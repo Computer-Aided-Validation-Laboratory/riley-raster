@@ -43,6 +43,7 @@ pub const ScratchTileGeometry = common.ScratchTileGeometry;
 
 pub fn resolveScratchDirect(
     tile: rops.ActiveTile,
+    scratch_geom: ScratchTileGeometry,
     spx_tile_size: usize,
     fields_num: u8,
     spx_image_scratch: *const matslice.MatSlice(F),
@@ -52,7 +53,7 @@ pub fn resolveScratchDirect(
 ) void {
     resolve_scratch_direct_impl(
         tile,
-        ScratchTileGeometry.initCoreOnly(tile, 1),
+        scratch_geom,
         spx_tile_size,
         fields_num,
         spx_image_scratch,
@@ -66,6 +67,7 @@ pub fn resolveScratchDirect(
 
 pub fn avgScratch(
     tile: rops.ActiveTile,
+    scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
     spx_tile_size: usize,
     fields_num: u8,
@@ -76,7 +78,7 @@ pub fn avgScratch(
 ) void {
     avg_scratch_impl(
         tile,
-        ScratchTileGeometry.initCoreOnly(tile, sub_samp),
+        scratch_geom,
         sub_samp,
         spx_tile_size,
         fields_num,

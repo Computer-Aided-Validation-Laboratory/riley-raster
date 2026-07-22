@@ -131,8 +131,8 @@ pub fn countOutputFields(meshes: []const MeshInput) u8 {
     for (meshes) |mesh| {
         const mesh_fields: u8 = switch (mesh.shader) {
             .nodal => |shader| shader.field.getFieldsN(),
-            .tex_u8, .tex_u16 => 1,
-            .tex_rgb_u8, .tex_rgb_u16 => 3,
+            .tex_u8, .tex_u16, .tex_f => 1,
+            .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
             .func => 1,
             .func_rgb => 3,
         };
@@ -180,10 +180,16 @@ pub fn meshInputFromSimDataSlice(
                 .tex_u16 => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
+                .tex_f => |tex| {
+                    outer_alloc.free(tex.uvs.slice);
+                },
                 .tex_rgb_u8 => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
                 .tex_rgb_u16 => |tex| {
+                    outer_alloc.free(tex.uvs.slice);
+                },
+                .tex_rgb_f => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
                 .func => |tex_func| {
@@ -310,6 +316,21 @@ pub fn initMeshStatic(
                 .normal_type = tex_in.normal_type,
             } };
         },
+        .tex_f => |tex_in| {
+            const elem_uvs = try prepUVs(
+                allocator,
+                &tex_in.uvs,
+                &mesh_input.connect,
+            );
+            shader_static = .{ .tex_f = .{
+                .elem_uvs = elem_uvs,
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .bits = tex_in.bits,
+                .scaling = tex_in.scaling,
+                .normal_type = tex_in.normal_type,
+            } };
+        },
         .tex_rgb_u8 => |tex_in| {
             const elem_uvs = try prepUVs(
                 allocator,
@@ -332,6 +353,21 @@ pub fn initMeshStatic(
                 &mesh_input.connect,
             );
             shader_static = .{ .tex_rgb_u16 = .{
+                .elem_uvs = elem_uvs,
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .bits = tex_in.bits,
+                .scaling = tex_in.scaling,
+                .normal_type = tex_in.normal_type,
+            } };
+        },
+        .tex_rgb_f => |tex_in| {
+            const elem_uvs = try prepUVs(
+                allocator,
+                &tex_in.uvs,
+                &mesh_input.connect,
+            );
+            shader_static = .{ .tex_rgb_f = .{
                 .elem_uvs = elem_uvs,
                 .tex = tex_in.tex,
                 .samp_cfg = tex_in.samp_cfg,
@@ -411,6 +447,7 @@ pub fn prepMeshFrames(
     chunk_exec: *pce.ParaChunkExecutor,
     workers_num: usize,
     camera: *const cam.CameraPrepared,
+    raster_halo_px: u16,
     config: rastcfg.RasterConfig,
     frame_idx: usize,
     static_meshes: []const MeshStatic,
@@ -444,11 +481,12 @@ pub fn prepMeshFrames(
 
         // Prepares meshes for each frame including coord transforms to camera space and
         // data reshaping to elem order for a given frame.
-        frame_meshes[ii] = try prepMeshFrame(
+        frame_meshes[ii] = try prepMeshFrameWithHalo(
             arena_alloc,
             chunk_exec,
             workers_num,
             camera,
+            raster_halo_px,
             config,
             mesh_static,
             frame_idx,
@@ -473,11 +511,38 @@ pub fn prepMeshFrame(
     scaling_params: ?imageops.ScalingParams,
     timing: *GeomTimes,
 ) !MeshFrame {
+    return prepMeshFrameWithHalo(
+        allocator,
+        chunk_exec,
+        workers_num,
+        camera,
+        config.raster_halo_px_override orelse camera.prep_psf.halo_px,
+        config,
+        mesh_static,
+        frame_idx,
+        scaling_params,
+        timing,
+    );
+}
+
+pub fn prepMeshFrameWithHalo(
+    allocator: std.mem.Allocator,
+    chunk_exec: *pce.ParaChunkExecutor,
+    workers_num: usize,
+    camera: *const cam.CameraPrepared,
+    raster_halo_px: u16,
+    config: rastcfg.RasterConfig,
+    mesh_static: *const MeshStatic,
+    frame_idx: usize,
+    scaling_params: ?imageops.ScalingParams,
+    timing: *GeomTimes,
+) !MeshFrame {
     return switch (mesh_static.mesh_type) {
         inline else => |MT| {
             var pipeline = try FrameMeshPipeline(MT).init(
                 allocator,
                 camera,
+                raster_halo_px,
                 mesh_static,
                 frame_idx,
                 config.hull_mode,
@@ -583,6 +648,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         allocator: std.mem.Allocator,
         camera: *const cam.CameraPrepared,
+        raster_halo_px: u16,
         mesh_static: *const MeshStatic,
         frame_idx: usize,
         hull_mode: rastcfg.HullMode,
@@ -600,6 +666,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         fn init(
             allocator: std.mem.Allocator,
             camera: *const cam.CameraPrepared,
+            raster_halo_px: u16,
             mesh_static: *const MeshStatic,
             frame_idx: usize,
             hull_mode: rastcfg.HullMode,
@@ -621,6 +688,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             return .{
                 .allocator = allocator,
                 .camera = camera,
+                .raster_halo_px = raster_halo_px,
                 .mesh_static = mesh_static,
                 .frame_idx = frame_idx,
                 .hull_mode = hull_mode,
@@ -793,6 +861,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         const CullVisibleCountStage = struct {
             camera: *const cam.CameraPrepared,
+            raster_halo_px: u16,
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
             vis_counts_by_chunk: []usize,
@@ -811,29 +880,32 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             for (range_start..range_end) |ee| {
                 const bbox = if (MT == .tri3 or MT == .tri3opt)
-                    rops.calcVisibleNodeBBoxTri3(
+                    rops.calcVisibleNodeBBoxTri3WithHalo(
                         MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
                         ee,
+                        stage.raster_halo_px,
                     )
                 else if (stage.hull_mode == .off)
-                    rops.calcVisibleNodeBBoxHighOrdNoHull(
+                    rops.calcVisibleNodeBBoxHighOrdNoHullWithHalo(
                         MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
                         ee,
+                        stage.raster_halo_px,
                     )
                 else
-                    rops.calcVisibleNodeBBoxHighOrd(
+                    rops.calcVisibleNodeBBoxHighOrdWithHalo(
                         MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
                         ee,
                         hull_convex_fallback_on,
+                        stage.raster_halo_px,
                     );
 
                 if (bbox != null) {
@@ -860,6 +932,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             var cull_count_stage = CullVisibleCountStage{
                 .camera = self.camera,
+                .raster_halo_px = self.raster_halo_px,
                 .connect = &self.mesh_static.connect,
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
                 .vis_counts_by_chunk = self.mesh_workspace.vis_counts_by_chunk,
@@ -885,6 +958,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             var cull_fill_stage = CullVisibleFillStage{
                 .camera = self.camera,
+                .raster_halo_px = self.raster_halo_px,
                 .connect = &self.mesh_static.connect,
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
                 .vis_orig_elem_inds = self.mesh_workspace.vis_orig_elem_inds,
@@ -908,6 +982,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         const CullVisibleFillStage = struct {
             camera: *const cam.CameraPrepared,
+            raster_halo_px: u16,
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
             vis_orig_elem_inds: []usize,
@@ -928,29 +1003,32 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             for (range_start..range_end) |ee| {
                 const bbox = if (MT == .tri3 or MT == .tri3opt)
-                    rops.calcVisibleNodeBBoxTri3(
+                    rops.calcVisibleNodeBBoxTri3WithHalo(
                         MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
                         ee,
+                        stage.raster_halo_px,
                     )
                 else if (stage.hull_mode == .off)
-                    rops.calcVisibleNodeBBoxHighOrdNoHull(
+                    rops.calcVisibleNodeBBoxHighOrdNoHullWithHalo(
                         MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
                         ee,
+                        stage.raster_halo_px,
                     )
                 else
-                    rops.calcVisibleNodeBBoxHighOrd(
+                    rops.calcVisibleNodeBBoxHighOrdWithHalo(
                         MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
                         ee,
                         hull_convex_fallback_on,
+                        stage.raster_halo_px,
                     );
 
                 if (bbox) |b| {
@@ -1122,6 +1200,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         tex_static,
                     );
                 },
+                .tex_f => |tex_static| {
+                    mesh_prep.shader = try prepareTexShader(F, 1, self, tex_static);
+                },
                 .tex_rgb_u8 => |tex_static| {
                     mesh_prep.shader = try prepareTexShader(
                         u8,
@@ -1137,6 +1218,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         self,
                         tex_static,
                     );
+                },
+                .tex_rgb_f => |tex_static| {
+                    mesh_prep.shader = try prepareTexShader(F, 3, self, tex_static);
                 },
                 .func => |func_static| {
                     mesh_prep.shader = try prepareFuncShader(1, self, func_static);
@@ -1321,6 +1405,18 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .normal_type = tex_static.normal_type,
                     .elem_normals = elem_normals,
                 } };
+            } else if (comptime T == F and C == 1) {
+                return .{ .tex_f = .{
+                    .elem_uvs = elem_uvs,
+                    .tex = tex_static.tex,
+                    .samp_cfg = tex_static.samp_cfg,
+                    .bits = tex_static.bits,
+                    .scaling = tex_static.scaling,
+                    .scale_mul = factors.mul,
+                    .scale_add = factors.add,
+                    .normal_type = tex_static.normal_type,
+                    .elem_normals = elem_normals,
+                } };
             } else if (comptime T == u8 and C == 3) {
                 return .{ .tex_rgb_u8 = .{
                     .elem_uvs = elem_uvs,
@@ -1333,8 +1429,20 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .normal_type = tex_static.normal_type,
                     .elem_normals = elem_normals,
                 } };
-            } else {
+            } else if (comptime T == u16 and C == 3) {
                 return .{ .tex_rgb_u16 = .{
+                    .elem_uvs = elem_uvs,
+                    .tex = tex_static.tex,
+                    .samp_cfg = tex_static.samp_cfg,
+                    .bits = tex_static.bits,
+                    .scaling = tex_static.scaling,
+                    .scale_mul = factors.mul,
+                    .scale_add = factors.add,
+                    .normal_type = tex_static.normal_type,
+                    .elem_normals = elem_normals,
+                } };
+            } else {
+                return .{ .tex_rgb_f = .{
                     .elem_uvs = elem_uvs,
                     .tex = tex_static.tex,
                     .samp_cfg = tex_static.samp_cfg,

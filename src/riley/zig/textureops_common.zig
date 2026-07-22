@@ -54,6 +54,7 @@ pub const TexSamp = enum {
     lanczos3,
     cubic_bspline,
     quintic_bspline,
+    lanczos2,
 };
 
 pub const TexSampMode = enum {
@@ -212,6 +213,16 @@ pub fn sampScal(
             tex_x_frac,
             tex_y_frac,
         ),
+        .lanczos2 => sampTex4Tap(
+            C,
+            .lanczos2,
+            config.mode,
+            tex,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
         .lanczos3 => sampTex6Tap(
             C,
             .lanczos3,
@@ -341,12 +352,14 @@ fn sampTex4Tap(
         .cubic_catmull_rom => cubicCoeffCatmullRom,
         .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
         .cubic_bspline => cubicBSplineCoeff,
+        .lanczos2 => lanczos2Coeff,
         else => unreachable,
     };
     const lut = switch (sample) {
         .cubic_catmull_rom => catmull_rom_lut,
         .cubic_mitchell_netravali => mitchell_netravali_lut,
         .cubic_bspline => cubic_bspline_lut,
+        .lanczos2 => lanczos2_lut,
         else => unreachable,
     };
 
@@ -573,6 +586,15 @@ pub fn lanczos3Coeff(x: F) F {
     return (std.math.sin(pi_x) / pi_x) * (std.math.sin(pi_x_3) / pi_x_3);
 }
 
+pub fn lanczos2Coeff(x: F) F {
+    const abs_x = @abs(x);
+    if (abs_x < tol.tex.lancsoz_centre_snap) return 1.0;
+    if (abs_x >= 2.0) return 0.0;
+    const pi_x = std.math.pi * x;
+    const pi_x_2 = pi_x / 2.0;
+    return (std.math.sin(pi_x) / pi_x) * (std.math.sin(pi_x_2) / pi_x_2);
+}
+
 pub fn quinticBSplineCoeff(x: F) F {
     const r = @abs(x);
 
@@ -632,6 +654,22 @@ pub const cubic_bspline_lut = blk: {
             const jj_f = @as(F, @floatFromInt(jj));
             const xx = jj_f - 1.0 - tt;
             table[ii][jj] = cubicBSplineCoeff(xx);
+        }
+    }
+    break :blk table;
+};
+
+pub const lanczos2_lut = blk: {
+    @setEvalBranchQuota(eval_branch_quota);
+    var table: [lut_size][4]F = undefined;
+    const lut_size_f = @as(F, @floatFromInt(lut_size));
+    for (0..lut_size) |ii| {
+        const ii_f = @as(F, @floatFromInt(ii));
+        const tt = ii_f / lut_size_f;
+        for (0..4) |jj| {
+            const jj_f = @as(F, @floatFromInt(jj));
+            const xx = jj_f - 1.0 - tt;
+            table[ii][jj] = lanczos2Coeff(xx);
         }
     }
     break :blk table;

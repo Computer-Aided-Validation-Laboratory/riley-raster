@@ -31,7 +31,7 @@ const out_dir_root = "out/test_sin_approx";
 const pixels_num = [_]u32{ 800, 500 };
 const pixels_size = [_]F{ 5.3e-6, 5.3e-6 };
 const focal_length: F = 50.0e-3;
-const sub_sample: u8 = 2;
+const sub_sample: u32 = 2;
 const wave_oscillations: F = 10.0;
 const compare_abs_tol: F = if (F == f32) 1e-4 else 1e-11;
 

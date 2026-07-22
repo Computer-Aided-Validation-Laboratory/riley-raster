@@ -88,10 +88,10 @@ pub fn RasterCoords2D(comptime N: usize) type {
 
 pub const ElemBBox = struct {
     elem_idx: usize,
-    x_min: u16,
-    x_max: u16,
-    y_min: u16,
-    y_max: u16,
+    x_min: i32,
+    x_max: i32,
+    y_min: i32,
+    y_max: i32,
 };
 
 pub const RasterContext = struct {
@@ -241,6 +241,17 @@ pub fn calcVisibleNodeBBoxTri3(
     connect: *const meshio.Connect,
     elem_idx: usize,
 ) ?ElemBBox {
+    return calcVisibleNodeBBoxTri3WithHalo(MT, camera, coords_nodes, connect, elem_idx, 0);
+}
+
+pub fn calcVisibleNodeBBoxTri3WithHalo(
+    comptime MT: MeshType,
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
+    elem_idx: usize,
+    raster_halo_px: u16,
+) ?ElemBBox {
     comptime {
         if (MT != .tri3 and MT != .tri3opt) {
             @compileError("calcVisibleNodeBBoxTri3 only supps .tri3 and .tri3opt");
@@ -271,7 +282,13 @@ pub fn calcVisibleNodeBBoxTri3(
         camera,
         coords_ideal_raster,
     );
-    return calcBBoxFromRasterCoords(N, camera, elem_idx, coords_distorted);
+    return calcBBoxFromRasterCoords(
+        N,
+        camera,
+        elem_idx,
+        coords_distorted,
+        raster_halo_px,
+    );
 }
 
 pub fn calcVisibleNodeBBoxHighOrd(
@@ -281,6 +298,18 @@ pub fn calcVisibleNodeBBoxHighOrd(
     connect: *const meshio.Connect,
     elem_idx: usize,
     hull_convex_fallback_on: bool,
+) ?ElemBBox {
+    return calcVisibleNodeBBoxHighOrdWithHalo(MT, camera, coords_nodes, connect, elem_idx, hull_convex_fallback_on, 0);
+}
+
+pub fn calcVisibleNodeBBoxHighOrdWithHalo(
+    comptime MT: MeshType,
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
+    elem_idx: usize,
+    hull_convex_fallback_on: bool,
+    raster_halo_px: u16,
 ) ?ElemBBox {
     comptime {
         if (MT == .tri3) {
@@ -322,6 +351,7 @@ pub fn calcVisibleNodeBBoxHighOrd(
         camera,
         elem_idx,
         hull_distorted,
+        raster_halo_px,
     );
 }
 
@@ -331,6 +361,17 @@ pub fn calcVisibleNodeBBoxHighOrdNoHull(
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     elem_idx: usize,
+) ?ElemBBox {
+    return calcVisibleNodeBBoxHighOrdNoHullWithHalo(MT, camera, coords_nodes, connect, elem_idx, 0);
+}
+
+pub fn calcVisibleNodeBBoxHighOrdNoHullWithHalo(
+    comptime MT: MeshType,
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
+    elem_idx: usize,
+    raster_halo_px: u16,
 ) ?ElemBBox {
     comptime {
         if (MT == .tri3) {
@@ -364,6 +405,7 @@ pub fn calcVisibleNodeBBoxHighOrdNoHull(
         elem_idx,
         coords_distorted,
         tol.hull.no_hull_bbox_rel_pad,
+        raster_halo_px,
     );
 }
 
@@ -470,10 +512,10 @@ pub fn prepareVisibleRasterHullsRange(
 pub const OverlapBBox = struct {
     mesh_idx: usize,
     elem_idx: usize,
-    x_min: u16,
-    x_max: u16,
-    y_min: u16,
-    y_max: u16,
+    x_min: i32,
+    x_max: i32,
+    y_min: i32,
+    y_max: i32,
 };
 
 pub const ActiveTile = struct {
@@ -483,10 +525,10 @@ pub const ActiveTile = struct {
     y_px_min: u16,
     x_px_max: u16,
     y_px_max: u16,
-    scratch_x_px_min: u16,
-    scratch_y_px_min: u16,
-    scratch_x_px_max: u16,
-    scratch_y_px_max: u16,
+    scratch_x_px_min: i32,
+    scratch_y_px_min: i32,
+    scratch_x_px_max: i32,
+    scratch_y_px_max: i32,
 };
 
 pub const TilingOverlaps = struct {
@@ -576,16 +618,10 @@ pub fn sceneTileElemOverlap(
                 .y_px_min = @intCast(ty * tile_size),
                 .x_px_max = @min(screen_px_x, @as(u16, @intCast((tx + 1) * tile_size))),
                 .y_px_max = @min(screen_px_y, @as(u16, @intCast((ty + 1) * tile_size))),
-                .scratch_x_px_min = (@as(u16, @intCast(tx * tile_size))) -| halo_px,
-                .scratch_y_px_min = (@as(u16, @intCast(ty * tile_size))) -| halo_px,
-                .scratch_x_px_max = @min(
-                    screen_px_x,
-                    @as(u16, @intCast(@as(u32, @min(screen_px_x, @as(u16, @intCast((tx + 1) * tile_size)))) + halo_px)),
-                ),
-                .scratch_y_px_max = @min(
-                    screen_px_y,
-                    @as(u16, @intCast(@as(u32, @min(screen_px_y, @as(u16, @intCast((ty + 1) * tile_size)))) + halo_px)),
-                ),
+                .scratch_x_px_min = @as(i32, @intCast(tx * tile_size)) - halo_px,
+                .scratch_y_px_min = @as(i32, @intCast(ty * tile_size)) - halo_px,
+                .scratch_x_px_max = @as(i32, @intCast(@min(screen_px_x, @as(u16, @intCast((tx + 1) * tile_size))))) + halo_px,
+                .scratch_y_px_max = @as(i32, @intCast(@min(screen_px_y, @as(u16, @intCast((ty + 1) * tile_size))))) + halo_px,
             };
 
             active_idx += 1;
@@ -650,24 +686,11 @@ fn runTilingCount(
 
     for (range_start..range_end) |ee| {
         const elem_bbox = tiling.elem_bbox_slice[ee];
-        const halo_u32: u32 = tiling.halo_px;
-        const x_min_expanded: u32 = if (elem_bbox.x_min > tiling.halo_px)
-            elem_bbox.x_min - tiling.halo_px
-        else
-            0;
-        const y_min_expanded: u32 = if (elem_bbox.y_min > tiling.halo_px)
-            elem_bbox.y_min - tiling.halo_px
-        else
-            0;
-        const x_max_expanded: u32 = @as(u32, elem_bbox.x_max) + halo_u32;
-        const y_max_expanded: u32 = @as(u32, elem_bbox.y_max) + halo_u32;
-
-        const tx_start: usize = x_min_expanded / tiling.tile_size;
-        const tx_end: usize = @min(tiling.tiles_num_x, @as(usize, (x_max_expanded +
-            tiling.tile_size - 1) / tiling.tile_size));
-        const ty_start: usize = y_min_expanded / tiling.tile_size;
-        const ty_end: usize = @min(tiling.tiles_num_y, @as(usize, (y_max_expanded +
-            tiling.tile_size - 1) / tiling.tile_size));
+        const tile_range = calcElemTileRange(elem_bbox, tiling.tile_size, tiling.halo_px, tiling.tiles_num_x, tiling.tiles_num_y);
+        const tx_start = tile_range.tx_start;
+        const tx_end = tile_range.tx_end;
+        const ty_start = tile_range.ty_start;
+        const ty_end = tile_range.ty_end;
 
         for (ty_start..ty_end) |ty| {
             const row_off = ty * tiling.tiles_num_x;
@@ -702,32 +725,11 @@ fn runTilingFill(
 
     for (range_start..range_end) |ee| {
         const elem_bbox = tiling.elem_bbox_slice[ee];
-        const halo_u32: u32 = tiling.halo_px;
-
-        const x_min_expanded: u32 = if (elem_bbox.x_min > tiling.halo_px)
-            elem_bbox.x_min - tiling.halo_px
-        else
-            0;
-
-        const y_min_expanded: u32 = if (elem_bbox.y_min > tiling.halo_px)
-            elem_bbox.y_min - tiling.halo_px
-        else
-            0;
-
-        const x_max_expanded: u32 = @as(u32, elem_bbox.x_max) + halo_u32;
-        const y_max_expanded: u32 = @as(u32, elem_bbox.y_max) + halo_u32;
-
-        const tx_start = x_min_expanded / tiling.tile_size;
-        const tx_end = @min(
-            tiling.tiles_num_x,
-            @as(usize, (x_max_expanded + tiling.tile_size - 1) / tiling.tile_size),
-        );
-
-        const ty_start = y_min_expanded / tiling.tile_size;
-        const ty_end = @min(
-            tiling.tiles_num_y,
-            @as(usize, (y_max_expanded + tiling.tile_size - 1) / tiling.tile_size),
-        );
+        const tile_range = calcElemTileRange(elem_bbox, tiling.tile_size, tiling.halo_px, tiling.tiles_num_x, tiling.tiles_num_y);
+        const tx_start = tile_range.tx_start;
+        const tx_end = tile_range.tx_end;
+        const ty_start = tile_range.ty_start;
+        const ty_end = tile_range.ty_end;
 
         for (ty_start..ty_end) |ty| {
             const tile_px_min_y = @as(u16, @intCast(ty * tiling.tile_size));
@@ -735,11 +737,8 @@ fn runTilingFill(
                 u16,
                 @min(@as(u32, tile_px_min_y) + tiling.tile_size, tiling.screen_px_y),
             );
-            const scratch_px_min_y = tile_px_min_y -| tiling.halo_px;
-            const scratch_px_max_y = @min(
-                tiling.screen_px_y,
-                @as(u16, @intCast(@as(u32, tile_px_max_y) + tiling.halo_px)),
-            );
+            const scratch_px_min_y: i32 = @as(i32, tile_px_min_y) - tiling.halo_px;
+            const scratch_px_max_y: i32 = @as(i32, tile_px_max_y) + tiling.halo_px;
 
             const overlap_y_min = @max(elem_bbox.y_min, scratch_px_min_y);
             const overlap_y_max = @min(elem_bbox.y_max, scratch_px_max_y);
@@ -750,11 +749,8 @@ fn runTilingFill(
                     u16,
                     @min(@as(u32, tile_px_min_x) + tiling.tile_size, tiling.screen_px_x),
                 );
-                const scratch_px_min_x = tile_px_min_x -| tiling.halo_px;
-                const scratch_px_max_x = @min(
-                    tiling.screen_px_x,
-                    @as(u16, @intCast(@as(u32, tile_px_max_x) + tiling.halo_px)),
-                );
+                const scratch_px_min_x: i32 = @as(i32, tile_px_min_x) - tiling.halo_px;
+                const scratch_px_max_x: i32 = @as(i32, tile_px_max_x) + tiling.halo_px;
 
                 const tile_idx = ty * tiling.tiles_num_x + tx;
                 const write_idx = tiling.tile_write_inds[tile_idx].fetchAdd(1, .monotonic);
@@ -770,6 +766,27 @@ fn runTilingFill(
             }
         }
     }
+}
+
+fn calcElemTileRange(
+    elem_bbox: ElemBBox,
+    tile_size: u16,
+    halo_px: u16,
+    tiles_num_x: usize,
+    tiles_num_y: usize,
+) struct { tx_start: usize, tx_end: usize, ty_start: usize, ty_end: usize } {
+    const tile_i: i32 = tile_size;
+    const halo_i: i32 = halo_px;
+    const x_min = @max(@as(i32, 0), @divFloor(elem_bbox.x_min - halo_i, tile_i));
+    const y_min = @max(@as(i32, 0), @divFloor(elem_bbox.y_min - halo_i, tile_i));
+    const x_max = @min(@as(i32, @intCast(tiles_num_x)), @divFloor(elem_bbox.x_max + halo_i + tile_i - 1, tile_i));
+    const y_max = @min(@as(i32, @intCast(tiles_num_y)), @divFloor(elem_bbox.y_max + halo_i + tile_i - 1, tile_i));
+    return .{
+        .tx_start = @intCast(x_min),
+        .tx_end = @intCast(x_max),
+        .ty_start = @intCast(y_min),
+        .ty_end = @intCast(y_max),
+    };
 }
 
 fn transformWorldNodeToRaster(
@@ -885,11 +902,13 @@ fn isOnScreen(
     x_max: F,
     y_min: F,
     y_max: F,
+    raster_halo_px: u16,
 ) bool {
-    return x_min <= @as(F, @floatFromInt(camera.pixels_num[0] - 1)) and
-        x_max >= 0.0 and
-        y_min <= @as(F, @floatFromInt(camera.pixels_num[1] - 1)) and
-        y_max >= 0.0;
+    const halo: F = @floatFromInt(raster_halo_px);
+    return x_min < @as(F, @floatFromInt(camera.pixels_num[0])) + halo and
+        x_max >= -halo and
+        y_min < @as(F, @floatFromInt(camera.pixels_num[1])) + halo and
+        y_max >= -halo;
 }
 
 fn projectClipToIdealRaster(
@@ -951,22 +970,23 @@ fn calcBBoxFromRasterCoords(
     camera: *const cam.CameraPrepared,
     elem_idx: usize,
     coords_raster: RasterCoords2D(N),
+    raster_halo_px: u16,
 ) ?ElemBBox {
     const x_min = std.mem.min(F, &coords_raster.x);
     const x_max = std.mem.max(F, &coords_raster.x);
     const y_min = std.mem.min(F, &coords_raster.y);
     const y_max = std.mem.max(F, &coords_raster.y);
 
-    if (!isOnScreen(camera, x_min, x_max, y_min, y_max)) {
+    if (!isOnScreen(camera, x_min, x_max, y_min, y_max, raster_halo_px)) {
         return null;
     }
 
     return .{
         .elem_idx = elem_idx,
-        .x_min = boundIndMin(u16, x_min),
-        .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
-        .y_min = boundIndMin(u16, y_min),
-        .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
+        .x_min = boundIndMinSigned(x_min, -@as(i32, raster_halo_px)),
+        .x_max = boundIndMaxSigned(x_max, @as(i32, @intCast(camera.pixels_num[0])) + raster_halo_px),
+        .y_min = boundIndMinSigned(y_min, -@as(i32, raster_halo_px)),
+        .y_max = boundIndMaxSigned(y_max, @as(i32, @intCast(camera.pixels_num[1])) + raster_halo_px),
     };
 }
 
@@ -976,6 +996,7 @@ fn calcBBoxFromRasterCoordsPadded(
     elem_idx: usize,
     coords_raster: RasterCoords2D(N),
     rel_pad: F,
+    raster_halo_px: u16,
 ) ?ElemBBox {
     const x_min = std.mem.min(F, &coords_raster.x);
     const x_max = std.mem.max(F, &coords_raster.x);
@@ -992,17 +1013,26 @@ fn calcBBoxFromRasterCoordsPadded(
         x_max + pad,
         y_min - pad,
         y_max + pad,
+        raster_halo_px,
     )) {
         return null;
     }
 
     return .{
         .elem_idx = elem_idx,
-        .x_min = boundIndMin(u16, x_min - pad),
-        .x_max = boundIndMax(u16, x_max + pad, @intCast(camera.pixels_num[0])),
-        .y_min = boundIndMin(u16, y_min - pad),
-        .y_max = boundIndMax(u16, y_max + pad, @intCast(camera.pixels_num[1])),
+        .x_min = boundIndMinSigned(x_min - pad, -@as(i32, raster_halo_px)),
+        .x_max = boundIndMaxSigned(x_max + pad, @as(i32, @intCast(camera.pixels_num[0])) + raster_halo_px),
+        .y_min = boundIndMinSigned(y_min - pad, -@as(i32, raster_halo_px)),
+        .y_max = boundIndMaxSigned(y_max + pad, @as(i32, @intCast(camera.pixels_num[1])) + raster_halo_px),
     };
+}
+
+fn boundIndMinSigned(val: F, min: i32) i32 {
+    return @max(min, @as(i32, @intFromFloat(@floor(val))));
+}
+
+fn boundIndMaxSigned(val: F, max: i32) i32 {
+    return @min(max, @as(i32, @intFromFloat(@ceil(val))));
 }
 
 //------------------------------------------------------------------------------------------
@@ -1125,6 +1155,137 @@ test "calcVisibleNodeBBoxTri3 on_screen" {
 
     const bbox = calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0);
     try std.testing.expect(bbox != null);
+}
+
+test "calcVisibleNodeBBoxTri3 retains an element in the PSF halo" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(3, allocator);
+    defer connect.deinit(allocator);
+    var coords = try initElemCoords(
+        3,
+        allocator,
+        .{ -1.75, -1.75, -0.25 },
+        .{ 2.0, 4.0, 2.0 },
+        .{ 1.0, 1.0, 1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    try std.testing.expect(
+        calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0) == null,
+    );
+    const bbox = calcVisibleNodeBBoxTri3WithHalo(
+        .tri3,
+        &camera,
+        &coords,
+        &connect,
+        0,
+        2,
+    ).?;
+    try std.testing.expectEqual(@as(i32, -2), bbox.x_min);
+    try std.testing.expect(bbox.x_max <= 0);
+}
+
+test "calcVisibleNodeBBoxTri3 uses the final pixel boundary for visibility" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(3, allocator);
+    defer connect.deinit(allocator);
+    var coords = try initElemCoords(
+        3,
+        allocator,
+        .{ 9.25, 9.25, 9.75 },
+        .{ 2.0, 4.0, 2.0 },
+        .{ 1.0, 1.0, 1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    const bbox = calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0);
+    try std.testing.expect(bbox != null);
+    try std.testing.expectEqual(@as(i32, 9), bbox.?.x_min);
+    try std.testing.expectEqual(@as(i32, 10), bbox.?.x_max);
+}
+
+test "calcVisibleNodeBBoxTri3 rejects an element beyond the final pixel boundary" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(3, allocator);
+    defer connect.deinit(allocator);
+    var coords = try initElemCoords(
+        3,
+        allocator,
+        .{ 10.0, 10.0, 10.5 },
+        .{ 2.0, 4.0, 2.0 },
+        .{ 1.0, 1.0, 1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    try std.testing.expect(
+        calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0) == null,
+    );
+}
+
+test "calcVisibleNodeBBoxTri3 extends the final pixel boundary by the halo" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(3, allocator);
+    defer connect.deinit(allocator);
+    var coords = try initElemCoords(
+        3,
+        allocator,
+        .{ 10.25, 10.25, 11.75 },
+        .{ 2.0, 4.0, 2.0 },
+        .{ 1.0, 1.0, 1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    const bbox = calcVisibleNodeBBoxTri3WithHalo(
+        .tri3,
+        &camera,
+        &coords,
+        &connect,
+        0,
+        2,
+    );
+    try std.testing.expect(bbox != null);
+    try std.testing.expectEqual(@as(i32, 10), bbox.?.x_min);
+    try std.testing.expectEqual(@as(i32, 12), bbox.?.x_max);
+}
+
+test "calcVisibleNodeBBoxTri3 rejects an element beyond the halo boundary" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(3, allocator);
+    defer connect.deinit(allocator);
+    var coords = try initElemCoords(
+        3,
+        allocator,
+        .{ 12.0, 12.0, 12.5 },
+        .{ 2.0, 4.0, 2.0 },
+        .{ 1.0, 1.0, 1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    try std.testing.expect(
+        calcVisibleNodeBBoxTri3WithHalo(
+            .tri3,
+            &camera,
+            &coords,
+            &connect,
+            0,
+            2,
+        ) == null,
+    );
 }
 
 test "calcVisibleNodeBBoxTri3 backface" {

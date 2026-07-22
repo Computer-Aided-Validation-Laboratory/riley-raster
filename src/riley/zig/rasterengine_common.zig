@@ -56,6 +56,16 @@ pub const RasterBounds = struct {
     y_min_f: F,
 };
 
+pub fn globalSubpxForReport(
+    tile_px_min: i32,
+    sub_samp: usize,
+    scratch_subpx: usize,
+) usize {
+    const tile_subpx = tile_px_min * @as(i32, @intCast(sub_samp));
+    const global_subpx = tile_subpx + @as(i32, @intCast(scratch_subpx));
+    return @intCast(@max(0, global_subpx));
+}
+
 pub fn rasterDirectScalComm(
     comptime Geom: type,
     comptime ShaderKern: type,
@@ -111,12 +121,16 @@ pub fn rasterDirectScalComm(
             const ideal_x_pix = ideal_x_plane[scratch_idx];
             const ideal_y_pix = ideal_y_plane[scratch_idx];
 
-            const tile_subx: usize = @intCast(tile.scratch_x_px_min);
-            const tile_suby: usize = @intCast(tile.scratch_y_px_min);
-            const tile_subx_off: usize = tile_subx * sub_samp;
-            const tile_suby_off: usize = tile_suby * sub_samp;
-            const global_subx: usize = tile_subx_off +% scratch_x_u;
-            const global_suby: usize = tile_suby_off +% scratch_y_u;
+            const global_subx = globalSubpxForReport(
+                tile.scratch_x_px_min,
+                sub_samp,
+                scratch_x_u,
+            );
+            const global_suby = globalSubpxForReport(
+                tile.scratch_y_px_min,
+                sub_samp,
+                scratch_y_u,
+            );
 
             if (comptime report_mode == .full_stats) {
                 rasterreport.recordEarlyOut(
@@ -184,8 +198,14 @@ pub fn rasterDirectScalComm(
                     global_subx,
                     global_suby,
                     geometry_result.iters,
-                    tile.scratch_x_px_min + scratch_x_u / sub_samp,
-                    tile.scratch_y_px_min + scratch_y_u / sub_samp,
+                    @intCast(@max(0, tile.scratch_x_px_min + @as(
+                        i32,
+                        @intCast(scratch_x_u / sub_samp),
+                    ))),
+                    @intCast(@max(0, tile.scratch_y_px_min + @as(
+                        i32,
+                        @intCast(scratch_y_u / sub_samp),
+                    ))),
                 );
             }
 
@@ -291,6 +311,10 @@ pub fn rasterSceneComm(
     const arena_alloc = arena.allocator();
 
     const worker_states = try arena_alloc.alloc(WorkerState, workers_num);
+    var worker_states_initialized: usize = 0;
+    errdefer for (worker_states[0..worker_states_initialized]) |*worker_state| {
+        worker_state.deinit();
+    };
     for (worker_states) |*worker_state| {
         worker_state.* = try WorkerState.init(
             arena_alloc,
@@ -298,7 +322,9 @@ pub fn rasterSceneComm(
             image_out_arr.dims[0],
             tileScratchSubpxSize(ctx_rast),
         );
+        worker_states_initialized += 1;
     }
+    defer for (worker_states) |*worker_state| worker_state.deinit();
 
     var tile_range_ctx = TileRangeCtx{
         .io = io,
@@ -340,9 +366,11 @@ fn tileScratchSubpxSize(
     ctx_rast: rops.RasterContext,
 ) usize {
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    const raster_halo_px = ctx_rast.config.raster_halo_px_override orelse
+        ctx_rast.camera.prep_psf.halo_px;
     const scratch_tile_px: usize =
         @as(usize, @intCast(ctx_rast.tile_size)) +
-        2 * @as(usize, ctx_rast.camera.prep_psf.halo_px);
+        2 * @as(usize, raster_halo_px);
     return scratch_tile_px * sub_samp;
 }
 
@@ -405,8 +433,8 @@ pub const Tri3FixedEdges = struct {
     pub fn init(
         nodes_coords: rops.Vec3Slices(F),
         sub_samp: usize,
-        start_subx_global: usize,
-        start_suby_global: usize,
+        start_subx_global: isize,
+        start_suby_global: isize,
         max_x_steps: usize,
         max_y_steps: usize,
     ) ?@This() {
@@ -524,38 +552,14 @@ fn fillTileIdealCentFullInMem(
     subpx_scratch: anytype,
     subpx_tile_size: usize,
 ) void {
-    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const camera_prepared = ctx_rast.camera;
-    const stride_y = camera_prepared.ideal_pixel_centers.strides[0];
-    const stride_x = camera_prepared.ideal_pixel_centers.strides[1];
-    const slice = camera_prepared.ideal_pixel_centers.slice;
-
-    const ideal_x_plane = cam.getIdealXPlaneScratch(
+    ctx_rast.camera.fillTileIdealCentersPerTile(
+        tile.scratch_x_px_min,
+        tile.scratch_x_px_max,
+        tile.scratch_y_px_min,
+        tile.scratch_y_px_max,
+        subpx_tile_size,
         subpx_scratch.ideal_pix_cent,
-    );
-    const ideal_y_plane = cam.getIdealYPlaneScratch(
-        subpx_scratch.ideal_pix_cent,
-    );
-
-    const start_x = @as(usize, @intCast(tile.scratch_x_px_min)) * sub_samp;
-    const start_y = @as(usize, @intCast(tile.scratch_y_px_min)) * sub_samp;
-    const tile_w = @as(usize, tile.scratch_x_px_max - tile.scratch_x_px_min) * sub_samp;
-    const tile_h = @as(usize, tile.scratch_y_px_max - tile.scratch_y_px_min) * sub_samp;
-
-    for (0..tile_h) |jj| {
-        const global_y = start_y + jj;
-        const row_off = global_y * stride_y;
-        const scratch_row_off = jj * subpx_tile_size;
-
-        for (0..tile_w) |ii| {
-            const global_x = start_x + ii;
-            const col_off = global_x * stride_x;
-            const scratch_idx = scratch_row_off + ii;
-
-            ideal_x_plane[scratch_idx] = slice[row_off + col_off + 0];
-            ideal_y_plane[scratch_idx] = slice[row_off + col_off + 1];
-        }
-    }
+    ) catch unreachable;
 }
 
 fn fillTileIdealCent(
@@ -572,18 +576,18 @@ fn fillTileIdealCent(
             subpx_tile_size,
         ),
         .per_tile => try ctx_rast.camera.fillTileIdealCentersPerTile(
-            @intCast(tile.scratch_x_px_min),
-            @intCast(tile.scratch_x_px_max),
-            @intCast(tile.scratch_y_px_min),
-            @intCast(tile.scratch_y_px_max),
+            tile.scratch_x_px_min,
+            tile.scratch_x_px_max,
+            tile.scratch_y_px_min,
+            tile.scratch_y_px_max,
             subpx_tile_size,
             subpx_scratch.ideal_pix_cent,
         ),
         .affine_jac => ctx_rast.camera.fillTileIdealCentersAffineJac(
-            @intCast(tile.scratch_x_px_min),
-            @intCast(tile.scratch_x_px_max),
-            @intCast(tile.scratch_y_px_min),
-            @intCast(tile.scratch_y_px_max),
+            tile.scratch_x_px_min,
+            tile.scratch_x_px_max,
+            tile.scratch_y_px_min,
+            tile.scratch_y_px_max,
             subpx_tile_size,
             subpx_scratch.ideal_pix_cent,
         ),
@@ -680,8 +684,8 @@ fn rasterTileComm(
                         @intCast(s.elem_field.dims[1])
                     else
                         @intCast(s.elem_field.dims[2]),
-                    .tex_u8, .tex_u16 => 1,
-                    .tex_rgb_u8, .tex_rgb_u16 => 3,
+                    .tex_u8, .tex_u16, .tex_f => 1,
+                    .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
                     .func => 1,
                     .func_rgb => 3,
                 };
@@ -791,6 +795,31 @@ fn rasterTileComm(
                             subpx_scratch,
                         );
                     },
+                    .tex_f => |*shader| {
+                        const SK = shadekerns.TexKernel(N, F, 1);
+                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                        local_shader_buf.load(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
+                        if (shader.elem_normals) |en| {
+                            const prep_idx = en.map[ov.elem_idx];
+                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
+                        }
+                        shaded_px += try RasterBackend.RasterEngine(
+                            GK,
+                            SK,
+                            TexPrepared(F, 1),
+                        ).render(
+                            report_mode,
+                            ctx_rast,
+                            ctx_report,
+                            tile,
+                            ov,
+                            coords,
+                            hull,
+                            shader,
+                            &local_shader_buf,
+                            subpx_scratch,
+                        );
+                    },
                     .tex_rgb_u8 => |*shader| {
                         const SK = shadekerns.TexKernel(N, u8, 3);
                         var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
@@ -838,6 +867,31 @@ fn rasterTileComm(
                             GK,
                             SK,
                             TexPrepared(u16, 3),
+                        ).render(
+                            report_mode,
+                            ctx_rast,
+                            ctx_report,
+                            tile,
+                            ov,
+                            coords,
+                            hull,
+                            shader,
+                            &local_shader_buf,
+                            subpx_scratch,
+                        );
+                    },
+                    .tex_rgb_f => |*shader| {
+                        const SK = shadekerns.TexKernel(N, F, 3);
+                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                        local_shader_buf.load(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
+                        if (shader.elem_normals) |en| {
+                            const prep_idx = en.map[ov.elem_idx];
+                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
+                        }
+                        shaded_px += try RasterBackend.RasterEngine(
+                            GK,
+                            SK,
+                            TexPrepared(F, 3),
                         ).render(
                             report_mode,
                             ctx_rast,
@@ -978,6 +1032,7 @@ fn rasterTileComm(
     } else if (sub_samp > 1) {
         scratchresolve.avgScratch(
             tile,
+            scratch_geom,
             @intCast(sub_samp),
             subpx_tile_size,
             fields_num,
@@ -989,6 +1044,7 @@ fn rasterTileComm(
     } else {
         scratchresolve.resolveScratchDirect(
             tile,
+            scratch_geom,
             subpx_tile_size,
             fields_num,
             &subpx_scratch.image,
@@ -1074,6 +1130,10 @@ fn ThreadState(
                 ),
                 .log = initThreadReportLog(report_mode),
             };
+        }
+
+        fn deinit(self: *Self) void {
+            self.arena.deinit();
         }
     };
 }

@@ -59,11 +59,13 @@ pub const Tex = common.Tex;
 const catmull_rom_lut = common.catmull_rom_lut;
 const mitchell_netravali_lut = common.mitchell_netravali_lut;
 const cubic_bspline_lut = common.cubic_bspline_lut;
+const lanczos2_lut = common.lanczos2_lut;
 const lanczos3_lut = common.lanczos3_lut;
 const quintic_bspline_lut = common.quintic_bspline_lut;
 const cubicCoeffCatmullRom = common.cubicCoeffCatmullRom;
 const cubicCoeffMitchellNetravali = common.cubicCoeffMitchellNetravali;
 const cubicBSplineCoeff = common.cubicBSplineCoeff;
+const lanczos2Coeff = common.lanczos2Coeff;
 const lanczos3Coeff = common.lanczos3Coeff;
 const quinticBSplineCoeff = common.quinticBSplineCoeff;
 const getLerpSampCoeffs = common.getLerpSampCoeffs;
@@ -129,6 +131,16 @@ pub inline fn sampWide(
             v_tex_y_frac,
         ),
         .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => samp4TapWide(
+            C,
+            config.sample,
+            config.mode,
+            tex,
+            v_tex_x_i,
+            v_tex_y_i,
+            v_tex_x_frac,
+            v_tex_y_frac,
+        ),
+        .lanczos2 => samp4TapWide(
             C,
             config.sample,
             config.mode,
@@ -321,6 +333,16 @@ pub inline fn sampOneLane(
             tex_y_frac,
         ),
         .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => samp4TapOneLane(
+            C,
+            config.sample,
+            config.mode,
+            tex,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .lanczos2 => samp4TapOneLane(
             C,
             config.sample,
             config.mode,
@@ -536,20 +558,21 @@ fn samp4TapWide(
         .cubic_catmull_rom => catmull_rom_lut,
         .cubic_mitchell_netravali => mitchell_netravali_lut,
         .cubic_bspline => cubic_bspline_lut,
+        .lanczos2 => lanczos2_lut,
         else => unreachable,
     };
 
     var v_samp_coeff_sum: VecSF = @splat(0.0);
     const v_samp_coeffs = switch (mode) {
         .direct => blk: {
-
             const v_kernel: *const fn (VecSF) VecSF = switch (sample) {
                 .cubic_catmull_rom => cubicCoeffCatmullRomSIMD,
                 .cubic_mitchell_netravali => cubicCoeffMitchellNetravaliSIMD,
                 .cubic_bspline => cubicBSplineCoeffSIMD,
+                .lanczos2 => lanczos2CoeffSIMD,
                 else => unreachable,
             };
-            
+
             const coeffs_x = [TAP]VecSF{
                 v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0))),
                 v_kernel(v_tex_x_frac),
@@ -956,6 +979,7 @@ fn samp4TapOneLane(
         .cubic_catmull_rom => cubicCoeffCatmullRom,
         .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
         .cubic_bspline => cubicBSplineCoeff,
+        .lanczos2 => lanczos2Coeff,
         else => unreachable,
     };
 
@@ -963,6 +987,7 @@ fn samp4TapOneLane(
         .cubic_catmull_rom => catmull_rom_lut,
         .cubic_mitchell_netravali => mitchell_netravali_lut,
         .cubic_bspline => cubic_bspline_lut,
+        .lanczos2 => lanczos2_lut,
         else => unreachable,
     };
 
@@ -1225,6 +1250,15 @@ fn lanczos3CoeffSIMD(v_x: VecSF) VecSF {
     const ax_arr: [S]F = v_ax;
     for (0..S) |ii| {
         samp_res_arr[ii] = lanczos3Coeff(ax_arr[ii]);
+    }
+    return samp_res_arr;
+}
+
+fn lanczos2CoeffSIMD(v_x: VecSF) VecSF {
+    const x_arr: [S]F = v_x;
+    var samp_res_arr: [S]F = undefined;
+    for (0..S) |ii| {
+        samp_res_arr[ii] = lanczos2Coeff(x_arr[ii]);
     }
     return samp_res_arr;
 }

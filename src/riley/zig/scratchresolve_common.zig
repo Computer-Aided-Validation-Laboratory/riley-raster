@@ -33,12 +33,12 @@ pub const ScratchTileGeometry = struct {
 
         const scratch_w_px = @as(
             usize,
-            tile.scratch_x_px_max - tile.scratch_x_px_min,
+            @intCast(tile.scratch_x_px_max - tile.scratch_x_px_min),
         );
 
         const scratch_h_px = @as(
             usize,
-            tile.scratch_y_px_max - tile.scratch_y_px_min,
+            @intCast(tile.scratch_y_px_max - tile.scratch_y_px_min),
         );
 
         return .{
@@ -48,14 +48,12 @@ pub const ScratchTileGeometry = struct {
             .scratch_h_px = scratch_h_px,
             .scratch_w_subpx = scratch_w_px * sub_sample,
             .scratch_h_subpx = scratch_h_px * sub_sample,
-            .core_start_x_subpx = (@as(
-                usize,
-                tile.x_px_min - tile.scratch_x_px_min,
-            )) * sub_sample,
-            .core_start_y_subpx = (@as(
-                usize,
-                tile.y_px_min - tile.scratch_y_px_min,
-            )) * sub_sample,
+            .core_start_x_subpx = (@as(usize, @intCast(
+                @as(i32, tile.x_px_min) - tile.scratch_x_px_min,
+            ))) * sub_sample,
+            .core_start_y_subpx = (@as(usize, @intCast(
+                @as(i32, tile.y_px_min) - tile.scratch_y_px_min,
+            ))) * sub_sample,
         };
     }
 

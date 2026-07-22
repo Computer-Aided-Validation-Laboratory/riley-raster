@@ -205,6 +205,22 @@ pub fn renderCase(
     render_case: RenderCase,
     tile_size_override: ?u16,
 ) !NDArray(F) {
+    return renderCaseWithRasterHalo(
+        outer_alloc,
+        io,
+        render_case,
+        tile_size_override,
+        null,
+    );
+}
+
+pub fn renderCaseWithRasterHalo(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    render_case: RenderCase,
+    tile_size_override: ?u16,
+    raster_halo_px_override: ?u16,
+) !NDArray(F) {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
@@ -221,7 +237,7 @@ pub fn renderCase(
     const mesh_input = buildMeshInput(&prepared, render_case);
     const camera_input = buildCameraInput(&prepared, render_case.psf_case.psf);
 
-    const config = baseRasterConfig(
+    var config = baseRasterConfig(
         tile_size_override,
         .memory,
         &[_]iio.ImageSaveOpts{
@@ -229,6 +245,7 @@ pub fn renderCase(
         },
         render_case.shader_case.background_value,
     );
+    config.raster_halo_px_override = raster_halo_px_override;
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };

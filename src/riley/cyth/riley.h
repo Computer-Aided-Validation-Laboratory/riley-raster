@@ -49,6 +49,20 @@ typedef struct c_array_3d_f64 {
     size_t dim2;
 } CArray3DF64;
 
+typedef struct c_array_3d_u8 {
+    const uint8_t* elems;
+    size_t dim0;
+    size_t dim1;
+    size_t dim2;
+} CArray3DU8;
+
+typedef struct c_array_3d_u16 {
+    const uint16_t* elems;
+    size_t dim0;
+    size_t dim1;
+    size_t dim2;
+} CArray3DU16;
+
 typedef struct c_dims_5_usize {
     size_t dim0;
     size_t dim1;
@@ -69,7 +83,7 @@ typedef struct c_camera_input {
     CVec3F64 rot_world;
     CVec3F64 roi_cent_world;
     double focal_length;
-    uint8_t sub_sample;
+    uint32_t sub_sample;
     uint32_t distortion_model;
     double distortion_k1;
     double distortion_k2;
@@ -189,6 +203,9 @@ typedef struct c_mesh_input {
     uint32_t shader_tag;
     CArray2DF64 uvs;
     CArray3DF64 tex;
+    CArray3DU8 tex_u8;
+    CArray3DU16 tex_u16;
+    uint32_t texture_storage;
     uint32_t sample;
     uint32_t sample_mode;
     int bits;

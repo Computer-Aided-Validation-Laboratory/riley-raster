@@ -932,11 +932,14 @@ fn runGeometryStage(
     const arena_alloc = job.ctx.arena.allocator();
 
     var timing = mo.GeomTimes{};
+    const raster_halo_px = job.desc.config.raster_halo_px_override orelse
+        job.desc.camera.prep_psf.halo_px;
     const geo_res = try mo.prepMeshFrames(
         arena_alloc,
         &chunk_exec,
         scalingpolicy.geometryWorkers(geom_workers),
         job.desc.camera,
+        raster_halo_px,
         job.desc.config,
         job.desc.frame_idx,
         job.desc.mesh_static,
@@ -1006,7 +1009,7 @@ fn sceneTileOverlapBinning(
         tiles_num_y,
         @intCast(job.camera.pixels_num[0]),
         @intCast(job.camera.pixels_num[1]),
-        job.camera.prep_psf.halo_px,
+        job.config.raster_halo_px_override orelse job.camera.prep_psf.halo_px,
         ctx.elems_in_image_by_mesh,
         ctx.elem_bboxes_by_mesh,
     );
@@ -1304,7 +1307,7 @@ fn prepareFrameContext(
         input.config.tile_size_max,
         input.camera.pixels_num,
         input.camera.sub_sample,
-        input.camera.prep_psf.halo_px,
+        input.config.raster_halo_px_override orelse input.camera.prep_psf.halo_px,
     );
 
     ctx.report_storage = try initFrameReportStorage(
@@ -1477,9 +1480,10 @@ fn saveFrame(
             input.config.image_save_opts,
         );
     }
-    if ((input.config.save_strategy == .memory 
-         or input.config.save_strategy == .both) 
-         and !input.can_write_result_direct) {
+    if ((input.config.save_strategy == .memory or
+        input.config.save_strategy == .both) and
+        !input.can_write_result_direct)
+    {
         const images_arr = input.images_arr orelse return error.NoResult;
         copyFrameToImageBatch(
             input.config.background_value,

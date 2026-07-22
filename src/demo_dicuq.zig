@@ -42,7 +42,7 @@ const PIXELS_SIZE = [2]F{
 };
 const FOCAL_LENGTH: F = @floatCast(50.0e-3);
 const FOV_SCALE_FACTOR: F = @floatCast(0.65);
-const SUB_SAMPLE: u8 = 2;
+const SUB_SAMPLE: u32 = 2;
 const STEREO_ANGLE_DEG: F = 20.0;
 
 const TOTAL_THREADS: u16 = 8;

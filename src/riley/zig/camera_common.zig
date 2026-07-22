@@ -32,7 +32,7 @@ pub const CameraInput = struct {
     rot_world: rotation.Rotation,
     roi_cent_world: vec.Vec3f,
     focal_length: F,
-    sub_sample: u8,
+    sub_sample: u32,
     distortion: cm.DistortionModel = .none,
     psf: cm.PointSpreadFunc = .{ .pixel_box = .{} },
     coord_sys: CameraCoordSys = .opengl,
@@ -132,7 +132,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         rot_world: rotation.Rotation,
         roi_cent_world: vec.Vec3f,
         focal_length: F,
-        sub_sample: u8,
+        sub_sample: u32,
         sensor_size: [2]F,
         image_dims: [2]F,
         image_dist: F,
@@ -152,7 +152,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         ) !Self {
             const subpixel_center_map = input.subpixel_center_map;
             const actual_sub_sample = if (input.sub_sample == 0)
-                @as(u8, 2)
+                @as(u32, 2)
             else
                 input.sub_sample;
             const sensor_size = calcSensorSize(
@@ -292,10 +292,10 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
 
         pub inline fn fillTileIdealCentersPerTile(
             self: *const Self,
-            scratch_x_px_min: usize,
-            scratch_x_px_max: usize,
-            scratch_y_px_min: usize,
-            scratch_y_px_max: usize,
+            scratch_x_px_min: i32,
+            scratch_x_px_max: i32,
+            scratch_y_px_min: i32,
+            scratch_y_px_max: i32,
             subpx_tile_size: usize,
             ideal_pixel_centers: []F,
         ) !void {
@@ -312,10 +312,10 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
 
         pub inline fn fillTileIdealCentersAffineJac(
             self: *const Self,
-            scratch_x_px_min: usize,
-            scratch_x_px_max: usize,
-            scratch_y_px_min: usize,
-            scratch_y_px_max: usize,
+            scratch_x_px_min: i32,
+            scratch_x_px_max: i32,
+            scratch_y_px_min: i32,
+            scratch_y_px_max: i32,
             subpx_tile_size: usize,
             ideal_pixel_centers: []F,
         ) void {
@@ -405,7 +405,7 @@ const coord_y = [_]F{ bb, bb, -bb, -bb, bb, bb, -bb, -bb };
 const coord_z = [_]F{ bb, bb, bb, bb, -bb, -bb, -bb, -bb };
 const roi_world_arr = [_]F{ 0, 0, 0 };
 const roi_world = vec.Vec3f.initSlice(&roi_world_arr);
-const sub_samp: u8 = 2;
+const sub_samp: u32 = 2;
 
 fn expectApproxEqRelAbs(
     expected: F,

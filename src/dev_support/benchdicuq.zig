@@ -39,7 +39,7 @@ pub const PreparedDicuqBenchmark = struct {
 pub const DicuqDefaults = struct {
     data_dir: []const u8,
     pixels_num: [2]u32,
-    sub_sample: u8,
+    sub_sample: u32,
     focal_leng: F,
     pixels_size: [2]F,
     fov_scale: F,
@@ -467,7 +467,7 @@ fn aggregateBenchLog(
 fn calcDicuqMetrics(
     mesh_type: gk.MeshType,
     pixel_num: [2]u32,
-    sub_sample: u8,
+    sub_sample: u32,
     frame_count: usize,
     e2e_ms: F,
     frame_times: report.FrameTimes,

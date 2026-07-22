@@ -52,7 +52,7 @@ test "Nodal normals are prepared when requested" {
 
     const io = std.testing.io;
 
-    var sim_data = try loadData(arena_alloc, io, "data/bench/tri3_sphere200");
+    var sim_data = try loadData(arena_alloc, io, "data/min/tri3_sphere200");
 
     const pixel_num = [_]u32{ 320, 320 };
     const pixel_size = [_]F{ 0.00625, 0.00625 };

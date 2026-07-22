@@ -57,8 +57,11 @@ pub const RasterConfig = struct {
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
     tile_size_override: ?u16 = null,
-    tile_size_min: u16 = 4,
+    tile_size_min: u16 = 1,
     tile_size_max: u16 = 256,
+    // Test/development override for exercising the extended raster domain
+    // without changing the camera PSF or resolve operation.
+    raster_halo_px_override: ?u16 = null,
     background_value: F = 0.0,
     hull_mode: HullMode = .on_no_fallback,
     newton_seed_mode: NewtonSeedMode = .centroid,

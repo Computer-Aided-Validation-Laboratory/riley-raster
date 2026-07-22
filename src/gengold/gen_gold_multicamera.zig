@@ -55,14 +55,14 @@ pub fn main(init: std.process.Init) !void {
     const render_cases = [_]RenderCase{
         .{
             .case_name = "tri3_nodal_grey",
-            .data_dir = "data/bench/tri3_sphere200",
+            .data_dir = "data/min/tri3_sphere200",
             .mesh_type = .tri3,
             .channels = 1,
             .shader = .nodal_grey,
         },
         .{
             .case_name = "tri6_tex8_rgb_cubic_catmull_rom_lut_lerp",
-            .data_dir = "data/bench/tri6_sphere200",
+            .data_dir = "data/min/tri6_sphere200",
             .mesh_type = .tri6,
             .channels = 3,
             .shader = .{

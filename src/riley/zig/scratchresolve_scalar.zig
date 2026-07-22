@@ -223,6 +223,10 @@ pub fn avgScratchCore(
             continue;
         }
 
+        if (tx_start > tx_end) {
+            continue;
+        }
+
         for (tx_start..tx_end + 1) |jj| {
             const image_px_x = tile.x_px_min + jj;
             const spx_start_x = scratch_geom.core_start_x_subpx + sub_samp * jj;

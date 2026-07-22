@@ -17,8 +17,10 @@ pub const multicamera = @import("tests/test_gold_multicamera.zig");
 pub const hull = @import("tests/test_hull.zig");
 pub const nodal_normals = @import("tests/test_nodal_normals.zig");
 pub const texfunc = @import("tests/test_texfunc.zig");
+pub const texfloat = @import("tests/test_texfloat.zig");
 pub const ssaa = @import("tests/test_gold_ssaa.zig");
 pub const psf = @import("tests/test_gold_psf.zig");
+pub const visibility = @import("tests/test_visibility.zig");
 
 pub fn main(init: std.process.Init) !void {
     _ = init;

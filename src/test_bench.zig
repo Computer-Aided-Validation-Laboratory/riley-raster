@@ -54,7 +54,7 @@ test "Unified Benchmark Tests" {
         out_dir: []const u8,
         is_sphere: bool = false,
         fov_scale: F = 1.0,
-        sub_sample: u8 = 2,
+        sub_sample: u32 = 2,
         skip_quad4ibi_sphere: bool = false,
     }{
         .{
