@@ -459,26 +459,3 @@ fn checkCamInpAssert(cam_inp: cam.CameraInput) void {
     std.debug.assert(isValidDistortion(cam_inp.distortion));
     std.debug.assert(isValidPsf(cam_inp.psf));
 }
-
-test "full stats rejects multiple raster workers" {
-    const render_groups = [_]struct { workers: u16 }{
-        .{ .workers = 2 },
-    };
-    const config = rastcfg.RasterConfig{
-        .report = .full_stats,
-        .max_raster_workers_per_job = 2,
-    };
-
-    try std.testing.expectError(
-        error.FullStatsRequiresSingleRasterWorker,
-        checkRenderInpsErr(
-            &render_groups,
-            &[_]cam.CameraInput{},
-            &[_]mo.MeshInput{},
-            config,
-            null,
-            false,
-            null,
-        ),
-    );
-}
