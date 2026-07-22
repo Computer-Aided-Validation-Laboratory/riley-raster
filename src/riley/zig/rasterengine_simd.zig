@@ -1149,9 +1149,6 @@ fn rasterSteppedSIMDFixP(
     const dy: [2]F = .{ y[1] - y[0], y[2] - y[0] };
     const area = @mulAdd(F, dx[0], dy[0], -(dy[1] * dx[1]));
 
-    const tile_suby: usize = @intCast(tile.scratch_y_px_min);
-    const tile_suby_off = tile_suby * sub_samp;
-
     const is_const_depth = z[0] == z[1] and z[1] == z[2];
     const v_nodes_inv_z = Geom.getSIMDInvZ(nodes_coords);
 
@@ -1173,7 +1170,11 @@ fn rasterSteppedSIMDFixP(
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
         const row_offset = scratch_y_u * subpx_dom.tile_size;
-        const global_suby = tile_suby_off + scratch_y_u;
+        const global_suby = comm.globalSubpxForReport(
+            tile.scratch_y_px_min,
+            sub_samp,
+            scratch_y_u,
+        );
         const y_steps: buildconfig.Tri3FixedEdge = @intCast(
             scratch_y_u - rast_bounds.start_y_u,
         );
@@ -1426,18 +1427,20 @@ fn rasterSteppedSIMDFloat(
         dw_dy[nn] = b[nn] * step;
     }
 
-    const tile_subx: usize = @intCast(tile.scratch_x_px_min);
-    const tile_suby: usize = @intCast(tile.scratch_y_px_min);
-    const tile_subx_off = tile_subx * sub_samp;
-    const tile_suby_off = tile_suby * sub_samp;
+    const tile_subx_off = @as(isize, tile.scratch_x_px_min) *
+        @as(isize, @intCast(sub_samp));
+    const tile_suby_off = @as(isize, tile.scratch_y_px_min) *
+        @as(isize, @intCast(sub_samp));
 
     const is_const_depth = z[0] == z[1] and z[1] == z[2];
     const v_nodes_inv_z = Geom.getSIMDInvZ(nodes_coords);
 
     const edge_tol = tol.edge.tri_weight_inclusion;
 
-    const start_subx_global = tile_subx_off + rast_bounds.start_x_u;
-    const start_suby_global = tile_suby_off + rast_bounds.start_y_u;
+    const start_subx_global = tile_subx_off +
+        @as(isize, @intCast(rast_bounds.start_x_u));
+    const start_suby_global = tile_suby_off +
+        @as(isize, @intCast(rast_bounds.start_y_u));
 
     const start_subx_f = @as(F, @floatFromInt(start_subx_global));
     const start_suby_f = @as(F, @floatFromInt(start_suby_global));
@@ -1466,7 +1469,11 @@ fn rasterSteppedSIMDFloat(
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
         const row_offset = scratch_y_u * subpx_dom.tile_size;
-        const global_suby = tile_suby_off + scratch_y_u;
+        const global_suby = comm.globalSubpxForReport(
+            tile.scratch_y_px_min,
+            sub_samp,
+            scratch_y_u,
+        );
         const y_steps = @as(F, @floatFromInt(scratch_y_u - rast_bounds.start_y_u));
 
         var w_row: [3]F = undefined;

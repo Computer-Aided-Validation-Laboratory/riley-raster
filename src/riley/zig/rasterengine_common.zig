@@ -121,12 +121,16 @@ pub fn rasterDirectScalComm(
             const ideal_x_pix = ideal_x_plane[scratch_idx];
             const ideal_y_pix = ideal_y_plane[scratch_idx];
 
-            const tile_subx: usize = @intCast(tile.scratch_x_px_min);
-            const tile_suby: usize = @intCast(tile.scratch_y_px_min);
-            const tile_subx_off: usize = tile_subx * sub_samp;
-            const tile_suby_off: usize = tile_suby * sub_samp;
-            const global_subx: usize = tile_subx_off +% scratch_x_u;
-            const global_suby: usize = tile_suby_off +% scratch_y_u;
+            const global_subx = globalSubpxForReport(
+                tile.scratch_x_px_min,
+                sub_samp,
+                scratch_x_u,
+            );
+            const global_suby = globalSubpxForReport(
+                tile.scratch_y_px_min,
+                sub_samp,
+                scratch_y_u,
+            );
 
             if (comptime report_mode == .full_stats) {
                 rasterreport.recordEarlyOut(
@@ -362,9 +366,11 @@ fn tileScratchSubpxSize(
     ctx_rast: rops.RasterContext,
 ) usize {
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    const raster_halo_px = ctx_rast.config.raster_halo_px_override orelse
+        ctx_rast.camera.prep_psf.halo_px;
     const scratch_tile_px: usize =
         @as(usize, @intCast(ctx_rast.tile_size)) +
-        2 * @as(usize, ctx_rast.camera.prep_psf.halo_px);
+        2 * @as(usize, raster_halo_px);
     return scratch_tile_px * sub_samp;
 }
 
@@ -1026,6 +1032,7 @@ fn rasterTileComm(
     } else if (sub_samp > 1) {
         scratchresolve.avgScratch(
             tile,
+            scratch_geom,
             @intCast(sub_samp),
             subpx_tile_size,
             fields_num,
@@ -1037,6 +1044,7 @@ fn rasterTileComm(
     } else {
         scratchresolve.resolveScratchDirect(
             tile,
+            scratch_geom,
             subpx_tile_size,
             fields_num,
             &subpx_scratch.image,

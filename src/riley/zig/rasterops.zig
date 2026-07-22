@@ -1188,6 +1188,106 @@ test "calcVisibleNodeBBoxTri3 retains an element in the PSF halo" {
     try std.testing.expect(bbox.x_max <= 0);
 }
 
+test "calcVisibleNodeBBoxTri3 uses the final pixel boundary for visibility" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(3, allocator);
+    defer connect.deinit(allocator);
+    var coords = try initElemCoords(
+        3,
+        allocator,
+        .{ 9.25, 9.25, 9.75 },
+        .{ 2.0, 4.0, 2.0 },
+        .{ 1.0, 1.0, 1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    const bbox = calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0);
+    try std.testing.expect(bbox != null);
+    try std.testing.expectEqual(@as(i32, 9), bbox.?.x_min);
+    try std.testing.expectEqual(@as(i32, 10), bbox.?.x_max);
+}
+
+test "calcVisibleNodeBBoxTri3 rejects an element beyond the final pixel boundary" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(3, allocator);
+    defer connect.deinit(allocator);
+    var coords = try initElemCoords(
+        3,
+        allocator,
+        .{ 10.0, 10.0, 10.5 },
+        .{ 2.0, 4.0, 2.0 },
+        .{ 1.0, 1.0, 1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    try std.testing.expect(
+        calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0) == null,
+    );
+}
+
+test "calcVisibleNodeBBoxTri3 extends the final pixel boundary by the halo" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(3, allocator);
+    defer connect.deinit(allocator);
+    var coords = try initElemCoords(
+        3,
+        allocator,
+        .{ 10.25, 10.25, 11.75 },
+        .{ 2.0, 4.0, 2.0 },
+        .{ 1.0, 1.0, 1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    const bbox = calcVisibleNodeBBoxTri3WithHalo(
+        .tri3,
+        &camera,
+        &coords,
+        &connect,
+        0,
+        2,
+    );
+    try std.testing.expect(bbox != null);
+    try std.testing.expectEqual(@as(i32, 10), bbox.?.x_min);
+    try std.testing.expectEqual(@as(i32, 12), bbox.?.x_max);
+}
+
+test "calcVisibleNodeBBoxTri3 rejects an element beyond the halo boundary" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(3, allocator);
+    defer connect.deinit(allocator);
+    var coords = try initElemCoords(
+        3,
+        allocator,
+        .{ 12.0, 12.0, 12.5 },
+        .{ 2.0, 4.0, 2.0 },
+        .{ 1.0, 1.0, 1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    try std.testing.expect(
+        calcVisibleNodeBBoxTri3WithHalo(
+            .tri3,
+            &camera,
+            &coords,
+            &connect,
+            0,
+            2,
+        ) == null,
+    );
+}
+
 test "calcVisibleNodeBBoxTri3 backface" {
     const allocator = std.testing.allocator;
     const camera = try initTestCullCamera(allocator);
