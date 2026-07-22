@@ -447,6 +447,7 @@ pub fn prepMeshFrames(
     chunk_exec: *pce.ParaChunkExecutor,
     workers_num: usize,
     camera: *const cam.CameraPrepared,
+    raster_halo_px: u16,
     config: rastcfg.RasterConfig,
     frame_idx: usize,
     static_meshes: []const MeshStatic,
@@ -480,11 +481,12 @@ pub fn prepMeshFrames(
 
         // Prepares meshes for each frame including coord transforms to camera space and
         // data reshaping to elem order for a given frame.
-        frame_meshes[ii] = try prepMeshFrame(
+        frame_meshes[ii] = try prepMeshFrameWithHalo(
             arena_alloc,
             chunk_exec,
             workers_num,
             camera,
+            raster_halo_px,
             config,
             mesh_static,
             frame_idx,
@@ -509,11 +511,38 @@ pub fn prepMeshFrame(
     scaling_params: ?imageops.ScalingParams,
     timing: *GeomTimes,
 ) !MeshFrame {
+    return prepMeshFrameWithHalo(
+        allocator,
+        chunk_exec,
+        workers_num,
+        camera,
+        config.raster_halo_px_override orelse camera.prep_psf.halo_px,
+        config,
+        mesh_static,
+        frame_idx,
+        scaling_params,
+        timing,
+    );
+}
+
+pub fn prepMeshFrameWithHalo(
+    allocator: std.mem.Allocator,
+    chunk_exec: *pce.ParaChunkExecutor,
+    workers_num: usize,
+    camera: *const cam.CameraPrepared,
+    raster_halo_px: u16,
+    config: rastcfg.RasterConfig,
+    mesh_static: *const MeshStatic,
+    frame_idx: usize,
+    scaling_params: ?imageops.ScalingParams,
+    timing: *GeomTimes,
+) !MeshFrame {
     return switch (mesh_static.mesh_type) {
         inline else => |MT| {
             var pipeline = try FrameMeshPipeline(MT).init(
                 allocator,
                 camera,
+                raster_halo_px,
                 mesh_static,
                 frame_idx,
                 config.hull_mode,
@@ -619,6 +648,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         allocator: std.mem.Allocator,
         camera: *const cam.CameraPrepared,
+        raster_halo_px: u16,
         mesh_static: *const MeshStatic,
         frame_idx: usize,
         hull_mode: rastcfg.HullMode,
@@ -636,6 +666,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         fn init(
             allocator: std.mem.Allocator,
             camera: *const cam.CameraPrepared,
+            raster_halo_px: u16,
             mesh_static: *const MeshStatic,
             frame_idx: usize,
             hull_mode: rastcfg.HullMode,
@@ -657,6 +688,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             return .{
                 .allocator = allocator,
                 .camera = camera,
+                .raster_halo_px = raster_halo_px,
                 .mesh_static = mesh_static,
                 .frame_idx = frame_idx,
                 .hull_mode = hull_mode,
@@ -829,6 +861,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         const CullVisibleCountStage = struct {
             camera: *const cam.CameraPrepared,
+            raster_halo_px: u16,
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
             vis_counts_by_chunk: []usize,
@@ -847,29 +880,32 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             for (range_start..range_end) |ee| {
                 const bbox = if (MT == .tri3 or MT == .tri3opt)
-                    rops.calcVisibleNodeBBoxTri3(
+                    rops.calcVisibleNodeBBoxTri3WithHalo(
                         MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
                         ee,
+                        stage.raster_halo_px,
                     )
                 else if (stage.hull_mode == .off)
-                    rops.calcVisibleNodeBBoxHighOrdNoHull(
+                    rops.calcVisibleNodeBBoxHighOrdNoHullWithHalo(
                         MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
                         ee,
+                        stage.raster_halo_px,
                     )
                 else
-                    rops.calcVisibleNodeBBoxHighOrd(
+                    rops.calcVisibleNodeBBoxHighOrdWithHalo(
                         MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
                         ee,
                         hull_convex_fallback_on,
+                        stage.raster_halo_px,
                     );
 
                 if (bbox != null) {
@@ -896,6 +932,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             var cull_count_stage = CullVisibleCountStage{
                 .camera = self.camera,
+                .raster_halo_px = self.raster_halo_px,
                 .connect = &self.mesh_static.connect,
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
                 .vis_counts_by_chunk = self.mesh_workspace.vis_counts_by_chunk,
@@ -921,6 +958,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             var cull_fill_stage = CullVisibleFillStage{
                 .camera = self.camera,
+                .raster_halo_px = self.raster_halo_px,
                 .connect = &self.mesh_static.connect,
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
                 .vis_orig_elem_inds = self.mesh_workspace.vis_orig_elem_inds,
@@ -944,6 +982,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         const CullVisibleFillStage = struct {
             camera: *const cam.CameraPrepared,
+            raster_halo_px: u16,
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
             vis_orig_elem_inds: []usize,
@@ -964,29 +1003,32 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             for (range_start..range_end) |ee| {
                 const bbox = if (MT == .tri3 or MT == .tri3opt)
-                    rops.calcVisibleNodeBBoxTri3(
+                    rops.calcVisibleNodeBBoxTri3WithHalo(
                         MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
                         ee,
+                        stage.raster_halo_px,
                     )
                 else if (stage.hull_mode == .off)
-                    rops.calcVisibleNodeBBoxHighOrdNoHull(
+                    rops.calcVisibleNodeBBoxHighOrdNoHullWithHalo(
                         MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
                         ee,
+                        stage.raster_halo_px,
                     )
                 else
-                    rops.calcVisibleNodeBBoxHighOrd(
+                    rops.calcVisibleNodeBBoxHighOrdWithHalo(
                         MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
                         ee,
                         hull_convex_fallback_on,
+                        stage.raster_halo_px,
                     );
 
                 if (bbox) |b| {

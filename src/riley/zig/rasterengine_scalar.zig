@@ -168,14 +168,10 @@ pub fn RasterEngine(
                 .y_off = 0.5 * @as(F, @floatFromInt(ctx_rast.camera.pixels_num[1])),
             };
 
-            const scratch_start_x_u = sub_samp_u *
-                (@as(usize, overlap.x_min) - tile.scratch_x_px_min);
-            const scratch_end_x_u = sub_samp_u *
-                (@as(usize, overlap.x_max) - tile.scratch_x_px_min);
-            const scratch_start_y_u = sub_samp_u *
-                (@as(usize, overlap.y_min) - tile.scratch_y_px_min);
-            const scratch_end_y_u = sub_samp_u *
-                (@as(usize, overlap.y_max) - tile.scratch_y_px_min);
+            const scratch_start_x_u = sub_samp_u * @as(usize, @intCast(overlap.x_min - tile.scratch_x_px_min));
+            const scratch_end_x_u = sub_samp_u * @as(usize, @intCast(overlap.x_max - tile.scratch_x_px_min));
+            const scratch_start_y_u = sub_samp_u * @as(usize, @intCast(overlap.y_min - tile.scratch_y_px_min));
+            const scratch_end_y_u = sub_samp_u * @as(usize, @intCast(overlap.y_max - tile.scratch_y_px_min));
 
             const rast_bounds = RasterBounds{
                 .start_x_u = scratch_start_x_u,
@@ -429,8 +425,8 @@ fn rasterNewtonImpl(
             const ideal_x_pix = ideal_x_plane[scratch_idx];
             const ideal_y_pix = ideal_y_plane[scratch_idx];
 
-            const global_subx = tile.scratch_x_px_min * sub_samp + scratch_x;
-            const global_suby = tile.scratch_y_px_min * sub_samp + scratch_y;
+            const global_subx: usize = @intCast(@max(0, tile.scratch_x_px_min * @as(i32, @intCast(sub_samp)) + @as(i32, @intCast(scratch_x))));
+            const global_suby: usize = @intCast(@max(0, tile.scratch_y_px_min * @as(i32, @intCast(sub_samp)) + @as(i32, @intCast(scratch_y))));
 
             var hull_seed: ?newton.NewtonSeed = null;
             if (comptime Geom.hull_nodes_num > 0) {
@@ -666,10 +662,8 @@ fn rasterSteppedScal(
     subpx_scratch: *SubpxScratchBuffs,
 ) !u64 {
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const tile_subx: usize = @intCast(tile.scratch_x_px_min);
-    const tile_suby: usize = @intCast(tile.scratch_y_px_min);
-    const start_subx_global = tile_subx * sub_samp + rast_bounds.start_x_u;
-    const start_suby_global = tile_suby * sub_samp + rast_bounds.start_y_u;
+    const start_subx_global: isize = @as(isize, tile.scratch_x_px_min) * @as(isize, @intCast(sub_samp)) + @as(isize, @intCast(rast_bounds.start_x_u));
+    const start_suby_global: isize = @as(isize, tile.scratch_y_px_min) * @as(isize, @intCast(sub_samp)) + @as(isize, @intCast(rast_bounds.start_y_u));
     const width = rast_bounds.end_x_u - rast_bounds.start_x_u;
     const height = rast_bounds.end_y_u - rast_bounds.start_y_u;
     const max_x_steps = if (width > 0) width - 1 else 0;

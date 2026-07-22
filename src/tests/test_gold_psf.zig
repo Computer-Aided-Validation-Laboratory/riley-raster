@@ -262,3 +262,40 @@ test "PSF gaussian constant render is invariant to tile size" {
         PSF_ABS_TOL,
     );
 }
+
+test "PSF halo-only bypass leaves the final image bitwise unchanged" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    const render_case = suite.RenderCase{
+        .distortion_case_name = "distort_bulge",
+        .mesh_type = .quad8,
+        .shader_case = suite.shader_cases[0],
+        .psf_case = suite.psf_cases[0],
+    };
+
+    const result_base = try suite.renderCase(
+        allocator,
+        io,
+        render_case,
+        suite.tile_size_small,
+    );
+    defer {
+        allocator.free(result_base.slice);
+        var result_base_mut = result_base;
+        result_base_mut.deinit(allocator);
+    }
+    const result_halo = try suite.renderCaseWithRasterHalo(
+        allocator,
+        io,
+        render_case,
+        suite.tile_size_small,
+        3,
+    );
+    defer {
+        allocator.free(result_halo.slice);
+        var result_halo_mut = result_halo;
+        result_halo_mut.deinit(allocator);
+    }
+
+    try std.testing.expectEqualSlices(F, result_base.slice, result_halo.slice);
+}

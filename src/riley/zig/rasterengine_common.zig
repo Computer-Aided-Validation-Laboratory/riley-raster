@@ -184,8 +184,8 @@ pub fn rasterDirectScalComm(
                     global_subx,
                     global_suby,
                     geometry_result.iters,
-                    tile.scratch_x_px_min + scratch_x_u / sub_samp,
-                    tile.scratch_y_px_min + scratch_y_u / sub_samp,
+                    @intCast(@max(0, tile.scratch_x_px_min + @as(i32, @intCast(scratch_x_u / sub_samp)))),
+                    @intCast(@max(0, tile.scratch_y_px_min + @as(i32, @intCast(scratch_y_u / sub_samp)))),
                 );
             }
 
@@ -411,8 +411,8 @@ pub const Tri3FixedEdges = struct {
     pub fn init(
         nodes_coords: rops.Vec3Slices(F),
         sub_samp: usize,
-        start_subx_global: usize,
-        start_suby_global: usize,
+        start_subx_global: isize,
+        start_suby_global: isize,
         max_x_steps: usize,
         max_y_steps: usize,
     ) ?@This() {
@@ -530,38 +530,14 @@ fn fillTileIdealCentFullInMem(
     subpx_scratch: anytype,
     subpx_tile_size: usize,
 ) void {
-    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const camera_prepared = ctx_rast.camera;
-    const stride_y = camera_prepared.ideal_pixel_centers.strides[0];
-    const stride_x = camera_prepared.ideal_pixel_centers.strides[1];
-    const slice = camera_prepared.ideal_pixel_centers.slice;
-
-    const ideal_x_plane = cam.getIdealXPlaneScratch(
+    ctx_rast.camera.fillTileIdealCentersPerTile(
+        tile.scratch_x_px_min,
+        tile.scratch_x_px_max,
+        tile.scratch_y_px_min,
+        tile.scratch_y_px_max,
+        subpx_tile_size,
         subpx_scratch.ideal_pix_cent,
-    );
-    const ideal_y_plane = cam.getIdealYPlaneScratch(
-        subpx_scratch.ideal_pix_cent,
-    );
-
-    const start_x = @as(usize, @intCast(tile.scratch_x_px_min)) * sub_samp;
-    const start_y = @as(usize, @intCast(tile.scratch_y_px_min)) * sub_samp;
-    const tile_w = @as(usize, tile.scratch_x_px_max - tile.scratch_x_px_min) * sub_samp;
-    const tile_h = @as(usize, tile.scratch_y_px_max - tile.scratch_y_px_min) * sub_samp;
-
-    for (0..tile_h) |jj| {
-        const global_y = start_y + jj;
-        const row_off = global_y * stride_y;
-        const scratch_row_off = jj * subpx_tile_size;
-
-        for (0..tile_w) |ii| {
-            const global_x = start_x + ii;
-            const col_off = global_x * stride_x;
-            const scratch_idx = scratch_row_off + ii;
-
-            ideal_x_plane[scratch_idx] = slice[row_off + col_off + 0];
-            ideal_y_plane[scratch_idx] = slice[row_off + col_off + 1];
-        }
-    }
+    ) catch unreachable;
 }
 
 fn fillTileIdealCent(
@@ -578,18 +554,18 @@ fn fillTileIdealCent(
             subpx_tile_size,
         ),
         .per_tile => try ctx_rast.camera.fillTileIdealCentersPerTile(
-            @intCast(tile.scratch_x_px_min),
-            @intCast(tile.scratch_x_px_max),
-            @intCast(tile.scratch_y_px_min),
-            @intCast(tile.scratch_y_px_max),
+            tile.scratch_x_px_min,
+            tile.scratch_x_px_max,
+            tile.scratch_y_px_min,
+            tile.scratch_y_px_max,
             subpx_tile_size,
             subpx_scratch.ideal_pix_cent,
         ),
         .affine_jac => ctx_rast.camera.fillTileIdealCentersAffineJac(
-            @intCast(tile.scratch_x_px_min),
-            @intCast(tile.scratch_x_px_max),
-            @intCast(tile.scratch_y_px_min),
-            @intCast(tile.scratch_y_px_max),
+            tile.scratch_x_px_min,
+            tile.scratch_x_px_max,
+            tile.scratch_y_px_min,
+            tile.scratch_y_px_max,
             subpx_tile_size,
             subpx_scratch.ideal_pix_cent,
         ),

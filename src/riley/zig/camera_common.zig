@@ -292,10 +292,10 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
 
         pub inline fn fillTileIdealCentersPerTile(
             self: *const Self,
-            scratch_x_px_min: usize,
-            scratch_x_px_max: usize,
-            scratch_y_px_min: usize,
-            scratch_y_px_max: usize,
+            scratch_x_px_min: i32,
+            scratch_x_px_max: i32,
+            scratch_y_px_min: i32,
+            scratch_y_px_max: i32,
             subpx_tile_size: usize,
             ideal_pixel_centers: []F,
         ) !void {
@@ -312,10 +312,10 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
 
         pub inline fn fillTileIdealCentersAffineJac(
             self: *const Self,
-            scratch_x_px_min: usize,
-            scratch_x_px_max: usize,
-            scratch_y_px_min: usize,
-            scratch_y_px_max: usize,
+            scratch_x_px_min: i32,
+            scratch_x_px_max: i32,
+            scratch_y_px_min: i32,
+            scratch_y_px_max: i32,
             subpx_tile_size: usize,
             ideal_pixel_centers: []F,
         ) void {

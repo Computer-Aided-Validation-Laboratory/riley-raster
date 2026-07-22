@@ -61,27 +61,27 @@ pub fn calcPinholeRasterPointSIMD(
 
 pub fn fillTileIdealCentersPerTile(
     camera: *const CameraPrepared,
-    scratch_x_px_min: usize,
-    scratch_x_px_max: usize,
-    scratch_y_px_min: usize,
-    scratch_y_px_max: usize,
+    scratch_x_px_min: i32,
+    scratch_x_px_max: i32,
+    scratch_y_px_min: i32,
+    scratch_y_px_max: i32,
     subpx_tile_size: usize,
     ideal_pixel_centers: []F,
 ) !void {
     const sub_samp: usize = @intCast(camera.sub_sample);
     const ideal_x_plane = common.getIdealXPlaneScratch(ideal_pixel_centers);
     const ideal_y_plane = common.getIdealYPlaneScratch(ideal_pixel_centers);
-    const start_x = scratch_x_px_min * sub_samp;
-    const start_y = scratch_y_px_min * sub_samp;
-    const tile_w = (scratch_x_px_max - scratch_x_px_min) * sub_samp;
-    const tile_h = (scratch_y_px_max - scratch_y_px_min) * sub_samp;
+    const start_x = scratch_x_px_min * @as(i32, @intCast(sub_samp));
+    const start_y = scratch_y_px_min * @as(i32, @intCast(sub_samp));
+    const tile_w: usize = @intCast((scratch_x_px_max - scratch_x_px_min) * @as(i32, @intCast(sub_samp)));
+    const tile_h: usize = @intCast((scratch_y_px_max - scratch_y_px_min) * @as(i32, @intCast(sub_samp)));
 
     const step = 1.0 / @as(F, @floatFromInt(camera.sub_sample));
     const off = 0.5 / @as(F, @floatFromInt(camera.sub_sample));
 
     if (common.isNoDistortion(camera.distortion)) {
         for (0..tile_h) |jj| {
-            const global_y = start_y + jj;
+            const global_y = start_y + @as(i32, @intCast(jj));
             const observed_y = @as(F, @floatFromInt(global_y)) * step + off;
             const scratch_row_off = jj * subpx_tile_size;
             @memset(
@@ -90,7 +90,7 @@ pub fn fillTileIdealCentersPerTile(
             );
         }
         for (0..tile_w) |ii| {
-            const global_x = start_x + ii;
+            const global_x = start_x + @as(i32, @intCast(ii));
             ideal_x_plane[ii] = @as(F, @floatFromInt(global_x)) * step + off;
         }
         for (1..tile_h) |jj| {
@@ -104,7 +104,7 @@ pub fn fillTileIdealCentersPerTile(
     }
 
     for (0..tile_h) |jj| {
-        const global_y = start_y + jj;
+        const global_y = start_y + @as(i32, @intCast(jj));
         const observed_y = @as(F, @floatFromInt(global_y)) * step + off;
         const v_observed_y: VecSF = @splat(observed_y);
         const scratch_row_off = jj * subpx_tile_size;
@@ -113,7 +113,7 @@ pub fn fillTileIdealCentersPerTile(
         while (ii < tile_w) : (ii += S) {
             const lane_count = @min(S, tile_w - ii);
             const v_active = calcActiveMask(lane_count);
-            const global_x_start = start_x + ii;
+            const global_x_start = start_x + @as(i32, @intCast(ii));
             const v_observed_x = calcObservedXVec(
                 global_x_start,
                 step,
@@ -140,121 +140,17 @@ pub fn fillTileIdealCentersPerTile(
 
 pub fn fillTileIdealCentersAffineJac(
     camera: *const CameraPrepared,
-    scratch_x_px_min: usize,
-    scratch_x_px_max: usize,
-    scratch_y_px_min: usize,
-    scratch_y_px_max: usize,
+    scratch_x_px_min: i32,
+    scratch_x_px_max: i32,
+    scratch_y_px_min: i32,
+    scratch_y_px_max: i32,
     subpx_tile_size: usize,
     ideal_pixel_centers: []F,
 ) void {
-    const sub_samp: usize = @intCast(camera.sub_sample);
-    const ideal_x_plane = common.getIdealXPlaneScratch(ideal_pixel_centers);
-    const ideal_y_plane = common.getIdealYPlaneScratch(ideal_pixel_centers);
-    const jac = &camera.pixel_center_jac;
-    const jac_slice = jac.slice;
-    const jac_field_stride = jac.strides[2];
-    const start_x = scratch_x_px_min * sub_samp;
-    const start_y = scratch_y_px_min * sub_samp;
-    const tile_w = (scratch_x_px_max - scratch_x_px_min) * sub_samp;
-    const tile_h = (scratch_y_px_max - scratch_y_px_min) * sub_samp;
-
-    const step = 1.0 / @as(F, @floatFromInt(camera.sub_sample));
-    const off = 0.5 / @as(F, @floatFromInt(camera.sub_sample));
-
-    if (common.isNoDistortion(camera.distortion)) {
-        for (0..tile_h) |jj| {
-            const global_y = start_y + jj;
-            const observed_y = @as(F, @floatFromInt(global_y)) * step + off;
-            const scratch_row_off = jj * subpx_tile_size;
-            @memset(
-                ideal_y_plane[scratch_row_off .. scratch_row_off + tile_w],
-                observed_y,
-            );
-        }
-        for (0..tile_w) |ii| {
-            const global_x = start_x + ii;
-            ideal_x_plane[ii] = @as(F, @floatFromInt(global_x)) * step + off;
-        }
-        for (1..tile_h) |jj| {
-            const scratch_row_off = jj * subpx_tile_size;
-            @memcpy(
-                ideal_x_plane[scratch_row_off .. scratch_row_off + tile_w],
-                ideal_x_plane[0..tile_w],
-            );
-        }
-        return;
-    }
-
-    for (0..tile_h) |jj| {
-        const global_suby = start_y + jj;
-        const pixel_y = global_suby / sub_samp;
-        const observed_y = @as(F, @floatFromInt(global_suby)) * step + off;
-        const center_y = common.calcPixelCenterCoord(pixel_y);
-        const scratch_row_off = jj * subpx_tile_size;
-
-        var ii: usize = 0;
-        while (ii < tile_w) : (ii += S) {
-            const lane_count = @min(S, tile_w - ii);
-            const global_x_start = start_x + ii;
-
-            var ideal_x_arr: [S]F = undefined;
-            var ideal_y_arr: [S]F = undefined;
-            var j11_arr: [S]F = undefined;
-            var j12_arr: [S]F = undefined;
-            var j21_arr: [S]F = undefined;
-            var j22_arr: [S]F = undefined;
-            var delta_x_arr: [S]F = undefined;
-
-            for (0..lane_count) |ll| {
-                const global_subx = global_x_start + ll;
-                const pixel_x = global_subx / sub_samp;
-                const observed_x = @as(F, @floatFromInt(global_subx)) *
-                    step + off;
-                const center_x = common.calcPixelCenterCoord(pixel_x);
-                const jac_px_base = jac.subBase2(pixel_y, pixel_x);
-                ideal_x_arr[ll] =
-                    jac_slice[jac_px_base + 0 * jac_field_stride];
-                ideal_y_arr[ll] =
-                    jac_slice[jac_px_base + 1 * jac_field_stride];
-                j11_arr[ll] =
-                    jac_slice[jac_px_base + 2 * jac_field_stride];
-                j12_arr[ll] =
-                    jac_slice[jac_px_base + 3 * jac_field_stride];
-                j21_arr[ll] =
-                    jac_slice[jac_px_base + 4 * jac_field_stride];
-                j22_arr[ll] =
-                    jac_slice[jac_px_base + 5 * jac_field_stride];
-                delta_x_arr[ll] = observed_x - center_x;
-            }
-            for (lane_count..S) |ll| {
-                ideal_x_arr[ll] = 0.0;
-                ideal_y_arr[ll] = 0.0;
-                j11_arr[ll] = 0.0;
-                j12_arr[ll] = 0.0;
-                j21_arr[ll] = 0.0;
-                j22_arr[ll] = 0.0;
-                delta_x_arr[ll] = 0.0;
-            }
-
-            const v_delta_x: VecSF = delta_x_arr;
-            const v_delta_y: VecSF = @splat(observed_y - center_y);
-            const v_ideal_x: VecSF = ideal_x_arr;
-            const v_ideal_y: VecSF = ideal_y_arr;
-            const v_j11: VecSF = j11_arr;
-            const v_j12: VecSF = j12_arr;
-            const v_j21: VecSF = j21_arr;
-            const v_j22: VecSF = j22_arr;
-
-            storeIdealPairs(
-                ideal_x_plane,
-                ideal_y_plane,
-                scratch_row_off + ii,
-                lane_count,
-                v_ideal_x + v_j11 * v_delta_x + v_j12 * v_delta_y,
-                v_ideal_y + v_j21 * v_delta_x + v_j22 * v_delta_y,
-            );
-        }
-    }
+    fillTileIdealCentersPerTile(
+        camera, scratch_x_px_min, scratch_x_px_max, scratch_y_px_min,
+        scratch_y_px_max, subpx_tile_size, ideal_pixel_centers,
+    ) catch unreachable;
 }
 
 pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
@@ -401,12 +297,12 @@ fn storeIdealPairs(
 }
 
 fn calcObservedXVec(
-    global_subx_start: usize,
+    global_subx_start: i32,
     step: F,
     off: F,
 ) VecSF {
     const v_start: VecSF = @splat(@as(F, @floatFromInt(global_subx_start)));
-    const v_lane: VecSF = @floatFromInt(std.simd.iota(usize, S));
+    const v_lane: VecSF = @floatFromInt(std.simd.iota(i32, S));
     return (v_start + v_lane) * @as(VecSF, @splat(step)) +
         @as(VecSF, @splat(off));
 }
