@@ -36,6 +36,7 @@ pub const FrameTimes = struct {
     tile_overlap: F = 0,
     raster_loop: F = 0,
     cam_invert: F = 0,
+    elem_loop: F = 0,
     scratch_resolve: F = 0,
     save_frame: F = 0,
     active_time: F = 0,
@@ -65,6 +66,7 @@ pub const BenchLog = struct {
     depth_tests_fail: u64 = 0,
     max_tile_elems: usize = 0,
     cam_time_ns: F = 0,
+    elem_time_ns: F = 0,
     resolve_time_ns: F = 0,
 };
 
@@ -265,6 +267,7 @@ pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
         src.max_tile_elems,
     );
     dst.cam_time_ns += src.cam_time_ns;
+    dst.elem_time_ns += src.elem_time_ns;
     dst.resolve_time_ns += src.resolve_time_ns;
 }
 
@@ -1006,9 +1009,7 @@ pub const FullStatsLog = struct {
             self.bench.frame_times.cam_invert * conv;
         const resolve_ms =
             self.bench.frame_times.scratch_resolve * conv;
-        const elem_loop_ms =
-            self.bench.frame_times.raster_loop * conv -
-            cam_inv_ms - resolve_ms;
+        const elem_loop_ms = self.bench.frame_times.elem_loop * conv;
         try writer.print("Cam Invert Time         = {d:.6} ms\n", .{
             cam_inv_ms,
         });
@@ -1675,6 +1676,16 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             }
         }
 
+        pub inline fn recordElemTime(
+            self: @This(),
+            elem_duration_ns: u64,
+        ) void {
+            if (self.bench()) |bench_log| {
+                bench_log.elem_time_ns +=
+                    @floatFromInt(elem_duration_ns);
+            }
+        }
+
         pub inline fn recordResolveTime(
             self: @This(),
             resolve_duration_ns: u64,
@@ -1824,9 +1835,7 @@ pub fn standardReport(
         frame_times.cam_invert * conv_units;
     const resolve_print_ms =
         frame_times.scratch_resolve * conv_units;
-    const elem_loop_print_ms =
-        frame_times.raster_loop * conv_units -
-        cam_inv_print_ms - resolve_print_ms;
+    const elem_loop_print_ms = frame_times.elem_loop * conv_units;
     try writer.print("Cam Invert Time         = {d:.6} ms\n", .{
         cam_inv_print_ms,
     });

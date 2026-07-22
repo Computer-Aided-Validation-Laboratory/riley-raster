@@ -1451,6 +1451,7 @@ fn rasterFrame(
     );
     if (report.getBenchLog(report_mode, report_ptr)) |bench_log| {
         ctx.frame_times.cam_invert = bench_log.cam_time_ns;
+        ctx.frame_times.elem_loop = bench_log.elem_time_ns;
         ctx.frame_times.scratch_resolve = bench_log.resolve_time_ns;
     }
 }

@@ -62,6 +62,14 @@ pub fn checkRenderInpsErr(
         if (render_group.workers == 0) {
             return error.InvalidRenderGroupWorkers;
         }
+        if (config.report == .full_stats and
+            @min(
+                render_group.workers,
+                config.max_raster_workers_per_job,
+            ) > 1)
+        {
+            return error.FullStatsRequiresSingleRasterWorker;
+        }
     }
 
     if (config.total_threads == 0) return error.InvalidTotalThreads;
@@ -149,6 +157,12 @@ pub fn checkRenderInpsAssert(
     std.debug.assert(meshes.len > 0);
     for (render_groups) |render_group| {
         std.debug.assert(render_group.workers > 0);
+        if (config.report == .full_stats) {
+            std.debug.assert(@min(
+                render_group.workers,
+                config.max_raster_workers_per_job,
+            ) == 1);
+        }
     }
 
     std.debug.assert(config.total_threads > 0);
@@ -444,4 +458,27 @@ fn checkCamInpAssert(cam_inp: cam.CameraInput) void {
     std.debug.assert(isFiniteSlice(cam_inp.rot_world.matrix.slice[0..]));
     std.debug.assert(isValidDistortion(cam_inp.distortion));
     std.debug.assert(isValidPsf(cam_inp.psf));
+}
+
+test "full stats rejects multiple raster workers" {
+    const render_groups = [_]struct { workers: u16 }{
+        .{ .workers = 2 },
+    };
+    const config = rastcfg.RasterConfig{
+        .report = .full_stats,
+        .max_raster_workers_per_job = 2,
+    };
+
+    try std.testing.expectError(
+        error.FullStatsRequiresSingleRasterWorker,
+        checkRenderInpsErr(
+            &render_groups,
+            &[_]cam.CameraInput{},
+            &[_]mo.MeshInput{},
+            config,
+            null,
+            false,
+            null,
+        ),
+    );
 }
