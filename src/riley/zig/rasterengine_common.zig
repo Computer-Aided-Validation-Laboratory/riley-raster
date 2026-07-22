@@ -56,6 +56,16 @@ pub const RasterBounds = struct {
     y_min_f: F,
 };
 
+pub fn globalSubpxForReport(
+    tile_px_min: i32,
+    sub_samp: usize,
+    scratch_subpx: usize,
+) usize {
+    const tile_subpx = tile_px_min * @as(i32, @intCast(sub_samp));
+    const global_subpx = tile_subpx + @as(i32, @intCast(scratch_subpx));
+    return @intCast(@max(0, global_subpx));
+}
+
 pub fn rasterDirectScalComm(
     comptime Geom: type,
     comptime ShaderKern: type,
@@ -184,8 +194,14 @@ pub fn rasterDirectScalComm(
                     global_subx,
                     global_suby,
                     geometry_result.iters,
-                    @intCast(@max(0, tile.scratch_x_px_min + @as(i32, @intCast(scratch_x_u / sub_samp)))),
-                    @intCast(@max(0, tile.scratch_y_px_min + @as(i32, @intCast(scratch_y_u / sub_samp)))),
+                    @intCast(@max(0, tile.scratch_x_px_min + @as(
+                        i32,
+                        @intCast(scratch_x_u / sub_samp),
+                    ))),
+                    @intCast(@max(0, tile.scratch_y_px_min + @as(
+                        i32,
+                        @intCast(scratch_y_u / sub_samp),
+                    ))),
                 );
             }
 

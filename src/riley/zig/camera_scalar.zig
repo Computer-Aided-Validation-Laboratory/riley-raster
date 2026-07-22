@@ -35,8 +35,10 @@ pub fn fillTileIdealCentersPerTile(
     const ideal_y_plane = common.getIdealYPlaneScratch(ideal_pixel_centers);
     const start_x = scratch_x_px_min * @as(i32, @intCast(sub_samp));
     const start_y = scratch_y_px_min * @as(i32, @intCast(sub_samp));
-    const tile_w: usize = @intCast((scratch_x_px_max - scratch_x_px_min) * @as(i32, @intCast(sub_samp)));
-    const tile_h: usize = @intCast((scratch_y_px_max - scratch_y_px_min) * @as(i32, @intCast(sub_samp)));
+    const tile_w_px = scratch_x_px_max - scratch_x_px_min;
+    const tile_h_px = scratch_y_px_max - scratch_y_px_min;
+    const tile_w: usize = @intCast(tile_w_px * @as(i32, @intCast(sub_samp)));
+    const tile_h: usize = @intCast(tile_h_px * @as(i32, @intCast(sub_samp)));
 
     const step = 1.0 / @as(F, @floatFromInt(camera.sub_sample));
     const off = 0.5 / @as(F, @floatFromInt(camera.sub_sample));
@@ -95,8 +97,13 @@ pub fn fillTileIdealCentersAffineJac(
     ideal_pixel_centers: []F,
 ) void {
     fillTileIdealCentersPerTile(
-        camera, scratch_x_px_min, scratch_x_px_max, scratch_y_px_min,
-        scratch_y_px_max, subpx_tile_size, ideal_pixel_centers,
+        camera,
+        scratch_x_px_min,
+        scratch_x_px_max,
+        scratch_y_px_min,
+        scratch_y_px_max,
+        subpx_tile_size,
+        ideal_pixel_centers,
     ) catch unreachable;
 }
 

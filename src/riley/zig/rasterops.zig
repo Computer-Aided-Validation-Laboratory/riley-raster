@@ -782,8 +782,10 @@ fn calcElemTileRange(
     const x_max = @min(@as(i32, @intCast(tiles_num_x)), @divFloor(elem_bbox.x_max + halo_i + tile_i - 1, tile_i));
     const y_max = @min(@as(i32, @intCast(tiles_num_y)), @divFloor(elem_bbox.y_max + halo_i + tile_i - 1, tile_i));
     return .{
-        .tx_start = @intCast(x_min), .tx_end = @intCast(x_max),
-        .ty_start = @intCast(y_min), .ty_end = @intCast(y_max),
+        .tx_start = @intCast(x_min),
+        .tx_end = @intCast(x_max),
+        .ty_start = @intCast(y_min),
+        .ty_end = @intCast(y_max),
     };
 }
 

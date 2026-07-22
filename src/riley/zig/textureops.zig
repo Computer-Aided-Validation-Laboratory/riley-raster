@@ -18,6 +18,7 @@ const impl = if (cfg.simd == .on) simd_impl else common_impl;
 pub const TexSamp = common_impl.TexSamp;
 pub const TexSampMode = common_impl.TexSampMode;
 pub const TexSampConfig = common_impl.TexSampConfig;
+pub const lanczos2Coeff = common_impl.lanczos2Coeff;
 pub const TextureSampConfig = TexSampConfig;
 pub const TexSample = TexSamp;
 pub const TexSampleMode = TexSampMode;

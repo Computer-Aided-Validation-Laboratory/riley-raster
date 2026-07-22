@@ -674,6 +674,7 @@ fn texSampleFromC(sample: u32) !texops.TexSamp {
         @intFromEnum(texops.TexSamp.lanczos3) => .lanczos3,
         @intFromEnum(texops.TexSamp.cubic_bspline) => .cubic_bspline,
         @intFromEnum(texops.TexSamp.quintic_bspline) => .quintic_bspline,
+        @intFromEnum(texops.TexSamp.lanczos2) => .lanczos2,
         else => error.InvalidTexSample,
     };
 }

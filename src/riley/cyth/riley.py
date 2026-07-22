@@ -264,6 +264,7 @@ class TextureSample(IntEnum):
     lanczos3 = 4
     cubic_bspline = 5
     quintic_bspline = 6
+    lanczos2 = 7
 
 
 class TextureSampleMode(IntEnum):

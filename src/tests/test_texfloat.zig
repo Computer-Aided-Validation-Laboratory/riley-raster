@@ -51,3 +51,48 @@ test "float texture shader variants preserve fractional texels" {
         else => unreachable,
     }
 }
+
+test "Lanczos2 supports direct and LUT sampling modes" {
+    const allocator = std.testing.allocator;
+
+    var texture = try texops.Tex(F, 1).init(allocator, 5, 5);
+    defer texture.deinit(allocator);
+    for (0..5) |row| {
+        for (0..5) |col| {
+            const texel = @as(F, @floatFromInt(row * 5 + col));
+            texture.setVal(0, row, col, texel);
+        }
+    }
+
+    const configs = [_]texops.TextureSampleConfig{
+        .{ .sample = .lanczos2, .mode = .direct },
+        .{ .sample = .lanczos2, .mode = .lut },
+        .{ .sample = .lanczos2, .mode = .lut_lerp },
+    };
+    const u: F = 0.375;
+    const v: F = 0.625;
+    const direct = texops.sampScal(1, configs[0], texture, u, v)[0];
+    const abs_tol: F = 2e-2;
+
+    try std.testing.expectApproxEqAbs(@as(F, 1.0), texops.lanczos2Coeff(0.0), abs_tol);
+    try std.testing.expectApproxEqAbs(@as(F, 0.0), texops.lanczos2Coeff(2.0), abs_tol);
+
+    inline for (configs) |config| {
+        const scalar = texops.sampScal(1, config, texture, u, v)[0];
+        const one_lane = texops.sampOneLane(1, config, texture, u, v)[0];
+        const wide = texops.sampWide(
+            1,
+            config,
+            texture,
+            @splat(u),
+            @splat(v),
+        );
+        const wide_vals: [buildconfig.SimdWidth]F = wide[0];
+
+        try std.testing.expectApproxEqAbs(direct, scalar, abs_tol);
+        try std.testing.expectApproxEqAbs(scalar, one_lane, abs_tol);
+        inline for (wide_vals) |wide_val| {
+            try std.testing.expectApproxEqAbs(scalar, wide_val, abs_tol);
+        }
+    }
+}

@@ -1480,9 +1480,10 @@ fn saveFrame(
             input.config.image_save_opts,
         );
     }
-    if ((input.config.save_strategy == .memory 
-         or input.config.save_strategy == .both) 
-         and !input.can_write_result_direct) {
+    if ((input.config.save_strategy == .memory or
+        input.config.save_strategy == .both) and
+        !input.can_write_result_direct)
+    {
         const images_arr = input.images_arr orelse return error.NoResult;
         copyFrameToImageBatch(
             input.config.background_value,
