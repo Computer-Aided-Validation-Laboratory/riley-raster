@@ -973,6 +973,7 @@ fn funcShaderParamsFromC(
                     },
                 },
             },
+            .speckle => .{ .speckle = .{} },
         },
     };
 }
