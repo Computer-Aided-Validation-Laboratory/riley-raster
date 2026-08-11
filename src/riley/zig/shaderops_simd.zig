@@ -652,12 +652,15 @@ pub inline fn fillFuncClipSIMD(
         .para => {},
     }
 
-    const normal_vecs = calcNormalLaneVecs(
-        N,
-        shader.elem_normals != null,
-        shader_buf,
-        v_weights,
-    );
+    const normal_vecs = if (shader.builtin == .speckle)
+        [3]VecSF{ @splat(0.0), @splat(0.0), @splat(1.0) }
+    else
+        calcNormalLaneVecs(
+            N,
+            shader.elem_normals != null,
+            shader_buf,
+            v_weights,
+        );
 
     const px_stride = spx_image_scratch.cols_num;
     const scratch_idx = ctx_shade.scratch_idx;
@@ -748,12 +751,15 @@ pub inline fn fillFuncPerspSIMD(
         .para => {},
     }
 
-    const normal_vecs = calcNormalLaneVecs(
-        N,
-        shader.elem_normals != null,
-        shader_buf,
-        v_weights,
-    );
+    const normal_vecs = if (shader.builtin == .speckle)
+        [3]VecSF{ @splat(0.0), @splat(0.0), @splat(1.0) }
+    else
+        calcNormalLaneVecs(
+            N,
+            shader.elem_normals != null,
+            shader_buf,
+            v_weights,
+        );
 
     const px_stride = spx_image_scratch.cols_num;
     const scratch_idx = ctx_shade.scratch_idx;
