@@ -108,6 +108,11 @@ pub fn build(b: *std.Build) void {
             .description = "Run the focused analytic verification suite",
             .source_path = "src/test_verif.zig",
         },
+        .{
+            .step_name = "test-procedural-speckles",
+            .description = "Run the procedural speckle behavior tests",
+            .source_path = "src/testproceduralspeckles.zig",
+        },
     };
 
     for (tests) |entry| {
