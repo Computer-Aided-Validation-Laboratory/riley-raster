@@ -179,6 +179,11 @@ pub fn build(b: *std.Build) void {
             .description = "Run the complete feature-zoo demo",
             .source_path = "src/demo9_feature_zoo.zig",
         },
+        .{
+            .step_name = "demo-procedural-speckles",
+            .description = "Run the procedural speckle prototype demo",
+            .source_path = "src/demoproceduralspeckles.zig",
+        },
     };
 
     const demos_step = b.step("demos", "Run all demo entrypoints");
