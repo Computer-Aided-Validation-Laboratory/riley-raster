@@ -301,15 +301,20 @@ pub const Speckle2DParams = struct {
             if (!std.math.isFinite(self.radius_jitter) or self.radius_jitter < 0.0) {
                 return error.InvalidSpeckleRadiusJitter;
             }
-            if (comptime buildconfig.speckle_direct_fixed) {
-                if (self.radius_jitter != 0.0) {
-                    return error.InvalidDirectFixedSpeckleRadiusJitter;
-                }
-                if (self.radius_mean >= 0.5) {
-                    return error.InvalidDirectFixedSpeckleRadius;
-                }
-            } else if (self.radius_jitter > self.radius_mean) {
-                return error.InvalidSpeckleRadiusRange;
+            switch (comptime buildconfig.speckle_evaluator) {
+                .direct_fixed => {
+                    if (self.radius_jitter != 0.0) {
+                        return error.InvalidDirectFixedSpeckleRadiusJitter;
+                    }
+                    if (self.radius_mean >= 0.5) {
+                        return error.InvalidDirectFixedSpeckleRadius;
+                    }
+                },
+                .cell_hash, .list_naive, .list_indexed, .classified_indexed, .mask_1bit, .mask_u8 => {
+                    if (self.radius_jitter > self.radius_mean) {
+                        return error.InvalidSpeckleRadiusRange;
+                    }
+                },
             }
             if (!std.math.isFinite(self.edge_softness) or self.edge_softness < 0.0) {
                 return error.InvalidSpeckleEdgeSoftness;
@@ -318,7 +323,7 @@ pub const Speckle2DParams = struct {
                 self.edge_softness
             else
                 0.0;
-            if (comptime !buildconfig.speckle_direct_fixed) {
+            if (comptime buildconfig.speckle_evaluator != .direct_fixed) {
                 if (self.radius_mean + self.radius_jitter + effective_softness > 1.0) {
                     return error.InvalidSpeckleNeighborhoodRadius;
                 }
@@ -2227,7 +2232,7 @@ test "procedural speckle hash has stable known vectors" {
 
 test "procedural speckle parameters validate shape-specific settings" {
     var invalid = Speckle2DParams{};
-    if (comptime buildconfig.speckle_direct_fixed) invalid.radius_jitter = 0.0;
+    if (comptime buildconfig.speckle_evaluator == .direct_fixed) invalid.radius_jitter = 0.0;
     try invalid.validate();
     if (comptime speckle_shape == .perlin) {
         invalid.perlin_coverage_transition_width = -0.01;
@@ -2242,7 +2247,7 @@ test "procedural speckle parameters validate shape-specific settings" {
         invalid.edge_softness = -1.0;
         try invalid.validate();
     } else {
-        if (comptime buildconfig.speckle_direct_fixed) {
+        if (comptime buildconfig.speckle_evaluator == .direct_fixed) {
             invalid.radius_jitter = 0.01;
             try testing.expectError(
                 error.InvalidDirectFixedSpeckleRadiusJitter,
@@ -2254,7 +2259,7 @@ test "procedural speckle parameters validate shape-specific settings" {
         }
 
         invalid = Speckle2DParams{};
-        if (comptime buildconfig.speckle_direct_fixed) {
+        if (comptime buildconfig.speckle_evaluator == .direct_fixed) {
             invalid.radius_mean = 0.5;
             invalid.radius_jitter = 0.0;
             try testing.expectError(
@@ -2418,7 +2423,7 @@ test "generated speckle list matches cell hash evaluation" {
     params.cells_per_uv = .{ 4.0, 3.0 };
     params.uv_offset = .{ -0.25, 0.4 };
     params.occupancy = 0.7;
-    if (comptime buildconfig.speckle_direct_fixed) params.radius_jitter = 0.0;
+    if (comptime buildconfig.speckle_evaluator == .direct_fixed) params.radius_jitter = 0.0;
     const speckles = try generateSpeckleList2D(testing.allocator, params);
     defer testing.allocator.free(speckles.disk_by_cell);
     defer testing.allocator.free(speckles.disks);
@@ -2440,7 +2445,7 @@ test "generated speckle list matches cell hash evaluation" {
 }
 
 test "direct fixed generation is deterministic contained and exact" {
-    if (comptime !buildconfig.speckle_direct_fixed) return;
+    if (comptime buildconfig.speckle_evaluator != .direct_fixed) return;
 
     const params: Speckle2DParams = .{
         .seed = 0x85ebca6b,
@@ -2570,7 +2575,7 @@ fn expectClassifiedSpeckleExact(
 }
 
 test "classified indexed speckle is exact on boundaries and varied points" {
-    if (comptime !buildconfig.speckle_classified_indexed) return;
+    if (comptime buildconfig.speckle_evaluator != .classified_indexed) return;
 
     const params: Speckle2DParams = .{
         .seed = 0x85ebca6b,
