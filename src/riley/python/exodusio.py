@@ -262,8 +262,19 @@ def _read_exodus_names(variable: netCDF4.Variable) -> list[str]:
         raise ExodusError("Nodal variable names must be two dimensional.")
 
     names: list[str] = []
-    for name in netCDF4.chartostring(names_raw):
-        name_str = str(name).strip()
+    for row in names_raw:
+        if row.dtype.kind == "S":
+            name_str = row.tobytes().decode("utf-8", errors="replace")
+        elif row.dtype.kind == "U":
+            name_str = "".join(row)
+        else:
+            name_str = "".join(
+                c.decode("utf-8", errors="replace")
+                if isinstance(c, bytes)
+                else str(c)
+                for c in row
+            )
+        name_str = name_str.strip("\x00 ").strip()
         if not name_str:
             raise ExodusError("Nodal variable names must not be empty.")
         names.append(name_str)

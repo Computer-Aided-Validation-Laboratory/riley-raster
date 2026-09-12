@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import netCDF4
@@ -38,10 +39,14 @@ def write_minimal_exodus(
         coord = dataset.createVariable(
             "coord", "f8", ("num_dim", "num_nodes")
         )
-        coord[:] = ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
-        connect = dataset.createVariable(
-            "connect1", connect_dtype, ("num_elem", "num_nodes_per_elem")
-        )
-        connect[:] = connect_values
+        with warnings.catch_warnings():
+            warnings.simplefilter(
+                "ignore", category=DeprecationWarning
+            )
+            coord[:] = ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+            connect = dataset.createVariable(
+                "connect1", connect_dtype, ("num_elem", "num_nodes_per_elem")
+            )
+            connect[:] = connect_values
         if elem_type is not None:
             connect.elem_type = elem_type
