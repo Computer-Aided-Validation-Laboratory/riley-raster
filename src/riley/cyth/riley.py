@@ -70,7 +70,7 @@ class Speckle2DParams:
     uv_offset: tuple[float, float] = (0.0, 0.0)
     occupancy: float = 0.9
     radius_mean: float = 0.45
-    radius_jitter: float = 0.08
+    radius_jitter: float = 0.0
     edge_softness: float = 0.035
     perlin_coverage_threshold: float = 0.0
     perlin_coverage_transition_width: float = 0.12
