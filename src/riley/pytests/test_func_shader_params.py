@@ -17,7 +17,7 @@ def test_speckle_params_defaults_and_conversion_helper() -> None:
     assert speckle.uv_offset == (0.0, 0.0)
     assert speckle.occupancy == 0.9
     assert speckle.radius_mean == 0.45
-    assert speckle.radius_jitter == 0.08
+    assert speckle.radius_jitter == 0.0
     assert speckle.edge_softness == 0.035
     assert speckle.perlin_coverage_threshold == 0.0
     assert speckle.perlin_coverage_transition_width == 0.12
