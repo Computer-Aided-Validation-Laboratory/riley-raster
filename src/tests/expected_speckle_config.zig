@@ -1,2 +1,2 @@
-pub const evaluator = "mask-1bit";
+pub const evaluator = "classified-indexed";
 pub const shape = "disk";

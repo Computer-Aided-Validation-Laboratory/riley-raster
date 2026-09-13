@@ -199,7 +199,7 @@ fn buildOptionsSpeckleEvaluator() []const u8 {
     if (@hasDecl(build_options, "speckle_evaluator")) {
         return build_options.speckle_evaluator;
     }
-    return "mask-1bit";
+    return "classified-indexed";
 }
 
 fn parseSpeckleEvaluator(comptime evaluator: []const u8) SpeckleEvaluator {

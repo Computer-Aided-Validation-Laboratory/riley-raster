@@ -77,7 +77,7 @@ pub fn build(b: *std.Build) void {
         []const u8,
         "speckle-evaluator",
         "Procedural speckle evaluator: cell-hash, list-naive, list-indexed, classified-indexed, direct-fixed, mask-1bit, or mask-u8",
-    ) orelse "mask-1bit";
+    ) orelse "classified-indexed";
     options.speckle_shape = b.option(
         []const u8,
         "speckle-shape",
