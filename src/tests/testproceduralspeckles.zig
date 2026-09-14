@@ -45,7 +45,10 @@ test "selected speckle evaluator prepares its production resources" {
         .cells_per_uv = .{ 24.0, 20.0 },
         .occupancy = 0.8,
         .radius_mean = 0.42,
-        .radius_jitter = if (comptime buildconfig.speckle_evaluator == .direct_fixed) 0.0 else 0.06,
+        .radius_jitter = switch (comptime buildconfig.speckle_evaluator) {
+            .classified_indexed, .direct_fixed => 0.0,
+            else => 0.06,
+        },
         .edge_softness = 0.03,
     };
     const mesh_input = meshpipeline.MeshInput{
