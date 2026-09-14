@@ -74,11 +74,11 @@ pub fn MatStack(
             return .{ .slice = slice_in[0..elem_n].* };
         }
 
-        pub inline fn get(self: *const Self, row: usize, col: usize) T {
+        pub fn get(self: *const Self, row: usize, col: usize) T {
             return self.slice[(row * cols_n) + col];
         }
 
-        pub inline fn set(self: *Self, row: usize, col: usize, val: T) void {
+        pub fn set(self: *Self, row: usize, col: usize, val: T) void {
             self.slice[(row * cols_n) + col] = val;
         }
 
@@ -559,6 +559,54 @@ test "Mat22f.mulMat" {
     try expectEqual(mat_exp, mat0.mulMat(mat1));
 }
 
+test "Mat22f.mulMat.identity_and_negative" {
+    const mat_ident = Mat22f.initIdentity();
+
+    const m0 = [_]TestType{ 2, -1, 3, 4 };
+    const mat0 = Mat22f.initSlice(&m0);
+    try expectEqual(mat0, mat0.mulMat(mat_ident));
+
+    const m1 = [_]TestType{ -1, 5, 2, -3 };
+    const mat1 = Mat22f.initSlice(&m1);
+
+    const m_exp = [_]TestType{ -4, 13, 5, 3 };
+    const mat_exp = Mat22f.initSlice(&m_exp);
+    try expectEqual(mat_exp, mat0.mulMat(mat1));
+}
+
+test "Mat22Ops.det" {
+    const mat_ident = Mat22f.initIdentity();
+    try expectEqual(1, Mat22Ops.det(TestType, mat_ident));
+
+    const m_pos = [_]TestType{ 3, 2, 1, 4 };
+    const mat_pos = Mat22f.initSlice(&m_pos);
+    try expectEqual(10, Mat22Ops.det(TestType, mat_pos));
+
+    const m_zero = [_]TestType{ 2, 4, 1, 2 };
+    const mat_zero = Mat22f.initSlice(&m_zero);
+    try expectEqual(0, Mat22Ops.det(TestType, mat_zero));
+
+    const m_neg = [_]TestType{ 1, 5, 3, 2 };
+    const mat_neg = Mat22f.initSlice(&m_neg);
+    try expectEqual(-13, Mat22Ops.det(TestType, mat_neg));
+}
+
+test "Mat22Ops.inv" {
+    // Inversion with positive determinant: det = 2
+    const m_pos = [_]TestType{ 4, 2, 3, 2 };
+    const mat_pos = Mat22f.initSlice(&m_pos);
+    const m_pos_exp = [_]TestType{ 1.0, -1.0, -1.5, 2.0 };
+    const mat_pos_exp = Mat22f.initSlice(&m_pos_exp);
+    try expectEqual(mat_pos_exp, Mat22Ops.inv(TestType, mat_pos));
+
+    // Inversion with negative determinant: det = -2
+    const m_neg = [_]TestType{ 1, 2, 3, 4 };
+    const mat_neg = Mat22f.initSlice(&m_neg);
+    const m_neg_exp = [_]TestType{ -2.0, 1.0, 1.5, -0.5 };
+    const mat_neg_exp = Mat22f.initSlice(&m_neg_exp);
+    try expectEqual(mat_neg_exp, Mat22Ops.inv(TestType, mat_neg));
+}
+
 test "Mat33f.add" {
     const m0 = [_]TestType{ 1, 2, 3, 4, 5, 6, 7, 8, 9 };
     const mat0 = Mat33f.initSlice(&m0);
@@ -673,7 +721,37 @@ test "Mat33f.mulMat" {
     try expectEqual(mat_exp, mat0.mulMat(mat1));
 }
 
+test "Mat33f.mulMat.identity_and_negative" {
+    const mat_ident = Mat33f.initIdentity();
+
+    const m0 = [_]TestType{
+        1, -2, 3,
+        0, 4, -1,
+        -1, 2, 1,
+    };
+    const mat0 = Mat33f.initSlice(&m0);
+    try expectEqual(mat0, mat0.mulMat(mat_ident));
+
+    const m1 = [_]TestType{
+        2, 1, 0,
+        -1, 3, 2,
+        4, 0, -2,
+    };
+    const mat1 = Mat33f.initSlice(&m1);
+
+    const m_exp = [_]TestType{
+        16, -5, -10,
+        -8, 12, 10,
+        0, 5, 2,
+    };
+    const mat_exp = Mat33f.initSlice(&m_exp);
+    try expectEqual(mat_exp, mat0.mulMat(mat1));
+}
+
 test "Mat33Ops.det" {
+    const mat_ident = Mat33f.initIdentity();
+    try expectEqual(1, Mat33Ops.det(TestType, mat_ident));
+
     const m0 = [_]TestType{ 1, 2, 3, 4, 5, 6, 7, 8, 9 };
     const mat0 = Mat33f.initSlice(&m0);
     const det0_exp: TestType = 0;
@@ -684,6 +762,33 @@ test "Mat33Ops.det" {
 
     try expectEqual(det0_exp, Mat33Ops.det(TestType, mat0));
     try expectEqual(det1_exp, Mat33Ops.det(TestType, mat1));
+
+    // Zero determinant (dependent rows: row 1 = 2 * row 0)
+    const m_zero = [_]TestType{
+        1, 2, 3,
+        2, 4, 6,
+        5, 1, 0,
+    };
+    const mat_zero = Mat33f.initSlice(&m_zero);
+    try expectEqual(0, Mat33Ops.det(TestType, mat_zero));
+
+    // Negative determinant: det = -21
+    const m_neg = [_]TestType{
+        2, -1, 3,
+        1, 0, 4,
+        3, 2, 1,
+    };
+    const mat_neg = Mat33f.initSlice(&m_neg);
+    try expectEqual(-21, Mat33Ops.det(TestType, mat_neg));
+
+    // Permutation / reflection matrix: det = -1
+    const m_perm = [_]TestType{
+        0, 1, 0,
+        1, 0, 0,
+        0, 0, 1,
+    };
+    const mat_perm = Mat33f.initSlice(&m_perm);
+    try expectEqual(-1, Mat33Ops.det(TestType, mat_perm));
 }
 
 test "Mat33Ops.inv" {
@@ -694,6 +799,22 @@ test "Mat33Ops.inv" {
     const mat_exp = Mat33f.initSlice(&m2);
 
     try expectEqual(mat_exp, Mat33Ops.inv(TestType, mat1));
+
+    // Inversion with negative determinant: det = -5
+    const m_neg = [_]TestType{
+        0, 1, 1,
+        1, 2, 0,
+        2, 0, 1,
+    };
+    const mat_neg = Mat33f.initSlice(&m_neg);
+
+    const m_neg_exp = [_]TestType{
+        -0.4, 0.2, 0.4,
+        0.2, 0.4, -0.2,
+        0.8, -0.4, 0.2,
+    };
+    const mat_neg_exp = Mat33f.initSlice(&m_neg_exp);
+    try expectEqual(mat_neg_exp, Mat33Ops.inv(TestType, mat_neg));
 }
 
 test "Mat44f.insertRowVec" {
@@ -762,7 +883,40 @@ test "Mat44f.inertSubMat" {
     try expectEqual(mat_exp2, mat0);
 }
 
+test "Mat44f.mulMat" {
+    const mat_ident = Mat44f.initIdentity();
+
+    const m0 = [_]TestType{
+        1, 0, 2, 0,
+        0, 1, 0, 2,
+        2, 0, 1, 0,
+        0, 2, 0, 1,
+    };
+    const mat0 = Mat44f.initSlice(&m0);
+    try expectEqual(mat0, mat0.mulMat(mat_ident));
+
+    const m1 = [_]TestType{
+        2, 1, 0, 0,
+        1, 2, 0, 0,
+        0, 0, 2, 1,
+        0, 0, 1, 2,
+    };
+    const mat1 = Mat44f.initSlice(&m1);
+
+    const m_exp = [_]TestType{
+        2, 1, 4, 2,
+        1, 2, 2, 4,
+        4, 2, 2, 1,
+        2, 4, 1, 2,
+    };
+    const mat_exp = Mat44f.initSlice(&m_exp);
+    try expectEqual(mat_exp, mat0.mulMat(mat1));
+}
+
 test "Mat44Ops.det" {
+    const mat_ident = Mat44f.initIdentity();
+    try expectEqual(1, Mat44Ops.det(TestType, mat_ident));
+
     const m0 = [_]TestType{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
     const mat0 = Mat44f.initSlice(&m0);
 
@@ -776,6 +930,26 @@ test "Mat44Ops.det" {
     det_exp = 6;
 
     try expectEqual(det_exp, Mat44Ops.det(TestType, mat1));
+
+    // Zero determinant (dependent rows: row 1 = 2 * row 0)
+    const m_zero = [_]TestType{
+        1, 2, 3, 4,
+        2, 4, 6, 8,
+        1, 0, 1, 0,
+        0, 1, 0, 1,
+    };
+    const mat_zero = Mat44f.initSlice(&m_zero);
+    try expectEqual(0, Mat44Ops.det(TestType, mat_zero));
+
+    // Negative determinant: det = -2
+    const m_neg = [_]TestType{
+        1, 2, 0, 0,
+        3, 4, 0, 0,
+        0, 0, 1, 1,
+        0, 0, 1, 2,
+    };
+    const mat_neg = Mat44f.initSlice(&m_neg);
+    try expectEqual(-2, Mat44Ops.det(TestType, mat_neg));
 }
 
 test "Mat44Ops.insertMat22" {
@@ -794,8 +968,32 @@ test "Mat44Ops.inv" {
     const m0 = [_]TestType{ 0, 2, 0, 2, 2, 1, 1, 2, 2, 1, 2, 2, 2, 1, 2, 1 };
     const mat0 = Mat44f.initSlice(&m0);
 
-    const m1 = [_]TestType{ -0.25, 1, -1, 0.5, 0.5, 0, -1, 1, 0, -1, 1, 0, 0, 0, 1, -1 };
+    const m1 = [_]TestType{
+        -0.25, 1, -1, 0.5,
+        0.5, 0, -1, 1,
+        0, -1, 1, 0,
+        0, 0, 1, -1,
+    };
     const mat_exp = Mat44f.initSlice(&m1);
 
+    try expectEqual(mat_exp, Mat44Ops.inv(TestType, mat0));
+}
+
+test "Mat44Ops.inv.negative_det" {
+    const m0 = [_]TestType{
+        1, 2, 0, 0,
+        3, 4, 0, 0,
+        0, 0, 1, 1,
+        0, 0, 1, 2,
+    };
+    const mat0 = Mat44f.initSlice(&m0);
+
+    const m_exp = [_]TestType{
+        -2.0, 1.0, 0.0, 0.0,
+        1.5, -0.5, 0.0, 0.0,
+        0.0, 0.0, 2.0, -1.0,
+        0.0, 0.0, -1.0, 1.0,
+    };
+    const mat_exp = Mat44f.initSlice(&m_exp);
     try expectEqual(mat_exp, Mat44Ops.inv(TestType, mat0));
 }
