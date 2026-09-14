@@ -1,4 +1,4 @@
-name: Python Package
+name: Python Package Build
 
 on:
   push:
@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   build_and_test:
-    name: Build & Test on ${{ matrix.os }}
+    name: Python Package Build & Test on ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
