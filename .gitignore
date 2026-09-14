@@ -78,8 +78,8 @@ maths/
 
 # Other mesh data to keep
 !data/rabbits/**/*.csv
-!data/FE/platehole3d_2mr_63f/*.csv
-!data/FE/platehole3d_2mr_63f.e
+!data/FE/platehole3d_2mr_7f/*.csv
+!data/FE/platehole3d_2mr_7f.e
 !data/calplate/**/*.csv
 
 # We need to keep the textures for the tests

@@ -10,8 +10,8 @@ patterns = ["*.csv", "*.e", "*.msh"]
 
 
 [[copy]]
-source = "data/FE/platehole3d_2mr_63f.e"
-dest = "fe/platehole3d_2mr_63f.e"
+source = "data/FE/platehole3d_2mr_7f.e"
+dest = "fe/platehole3d_2mr_7f.e"
 
 [[copy]]
 source = "data/min/tri6_sphere200/connect.csv"
@@ -94,28 +94,28 @@ source = "data/min/quad9_sphere200/uvs.csv"
 dest = "min/quad9_sphere200/uvs.csv"
 
 [[copy]]
-source = "data/FE/platehole3d_2mr_63f/connect.csv"
-dest = "fe/platehole3d_2mr_63f/connect.csv"
+source = "data/FE/platehole3d_2mr_7f/connect.csv"
+dest = "fe/platehole3d_2mr_7f/connect.csv"
 
 [[copy]]
-source = "data/FE/platehole3d_2mr_63f/coords.csv"
-dest = "fe/platehole3d_2mr_63f/coords.csv"
+source = "data/FE/platehole3d_2mr_7f/coords.csv"
+dest = "fe/platehole3d_2mr_7f/coords.csv"
 
 [[copy]]
-source = "data/FE/platehole3d_2mr_63f/field_disp_x.csv"
-dest = "fe/platehole3d_2mr_63f/field_disp_x.csv"
+source = "data/FE/platehole3d_2mr_7f/field_disp_x.csv"
+dest = "fe/platehole3d_2mr_7f/field_disp_x.csv"
 
 [[copy]]
-source = "data/FE/platehole3d_2mr_63f/field_disp_y.csv"
-dest = "fe/platehole3d_2mr_63f/field_disp_y.csv"
+source = "data/FE/platehole3d_2mr_7f/field_disp_y.csv"
+dest = "fe/platehole3d_2mr_7f/field_disp_y.csv"
 
 [[copy]]
-source = "data/FE/platehole3d_2mr_63f/field_disp_z.csv"
-dest = "fe/platehole3d_2mr_63f/field_disp_z.csv"
+source = "data/FE/platehole3d_2mr_7f/field_disp_z.csv"
+dest = "fe/platehole3d_2mr_7f/field_disp_z.csv"
 
 [[copy]]
-source = "data/FE/platehole3d_2mr_63f/uvs.csv"
-dest = "fe/platehole3d_2mr_63f/uvs.csv"
+source = "data/FE/platehole3d_2mr_7f/uvs.csv"
+dest = "fe/platehole3d_2mr_7f/uvs.csv"
 
 [[copy]]
 source = "data/calplate/tri3_calplate3d/connect.csv"

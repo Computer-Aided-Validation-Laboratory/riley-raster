@@ -556,15 +556,15 @@ def sphere200_case_path(case_name: str = "tri6_sphere200") -> Path:
 
 def platehole_csv_case_path() -> Path:
     return _resolve_data_path(
-        "fe/platehole3d_2mr_63f",
-        "data/FE/platehole3d_2mr_63f",
+        "fe/platehole3d_2mr_7f",
+        "data/FE/platehole3d_2mr_7f",
     )
 
 
 def platehole_exodus_path() -> Path:
     return _resolve_data_path(
-        "fe/platehole3d_2mr_63f.e",
-        "data/FE/platehole3d_2mr_63f.e",
+        "fe/platehole3d_2mr_7f.e",
+        "data/FE/platehole3d_2mr_7f.e",
     )
 
 
