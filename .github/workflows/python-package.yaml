@@ -50,7 +50,7 @@ jobs:
 
       - name: Install built wheel
         run: |
-          python -m pip install --no-index --find-links dist riley-raster
+          python -m pip install --find-links dist riley-raster
 
       - name: Run Python test suite
         run: |
