@@ -105,7 +105,9 @@ class MultiBuildExt(build_ext):
         print(f"Target: {zig_lib_output}")
         print(80 * "-")
 
-        is_windows = platform.system().lower() == "windows"
+        system = platform.system().lower()
+        is_windows = system == "windows"
+        is_darwin = system == "darwin"
         zig_target_args = []
         zig_soname_args = []
         if is_windows:
@@ -117,6 +119,11 @@ class MultiBuildExt(build_ext):
             else:
                 target_triple = "i386-windows-msvc"
             zig_target_args = ["-target", target_triple]
+        elif is_darwin:
+            zig_soname_args = [
+                "-install_name",
+                f"@rpath/{lib_link_name('c_riley')}",
+            ]
         else:
             zig_soname_args = [f"-fsoname={lib_link_name('c_riley')}"]
 
@@ -193,7 +200,9 @@ class MultiBuildExt(build_ext):
         ):
             shutil.copy2(built_zig_lib, src_zig_lib)
 
-        is_windows = platform.system().lower() == "windows"
+        system = platform.system().lower()
+        is_windows = system == "windows"
+        is_darwin = system == "darwin"
         if not is_windows:
             if PLATFORM_INFO["runtime_lib_dir"] not in self.rpath:
                 self.rpath.append(PLATFORM_INFO["runtime_lib_dir"])
@@ -213,6 +222,9 @@ class MultiBuildExt(build_ext):
                     ee.runtime_library_dirs.append(
                         PLATFORM_INFO["runtime_lib_dir"]
                     )
+            if is_darwin:
+                if "-Wl,-rpath,@loader_path" not in ee.extra_link_args:
+                    ee.extra_link_args.append("-Wl,-rpath,@loader_path")
 
         super().run()
 
@@ -227,13 +239,19 @@ H_DIRS = [
     str(PROJECT_ROOT / "src" / "riley" / "zig"),
 ]
 
-is_windows = platform.system().lower() == "windows"
+system = platform.system().lower()
+is_windows = system == "windows"
+is_darwin = system == "darwin"
 
 # Configure compiler flags based on OS to support both MSVC and GCC/Clang
 if is_windows:
     cython_compile_args = ["/fp:fast", "/O2"]
     cython_link_args = ["msvcrt.lib", "ucrt.lib", "vcruntime.lib"]
     runtime_lib_dirs = []
+elif is_darwin:
+    cython_compile_args = ["-ffast-math", "-O3"]
+    cython_link_args = ["-Wl,-rpath,@loader_path"]
+    runtime_lib_dirs = [PLATFORM_INFO["runtime_lib_dir"]]
 else:
     cython_compile_args = ["-ffast-math", "-O3"]
     cython_link_args = []
