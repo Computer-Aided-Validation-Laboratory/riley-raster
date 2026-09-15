@@ -29,7 +29,7 @@ jobs:
           version: 0.16.0
 
       - name: Build library
-        run: zig build
+        run: zig build -Doptimize=ReleaseFast --summary all
 
       - name: Build documentation
         if: matrix.os == 'ubuntu-latest'
