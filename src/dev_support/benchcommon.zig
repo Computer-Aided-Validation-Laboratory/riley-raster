@@ -131,7 +131,7 @@ pub fn calcMetrics(
     frame_times: report.FrameTimes,
     bench_log: report.BenchLog,
 ) CalculatedMetrics {
-    const raster_sec = frame_times.raster_loop / 1e9;
+    const raster_sec = report.rasterStageTime(frame_times) / 1e9;
     const geom_tiling_sec = (frame_times.geometry_prep + frame_times.tile_overlap) / 1e9;
     const active_sec = frame_times.active_time / 1e9;
 
@@ -506,7 +506,6 @@ pub const BenchConfig = struct {
     element_type: gk.MeshType = .tri3,
     texture_type: ShaderType = .tex8_grey,
     samp_cfg: TextureSampleConfig = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
-    skip_quad4ibi_sphere: bool = false,
 };
 
 pub fn shouldRun(
@@ -516,16 +515,9 @@ pub fn shouldRun(
     sc: TextureSampleConfig,
     data_dir: []const u8,
 ) bool {
+    _ = data_dir;
     const is_tex = (st == .tex8_grey or st == .tex8_rgb);
     if (!is_tex and (sc.sample != .linear or sc.mode != .direct)) return false;
-
-    if (config.skip_quad4ibi_sphere and mt == .quad4ibi) {
-        if (std.mem.indexOf(u8, data_dir, "sphere200") != null or
-            std.mem.indexOf(u8, data_dir, "sphere2000") != null)
-        {
-            return false;
-        }
-    }
 
     return switch (config.run) {
         .all => true,
@@ -1060,10 +1052,7 @@ fn runBenchmarkInternal(
     }
 
     var bench_capture_storage: [1]report.FrameBenchCapture = undefined;
-    const bench_capture: ?[]report.FrameBenchCapture = if (report_mode == .bench)
-        bench_capture_storage[0..]
-    else
-        null;
+    const bench_capture: ?[]report.FrameBenchCapture = bench_capture_storage[0..];
 
     const needs_images_arr = config_run.save_strategy == .memory or
         config_run.save_strategy == .both;
@@ -1105,7 +1094,7 @@ fn runBenchmarkInternal(
     else
         0.0;
     const raster_ms = if (report_mode == .bench)
-        bench_capture_storage[0].bench_log.frame_times.raster_loop / 1e6
+        report.rasterStageTime(bench_capture_storage[0].bench_log.frame_times) / 1e6
     else
         0.0;
     const metrics = if (report_mode == .bench)
@@ -1148,10 +1137,7 @@ fn runBenchmarkInternal(
         images_mut.deinit(outer_alloc);
     }
 
-    const pipeline_times = if (report_mode == .bench)
-        bench_capture_storage[0].bench_log.frame_times
-    else
-        report.FrameTimes{};
+    const pipeline_times = bench_capture_storage[0].bench_log.frame_times;
 
     return .{
         .e2e_ms = e2e_ms,
@@ -1356,7 +1342,7 @@ pub fn calcBenchmarkCSVValuesFromResult(
     const conv_ms = 1.0 / 1e6;
     const cam_inv_ms = result.cam_ms;
     const resolve_ms = result.resolve_ms;
-    const elem_loop_ms = result.raster_ms - cam_inv_ms - resolve_ms;
+    const elem_loop_ms = result.pipeline_times.elem_loop * conv_ms;
     return .{
         .total_elems = @floatFromInt(result.total_elems),
         .vis_elems = @floatFromInt(result.vis_elems),

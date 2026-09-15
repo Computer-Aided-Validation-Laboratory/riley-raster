@@ -25,6 +25,31 @@ pub const ReportMode = rastcfg.ReportMode;
 
 pub const OffLog = struct {};
 
+pub const GlobalSubpxStats = struct {
+    mode: rastcfg.BufferMode = .tile_local,
+    output_w_subpx: usize = 0,
+    output_h_subpx: usize = 0,
+    outer_halo_subpx: usize = 0,
+    tile_core_subpx: usize = 0,
+    tile_scratch_subpx: usize = 0,
+    tile_grid_count: usize = 0,
+    active_tile_count: usize = 0,
+    overlap_refs_total: usize = 0,
+    overlap_refs_max: usize = 0,
+    stripe_core_subpx: usize = 0,
+    stripe_count: usize = 0,
+    final_stripe_core_subpx: usize = 0,
+    stripe_storage_w_subpx: usize = 0,
+    stripe_storage_h_subpx: usize = 0,
+    stripe_storage_samples_cleared: u64 = 0,
+};
+
+pub const GlobalSubpxTimes = struct {
+    buffer_setup: F = 0,
+    tile_raster: F = 0,
+    resolve: F = 0,
+};
+
 pub const FrameTimes = struct {
     setup_frame_buff: F = 0,
     prepare_frame_context: F = 0,
@@ -35,12 +60,29 @@ pub const FrameTimes = struct {
     geom_remap_inds: F = 0,
     tile_overlap: F = 0,
     raster_loop: F = 0,
+    raster_workers_requested: u16 = 0,
+    raster_workers_used: u16 = 0,
+    resolve_workers_requested: u16 = 0,
+    resolve_workers_used: u16 = 0,
     cam_invert: F = 0,
+    elem_loop: F = 0,
     scratch_resolve: F = 0,
+    global_subpx_times: GlobalSubpxTimes = .{},
+    global_subpx_stats: ?GlobalSubpxStats = null,
     save_frame: F = 0,
     active_time: F = 0,
     latency_time: F = 0,
 };
+
+pub fn rasterStageTime(frame_times: FrameTimes) F {
+    if (frame_times.global_subpx_stats != null) {
+        return frame_times.tile_overlap +
+            frame_times.global_subpx_times.buffer_setup +
+            frame_times.global_subpx_times.tile_raster +
+            frame_times.global_subpx_times.resolve;
+    }
+    return frame_times.raster_loop;
+}
 
 pub const EndToEndTimes = struct {
     setup_time: F = 0,
@@ -65,6 +107,7 @@ pub const BenchLog = struct {
     depth_tests_fail: u64 = 0,
     max_tile_elems: usize = 0,
     cam_time_ns: F = 0,
+    elem_time_ns: F = 0,
     resolve_time_ns: F = 0,
 };
 
@@ -121,6 +164,7 @@ pub fn publishFrameResults(
     frame_idx: usize,
     cameras_num: usize,
     out_dir: ?std.Io.Dir,
+    out_dir_path: ?[]const u8,
     bench_capture: ?[]FrameBenchCapture,
     report_storage: *FrameReportStorage,
     frame_times: FrameTimes,
@@ -140,6 +184,7 @@ pub fn publishFrameResults(
         frame_idx,
         cameras_num,
         out_dir,
+        out_dir_path,
         bench_capture,
         report_storage,
         frame_times,
@@ -160,6 +205,7 @@ pub fn publishFrameResultsWithNodesPerElem(
     frame_idx: usize,
     cameras_num: usize,
     out_dir: ?std.Io.Dir,
+    out_dir_path: ?[]const u8,
     bench_capture: ?[]FrameBenchCapture,
     report_storage: *FrameReportStorage,
     frame_times: FrameTimes,
@@ -212,6 +258,8 @@ pub fn publishFrameResultsWithNodesPerElem(
                 frame_idx,
                 camera_idx,
                 frame_times,
+                config.raster_halo_px_override orelse camera.prep_psf.halo_px,
+                out_dir_path,
                 total_elems_num,
                 total_elems_in_image,
                 nodes_per_elem,
@@ -265,6 +313,7 @@ pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
         src.max_tile_elems,
     );
     dst.cam_time_ns += src.cam_time_ns;
+    dst.elem_time_ns += src.elem_time_ns;
     dst.resolve_time_ns += src.resolve_time_ns;
 }
 
@@ -1006,9 +1055,7 @@ pub const FullStatsLog = struct {
             self.bench.frame_times.cam_invert * conv;
         const resolve_ms =
             self.bench.frame_times.scratch_resolve * conv;
-        const elem_loop_ms =
-            self.bench.frame_times.raster_loop * conv -
-            cam_inv_ms - resolve_ms;
+        const elem_loop_ms = self.bench.frame_times.elem_loop * conv;
         try writer.print("Cam Invert Time         = {d:.6} ms\n", .{
             cam_inv_ms,
         });
@@ -1675,6 +1722,16 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             }
         }
 
+        pub inline fn recordElemTime(
+            self: @This(),
+            elem_duration_ns: u64,
+        ) void {
+            if (self.bench()) |bench_log| {
+                bench_log.elem_time_ns +=
+                    @floatFromInt(elem_duration_ns);
+            }
+        }
+
         pub inline fn recordResolveTime(
             self: @This(),
             resolve_duration_ns: u64,
@@ -1727,11 +1784,25 @@ pub fn standardReport(
     frame_idx: usize,
     camera_idx: usize,
     frame_times: FrameTimes,
+    tile_halo_px: u16,
+    out_dir_path: ?[]const u8,
     total_elems: usize,
     vis_elems: usize,
     nodes_per_elem: F,
     bench_log: *const BenchLog,
 ) !void {
+    if (frame_times.global_subpx_stats) |stats| {
+        return globalSubpxStandardReport(
+            io,
+            camera,
+            frame_idx,
+            camera_idx,
+            frame_times,
+            stats,
+            out_dir_path,
+            bench_log,
+        );
+    }
     var buff: [4096]u8 = undefined;
     var stdout_writer = std.Io.File.stdout().writer(io, &buff);
     const writer = &stdout_writer.interface;
@@ -1768,7 +1839,7 @@ pub fn standardReport(
     const print_break = [_]u8{'='} ** 80;
     const print_break_inner = [_]u8{'-'} ** 80;
 
-    try writer.print("\n{s}\nRaster Frame Times: Frame {d}, Camera {d}\n{s}\n", .{
+    try writer.print("{s}\nRILEY TILE LOCAL RASTER: Frame {d}, Camera {d}\n{s}\n", .{
         print_break,
         frame_idx,
         camera_idx,
@@ -1784,81 +1855,250 @@ pub fn standardReport(
     const total_elems_f = @as(F, @floatFromInt(total_elems));
     const vis_pct = if (total_elems > 0) (vis_elems_f * 100.0 / total_elems_f) else 0;
 
-    try writer.print("Vis Elems = {d}\n", .{vis_elems});
-    try writer.print("Total Elems   = {d}\n", .{total_elems});
-    try writer.print("Vis %         = {d:.2}%\n", .{vis_pct});
-    try writer.print("Total SubPx   = {d:.0}\n", .{total_subpx});
-    try writer.print("Shaded SubPx  = {d:.0}\n", .{shaded_subpx});
-    try writer.print("Shaded %      = {d:.2}%\n", .{shaded_pct});
+    const tile_subpx = @as(usize, actual_tile_size) * camera.sub_sample;
+
+    try writer.print("Camera Pixels              = {d}x{d}\n", .{
+        camera.pixels_num[0],
+        camera.pixels_num[1],
+    });
+    try writer.print("Camera Distortion          = {s}\n", .{
+        @tagName(camera.distortion),
+    });
+    try writer.print("Camera PSF                 = {s}\n", .{@tagName(camera.psf)});
+    try writer.print("Camera Subsamples          = {d}x{d}\n", .{
+        camera.sub_sample,
+        camera.sub_sample,
+    });
+    try writer.print("Tile Size Pixels           = {d}x{d}\n", .{
+        actual_tile_size,
+        actual_tile_size,
+    });
+    try writer.print("Tile Size Subpixels        = {d}x{d}\n", .{ tile_subpx, tile_subpx });
+    try writer.print("Tile Halo Pixels           = {d}\n", .{tile_halo_px});
     try writer.print("{s}\n", .{print_break_inner});
 
-    try writer.print("Actual Tile Size        = {d}x{d}\n", .{
-        actual_tile_size,
-        actual_tile_size,
-    });
-    try writer.print("Setup Frame Buff      = {d:.6} ms\n", .{
+    try writer.print("Vis Elems                  = {d}\n", .{vis_elems});
+    try writer.print("Total Elems                = {d}\n", .{total_elems});
+    try writer.print("Vis %                      = {d:.2}%\n", .{vis_pct});
+    try writer.print("Total SubPx                = {d:.0}\n", .{total_subpx});
+    try writer.print("Shaded SubPx               = {d:.0}\n", .{shaded_subpx});
+    try writer.print("Shaded %                   = {d:.2}%\n", .{shaded_pct});
+    try writer.print("{s}\n", .{print_break_inner});
+
+    try writer.print("Setup Frame Buff           = {d:.6} ms\n", .{
         frame_times.setup_frame_buff * conv_units,
     });
-    try writer.print("Prep Frame              = {d:.6} ms\n", .{
+    try writer.print("Prep Frame                 = {d:.6} ms\n", .{
         frame_times.prepare_frame_context * conv_units,
     });
-    try writer.print("Geometry Preparation    = {d:.6} ms\n", .{
+    try writer.print("Geometry Preparation       = {d:.6} ms\n", .{
         frame_times.geometry_prep * conv_units,
     });
-    try writer.print("  Coord Ops             = {d:.6} ms\n", .{
+    try writer.print("  Coord Ops                = {d:.6} ms\n", .{
         frame_times.geom_coord_ops * conv_units,
     });
-    try writer.print("  Cull Ops              = {d:.6} ms\n", .{
+    try writer.print("  Cull Ops                 = {d:.6} ms\n", .{
         frame_times.geom_cull_ops * conv_units,
     });
-    try writer.print("  Prep Hulls Shaders    = {d:.6} ms\n", .{
+    try writer.print("  Prep Hulls Shaders       = {d:.6} ms\n", .{
         frame_times.geom_prep_hulls_shaders * conv_units,
     });
-    try writer.print("  Remap Inds            = {d:.6} ms\n", .{
+    try writer.print("  Remap Inds               = {d:.6} ms\n", .{
         frame_times.geom_remap_inds * conv_units,
     });
-    try writer.print("Elem/Tile Overlap       = {d:.6} ms\n", .{
+    try writer.print("Elem/Tile Overlap          = {d:.6} ms\n", .{
         frame_times.tile_overlap * conv_units,
     });
     const cam_inv_print_ms =
         frame_times.cam_invert * conv_units;
     const resolve_print_ms =
         frame_times.scratch_resolve * conv_units;
-    const elem_loop_print_ms =
-        frame_times.raster_loop * conv_units -
-        cam_inv_print_ms - resolve_print_ms;
-    try writer.print("Cam Invert Time         = {d:.6} ms\n", .{
+    const elem_loop_print_ms = frame_times.elem_loop * conv_units;
+    try writer.print("Cam Invert Time            = {d:.6} ms\n", .{
         cam_inv_print_ms,
     });
-    try writer.print("Elem Loop Time          = {d:.6} ms\n", .{
+    try writer.print("Elem Loop Time             = {d:.6} ms\n", .{
         elem_loop_print_ms,
     });
-    try writer.print("Scratch Resolve Time    = {d:.6} ms\n", .{
+    try writer.print("Scratch Resolve Time       = {d:.6} ms\n", .{
         resolve_print_ms,
     });
-    try writer.print("Raster loop time        = {d:.6} ms\n", .{
+    try writer.print("Raster Loop                = {d:.6} ms\n", .{
         frame_times.raster_loop * conv_units,
     });
-    try writer.print("Save Time               = {d:.6} ms\n", .{
+    try writer.print("Save Frame                 = {d:.6} ms\n", .{
         frame_times.save_frame * conv_units,
     });
 
     try writer.print("{s}\n", .{print_break_inner});
-    try writer.print("ACTIVE FRAME TIME  = {d:.3} ms\n", .{
+    try writer.print("ACTIVE FRAME TIME          = {d:.3} ms\n", .{
         frame_times.active_time * conv_units,
     });
-    try writer.print("FRAME LATENCY      = {d:.3} ms\n", .{
+    try writer.print("FRAME LATENCY              = {d:.3} ms\n", .{
         frame_times.latency_time * conv_units,
     });
     try writer.print("{s}\n", .{print_break_inner});
 
-    try writer.print("Geom. Node Throughput  = {d:.2} MNodes/s\n", .{mnodes_sec});
-    try writer.print("Geom. Elem. Throughput = {d:.2} MElem/s\n", .{melems_sec});
-    try writer.print("Subpx Raster Throughput  = {d:.2} MSubPx/s\n", .{msubpx_sec});
-    try writer.print("Raster Throughput        = {d:.2} MPx/s\n", .{mpx_sec});
-    try writer.print("Active Frame Throughput  = {d:.2} MPx/s\n", .{frame_mpx_sec});
+    try writer.print("Geom. Node Throughput      = {d:.2} MNodes/s\n", .{mnodes_sec});
+    try writer.print("Geom. Elem. Throughput     = {d:.2} MElem/s\n", .{melems_sec});
+    try writer.print("Subpx Raster Throughput    = {d:.2} MSubPx/s\n", .{msubpx_sec});
+    try writer.print("Raster Throughput          = {d:.2} MPx/s\n", .{mpx_sec});
+    try writer.print("Active Frame Throughput    = {d:.2} MPx/s\n", .{frame_mpx_sec});
 
+    if (out_dir_path) |path| {
+        try writer.print("Output Frame Path          = {s}\n", .{path});
+    } else {
+        try writer.print("Output Frame Path          = not written (memory output)\n", .{});
+    }
     try writer.print("{s}\n", .{print_break});
+    try writer.flush();
+}
+
+fn globalSubpxStandardReport(
+    io: std.Io,
+    camera: *const cam.CameraPrepared,
+    frame_idx: usize,
+    camera_idx: usize,
+    frame_times: FrameTimes,
+    stats: GlobalSubpxStats,
+    out_dir_path: ?[]const u8,
+    bench_log: *const BenchLog,
+) !void {
+    var buff: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(io, &buff);
+    const writer = &stdout_writer.interface;
+    const stats_break = [_]u8{'='} ** 80;
+    const section_break = [_]u8{'-'} ** 80;
+    const conv: F = 1.0 / 1.0e6;
+    const output_samples = @as(F, @floatFromInt(
+        stats.output_w_subpx * stats.output_h_subpx,
+    ));
+    const output_px = output_samples / @as(F, @floatFromInt(
+        camera.sub_sample * camera.sub_sample,
+    ));
+    const active_tiles = @as(F, @floatFromInt(stats.active_tile_count));
+    const mean_refs = if (stats.active_tile_count > 0)
+        @as(F, @floatFromInt(stats.overlap_refs_total)) / active_tiles
+    else
+        0.0;
+    const empty_tiles = stats.tile_grid_count -| stats.active_tile_count;
+    const buffer_planning = frame_times.tile_overlap +
+        frame_times.global_subpx_times.buffer_setup;
+    const raster_sec = frame_times.global_subpx_times.tile_raster / 1e9;
+    const resolve_sec = frame_times.global_subpx_times.resolve / 1e9;
+    const active_sec = frame_times.active_time / 1e9;
+    const shaded = @as(F, @floatFromInt(bench_log.total_shaded_px));
+    const shade_rate = if (raster_sec > 0)
+        shaded / (raster_sec * 1e6)
+    else
+        0.0;
+    const sample_rate = if (raster_sec > 0)
+        output_samples / (raster_sec * 1e6)
+    else
+        0.0;
+    const resolve_rate = if (resolve_sec > 0)
+        output_px / (resolve_sec * 1e6)
+    else
+        0.0;
+    const active_rate = if (active_sec > 0)
+        output_px / (active_sec * 1e6)
+    else
+        0.0;
+
+    try writer.print("{s}\nRILEY GLOBAL SUBPIXEL RASTER: Frame {d}, Camera {d}\n{s}\n", .{
+        stats_break,
+        frame_idx,
+        camera_idx,
+        stats_break,
+    });
+    try writer.print("Mode                         = {s}\n", .{@tagName(stats.mode)});
+    try writer.print("Output Core                  = {d} x {d} px | {d} x {d} subpx\n", .{
+        camera.pixels_num[0],
+        camera.pixels_num[1],
+        stats.output_w_subpx,
+        stats.output_h_subpx,
+    });
+    try writer.print("Subsample                    = {d} x {d}\n", .{
+        camera.sub_sample,
+        camera.sub_sample,
+    });
+    try writer.print("PSF / Support                = {s} | {d} px\n", .{
+        @tagName(camera.psf),
+        camera.prep_psf.halo_px,
+    });
+    try writer.print("{s}\nTILE DOMAIN\n", .{section_break});
+    try writer.print("Tile Core                    = {d} x {d} subpx\n", .{
+        stats.tile_core_subpx,
+        stats.tile_core_subpx,
+    });
+    try writer.print("Interior Tile Halo           = 0 x 0 px\n", .{});
+    try writer.print("Outer Frame Halo             = {d} x {d} subpx\n", .{
+        stats.outer_halo_subpx,
+        stats.outer_halo_subpx,
+    });
+    try writer.print("Scratch Capacity             = {d} x {d} subpx\n", .{
+        stats.tile_scratch_subpx,
+        stats.tile_scratch_subpx,
+    });
+    try writer.print("Raster Workers (Req / Used)  = {d} / {d}\n", .{
+        frame_times.raster_workers_requested,
+        frame_times.raster_workers_used,
+    });
+    try writer.print("Resolve Workers (Req / Used) = {d} / {d}\n", .{
+        frame_times.resolve_workers_requested,
+        frame_times.resolve_workers_used,
+    });
+    try writer.print("Tile Grid / Active / Empty   = {d} / {d} / {d}\n", .{
+        stats.tile_grid_count,
+        stats.active_tile_count,
+        empty_tiles,
+    });
+    try writer.print("Overlap Refs / Active Tile   = mean {d:.2} | max {d}\n", .{
+        mean_refs,
+        stats.overlap_refs_max,
+    });
+    if (stats.mode == .global_subpx_stripe) {
+        const repeated_storage = stats.stripe_storage_samples_cleared -|
+            stats.output_w_subpx * stats.output_h_subpx;
+        try writer.print("{s}\nSTRIPE DOMAIN\n", .{section_break});
+        try writer.print("Core Height                  = {d} subpx\n", .{stats.stripe_core_subpx});
+        try writer.print("Stripe Count / Final Height  = {d} / {d} subpx\n", .{
+            stats.stripe_count,
+            stats.final_stripe_core_subpx,
+        });
+        try writer.print("Stripe Edge Halo             = x: {d} | y: {d} subpx\n", .{
+            stats.outer_halo_subpx,
+            stats.outer_halo_subpx,
+        });
+        try writer.print("Peak Stripe Storage          = {d} x {d} subpx\n", .{
+            stats.stripe_storage_w_subpx,
+            stats.stripe_storage_h_subpx,
+        });
+        try writer.print("Repeated Halo Storage        = {d} samples\n", .{repeated_storage});
+    }
+    try writer.print("{s}\nWALL-CLOCK TIMINGS\n", .{section_break});
+    try writer.print("Global Buffer + Planning     = {d:.3} ms\n", .{buffer_planning * conv});
+    try writer.print("Global Tile Raster           = {d:.3} ms\n", .{
+        frame_times.global_subpx_times.tile_raster * conv,
+    });
+    try writer.print("Global Resolve               = {d:.3} ms\n", .{
+        frame_times.global_subpx_times.resolve * conv,
+    });
+    try writer.print("Save Frame                   = {d:.3} ms\n", .{frame_times.save_frame * conv});
+    try writer.print("Active Frame                 = {d:.3} ms\n", .{frame_times.active_time * conv});
+    try writer.print("Frame Latency                = {d:.3} ms\n", .{frame_times.latency_time * conv});
+    try writer.print("{s}\nRATES\n", .{section_break});
+    try writer.print("Executed Shade Rate          = {d:.3} Msubpx/s\n", .{shade_rate});
+    try writer.print("Output Sample Rate           = {d:.3} Msubpx/s\n", .{sample_rate});
+    try writer.print("Global Resolve Rate          = {d:.3} MPx/s\n", .{resolve_rate});
+    try writer.print("Active Frame Rate            = {d:.3} MPx/s\n", .{active_rate});
+    try writer.print("{s}\n", .{section_break});
+    if (out_dir_path) |path| {
+        try writer.print("Output Frame Path            = {s}\n", .{path});
+    } else {
+        try writer.print("Output Frame Path            = not written (memory output)\n", .{});
+    }
+    try writer.print("{s}\n", .{stats_break});
     try writer.flush();
 }
 
@@ -1881,14 +2121,21 @@ pub fn printRenderSummary(
     }
     total_pixels *= num_time;
 
-    const actual_tile_size = scalingpolicy.tileSize(
-        config.tile_size_override,
-        config.tile_size_min,
-        config.tile_size_max,
-        cameras[0].pixels_num,
-        cameras[0].sub_sample,
-        cameras[0].prep_psf.halo_px,
-    );
+    const actual_tile_size = switch (config.buffer_mode) {
+        .tile_local => scalingpolicy.tileSize(
+            config.tile_size_override,
+            config.tile_size_min,
+            config.tile_size_max,
+            cameras[0].pixels_num,
+            cameras[0].sub_sample,
+            cameras[0].prep_psf.halo_px,
+        ),
+        .global_subpx_full, .global_subpx_stripe => @divExact(
+            config.global_subpx_tile_size_override orelse
+                config.global_subpx_tile_size_min,
+            @as(u16, @intCast(cameras[0].sub_sample)),
+        ),
+    };
 
     const total_frames = cameras.len * num_time;
     const total_render_ms = end_to_end_times.total_time / 1e6;
@@ -1909,7 +2156,7 @@ pub fn printRenderSummary(
     var total_raster_ns: F = 0.0;
     if (bench_capture) |capture| {
         for (capture) |frame_capture| {
-            total_raster_ns += frame_capture.bench_log.frame_times.raster_loop;
+            total_raster_ns += rasterStageTime(frame_capture.bench_log.frame_times);
         }
     }
     const total_raster_sec = total_raster_ns / 1e9;
@@ -1923,14 +2170,23 @@ pub fn printRenderSummary(
     const writer = &stdout_writer.interface;
     const print_break = [_]u8{'='} ** 80;
 
-    try writer.print("\n{s}\nRiley Raster Render Summary\n{s}\n", .{
+    try writer.print("{s}\nRILEY RASTER RENDER SUMMARY\n{s}\n", .{
         print_break,
         print_break,
     });
-    try writer.print("Actual Tile Size        = {d}x{d}\n", .{
-        actual_tile_size,
-        actual_tile_size,
+    try writer.print("Buffer Mode             = {s}\n", .{
+        @tagName(config.buffer_mode),
     });
+    if (config.buffer_mode != .tile_local) {
+        const global_tile_subpx = @as(usize, actual_tile_size) *
+            @as(usize, cameras[0].sub_sample);
+        try writer.print("Global Raster Tile      = {d} subpx\n", .{global_tile_subpx});
+        if (config.buffer_mode == .global_subpx_stripe) {
+            const stripe_subpx = config.global_subpx_stripe_size_override orelse
+                config.global_subpx_stripe_size_min;
+            try writer.print("Global Stripe Height    = {d} subpx\n", .{stripe_subpx});
+        }
+    }
     try writer.print("Setup Time              = {d:.3} ms\n", .{setup_ms});
     // try writer.print("Setup other             = {d:.3} ms\n", .{
     //     setup_other_ms,

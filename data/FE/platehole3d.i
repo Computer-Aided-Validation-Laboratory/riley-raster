@@ -7,11 +7,8 @@
 
 timeStep = 1
 
-endTime = 63
-maxDisp = 0.01e-3
-
-# endTime = 1
-# maxDisp = 0.01e-3
+endTime =7
+maxDisp = 0.1e-3
 
 # Mechanical Loads/BCs
 topDispRate = ${fparse maxDisp / endTime}  # m/s
@@ -20,7 +17,7 @@ topDispRate = ${fparse maxDisp / endTime}  # m/s
 ss316LEMod = 200e9       # Pa
 ss316LPRatio = 0.3      # -
 
-meshRatio = 6
+meshRatio = 2
 
 #** MOOSEHERDER VARIABLES - END
 #-------------------------------------------------------------------------
@@ -31,7 +28,7 @@ meshRatio = 6
 
 [Mesh]
     type = FileMesh
-    file = 'platehole3d_${meshRatio}.msh'
+    file = 'platehole3d_${meshRatio}mr.msh'
 []
 
 [Physics/SolidMechanics/QuasiStatic]

@@ -57,6 +57,7 @@ pub const DicuqFrameRow = struct {
     shaded_px: u64,
     geom_time_ms: F,
     cam_time_ms: F,
+    elem_loop_time_ms: F,
     resolve_time_ms: F,
     raster_time_ms: F,
     save_time_ms: F,
@@ -77,6 +78,7 @@ pub const DicuqE2ERow = struct {
     shaded_px: u64,
     geom_time_ms: F,
     cam_time_ms: F,
+    elem_loop_time_ms: F,
     resolve_time_ms: F,
     raster_time_ms: F,
     save_time_ms: F,
@@ -119,6 +121,7 @@ const DicuqFrameStatsRow = struct {
     shaded_px: F,
     geom_time_ms: F,
     cam_time_ms: F,
+    elem_loop_time_ms: F,
     resolve_time_ms: F,
     raster_time_ms: F,
     save_time_ms: F,
@@ -138,6 +141,7 @@ const DicuqE2EStatsRow = struct {
     shaded_px: F,
     geom_time_ms: F,
     cam_time_ms: F,
+    elem_loop_time_ms: F,
     resolve_time_ms: F,
     raster_time_ms: F,
     save_time_ms: F,
@@ -392,7 +396,7 @@ pub fn runBenchmark(
             .e2e_ms = e2e_ms,
             .geom_ms = (frame_times.geometry_prep + frame_times.tile_overlap) /
                 1e6,
-            .raster_ms = frame_times.raster_loop / 1e6,
+            .raster_ms = report.rasterStageTime(frame_times) / 1e6,
             .cam_ms = frame_times.cam_invert / 1e6,
             .resolve_ms = frame_times.scratch_resolve / 1e6,
             .fps = if (e2e_ms > 0)
@@ -434,8 +438,20 @@ fn aggregateFrameTimes(
             capture.bench_log.frame_times.tile_overlap;
         frame_times.raster_loop +=
             capture.bench_log.frame_times.raster_loop;
+        frame_times.global_subpx_times.buffer_setup +=
+            capture.bench_log.frame_times.global_subpx_times.buffer_setup;
+        frame_times.global_subpx_times.tile_raster +=
+            capture.bench_log.frame_times.global_subpx_times.tile_raster;
+        frame_times.global_subpx_times.resolve +=
+            capture.bench_log.frame_times.global_subpx_times.resolve;
+        if (frame_times.global_subpx_stats == null) {
+            frame_times.global_subpx_stats =
+                capture.bench_log.frame_times.global_subpx_stats;
+        }
         frame_times.cam_invert +=
             capture.bench_log.frame_times.cam_invert;
+        frame_times.elem_loop +=
+            capture.bench_log.frame_times.elem_loop;
         frame_times.scratch_resolve +=
             capture.bench_log.frame_times.scratch_resolve;
         frame_times.save_frame +=
@@ -473,7 +489,7 @@ fn calcDicuqMetrics(
     frame_times: report.FrameTimes,
     bench_log: report.BenchLog,
 ) common.CalculatedMetrics {
-    const raster_sec = frame_times.raster_loop / 1e9;
+    const raster_sec = report.rasterStageTime(frame_times) / 1e9;
     const geom_tiling_sec =
         (frame_times.geometry_prep + frame_times.tile_overlap) / 1e9;
     const active_sec = frame_times.active_time / 1e9;
@@ -609,8 +625,9 @@ fn buildFrameRows(
             .shaded_px = capture.bench_log.total_shaded_px,
             .geom_time_ms = geom_time_ns / 1e6,
             .cam_time_ms = capture.bench_log.frame_times.cam_invert / 1e6,
+            .elem_loop_time_ms = capture.bench_log.frame_times.elem_loop / 1e6,
             .resolve_time_ms = capture.bench_log.frame_times.scratch_resolve / 1e6,
-            .raster_time_ms = capture.bench_log.frame_times.raster_loop / 1e6,
+            .raster_time_ms = report.rasterStageTime(capture.bench_log.frame_times) / 1e6,
             .save_time_ms = capture.bench_log.frame_times.save_frame / 1e6,
             .frame_time_ms = capture.bench_log.frame_times.active_time / 1e6,
             .e2e_time_ms = null,
@@ -620,7 +637,7 @@ fn buildFrameRows(
             ),
             .raster_tpx_mpx_s = calcFrameMPxPerSec(
                 camera_inputs[capture.camera_idx],
-                capture.bench_log.frame_times.raster_loop,
+                report.rasterStageTime(capture.bench_log.frame_times),
             ),
             .frame_tpx_mpx_s = calcFrameActiveMPxPerSec(
                 camera_inputs[capture.camera_idx],
@@ -641,6 +658,7 @@ fn buildE2ESummaryRow(
     e2e_ms: ?F,
 ) DicuqE2ERow {
     var geom_time_ms: F = 0.0;
+    var elem_loop_time_ms: F = 0.0;
     var raster_time_ms: F = 0.0;
     var save_time_ms: F = 0.0;
     var frame_time_ms: F = 0.0;
@@ -657,6 +675,7 @@ fn buildE2ESummaryRow(
             }
         }
         geom_time_ms += frame_row.geom_time_ms;
+        elem_loop_time_ms += frame_row.elem_loop_time_ms;
         raster_time_ms += frame_row.raster_time_ms;
         save_time_ms += frame_row.save_time_ms;
         frame_time_ms += frame_row.frame_time_ms;
@@ -712,6 +731,7 @@ fn buildE2ESummaryRow(
             }
             break :blk cam_sum;
         },
+        .elem_loop_time_ms = elem_loop_time_ms,
         .resolve_time_ms = blk: {
             var res_sum: F = 0.0;
             for (frame_rows) |fr| {
@@ -817,8 +837,7 @@ fn appendFrameRowsCSV(
     );
 
     for (frame_rows) |frame_row| {
-        const elem_loop_ms = frame_row.raster_time_ms -
-            frame_row.cam_time_ms - frame_row.resolve_time_ms;
+        const elem_loop_ms = frame_row.elem_loop_time_ms;
         const row = try std.fmt.allocPrint(
             allocator,
             "{d},{s},{d},{d},{d},{d},{d},{d}," ++
@@ -881,8 +900,7 @@ fn appendE2ERowsCSV(
         else
             try allocator.dupe(u8, "");
         defer allocator.free(e2e_tp_text);
-        const elem_loop_ms = e2e_row.raster_time_ms -
-            e2e_row.cam_time_ms - e2e_row.resolve_time_ms;
+        const elem_loop_ms = e2e_row.elem_loop_time_ms;
 
         const row = try std.fmt.allocPrint(
             allocator,
@@ -960,6 +978,8 @@ fn calcFrameStatsRow(
     defer allocator.free(geom_vals);
     var cam_vals = try allocator.alloc(F, count);
     defer allocator.free(cam_vals);
+    var elem_loop_vals = try allocator.alloc(F, count);
+    defer allocator.free(elem_loop_vals);
     var resolve_vals = try allocator.alloc(F, count);
     defer allocator.free(resolve_vals);
     var raster_vals = try allocator.alloc(F, count);
@@ -992,6 +1012,7 @@ fn calcFrameStatsRow(
         total_px_vals[ii] = @floatFromInt(frame_row.total_px);
         geom_vals[ii] = frame_row.geom_time_ms;
         cam_vals[ii] = frame_row.cam_time_ms;
+        elem_loop_vals[ii] = frame_row.elem_loop_time_ms;
         resolve_vals[ii] = frame_row.resolve_time_ms;
         raster_vals[ii] = frame_row.raster_time_ms;
         save_vals[ii] = frame_row.save_time_ms;
@@ -1038,6 +1059,10 @@ fn calcFrameStatsRow(
         ),
         .cam_time_ms = selectDicuqStat(
             try calcFieldStats(allocator, cam_vals),
+            kind,
+        ),
+        .elem_loop_time_ms = selectDicuqStat(
+            try calcFieldStats(allocator, elem_loop_vals),
             kind,
         ),
         .resolve_time_ms = selectDicuqStat(
@@ -1114,6 +1139,8 @@ fn calcE2EStatsRow(
     defer allocator.free(geom_vals);
     var cam_vals = try allocator.alloc(F, count);
     defer allocator.free(cam_vals);
+    var elem_loop_vals = try allocator.alloc(F, count);
+    defer allocator.free(elem_loop_vals);
     var resolve_vals = try allocator.alloc(F, count);
     defer allocator.free(resolve_vals);
     var raster_vals = try allocator.alloc(F, count);
@@ -1145,6 +1172,7 @@ fn calcE2EStatsRow(
             shaded_vals[rr] = @floatFromInt(row.shaded_px);
             geom_vals[rr] = row.geom_time_ms;
             cam_vals[rr] = row.cam_time_ms;
+            elem_loop_vals[rr] = row.elem_loop_time_ms;
             resolve_vals[rr] = row.resolve_time_ms;
             raster_vals[rr] = row.raster_time_ms;
             save_vals[rr] = row.save_time_ms;
@@ -1193,6 +1221,10 @@ fn calcE2EStatsRow(
         ),
         .cam_time_ms = selectDicuqStat(
             try calcFieldStats(allocator, cam_vals),
+            kind,
+        ),
+        .elem_loop_time_ms = selectDicuqStat(
+            try calcFieldStats(allocator, elem_loop_vals),
             kind,
         ),
         .resolve_time_ms = selectDicuqStat(
@@ -1290,8 +1322,7 @@ fn appendFrameStatsRowsCSV(
         else
             try allocator.dupe(u8, "");
         defer allocator.free(e2e_tp_text);
-        const elem_loop_ms = stats_row.raster_time_ms -
-            stats_row.cam_time_ms - stats_row.resolve_time_ms;
+        const elem_loop_ms = stats_row.elem_loop_time_ms;
         const row = try std.fmt.allocPrint(
             allocator,
             "{d},{s},{s},{d:.6},{d:.6},{d:.6},{d:.6}," ++
@@ -1371,8 +1402,7 @@ fn appendE2EStatsRowsCSV(
         else
             try allocator.dupe(u8, "");
         defer allocator.free(e2e_tp_text);
-        const elem_loop_ms = stats_row.raster_time_ms -
-            stats_row.cam_time_ms - stats_row.resolve_time_ms;
+        const elem_loop_ms = stats_row.elem_loop_time_ms;
         const row = try std.fmt.allocPrint(
             allocator,
             "{s},{s},{d:.6},{d:.6},{d:.6},{d:.6}," ++

@@ -8,8 +8,11 @@ file-out/
 .zig-cache/
 zig-out/
 out/
+out_riley_py/
+out-riley-py/
 bin/
 .*
+.*/
 !.gitignore
 !.github/
 
@@ -34,6 +37,7 @@ debug/
 examples/
 pyout/
 refs/
+maths/
 
 # Don't commit large mesh, simulation or image files to the repo unless we have to
 *.ppm
@@ -47,16 +51,25 @@ refs/
 # Keep the min test suite to ship with the repo
 !data/min/
 !data/min/**/*.csv
+!data/cubes/
+!data/cubes/**/*.csv
+!data/shapes/**/*.csv
+!data/shapes/**/*.msh
+!data/shapes/**/*.e
 !gold/min/
 !gold/min/**/*.fimg
 !gold/min/**/*.bmp
 !gold/min/**/*.csv
+!gold/basic/
+!gold/basic/**/*.fimg
 !gold/perf_stats_ref/
 !gold/perf_stats_ref/**/
 !gold/perf_stats_ref/**/*.csv
 !gold/perf_stats_ref/**/*.json
 !gold/perf_stats_ref/**/*.txt
 !gold/perf_stats_ref/**/*.md
+!gold/verif/
+!gold/verif/**
 
 # Keep our other test suite data committed to the repo
 !data/small/**/*.csv
@@ -65,8 +78,8 @@ refs/
 
 # Other mesh data to keep
 !data/rabbits/**/*.csv
-!data/FE/platehole3d_2mr_63f/*.csv
-!data/FE/platehole3d_2mr_63f.e
+!data/FE/platehole3d_2mr_7f/*.csv
+!data/FE/platehole3d_2mr_7f.e
 !data/calplate/**/*.csv
 
 # We need to keep the textures for the tests
@@ -97,8 +110,8 @@ uv.lock
 
 # Cython
 *.html
-src/riley/cyth/riley.c
-src/riley/cyth/riley.html
+src/riley/cython/riley.c
+src/riley/cython/riley.html
 
 # Windows :(
 *.dll

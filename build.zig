@@ -2,8 +2,8 @@ const std = @import("std");
 
 const riley_version = std.SemanticVersion{
     .major = 2026,
-    .minor = 7,
-    .patch = 1,
+    .minor = 9,
+    .patch = 0,
 };
 
 const RunEntry = struct {
@@ -21,8 +21,11 @@ const TestEntry = struct {
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const precision = b.option([]const u8, "precision", "Floating point precision: f64 or f32") orelse
-        "f64";
+    const precision = b.option(
+        []const u8,
+        "precision",
+        "Floating point precision: f64 or f32",
+    ) orelse "f64";
     const simd = b.option([]const u8, "simd", "SIMD mode: on or off") orelse "on";
     const newton_solver = b.option(
         []const u8,
@@ -52,26 +55,31 @@ pub fn build(b: *std.Build) void {
         build_options_module,
     );
     shared_lib.installHeader(
-        b.path("src/riley/cyth/riley.h"),
+        b.path("src/riley/cython/riley.h"),
         "riley.h",
     );
     b.installArtifact(shared_lib);
 
     const tests = [_]TestEntry{
         .{
-            .step_name = "test-min",
-            .description = "Run the MIN test suite",
-            .source_path = "src/test_min.zig",
+            .step_name = "test-verif-basic",
+            .description = "Run the verification and BASIC test suites in one build",
+            .source_path = "src/test_verif_basic.zig",
         },
         .{
-            .step_name = "test-gold-all",
-            .description = "Run the ALL gold regression test suite",
-            .source_path = "src/test_gold_all.zig",
+            .step_name = "test-basic",
+            .description = "Run the BASIC test suite",
+            .source_path = "src/test_basic.zig",
         },
         .{
-            .step_name = "test-bench",
-            .description = "Run the benchmark regression test suite",
-            .source_path = "src/test_bench.zig",
+            .step_name = "test-full",
+            .description = "Run the FULL test suite",
+            .source_path = "src/test_full.zig",
+        },
+        .{
+            .step_name = "test-verif",
+            .description = "Run the focused analytic verification suite",
+            .source_path = "src/test_verif.zig",
         },
     };
 
@@ -91,34 +99,49 @@ pub fn build(b: *std.Build) void {
 
     const demos = [_]RunEntry{
         .{
-            .step_name = "demo-sphere200",
+            .step_name = "demo0-quickstart",
+            .description = "Run the triangle quickstart demo",
+            .source_path = "src/demo0_quickstart.zig",
+        },
+        .{
+            .step_name = "demo1-sphere200",
             .description = "Run the sphere200 demo",
-            .source_path = "src/demo_sphere200.zig",
+            .source_path = "src/demo1_sphere200.zig",
         },
         .{
-            .step_name = "demo-rabbits",
+            .step_name = "demo2-psf",
+            .description = "Run the Gaussian PSF demo",
+            .source_path = "src/demo2_psf.zig",
+        },
+        .{
+            .step_name = "demo3-rabbits",
             .description = "Run the rabbits demo",
-            .source_path = "src/demo_rabbits.zig",
+            .source_path = "src/demo3_rabbits.zig",
         },
         .{
-            .step_name = "demo-rabbits-rgb",
+            .step_name = "demo4-rabbits-rgb",
             .description = "Run the rabbits RGB demo",
-            .source_path = "src/demo_rabbits_rgb.zig",
+            .source_path = "src/demo4_rabbits_rgb.zig",
         },
         .{
-            .step_name = "demo-rabbits-fields",
+            .step_name = "demo5-rabbits-fields",
             .description = "Run the rabbits fields demo",
-            .source_path = "src/demo_rabbits_fields.zig",
+            .source_path = "src/demo5_rabbits_fields.zig",
         },
         .{
-            .step_name = "demo-dicuq",
+            .step_name = "demo6-dicuq",
             .description = "Run the DIC UQ demo",
-            .source_path = "src/demo_dicuq.zig",
+            .source_path = "src/demo6_dicuq.zig",
         },
         .{
-            .step_name = "demo-stereocal",
+            .step_name = "demo8-stereocal",
             .description = "Run the stereo calibration demo",
-            .source_path = "src/demo_stereocal.zig",
+            .source_path = "src/demo8_stereocal.zig",
+        },
+        .{
+            .step_name = "demo9-feature-zoo",
+            .description = "Run the complete feature-zoo demo",
+            .source_path = "src/demo9_feature_zoo.zig",
         },
     };
 
@@ -138,14 +161,19 @@ pub fn build(b: *std.Build) void {
 
     const generators = [_]RunEntry{
         .{
-            .step_name = "gen-gold-all",
-            .description = "Generate the ALL gold datasets",
-            .source_path = "src/gen_gold_all.zig",
+            .step_name = "gen-gold-basic",
+            .description = "Generate the BASIC gold datasets",
+            .source_path = "src/gen_gold_basic.zig",
         },
         .{
-            .step_name = "gen-gold-min",
-            .description = "Generate the MIN gold datasets",
-            .source_path = "src/gen_gold_min.zig",
+            .step_name = "gen-gold-full",
+            .description = "Generate the FULL gold datasets",
+            .source_path = "src/gen_gold_full.zig",
+        },
+        .{
+            .step_name = "gen-gold-verif-zig",
+            .description = "Generate the Zig verification oracle inputs",
+            .source_path = "src/gen_gold_verif.zig",
         },
     };
 
@@ -160,10 +188,32 @@ pub fn build(b: *std.Build) void {
             entry,
         );
         run_step.dependOn(&run_artifact.step);
-        if (std.mem.eql(u8, entry.step_name, "gen-gold-all")) {
+        if (std.mem.eql(u8, entry.step_name, "gen-gold-full")) {
             gold_step.dependOn(&run_artifact.step);
         }
     }
+
+    const gen_verif_python = b.addSystemCommand(&.{
+        ".venv/bin/python",
+        "src/gengold/gengold_verif.py",
+    });
+    const gen_verif_zig = addRunStep(
+        b,
+        target,
+        optimize,
+        build_options_module,
+        .{
+            .step_name = "gen-gold-verif-zig-internal",
+            .description = "Generate verification oracle inputs",
+            .source_path = "src/gen_gold_verif.zig",
+        },
+    );
+    gen_verif_python.step.dependOn(&gen_verif_zig.step);
+    const gen_verif_step = b.step(
+        "gen-gold-verif",
+        "Generate focused analytic verification gold",
+    );
+    gen_verif_step.dependOn(&gen_verif_python.step);
 
     const benches = [_]RunEntry{
         .{
@@ -316,7 +366,8 @@ fn addTestRunStep(
         \\    sha256sum |
         \\    cut -d' ' -f1
         \\)"
-        \\tree_dir="${cache_root}/${step_name}_${precision}_${simd}_${newton_solver}_${opt}_${src_hash}"
+        \\tree_dir="${cache_root}/${step_name}_${precision}_${simd}_"
+        \\tree_dir="${tree_dir}${newton_solver}_${opt}_${src_hash}"
         \\if [ ! -d "$tree_dir" ]; then
         \\    lock_dir="${tree_dir}.lock"
         \\    while ! mkdir "$lock_dir" 2>/dev/null; do
@@ -337,7 +388,8 @@ fn addTestRunStep(
         \\            printf '    pub const precision = "%s";\n' "$precision"
         \\            printf '    pub const simd = "%s";\n' "$simd"
         \\            printf '    pub const newton_solver = "%s";\n' "$newton_solver"
-        \\            printf '    pub const simd_vector_width: comptime_int = %s;\n' "$simd_vector_width"
+        \\            printf '    pub const simd_vector_width: comptime_int = '
+        \\            printf '%s;\n' "$simd_vector_width"
         \\            printf '};\n\n'
         \\            cat "$src_orig"
         \\        } > "$src_file"
