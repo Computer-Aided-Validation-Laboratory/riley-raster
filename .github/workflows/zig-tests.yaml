@@ -23,17 +23,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Zig
+      - name: Zig Setup
         uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
 
-      - name: Build library
+      - name: Zig Build Riley Library
         run: zig build -Doptimize=ReleaseFast --summary all
 
-      - name: Build documentation
+      - name: Zig Build documentation
         if: matrix.os == 'ubuntu-latest'
         run: zig build docs
 
-      - name: Run Zig Verification and Basic Tests
+      - name: Zig Run Verification and Basic Tests
         run: zig build test-verif-basic -Doptimize=ReleaseSafe

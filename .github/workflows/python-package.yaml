@@ -30,28 +30,28 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
           df -h /
 
-      - name: Setup Zig
+      - name: Zig Setup
         uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
 
-      - name: Setup Python
+      - name: Python setup
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
 
-      - name: Install build tools and test dependencies
+      - name: Python install build tools and test dependencies
         run: |
           python -m pip install --upgrade pip build pytest
 
-      - name: Build distribution packages (wheel and sdist)
+      - name: Python build distribution packages (wheel and sdist)
         run: |
           python -m build
 
-      - name: Install built wheel
+      - name: Python install built wheel
         run: |
           python -m pip install --find-links dist riley-raster
 
-      - name: Run Python test suite
+      - name: Python run test suite
         run: |
           python -m pytest --pyargs riley.pytests -s
