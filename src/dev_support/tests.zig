@@ -363,7 +363,7 @@ fn saveResultToFails(
                     camera_idx,
                     frame_idx,
                     field_idx,
-                    1,
+                    rastcfg.RasterConfig.default_output_name_format,
                 );
                 try iio.saveMatAsImage(
                     io,
