@@ -1948,6 +1948,7 @@ fn saveFrame(
             &output_frame_arr,
             saveoverlap.imageSaveChannelsOverride(input.config.image_save_mode),
             input.config.image_save_opts,
+            input.config.output_name_format,
         );
     }
     if ((input.config.save_strategy == .memory or
