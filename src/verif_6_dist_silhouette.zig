@@ -556,7 +556,7 @@ fn runDistortCase(
             0,
             frame_idx,
             0,
-            1,
+            "cam{camera}_frame{frame}_field{field}",
         );
 
         const csv_name = try std.fmt.allocPrint(aa, "{s}.csv", .{base_name});
