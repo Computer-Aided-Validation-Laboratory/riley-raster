@@ -14,6 +14,7 @@ const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const cam = @import("../riley/zig/camera.zig");
 const csvio = @import("../riley/zig/csvio.zig");
+const fullfixtures = @import("../dev_support/fullfixtures.zig");
 const Mat22f = @import("../riley/zig/matstack.zig").Mat22f;
 const tcfg = @import("../dev_support/testconfig.zig");
 
@@ -325,6 +326,116 @@ fn checkJacobians(cases: anytype, jacobians: anytype) !void {
     }
 }
 
+fn checkBrownConradyPolynomialEquivalence() !void {
+    const equivalent = fullfixtures.getEquivalentBrownConradyPolynomial();
+    const brown_model: cam.DistortionModel = .{
+        .brown_conrady = equivalent.brown_conrady,
+    };
+    const polynomial_model: cam.DistortionModel = .{
+        .polynomial = equivalent.polynomial,
+    };
+    const polynomial_map = equivalent.polynomial.forward_map orelse unreachable;
+    const points = [_][2]F{
+        .{ -0.010, -0.009 },
+        .{ -0.008, 0.006 },
+        .{ -0.004, -0.007 },
+        .{ 0.003, 0.009 },
+        .{ 0.007, -0.005 },
+        .{ 0.010, 0.008 },
+    };
+    const forward_tolerance: F = 1.0e-14;
+    const jacobian_tolerance: F = 1.0e-12;
+
+    for (points, 0..) |point, point_id| {
+        const brown_forward = cam.forwardDistortionModelScal(
+            brown_model,
+            point[0],
+            point[1],
+        );
+        const polynomial_forward = cam.forwardDistortionModelScal(
+            polynomial_model,
+            point[0],
+            point[1],
+        );
+        try expectPairApprox(
+            "Brown-Conrady/polynomial scalar forward equivalence",
+            0,
+            point_id,
+            brown_forward,
+            polynomial_forward,
+            forward_tolerance,
+        );
+
+        const brown_jac = equivalent.brown_conrady.forwardWithJac(
+            point[0],
+            point[1],
+        ).jac;
+        const polynomial_jac = polynomial_map.forwardWithJac(
+            point[0],
+            point[1],
+        ).jac;
+        for (0..2) |row| {
+            for (0..2) |col| {
+                try std.testing.expectApproxEqAbs(
+                    brown_jac.get(row, col),
+                    polynomial_jac.get(row, col),
+                    jacobian_tolerance,
+                );
+            }
+        }
+
+        const brown_inverse = try cam.invDistortionModelScal(
+            brown_model,
+            brown_forward[0],
+            brown_forward[1],
+        );
+        const polynomial_inverse = try cam.invDistortionModelScal(
+            polynomial_model,
+            brown_forward[0],
+            brown_forward[1],
+        );
+        try expectPairApprox(
+            "Brown-Conrady/polynomial scalar inverse equivalence",
+            0,
+            point_id,
+            .{ brown_inverse.x, brown_inverse.y },
+            .{ polynomial_inverse.x, polynomial_inverse.y },
+            tcfg.DISTORTION_ORACLE_TOL.inverse_abs_norm,
+        );
+
+        var observed_x = [_]F{0.0} ** S;
+        var observed_y = [_]F{0.0} ** S;
+        var active = [_]bool{false} ** S;
+        observed_x[0] = brown_forward[0];
+        observed_y[0] = brown_forward[1];
+        active[0] = true;
+        const brown_simd_inverse = try cam.invDistortionModelSIMD(
+            brown_model,
+            @as(VecSF, observed_x),
+            @as(VecSF, observed_y),
+            @as(VecSB, active),
+        );
+        const polynomial_simd_inverse = try cam.invDistortionModelSIMD(
+            polynomial_model,
+            @as(VecSF, observed_x),
+            @as(VecSF, observed_y),
+            @as(VecSB, active),
+        );
+        const brown_simd_x: [S]F = brown_simd_inverse.x;
+        const brown_simd_y: [S]F = brown_simd_inverse.y;
+        const polynomial_simd_x: [S]F = polynomial_simd_inverse.x;
+        const polynomial_simd_y: [S]F = polynomial_simd_inverse.y;
+        try expectPairApprox(
+            "Brown-Conrady/polynomial SIMD inverse equivalence",
+            0,
+            point_id,
+            .{ brown_simd_x[0], brown_simd_y[0] },
+            .{ polynomial_simd_x[0], polynomial_simd_y[0] },
+            tcfg.DISTORTION_ORACLE_TOL.backend_abs_norm,
+        );
+    }
+}
+
 pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     var cases = try csvio.loadScalarCsv2D(allocator, io, cases_path);
     defer {
@@ -348,4 +459,5 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     try checkScalarPoints(cases, points);
     try checkSIMDPoints(cases, points);
     try checkJacobians(cases, jacobians);
+    try checkBrownConradyPolynomialEquivalence();
 }

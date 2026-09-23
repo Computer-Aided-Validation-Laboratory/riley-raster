@@ -557,73 +557,6 @@ pub fn prepareDistortionModel(model: DistortionModel) !DistortionModel {
     };
 }
 
-test "BrownConradyExt prepared tilt matches direct evaluation" {
-    const direct = BrownConradyExt{
-        .k1 = -0.08,
-        .s1 = 1.2e-3,
-        .tau_x = 0.023,
-        .tau_y = -0.031,
-    };
-    const prepared = try direct.prepare();
-    const expected = direct.forward(0.47, -0.29);
-    const actual = prepared.forward(0.47, -0.29);
-    try std.testing.expectApproxEqAbs(expected[0], actual[0], 1.0e-14);
-    try std.testing.expectApproxEqAbs(expected[1], actual[1], 1.0e-14);
-    const recovered = try prepared.inv(actual[0], actual[1]);
-    try std.testing.expectApproxEqAbs(@as(F, 0.47), recovered.x, 2.0e-5);
-    try std.testing.expectApproxEqAbs(@as(F, -0.29), recovered.y, 2.0e-5);
-}
-
-test "BrownConradyExt tilt matrices compose to identity" {
-    const distortion = BrownConradyExt{
-        .tau_x = 0.023,
-        .tau_y = -0.031,
-    };
-    const forward = distortion.getForwardTiltMatrix();
-    const inverse = try distortion.getInverseTiltMatrix();
-    const product = forward.mulMat(inverse);
-    const identity = Mat33f.initIdentity();
-    inline for (0..3) |row| {
-        inline for (0..3) |col| {
-            try std.testing.expectApproxEqAbs(
-                identity.get(row, col),
-                product.get(row, col),
-                1.0e-14,
-            );
-        }
-    }
-}
-
-test "BrownConradyExt rejects singular prepared tilt" {
-    const singular = BrownConradyExt{ .tau_y = std.math.pi / 2.0 };
-    try std.testing.expectError(
-        error.SingularTiltProjection,
-        singular.prepare(),
-    );
-}
-
-test "BrownConradyExt inverse rejects singular tilt projection" {
-    const singular = BrownConradyExt{ .tau_y = std.math.pi / 2.0 };
-    try std.testing.expectError(
-        error.SingularTiltProjection,
-        singular.inv(0.2, -0.3),
-    );
-}
-
-test "BrownConradyExt rational pole propagates non-finite forward value" {
-    const pole = BrownConradyExt{ .k4 = -1.0 };
-    const result = pole.forward(1.0, 0.0);
-    try std.testing.expect(!std.math.isFinite(result[0]));
-}
-
-test "PolynomialMap inverse rejects a singular Jacobian" {
-    const singular = PolynomialMap{
-        .order = .linear,
-        .coeffs_u = .{ 0.0, -1.0, 0.0 } ++ [_]F{0.0} ** 7,
-    };
-    try std.testing.expectError(error.SingularJac, singular.inv(0.3, -0.2));
-}
-
 // --------------------------------------------------------------------------------------
 // Point Spread Func
 // --------------------------------------------------------------------------------------
@@ -1034,4 +967,75 @@ pub fn preparePSF(
             };
         },
     }
+}
+
+//------------------------------------------------------------------------------------------
+// Tests
+//------------------------------------------------------------------------------------------
+
+test "BrownConradyExt prepared tilt matches direct evaluation" {
+    const direct = BrownConradyExt{
+        .k1 = -0.08,
+        .s1 = 1.2e-3,
+        .tau_x = 0.023,
+        .tau_y = -0.031,
+    };
+    const prepared = try direct.prepare();
+    const expected = direct.forward(0.47, -0.29);
+    const actual = prepared.forward(0.47, -0.29);
+    try std.testing.expectApproxEqAbs(expected[0], actual[0], 1.0e-14);
+    try std.testing.expectApproxEqAbs(expected[1], actual[1], 1.0e-14);
+    const recovered = try prepared.inv(actual[0], actual[1]);
+    try std.testing.expectApproxEqAbs(@as(F, 0.47), recovered.x, 2.0e-5);
+    try std.testing.expectApproxEqAbs(@as(F, -0.29), recovered.y, 2.0e-5);
+}
+
+test "BrownConradyExt tilt matrices compose to identity" {
+    const distortion = BrownConradyExt{
+        .tau_x = 0.023,
+        .tau_y = -0.031,
+    };
+    const forward = distortion.getForwardTiltMatrix();
+    const inverse = try distortion.getInverseTiltMatrix();
+    const product = forward.mulMat(inverse);
+    const identity = Mat33f.initIdentity();
+    inline for (0..3) |row| {
+        inline for (0..3) |col| {
+            try std.testing.expectApproxEqAbs(
+                identity.get(row, col),
+                product.get(row, col),
+                1.0e-14,
+            );
+        }
+    }
+}
+
+test "BrownConradyExt rejects singular prepared tilt" {
+    const singular = BrownConradyExt{ .tau_y = std.math.pi / 2.0 };
+    try std.testing.expectError(
+        error.SingularTiltProjection,
+        singular.prepare(),
+    );
+}
+
+test "BrownConradyExt inverse rejects singular tilt projection" {
+    const singular = BrownConradyExt{ .tau_y = std.math.pi / 2.0 };
+    try std.testing.expectError(
+        error.SingularTiltProjection,
+        singular.inv(0.2, -0.3),
+    );
+}
+
+test "BrownConradyExt rational pole propagates non-finite forward value" {
+    const pole = BrownConradyExt{ .k4 = -1.0 };
+    const result = pole.forward(1.0, 0.0);
+    try std.testing.expect(!std.math.isFinite(result[0]));
+}
+
+test "PolynomialMap inverse rejects a singular Jacobian" {
+    const singular = PolynomialMap{
+        .order = .linear,
+        .coeffs_u = .{ 0.0, -1.0, 0.0 } ++ [_]F{0.0} ** 7,
+    };
+    try std.testing.expectError(error.SingularJac, singular.inv(0.3, -0.2));
 }

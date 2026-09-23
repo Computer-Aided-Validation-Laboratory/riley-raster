@@ -484,6 +484,36 @@ pub fn getRepresentativePolynomialMap() camera.PolynomialMap {
     return poly_map;
 }
 
+pub const EquivalentBrownConradyPolynomial = struct {
+    brown_conrady: camera.BrownConrady,
+    polynomial: camera.BidirectionalPolynomial,
+};
+
+/// A cubic polynomial representation of a Brown-Conrady model with radial
+/// k1 and both tangential terms.  The polynomial model is forward-only: its
+/// inverse is deliberately solved from the same forward map as Brown-Conrady.
+pub fn getEquivalentBrownConradyPolynomial() EquivalentBrownConradyPolynomial {
+    const brown_conrady = camera.BrownConrady{
+        .k1 = -1200.0,
+        .p1 = 0.25,
+        .p2 = -0.20,
+    };
+    return .{
+        .brown_conrady = brown_conrady,
+        .polynomial = .{
+            .forward_map = .{
+                .order = .cubic,
+                // u displacement: 3*p2*x^2 + 2*p1*x*y + p2*y^2
+                //               + k1*x^3 + k1*x*y^2.
+                .coeffs_u = .{ 0.0, 0.0, 0.0, -0.60, 0.50, -0.20, -1200.0, 0.0, -1200.0, 0.0 },
+                // v displacement: p1*x^2 + 2*p2*x*y + 3*p1*y^2
+                //               + k1*x^2*y + k1*y^3.
+                .coeffs_v = .{ 0.0, 0.0, 0.0, 0.25, -0.40, 0.75, 0.0, -1200.0, 0.0, -1200.0 },
+            },
+        },
+    };
+}
+
 pub fn createScene1Camera(meshes: []const MeshInput) CameraInput {
     const target = sceneops.boundsCenterOverMeshes(meshes);
     const rot = Rotation.init(
