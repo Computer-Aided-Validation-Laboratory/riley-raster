@@ -79,7 +79,6 @@ pub const DISTORTION_ORACLE_TOL = DistortionOracleTol{
 };
 
 pub const DISTORTION_ROUNDTRIP_ABS_PX: F = 1.0e-6;
-
 pub const RasterConfigMode = enum {
     gold_gen,
     preview,

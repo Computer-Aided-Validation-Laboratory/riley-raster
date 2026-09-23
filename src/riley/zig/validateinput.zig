@@ -11,6 +11,7 @@ const buildconfig = @import("buildconfig.zig");
 const cam = @import("camera.zig");
 const geomkerns = @import("geometrykernels.zig");
 const imageops = @import("imageops.zig");
+const imageio = @import("imageio.zig");
 const matslice = @import("matslice.zig");
 const mo = @import("meshpipeline.zig");
 const ndarray = @import("ndarray.zig");
@@ -86,6 +87,7 @@ pub const InputValidationError = error{
     InvalidBackgroundValue,
     InvalidSaveFrameBuffCount,
     InvalidImageSaveOpts,
+     InvalidOutputNameFormat,
     InvalidFullStatsFormats,
     InvalidBenchCaptureBuff,
     InvalidRasterHaloPxOverride,
@@ -122,6 +124,7 @@ pub fn checkRenderInps(
 ) InputValidationError!ValidSummary {
     try checkTopLevelAndRenderGroups(render_groups, config);
     try checkRasterConfig(config);
+     try imageio.validateOutputNameFormat(config.output_name_format);
     try checkMeshesMetadata(meshes, cam_inps);
     try checkCameras(cam_inps, config);
 
@@ -321,7 +324,7 @@ fn checkMeshesMetadata(
         }
         if (mesh.connect.table.cols_num != expected_nodes_per_elem or
             mesh.connect.table_mem.len !=
-                mesh.connect.table.rows_num * mesh.connect.table.cols_num)
+             mesh.connect.table.rows_num * mesh.connect.table.cols_num)
         {
             return error.InvalidConnectivityDimensions;
         }
@@ -332,7 +335,7 @@ fn checkMeshesMetadata(
                 disp_field.array.dims[1] != mesh.coords.mat.rows_num or
                 disp_field.array.dims[2] != 3 or
                 disp_field.array_mem.len !=
-                    disp_field.array.dims[0] * disp_field.array.dims[1] * disp_field.array.dims[2])
+                 disp_field.array.dims[0] * disp_field.array.dims[1] * disp_field.array.dims[2])
             {
                 return error.InvalidDisplacementDimensions;
             }

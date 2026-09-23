@@ -29,16 +29,18 @@ hole_loc_y = plate_height/2;
 hole_circ = 2*Pi*hole_rad;
 
 // Mesh variables
-MR = 1;
-file_name = Sprintf("platehole3d_%g.msh", MR);
+MR = 2;
+file_name = Sprintf("platehole3d_%gmr.msh", MR);
 
 elem_order = 2;
 second_ord_incomp = 1;
 
+bias_rad = 1.2; // > 1.0 refines elements near the hole
+
 plate_thick_layers = MR;
 hole_sect_nodes = 2*Floor((5*MR - 1)/2)+1; // Must be odd
 plate_rad_nodes = 2*Floor((5*MR - 1)/2)+1;
-plate_diff_nodes = 2*Floor((4*MR - 1)/2); // numbers of nodes along the rectangular extension
+plate_diff_nodes = MR + 1; // numbers of nodes along the rectangular extension
 
 plate_edge_nodes = Floor((hole_sect_nodes-1)/2)+1;
 elem_size = hole_circ/(4*(hole_sect_nodes-1));
@@ -93,7 +95,8 @@ BooleanDifference{ Surface{s3,s4,s5,s6}; Delete; }{ Surface{s9}; Delete; }
 
 //------------------------------------------------------------------------------
 // Transfinite meshing (line element sizes and mapped meshing)
-Transfinite Curve{31,24,26,28} = plate_rad_nodes;
+Transfinite Curve{24,31} = plate_rad_nodes Using Progression bias_rad;
+Transfinite Curve{26,28} = plate_rad_nodes Using Progression 1.0/bias_rad;
 Transfinite Curve{1,5,3,7,23,29,30,34,14,17,19,22} = plate_edge_nodes;
 Transfinite Curve{32,33,25,27} = hole_sect_nodes;
 Transfinite Curve{4,2,6,20,18,21} = plate_diff_nodes;

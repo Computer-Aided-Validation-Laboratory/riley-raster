@@ -108,8 +108,13 @@ pub fn main(init: std.process.Init) !void {
     // 1. Setup paths and parameters
     // -------------------------------------------------------------------------
     var coord_sys = camera_mod.CameraCoordSys.opengl;
-    if (init.minimal.args.vector.len > 1) {
-        const arg = std.mem.span(init.minimal.args.vector[1]);
+    var arg_it = try std.process.Args.Iterator.initAllocator(
+        init.minimal.args,
+        aa,
+    );
+    defer arg_it.deinit();
+    _ = arg_it.next();
+    if (arg_it.next()) |arg| {
         if (std.mem.eql(u8, arg, "opencv")) {
             coord_sys = .opencv;
         }

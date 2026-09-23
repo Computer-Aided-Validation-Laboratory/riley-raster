@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "riley-raster"
-version = "2026.9.0"
+version = "2026.9.2"
 description = "A Zig software rasteriser for DIC UQ."
 authors = [
   { name = "scepticalrabbit (Lloyd Fletcher)", email = "thescepticalrabbit@gmail.com" },
@@ -28,7 +28,6 @@ dev = [
   "twine",
   "ziglang",
   "cython",
-  "opencv-python-headless",
 ]
 
 [tool.setuptools.packages.find]
@@ -47,3 +46,6 @@ riley = [
 
 [tool.pytest.ini_options]
 testpaths = ["src/riley/pytests"]
+filterwarnings = [
+  "ignore:.*Setting the shape on a NumPy array.*:DeprecationWarning",
+]

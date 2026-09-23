@@ -1,0 +1,57 @@
+name: Python Package Build
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_and_test:
+    name: Python Package Build & Test on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reclaim runner disk space (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h /
+
+      - name: Zig Setup
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Python setup
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Python install build tools and test dependencies
+        run: |
+          python -m pip install --upgrade pip build pytest
+
+      - name: Python build distribution packages (wheel and sdist)
+        run: |
+          python -m build
+
+      - name: Python install built wheel
+        run: |
+          python -m pip install --find-links dist riley-raster
+
+      - name: Python run test suite
+        run: |
+          python -m pytest --pyargs riley.pytests -s

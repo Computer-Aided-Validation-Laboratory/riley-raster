@@ -331,6 +331,7 @@ pub const CRasterConfig = extern struct {
     full_stats_save_pixel_occupancy_map: u8,
     full_stats_save_normals_map: u8,
     buffer_mode: u32,
+    output_name_format: ?[*:0]const u8,
 };
 
 const MeshInputBuilt = struct {
@@ -1627,6 +1628,9 @@ fn buildRasterConfig(
         ),
     };
     config.image_save_opts = save_opts;
+    if (in_config.output_name_format) |format| {
+        config.output_name_format = std.mem.span(format);
+    }
     config.full_stats_opts = .{
         .save_solver_csv = in_config.full_stats_save_solver_csv != 0,
         .save_iter_map = in_config.full_stats_save_iter_map != 0,

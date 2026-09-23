@@ -56,6 +56,12 @@ pub const ImageSaveOpts = struct {
     }
 };
 
+const OutputNameField = enum {
+    camera,
+    frame,
+    field,
+};
+
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
@@ -137,6 +143,7 @@ pub fn saveImages(
     frame_arr: *const ndarray.NDArray(F),
     channels_override: ?usize,
     opts_slice: []const ImageSaveOpts,
+    output_name_format: []const u8,
 ) !void {
     const save_dir = out_dir orelse return;
     var name_buff: [1024]u8 = undefined;
@@ -153,7 +160,7 @@ pub fn saveImages(
                 camera_idx,
                 frame_idx,
                 ff,
-                channels,
+                output_name_format,
             );
 
             try saveImage(io, save_dir, file_name, frame_arr, ff, save_opts);
@@ -167,26 +174,133 @@ pub fn formatFrameFieldBaseName(
     camera_idx: usize,
     frame_idx: usize,
     field_idx: usize,
-    channels: usize,
+    output_name_format: []const u8,
 ) ![]const u8 {
-    return if (channels == 1)
-        std.fmt.bufPrint(
-            buff,
-            "cam{d}_frame{d}_field{d}",
-            .{ camera_idx, frame_idx, field_idx },
-        )
-    else if (channels == 3)
-        std.fmt.bufPrint(
-            buff,
-            "cam{d}_frame{d}_field{d}_rgb",
-            .{ camera_idx, frame_idx, field_idx },
-        )
-    else
-        std.fmt.bufPrint(
-            buff,
-            "cam{d}_frame{d}_field{d}_{d}",
-            .{ camera_idx, frame_idx, field_idx, field_idx + channels - 1 },
+    try validateOutputNameFormat(output_name_format);
+    var out_idx: usize = 0;
+    var in_idx: usize = 0;
+    while (in_idx < output_name_format.len) {
+        if (output_name_format[in_idx] != '{') {
+            if (out_idx >= buff.len) return error.NoSpaceLeft;
+            buff[out_idx] = output_name_format[in_idx];
+            out_idx += 1;
+            in_idx += 1;
+            continue;
+        }
+        const close_rel = std.mem.indexOfScalar(
+            u8,
+            output_name_format[in_idx + 1 ..],
+            '}',
+        ) orelse return error.InvalidOutputNameFormat;
+        const close = in_idx + 1 + close_rel;
+        const expression = output_name_format[in_idx + 1 .. close];
+        const colon = std.mem.indexOfScalar(u8, expression, ':');
+        const name = if (colon) |idx| expression[0..idx] else expression;
+        const spec = if (colon) |idx| expression[idx + 1 ..] else "";
+
+        const field = std.meta.stringToEnum(OutputNameField, name) orelse
+            return error.InvalidOutputNameFormat;
+        const value = switch (field) {
+            .camera => camera_idx,
+            .frame => frame_idx,
+            .field => field_idx,
+        };
+        const width = try parseOutputNameWidth(spec);
+        var digits_buff: [32]u8 = undefined;
+        const digits = try std.fmt.bufPrint(&digits_buff, "{d}", .{value});
+        const padding = width -| digits.len;
+        if (out_idx + padding + digits.len > buff.len) return error.NoSpaceLeft;
+        @memset(buff[out_idx .. out_idx + padding], '0');
+        out_idx += padding;
+        @memcpy(buff[out_idx .. out_idx + digits.len], digits);
+        out_idx += digits.len;
+        in_idx = close + 1;
+    }
+    if (out_idx == 0) return error.InvalidOutputNameFormat;
+    return buff[0..out_idx];
+}
+
+pub fn validateOutputNameFormat(output_name_format: []const u8) !void {
+    if (output_name_format.len == 0) return error.InvalidOutputNameFormat;
+    var in_idx: usize = 0;
+    while (in_idx < output_name_format.len) {
+        const char = output_name_format[in_idx];
+        if (char == '/' or char == '\\' or char == '}')
+            return error.InvalidOutputNameFormat;
+        if (char != '{') {
+            in_idx += 1;
+            continue;
+        }
+        const close_rel = std.mem.indexOfScalar(
+            u8,
+            output_name_format[in_idx + 1 ..],
+            '}',
+        ) orelse return error.InvalidOutputNameFormat;
+        const close = in_idx + 1 + close_rel;
+        const expression = output_name_format[in_idx + 1 .. close];
+        if (std.mem.indexOfScalar(u8, expression, '{') != null)
+            return error.InvalidOutputNameFormat;
+        const colon = std.mem.indexOfScalar(u8, expression, ':');
+        const name = if (colon) |idx| expression[0..idx] else expression;
+        const spec = if (colon) |idx| expression[idx + 1 ..] else "";
+        _ = std.meta.stringToEnum(OutputNameField, name) orelse
+            return error.InvalidOutputNameFormat;
+        _ = try parseOutputNameWidth(spec);
+        in_idx = close + 1;
+    }
+}
+
+fn parseOutputNameWidth(spec: []const u8) !usize {
+    if (spec.len == 0) return 0;
+    if (spec[0] != '0') return error.InvalidOutputNameFormat;
+    const digits = if (spec[spec.len - 1] == 'd') spec[1 .. spec.len - 1] else spec[1..];
+    if (digits.len == 0) return error.InvalidOutputNameFormat;
+    const width = std.fmt.parseInt(usize, digits, 10) catch
+        return error.InvalidOutputNameFormat;
+    if (width > 32) return error.InvalidOutputNameFormat;
+    return width;
+}
+
+test "output name format expands fields and zero padding" {
+    var buff: [64]u8 = undefined;
+    const name = try formatFrameFieldBaseName(
+        &buff,
+        2,
+        7,
+        3,
+        "frame{frame:04}_{camera}_field{field}",
+    );
+    try std.testing.expectEqualStrings("frame0007_2_field3", name);
+}
+
+test "output name format rejects invalid templates" {
+    const invalid_formats = [_][]const u8{
+        "",
+        "cam{rabbits}",
+        "cam{camera",
+        "cam}camera_frame{frame}",
+        "cam{camera}}_frame{frame}",
+        "cam{{camera}}",
+        "cam{camera:4}",
+        "cam{camera:0}",
+        "cam{camera:033}",
+        "folder/frame{frame}",
+        "folder\\frame{frame}",
+    };
+    for (invalid_formats) |format| {
+        try std.testing.expectError(
+            error.InvalidOutputNameFormat,
+            validateOutputNameFormat(format),
         );
+    }
+}
+
+test "output name format reports a short destination buffer" {
+    var buff: [4]u8 = undefined;
+    try std.testing.expectError(
+        error.NoSpaceLeft,
+        formatFrameFieldBaseName(&buff, 0, 12345, 0, "{frame}"),
+    );
 }
 
 pub fn savePPM(
