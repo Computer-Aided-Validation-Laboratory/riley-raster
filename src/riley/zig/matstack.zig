@@ -22,6 +22,7 @@ const TestType = F;
 pub const Mat22f = Mat22T(buildconfig.F);
 pub const Mat33f = Mat33T(buildconfig.F);
 pub const Mat44f = Mat44T(buildconfig.F);
+pub const MatrixInversionError = error{SingularMatrix};
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -74,6 +75,17 @@ pub fn MatStack(
             return .{ .slice = slice_in[0..elem_n].* };
         }
 
+        /// Builds a row-major matrix without requiring callers to flatten rows.
+        pub fn initRows(rows: [rows_n][cols_n]T) Self {
+            var mat: Self = undefined;
+            inline for (0..rows_n) |row| {
+                inline for (0..cols_n) |col| {
+                    mat.set(row, col, rows[row][col]);
+                }
+            }
+            return mat;
+        }
+
         pub fn get(self: *const Self, row: usize, col: usize) T {
             return self.slice[(row * cols_n) + col];
         }
@@ -92,7 +104,7 @@ pub fn MatStack(
 
         pub fn getColVec(self: *const Self, col: usize) VecStack(rows_n, T) {
             var col_vec: [rows_n]T = undefined;
-            for (0..rows_n) |rr| {
+            inline for (0..rows_n) |rr| {
                 col_vec[rr] = self.get(rr, col);
             }
             const vec = VecStack(rows_n, T).initSlice(&col_vec);
@@ -126,7 +138,7 @@ pub fn MatStack(
             comptime vec_len: usize,
             vec: VecStack(vec_len, T),
         ) void {
-            for (0..vec_len) |cc| {
+            inline for (0..vec_len) |cc| {
                 self.set(row, cc + col_start, vec.get(cc));
             }
         }
@@ -138,7 +150,7 @@ pub fn MatStack(
             comptime vec_len: usize,
             vec: VecStack(vec_len, T),
         ) void {
-            for (0..vec_len) |rr| {
+            inline for (0..vec_len) |rr| {
                 self.set(rr + row_start, col, vec.get(rr));
             }
         }
@@ -149,22 +161,21 @@ pub fn MatStack(
             col_start: usize,
             comptime mat_rows: usize,
             comptime mat_cols: usize,
-            mat: MatStack(mat_rows, mat_rows, T),
+            mat: MatStack(mat_rows, mat_cols, T),
         ) void {
-            for (0..mat_rows) |rr| {
-                for (0..mat_cols) |cc| {
+            inline for (0..mat_rows) |rr| {
+                inline for (0..mat_cols) |cc| {
                     self.set(rr + row_start, cc + col_start, mat.get(rr, cc));
                 }
             }
         }
 
-        pub fn transpose(self: *const Self) Self {
-            var mat_out: Self = undefined;
+        pub fn transpose(self: *const Self) MatStack(cols_n, rows_n, T) {
+            var mat_out: MatStack(cols_n, rows_n, T) = undefined;
 
-            for (0..rows_n) |ii| {
-                for (ii..cols_n) |jj| {
-                    mat_out.set(ii, jj, self.get(jj, ii));
-                    mat_out.set(jj, ii, self.get(ii, jj));
+            inline for (0..rows_n) |row| {
+                inline for (0..cols_n) |col| {
+                    mat_out.set(col, row, self.get(row, col));
                 }
             }
 
@@ -190,7 +201,7 @@ pub fn MatStack(
         pub fn add(self: *const Self, to_add: Self) Self {
             var mat_out: Self = undefined;
 
-            for (0..elem_n) |ee| {
+            inline for (0..elem_n) |ee| {
                 mat_out.slice[ee] = self.slice[ee] + to_add.slice[ee];
             }
 
@@ -200,7 +211,7 @@ pub fn MatStack(
         pub fn sub(self: *const Self, to_sub: Self) Self {
             var mat_out: Self = undefined;
 
-            for (0..elem_n) |ee| {
+            inline for (0..elem_n) |ee| {
                 mat_out.slice[ee] = self.slice[ee] - to_sub.slice[ee];
             }
 
@@ -210,7 +221,7 @@ pub fn MatStack(
         pub fn mulScal(self: *const Self, scal: T) Self {
             var mat_out: Self = undefined;
 
-            for (0..elem_n) |ee| {
+            inline for (0..elem_n) |ee| {
                 mat_out.slice[ee] = scal * self.slice[ee];
             }
 
@@ -221,9 +232,9 @@ pub fn MatStack(
             var vec_out: VecStack(rows_n, T) = undefined;
             var sum: T = 0;
 
-            for (0..rows_n) |rr| {
+            inline for (0..rows_n) |rr| {
                 sum = 0;
-                for (0..cols_n) |cc| {
+                inline for (0..cols_n) |cc| {
                     sum += self.get(rr, cc) * vec.get(cc);
                 }
                 vec_out.set(rr, sum);
@@ -236,11 +247,11 @@ pub fn MatStack(
             var mat_out: Self = undefined;
             var sum: T = 0;
 
-            for (0..rows_n) |rr| {
-                for (0..cols_n) |cc| {
+            inline for (0..rows_n) |rr| {
+                inline for (0..cols_n) |cc| {
                     sum = 0;
 
-                    for (0..cols_n) |mm| {
+                    inline for (0..cols_n) |mm| {
                         sum += self.get(rr, mm) * to_mult.get(mm, cc);
                     }
 
@@ -295,8 +306,21 @@ pub const Mat22Ops = struct {
     pub fn inv(comptime T: type, mat22: Mat22T(T)) Mat22T(T) {
         var inv_mat: Mat22T(T) = adj(T, mat22);
         const mat_det: T = det(T, mat22);
+        std.debug.assert(std.math.isFinite(mat_det) and mat_det != 0);
         inv_mat = inv_mat.mulScal(1 / mat_det);
         return inv_mat;
+    }
+
+    pub fn invChecked(
+        comptime T: type,
+        mat22: Mat22T(T),
+        min_abs_det: T,
+    ) MatrixInversionError!Mat22T(T) {
+        const mat_det = det(T, mat22);
+        if (!std.math.isFinite(mat_det) or @abs(mat_det) <= min_abs_det) {
+            return error.SingularMatrix;
+        }
+        return inv(T, mat22);
     }
 };
 
@@ -320,7 +344,9 @@ pub const Mat33Ops = struct {
     ) Mat33T(T) {
         var inv33: Mat33T(T) = undefined;
 
-        const detm = 1 / det(T, mat33);
+        const mat_det = det(T, mat33);
+        std.debug.assert(std.math.isFinite(mat_det) and mat_det != 0);
+        const detm = 1 / mat_det;
 
         // Calculate the cofactors and transpose in one step
         inv33.slice[0] = detm * (mat33.get(1, 1) * mat33.get(2, 2) - //
@@ -343,6 +369,18 @@ pub const Mat33Ops = struct {
             mat33.get(0, 1) * mat33.get(1, 0));
 
         return inv33;
+    }
+
+    pub fn invChecked(
+        comptime T: type,
+        mat33: Mat33T(T),
+        min_abs_det: T,
+    ) MatrixInversionError!Mat33T(T) {
+        const mat_det = det(T, mat33);
+        if (!std.math.isFinite(mat_det) or @abs(mat_det) <= min_abs_det) {
+            return error.SingularMatrix;
+        }
+        return inv(T, mat33);
     }
 };
 
@@ -400,6 +438,7 @@ pub const Mat44Ops = struct {
         const adj_ab_dc = adj_ab.mulMat(adj_dc);
 
         const det_m: T = det_a * det_d + det_b * det_c - adj_ab_dc.trace();
+        std.debug.assert(std.math.isFinite(det_m) and det_m != 0);
 
         var inv_a = mat_a.mulScal(det_d);
         const b_adj_dc = mat_b.mulMat(adj_dc);
@@ -432,6 +471,18 @@ pub const Mat44Ops = struct {
 
         mat_inv = mat_inv.mulScal(1 / det_m);
         return mat_inv;
+    }
+
+    pub fn invChecked(
+        comptime T: type,
+        mat: Mat44T(T),
+        min_abs_det: T,
+    ) MatrixInversionError!Mat44T(T) {
+        const mat_det = det(T, mat);
+        if (!std.math.isFinite(mat_det) or @abs(mat_det) <= min_abs_det) {
+            return error.SingularMatrix;
+        }
+        return inv(T, mat);
     }
 
     pub fn mulVec3(comptime T: type, mat: Mat44T(T), vec: Vec3T(T)) Vec3T(T) {
@@ -522,6 +573,22 @@ test "Mat22f.transpose" {
     try expectEqual(mat_exp, mat0.transpose());
 }
 
+test "MatStack rectangular transpose and row construction" {
+    const Mat23 = MatStack(2, 3, TestType);
+    const Mat32 = MatStack(3, 2, TestType);
+    const mat = Mat23.initRows(.{
+        .{ 1, 2, 3 },
+        .{ 4, 5, 6 },
+    });
+    const expected = Mat32.initRows(.{
+        .{ 1, 4 },
+        .{ 2, 5 },
+        .{ 3, 6 },
+    });
+
+    try expectEqual(expected, mat.transpose());
+}
+
 test "Mat22f.mulScal" {
     const m0 = [_]TestType{ 1, 2, 3, 4 };
     const mat0 = Mat22f.initSlice(&m0);
@@ -605,6 +672,35 @@ test "Mat22Ops.inv" {
     const m_neg_exp = [_]TestType{ -2.0, 1.0, 1.5, -0.5 };
     const mat_neg_exp = Mat22f.initSlice(&m_neg_exp);
     try expectEqual(mat_neg_exp, Mat22Ops.inv(TestType, mat_neg));
+}
+
+test "Mat22Ops.invChecked rejects singular and near-singular matrices" {
+    const valid = Mat22f.initRows(.{
+        .{ 4, 2 },
+        .{ 3, 2 },
+    });
+    try expectEqual(
+        Mat22Ops.inv(TestType, valid),
+        try Mat22Ops.invChecked(TestType, valid, 1.0e-8),
+    );
+
+    const singular = Mat22f.initRows(.{
+        .{ 1, 2 },
+        .{ 2, 4 },
+    });
+    try std.testing.expectError(
+        error.SingularMatrix,
+        Mat22Ops.invChecked(TestType, singular, 0),
+    );
+
+    const near_singular = Mat22f.initRows(.{
+        .{ 1, 0 },
+        .{ 0, 1.0e-10 },
+    });
+    try std.testing.expectError(
+        error.SingularMatrix,
+        Mat22Ops.invChecked(TestType, near_singular, 1.0e-8),
+    );
 }
 
 test "Mat33f.add" {
@@ -817,6 +913,18 @@ test "Mat33Ops.inv" {
     try expectEqual(mat_neg_exp, Mat33Ops.inv(TestType, mat_neg));
 }
 
+test "Mat33Ops.invChecked rejects singular matrices" {
+    const singular = Mat33f.initRows(.{
+        .{ 1, 2, 3 },
+        .{ 2, 4, 6 },
+        .{ 0, 1, 0 },
+    });
+    try std.testing.expectError(
+        error.SingularMatrix,
+        Mat33Ops.invChecked(TestType, singular, 0),
+    );
+}
+
 test "Mat44f.insertRowVec" {
     var mat0 = Mat44f.initZeros();
     const vec0 = Vec2f.initOnes();
@@ -865,7 +973,7 @@ test "Mat44f.insertColVec" {
     try expectEqual(mat_exp3, mat0);
 }
 
-test "Mat44f.inertSubMat" {
+test "Mat44f.insertSubMat" {
     var mat0 = Mat44f.initZeros();
     const mat1 = Mat22f.initOnes();
     const mat2 = Mat33f.initOnes();
@@ -881,6 +989,24 @@ test "Mat44f.inertSubMat" {
 
     mat0.insertSubMat(0, 0, 3, 3, mat2);
     try expectEqual(mat_exp2, mat0);
+}
+
+test "MatStack insertSubMat accepts rectangular matrices" {
+    const Mat23 = MatStack(2, 3, TestType);
+    var destination = Mat44f.initZeros();
+    const source = Mat23.initRows(.{
+        .{ 1, 2, 3 },
+        .{ 4, 5, 6 },
+    });
+    destination.insertSubMat(1, 0, 2, 3, source);
+
+    const expected = Mat44f.initRows(.{
+        .{ 0, 0, 0, 0 },
+        .{ 1, 2, 3, 0 },
+        .{ 4, 5, 6, 0 },
+        .{ 0, 0, 0, 0 },
+    });
+    try expectEqual(expected, destination);
 }
 
 test "Mat44f.mulMat" {
@@ -996,4 +1122,17 @@ test "Mat44Ops.inv.negative_det" {
     };
     const mat_exp = Mat44f.initSlice(&m_exp);
     try expectEqual(mat_exp, Mat44Ops.inv(TestType, mat0));
+}
+
+test "Mat44Ops.invChecked rejects singular matrices" {
+    const singular = Mat44f.initRows(.{
+        .{ 1, 0, 0, 0 },
+        .{ 0, 1, 0, 0 },
+        .{ 0, 0, 1, 0 },
+        .{ 0, 0, 0, 0 },
+    });
+    try std.testing.expectError(
+        error.SingularMatrix,
+        Mat44Ops.invChecked(TestType, singular, 0),
+    );
 }
