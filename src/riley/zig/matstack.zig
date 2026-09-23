@@ -322,6 +322,25 @@ pub const Mat22Ops = struct {
         }
         return inv(T, mat22);
     }
+
+    /// Solves `mat22 * x = rhs` while rejecting singular or ill-conditioned
+    /// matrices according to the caller-provided determinant threshold.
+    pub fn solveChecked(
+        comptime T: type,
+        mat22: Mat22T(T),
+        rhs: Vec2T(T),
+        min_abs_det: T,
+    ) MatrixInversionError!Vec2T(T) {
+        const mat_det = det(T, mat22);
+        if (!std.math.isFinite(mat_det) or @abs(mat_det) <= min_abs_det) {
+            return error.SingularMatrix;
+        }
+        const x = (mat22.get(1, 1) * rhs.get(0) -
+            mat22.get(0, 1) * rhs.get(1)) / mat_det;
+        const y = (mat22.get(0, 0) * rhs.get(1) -
+            mat22.get(1, 0) * rhs.get(0)) / mat_det;
+        return Vec2T(T).initSlice(&[_]T{ x, y });
+    }
 };
 
 pub const Mat33Ops = struct {
@@ -700,6 +719,28 @@ test "Mat22Ops.invChecked rejects singular and near-singular matrices" {
     try std.testing.expectError(
         error.SingularMatrix,
         Mat22Ops.invChecked(TestType, near_singular, 1.0e-8),
+    );
+}
+
+test "Mat22Ops.solveChecked solves and rejects singular systems" {
+    const mat = Mat22f.initRows(.{
+        .{ 4, 2 },
+        .{ 3, 2 },
+    });
+    const rhs = Vec2f.initSlice(&[_]TestType{ 6, 5 });
+    const expected = Vec2f.initSlice(&[_]TestType{ 1, 1 });
+    try expectEqual(
+        expected,
+        try Mat22Ops.solveChecked(TestType, mat, rhs, 1.0e-8),
+    );
+
+    const singular = Mat22f.initRows(.{
+        .{ 1, 2 },
+        .{ 2, 4 },
+    });
+    try std.testing.expectError(
+        error.SingularMatrix,
+        Mat22Ops.solveChecked(TestType, singular, rhs, 0),
     );
 }
 

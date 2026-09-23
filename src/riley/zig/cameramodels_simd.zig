@@ -158,25 +158,24 @@ pub fn forwardDistortionWithJacSIMD(
 
         if (distortion.isTiltActive()) {
             const matrix = distortion.getForwardTiltMatrix();
-            const numerator_x = @as(VecSF, @splat(matrix[0][0])) * x_d +
-                @as(VecSF, @splat(matrix[0][1])) * y_d +
-                @as(VecSF, @splat(matrix[0][2]));
-            const numerator_y = @as(VecSF, @splat(matrix[1][0])) * x_d +
-                @as(VecSF, @splat(matrix[1][1])) * y_d +
-                @as(VecSF, @splat(matrix[1][2]));
-            const denominator = @as(VecSF, @splat(matrix[2][0])) * x_d +
-                @as(VecSF, @splat(matrix[2][1])) * y_d +
-                @as(VecSF, @splat(matrix[2][2]));
+            const m00: VecSF = @splat(matrix.get(0, 0));
+            const m01: VecSF = @splat(matrix.get(0, 1));
+            const m02: VecSF = @splat(matrix.get(0, 2));
+            const m10: VecSF = @splat(matrix.get(1, 0));
+            const m11: VecSF = @splat(matrix.get(1, 1));
+            const m12: VecSF = @splat(matrix.get(1, 2));
+            const m20: VecSF = @splat(matrix.get(2, 0));
+            const m21: VecSF = @splat(matrix.get(2, 1));
+            const m22: VecSF = @splat(matrix.get(2, 2));
+            const numerator_x = m00 * x_d + m01 * y_d + m02;
+            const numerator_y = m10 * x_d + m11 * y_d + m12;
+            const denominator = m20 * x_d + m21 * y_d + m22;
             const inv_denominator = @as(VecSF, @splat(1.0)) / denominator;
             const inv_denominator_sq = inv_denominator * inv_denominator;
-            const tilt_j11 = (@as(VecSF, @splat(matrix[0][0])) * denominator -
-                numerator_x * @as(VecSF, @splat(matrix[2][0]))) * inv_denominator_sq;
-            const tilt_j12 = (@as(VecSF, @splat(matrix[0][1])) * denominator -
-                numerator_x * @as(VecSF, @splat(matrix[2][1]))) * inv_denominator_sq;
-            const tilt_j21 = (@as(VecSF, @splat(matrix[1][0])) * denominator -
-                numerator_y * @as(VecSF, @splat(matrix[2][0]))) * inv_denominator_sq;
-            const tilt_j22 = (@as(VecSF, @splat(matrix[1][1])) * denominator -
-                numerator_y * @as(VecSF, @splat(matrix[2][1]))) * inv_denominator_sq;
+            const tilt_j11 = (m00 * denominator - numerator_x * m20) * inv_denominator_sq;
+            const tilt_j12 = (m01 * denominator - numerator_x * m21) * inv_denominator_sq;
+            const tilt_j21 = (m10 * denominator - numerator_y * m20) * inv_denominator_sq;
+            const tilt_j22 = (m11 * denominator - numerator_y * m21) * inv_denominator_sq;
             const lens_j11 = j11;
             const lens_j12 = j12;
             const lens_j21 = j21;
@@ -428,15 +427,18 @@ fn removeTiltSIMD(
     if (!distortion.isTiltActive()) return .{ .x = x_d, .y = y_d };
 
     const matrix = try distortion.getInverseTiltMatrix();
-    const numerator_x = @as(VecSF, @splat(matrix[0][0])) * x_d +
-        @as(VecSF, @splat(matrix[0][1])) * y_d +
-        @as(VecSF, @splat(matrix[0][2]));
-    const numerator_y = @as(VecSF, @splat(matrix[1][0])) * x_d +
-        @as(VecSF, @splat(matrix[1][1])) * y_d +
-        @as(VecSF, @splat(matrix[1][2]));
-    const denominator = @as(VecSF, @splat(matrix[2][0])) * x_d +
-        @as(VecSF, @splat(matrix[2][1])) * y_d +
-        @as(VecSF, @splat(matrix[2][2]));
+    const m00: VecSF = @splat(matrix.get(0, 0));
+    const m01: VecSF = @splat(matrix.get(0, 1));
+    const m02: VecSF = @splat(matrix.get(0, 2));
+    const m10: VecSF = @splat(matrix.get(1, 0));
+    const m11: VecSF = @splat(matrix.get(1, 1));
+    const m12: VecSF = @splat(matrix.get(1, 2));
+    const m20: VecSF = @splat(matrix.get(2, 0));
+    const m21: VecSF = @splat(matrix.get(2, 1));
+    const m22: VecSF = @splat(matrix.get(2, 2));
+    const numerator_x = m00 * x_d + m01 * y_d + m02;
+    const numerator_y = m10 * x_d + m11 * y_d + m12;
+    const denominator = m20 * x_d + m21 * y_d + m22;
     const singular = @abs(denominator) < @as(VecSF, @splat(tol.distortion.det));
     if (@reduce(.Or, lane_active & singular)) {
         return error.SingularTiltProjection;

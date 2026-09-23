@@ -87,10 +87,10 @@ fn inverseDistortionWithIters(
             };
         }
 
-        const jac00 = fwd.jac[0][0];
-        const jac01 = fwd.jac[0][1];
-        const jac10 = fwd.jac[1][0];
-        const jac11 = fwd.jac[1][1];
+        const jac00 = fwd.jac.get(0, 0);
+        const jac01 = fwd.jac.get(0, 1);
+        const jac10 = fwd.jac.get(1, 0);
+        const jac11 = fwd.jac.get(1, 1);
         const det = jac00 * jac11 - jac01 * jac10;
 
         if (@abs(det) < tol.distortion.det) {

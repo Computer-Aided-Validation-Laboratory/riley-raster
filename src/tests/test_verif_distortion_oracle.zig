@@ -14,6 +14,7 @@ const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const cam = @import("../riley/zig/camera.zig");
 const csvio = @import("../riley/zig/csvio.zig");
+const Mat22f = @import("../riley/zig/matstack.zig").Mat22f;
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const cases_path = "gold/verif/distortion_oracle_cases.csv";
@@ -271,7 +272,7 @@ fn checkSIMDPoints(cases: anytype, points: anytype) !void {
     }
 }
 
-fn modelJacobian(model: cam.DistortionModel, x: F, y: F) ?[2][2]F {
+fn modelJacobian(model: cam.DistortionModel, x: F, y: F) ?Mat22f {
     return switch (model) {
         .brown_conrady => |brown| brown.forwardWithJac(x, y).jac,
         .brown_conrady_ext => |brown| brown.forwardWithJac(x, y).jac,
@@ -302,7 +303,7 @@ fn checkJacobians(cases: anytype, jacobians: anytype) !void {
                     tolerance.jac_abs,
                     tolerance.jac_rel * scale,
                 );
-                if (@abs(actual[jj][ii] - expected[jj][ii]) > allowed) {
+                if (@abs(actual.get(jj, ii) - expected[jj][ii]) > allowed) {
                     std.debug.print(
                         "distortion oracle Jacobian mismatch: case={d}, " ++
                             "point={d}, entry=({d},{d}), expected={e}, " ++
@@ -313,7 +314,7 @@ fn checkJacobians(cases: anytype, jacobians: anytype) !void {
                             jj,
                             ii,
                             expected[jj][ii],
-                            actual[jj][ii],
+                            actual.get(jj, ii),
                             allowed,
                         },
                     );

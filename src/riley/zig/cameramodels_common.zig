@@ -10,6 +10,14 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
+const matstack = @import("matstack.zig");
+const Mat22f = matstack.Mat22f;
+const Mat22Ops = matstack.Mat22Ops;
+const Mat33f = matstack.Mat33f;
+const Mat33Ops = matstack.Mat33Ops;
+const Vec2f = @import("vecstack.zig").Vec2f;
+const Vec3f = @import("vecstack.zig").Vec3f;
+
 const cfg = buildconfig.config;
 const tol = cfg.tol;
 
@@ -28,7 +36,7 @@ pub const DistortionInvResult = struct {
 pub const DistortionForwardJacResult = struct {
     x_d: F,
     y_d: F,
-    jac: [2][2]F,
+    jac: Mat22f,
 };
 
 pub const BrownConrady = struct {
@@ -109,8 +117,11 @@ pub const BrownConradyExt = struct {
         var prepared = self;
         if (prepared.isTiltActive()) {
             const forward_matrix = calcTiltMatrix(self.tau_x, self.tau_y);
-            const inverse_matrix = invertMat33(forward_matrix) orelse
-                return error.SingularTiltProjection;
+            const inverse_matrix = Mat33Ops.invChecked(
+                F,
+                forward_matrix,
+                tol.distortion.det,
+            ) catch return error.SingularTiltProjection;
             prepared.tilt_projection = .{
                 .forward_matrix = forward_matrix,
                 .inverse_matrix = inverse_matrix,
@@ -124,15 +135,18 @@ pub const BrownConradyExt = struct {
             @abs(self.tau_y) > tol.distortion.tilt_identity;
     }
 
-    pub fn getForwardTiltMatrix(self: BrownConradyExt) [3][3]F {
+    pub fn getForwardTiltMatrix(self: BrownConradyExt) Mat33f {
         if (self.tilt_projection) |projection| return projection.forward_matrix;
         return calcTiltMatrix(self.tau_x, self.tau_y);
     }
 
-    pub fn getInverseTiltMatrix(self: BrownConradyExt) ![3][3]F {
+    pub fn getInverseTiltMatrix(self: BrownConradyExt) !Mat33f {
         if (self.tilt_projection) |projection| return projection.inverse_matrix;
-        return invertMat33(calcTiltMatrix(self.tau_x, self.tau_y)) orelse
-            error.SingularTiltProjection;
+        return Mat33Ops.invChecked(
+            F,
+            calcTiltMatrix(self.tau_x, self.tau_y),
+            tol.distortion.det,
+        ) catch error.SingularTiltProjection;
     }
 
     pub fn forward(
@@ -154,7 +168,7 @@ pub const BrownConradyExt = struct {
         return .{
             .x_d = tilt.coords[0],
             .y_d = tilt.coords[1],
-            .jac = mulJac22(tilt.jac, lens.jac),
+            .jac = tilt.jac.mulMat(lens.jac),
         };
     }
 
@@ -171,15 +185,12 @@ pub const BrownConradyExt = struct {
         if (!self.isTiltActive()) {
             return .{
                 .coords = .{ x, y },
-                .jac = .{ .{ 1.0, 0.0 }, .{ 0.0, 1.0 } },
+                .jac = Mat22f.initIdentity(),
             };
         }
         return applyHomography(self.getForwardTiltMatrix(), x, y) catch .{
             .coords = .{ std.math.nan(F), std.math.nan(F) },
-            .jac = .{
-                .{ std.math.nan(F), std.math.nan(F) },
-                .{ std.math.nan(F), std.math.nan(F) },
-            },
+            .jac = Mat22f.initFill(std.math.nan(F)),
         };
     }
 
@@ -206,10 +217,10 @@ pub const BrownConradyExt = struct {
         const r4 = r2 * r2;
         result.x_d += self.s1 * r2 + self.s2 * r4;
         result.y_d += self.s3 * r2 + self.s4 * r4;
-        result.jac[0][0] += 2.0 * x * (self.s1 + 2.0 * self.s2 * r2);
-        result.jac[0][1] += 2.0 * y * (self.s1 + 2.0 * self.s2 * r2);
-        result.jac[1][0] += 2.0 * x * (self.s3 + 2.0 * self.s4 * r2);
-        result.jac[1][1] += 2.0 * y * (self.s3 + 2.0 * self.s4 * r2);
+        result.jac.set(0, 0, result.jac.get(0, 0) + 2.0 * x * (self.s1 + 2.0 * self.s2 * r2));
+        result.jac.set(0, 1, result.jac.get(0, 1) + 2.0 * y * (self.s1 + 2.0 * self.s2 * r2));
+        result.jac.set(1, 0, result.jac.get(1, 0) + 2.0 * x * (self.s3 + 2.0 * self.s4 * r2));
+        result.jac.set(1, 1, result.jac.get(1, 1) + 2.0 * y * (self.s3 + 2.0 * self.s4 * r2));
         return result;
     }
 
@@ -238,15 +249,15 @@ pub const BrownConradyExt = struct {
 
 const TiltResult = struct {
     coords: [2]F,
-    jac: [2][2]F,
+    jac: Mat22f,
 };
 
 pub const TiltProjection = struct {
-    forward_matrix: [3][3]F,
-    inverse_matrix: [3][3]F,
+    forward_matrix: Mat33f,
+    inverse_matrix: Mat33f,
 };
 
-pub fn calcTiltMatrix(tau_x: F, tau_y: F) [3][3]F {
+pub fn calcTiltMatrix(tau_x: F, tau_y: F) Mat33f {
     const cos_x = @cos(tau_x);
     const sin_x = @sin(tau_x);
     const cos_y = @cos(tau_y);
@@ -254,17 +265,18 @@ pub fn calcTiltMatrix(tau_x: F, tau_y: F) [3][3]F {
     const r02 = -sin_y * cos_x;
     const r12 = sin_x;
     const r22 = cos_y * cos_x;
-    return .{
+    return Mat33f.initRows(.{
         .{ r22 * cos_y - r02 * sin_y, r22 * sin_y * sin_x + r02 * cos_y * sin_x, 0.0 },
         .{ -r12 * sin_y, r22 * cos_x + r12 * cos_y * sin_x, 0.0 },
         .{ sin_y, -cos_y * sin_x, r22 },
-    };
+    });
 }
 
-fn applyHomography(matrix: [3][3]F, x: F, y: F) !TiltResult {
-    const numerator_x = matrix[0][0] * x + matrix[0][1] * y + matrix[0][2];
-    const numerator_y = matrix[1][0] * x + matrix[1][1] * y + matrix[1][2];
-    const denominator = matrix[2][0] * x + matrix[2][1] * y + matrix[2][2];
+fn applyHomography(matrix: Mat33f, x: F, y: F) !TiltResult {
+    const projected = matrix.mulVec(Vec3f.initSlice(&[_]F{ x, y, 1.0 }));
+    const numerator_x = projected.get(0);
+    const numerator_y = projected.get(1);
+    const denominator = projected.get(2);
     if (!std.math.isFinite(denominator) or @abs(denominator) < tol.distortion.det) {
         return error.SingularTiltProjection;
     }
@@ -274,54 +286,16 @@ fn applyHomography(matrix: [3][3]F, x: F, y: F) !TiltResult {
     const inv_denominator_sq = inv_denominator * inv_denominator;
     return .{
         .coords = .{ out_x, out_y },
-        .jac = .{
+        .jac = Mat22f.initRows(.{
             .{
-                (matrix[0][0] * denominator - numerator_x * matrix[2][0]) * inv_denominator_sq,
-                (matrix[0][1] * denominator - numerator_x * matrix[2][1]) * inv_denominator_sq,
+                (matrix.get(0, 0) * denominator - numerator_x * matrix.get(2, 0)) * inv_denominator_sq,
+                (matrix.get(0, 1) * denominator - numerator_x * matrix.get(2, 1)) * inv_denominator_sq,
             },
             .{
-                (matrix[1][0] * denominator - numerator_y * matrix[2][0]) * inv_denominator_sq,
-                (matrix[1][1] * denominator - numerator_y * matrix[2][1]) * inv_denominator_sq,
+                (matrix.get(1, 0) * denominator - numerator_y * matrix.get(2, 0)) * inv_denominator_sq,
+                (matrix.get(1, 1) * denominator - numerator_y * matrix.get(2, 1)) * inv_denominator_sq,
             },
-        },
-    };
-}
-
-fn invertMat33(matrix: [3][3]F) ?[3][3]F {
-    const det = matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1]) -
-        matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0]) +
-        matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]);
-    if (!std.math.isFinite(det) or @abs(det) < tol.distortion.det) return null;
-    const inv_det = 1.0 / det;
-    return .{
-        .{
-            (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1]) * inv_det,
-            (matrix[0][2] * matrix[2][1] - matrix[0][1] * matrix[2][2]) * inv_det,
-            (matrix[0][1] * matrix[1][2] - matrix[0][2] * matrix[1][1]) * inv_det,
-        },
-        .{
-            (matrix[1][2] * matrix[2][0] - matrix[1][0] * matrix[2][2]) * inv_det,
-            (matrix[0][0] * matrix[2][2] - matrix[0][2] * matrix[2][0]) * inv_det,
-            (matrix[0][2] * matrix[1][0] - matrix[0][0] * matrix[1][2]) * inv_det,
-        },
-        .{
-            (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]) * inv_det,
-            (matrix[0][1] * matrix[2][0] - matrix[0][0] * matrix[2][1]) * inv_det,
-            (matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0]) * inv_det,
-        },
-    };
-}
-
-fn mulJac22(lhs: [2][2]F, rhs: [2][2]F) [2][2]F {
-    return .{
-        .{
-            lhs[0][0] * rhs[0][0] + lhs[0][1] * rhs[1][0],
-            lhs[0][0] * rhs[0][1] + lhs[0][1] * rhs[1][1],
-        },
-        .{
-            lhs[1][0] * rhs[0][0] + lhs[1][1] * rhs[1][0],
-            lhs[1][0] * rhs[0][1] + lhs[1][1] * rhs[1][1],
-        },
+        }),
     };
 }
 
@@ -339,14 +313,14 @@ fn invBrownConradyExtLens(
         if (@max(@abs(f0), @abs(f1)) < tol.distortion.resid) {
             return .{ .x = x, .y = y };
         }
-        const a = fwd.jac[0][0];
-        const b = fwd.jac[0][1];
-        const c = fwd.jac[1][0];
-        const d = fwd.jac[1][1];
-        const det = a * d - b * c;
-        if (@abs(det) < tol.distortion.det) return error.SingularJac;
-        const delta_x = (-f0 * d + b * f1) / det;
-        const delta_y = (c * f0 - a * f1) / det;
+        const delta = Mat22Ops.solveChecked(
+            F,
+            fwd.jac,
+            Vec2f.initSlice(&[_]F{ -f0, -f1 }),
+            tol.distortion.det,
+        ) catch return error.SingularJac;
+        const delta_x = delta.x();
+        const delta_y = delta.y();
         x += delta_x;
         y += delta_y;
         if (@max(@abs(delta_x), @abs(delta_y)) < tol.distortion.delta) {
@@ -426,10 +400,10 @@ pub const PolynomialMap = struct {
         return .{
             .x_d = distorted[0],
             .y_d = distorted[1],
-            .jac = .{
+            .jac = Mat22f.initRows(.{
                 .{ 1.0 + ddu_dx, ddu_dy },
                 .{ ddv_dx, 1.0 + ddv_dy },
-            },
+            }),
         };
     }
 
@@ -454,17 +428,14 @@ pub const PolynomialMap = struct {
                 return .{ .x = x, .y = y };
             }
 
-            const a = fwd.jac[0][0];
-            const b = fwd.jac[0][1];
-            const c = fwd.jac[1][0];
-            const d = fwd.jac[1][1];
-            const det = a * d - b * c;
-            if (@abs(det) < tol.distortion.det) {
-                return error.SingularJac;
-            }
-
-            const delta_x = (-f0 * d + b * f1) / det;
-            const delta_y = (c * f0 - a * f1) / det;
+            const delta = Mat22Ops.solveChecked(
+                F,
+                fwd.jac,
+                Vec2f.initSlice(&[_]F{ -f0, -f1 }),
+                tol.distortion.det,
+            ) catch return error.SingularJac;
+            const delta_x = delta.x();
+            const delta_y = delta.y();
             x += delta_x;
             y += delta_y;
 
@@ -601,6 +572,26 @@ test "BrownConradyExt prepared tilt matches direct evaluation" {
     const recovered = try prepared.inv(actual[0], actual[1]);
     try std.testing.expectApproxEqAbs(@as(F, 0.47), recovered.x, 2.0e-5);
     try std.testing.expectApproxEqAbs(@as(F, -0.29), recovered.y, 2.0e-5);
+}
+
+test "BrownConradyExt tilt matrices compose to identity" {
+    const distortion = BrownConradyExt{
+        .tau_x = 0.023,
+        .tau_y = -0.031,
+    };
+    const forward = distortion.getForwardTiltMatrix();
+    const inverse = try distortion.getInverseTiltMatrix();
+    const product = forward.mulMat(inverse);
+    const identity = Mat33f.initIdentity();
+    inline for (0..3) |row| {
+        inline for (0..3) |col| {
+            try std.testing.expectApproxEqAbs(
+                identity.get(row, col),
+                product.get(row, col),
+                1.0e-14,
+            );
+        }
+    }
 }
 
 test "BrownConradyExt rejects singular prepared tilt" {
@@ -792,17 +783,14 @@ fn invFromForwardWithJac(
             return .{ .x = x, .y = y };
         }
 
-        const a = fwd.jac[0][0];
-        const b = fwd.jac[0][1];
-        const c = fwd.jac[1][0];
-        const d = fwd.jac[1][1];
-        const det = a * d - b * c;
-        if (@abs(det) < tol.distortion.det) {
-            return error.SingularJac;
-        }
-
-        const delta_x = (-f0 * d + b * f1) / det;
-        const delta_y = (c * f0 - a * f1) / det;
+        const delta = Mat22Ops.solveChecked(
+            F,
+            fwd.jac,
+            Vec2f.initSlice(&[_]F{ -f0, -f1 }),
+            tol.distortion.det,
+        ) catch return error.SingularJac;
+        const delta_x = delta.x();
+        const delta_y = delta.y();
 
         x += delta_x;
         y += delta_y;
@@ -888,10 +876,10 @@ fn distortionForwardWithJacFromRadialScale(
     return .{
         .x_d = distorted[0],
         .y_d = distorted[1],
-        .jac = .{
+        .jac = Mat22f.initRows(.{
             .{ dx_fwd_dx, dx_fwd_dy },
             .{ dy_fwd_dx, dy_fwd_dy },
-        },
+        }),
     };
 }
 
