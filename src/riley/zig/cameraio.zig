@@ -58,12 +58,12 @@ pub fn saveCamera(
         const r_riley = camera_input.rot_world.matrix;
         const r_riley_t = r_riley.transpose();
         var r_opencv = r_riley_t;
-        r_opencv.slice[3] = -r_opencv.slice[3];
-        r_opencv.slice[4] = -r_opencv.slice[4];
-        r_opencv.slice[5] = -r_opencv.slice[5];
-        r_opencv.slice[6] = -r_opencv.slice[6];
-        r_opencv.slice[7] = -r_opencv.slice[7];
-        r_opencv.slice[8] = -r_opencv.slice[8];
+        r_opencv.set(1, 0, -r_opencv.get(1, 0));
+        r_opencv.set(1, 1, -r_opencv.get(1, 1));
+        r_opencv.set(1, 2, -r_opencv.get(1, 2));
+        r_opencv.set(2, 0, -r_opencv.get(2, 0));
+        r_opencv.set(2, 1, -r_opencv.get(2, 1));
+        r_opencv.set(2, 2, -r_opencv.get(2, 2));
 
         const r_opencv_c = r_opencv.mulVec(camera_input.pos_world);
         pos_val = @import("vecstack.zig").initVec3(

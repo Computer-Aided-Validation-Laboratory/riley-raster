@@ -34,14 +34,14 @@ pub fn MatStack(
     comptime T: type,
 ) type {
     return struct {
-        slice: [elem_n]T,
+        mat: [rows_n][cols_n]T,
 
         pub const elem_n: usize = rows_n * cols_n;
 
         const Self: type = @This();
 
         pub fn initFill(fill_val: T) Self {
-            return .{ .slice = [_]T{fill_val} ** elem_n };
+            return .{ .mat = [_][cols_n]T{[_]T{fill_val} ** cols_n} ** rows_n };
         }
 
         pub fn initZeros() Self {
@@ -72,7 +72,17 @@ pub fn MatStack(
         }
 
         pub fn initSlice(slice_in: []const T) Self {
-            return .{ .slice = slice_in[0..elem_n].* };
+            var mat: Self = undefined;
+            inline for (0..rows_n) |row| {
+                inline for (0..cols_n) |col| {
+                    mat.mat[row][col] = slice_in[(row * cols_n) + col];
+                }
+            }
+            return mat;
+        }
+
+        pub fn asSlice(self: *const Self) []const T {
+            return @as(*const [elem_n]T, @ptrCast(&self.mat))[0..];
         }
 
         /// Builds a row-major matrix without requiring callers to flatten rows.
@@ -87,18 +97,15 @@ pub fn MatStack(
         }
 
         pub fn get(self: *const Self, row: usize, col: usize) T {
-            return self.slice[(row * cols_n) + col];
+            return self.mat[row][col];
         }
 
         pub fn set(self: *Self, row: usize, col: usize, val: T) void {
-            self.slice[(row * cols_n) + col] = val;
+            self.mat[row][col] = val;
         }
 
         pub fn getRowVec(self: *const Self, row: usize) VecStack(cols_n, T) {
-            const start: usize = row * cols_n;
-            const end: usize = start + cols_n;
-            const row_slice: []const T = self.slice[start..end];
-            const vec = VecStack(cols_n, T).initSlice(row_slice);
+            const vec = VecStack(cols_n, T).initSlice(&self.mat[row]);
             return vec;
         }
 
@@ -201,8 +208,10 @@ pub fn MatStack(
         pub fn add(self: *const Self, to_add: Self) Self {
             var mat_out: Self = undefined;
 
-            inline for (0..elem_n) |ee| {
-                mat_out.slice[ee] = self.slice[ee] + to_add.slice[ee];
+            inline for (0..rows_n) |row| {
+                inline for (0..cols_n) |col| {
+                    mat_out.mat[row][col] = self.mat[row][col] + to_add.mat[row][col];
+                }
             }
 
             return mat_out;
@@ -211,8 +220,10 @@ pub fn MatStack(
         pub fn sub(self: *const Self, to_sub: Self) Self {
             var mat_out: Self = undefined;
 
-            inline for (0..elem_n) |ee| {
-                mat_out.slice[ee] = self.slice[ee] - to_sub.slice[ee];
+            inline for (0..rows_n) |row| {
+                inline for (0..cols_n) |col| {
+                    mat_out.mat[row][col] = self.mat[row][col] - to_sub.mat[row][col];
+                }
             }
 
             return mat_out;
@@ -221,8 +232,10 @@ pub fn MatStack(
         pub fn mulScal(self: *const Self, scal: T) Self {
             var mat_out: Self = undefined;
 
-            inline for (0..elem_n) |ee| {
-                mat_out.slice[ee] = scal * self.slice[ee];
+            inline for (0..rows_n) |row| {
+                inline for (0..cols_n) |col| {
+                    mat_out.mat[row][col] = scal * self.mat[row][col];
+                }
             }
 
             return mat_out;
@@ -262,13 +275,10 @@ pub fn MatStack(
         }
 
         pub fn matPrint(self: *const Self) void {
-            var ind: usize = 0;
-
             for (0..rows_n) |ii| {
                 print("[", .{});
                 for (0..cols_n) |jj| {
-                    ind = (ii * cols_n) + jj;
-                    print("{e:.3},", .{self.slice[ind]});
+                    print("{e:.3},", .{self.mat[ii][jj]});
                 }
                 print("]\n", .{});
             }
@@ -368,23 +378,23 @@ pub const Mat33Ops = struct {
         const detm = 1 / mat_det;
 
         // Calculate the cofactors and transpose in one step
-        inv33.slice[0] = detm * (mat33.get(1, 1) * mat33.get(2, 2) - //
+        inv33.mat[0][0] = detm * (mat33.get(1, 1) * mat33.get(2, 2) - //
             mat33.get(1, 2) * mat33.get(2, 1));
-        inv33.slice[1] = -detm * (mat33.get(0, 1) * mat33.get(2, 2) - //
+        inv33.mat[0][1] = -detm * (mat33.get(0, 1) * mat33.get(2, 2) - //
             mat33.get(0, 2) * mat33.get(2, 1));
-        inv33.slice[2] = detm * (mat33.get(0, 1) * mat33.get(1, 2) - //
+        inv33.mat[0][2] = detm * (mat33.get(0, 1) * mat33.get(1, 2) - //
             mat33.get(0, 2) * mat33.get(1, 1));
-        inv33.slice[3] = -detm * (mat33.get(1, 0) * mat33.get(2, 2) - //
+        inv33.mat[1][0] = -detm * (mat33.get(1, 0) * mat33.get(2, 2) - //
             mat33.get(1, 2) * mat33.get(2, 0));
-        inv33.slice[4] = detm * (mat33.get(0, 0) * mat33.get(2, 2) - //
+        inv33.mat[1][1] = detm * (mat33.get(0, 0) * mat33.get(2, 2) - //
             mat33.get(0, 2) * mat33.get(2, 0));
-        inv33.slice[5] = -detm * (mat33.get(0, 0) * mat33.get(1, 2) - //
+        inv33.mat[1][2] = -detm * (mat33.get(0, 0) * mat33.get(1, 2) - //
             mat33.get(0, 2) * mat33.get(1, 0));
-        inv33.slice[6] = detm * (mat33.get(1, 0) * mat33.get(2, 1) - //
+        inv33.mat[2][0] = detm * (mat33.get(1, 0) * mat33.get(2, 1) - //
             mat33.get(1, 1) * mat33.get(2, 0));
-        inv33.slice[7] = -detm * (mat33.get(0, 0) * mat33.get(2, 1) - //
+        inv33.mat[2][1] = -detm * (mat33.get(0, 0) * mat33.get(2, 1) - //
             mat33.get(0, 1) * mat33.get(2, 0));
-        inv33.slice[8] = detm * (mat33.get(0, 0) * mat33.get(1, 1) - //
+        inv33.mat[2][2] = detm * (mat33.get(0, 0) * mat33.get(1, 1) - //
             mat33.get(0, 1) * mat33.get(1, 0));
 
         return inv33;
@@ -862,24 +872,24 @@ test "Mat33f.mulMat.identity_and_negative" {
     const mat_ident = Mat33f.initIdentity();
 
     const m0 = [_]TestType{
-        1, -2, 3,
-        0, 4, -1,
-        -1, 2, 1,
+        1,  -2, 3,
+        0,  4,  -1,
+        -1, 2,  1,
     };
     const mat0 = Mat33f.initSlice(&m0);
     try expectEqual(mat0, mat0.mulMat(mat_ident));
 
     const m1 = [_]TestType{
-        2, 1, 0,
+        2,  1, 0,
         -1, 3, 2,
-        4, 0, -2,
+        4,  0, -2,
     };
     const mat1 = Mat33f.initSlice(&m1);
 
     const m_exp = [_]TestType{
         16, -5, -10,
         -8, 12, 10,
-        0, 5, 2,
+        0,  5,  2,
     };
     const mat_exp = Mat33f.initSlice(&m_exp);
     try expectEqual(mat_exp, mat0.mulMat(mat1));
@@ -912,8 +922,8 @@ test "Mat33Ops.det" {
     // Negative determinant: det = -21
     const m_neg = [_]TestType{
         2, -1, 3,
-        1, 0, 4,
-        3, 2, 1,
+        1, 0,  4,
+        3, 2,  1,
     };
     const mat_neg = Mat33f.initSlice(&m_neg);
     try expectEqual(-21, Mat33Ops.det(TestType, mat_neg));
@@ -946,9 +956,9 @@ test "Mat33Ops.inv" {
     const mat_neg = Mat33f.initSlice(&m_neg);
 
     const m_neg_exp = [_]TestType{
-        -0.4, 0.2, 0.4,
-        0.2, 0.4, -0.2,
-        0.8, -0.4, 0.2,
+        -0.4, 0.2,  0.4,
+        0.2,  0.4,  -0.2,
+        0.8,  -0.4, 0.2,
     };
     const mat_neg_exp = Mat33f.initSlice(&m_neg_exp);
     try expectEqual(mat_neg_exp, Mat33Ops.inv(TestType, mat_neg));
@@ -1136,10 +1146,10 @@ test "Mat44Ops.inv" {
     const mat0 = Mat44f.initSlice(&m0);
 
     const m1 = [_]TestType{
-        -0.25, 1, -1, 0.5,
-        0.5, 0, -1, 1,
-        0, -1, 1, 0,
-        0, 0, 1, -1,
+        -0.25, 1,  -1, 0.5,
+        0.5,   0,  -1, 1,
+        0,     -1, 1,  0,
+        0,     0,  1,  -1,
     };
     const mat_exp = Mat44f.initSlice(&m1);
 
@@ -1156,10 +1166,10 @@ test "Mat44Ops.inv.negative_det" {
     const mat0 = Mat44f.initSlice(&m0);
 
     const m_exp = [_]TestType{
-        -2.0, 1.0, 0.0, 0.0,
-        1.5, -0.5, 0.0, 0.0,
-        0.0, 0.0, 2.0, -1.0,
-        0.0, 0.0, -1.0, 1.0,
+        -2.0, 1.0,  0.0,  0.0,
+        1.5,  -0.5, 0.0,  0.0,
+        0.0,  0.0,  2.0,  -1.0,
+        0.0,  0.0,  -1.0, 1.0,
     };
     const mat_exp = Mat44f.initSlice(&m_exp);
     try expectEqual(mat_exp, Mat44Ops.inv(TestType, mat0));

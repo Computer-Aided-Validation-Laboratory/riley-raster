@@ -1333,9 +1333,9 @@ pub fn createScene3Cameras() [8]CameraInput {
     const cam7_rot = Rotation.init(0.0, oblique_angle_rad, oblique_angle_rad);
     const cam7_pos = vec.initVec3(
         F,
-        z_cam0_scene3 * cam7_rot.matrix.slice[2],
-        z_cam0_scene3 * cam7_rot.matrix.slice[5],
-        z_cam0_scene3 * cam7_rot.matrix.slice[8],
+        z_cam0_scene3 * cam7_rot.matrix.get(0, 2),
+        z_cam0_scene3 * cam7_rot.matrix.get(1, 2),
+        z_cam0_scene3 * cam7_rot.matrix.get(2, 2),
     );
     const cam7 = CameraInput{
         .pixels_num = pixel_num_scene3,

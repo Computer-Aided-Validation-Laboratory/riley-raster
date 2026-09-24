@@ -87,7 +87,7 @@ pub const InputValidationError = error{
     InvalidBackgroundValue,
     InvalidSaveFrameBuffCount,
     InvalidImageSaveOpts,
-     InvalidOutputNameFormat,
+    InvalidOutputNameFormat,
     InvalidFullStatsFormats,
     InvalidBenchCaptureBuff,
     InvalidRasterHaloPxOverride,
@@ -124,7 +124,7 @@ pub fn checkRenderInps(
 ) InputValidationError!ValidSummary {
     try checkTopLevelAndRenderGroups(render_groups, config);
     try checkRasterConfig(config);
-     try imageio.validateOutputNameFormat(config.output_name_format);
+    try imageio.validateOutputNameFormat(config.output_name_format);
     try checkMeshesMetadata(meshes, cam_inps);
     try checkCameras(cam_inps, config);
 
@@ -324,7 +324,7 @@ fn checkMeshesMetadata(
         }
         if (mesh.connect.table.cols_num != expected_nodes_per_elem or
             mesh.connect.table_mem.len !=
-             mesh.connect.table.rows_num * mesh.connect.table.cols_num)
+                mesh.connect.table.rows_num * mesh.connect.table.cols_num)
         {
             return error.InvalidConnectivityDimensions;
         }
@@ -335,7 +335,7 @@ fn checkMeshesMetadata(
                 disp_field.array.dims[1] != mesh.coords.mat.rows_num or
                 disp_field.array.dims[2] != 3 or
                 disp_field.array_mem.len !=
-                 disp_field.array.dims[0] * disp_field.array.dims[1] * disp_field.array.dims[2])
+                    disp_field.array.dims[0] * disp_field.array.dims[1] * disp_field.array.dims[2])
             {
                 return error.InvalidDisplacementDimensions;
             }
@@ -402,7 +402,7 @@ fn checkCamInp(cam_inp: cam.CameraInput) InputValidationError!void {
         return error.InvalidCameraRoi;
     }
 
-    if (!isFiniteSlice(cam_inp.rot_world.matrix.slice[0..])) {
+    if (!isFiniteSlice(cam_inp.rot_world.matrix.asSlice())) {
         return error.InvalidCameraRotation;
     }
     if (!isValidRotationMatrix(cam_inp.rot_world.matrix)) {
@@ -908,5 +908,5 @@ fn isFinite2D(comptime N1: usize, comptime N2: usize, arr: *const [N1][N2]F) boo
 }
 
 fn isFiniteVec3(vec_val: anytype) bool {
-    return isFiniteSlice(vec_val.slice[0..]);
+    return isFiniteSlice(vec_val.asSlice());
 }

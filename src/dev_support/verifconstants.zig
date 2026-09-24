@@ -33,9 +33,9 @@ fn edgeCameraInput(
     return .{
         .pixels_num = .{ 800, 500 },
         .pixels_size = .{ 5.3e-6, 5.3e-6 },
-        .pos_world = .{ .slice = pos_world },
+        .pos_world = .{ .vec = pos_world },
         .rot_world = rotation.Rotation.init(0.0, 0.0, 0.0),
-        .roi_cent_world = .{ .slice = roi_cent_world },
+        .roi_cent_world = .{ .vec = roi_cent_world },
         .focal_length = 5.0e-2,
         .sub_sample = 1,
         .distortion = .none,

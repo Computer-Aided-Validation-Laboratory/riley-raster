@@ -49,13 +49,12 @@ pub const BrownConrady = struct {
     pub fn forward(
         self: BrownConrady,
         x: F,
-        y: F,
+        y: F
     ) [2]F {
         const r2 = x * x + y * y;
         const r4 = r2 * r2;
         const r6 = r4 * r2;
-        const radial_scale =
-            1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
+        const radial_scale = 1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
         return distortionForwardFromRadialScale(
             x,
             y,
@@ -68,15 +67,13 @@ pub const BrownConrady = struct {
     pub fn forwardWithJac(
         self: BrownConrady,
         x: F,
-        y: F,
+        y: F
     ) DistortionForwardJacResult {
         const r2 = x * x + y * y;
         const r4 = r2 * r2;
         const r6 = r4 * r2;
-        const radial_scale =
-            1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
-        const dradial_dr2 =
-            self.k1 + 2.0 * self.k2 * r2 + 3.0 * self.k3 * r4;
+        const radial_scale = 1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
+        const dradial_dr2 = self.k1 + 2.0 * self.k2 * r2 + 3.0 * self.k3 * r4;
         return distortionForwardWithJacFromRadialScale(
             x,
             y,
@@ -90,7 +87,7 @@ pub const BrownConrady = struct {
     pub fn inv(
         self: BrownConrady,
         x_d: F,
-        y_d: F,
+        y_d: F
     ) !DistortionInvResult {
         return invFromForwardWithJac(BrownConrady, self, x_d, y_d);
     }
@@ -115,18 +112,22 @@ pub const BrownConradyExt = struct {
 
     pub fn prepare(self: BrownConradyExt) !BrownConradyExt {
         var prepared = self;
+
         if (prepared.isTiltActive()) {
             const forward_matrix = calcTiltMatrix(self.tau_x, self.tau_y);
+
             const inverse_matrix = Mat33Ops.invChecked(
                 F,
                 forward_matrix,
                 tol.distortion.det,
             ) catch return error.SingularTiltProjection;
+
             prepared.tilt_projection = .{
                 .forward_matrix = forward_matrix,
                 .inverse_matrix = inverse_matrix,
             };
         }
+
         return prepared;
     }
 
@@ -142,6 +143,7 @@ pub const BrownConradyExt = struct {
 
     pub fn getInverseTiltMatrix(self: BrownConradyExt) !Mat33f {
         if (self.tilt_projection) |projection| return projection.inverse_matrix;
+
         return Mat33Ops.invChecked(
             F,
             calcTiltMatrix(self.tau_x, self.tau_y),
@@ -152,7 +154,7 @@ pub const BrownConradyExt = struct {
     pub fn forward(
         self: BrownConradyExt,
         x: F,
-        y: F,
+        y: F
     ) [2]F {
         const lens = self.forwardLensWithJac(x, y);
         return self.applyTilt(lens.x_d, lens.y_d).coords;
@@ -161,7 +163,7 @@ pub const BrownConradyExt = struct {
     pub fn forwardWithJac(
         self: BrownConradyExt,
         x: F,
-        y: F,
+        y: F
     ) DistortionForwardJacResult {
         const lens = self.forwardLensWithJac(x, y);
         const tilt = self.applyTilt(lens.x_d, lens.y_d);
@@ -175,7 +177,7 @@ pub const BrownConradyExt = struct {
     pub fn inv(
         self: BrownConradyExt,
         x_d: F,
-        y_d: F,
+        y_d: F
     ) !DistortionInvResult {
         const untilted = try self.removeTilt(x_d, y_d);
         return invBrownConradyExtLens(self, untilted[0], untilted[1]);
@@ -202,7 +204,7 @@ pub const BrownConradyExt = struct {
     fn forwardLensWithJac(
         self: BrownConradyExt,
         x: F,
-        y: F,
+        y: F
     ) DistortionForwardJacResult {
         const radial = self.calcRadialScaleAndDerivative(x, y);
         var result = distortionForwardWithJacFromRadialScale(
