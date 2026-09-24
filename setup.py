@@ -256,7 +256,7 @@ is_darwin = system == "darwin"
 # Configure compiler flags based on OS to support both MSVC and GCC/Clang
 if is_windows:
     cython_compile_args = ["/fp:fast", "/O2"]
-    cython_link_args = ["msvcrt.lib", "ucrt.lib", "vcruntime.lib"]
+    cython_link_args = ["msvcrt.lib", "ucrt.lib", "vcruntime.lib", "kernel32.lib",]
     runtime_lib_dirs = []
 elif is_darwin:
     cython_compile_args = ["-ffast-math", "-O3"]

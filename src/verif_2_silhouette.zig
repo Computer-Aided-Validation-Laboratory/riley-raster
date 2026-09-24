@@ -523,7 +523,7 @@ fn runDistortCase(
             0,
             frame_idx,
             0,
-            1,
+            rastcfg.RasterConfig.default_output_name_format,
         );
 
         const csv_name = try std.fmt.allocPrint(aa, "{s}.csv", .{base_name});
