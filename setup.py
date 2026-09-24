@@ -120,6 +120,16 @@ class MultiBuildExt(build_ext):
                 target_triple = "i386-windows-msvc"
             zig_target_args = ["-target", target_triple]
         elif is_darwin:
+            macos_arch = platform.machine().lower()
+            if macos_arch in ("arm64", "aarch64"):
+                macos_target_arch = "aarch64"
+            elif macos_arch in ("x86_64", "amd64"):
+                macos_target_arch = "x86_64"
+            else:
+                raise RuntimeError(
+                    f"Unsupported macOS architecture for Zig build: {macos_arch}"
+                )
+            zig_target_args = ["-target", f"{macos_target_arch}-macos.11.0"]
             zig_soname_args = [
                 "-install_name",
                 f"@rpath/{lib_link_name('c_riley')}",
