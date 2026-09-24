@@ -48,6 +48,8 @@ maths/
 *.msh
 *.e
 *.svg
+*.png
+*.jpg
 
 # Keep the min test suite to ship with the repo
 !data/min/
@@ -97,6 +99,9 @@ src/riley/data/textures/
 # We need to keep the demo images for the README
 !images/*.bmp
 !images/*.tiff
+!images/*.svg
+!images/*.png
+!images/*.jpg
 
 # Keep llvmpipe performance comparison figures
 !perf/*.csv
