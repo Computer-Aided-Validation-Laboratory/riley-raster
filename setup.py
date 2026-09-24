@@ -3,6 +3,7 @@ import sys
 import shutil
 import platform
 import importlib.util
+import sysconfig
 from pathlib import Path
 from setuptools import setup, Extension
 from setuptools.command.build_py import build_py
@@ -49,6 +50,20 @@ def lib_link_name(lib_name: str) -> str:
     """Return platform linkable shared library name (e.g. libc_riley.so)."""
     return f"{PLATFORM_INFO['lib_prefix']}{lib_name}{PLATFORM_INFO['lib_ext']}"
 
+
+def get_windows_target_triple() -> str:
+    """Return the Zig target matching the Python interpreter being built."""
+    platform_tag = sysconfig.get_platform().lower()
+    if platform_tag == "win32":
+        return "i386-windows-msvc"
+    if platform_tag in ("win-amd64", "win_amd64"):
+        return "x86_64-windows-msvc"
+    if platform_tag in ("win-arm64", "win_arm64"):
+        return "aarch64-windows-msvc"
+
+    raise RuntimeError(
+        f"Unsupported Windows Python platform for Zig build: {platform_tag}"
+    )
 
 # -----------------------------------------------------------------------------
 # Generated package data sync
@@ -111,13 +126,7 @@ class MultiBuildExt(build_ext):
         zig_target_args = []
         zig_soname_args = []
         if is_windows:
-            arch = platform.machine().lower()
-            if arch in ("amd64", "x86_64"):
-                target_triple = "x86_64-windows-msvc"
-            elif arch in ("arm64", "aarch64"):
-                target_triple = "aarch64-windows-msvc"
-            else:
-                target_triple = "i386-windows-msvc"
+            target_triple = get_windows_target_triple()
             zig_target_args = ["-target", target_triple]
         elif is_darwin:
             macos_arch = platform.machine().lower()
