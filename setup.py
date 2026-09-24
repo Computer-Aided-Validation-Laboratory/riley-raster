@@ -55,7 +55,7 @@ def get_windows_target_triple() -> str:
     """Return the Zig target matching the Python interpreter being built."""
     platform_tag = sysconfig.get_platform().lower()
     if platform_tag == "win32":
-        return "i386-windows-msvc"
+        return "x86-windows-msvc"
     if platform_tag in ("win-amd64", "win_amd64"):
         return "x86_64-windows-msvc"
     if platform_tag in ("win-arm64", "win_arm64"):
