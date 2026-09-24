@@ -19,8 +19,10 @@ const simd = @import("cameramodels_simd.zig");
 // --------------------------------------------------------------------------------------
 
 pub const BrownConrady = common.BrownConrady;
+pub const BrownConradyParams = common.BrownConradyParams;
 pub const BrownConradyExt = common.BrownConradyExt;
-pub const DistortionInvResult = common.DistortionInvResult;
+pub const BrownConradyExtParams = common.BrownConradyExtParams;
+pub const DistortionCoords = common.DistortionCoords;
 pub const DistortionForwardJacResult = common.DistortionForwardJacResult;
 
 // --------------------------------------------------------------------------------------
@@ -32,19 +34,28 @@ pub const PolynomialMap = common.PolynomialMap;
 pub const BidirectionalPolynomial = common.BidirectionalPolynomial;
 pub const BrownConradyPolynomial = common.BrownConradyPolynomial;
 pub const BrownConradyExtPolynomial = common.BrownConradyExtPolynomial;
+pub const BrownConradyExtPolynomialParams = common.BrownConradyExtPolynomialParams;
 
 // --------------------------------------------------------------------------------------
 // Distortion Unions
 // --------------------------------------------------------------------------------------
 
 pub const DistortionModel = common.DistortionModel;
-pub const prepareDistortionModel = common.prepareDistortionModel;
+pub const DistortionParams = common.DistortionParams;
+pub const initDistortionModel = common.initDistortionModel;
+pub const distortionParamsFromModel = common.distortionParamsFromModel;
 pub const forwardDistortionModelScal = scal.forwardDistortionModel;
 pub const invDistortionModelScal = scal.invDistortionModel;
 pub const DistortionForwardJacSIMDResult = simd.DistortionForwardJacSIMDResult;
+pub const DistortionCoordsSIMD = simd.DistortionCoordsSIMD;
+pub const BrownConradySIMD = simd.BrownConradySIMD;
+pub const BrownConradyExtSIMD = simd.BrownConradyExtSIMD;
+pub const PolynomialMapSIMD = simd.PolynomialMapSIMD;
+pub const BidirectionalPolynomialSIMD = simd.BidirectionalPolynomialSIMD;
 pub const forwardDistortionSIMD = simd.forwardDistortionSIMD;
 pub const forwardDistortionWithJacSIMD = simd.forwardDistortionWithJacSIMD;
 pub const invDistortionSIMD = simd.invDistortionSIMD;
+pub const forwardDistortionModelSIMD = simd.forwardDistortionModelSIMD;
 pub const invDistortionModelSIMD = simd.invDistortionModelSIMD;
 
 // --------------------------------------------------------------------------------------

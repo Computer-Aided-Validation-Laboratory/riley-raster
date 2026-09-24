@@ -485,7 +485,7 @@ pub fn getRepresentativePolynomialMap() camera.PolynomialMap {
 }
 
 pub const EquivalentBrownConradyPolynomial = struct {
-    brown_conrady: camera.BrownConrady,
+    brown_conrady: camera.BrownConrady.Params,
     polynomial: camera.BidirectionalPolynomial,
 };
 
@@ -493,7 +493,7 @@ pub const EquivalentBrownConradyPolynomial = struct {
 /// k1 and both tangential terms.  The polynomial model is forward-only: its
 /// inverse is deliberately solved from the same forward map as Brown-Conrady.
 pub fn getEquivalentBrownConradyPolynomial() EquivalentBrownConradyPolynomial {
-    const brown_conrady = camera.BrownConrady{
+    const brown_conrady = camera.BrownConrady.Params{
         .k1 = -1200.0,
         .p1 = 0.25,
         .p2 = -0.20,

@@ -2,17 +2,17 @@
 
 Riley is a high performance Zig software rasteriser for digital image correlation uncertainty quantification (DIC UQ). It synthesises deformed speckle images from finite element simulations, with higher order surface elements (`tri3`, `tri6`, `quad4`, `quad8`, and `quad9`), camera models and distortion, texture/nodal/analytic shaders, and mixed scenes.
 
-Riley's Zig core uses `comptime` specialisation and SIMD with `@Vector` to keep its rendering path direct. It is available as a Zig library and executable, a C compatible ABI, and the [`riley-raster`](https://pypi.org/project/riley-raster/) Python package.
+Riley's Zig core uses `comptime` specialisation and SIMD with `@Vector` to keep its rendering path direct. It also uses hierarchical offline parallelisation allowing scaling over cameras and timesteps to be rendered. Riley is available as a Zig library and executable, a C compatible ABI, and the [`riley-raster`](https://pypi.org/project/riley-raster/) Python package.
 
 ## Quick start: Zig
 
-Riley targets [Zig 0.16.0](https://ziglang.org/download/). Clone the repository, then build and run the smallest demo:
+Riley uses [Zig 0.16.0](https://ziglang.org/download/). Clone the repository, then build and run the smallest demo:
 
 ```shell
 zig build demo0-quickstart -Doptimize=ReleaseFast
 ```
 
-Renders are written below `out/`. Run the combined smoke suite with:
+Renders are written to `out/`. Run the combined smoke suite with:
 
 ```shell
 zig build test-verif-basic -Doptimize=ReleaseSafe
@@ -20,7 +20,7 @@ zig build test-verif-basic -Doptimize=ReleaseSafe
 
 ## Quick start: Python
 
-Install the published package, The package builds Riley from Zig source locally, so installation can take a several minutes.:
+Install the published package, the package builds Riley from Zig source locally, so installation can take a several minutes.:
 
 ```shell
 python -m pip install riley-raster
@@ -38,9 +38,9 @@ The Zig test suites are intentionally separated by purpose. The focused verifica
 
 | Command | Purpose |
 | --- | --- |
-| `zig build test-verif-basic -Doptimize=ReleaseSafe` | Fast combination of focused analytic verification and BASIC regression tests. |
+| `zig build test-verif-basic -Doptimize=ReleaseSafe` | Fast combination of focused analytic verification and basic regression tests. |
 | `zig build test-verif -Doptimize=ReleaseSafe` | Analytic verification of the solver, silhouettes, depth buffer, and camera distortion. |
-| `zig build test-basic -Doptimize=ReleaseSafe` | BASIC regression suite. |
+| `zig build test-basic -Doptimize=ReleaseSafe` | Basic regression suite. |
 | `zig build test-full -Doptimize=ReleaseSafe` | Full regression suite. |
 
 Run the packaged Python test suite with:
@@ -59,7 +59,7 @@ The repository parity tests compare Python and Zig demo output when the reposito
 
 ## Examples
 
-Riley keeps the Zig path first. For example, render the rabbits with:
+Riley provides a series of capability demos in Zig and Python. For example, render the rabbits demo with:
 
 ```shell
 zig build demo3-rabbits -Doptimize=ReleaseFast
@@ -73,27 +73,27 @@ python -m riley demo3_rabbits
 
 Browse the complete [Zig demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src) or [Python demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src/riley/pydemos). The image links below are absolute GitHub URLs so they render both on GitHub and on PyPI.
 
-### Rabbits
+### Rabbits demo
 
 The rabbit scene combines all supported element types and the principal shader families in a single render.
 
-![Rendered rabbits](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/demo_rabbitrender.bmp)
+![Rendered rabbits](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/demo_rabbitrender.png)
 
-### Digital image correlation UQ
+### Digital image correlation UQ demo
 
 A representative stereo DIC UQ render of a plate with a hole in tension.
 
 | Camera 0 | Camera 1 |
 | :---: | :---: |
-| ![DIC Camera 0](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/dicuq_cam0_frame0_field0.bmp) | ![DIC Camera 1](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/dicuq_cam1_frame0_field0.bmp) |
+| <img src="https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/dicuq_cam0_frame0_field0.png" alt="DIC Camera 0" width="400"> | <img src="https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/dicuq_cam1_frame0_field0.png" alt="DIC Camera 1" width="400"> |
 
-### Stereo calibration targets
+### Stereo calibration target demo
 
 Stereo calibration target renders using the DIC UQ camera setup.
 
 | Camera 0 | Camera 1 |
 | :---: | :---: |
-| ![Calibration camera 0](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/cal_cam0_frame0_field0.bmp) | ![Calibration camera 1](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/cal_cam1_frame0_field0.bmp) |
+| <img src="https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/cal_cam0_frame0_field0.png" alt="Calibration camera 0" width="400"> | <img src="https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/cal_cam1_frame0_field0.png" alt="Calibration camera 1" width="400"> |
 
 ## Project Layout
 The main Zig entry point for the rendering pipeline is the `raster(...)` family in `./src/riley/zig/riley.zig`.
@@ -102,11 +102,11 @@ Useful top-level locations:
 
 - `src/`: Zig demos, tests, benchmarks and the core Riley source
 - `src/riley/zig/`: core Zig implementation
+- `src/riley/cython/`: Cython->Python bindings for Riley
+- `src/riley/python/`: Python utilities for setup and mesh manipulation
 - `src/riley/pydemos/`: packaged Python demos
 - `src/riley/pytests/`: packaged Python tests
-- `pyscripts/`: compatibility wrappers for the packaged Python demo/test entry points
-- `scripts/`: benchmark and performance orchestration scripts
-- `gold/`: gold reference renders
+- `gold/`: gold reference renders for regression testing
 - `out/`: Zig render and benchmark output
 - `out_riley_py/`: Python render output
 - `dev/README.md`: detailed developer testing and benchmark notes

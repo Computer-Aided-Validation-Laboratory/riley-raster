@@ -634,7 +634,7 @@ fn psfFromC(in_camera: *const CPSF) !cam.PointSpreadFunc {
     };
 }
 
-fn distortionFromC(in_camera: *const CDistortion) !cam.DistortionModel {
+fn distortionFromC(in_camera: *const CDistortion) !cam.DistortionParams {
     const poly_order: cam.PolynomialOrder = switch (in_camera.distortion_poly_order) {
         0, 2 => .quadratic,
         1 => .linear,

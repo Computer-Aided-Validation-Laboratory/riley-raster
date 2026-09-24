@@ -26,7 +26,7 @@ const cameraops = @import("riley/zig/cameraops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const CameraInput = camera_mod.CameraInput;
-const DistortionModel = camera_mod.DistortionModel;
+const DistortionModel = camera_mod.DistortionParams;
 const BrownConrady = camera_mod.BrownConrady;
 const BrownConradyExt = camera_mod.BrownConradyExt;
 const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
@@ -63,14 +63,14 @@ const DISTORTION_CASE: DistortionCase = .brown_conrady;
 fn buildDistortion() DistortionModel {
     return switch (DISTORTION_CASE) {
         .none => .none,
-        .brown_conrady => .{ .brown_conrady = BrownConrady{
+        .brown_conrady => .{ .brown_conrady = BrownConrady.Params{
             .k1 = -0.2,
             .k2 = 0.1,
             .k3 = 0.0,
             .p1 = 0.0001,
             .p2 = -0.0001,
         } },
-        .brown_conrady_ext => .{ .brown_conrady_ext = BrownConradyExt{
+        .brown_conrady_ext => .{ .brown_conrady_ext = BrownConradyExt.Params{
             .k1 = -0.2,
             .k2 = 0.1,
             .k3 = -0.01,

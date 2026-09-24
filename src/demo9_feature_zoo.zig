@@ -235,7 +235,7 @@ fn makeCamera(
     pixels_num: [2]u32,
     rot: Rotation,
     sub_sample: u32,
-    distortion: camera.DistortionModel,
+    distortion: camera.DistortionParams,
     psf: camera.PointSpreadFunc,
 ) camera.CameraInput {
     const target = sceneops.boundsCenterOverMeshes(meshes);
@@ -262,7 +262,7 @@ fn makeCamera(
 
 fn buildCameras(meshes: []MeshInput) [6]camera.CameraInput {
     const deg = std.math.degreesToRadians;
-    const brown: camera.DistortionModel = .{ .brown_conrady = .{
+    const brown: camera.DistortionParams = .{ .brown_conrady = .{
         .k1 = -0.12,
         .k2 = 0.035,
         .p1 = 0.0002,

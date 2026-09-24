@@ -47,6 +47,7 @@ maths/
 *.csv
 *.msh
 *.e
+*.svg
 
 # Keep the min test suite to ship with the repo
 !data/min/

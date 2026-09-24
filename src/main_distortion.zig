@@ -24,7 +24,7 @@ const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const MeshInput = mo.MeshInput;
 const MeshType = gk.MeshType;
 const CameraInput = camera_mod.CameraInput;
-const DistortionModel = camera_mod.DistortionModel;
+const DistortionModel = camera_mod.DistortionParams;
 const BrownConrady = camera_mod.BrownConrady;
 const PointSpreadFunc = camera_mod.PointSpreadFunc;
 const FuncShaderBuiltin = shaderops.FuncShaderBuiltin;
@@ -71,7 +71,7 @@ const DISTORTION_CASES = [_]struct {
     },
     .{
         .name = "heavy_pincushion",
-        .model = .{ .brown_conrady = BrownConrady{
+        .model = .{ .brown_conrady = BrownConrady.Params{
             .k1 = 12.0,
             .k2 = 40.0,
             .k3 = 0.0,
@@ -81,7 +81,7 @@ const DISTORTION_CASES = [_]struct {
     },
     .{
         .name = "heavy_barrel",
-        .model = .{ .brown_conrady = BrownConrady{
+        .model = .{ .brown_conrady = BrownConrady.Params{
             .k1 = -12.0,
             .k2 = 40.0,
             .k3 = 0.0,

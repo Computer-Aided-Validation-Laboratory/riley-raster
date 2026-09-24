@@ -810,7 +810,7 @@ fn isValidBidirectionalPolynomial(poly: cam.BidirectionalPolynomial) bool {
     return true;
 }
 
-fn isValidDistortion(distortion: cam.DistortionModel) bool {
+fn isValidDistortion(distortion: cam.DistortionParams) bool {
     return switch (distortion) {
         .none => true,
         .brown_conrady => |bc| isFiniteSlice(&[_]F{

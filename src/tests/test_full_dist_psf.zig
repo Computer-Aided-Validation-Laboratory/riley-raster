@@ -248,7 +248,7 @@ fn runAdditionalDistPsfTests(
 
     const extra_dist_cases = [_]struct {
         tag: []const u8,
-        distortion: camera.DistortionModel,
+        distortion: camera.DistortionParams,
     }{
         .{
             .tag = "standalone_polynomial",

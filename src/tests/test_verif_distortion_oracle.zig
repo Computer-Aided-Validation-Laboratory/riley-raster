@@ -59,7 +59,7 @@ fn buildPolynomial(row: []const F) cam.BidirectionalPolynomial {
     return .{ .forward_map = forward_map, .inv_map = inv_map };
 }
 
-fn buildBrown(row: []const F) cam.BrownConrady {
+fn buildBrown(row: []const F) cam.BrownConrady.Params {
     return .{
         .k1 = row[brown_start + 0],
         .k2 = row[brown_start + 1],
@@ -69,7 +69,7 @@ fn buildBrown(row: []const F) cam.BrownConrady {
     };
 }
 
-fn buildBrownExt(row: []const F) cam.BrownConradyExt {
+fn buildBrownExt(row: []const F) cam.BrownConradyExt.Params {
     return .{
         .k1 = row[brown_start + 0],
         .k2 = row[brown_start + 1],
@@ -90,7 +90,7 @@ fn buildBrownExt(row: []const F) cam.BrownConradyExt {
 
 fn buildModel(row: []const F) !cam.DistortionModel {
     const model_tag: u8 = @intFromFloat(row[1]);
-    return switch (model_tag) {
+    const params: cam.DistortionParams = switch (model_tag) {
         0 => .none,
         1 => .{ .brown_conrady = buildBrown(row) },
         2 => .{ .brown_conrady_ext = buildBrownExt(row) },
@@ -103,8 +103,9 @@ fn buildModel(row: []const F) !cam.DistortionModel {
             .brown_conrady_ext = buildBrownExt(row),
             .polynomial = buildPolynomial(row),
         } },
-        else => error.InvalidOracleModel,
+        else => return error.InvalidOracleModel,
     };
+    return cam.DistortionModel.init(params);
 }
 
 fn reportMismatch(
@@ -171,7 +172,7 @@ fn checkScalarPoints(cases: anytype, points: anytype) !void {
             case_id,
             point_id,
             expected_observed,
-            actual_observed,
+            .{ actual_observed.x, actual_observed.y },
             tolerance.forward_abs_norm,
         );
 
@@ -222,7 +223,7 @@ fn checkSIMDPoints(cases: anytype, points: anytype) !void {
         const model = try buildModel(case_row);
         const actual_forward = switch (model) {
             .brown_conrady => |brown| cam.forwardDistortionSIMD(
-                cam.BrownConrady,
+                cam.BrownConrady.Params,
                 brown,
                 @as(VecSF, ideal_x),
                 @as(VecSF, ideal_y),
@@ -236,8 +237,8 @@ fn checkSIMDPoints(cases: anytype, points: anytype) !void {
             else => null,
         };
         if (actual_forward) |forward| {
-            const forward_x: [S]F = forward.x_d;
-            const forward_y: [S]F = forward.y_d;
+            const forward_x: [S]F = forward.x;
+            const forward_y: [S]F = forward.y;
             for (0..lane_count) |lane| {
                 const row = points.slice[(row_start + lane) * points_cols_num ..][0..points_cols_num];
                 try expectPairApprox(
@@ -275,8 +276,8 @@ fn checkSIMDPoints(cases: anytype, points: anytype) !void {
 
 fn modelJacobian(model: cam.DistortionModel, x: F, y: F) ?Mat22f {
     return switch (model) {
-        .brown_conrady => |brown| brown.forwardWithJac(x, y).jac,
-        .brown_conrady_ext => |brown| brown.forwardWithJac(x, y).jac,
+        .brown_conrady => |brown| cam.BrownConrady.forwardWithJac(brown, x, y).jac,
+        .brown_conrady_ext => |brown| cam.BrownConradyExt.forwardWithJac(brown, x, y).jac,
         .polynomial => |polynomial| if (polynomial.forward_map) |forward_map|
             forward_map.forwardWithJac(x, y).jac
         else
@@ -361,12 +362,13 @@ fn checkBrownConradyPolynomialEquivalence() !void {
             "Brown-Conrady/polynomial scalar forward equivalence",
             0,
             point_id,
-            brown_forward,
-            polynomial_forward,
+            .{ brown_forward.x, brown_forward.y },
+            .{ polynomial_forward.x, polynomial_forward.y },
             forward_tolerance,
         );
 
-        const brown_jac = equivalent.brown_conrady.forwardWithJac(
+        const brown_jac = cam.BrownConrady.forwardWithJac(
+            equivalent.brown_conrady,
             point[0],
             point[1],
         ).jac;
@@ -386,13 +388,13 @@ fn checkBrownConradyPolynomialEquivalence() !void {
 
         const brown_inverse = try cam.invDistortionModelScal(
             brown_model,
-            brown_forward[0],
-            brown_forward[1],
+            brown_forward.x,
+            brown_forward.y,
         );
         const polynomial_inverse = try cam.invDistortionModelScal(
             polynomial_model,
-            brown_forward[0],
-            brown_forward[1],
+            brown_forward.x,
+            brown_forward.y,
         );
         try expectPairApprox(
             "Brown-Conrady/polynomial scalar inverse equivalence",
@@ -406,8 +408,8 @@ fn checkBrownConradyPolynomialEquivalence() !void {
         var observed_x = [_]F{0.0} ** S;
         var observed_y = [_]F{0.0} ** S;
         var active = [_]bool{false} ** S;
-        observed_x[0] = brown_forward[0];
-        observed_y[0] = brown_forward[1];
+        observed_x[0] = brown_forward.x;
+        observed_y[0] = brown_forward.y;
         active[0] = true;
         const brown_simd_inverse = try cam.invDistortionModelSIMD(
             brown_model,

@@ -956,8 +956,8 @@ fn distortIdealRasterCoords(
             x_ideal,
             y_ideal,
         );
-        coords_distorted.x[nn] = distorted[0] * focal_px.fx + offsets.x_off;
-        coords_distorted.y[nn] = distorted[1] * focal_px.fy + offsets.y_off;
+        coords_distorted.x[nn] = distorted.x * focal_px.fx + offsets.x_off;
+        coords_distorted.y[nn] = distorted.y * focal_px.fy + offsets.y_off;
     }
 
     return coords_distorted;
@@ -1082,7 +1082,7 @@ fn initTestCullCameraWithDistortion(
             .roi_cent_world = Vec3f.initZeros(),
             .focal_length = 1.0,
             .sub_sample = 1,
-            .distortion = distortion,
+            .distortion = cam.distortionParamsFromModel(distortion),
         },
     );
 }
@@ -1632,7 +1632,7 @@ test "calcVisibleNodeBBoxHighOrd distorted_off_screen_shift" {
 
 test "calcVisibleNodeBBoxHighOrd backface_uses_ideal_pinhole" {
     const allocator = std.testing.allocator;
-    const distortion = cam.DistortionModel{
+    const distortion = try cam.DistortionModel.init(.{
         .brown_conrady_ext = .{
             .k1 = -0.2,
             .k2 = 0.05,
@@ -1643,7 +1643,7 @@ test "calcVisibleNodeBBoxHighOrd backface_uses_ideal_pinhole" {
             .p1 = 0.01,
             .p2 = -0.01,
         },
-    };
+    });
     const camera = initTestCullCameraManual(distortion);
 
     var connect = try initSingleElemConnect(6, allocator);

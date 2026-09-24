@@ -194,8 +194,8 @@ pub fn idealToObservedRaster(
         y_norm,
     );
     return .{
-        distorted[0] * focal_px.fx + offsets.x_off,
-        distorted[1] * focal_px.fy + offsets.y_off,
+        distorted.x * focal_px.fx + offsets.x_off,
+        distorted.y * focal_px.fy + offsets.y_off,
     };
 }
 

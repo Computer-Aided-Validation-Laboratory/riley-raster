@@ -496,9 +496,9 @@ fn parseOptionalFloatValue(
 
 fn writeExtendedDistortion(
     writer: *std.Io.Writer,
-    model: ?cam.BrownConradyExt,
+    model: ?cam.BrownConradyExt.Params,
 ) !void {
-    const ext = model orelse cam.BrownConradyExt{};
+    const ext = model orelse cam.BrownConradyExt.Params{};
     try writer.print("{s},{d:.12}\n", .{ "s1", ext.s1 });
     try writer.print("{s},{d:.12}\n", .{ "s2", ext.s2 });
     try writer.print("{s},{d:.12}\n", .{ "s3", ext.s3 });
@@ -564,7 +564,7 @@ fn loadPolynomial(
 
 fn writeDistortion(
     writer: *std.Io.Writer,
-    distortion: cam.DistortionModel,
+    distortion: cam.DistortionParams,
 ) !void {
     switch (distortion) {
         .none => {
@@ -686,7 +686,7 @@ fn writeDistortion(
 
 fn loadDistortion(
     kv: *const std.StringHashMap([]const u8),
-) !cam.DistortionModel {
+) !cam.DistortionParams {
     const model_name = try requireValue(kv, "distortion_model");
     const polynomial = try loadPolynomial(kv);
     if (std.mem.eql(u8, model_name, "none")) {
