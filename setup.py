@@ -106,6 +106,19 @@ class RileyBuildPy(build_py):
 
         super().run()
 
+    def _get_data_files(self):
+        data_files = super()._get_data_files()
+        generated_lib = Path(self.build_lib) / "riley" / "cython" / lib_link_name("c_riley")
+        source_dir = PROJECT_ROOT / "src" / "riley" / "cython"
+        if generated_lib.is_file():
+            data_files.append((
+                "riley.cython",
+                str(source_dir),
+                str(Path(self.build_lib) / "riley" / "cython"),
+                [generated_lib.name],
+            ))
+        return data_files
+
 
 # -----------------------------------------------------------------------------
 # Custom Multi-Build
