@@ -50,3 +50,5 @@ filterwarnings = [
   "ignore:.*Setting the shape on a NumPy array.*:DeprecationWarning",
 ]
 
+[tool.cibuildwheel.windows]
+repair-wheel-command = "delvewheel repair -w {dest_dir} --add-path src\\riley\\cython -v {wheel}"

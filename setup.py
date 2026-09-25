@@ -267,16 +267,6 @@ class MultiBuildExt(build_ext):
 
         super().run()
 
-        # Copy c_riley.dll next to the compiled extension
-        zig_library = zig_out_dir / lib_link_name("c_riley")
-
-        for ext in self.extensions:
-            ext_path = Path(self.get_ext_fullpath(ext.name))
-            target = ext_path.parent / zig_library.name
-
-            shutil.copy2(zig_library, target)
-            print(f"Copied {zig_library} -> {target}")
-
 
 # -----------------------------------------------------------------------------
 # Extensions
