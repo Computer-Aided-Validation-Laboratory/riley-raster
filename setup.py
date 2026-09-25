@@ -3,6 +3,7 @@ import sys
 import shutil
 import platform
 import importlib.util
+import sysconfig
 from pathlib import Path
 from setuptools import setup, Extension
 from setuptools.command.build_py import build_py
@@ -50,6 +51,20 @@ def lib_link_name(lib_name: str) -> str:
     return f"{PLATFORM_INFO['lib_prefix']}{lib_name}{PLATFORM_INFO['lib_ext']}"
 
 
+def get_windows_target_triple() -> str:
+    """Return the Zig target matching the Python interpreter being built."""
+    platform_tag = sysconfig.get_platform().lower()
+    if platform_tag == "win32":
+        return "x86-windows-msvc"
+    if platform_tag in ("win-amd64", "win_amd64"):
+        return "x86_64-windows-msvc"
+    if platform_tag in ("win-arm64", "win_arm64"):
+        return "aarch64-windows-msvc"
+
+    raise RuntimeError(
+        f"Unsupported Windows Python platform for Zig build: {platform_tag}"
+    )
+
 # -----------------------------------------------------------------------------
 # Generated package data sync
 
@@ -82,7 +97,27 @@ class RileyBuildPy(build_py):
 
     def run(self):
         ensure_python_package_data()
+        self.run_command("build_ext")
+
+        generated_lib = Path(self.build_lib) / "riley" / "cython" / lib_link_name("c_riley")
+        source_lib = PROJECT_ROOT / "src" / "riley" / "cython" / lib_link_name("c_riley")
+        if generated_lib.is_file():
+            shutil.copy2(generated_lib, source_lib)
+
         super().run()
+
+    def _get_data_files(self):
+        data_files = super()._get_data_files()
+        generated_lib = Path(self.build_lib) / "riley" / "cython" / lib_link_name("c_riley")
+        source_dir = PROJECT_ROOT / "src" / "riley" / "cython"
+        if generated_lib.is_file():
+            data_files.append((
+                "riley.cython",
+                str(source_dir),
+                str(Path(self.build_lib) / "riley" / "cython"),
+                [generated_lib.name],
+            ))
+        return data_files
 
 
 # -----------------------------------------------------------------------------
@@ -111,15 +146,19 @@ class MultiBuildExt(build_ext):
         zig_target_args = []
         zig_soname_args = []
         if is_windows:
-            arch = platform.machine().lower()
-            if arch in ("amd64", "x86_64"):
-                target_triple = "x86_64-windows-msvc"
-            elif arch in ("arm64", "aarch64"):
-                target_triple = "aarch64-windows-msvc"
-            else:
-                target_triple = "i386-windows-msvc"
+            target_triple = get_windows_target_triple()
             zig_target_args = ["-target", target_triple]
         elif is_darwin:
+            macos_arch = platform.machine().lower()
+            if macos_arch in ("arm64", "aarch64"):
+                macos_target_arch = "aarch64"
+            elif macos_arch in ("x86_64", "amd64"):
+                macos_target_arch = "x86_64"
+            else:
+                raise RuntimeError(
+                    f"Unsupported macOS architecture for Zig build: {macos_arch}"
+                )
+            zig_target_args = ["-target", f"{macos_target_arch}-macos.11.0"]
             zig_soname_args = [
                 "-install_name",
                 f"@rpath/{lib_link_name('c_riley')}",
