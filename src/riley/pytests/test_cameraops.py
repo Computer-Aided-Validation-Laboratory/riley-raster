@@ -1,5 +1,7 @@
 """Tests for camera framing and positioning operations."""
 
+import copy
+import csv
 import math
 from pathlib import Path
 import numpy as np
@@ -34,6 +36,79 @@ def test_extended_distortion_camera_io_roundtrip(tmp_path: Path) -> None:
     assert loaded.distortion_s4 == pytest.approx(camera.distortion_s4)
     assert loaded.distortion_tau_x == pytest.approx(camera.distortion_tau_x)
     assert loaded.distortion_tau_y == pytest.approx(camera.distortion_tau_y)
+
+
+def test_stereo_camera_io_reports_physical_opencv_baseline(
+    tmp_path: Path,
+) -> None:
+    cam0 = riley.Camera(
+        pixels_num=(640, 480),
+        pixels_size=(3.45e-6, 3.45e-6),
+        pos_world=(0.0125, 0.0175, 0.1600),
+        rot_world=(0.0, 0.0, 0.0),
+        roi_cent_world=(0.01, 0.02, 0.0),
+        focal_length=0.05,
+        sub_sample=2,
+    )
+    cam1 = copy.deepcopy(cam0)
+    cam1.pos_world = (0.0675, 0.0175, 0.1500)
+    cam1.rot_world = (0.0, 0.35, 0.0)
+
+    cam0_opencv = copy.deepcopy(cam0)
+    cam1_opencv = copy.deepcopy(cam1)
+    cam0_opencv.coord_sys = riley.CameraCoordSys.opencv
+    cam1_opencv.coord_sys = riley.CameraCoordSys.opencv
+
+    riley.save_stereo_pair(
+        str(tmp_path),
+        "stereo_data_opengl.csv",
+        cam0,
+        cam1,
+    )
+    riley.save_stereo_pair(
+        str(tmp_path),
+        "stereo_data_opencv.csv",
+        cam0_opencv,
+        cam1_opencv,
+    )
+
+    expected_baseline = np.asarray(cam1.pos_world) - np.asarray(cam0.pos_world)
+    opengl_baseline, opengl_length = _read_stereo_baseline(
+        tmp_path / "stereo_data_opengl.csv",
+    )
+    opencv_baseline, opencv_length = _read_stereo_baseline(
+        tmp_path / "stereo_data_opencv.csv",
+    )
+    np.testing.assert_allclose(opengl_baseline, expected_baseline, atol=1.0e-12)
+    np.testing.assert_allclose(opencv_baseline, expected_baseline, atol=1.0e-12)
+    expected_length = np.linalg.norm(expected_baseline)
+    assert opengl_length == pytest.approx(expected_length, abs=1.0e-12)
+    assert opencv_length == pytest.approx(expected_length, abs=1.0e-12)
+
+    loaded_cam0, loaded_cam1 = riley.load_stereo_pair(
+        str(tmp_path),
+        "stereo_data_opencv.csv",
+    )
+    np.testing.assert_allclose(loaded_cam0.pos_world, cam0.pos_world, atol=1.0e-12)
+    np.testing.assert_allclose(loaded_cam1.pos_world, cam1.pos_world, atol=1.0e-12)
+
+
+def _read_stereo_baseline(path: Path) -> tuple[np.ndarray, float]:
+    with path.open(newline="") as csv_file:
+        values = {
+            key: value
+            for key, value in csv.reader(csv_file)
+            if key != "key"
+        }
+    baseline = np.array(
+        (
+            float(values["baseline_x_m"]),
+            float(values["baseline_y_m"]),
+            float(values["baseline_z_m"]),
+        ),
+        dtype=np.float64,
+    )
+    return baseline, float(values["baseline_len_m"])
 
 
 def test_coverage_and_fov_scale_roundtrip() -> None:
