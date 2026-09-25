@@ -1038,17 +1038,13 @@ fn buildSpeckleClassificationsExhaustive(
     uv_to_cell: [2]F,
     speckles: SpeckleList2D,
 ) void {
-    const params = speckles.params;
+    const proc_axes = speckleClassificationAxes(dims, uv_to_cell, speckles.params);
     for (0..dims[1]) |yy| {
-        const uv_min_y = @as(F, @floatFromInt(yy)) / uv_to_cell[1];
-        const uv_max_y = @as(F, @floatFromInt(yy + 1)) / uv_to_cell[1];
-        const proc_min_y = uv_min_y * params.cells_per_uv[1] + params.uv_offset[1];
-        const proc_max_y = uv_max_y * params.cells_per_uv[1] + params.uv_offset[1];
+        const proc_min_y = proc_axes[1].lowerBound(yy);
+        const proc_max_y = proc_axes[1].upperBound(yy + 1);
         for (0..dims[0]) |xx| {
-            const uv_min_x = @as(F, @floatFromInt(xx)) / uv_to_cell[0];
-            const uv_max_x = @as(F, @floatFromInt(xx + 1)) / uv_to_cell[0];
-            const proc_min_x = uv_min_x * params.cells_per_uv[0] + params.uv_offset[0];
-            const proc_max_x = uv_max_x * params.cells_per_uv[0] + params.uv_offset[0];
+            const proc_min_x = proc_axes[0].lowerBound(xx);
+            const proc_max_x = proc_axes[0].upperBound(xx + 1);
             const state_index = yy * dims[0] + xx;
             states[state_index / 4] = encodeSpeckleClassificationState(
                 states[state_index / 4],
@@ -1085,7 +1081,16 @@ const SpeckleClassificationAxis = struct {
     uv_to_cell: F,
     cells_per_uv: F,
     uv_offset: F,
+    transform_margin: F,
     cached_boundaries: ?[]const F = null,
+
+    inline fn lowerBound(self: @This(), index: usize) F {
+        return self.boundary(index) - self.transform_margin;
+    }
+
+    inline fn upperBound(self: @This(), index: usize) F {
+        return self.boundary(index) + self.transform_margin;
+    }
 
     inline fn boundary(self: @This(), index: usize) F {
         if (self.cached_boundaries) |boundaries| return boundaries[index];
@@ -1098,6 +1103,28 @@ const SpeckleClassificationAxis = struct {
     }
 };
 
+fn speckleClassificationAxes(
+    dims: [2]usize,
+    uv_to_cell: [2]F,
+    params: Speckle2DParams,
+) [2]SpeckleClassificationAxis {
+    var axes: [2]SpeckleClassificationAxis = undefined;
+    for (0..2) |axis| {
+        const scale = @max(1.0, params.cells_per_uv[axis] + @abs(params.uv_offset[axis]));
+        // Lookup multiplication, boundary division and both affine evaluations cost
+        // less than 4*eps*scale; 8 also covers rounding the expanded endpoints.
+        // Coordinate and allocation limits keep indices exactly representable in F.
+        axes[axis] = .{
+            .dim = dims[axis],
+            .uv_to_cell = uv_to_cell[axis],
+            .cells_per_uv = params.cells_per_uv[axis],
+            .uv_offset = params.uv_offset[axis],
+            .transform_margin = 8.0 * std.math.floatEps(F) * scale,
+        };
+    }
+    return axes;
+}
+
 fn speckleClassificationAxisRange(
     proc_min: F,
     proc_max: F,
@@ -1108,7 +1135,7 @@ fn speckleClassificationAxisRange(
     var high = dim;
     while (low < high) {
         const mid = low + (high - low) / 2;
-        const box_max = axis.boundary(mid + 1);
+        const box_max = axis.upperBound(mid + 1);
         if (box_max >= proc_min) {
             high = mid;
         } else {
@@ -1122,7 +1149,7 @@ fn speckleClassificationAxisRange(
     high = dim;
     while (low < high) {
         const mid = low + (high - low) / 2;
-        const box_min = axis.boundary(mid);
+        const box_min = axis.lowerBound(mid);
         if (box_min > proc_max) {
             high = mid;
         } else {
@@ -1131,27 +1158,6 @@ fn speckleClassificationAxisRange(
     }
     if (low == first) return null;
     return .{ .min = first, .max = low - 1 };
-}
-
-fn maxSpeckleClassificationMargin(
-    disk: SpeckleDisk2D,
-    params: Speckle2DParams,
-) F {
-    const proc_max = [2]F{
-        params.uv_offset[0] + params.cells_per_uv[0],
-        params.uv_offset[1] + params.cells_per_uv[1],
-    };
-    const scale = @max(
-        @as(F, 1.0),
-        @max(
-            @max(@abs(params.uv_offset[0]), @abs(proc_max[0])),
-            @max(
-                @max(@abs(params.uv_offset[1]), @abs(proc_max[1])),
-                @max(@abs(disk.center[0]), @abs(disk.center[1])),
-            ),
-        ),
-    );
-    return 16.0 * std.math.floatEps(F) * scale;
 }
 
 inline fn speckleClassificationSearchIncludesCell(
@@ -1168,12 +1174,12 @@ fn stampFixedSpeckleDiskClassification(
     states: []u8,
     dims: [2]usize,
     proc_axes: [2]SpeckleClassificationAxis,
-    speckles: SpeckleList2D,
+    domain_scale: F,
     disk_cell: [2]i64,
     disk: SpeckleDisk2D,
 ) void {
-    const params = speckles.params;
-    const max_margin = maxSpeckleClassificationMargin(disk, params);
+    const center_scale = @max(@abs(disk.center[0]), @abs(disk.center[1]));
+    const max_margin = 16.0 * std.math.floatEps(F) * @max(domain_scale, center_scale);
     // The exhaustive intersection test can reach two local margins beyond the disk.
     // Four domain-wide margins keep this candidate scan conservative under rounding;
     // the shared exact predicate below still decides every state transition.
@@ -1193,8 +1199,8 @@ fn stampFixedSpeckleDiskClassification(
     ) orelse return;
 
     for (y_range.min..y_range.max + 1) |yy| {
-        const proc_min_y = proc_axes[1].boundary(yy);
-        const proc_max_y = proc_axes[1].boundary(yy + 1);
+        const proc_min_y = proc_axes[1].lowerBound(yy);
+        const proc_max_y = proc_axes[1].upperBound(yy + 1);
         if (!owner_search_is_implicit and
             !speckleClassificationSearchIncludesCell(
                 proc_min_y,
@@ -1211,8 +1217,8 @@ fn stampFixedSpeckleDiskClassification(
             );
             if (old_state == .foreground) continue;
 
-            const proc_min_x = proc_axes[0].boundary(xx);
-            const proc_max_x = proc_axes[0].boundary(xx + 1);
+            const proc_min_x = proc_axes[0].lowerBound(xx);
+            const proc_max_x = proc_axes[0].upperBound(xx + 1);
             if (!owner_search_is_implicit and
                 !speckleClassificationSearchIncludesCell(
                     proc_min_x,
@@ -1254,14 +1260,13 @@ fn buildFixedSpeckleClassificationsByStamping(
     // Covers the default 2305 + 1921 boundaries without arena scratch storage.
     var boundary_cache: [speckle_classification_boundary_cache_capacity]F = undefined;
     var cached_boundary_count: usize = 0;
-    var proc_axes: [2]SpeckleClassificationAxis = undefined;
+    var proc_axes = speckleClassificationAxes(dims, uv_to_cell, speckles.params);
+    var domain_scale: F = 1.0;
     for (0..2) |axis| {
-        proc_axes[axis] = .{
-            .dim = dims[axis],
-            .uv_to_cell = uv_to_cell[axis],
-            .cells_per_uv = speckles.params.cells_per_uv[axis],
-            .uv_offset = speckles.params.uv_offset[axis],
-        };
+        const domain_min = proc_axes[axis].lowerBound(0);
+        const domain_max = proc_axes[axis].upperBound(dims[axis]);
+        const axis_scale = @max(@abs(domain_min), @abs(domain_max));
+        domain_scale = @max(domain_scale, axis_scale);
 
         const boundary_count = dims[axis] + 1;
         if (boundary_count <= boundary_cache.len - cached_boundary_count) {
@@ -1287,7 +1292,7 @@ fn buildFixedSpeckleClassificationsByStamping(
                 states,
                 dims,
                 proc_axes,
-                speckles,
+                domain_scale,
                 .{ disk_cell_x, disk_cell_y },
                 speckles.disks[encoded],
             );
@@ -2999,6 +3004,87 @@ test "fixed-radius stamping handles boundary cache overflow exactly" {
         dims[0] + 1 > speckle_classification_boundary_cache_capacity,
     );
     try testing.expectEqual(@as(usize, 1), dims[1]);
+    try expectFixedSpeckleStampMatchesExhaustive(params);
+}
+
+test "speckle classification bounds contain rounded UV lookups" {
+    if (comptime buildconfig.speckle_evaluator != .classified_indexed) return;
+
+    const cases = [_]Speckle2DParams{
+        .{ .cells_per_uv = .{ 192.0, 160.0 }, .uv_offset = .{ -191.0, -159.0 } },
+        .{ .cells_per_uv = .{ 3.25, 2.5 }, .uv_offset = .{ -2.0, 0.4 } },
+        .{ .cells_per_uv = .{ 0.03125, 0.0625 }, .uv_offset = .{ 0.999, -2.001 } },
+        .{
+            .cells_per_uv = .{ 2.25, 1.75 },
+            .uv_offset = if (F == f32)
+                .{ 65_530.0, -65_535.0 }
+            else
+                .{ 35_184_372_088_828.0, -35_184_372_088_831.0 },
+        },
+    };
+    for (cases) |params| {
+        try params.validate();
+        const dims = try speckleClassificationDims(params);
+        const uv_to_cell = [2]F{ @floatFromInt(dims[0]), @floatFromInt(dims[1]) };
+        const axes = speckleClassificationAxes(dims, uv_to_cell, params);
+        for (axes) |axis| {
+            for (0..axis.dim + 1) |ii| {
+                const uv = @as(F, @floatFromInt(ii)) / axis.uv_to_cell;
+                const below = std.math.nextAfter(F, uv, -std.math.inf(F));
+                const above = std.math.nextAfter(F, uv, std.math.inf(F));
+                const samples = [_]F{
+                    std.math.nextAfter(F, below, -std.math.inf(F)),
+                    below,
+                    uv,
+                    above,
+                    std.math.nextAfter(F, above, std.math.inf(F)),
+                };
+                for (samples) |sample| {
+                    const bounded_uv = @max(0.0, @min(1.0, sample));
+                    const index: usize = @intFromFloat(bounded_uv * axis.uv_to_cell);
+                    const cell = @min(axis.dim - 1, index);
+                    const proc = bounded_uv * axis.cells_per_uv + axis.uv_offset;
+                    try testing.expect(proc >= axis.lowerBound(cell));
+                    try testing.expect(proc <= axis.upperBound(cell + 1));
+                }
+            }
+        }
+    }
+}
+
+test "classified indexed speckle preserves foreground after UV cancellation" {
+    if (comptime buildconfig.speckle_evaluator != .classified_indexed) return;
+
+    const params: Speckle2DParams = .{
+        .seed = 63,
+        .cells_per_uv = .{ 192.0, 1.0 },
+        .uv_offset = .{ -191.0, 0.0 },
+        .occupancy = 0.01,
+        .radius_mean = if (F == f32) 0.06400136 else 0.4806722005208286,
+        .radius_jitter = 0.0,
+        .foreground = 0.0,
+        .background = 1.0,
+    };
+    // Both precision-specific samples lie inside the disk centred at
+    // (-0.8973388671875, 0.73699951171875). At 12 samples/cell, cancellation places
+    // them outside their nominal microcells, beyond the local-coordinate margin.
+    const uv = [2]F{
+        if (F == f32) 0.9904513359069824 else 0.9926215277777777,
+        0.73699951171875,
+    };
+    const classified = try generateClassifiedIndexedSpeckle2D(testing.allocator, params);
+    defer testing.allocator.free(classified.states);
+    defer testing.allocator.free(classified.speckles.disk_by_cell);
+    defer testing.allocator.free(classified.speckles.disks);
+
+    try testing.expectEqual(
+        params.foreground,
+        evalSpeckleList2DIndexed(uv, classified.speckles),
+    );
+    try testing.expectEqual(
+        params.foreground,
+        evalClassifiedIndexedSpeckle2D(uv, classified),
+    );
     try expectFixedSpeckleStampMatchesExhaustive(params);
 }
 
