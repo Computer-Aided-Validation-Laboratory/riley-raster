@@ -97,6 +97,13 @@ class RileyBuildPy(build_py):
 
     def run(self):
         ensure_python_package_data()
+        self.run_command("build_ext")
+
+        generated_lib = Path(self.build_lib) / "riley" / "cython" / lib_link_name("c_riley")
+        source_lib = PROJECT_ROOT / "src" / "riley" / "cython" / lib_link_name("c_riley")
+        if generated_lib.is_file():
+            shutil.copy2(generated_lib, source_lib)
+
         super().run()
 
 
