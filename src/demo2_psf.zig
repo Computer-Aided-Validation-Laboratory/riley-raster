@@ -24,7 +24,7 @@ const F = buildconfig.F;
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
-    var arena = std.heap.Arenarena_allocllocator.init(outer_alloc);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
@@ -60,7 +60,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     std.debug.print(
         "Loading sphere simulation data from {s}...\n",
-        .{ data_dir },
+        .{data_dir},
     );
     const sim_data = try meshio.loadSimData(
         arena_alloc,
@@ -103,7 +103,7 @@ pub fn main(init: std.process.Init) !void {
     const focal_length: F = @floatCast(50.0e-3);
     const rotation = Rotation.init(0, 0, 0);
     const roi_cent_world = sceneops.boundsCenter(&sim_data.coords);
-    
+
     const pos_world = cameraops.posFillFrameFromRot(
         &sim_data.coords,
         pixel_num,
@@ -112,7 +112,7 @@ pub fn main(init: std.process.Init) !void {
         rotation,
         1.0,
     );
-    
+
     const camera_input = camera.CameraInput{
         .pixels_num = pixel_num,
         .pixels_size = pixel_size,
@@ -134,7 +134,7 @@ pub fn main(init: std.process.Init) !void {
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = config_base.total_threads },
     };
-    
+
     const modes = [_]riley.BufferMode{
         .global_subpx_full,
         .global_subpx_stripe,
@@ -147,7 +147,7 @@ pub fn main(init: std.process.Init) !void {
             arena_alloc,
             &[_][]const u8{ out_dir_root, @tagName(mode) },
         );
-        
+
         std.debug.print("Rendering PSF sphere with {s}...\n", .{@tagName(mode)});
         if (try riley.raster(
             arena_alloc,

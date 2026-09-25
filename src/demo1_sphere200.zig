@@ -30,7 +30,7 @@ const F = buildconfig.F;
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
-    var arena = std.heap.Arenarena_allocllocator.init(outer_alloc);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
