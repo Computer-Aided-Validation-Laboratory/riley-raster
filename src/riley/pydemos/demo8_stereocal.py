@@ -78,21 +78,11 @@ def main() -> None:
     total_threads = 8
 
     # --------------------------------------------------------------------------
-    # 2. Load calibration plate mesh, sample frames, and apply texture
+    # 2. Load calibration plate mesh and apply texture
     # --------------------------------------------------------------------------
     coords = riley.load_csv(data_dir / "coords.csv")
     connect = riley.load_csv(data_dir / "connect.csv", dtype=np.int64)
     uvs = riley.load_csv(data_dir / "uvs.csv")
-    disp_components = tuple(
-        riley.load_csv(data_dir / f"field_disp_{axis}.csv")
-        for axis in "xyz"
-    )
-
-    frame_indices = riley.frames_evenly_spaced_idxs(
-        disp_components[0].shape[1],
-        FRAMES_MAX,
-    )
-    disp_components = tuple(item[:, frame_indices] for item in disp_components)
     texture = riley.load_texture_mono_u8(texture_path)
 
     # Shift calibration plate to match the DICUQ specimen center
@@ -109,6 +99,24 @@ def main() -> None:
     stereo_file = "stereo_data_opengl.csv"
     riley.save_stereo_pair(str(out_dir), stereo_file, camera_0, camera_1)
     camera_0, camera_1 = riley.load_stereo_pair(str(out_dir), stereo_file)
+
+    motion_limits = riley.CalTargetMotionLimits(
+        translation=(
+            (-1.0e-3, 1.0e-3),
+            (-1.0e-3, 1.0e-3),
+            (-1.0e-3, 1.0e-3),
+        ),
+        rotation_deg=((-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)),
+    )
+    disp_components = riley.caltarget_motion_from_fov(
+        coords,
+        camera_0,
+        FRAMES_MAX,
+        limits=motion_limits,
+        fov_fraction=0.8,
+        sampling=riley.ECalTargetMotionSampling.HYPERCUBE,
+        seed=8,
+    )
 
     # --------------------------------------------------------------------------
     # 4. Build mesh and raster configuration

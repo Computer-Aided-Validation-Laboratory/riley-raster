@@ -17,6 +17,7 @@ dependencies = [
   "numpy>=2.0.0",
   "Pillow>=10.0.0",
   "pytest>=9.0.0",
+  "scipy>=1.14.0",
 ]
 
 [project.urls]
@@ -28,6 +29,7 @@ dev = [
   "twine",
   "ziglang",
   "cython",
+  "opencv-python-headless",
 ]
 
 [tool.setuptools.packages.find]

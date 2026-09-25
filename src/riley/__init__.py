@@ -80,6 +80,7 @@ from riley.cython.riley import (
     save_stereo_pair,
 )
 from riley.python import (
+    calibration,
     exodusio,
     frameops,
     meshconst,
@@ -89,6 +90,12 @@ from riley.python import (
     sceneops,
     textureio,
     uvtools,
+)
+from riley.python.calibration import (
+    CalTargetMotionLimits,
+    ECalTargetMotionSampling,
+    caltarget_motion_from_fov,
+    caltarget_motion_from_limits,
 )
 from riley.python.exodusio import (
     ExodusBlock,
@@ -166,10 +173,12 @@ from riley.python.uvtools import (
 
 __all__ = [
     "BufferMode",
+    "CalTargetMotionLimits",
     "Camera",
     "CameraCoordSys",
     "CameraInput",
     "ConnectConvention",
+    "ECalTargetMotionSampling",
     "EConnectAxis",
     "EElemType",
     "EFrameFit",
@@ -228,6 +237,9 @@ __all__ = [
     "ValidateInput",
     "calc_pixel_resolution",
     "convert_mesh",
+    "caltarget_motion_from_fov",
+    "caltarget_motion_from_limits",
+    "calibration",
     "convert_mesh_for_render",
     "coverage_to_fov_scale",
     "create_mesh",

@@ -64,13 +64,6 @@ STANDARD_DEMO_CASES = (
         2,
     ),
     (
-        "stereocal",
-        [str(PYTHON_EXE), "-m", "riley", "demo8_stereocal"],
-        "out/demo8_stereocal",
-        "out_riley_py/demo8_stereocal",
-        8,
-    ),
-    (
         "feature_zoo",
         [str(PYTHON_EXE), "-m", "riley", "demo9_feature_zoo"],
         "out/demo9_feature_zoo",
@@ -85,6 +78,13 @@ EXODUS_DEMO_CASE = (
     "out/demo6_dicuq",
     "out_riley_py/demo7_dic_from_exodus",
     2,
+)
+
+CALIBRATION_DEMO_CASE = (
+    "stereocal",
+    [str(PYTHON_EXE), "-m", "riley", "demo8_stereocal"],
+    "out_riley_py/demo8_stereocal",
+    8,
 )
 
 ALL_DEMO_CASES = (*STANDARD_DEMO_CASES, EXODUS_DEMO_CASE)
@@ -351,3 +351,15 @@ def test_demo_parity(
 def test_demo7_dic_from_exodus_parity() -> None:
     case_name, python_cmd, zig_dir, py_dir, _ = EXODUS_DEMO_CASE
     _run_demo_case(case_name, python_cmd, zig_dir, py_dir)
+
+
+def test_demo8_stereocal_motion() -> None:
+    """The Python calibration helper drives the stereocal demonstration."""
+    case_name, python_cmd, py_dir, frames_num = CALIBRATION_DEMO_CASE
+    silent_env = dict(os.environ)
+    silent_env["RILEY_DEMO_SILENT"] = "1"
+    py_dir_path = PROJECT_ROOT / py_dir
+    shutil.rmtree(py_dir_path, ignore_errors=True)
+
+    _run_command(f"python render {case_name}", python_cmd, silent_env)
+    assert _has_expected_demo_renders(py_dir_path, frames_num)
