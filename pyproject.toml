@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "riley-raster"
-version = "2026.9.1"
+version = "2026.9.2"
 description = "A Zig software rasteriser for DIC UQ."
 authors = [
   { name = "scepticalrabbit (Lloyd Fletcher)", email = "thescepticalrabbit@gmail.com" },
@@ -50,3 +50,5 @@ filterwarnings = [
   "ignore:.*Setting the shape on a NumPy array.*:DeprecationWarning",
 ]
 
+[tool.cibuildwheel.windows]
+repair-wheel-command = "delvewheel repair -w {dest_dir} --add-path src\\riley\\cython -v {wheel}"
