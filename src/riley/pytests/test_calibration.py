@@ -196,7 +196,7 @@ def test_fov_motion_keeps_all_nodes_inside_requested_fraction() -> None:
 
 def test_fov_rejects_reference_target_outside_fraction() -> None:
     coords = np.array(((0.81, 0.0, 0.0),), dtype=np.float64)
-    with pytest.raises(ValueError, match="cannot provide"):
+    with pytest.raises(ValueError, match="undeformed reference"):
         riley.caltarget_motion_from_fov(
             coords,
             _camera(),
@@ -205,6 +205,28 @@ def test_fov_rejects_reference_target_outside_fraction() -> None:
             fov_fraction=0.8,
             sampling=riley.ECalTargetMotionSampling.RANDOM,
         )
+
+
+def test_fov_contracts_requested_translation_to_sensor_bounds() -> None:
+    coords = np.array(((-0.1, 0.0, 0.0), (0.1, 0.0, 0.0)), dtype=np.float64)
+    disp_x, disp_y, disp_z = riley.caltarget_motion_from_fov(
+        coords,
+        _camera(),
+        2,
+        limits=riley.CalTargetMotionLimits(
+            translation=((1.0, 1.0), (0.0, 0.0), (0.0, 0.0)),
+        ),
+        fov_fraction=0.8,
+        sampling=riley.ECalTargetMotionSampling.RANDOM,
+    )
+
+    assert 0.0 < disp_x[0, 1] < 1.0
+    np.testing.assert_array_equal(disp_y, 0.0)
+    np.testing.assert_array_equal(disp_z, 0.0)
+    deformed = coords + np.column_stack((disp_x[:, 1], disp_y[:, 1], disp_z[:, 1]))
+    pixels_x = 50.0 + 50.0 * deformed[:, 0]
+    assert np.all(pixels_x >= 10.0)
+    assert np.all(pixels_x <= 90.0)
 
 
 @pytest.mark.parametrize(

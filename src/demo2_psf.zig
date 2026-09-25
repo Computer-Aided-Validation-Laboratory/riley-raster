@@ -20,17 +20,19 @@ const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 const F = buildconfig.F;
-const raster_threads: u16 = 8;
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
-    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+
+    var arena = std.heap.Arenarena_allocllocator.init(outer_alloc);
     defer arena.deinit();
-    const aa = arena.allocator();
+    const arena_alloc = arena.allocator();
 
     // -------------------------------------------------------------------------
     // 1. Setup paths and parameters
     // -------------------------------------------------------------------------
+    const raster_threads: u16 = 8;
+
     const config_base = riley.RasterConfig{
         .save_strategy = .disk,
         .total_threads = raster_threads,
@@ -40,8 +42,9 @@ pub fn main(init: std.process.Init) !void {
         },
         .report = .bench,
     };
+
     var threaded_io = riley.getThreadedIo(
-        aa,
+        arena_alloc,
         init.minimal,
         config_base.total_threads,
     );
@@ -56,22 +59,22 @@ pub fn main(init: std.process.Init) !void {
     // 2. Load mesh data and texture shader
     // -------------------------------------------------------------------------
     std.debug.print(
-        "Loading sphere simulation data from {s} with {d} raster threads...\n",
-        .{ data_dir, raster_threads },
+        "Loading sphere simulation data from {s}...\n",
+        .{ data_dir },
     );
     const sim_data = try meshio.loadSimData(
-        aa,
+        arena_alloc,
         io,
         data_dir ++ "coords.csv",
         data_dir ++ "connect.csv",
         null,
         null,
     );
-    const uvs = try uvio.loadUVMap(aa, io, data_dir ++ "uvs.csv");
+    const uvs = try uvio.loadUVMap(arena_alloc, io, data_dir ++ "uvs.csv");
     const texture = try iio.loadImage(
         u8,
         1,
-        aa,
+        arena_alloc,
         io,
         "texture/speckle_mono.bmp",
         .bmp,
@@ -100,6 +103,7 @@ pub fn main(init: std.process.Init) !void {
     const focal_length: F = @floatCast(50.0e-3);
     const rotation = Rotation.init(0, 0, 0);
     const roi_cent_world = sceneops.boundsCenter(&sim_data.coords);
+    
     const pos_world = cameraops.posFillFrameFromRot(
         &sim_data.coords,
         pixel_num,
@@ -108,6 +112,7 @@ pub fn main(init: std.process.Init) !void {
         rotation,
         1.0,
     );
+    
     const camera_input = camera.CameraInput{
         .pixels_num = pixel_num,
         .pixels_size = pixel_size,
@@ -129,6 +134,7 @@ pub fn main(init: std.process.Init) !void {
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = config_base.total_threads },
     };
+    
     const modes = [_]riley.BufferMode{
         .global_subpx_full,
         .global_subpx_stripe,
@@ -138,21 +144,22 @@ pub fn main(init: std.process.Init) !void {
         var config = config_base;
         config.buffer_mode = mode;
         const out_dir = try std.fs.path.join(
-            aa,
+            arena_alloc,
             &[_][]const u8{ out_dir_root, @tagName(mode) },
         );
+        
         std.debug.print("Rendering PSF sphere with {s}...\n", .{@tagName(mode)});
         if (try riley.raster(
-            aa,
+            arena_alloc,
             &render_groups,
             &[_]camera.CameraInput{camera_input},
             &[_]mo.MeshInput{mesh},
             config,
             out_dir,
         )) |image| {
-            aa.free(image.slice);
+            arena_alloc.free(image.slice);
             var image_mut = image;
-            image_mut.deinit(aa);
+            image_mut.deinit(arena_alloc);
         }
     }
 

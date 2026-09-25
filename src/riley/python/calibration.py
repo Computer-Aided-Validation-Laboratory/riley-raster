@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 MotionRange: TypeAlias = tuple[float, float]
 AxisMotionRanges: TypeAlias = tuple[MotionRange, MotionRange, MotionRange]
 _NORMALISED_RANGES: TypeAlias = tuple[tuple[float, float], ...]
-_MAX_FOV_SAMPLE_ATTEMPTS = 10_000
 
 
 class ECalTargetMotionSampling(Enum):
@@ -102,9 +101,11 @@ def caltarget_motion_from_fov(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Create rigid fields whose generated poses fit one camera's FOV.
 
-    Every returned pose is checked against the central ``fov_fraction`` of the
-    supplied OpenGL-coordinate-system camera sensor. The function raises
-    ``ValueError`` when the limits cannot provide the requested valid poses.
+    Translation limits describe the maximum requested motion. Each sampled
+    pose is contracted automatically to remain in the central
+    ``fov_fraction`` of the supplied OpenGL-coordinate-system camera sensor.
+    The function raises ``ValueError`` only when the undeformed reference
+    target cannot fit in that fraction.
     """
     coords_out = _validate_coords(coords)
     center = _validate_rotation_center(rotation_center, coords_out)
@@ -113,28 +114,21 @@ def caltarget_motion_from_fov(
     ranges = _normalise_limits(limits)
     generator = _create_rng(seed, rng)
 
-    if sampling is ECalTargetMotionSampling.CARTESIAN:
-        poses = _sample_poses(
-            positions_num,
-            ranges,
-            sampling,
-            include_reference_frame,
-            generator,
-            cartesian_levels,
-        )
-        _validate_poses_in_fov(coords_out, center, poses, camera, fov_fraction)
-    else:
-        poses = _sample_fov_poses(
-            coords_out,
-            center,
-            camera,
-            fov_fraction,
-            positions_num,
-            ranges,
-            sampling,
-            include_reference_frame,
-            generator,
-        )
+    poses = _sample_poses(
+        positions_num,
+        ranges,
+        sampling,
+        include_reference_frame,
+        generator,
+        cartesian_levels,
+    )
+    poses = _fit_poses_to_fov(
+        coords_out,
+        center,
+        camera,
+        fov_fraction,
+        poses,
+    )
     return _calculate_displacements(coords_out, center, poses)
 
 
@@ -332,48 +326,83 @@ def _validate_fov_fraction(fov_fraction: float) -> None:
         raise ValueError("fov_fraction must be finite and in (0.0, 1.0].")
 
 
-def _sample_fov_poses(
+def _fit_poses_to_fov(
     coords: np.ndarray,
     center: np.ndarray,
     camera: Camera,
     fov_fraction: float,
-    positions_num: int,
-    ranges: _NORMALISED_RANGES,
-    sampling: ECalTargetMotionSampling,
-    include_reference_frame: bool,
-    rng: np.random.Generator,
+    poses: np.ndarray,
 ) -> np.ndarray:
-    for _ in range(_MAX_FOV_SAMPLE_ATTEMPTS):
-        poses = _sample_poses(
-            positions_num,
-            ranges,
-            sampling,
-            include_reference_frame,
-            rng,
-            None,
+    reference = np.zeros(6, dtype=np.float64)
+    if not _pose_is_in_fov(coords, center, reference, camera, fov_fraction):
+        raise ValueError(
+            "the undeformed reference target does not fit within the requested "
+            "camera FOV."
         )
-        if all(
-            _pose_is_in_fov(coords, center, pose, camera, fov_fraction)
-            for pose in poses
-        ):
-            return poses
-    raise ValueError(
-        "motion limits cannot provide the requested poses within the camera FOV."
+    fitted = np.empty_like(poses)
+    for pose_idx, pose in enumerate(poses):
+        fitted[pose_idx] = _fit_pose_to_fov(
+            coords,
+            center,
+            pose,
+            reference,
+            camera,
+            fov_fraction,
+        )
+    return fitted
+
+
+def _fit_pose_to_fov(
+    coords: np.ndarray,
+    center: np.ndarray,
+    pose: np.ndarray,
+    reference: np.ndarray,
+    camera: Camera,
+    fov_fraction: float,
+) -> np.ndarray:
+    rotation_pose = np.zeros(6, dtype=np.float64)
+    rotation_pose[3:] = pose[3:]
+    fitted_rotation = _contract_pose_to_fov(
+        coords,
+        center,
+        reference,
+        rotation_pose,
+        camera,
+        fov_fraction,
+    )
+    target_pose = fitted_rotation.copy()
+    target_pose[:3] = pose[:3]
+    return _contract_pose_to_fov(
+        coords,
+        center,
+        fitted_rotation,
+        target_pose,
+        camera,
+        fov_fraction,
     )
 
 
-def _validate_poses_in_fov(
+def _contract_pose_to_fov(
     coords: np.ndarray,
     center: np.ndarray,
-    poses: np.ndarray,
+    pose_start: np.ndarray,
+    pose_end: np.ndarray,
     camera: Camera,
     fov_fraction: float,
-) -> None:
-    for pose in poses:
-        if not _pose_is_in_fov(coords, center, pose, camera, fov_fraction):
-            raise ValueError(
-                "a Cartesian motion pose lies outside the requested camera FOV."
-            )
+) -> np.ndarray:
+    if _pose_is_in_fov(coords, center, pose_end, camera, fov_fraction):
+        return pose_end
+
+    lower = 0.0
+    upper = 1.0
+    for _ in range(52):
+        fraction = 0.5 * (lower + upper)
+        pose = pose_start + fraction * (pose_end - pose_start)
+        if _pose_is_in_fov(coords, center, pose, camera, fov_fraction):
+            lower = fraction
+        else:
+            upper = fraction
+    return pose_start + lower * (pose_end - pose_start)
 
 
 def _pose_is_in_fov(
