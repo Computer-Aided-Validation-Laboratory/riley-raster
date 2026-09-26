@@ -248,7 +248,7 @@ fn runAdditionalDistPsfTests(
 
     const extra_dist_cases = [_]struct {
         tag: []const u8,
-        distortion: camera.DistortionModel,
+        distortion: camera.DistortionParams,
     }{
         .{
             .tag = "standalone_polynomial",
@@ -358,6 +358,13 @@ fn runAdditionalDistPsfTests(
         }
     }
 
+    try runBrownConradyPolynomialEquivalenceRender(
+        allocator,
+        io,
+        prep,
+        config,
+    );
+
     // Test PSF cases with in-memory buffer mode equivalence
     for (extra_psf_cases) |psf_case| {
         var cam_tile = prep.camera_input;
@@ -406,4 +413,79 @@ fn runAdditionalDistPsfTests(
             try std.testing.expect(@abs(val_tile - val_global) <= tcfg.FULL_GOLD_ABS_TOL);
         }
     }
+}
+
+fn runBrownConradyPolynomialEquivalenceRender(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    prep: *const common_full.Scene1Prepared,
+    config: rastcfg.RasterConfig,
+) !void {
+    const mesh = fullcase_dist_psf.buildScene1Mesh(prep);
+    const meshes = [_]MeshInput{mesh};
+    const equivalent = common_full.getEquivalentBrownConradyPolynomial();
+
+    var brown_camera = prep.camera_input;
+    brown_camera.sub_sample = 4;
+    brown_camera.distortion = .{ .brown_conrady = equivalent.brown_conrady };
+    brown_camera.psf = .{ .gaussian = .{
+        .sigma_px = 1.5,
+        .supp_rad_px = 4.5,
+        .separable = .yes,
+    } };
+    var polynomial_camera = brown_camera;
+    polynomial_camera.distortion = .{ .polynomial = equivalent.polynomial };
+
+    var run_config = config;
+    run_config.save_strategy = .memory;
+    run_config.buffer_mode = .global_subpx_full;
+    run_config.background_value = common_full.grey_background_scene1;
+    const render_groups = [_]riley.RenderGroupSpec{
+        .{ .io = io, .workers = 1 },
+    };
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+    const result = try riley.raster(
+        aa,
+        &render_groups,
+        &[_]CameraInput{ brown_camera, polynomial_camera },
+        &meshes,
+        run_config,
+        null,
+    );
+    var render_result = result orelse return error.NoResult;
+    defer aa.free(render_result.slice);
+
+    var brown_image = try common_test.extractFrameImage(
+        aa,
+        &render_result,
+        0,
+        0,
+        0,
+        1,
+    );
+    defer {
+        aa.free(brown_image.slice);
+        brown_image.deinit(aa);
+    }
+    var polynomial_image = try common_test.extractFrameImage(
+        aa,
+        &render_result,
+        1,
+        0,
+        0,
+        1,
+    );
+    defer {
+        aa.free(polynomial_image.slice);
+        polynomial_image.deinit(aa);
+    }
+    try common_test.expectImagesEquivalent(
+        &brown_image,
+        &polynomial_image,
+        tcfg.EQUIV_REL_TOL,
+        tcfg.EQUIV_ABS_TOL,
+    );
 }

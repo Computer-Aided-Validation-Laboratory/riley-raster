@@ -21,20 +21,26 @@ const camera_impl = if (cfg.simd == .on) camera_simd else camera_scalar;
 // --------------------------------------------------------------------------------------
 
 pub const DistortionModel = cm.DistortionModel;
+pub const DistortionParams = cm.DistortionParams;
+pub const distortionParamsFromModel = cm.distortionParamsFromModel;
 pub const BrownConrady = cm.BrownConrady;
 pub const BrownConradyExt = cm.BrownConradyExt;
+pub const BrownConradyParams = cm.BrownConradyParams;
+pub const BrownConradyExtParams = cm.BrownConradyExtParams;
+pub const DistortionCoords = cm.DistortionCoords;
 pub const PolynomialOrder = cm.PolynomialOrder;
 pub const PolynomialMap = cm.PolynomialMap;
 pub const BidirectionalPolynomial = cm.BidirectionalPolynomial;
 pub const BrownConradyPolynomial = cm.BrownConradyPolynomial;
 pub const BrownConradyExtPolynomial = cm.BrownConradyExtPolynomial;
-pub const DistortionInvResult = cm.DistortionInvResult;
+pub const BrownConradyExtPolynomialParams = cm.BrownConradyExtPolynomialParams;
 pub const DistortionForwardJacResult = cm.DistortionForwardJacResult;
 pub const forwardDistortionModelScal = cm.forwardDistortionModelScal;
 pub const invDistortionModelScal = cm.invDistortionModelScal;
 pub const forwardDistortionSIMD = cm.forwardDistortionSIMD;
 pub const forwardDistortionWithJacSIMD = cm.forwardDistortionWithJacSIMD;
 pub const invDistortionSIMD = cm.invDistortionSIMD;
+pub const forwardDistortionModelSIMD = cm.forwardDistortionModelSIMD;
 pub const invDistortionModelSIMD = cm.invDistortionModelSIMD;
 pub const SeparablePSF = cm.SeparablePSF;
 pub const PixelBoxPSF = cm.PixelBoxPSF;

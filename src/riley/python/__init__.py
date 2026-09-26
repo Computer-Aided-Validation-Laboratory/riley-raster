@@ -8,6 +8,7 @@
 # --------------------------------------------------------------------------
 
 from riley.python import (
+    calibration,
     exodusio,
     frameops,
     meshconst,
@@ -17,6 +18,12 @@ from riley.python import (
     sceneops,
     textureio,
     uvtools,
+)
+from riley.python.calibration import (
+    CalTargetMotionLimits,
+    ECalTargetMotionSampling,
+    caltarget_motion_from_fov,
+    caltarget_motion_from_limits,
 )
 from riley.python.exodusio import (
     ExodusBlock,
@@ -93,8 +100,10 @@ from riley.python.uvtools import (
 )
 
 __all__ = [
+    "CalTargetMotionLimits",
     "ConnectConvention",
     "EConnectAxis",
+    "ECalTargetMotionSampling",
     "EElemType",
     "ENodeOrder",
     "ESceneOverlapDirect",
@@ -121,6 +130,9 @@ __all__ = [
     "UVProjPlane",
     "UserTopology",
     "convert_mesh",
+    "caltarget_motion_from_fov",
+    "caltarget_motion_from_limits",
+    "calibration",
     "convert_mesh_for_render",
     "create_mesh",
     "create_mesh_from_conversion",

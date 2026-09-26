@@ -321,21 +321,21 @@ fn projectWorldNodeToRaster(
         coord_world,
     );
 
-    coord_raster.slice[0] = camera_prepared.image_dist * coord_raster.slice[0] /
-        (-coord_raster.slice[2]);
-    coord_raster.slice[1] = camera_prepared.image_dist * coord_raster.slice[1] /
-        (-coord_raster.slice[2]);
+    coord_raster.vec[0] = camera_prepared.image_dist * coord_raster.vec[0] /
+        (-coord_raster.vec[2]);
+    coord_raster.vec[1] = camera_prepared.image_dist * coord_raster.vec[1] /
+        (-coord_raster.vec[2]);
 
-    coord_raster.slice[0] = 2.0 * coord_raster.slice[0] /
+    coord_raster.vec[0] = 2.0 * coord_raster.vec[0] /
         camera_prepared.image_dims[0];
-    coord_raster.slice[1] = 2.0 * coord_raster.slice[1] /
+    coord_raster.vec[1] = 2.0 * coord_raster.vec[1] /
         camera_prepared.image_dims[1];
 
-    coord_raster.slice[0] = (coord_raster.slice[0] + 1.0) * 0.5 *
+    coord_raster.vec[0] = (coord_raster.vec[0] + 1.0) * 0.5 *
         @as(F, @floatFromInt(camera_prepared.pixels_num[0]));
-    coord_raster.slice[1] = (1.0 - coord_raster.slice[1]) * 0.5 *
+    coord_raster.vec[1] = (1.0 - coord_raster.vec[1]) * 0.5 *
         @as(F, @floatFromInt(camera_prepared.pixels_num[1]));
-    coord_raster.slice[2] = -coord_raster.slice[2];
+    coord_raster.vec[2] = -coord_raster.vec[2];
     return coord_raster;
 }
 

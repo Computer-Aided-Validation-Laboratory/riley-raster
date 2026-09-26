@@ -596,7 +596,7 @@ fn testInvalidCameraRoi(
 ) !void {
     _ = allocator;
     var cam_inps = common_full.createScene3Cameras();
-    cam_inps[0].pos_world.slice[0] = std.math.nan(F);
+    cam_inps[0].pos_world.vec[0] = std.math.nan(F);
     try expectCameraError(io, fixture, &cam_inps, error.InvalidCameraRoi);
 }
 

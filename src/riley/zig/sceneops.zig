@@ -260,9 +260,9 @@ pub fn meanCenter(coords: *const meshio.Coords) vec.Vec3f {
     const coords_num = coords.mat.rows_num;
 
     for (0..coords_num) |nn| {
-        center_world.slice[0] += coords.mat.get(nn, 0);
-        center_world.slice[1] += coords.mat.get(nn, 1);
-        center_world.slice[2] += coords.mat.get(nn, 2);
+        center_world.vec[0] += coords.mat.get(nn, 0);
+        center_world.vec[1] += coords.mat.get(nn, 1);
+        center_world.vec[2] += coords.mat.get(nn, 2);
     }
 
     return center_world.mulScal(

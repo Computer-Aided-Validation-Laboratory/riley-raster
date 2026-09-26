@@ -32,13 +32,14 @@ pub fn main(init: std.process.Init) !void {
 
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
-    const aa = arena.allocator();
+    const arena_alloc = arena.allocator();
 
     // -------------------------------------------------------------------------
     // 1. Setup paths and parameters
     // -------------------------------------------------------------------------
     const data_dir = "data/min/tri6_sphere200/";
     const out_dir_root = "./out/demo1_sphere200";
+
     const pixel_num = [_]u32{ 800, 500 };
     const pixel_size = [_]F{
         @floatCast(5.3e-6),
@@ -47,10 +48,10 @@ pub fn main(init: std.process.Init) !void {
     const focal_leng: F = @floatCast(50.0e-3);
     const rot = Rotation.init(0, 0, 0);
     const fov_scale_factor: F = 1.0;
-    const total_threads: u16 = 4;
 
+    const total_threads: u16 = 4;
     var threaded_io = riley.getThreadedIo(
-        aa,
+        arena_alloc,
         init.minimal,
         total_threads,
     );
@@ -64,7 +65,7 @@ pub fn main(init: std.process.Init) !void {
     const coord_path = data_dir ++ "coords.csv";
     const conn_path = data_dir ++ "connect.csv";
     const sim_data = try meshio.loadSimData(
-        aa,
+        arena_alloc,
         io,
         coord_path,
         conn_path,
@@ -74,13 +75,13 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("Loading UV map...\n", .{});
     const uv_path = data_dir ++ "uvs.csv";
-    const uvs = try uvio.loadUVMap(aa, io, uv_path);
+    const uvs = try uvio.loadUVMap(arena_alloc, io, uv_path);
 
     std.debug.print("Loading speckle texture...\n", .{});
     const texture = try iio.loadImage(
         u8,
         1,
-        aa,
+        arena_alloc,
         io,
         "texture/speckle_mono.bmp",
         .bmp,
@@ -118,7 +119,7 @@ pub fn main(init: std.process.Init) !void {
         fov_scale_factor,
     );
     const camera = try CameraPrepared.init(
-        aa,
+        arena_alloc,
         .{
             .pixels_num = pixel_num,
             .pixels_size = pixel_size,
@@ -129,7 +130,7 @@ pub fn main(init: std.process.Init) !void {
             .sub_sample = 2,
         },
     );
-    defer camera.deinit(aa);
+    defer camera.deinit(arena_alloc);
 
     const camera_input = CameraInput{
         .pixels_num = camera.pixels_num,
@@ -139,7 +140,7 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .distortion = camera.distortion,
+        .distortion = camera_mod.distortionParamsFromModel(camera.distortion),
     };
 
     // -------------------------------------------------------------------------
@@ -164,7 +165,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Rendering sphere to {s}/...\n", .{out_dir_root});
     const meshes = [_]MeshInput{mesh_input};
     const images = try riley.raster(
-        aa,
+        arena_alloc,
         &render_groups,
         &[_]@TypeOf(camera_input){camera_input},
         &meshes,
@@ -173,8 +174,8 @@ pub fn main(init: std.process.Init) !void {
     );
 
     if (images) |img| {
-        aa.free(img.slice);
-        img.deinit(aa);
+        arena_alloc.free(img.slice);
+        img.deinit(arena_alloc);
     }
 
     std.debug.print("Demo complete. Images saved to {s}/\n", .{out_dir_root});

@@ -19,7 +19,7 @@ const SubPixelCenterMap = camera.SubPixelCenterMap;
 
 pub const DistCase = struct {
     tag: []const u8,
-    distortion: camera.DistortionModel,
+    distortion: camera.DistortionParams,
 };
 
 pub const PsfCase = struct {

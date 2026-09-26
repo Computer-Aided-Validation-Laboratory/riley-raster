@@ -83,7 +83,6 @@ def create_raster_config(
 
     if not output_name_format:
         raise ValueError("output_name_format must not be empty.")
-
     if num_frames <= 0:
         raise ValueError("num_frames must be positive.")
 

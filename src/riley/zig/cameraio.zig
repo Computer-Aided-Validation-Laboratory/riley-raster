@@ -11,6 +11,8 @@ const buildconfig = @import("buildconfig.zig");
 
 const cam = @import("camera.zig");
 const cameraops = @import("cameraops.zig");
+const rotation = @import("rotation.zig");
+const vec = @import("vecstack.zig");
 const F = buildconfig.F;
 
 // --------------------------------------------------------------------------------------
@@ -58,12 +60,12 @@ pub fn saveCamera(
         const r_riley = camera_input.rot_world.matrix;
         const r_riley_t = r_riley.transpose();
         var r_opencv = r_riley_t;
-        r_opencv.slice[3] = -r_opencv.slice[3];
-        r_opencv.slice[4] = -r_opencv.slice[4];
-        r_opencv.slice[5] = -r_opencv.slice[5];
-        r_opencv.slice[6] = -r_opencv.slice[6];
-        r_opencv.slice[7] = -r_opencv.slice[7];
-        r_opencv.slice[8] = -r_opencv.slice[8];
+        r_opencv.set(1, 0, -r_opencv.get(1, 0));
+        r_opencv.set(1, 1, -r_opencv.get(1, 1));
+        r_opencv.set(1, 2, -r_opencv.get(1, 2));
+        r_opencv.set(2, 0, -r_opencv.get(2, 0));
+        r_opencv.set(2, 1, -r_opencv.get(2, 1));
+        r_opencv.set(2, 2, -r_opencv.get(2, 2));
 
         const r_opencv_c = r_opencv.mulVec(camera_input.pos_world);
         pos_val = @import("vecstack.zig").initVec3(
@@ -251,7 +253,7 @@ pub fn saveStereoPair(
     const cam1 = stereo_pair.cameras[1];
     const cam0_opengl = cameraops.toOpenGLInput(cam0);
     const cam1_opengl = cameraops.toOpenGLInput(cam1);
-    const baseline = cam1_opengl.pos_world.sub(cam0_opengl.pos_world);
+    const baseline = calculateStereoBaseline(stereo_pair);
     const baseline_len = baseline.vecLen();
     const cam0_metrics = cameraops.calcPlaneMetrics(cam0);
     const cam1_metrics = cameraops.calcPlaneMetrics(cam1);
@@ -348,6 +350,12 @@ pub fn loadStereoPair(
             try loadCamera(allocator, io, dir, cam1_file),
         },
     };
+}
+
+fn calculateStereoBaseline(stereo_pair: cam.StereoPairInput) vec.Vec3f {
+    const cam0 = stereo_pair.cameras[0];
+    const cam1 = stereo_pair.cameras[1];
+    return cam1.pos_world.sub(cam0.pos_world);
 }
 
 fn parseKeyValueCsv(
@@ -485,6 +493,28 @@ fn parseOptionalU8Value(
     return def;
 }
 
+fn parseOptionalFloatValue(
+    kv: *const std.StringHashMap([]const u8),
+    key: []const u8,
+    def: F,
+) !F {
+    if (kv.get(key)) |value| return std.fmt.parseFloat(F, value);
+    return def;
+}
+
+fn writeExtendedDistortion(
+    writer: *std.Io.Writer,
+    model: ?cam.BrownConradyExt.Params,
+) !void {
+    const ext = model orelse cam.BrownConradyExt.Params{};
+    try writer.print("{s},{d:.12}\n", .{ "s1", ext.s1 });
+    try writer.print("{s},{d:.12}\n", .{ "s2", ext.s2 });
+    try writer.print("{s},{d:.12}\n", .{ "s3", ext.s3 });
+    try writer.print("{s},{d:.12}\n", .{ "s4", ext.s4 });
+    try writer.print("{s},{d:.12}\n", .{ "tau_x", ext.tau_x });
+    try writer.print("{s},{d:.12}\n", .{ "tau_y", ext.tau_y });
+}
+
 fn parsePolynomialMap(
     kv: *const std.StringHashMap([]const u8),
     prefix: []const u8,
@@ -542,7 +572,7 @@ fn loadPolynomial(
 
 fn writeDistortion(
     writer: *std.Io.Writer,
-    distortion: cam.DistortionModel,
+    distortion: cam.DistortionParams,
 ) !void {
     switch (distortion) {
         .none => {
@@ -555,6 +585,7 @@ fn writeDistortion(
             try writer.print("{s},{d:.12}\n", .{ "k6", 0.0 });
             try writer.print("{s},{d:.12}\n", .{ "p1", 0.0 });
             try writer.print("{s},{d:.12}\n", .{ "p2", 0.0 });
+            try writeExtendedDistortion(writer, null);
             try writePolynomialMetadata(writer, null);
         },
         .brown_conrady => |model| {
@@ -570,6 +601,7 @@ fn writeDistortion(
             try writer.print("{s},{d:.12}\n", .{ "k6", 0.0 });
             try writer.print("{s},{d:.12}\n", .{ "p1", model.p1 });
             try writer.print("{s},{d:.12}\n", .{ "p2", model.p2 });
+            try writeExtendedDistortion(writer, null);
             try writePolynomialMetadata(writer, null);
         },
         .brown_conrady_ext => |model| {
@@ -585,6 +617,7 @@ fn writeDistortion(
             try writer.print("{s},{d:.12}\n", .{ "k6", model.k6 });
             try writer.print("{s},{d:.12}\n", .{ "p1", model.p1 });
             try writer.print("{s},{d:.12}\n", .{ "p2", model.p2 });
+            try writeExtendedDistortion(writer, model);
             try writePolynomialMetadata(writer, null);
         },
         .polynomial => |poly| {
@@ -597,6 +630,7 @@ fn writeDistortion(
             try writer.print("{s},{d:.12}\n", .{ "k6", 0.0 });
             try writer.print("{s},{d:.12}\n", .{ "p1", 0.0 });
             try writer.print("{s},{d:.12}\n", .{ "p2", 0.0 });
+            try writeExtendedDistortion(writer, null);
             try writePolynomialMetadata(writer, poly);
         },
         .brown_conrady_polynomial => |chain| {
@@ -612,6 +646,7 @@ fn writeDistortion(
             try writer.print("{s},{d:.12}\n", .{ "k6", 0.0 });
             try writer.print("{s},{d:.12}\n", .{ "p1", chain.brown_conrady.p1 });
             try writer.print("{s},{d:.12}\n", .{ "p2", chain.brown_conrady.p2 });
+            try writeExtendedDistortion(writer, null);
             try writePolynomialMetadata(writer, chain.polynomial);
         },
         .brown_conrady_ext_polynomial => |chain| {
@@ -651,6 +686,7 @@ fn writeDistortion(
                 "p2",
                 chain.brown_conrady_ext.p2,
             });
+            try writeExtendedDistortion(writer, chain.brown_conrady_ext);
             try writePolynomialMetadata(writer, chain.polynomial);
         },
     }
@@ -658,7 +694,7 @@ fn writeDistortion(
 
 fn loadDistortion(
     kv: *const std.StringHashMap([]const u8),
-) !cam.DistortionModel {
+) !cam.DistortionParams {
     const model_name = try requireValue(kv, "distortion_model");
     const polynomial = try loadPolynomial(kv);
     if (std.mem.eql(u8, model_name, "none")) {
@@ -683,6 +719,12 @@ fn loadDistortion(
             .k6 = try std.fmt.parseFloat(F, try requireValue(kv, "k6")),
             .p1 = try std.fmt.parseFloat(F, try requireValue(kv, "p1")),
             .p2 = try std.fmt.parseFloat(F, try requireValue(kv, "p2")),
+            .s1 = try parseOptionalFloatValue(kv, "s1", 0.0),
+            .s2 = try parseOptionalFloatValue(kv, "s2", 0.0),
+            .s3 = try parseOptionalFloatValue(kv, "s3", 0.0),
+            .s4 = try parseOptionalFloatValue(kv, "s4", 0.0),
+            .tau_x = try parseOptionalFloatValue(kv, "tau_x", 0.0),
+            .tau_y = try parseOptionalFloatValue(kv, "tau_y", 0.0),
         } };
     }
     if (std.mem.eql(u8, model_name, "polynomial")) {
@@ -711,9 +753,147 @@ fn loadDistortion(
                 .k6 = try std.fmt.parseFloat(F, try requireValue(kv, "k6")),
                 .p1 = try std.fmt.parseFloat(F, try requireValue(kv, "p1")),
                 .p2 = try std.fmt.parseFloat(F, try requireValue(kv, "p2")),
+                .s1 = try parseOptionalFloatValue(kv, "s1", 0.0),
+                .s2 = try parseOptionalFloatValue(kv, "s2", 0.0),
+                .s3 = try parseOptionalFloatValue(kv, "s3", 0.0),
+                .s4 = try parseOptionalFloatValue(kv, "s4", 0.0),
+                .tau_x = try parseOptionalFloatValue(kv, "tau_x", 0.0),
+                .tau_y = try parseOptionalFloatValue(kv, "tau_y", 0.0),
             },
             .polynomial = polynomial orelse return error.MissingPolynomialMap,
         } };
     }
     return error.InvalidDistortionModel;
+}
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
+const testing = std.testing;
+const temp_test_dir = "out/test_cameraio";
+
+fn initTestCamera(
+    pos_world: [3]F,
+    alpha_z: F,
+    beta_y: F,
+    gamma_x: F,
+    coord_sys: cam.CameraCoordSys,
+) cam.CameraInput {
+    return .{
+        .pixels_num = .{ 640, 480 },
+        .pixels_size = .{ 3.45e-6, 3.45e-6 },
+        .pos_world = vec.initVec3(F, pos_world[0], pos_world[1], pos_world[2]),
+        .rot_world = rotation.Rotation.init(alpha_z, beta_y, gamma_x),
+        .roi_cent_world = vec.initVec3(F, 0.01, 0.02, 0.0),
+        .focal_length = 50.0e-3,
+        .sub_sample = 2,
+        .coord_sys = coord_sys,
+    };
+}
+
+fn expectVecApproxEqual(expected: vec.Vec3f, actual: vec.Vec3f) !void {
+    const tol: F = if (F == f32) 1.0e-5 else 1.0e-11;
+    try testing.expectApproxEqAbs(expected.get(0), actual.get(0), tol);
+    try testing.expectApproxEqAbs(expected.get(1), actual.get(1), tol);
+    try testing.expectApproxEqAbs(expected.get(2), actual.get(2), tol);
+}
+
+const StereoBaselineSummary = struct {
+    baseline: vec.Vec3f,
+    length: F,
+};
+
+fn readSummaryBaseline(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    dir: std.Io.Dir,
+    file_name: []const u8,
+) !StereoBaselineSummary {
+    var kv = try parseKeyValueCsv(allocator, io, dir, file_name);
+    defer deinitKeyValueCsv(allocator, &kv);
+    return .{
+        .baseline = vec.initVec3(
+            F,
+            try std.fmt.parseFloat(F, try requireValue(&kv, "baseline_x_m")),
+            try std.fmt.parseFloat(F, try requireValue(&kv, "baseline_y_m")),
+            try std.fmt.parseFloat(F, try requireValue(&kv, "baseline_z_m")),
+        ),
+        .length = try std.fmt.parseFloat(
+            F,
+            try requireValue(&kv, "baseline_len_m"),
+        ),
+    };
+}
+
+test "camera I/O preserves physical stereo baseline across OpenGL and OpenCV exports" {
+    const allocator = testing.allocator;
+    const io = testing.io;
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(io, "out", .default_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
+    cwd.deleteTree(io, temp_test_dir) catch {};
+    try cwd.createDir(io, temp_test_dir, .default_dir);
+    defer cwd.deleteTree(io, temp_test_dir) catch {};
+
+    var out_dir = try cwd.openDir(io, temp_test_dir, .{});
+    defer out_dir.close(io);
+
+    const cam0 = initTestCamera(.{ 0.0125, 0.0175, 0.1600 }, 0.0, 0.0, 0.0, .opengl);
+    const cam1 = initTestCamera(.{ 0.0675, 0.0175, 0.1500 }, 0.0, 0.35, 0.0, .opengl);
+    const expected_baseline = cam1.pos_world.sub(cam0.pos_world);
+
+    try saveCamera(io, out_dir, "camera_opengl.csv", 0, cam0);
+    const loaded_opengl = try loadCamera(allocator, io, out_dir, "camera_opengl.csv");
+    try expectVecApproxEqual(cam0.pos_world, loaded_opengl.pos_world);
+
+    var cam0_opencv = cam0;
+    var cam1_opencv = cam1;
+    cam0_opencv.coord_sys = .opencv;
+    cam1_opencv.coord_sys = .opencv;
+    try saveCamera(io, out_dir, "camera_opencv.csv", 0, cam0_opencv);
+    const loaded_opencv = try loadCamera(allocator, io, out_dir, "camera_opencv.csv");
+    try expectVecApproxEqual(cam0.pos_world, loaded_opencv.pos_world);
+
+    try saveStereoPair(
+        io,
+        out_dir,
+        "stereo_data_opengl.csv",
+        .{ .cameras = .{ cam0, cam1 } },
+    );
+    try saveStereoPair(
+        io,
+        out_dir,
+        "stereo_data_opencv.csv",
+        .{ .cameras = .{ cam0_opencv, cam1_opencv } },
+    );
+
+    const loaded_stereo = try loadStereoPair(
+        allocator,
+        io,
+        out_dir,
+        "stereo_data_opencv.csv",
+    );
+    try expectVecApproxEqual(cam0.pos_world, loaded_stereo.cameras[0].pos_world);
+    try expectVecApproxEqual(cam1.pos_world, loaded_stereo.cameras[1].pos_world);
+
+    const opengl_summary = try readSummaryBaseline(
+        allocator,
+        io,
+        out_dir,
+        "stereo_data_opengl.csv",
+    );
+    const opencv_summary = try readSummaryBaseline(
+        allocator,
+        io,
+        out_dir,
+        "stereo_data_opencv.csv",
+    );
+    try expectVecApproxEqual(expected_baseline, opengl_summary.baseline);
+    try expectVecApproxEqual(expected_baseline, opencv_summary.baseline);
+    const expected_baseline_len = expected_baseline.vecLen();
+    const tol: F = if (F == f32) 1.0e-5 else 1.0e-11;
+    try testing.expectApproxEqAbs(expected_baseline_len, opengl_summary.length, tol);
+    try testing.expectApproxEqAbs(expected_baseline_len, opencv_summary.length, tol);
 }

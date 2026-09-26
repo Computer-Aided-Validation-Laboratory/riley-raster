@@ -63,8 +63,8 @@ fn statsFileName(buf: []u8) ![]const u8 {
 }
 
 fn inverseDistortionWithIters(
-    comptime DistortionType: type,
-    distortion: DistortionType,
+    comptime Evaluator: type,
+    distortion: anytype,
     x_dist: F,
     y_dist: F,
 ) !DistortionInverseResult {
@@ -75,9 +75,12 @@ fn inverseDistortionWithIters(
     var y_guess = y_dist;
 
     for (0..max_iters) |ii| {
-        const fwd = distortion.forwardWithJac(x_guess, y_guess);
-        const resid_x = fwd.x_d - x_dist;
-        const resid_y = fwd.y_d - y_dist;
+        const fwd = if (Evaluator == cam.BrownConradyExt)
+            distortion.forwardWithJac(x_guess, y_guess)
+        else
+            Evaluator.forwardWithJac(distortion, x_guess, y_guess);
+        const resid_x = fwd.coords.x - x_dist;
+        const resid_y = fwd.coords.y - y_dist;
 
         if (@max(@abs(resid_x), @abs(resid_y)) < tol.distortion.resid) {
             return .{
@@ -87,10 +90,10 @@ fn inverseDistortionWithIters(
             };
         }
 
-        const jac00 = fwd.jac[0][0];
-        const jac01 = fwd.jac[0][1];
-        const jac10 = fwd.jac[1][0];
-        const jac11 = fwd.jac[1][1];
+        const jac00 = fwd.jac.get(0, 0);
+        const jac01 = fwd.jac.get(0, 1);
+        const jac10 = fwd.jac.get(1, 0);
+        const jac11 = fwd.jac.get(1, 1);
         const det = jac00 * jac11 - jac01 * jac10;
 
         if (@abs(det) < tol.distortion.det) {

@@ -16,7 +16,7 @@ pub const output_dir_name = "verif";
 
 pub const CameraDistortionCase = struct {
     case_name: []const u8,
-    distortion: cam.DistortionModel,
+    distortion: cam.DistortionParams,
 };
 
 pub const DistortCase = struct {
@@ -33,9 +33,9 @@ fn edgeCameraInput(
     return .{
         .pixels_num = .{ 800, 500 },
         .pixels_size = .{ 5.3e-6, 5.3e-6 },
-        .pos_world = .{ .slice = pos_world },
+        .pos_world = .{ .vec = pos_world },
         .rot_world = rotation.Rotation.init(0.0, 0.0, 0.0),
-        .roi_cent_world = .{ .slice = roi_cent_world },
+        .roi_cent_world = .{ .vec = roi_cent_world },
         .focal_length = 5.0e-2,
         .sub_sample = 1,
         .distortion = .none,
@@ -48,7 +48,7 @@ fn brownConradyDistortion(
     k3: F,
     p1: F,
     p2: F,
-) cam.DistortionModel {
+) cam.DistortionParams {
     return .{
         .brown_conrady = .{
             .k1 = k1,
@@ -69,7 +69,7 @@ fn brownConradyExtDistortion(
     k6: F,
     p1: F,
     p2: F,
-) cam.DistortionModel {
+) cam.DistortionParams {
     return .{
         .brown_conrady_ext = .{
             .k1 = k1,
@@ -88,7 +88,7 @@ fn standalonePolynomialDistortion(
     order: cam.PolynomialOrder,
     coeffs_u: [10]F,
     coeffs_v: [10]F,
-) cam.DistortionModel {
+) cam.DistortionParams {
     return .{
         .polynomial = .{
             .forward_map = .{
@@ -109,7 +109,7 @@ fn brownConradyPolynomialDistortion(
     order: cam.PolynomialOrder,
     coeffs_u: [10]F,
     coeffs_v: [10]F,
-) cam.DistortionModel {
+) cam.DistortionParams {
     return .{
         .brown_conrady_polynomial = .{
             .brown_conrady = .{
@@ -142,7 +142,7 @@ fn brownConradyExtPolynomialDistortion(
     order: cam.PolynomialOrder,
     coeffs_u: [10]F,
     coeffs_v: [10]F,
-) cam.DistortionModel {
+) cam.DistortionParams {
     return .{
         .brown_conrady_ext_polynomial = .{
             .brown_conrady_ext = .{

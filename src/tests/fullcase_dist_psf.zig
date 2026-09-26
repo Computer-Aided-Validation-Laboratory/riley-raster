@@ -18,7 +18,7 @@ const MeshInput = mo.MeshInput;
 
 pub const DistCase = struct {
     tag: []const u8,
-    distortion: camera.DistortionModel,
+    distortion: camera.DistortionParams,
 };
 
 pub const PsfCase = struct {

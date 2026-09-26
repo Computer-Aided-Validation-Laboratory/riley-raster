@@ -346,14 +346,14 @@ fn runCase(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .distortion = camera.distortion,
+        .distortion = cammod.distortionParamsFromModel(camera.distortion),
     };
 
     const front_centroid = sceneops.boundsForCoords(&front_mesh.coords).center;
     const cam_axis = [3]F{
-        camera_input.pos_world.slice[0] - camera_input.roi_cent_world.slice[0],
-        camera_input.pos_world.slice[1] - camera_input.roi_cent_world.slice[1],
-        camera_input.pos_world.slice[2] - camera_input.roi_cent_world.slice[2],
+        camera_input.pos_world.vec[0] - camera_input.roi_cent_world.vec[0],
+        camera_input.pos_world.vec[1] - camera_input.roi_cent_world.vec[1],
+        camera_input.pos_world.vec[2] - camera_input.roi_cent_world.vec[2],
     };
     const cam_axis_norm = @sqrt(
         cam_axis[0] * cam_axis[0] +
@@ -366,11 +366,11 @@ fn runCase(
         cam_axis[2] / cam_axis_norm,
     };
     const front_dist =
-        (camera_input.pos_world.slice[0] - front_centroid[0]) *
+        (camera_input.pos_world.vec[0] - front_centroid[0]) *
         cam_axis_unit[0] +
-        (camera_input.pos_world.slice[1] - front_centroid[1]) *
+        (camera_input.pos_world.vec[1] - front_centroid[1]) *
             cam_axis_unit[1] +
-        (camera_input.pos_world.slice[2] - front_centroid[2]) *
+        (camera_input.pos_world.vec[2] - front_centroid[2]) *
             cam_axis_unit[2];
     const largest_span = @max(width, height);
     const depth_tol = buildconfig.config.tol.geometry.depth_buff_inv_z_cmp;

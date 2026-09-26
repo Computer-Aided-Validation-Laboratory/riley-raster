@@ -40,25 +40,25 @@ pub const Rotation = struct {
 
         // Row major as in C
         // Row 1
-        self.matrix.slice[0] = @cos(self.alpha_z) * @cos(self.beta_y);
-        self.matrix.slice[1] = @cos(self.alpha_z) * @sin(self.beta_y) *
+        self.matrix.set(0, 0, @cos(self.alpha_z) * @cos(self.beta_y));
+        self.matrix.set(0, 1, @cos(self.alpha_z) * @sin(self.beta_y) *
             @sin(self.gamma_x) - @sin(self.alpha_z) *
-            @cos(self.gamma_x);
-        self.matrix.slice[2] = @cos(self.alpha_z) * @sin(self.beta_y) *
+            @cos(self.gamma_x));
+        self.matrix.set(0, 2, @cos(self.alpha_z) * @sin(self.beta_y) *
             @cos(self.gamma_x) + @sin(self.alpha_z) *
-            @sin(self.gamma_x);
+            @sin(self.gamma_x));
         // Row 2
-        self.matrix.slice[3] = @sin(self.alpha_z) * @cos(self.beta_y);
-        self.matrix.slice[4] = @sin(self.alpha_z) * @sin(self.beta_y) *
+        self.matrix.set(1, 0, @sin(self.alpha_z) * @cos(self.beta_y));
+        self.matrix.set(1, 1, @sin(self.alpha_z) * @sin(self.beta_y) *
             @sin(self.gamma_x) + @cos(self.alpha_z) *
-            @cos(self.gamma_x);
-        self.matrix.slice[5] = @sin(self.alpha_z) * @sin(self.beta_y) *
+            @cos(self.gamma_x));
+        self.matrix.set(1, 2, @sin(self.alpha_z) * @sin(self.beta_y) *
             @cos(self.gamma_x) - @cos(self.alpha_z) *
-            @sin(self.gamma_x);
+            @sin(self.gamma_x));
         // Row 3
-        self.matrix.slice[6] = -@sin(self.beta_y);
-        self.matrix.slice[7] = @cos(self.beta_y) * @sin(self.gamma_x);
-        self.matrix.slice[8] = @cos(self.beta_y) * @cos(self.gamma_x);
+        self.matrix.set(2, 0, -@sin(self.beta_y));
+        self.matrix.set(2, 1, @cos(self.beta_y) * @sin(self.gamma_x));
+        self.matrix.set(2, 2, @cos(self.beta_y) * @cos(self.gamma_x));
     }
 
     pub fn matPrint(self: *const Rotation) void {
@@ -66,11 +66,11 @@ pub const Rotation = struct {
     }
 
     pub fn fromMat33(mat: Mat33f) Rotation {
-        const r20 = mat.slice[6];
-        const r21 = mat.slice[7];
-        const r22 = mat.slice[8];
-        const r10 = mat.slice[3];
-        const r00 = mat.slice[0];
+        const r20 = mat.get(2, 0);
+        const r21 = mat.get(2, 1);
+        const r22 = mat.get(2, 2);
+        const r10 = mat.get(1, 0);
+        const r00 = mat.get(0, 0);
 
         const beta = std.math.asin(-r20);
         const cos_beta = @cos(beta);
@@ -82,10 +82,9 @@ pub const Rotation = struct {
             alpha = std.math.atan2(r10, r00);
             gamma = std.math.atan2(r21, r22);
         } else {
-            gamma = std.math.atan2(-mat.slice[1], mat.slice[4]);
+            gamma = std.math.atan2(-mat.get(0, 1), mat.get(1, 1));
         }
 
         return Rotation.init(alpha, beta, gamma);
     }
 };
-

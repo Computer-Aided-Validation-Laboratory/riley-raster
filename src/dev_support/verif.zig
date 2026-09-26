@@ -160,7 +160,7 @@ fn worldToCamera(
     return matrix.Mat44Ops.mulVec3(
         F,
         camera.world_to_cam_mat,
-        .{ .slice = .{ world_point.x, world_point.y, world_point.z } },
+        .{ .vec = .{ world_point.x, world_point.y, world_point.z } },
     );
 }
 
@@ -171,11 +171,11 @@ pub fn worldToIdealRaster(
     const coord_cam = worldToCamera(camera, world_point);
     const focal_px = camera.calcFocalPx();
     const offsets = camera.calcRasterOffsets();
-    const inv_neg_z = 1.0 / (-coord_cam.slice[2]);
+    const inv_neg_z = 1.0 / (-coord_cam.vec[2]);
 
     return .{
-        offsets.x_off + coord_cam.slice[0] * inv_neg_z * focal_px.fx,
-        offsets.y_off - coord_cam.slice[1] * inv_neg_z * focal_px.fy,
+        offsets.x_off + coord_cam.vec[0] * inv_neg_z * focal_px.fx,
+        offsets.y_off - coord_cam.vec[1] * inv_neg_z * focal_px.fy,
     };
 }
 
@@ -194,8 +194,8 @@ pub fn idealToObservedRaster(
         y_norm,
     );
     return .{
-        distorted[0] * focal_px.fx + offsets.x_off,
-        distorted[1] * focal_px.fy + offsets.y_off,
+        distorted.x * focal_px.fx + offsets.x_off,
+        distorted.y * focal_px.fy + offsets.y_off,
     };
 }
 
@@ -238,18 +238,18 @@ pub fn worldNodesToSolverCoords(
             .z = node_z[nn],
         };
         const coord_cam = worldToCamera(camera, world_point);
-        const inv_neg_z = 1.0 / (-coord_cam.slice[2]);
+        const inv_neg_z = 1.0 / (-coord_cam.vec[2]);
 
         if (mesh_type == .tri3 or mesh_type == .tri3opt) {
             solver_nodes.x[nn] = offsets.x_off +
-                coord_cam.slice[0] * inv_neg_z * focal_px.fx;
+                coord_cam.vec[0] * inv_neg_z * focal_px.fx;
             solver_nodes.y[nn] = offsets.y_off -
-                coord_cam.slice[1] * inv_neg_z * focal_px.fy;
-            solver_nodes.z[nn] = -coord_cam.slice[2];
+                coord_cam.vec[1] * inv_neg_z * focal_px.fy;
+            solver_nodes.z[nn] = -coord_cam.vec[2];
         } else {
-            solver_nodes.x[nn] = coord_cam.slice[0] * focal_px.fx;
-            solver_nodes.y[nn] = -coord_cam.slice[1] * focal_px.fy;
-            solver_nodes.z[nn] = -coord_cam.slice[2];
+            solver_nodes.x[nn] = coord_cam.vec[0] * focal_px.fx;
+            solver_nodes.y[nn] = -coord_cam.vec[1] * focal_px.fy;
+            solver_nodes.z[nn] = -coord_cam.vec[2];
         }
     }
 

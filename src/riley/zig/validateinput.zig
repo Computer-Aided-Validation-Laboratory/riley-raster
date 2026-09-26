@@ -324,7 +324,7 @@ fn checkMeshesMetadata(
         }
         if (mesh.connect.table.cols_num != expected_nodes_per_elem or
             mesh.connect.table_mem.len !=
-            mesh.connect.table.rows_num * mesh.connect.table.cols_num)
+                mesh.connect.table.rows_num * mesh.connect.table.cols_num)
         {
             return error.InvalidConnectivityDimensions;
         }
@@ -335,7 +335,7 @@ fn checkMeshesMetadata(
                 disp_field.array.dims[1] != mesh.coords.mat.rows_num or
                 disp_field.array.dims[2] != 3 or
                 disp_field.array_mem.len !=
-                disp_field.array.dims[0] * disp_field.array.dims[1] * disp_field.array.dims[2])
+                    disp_field.array.dims[0] * disp_field.array.dims[1] * disp_field.array.dims[2])
             {
                 return error.InvalidDisplacementDimensions;
             }
@@ -402,7 +402,7 @@ fn checkCamInp(cam_inp: cam.CameraInput) InputValidationError!void {
         return error.InvalidCameraRoi;
     }
 
-    if (!isFiniteSlice(cam_inp.rot_world.matrix.slice[0..])) {
+    if (!isFiniteSlice(cam_inp.rot_world.matrix.asSlice())) {
         return error.InvalidCameraRotation;
     }
     if (!isValidRotationMatrix(cam_inp.rot_world.matrix)) {
@@ -810,7 +810,7 @@ fn isValidBidirectionalPolynomial(poly: cam.BidirectionalPolynomial) bool {
     return true;
 }
 
-fn isValidDistortion(distortion: cam.DistortionModel) bool {
+fn isValidDistortion(distortion: cam.DistortionParams) bool {
     return switch (distortion) {
         .none => true,
         .brown_conrady => |bc| isFiniteSlice(&[_]F{
@@ -829,6 +829,12 @@ fn isValidDistortion(distortion: cam.DistortionModel) bool {
             bc.k6,
             bc.p1,
             bc.p2,
+            bc.s1,
+            bc.s2,
+            bc.s3,
+            bc.s4,
+            bc.tau_x,
+            bc.tau_y,
         }),
         .polynomial => |poly| isValidBidirectionalPolynomial(poly),
         .brown_conrady_polynomial => |chain| isFiniteSlice(&[_]F{
@@ -847,6 +853,12 @@ fn isValidDistortion(distortion: cam.DistortionModel) bool {
             chain.brown_conrady_ext.k6,
             chain.brown_conrady_ext.p1,
             chain.brown_conrady_ext.p2,
+            chain.brown_conrady_ext.s1,
+            chain.brown_conrady_ext.s2,
+            chain.brown_conrady_ext.s3,
+            chain.brown_conrady_ext.s4,
+            chain.brown_conrady_ext.tau_x,
+            chain.brown_conrady_ext.tau_y,
         }) and isValidBidirectionalPolynomial(chain.polynomial),
     };
 }
@@ -896,5 +908,5 @@ fn isFinite2D(comptime N1: usize, comptime N2: usize, arr: *const [N1][N2]F) boo
 }
 
 fn isFiniteVec3(vec_val: anytype) bool {
-    return isFiniteSlice(vec_val.slice[0..]);
+    return isFiniteSlice(vec_val.asSlice());
 }

@@ -114,9 +114,9 @@ pub fn nodesToRasterRangeInPlace(
     for (node_start..node_end) |nn| {
         const coord_world = coords_nodes.getVec3(nn);
         const coord_raster = transformWorldNodeToRaster(camera, coord_world);
-        coords_nodes.mat.set(nn, 0, coord_raster.slice[0]);
-        coords_nodes.mat.set(nn, 1, coord_raster.slice[1]);
-        coords_nodes.mat.set(nn, 2, coord_raster.slice[2]);
+        coords_nodes.mat.set(nn, 0, coord_raster.vec[0]);
+        coords_nodes.mat.set(nn, 1, coord_raster.vec[1]);
+        coords_nodes.mat.set(nn, 2, coord_raster.vec[2]);
     }
 }
 
@@ -129,9 +129,9 @@ pub fn nodesToClipPxLengRangeInPlace(
     for (node_start..node_end) |nn| {
         const coord_world = coords_nodes.getVec3(nn);
         const coord_clip = transformWorldNodeToClipPx(camera, coord_world);
-        coords_nodes.mat.set(nn, 0, coord_clip.slice[0]);
-        coords_nodes.mat.set(nn, 1, coord_clip.slice[1]);
-        coords_nodes.mat.set(nn, 2, coord_clip.slice[2]);
+        coords_nodes.mat.set(nn, 0, coord_clip.vec[0]);
+        coords_nodes.mat.set(nn, 1, coord_clip.vec[1]);
+        coords_nodes.mat.set(nn, 2, coord_clip.vec[2]);
     }
 }
 
@@ -805,19 +805,19 @@ fn transformWorldNodeToRaster(
 ) vecstack.Vec3T(F) {
     var coord_raster = matrix.Mat44Ops.mulVec3(F, camera.world_to_cam_mat, coord_world);
 
-    coord_raster.slice[0] = camera.image_dist * coord_raster.slice[0] /
-        (-coord_raster.slice[2]);
-    coord_raster.slice[1] = camera.image_dist * coord_raster.slice[1] /
-        (-coord_raster.slice[2]);
+    coord_raster.vec[0] = camera.image_dist * coord_raster.vec[0] /
+        (-coord_raster.vec[2]);
+    coord_raster.vec[1] = camera.image_dist * coord_raster.vec[1] /
+        (-coord_raster.vec[2]);
 
-    coord_raster.slice[0] = 2.0 * coord_raster.slice[0] / camera.image_dims[0];
-    coord_raster.slice[1] = 2.0 * coord_raster.slice[1] / camera.image_dims[1];
+    coord_raster.vec[0] = 2.0 * coord_raster.vec[0] / camera.image_dims[0];
+    coord_raster.vec[1] = 2.0 * coord_raster.vec[1] / camera.image_dims[1];
 
-    coord_raster.slice[0] = (coord_raster.slice[0] + 1.0) * 0.5 *
+    coord_raster.vec[0] = (coord_raster.vec[0] + 1.0) * 0.5 *
         @as(F, @floatFromInt(camera.pixels_num[0]));
-    coord_raster.slice[1] = (1.0 - coord_raster.slice[1]) * 0.5 *
+    coord_raster.vec[1] = (1.0 - coord_raster.vec[1]) * 0.5 *
         @as(F, @floatFromInt(camera.pixels_num[1]));
-    coord_raster.slice[2] = -coord_raster.slice[2];
+    coord_raster.vec[2] = -coord_raster.vec[2];
 
     return coord_raster;
 }
@@ -832,9 +832,9 @@ fn transformWorldNodeToClipPx(
         @as(F, @floatFromInt(camera.pixels_num[1])) / camera.image_dims[1];
 
     var coord_clip = matrix.Mat44Ops.mulVec3(F, camera.world_to_cam_mat, coord_world);
-    coord_clip.slice[0] *= x_scale;
-    coord_clip.slice[1] *= -y_scale;
-    coord_clip.slice[2] = -coord_clip.slice[2];
+    coord_clip.vec[0] *= x_scale;
+    coord_clip.vec[1] *= -y_scale;
+    coord_clip.vec[2] = -coord_clip.vec[2];
     return coord_clip;
 }
 
@@ -956,8 +956,8 @@ fn distortIdealRasterCoords(
             x_ideal,
             y_ideal,
         );
-        coords_distorted.x[nn] = distorted[0] * focal_px.fx + offsets.x_off;
-        coords_distorted.y[nn] = distorted[1] * focal_px.fy + offsets.y_off;
+        coords_distorted.x[nn] = distorted.x * focal_px.fx + offsets.x_off;
+        coords_distorted.y[nn] = distorted.y * focal_px.fy + offsets.y_off;
     }
 
     return coords_distorted;
@@ -1082,7 +1082,7 @@ fn initTestCullCameraWithDistortion(
             .roi_cent_world = Vec3f.initZeros(),
             .focal_length = 1.0,
             .sub_sample = 1,
-            .distortion = distortion,
+            .distortion = cam.distortionParamsFromModel(distortion),
         },
     );
 }
@@ -1632,7 +1632,7 @@ test "calcVisibleNodeBBoxHighOrd distorted_off_screen_shift" {
 
 test "calcVisibleNodeBBoxHighOrd backface_uses_ideal_pinhole" {
     const allocator = std.testing.allocator;
-    const distortion = cam.DistortionModel{
+    const distortion = try cam.DistortionModel.init(.{
         .brown_conrady_ext = .{
             .k1 = -0.2,
             .k2 = 0.05,
@@ -1643,7 +1643,7 @@ test "calcVisibleNodeBBoxHighOrd backface_uses_ideal_pinhole" {
             .p1 = 0.01,
             .p2 = -0.01,
         },
-    };
+    });
     const camera = initTestCullCameraManual(distortion);
 
     var connect = try initSingleElemConnect(6, allocator);

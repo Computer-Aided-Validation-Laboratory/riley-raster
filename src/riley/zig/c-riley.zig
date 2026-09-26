@@ -134,6 +134,12 @@ pub const CDistortion = extern struct {
     distortion_k6: F,
     distortion_p1: F,
     distortion_p2: F,
+    distortion_s1: F,
+    distortion_s2: F,
+    distortion_s3: F,
+    distortion_s4: F,
+    distortion_tau_x: F,
+    distortion_tau_y: F,
     distortion_poly_order: u32,
     distortion_poly_has_forward: u8,
     distortion_poly_has_inv: u8,
@@ -628,7 +634,7 @@ fn psfFromC(in_camera: *const CPSF) !cam.PointSpreadFunc {
     };
 }
 
-fn distortionFromC(in_camera: *const CDistortion) !cam.DistortionModel {
+fn distortionFromC(in_camera: *const CDistortion) !cam.DistortionParams {
     const poly_order: cam.PolynomialOrder = switch (in_camera.distortion_poly_order) {
         0, 2 => .quadratic,
         1 => .linear,
@@ -675,6 +681,12 @@ fn distortionFromC(in_camera: *const CDistortion) !cam.DistortionModel {
             .k6 = in_camera.distortion_k6,
             .p1 = in_camera.distortion_p1,
             .p2 = in_camera.distortion_p2,
+            .s1 = in_camera.distortion_s1,
+            .s2 = in_camera.distortion_s2,
+            .s3 = in_camera.distortion_s3,
+            .s4 = in_camera.distortion_s4,
+            .tau_x = in_camera.distortion_tau_x,
+            .tau_y = in_camera.distortion_tau_y,
         } },
         3 => .{ .polynomial = polynomial orelse return error.MissingPolynomialMap },
         4 => .{ .brown_conrady_polynomial = .{
@@ -697,6 +709,12 @@ fn distortionFromC(in_camera: *const CDistortion) !cam.DistortionModel {
                 .k6 = in_camera.distortion_k6,
                 .p1 = in_camera.distortion_p1,
                 .p2 = in_camera.distortion_p2,
+                .s1 = in_camera.distortion_s1,
+                .s2 = in_camera.distortion_s2,
+                .s3 = in_camera.distortion_s3,
+                .s4 = in_camera.distortion_s4,
+                .tau_x = in_camera.distortion_tau_x,
+                .tau_y = in_camera.distortion_tau_y,
             },
             .polynomial = polynomial orelse return error.MissingPolynomialMap,
         } },
@@ -1237,7 +1255,11 @@ fn buildMeshInput(
                 errdefer tex_array.deinit(allocator);
                 built.mesh_input.shader = .{ .tex_f = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(F, 1){ .array = tex_array, .rows_num = in_shader.tex.dim1, .cols_num = in_shader.tex.dim2 },
+                    .tex = texops.Tex(F, 1){
+                        .array = tex_array,
+                        .rows_num = in_shader.tex.dim1,
+                        .cols_num = in_shader.tex.dim2,
+                    },
                     .samp_cfg = samp_cfg,
                     .bits = bits,
                     .scaling = scaling,
@@ -1313,7 +1335,11 @@ fn buildMeshInput(
                 errdefer tex_array.deinit(allocator);
                 built.mesh_input.shader = .{ .tex_rgb_f = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(F, 3){ .array = tex_array, .rows_num = in_shader.tex.dim1, .cols_num = in_shader.tex.dim2 },
+                    .tex = texops.Tex(F, 3){
+                        .array = tex_array,
+                        .rows_num = in_shader.tex.dim1,
+                        .cols_num = in_shader.tex.dim2,
+                    },
                     .samp_cfg = samp_cfg,
                     .bits = bits,
                     .scaling = scaling,
@@ -1752,6 +1778,12 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
             .distortion_k6 = 0.0,
             .distortion_p1 = 0.0,
             .distortion_p2 = 0.0,
+            .distortion_s1 = 0.0,
+            .distortion_s2 = 0.0,
+            .distortion_s3 = 0.0,
+            .distortion_s4 = 0.0,
+            .distortion_tau_x = 0.0,
+            .distortion_tau_y = 0.0,
             .distortion_poly_order = @intFromEnum(cam.PolynomialOrder.quadratic),
             .distortion_poly_has_forward = 0,
             .distortion_poly_has_inv = 0,
@@ -1792,6 +1824,12 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
             out_camera.distortion.distortion_k6 = model.k6;
             out_camera.distortion.distortion_p1 = model.p1;
             out_camera.distortion.distortion_p2 = model.p2;
+            out_camera.distortion.distortion_s1 = model.s1;
+            out_camera.distortion.distortion_s2 = model.s2;
+            out_camera.distortion.distortion_s3 = model.s3;
+            out_camera.distortion.distortion_s4 = model.s4;
+            out_camera.distortion.distortion_tau_x = model.tau_x;
+            out_camera.distortion.distortion_tau_y = model.tau_y;
         },
         .polynomial => |poly| {
             out_camera.distortion.distortion_model = 3;
@@ -1838,6 +1876,12 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
             out_camera.distortion.distortion_k6 = chain.brown_conrady_ext.k6;
             out_camera.distortion.distortion_p1 = chain.brown_conrady_ext.p1;
             out_camera.distortion.distortion_p2 = chain.brown_conrady_ext.p2;
+            out_camera.distortion.distortion_s1 = chain.brown_conrady_ext.s1;
+            out_camera.distortion.distortion_s2 = chain.brown_conrady_ext.s2;
+            out_camera.distortion.distortion_s3 = chain.brown_conrady_ext.s3;
+            out_camera.distortion.distortion_s4 = chain.brown_conrady_ext.s4;
+            out_camera.distortion.distortion_tau_x = chain.brown_conrady_ext.tau_x;
+            out_camera.distortion.distortion_tau_y = chain.brown_conrady_ext.tau_y;
             if (chain.polynomial.forward_map) |forward_map| {
                 out_camera.distortion.distortion_poly_order = @intFromEnum(forward_map.order);
                 out_camera.distortion.distortion_poly_has_forward = 1;
