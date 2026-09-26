@@ -59,6 +59,7 @@ maths/
 !data/shapes/**/*.csv
 !data/shapes/**/*.msh
 !data/shapes/**/*.e
+!data/rabbits/outline/*.svg
 !gold/min/
 !gold/min/**/*.fimg
 !gold/min/**/*.bmp
@@ -73,6 +74,7 @@ maths/
 !gold/perf_stats_ref/**/*.md
 !gold/verif/
 !gold/verif/**
+
 
 # Keep our other test suite data committed to the repo
 !data/small/**/*.csv
