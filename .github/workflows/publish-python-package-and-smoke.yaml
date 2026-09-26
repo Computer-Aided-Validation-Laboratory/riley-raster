@@ -113,8 +113,13 @@ jobs:
         run: |
           version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Create clean environment
+      - name: Create clean environment (Linux)
+        if: runner.os == 'Linux'
         run: python -m venv "$RUNNER_TEMP/riley-pypi-smoke"
+      - name: Create clean environment (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python -m venv "$env:RUNNER_TEMP\riley-pypi-smoke"
       - name: Install from PyPI (Linux)
         if: runner.os == 'Linux'
         run: |
