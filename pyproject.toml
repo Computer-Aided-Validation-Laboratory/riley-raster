@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "riley-raster"
-version = "2026.9.2"
+version = "2026.9.3"
 description = "A Zig software rasteriser for DIC UQ."
 authors = [
   { name = "scepticalrabbit (Lloyd Fletcher)", email = "thescepticalrabbit@gmail.com" },
