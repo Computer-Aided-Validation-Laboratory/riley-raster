@@ -49,7 +49,8 @@ test "selected speckle evaluator prepares its production resources" {
             .classified_indexed, .direct_fixed => 0.0,
             else => 0.06,
         },
-        .edge_softness = 0.03,
+        .edge_softness = if (buildconfig.speckle_shape == .disk and
+            buildconfig.speckle_boundary_blur) 0.03 else 0.0,
     };
     const mesh_input = meshpipeline.MeshInput{
         .mesh_type = .tri3,

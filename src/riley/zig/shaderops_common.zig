@@ -260,7 +260,9 @@ pub const Speckle2DParams = struct {
     occupancy: F = 0.9,
     radius_mean: F = 0.45,
     radius_jitter: F = 0.0,
-    edge_softness: F = 0.035,
+    /// Disk boundary half-width in cell units; requires a compatible evaluator.
+    /// Positive values only affect shading when speckle_boundary_blur is enabled.
+    edge_softness: F = 0.0,
     perlin_coverage_threshold: F = 0.0,
     perlin_coverage_transition_width: F = 0.12,
     foreground: F = 0.0,
@@ -279,6 +281,20 @@ pub const Speckle2DParams = struct {
         for (self.uv_offset) |offset| {
             if (!std.math.isFinite(offset)) {
                 return error.InvalidSpeckleUVOffset;
+            }
+        }
+        if (!std.math.isFinite(self.edge_softness) or self.edge_softness < 0.0) {
+            return error.InvalidSpeckleEdgeSoftness;
+        }
+        if (self.edge_softness != 0.0) {
+            if (comptime speckle_shape != .disk) {
+                return error.SpeckleEdgeSoftnessRequiresDisk;
+            }
+            switch (comptime buildconfig.speckle_evaluator) {
+                .classified_indexed, .direct_fixed, .mask_1bit => {
+                    return error.SpeckleEvaluatorRequiresHardEdges;
+                },
+                .cell_hash, .list_naive, .list_indexed, .mask_u8 => {},
             }
         }
         if (comptime speckle_shape == .perlin) {
@@ -317,13 +333,7 @@ pub const Speckle2DParams = struct {
                     }
                 },
             }
-            if (!std.math.isFinite(self.edge_softness) or self.edge_softness < 0.0) {
-                return error.InvalidSpeckleEdgeSoftness;
-            }
-            const effective_softness = if (comptime speckle_boundary_blur)
-                self.edge_softness
-            else
-                0.0;
+            const effective_softness = effectiveSpeckleSoftness(self);
             if (comptime buildconfig.speckle_evaluator != .direct_fixed) {
                 if (self.radius_mean + self.radius_jitter + effective_softness > 1.0) {
                     return error.InvalidSpeckleNeighborhoodRadius;
@@ -2484,6 +2494,7 @@ test "procedural speckle hash has stable known vectors" {
 test "procedural speckle parameters validate shape-specific settings" {
     var invalid = Speckle2DParams{};
     if (comptime buildconfig.speckle_evaluator == .direct_fixed) invalid.radius_jitter = 0.0;
+    try testing.expectEqual(@as(F, 0.0), invalid.edge_softness);
     try invalid.validate();
     if (comptime speckle_shape == .perlin) {
         invalid.perlin_coverage_transition_width = -0.01;
@@ -2495,7 +2506,6 @@ test "procedural speckle parameters validate shape-specific settings" {
         invalid.occupancy = -1.0;
         invalid.radius_mean = -1.0;
         invalid.radius_jitter = -1.0;
-        invalid.edge_softness = -1.0;
         try invalid.validate();
     } else {
         if (comptime buildconfig.speckle_evaluator == .direct_fixed) {
@@ -2520,12 +2530,70 @@ test "procedural speckle parameters validate shape-specific settings" {
         } else {
             invalid.radius_mean = 0.9;
             invalid.radius_jitter = 0.15;
-            invalid.edge_softness = 0.1;
             try testing.expectError(
                 error.InvalidSpeckleNeighborhoodRadius,
                 invalid.validate(),
             );
         }
+    }
+}
+
+test "procedural speckle rejects negative and nonfinite softness for every shape" {
+    const invalid_values = [_]F{
+        -0.01,
+        std.math.nan(F),
+        std.math.inf(F),
+        -std.math.inf(F),
+    };
+    for (invalid_values) |softness| {
+        const params: Speckle2DParams = .{ .edge_softness = softness };
+        try testing.expectError(error.InvalidSpeckleEdgeSoftness, params.validate());
+    }
+}
+
+test "procedural speckle softness requires compatible disk evaluators" {
+    const params: Speckle2DParams = .{ .edge_softness = 0.05 };
+    if (comptime speckle_shape != .disk) {
+        try testing.expectError(error.SpeckleEdgeSoftnessRequiresDisk, params.validate());
+        return;
+    }
+    switch (comptime buildconfig.speckle_evaluator) {
+        .classified_indexed, .direct_fixed, .mask_1bit => {
+            try testing.expectError(
+                error.SpeckleEvaluatorRequiresHardEdges,
+                params.validate(),
+            );
+        },
+        .cell_hash, .list_naive, .list_indexed, .mask_u8 => try params.validate(),
+    }
+}
+
+test "procedural speckle softness preserves compile-time blur support bounds" {
+    if (comptime speckle_shape != .disk) return;
+    switch (comptime buildconfig.speckle_evaluator) {
+        .classified_indexed, .direct_fixed, .mask_1bit => return,
+        .cell_hash, .list_naive, .list_indexed, .mask_u8 => {},
+    }
+    const params: Speckle2DParams = .{ .radius_mean = 0.9, .edge_softness = 0.2 };
+    if (comptime speckle_boundary_blur) {
+        try testing.expectError(error.InvalidSpeckleNeighborhoodRadius, params.validate());
+    } else {
+        try params.validate();
+    }
+}
+
+test "speckle generators reject invalid softness before allocating" {
+    const params: Speckle2DParams = .{ .edge_softness = std.math.nan(F) };
+    inline for (.{
+        generateSpeckleList2D,
+        generateClassifiedIndexedSpeckle2D,
+        generateDirectFixedSpeckle2D,
+        generateSpeckleMask2D,
+    }) |generate| {
+        try testing.expectError(
+            error.InvalidSpeckleEdgeSoftness,
+            generate(testing.failing_allocator, params),
+        );
     }
 }
 
@@ -3205,6 +3273,10 @@ fn speckleMaskTestParams() Speckle2DParams {
         .occupancy = 0.72,
         .radius_mean = 0.38,
         .radius_jitter = 0.07,
+        .edge_softness = if (speckle_shape == .disk and speckle_boundary_blur)
+            0.035
+        else
+            0.0,
         .foreground = 0.15,
         .background = 0.85,
     };
@@ -3223,7 +3295,6 @@ test "Perlin mask is varied seed-sensitive bounded and balanced" {
     params.occupancy = -1.0;
     params.radius_mean = -1.0;
     params.radius_jitter = -1.0;
-    params.edge_softness = -1.0;
 
     const first = try generateSpeckleMask2D(testing.allocator, params);
     defer testing.allocator.free(first.bits);

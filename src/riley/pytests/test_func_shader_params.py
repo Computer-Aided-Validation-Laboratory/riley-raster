@@ -18,7 +18,7 @@ def test_speckle_params_defaults_and_conversion_helper() -> None:
     assert speckle.occupancy == 0.9
     assert speckle.radius_mean == 0.45
     assert speckle.radius_jitter == 0.0
-    assert speckle.edge_softness == 0.035
+    assert speckle.edge_softness == 0.0
     assert speckle.perlin_coverage_threshold == 0.0
     assert speckle.perlin_coverage_transition_width == 0.12
     assert speckle.foreground == 0.0
@@ -54,7 +54,7 @@ def test_speckle_params_pass_through_mesh_conversion() -> None:
             occupancy=0.75,
             radius_mean=0.4,
             radius_jitter=0.05,
-            edge_softness=0.02,
+            edge_softness=0.0,
             perlin_coverage_threshold=0.1,
             perlin_coverage_transition_width=0.2,
             foreground=0.1,

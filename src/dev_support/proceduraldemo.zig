@@ -229,7 +229,7 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\  --cells-u <value>     Procedural cell count across U
         \\  --cells-v <value>     Procedural cell count across V
         \\  --jitter <value>      Radius variation in cell units (disk/Gaussian)
-        \\  --softness <value>    Boundary-blur width in cell units (disk only)
+        \\  --softness <value>    Boundary half-width in cell units (disk only; default: 0)
         \\  --threshold <value>   Coverage threshold (Perlin only)
         \\  --transition <value>  Coverage transition width (Perlin only)
         \\  --seed <integer>      Deterministic unsigned 32-bit seed
@@ -249,6 +249,11 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\Disk/Gaussian constraints:
         \\  jitter <= size
         \\  size + jitter + effective boundary blur <= 1
+        \\
+        \\Softness constraints:
+        \\  Must be finite and nonnegative.
+        \\  Must be 0 for Gaussian/Perlin and classified-indexed/direct-fixed/mask-1bit.
+        \\  Positive disk softness only takes effect with -Dspeckle-boundary-blur=true.
         \\
     , .{});
 }
