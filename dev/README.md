@@ -15,6 +15,14 @@ Riley provides a layered testing architecture designed for fast routine verifica
 
 All test targets default to Debug and honor `-Doptimize`. Select
 `-Doptimize=ReleaseSafe` explicitly for optimized runs with safety checks.
+The four suite targets use native Zig test build steps with the original source
+files. Zig tracks imported source dependencies and build options; unrelated
+demo or Python edits do not invalidate their test binaries. Test execution still
+runs on each invocation so changes to gold data and runtime assets are checked.
+`src/dev_support/testrunner.zig` exposes the generated options at the test
+runner root used by `buildconfig.zig` and delegates execution to Zig's standard
+test runner. This keeps precision, SIMD, solver, and vector-width options active
+without modifying or copying suite source files.
 
 ```shell
 # 1. Combined Verification and Basic Suites (preferred routine/CI command)
@@ -266,6 +274,6 @@ python -m riley demo9_feature_zoo
 Python demo output is written to `Path.cwd() / "out_riley_py" / "<demo-name>"`.
 
 ## Notes
-- Plain `zig run` and `zig test` under `./src/` still use the default Riley path of `f64` with SIMD enabled.
+- Plain `zig run` and `zig test` under `./src/` use the default Riley path of `f64` with SIMD enabled. Run the four suite drivers through `zig build` to select precision, SIMD, solver, or vector-width options.
 - The public C ABI is fixed to that same production path.
 - Some older benchmark helper scripts remain in `./scripts/` for historical studies. Prefer the current commands above unless you specifically need an archived workflow.

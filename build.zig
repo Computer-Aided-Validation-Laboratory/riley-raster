@@ -87,12 +87,10 @@ pub fn build(b: *std.Build) void {
         const test_step = b.step(entry.step_name, entry.description);
         const test_run = addTestRunStep(
             b,
+            target,
             optimize,
+            build_options_module,
             entry,
-            precision,
-            simd,
-            newton_solver,
-            simd_vector_width,
         );
         test_step.dependOn(&test_run.step);
     }
@@ -338,76 +336,40 @@ fn addRileySharedLibrary(
 
 fn addTestRunStep(
     b: *std.Build,
+    target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    build_options_module: *std.Build.Module,
     entry: TestEntry,
-    precision: []const u8,
-    simd: []const u8,
-    newton_solver: []const u8,
-    simd_vector_width: u32,
 ) *std.Build.Step.Run {
-    const run_step = b.addSystemCommand(&.{
-        "sh",
-        "-c",
-        \\set -eu
-        \\step_name="$1"
-        \\src="$2"
-        \\precision="$3"
-        \\simd="$4"
-        \\newton_solver="$5"
-        \\simd_vector_width="$6"
-        \\zigexe="$7"
-        \\opt="$8"
-        \\cache_root=".zig-cache/riley-test"
-        \\mkdir -p "$cache_root"
-        \\src_hash="$(
-        \\    find src -type f -print0 |
-        \\    sort -z |
-        \\    xargs -0 sha256sum |
-        \\    sha256sum |
-        \\    cut -d' ' -f1
-        \\)"
-        \\tree_dir="${cache_root}/${step_name}_${precision}_${simd}_"
-        \\tree_dir="${tree_dir}${newton_solver}_${opt}_${src_hash}"
-        \\if [ ! -d "$tree_dir" ]; then
-        \\    lock_dir="${tree_dir}.lock"
-        \\    while ! mkdir "$lock_dir" 2>/dev/null; do
-        \\        sleep 0.1
-        \\    done
-        \\    cleanup() {
-        \\        rmdir "$lock_dir"
-        \\    }
-        \\    trap cleanup EXIT
-        \\    if [ ! -d "$tree_dir" ]; then
-        \\        mkdir -p "$tree_dir"
-        \\        cp -a src "$tree_dir/src"
-        \\        src_file="$tree_dir/$src"
-        \\        src_orig="${src_file}.orig"
-        \\        mv "$src_file" "$src_orig"
-        \\        {
-        \\            printf 'pub const build_options = struct {\n'
-        \\            printf '    pub const precision = "%s";\n' "$precision"
-        \\            printf '    pub const simd = "%s";\n' "$simd"
-        \\            printf '    pub const newton_solver = "%s";\n' "$newton_solver"
-        \\            printf '    pub const simd_vector_width: comptime_int = '
-        \\            printf '%s;\n' "$simd_vector_width"
-        \\            printf '};\n\n'
-        \\            cat "$src_orig"
-        \\        } > "$src_file"
-        \\    fi
-        \\fi
-        \\"$zigexe" test -lc -O "$opt" "$tree_dir/$src"
-        ,
-        "--",
-        entry.step_name,
-        entry.source_path,
-        precision,
-        simd,
-        newton_solver,
-        b.fmt("{d}", .{simd_vector_width}),
-        b.graph.zig_exe,
-        @tagName(optimize),
+    const test_module = b.createModule(.{
+        .root_source_file = b.path(entry.source_path),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
     });
-    return run_step;
+    test_module.addImport("build_options", build_options_module);
+    const default_runner_path = b.graph.zig_lib_directory.join(
+        b.allocator,
+        &.{ "compiler", "test_runner.zig" },
+    ) catch @panic("OOM locating the Zig test runner.");
+    test_module.addImport("default_test_runner", b.createModule(.{
+        .root_source_file = .{ .cwd_relative = default_runner_path },
+        .target = target,
+        .optimize = optimize,
+    }));
+    const tests = b.addTest(.{
+        .name = entry.step_name,
+        .root_module = test_module,
+        .test_runner = .{
+            .path = b.path("src/dev_support/testrunner.zig"),
+            .mode = .server,
+        },
+    });
+    const run_tests = b.addRunArtifact(tests);
+    // Suites read gold and runtime assets and may write failure diagnostics.
+    // Cache compilation, but execute the tests on every invocation.
+    run_tests.has_side_effects = true;
+    return run_tests;
 }
 
 fn addRunStep(
@@ -491,11 +453,7 @@ fn createRootModule(
     link_libc: bool,
     wrapper_kind: WrapperKind,
 ) *std.Build.Module {
-    const wrapper_text = wrapperSourceText(
-        b,
-        wrapper_kind,
-        source_path,
-    );
+    const wrapper_text = wrapperSourceText(wrapper_kind);
     const wrapper_files = b.addWriteFiles();
     const wrapper_source = wrapper_files.add(
         b.fmt("{s}.wrapper.zig", .{source_path}),
@@ -508,8 +466,6 @@ fn createRootModule(
         build_options_module,
         source_path,
         link_libc,
-        wrapper_kind,
-        wrapper_text,
     );
     return b.createModule(.{
         .root_source_file = wrapper_source,
@@ -522,14 +478,11 @@ fn createRootModule(
 
 const WrapperKind = enum {
     executable,
-    test_module,
     library,
 };
 
 fn wrapperSourceText(
-    b: *std.Build,
     wrapper_kind: WrapperKind,
-    source_path: []const u8,
 ) []const u8 {
     return switch (wrapper_kind) {
         .executable =>
@@ -541,22 +494,6 @@ fn wrapperSourceText(
         \\}
         \\
         ,
-        .test_module => blk: {
-            const source_text = std.Io.Dir.cwd().readFileAlloc(
-                b.graph.io,
-                source_path,
-                b.allocator,
-                .limited(16 * 1024 * 1024),
-            ) catch @panic("Failed to read test source file.");
-            break :blk std.fmt.allocPrint(
-                b.allocator,
-                \\pub const build_options = @import("build_options");
-                \\
-                \\{s}
-            ,
-                .{source_text},
-            ) catch @panic("Failed to write test wrapper source.");
-        },
         .library =>
         \\const entry_source = @import("entry_source");
         \\pub const build_options = @import("build_options");
@@ -575,8 +512,6 @@ fn buildWrapperImports(
     build_options_module: *std.Build.Module,
     source_path: []const u8,
     link_libc: bool,
-    wrapper_kind: WrapperKind,
-    _: []const u8,
 ) []const std.Build.Module.Import {
     var imports: std.ArrayList(std.Build.Module.Import) = .empty;
     imports.append(b.allocator, .{
@@ -584,18 +519,15 @@ fn buildWrapperImports(
         .module = build_options_module,
     }) catch @panic("OOM building imports.");
 
-    if (wrapper_kind != .test_module) {
-        imports.append(b.allocator, .{
-            .name = "entry_source",
-            .module = b.createModule(.{
-                .root_source_file = b.path(source_path),
-                .target = target,
-                .optimize = optimize,
-                .link_libc = link_libc,
-            }),
-        }) catch @panic("OOM building entry source import.");
-        return imports.items;
-    }
+    imports.append(b.allocator, .{
+        .name = "entry_source",
+        .module = b.createModule(.{
+            .root_source_file = b.path(source_path),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = link_libc,
+        }),
+    }) catch @panic("OOM building entry source import.");
     return imports.items;
 }
 
