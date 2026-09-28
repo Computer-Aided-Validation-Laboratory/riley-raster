@@ -388,29 +388,23 @@ pub inline fn evalFuncShaderGreyNormSIMD(
                 (v_one + @cos(v_phase_y)) - v_contrast;
         },
         .speckle => blk: {
-            const coord_0: [S]F = coord.coord_0;
-            const coord_1: [S]F = coord.coord_1;
-            var values: [S]F = undefined;
-            for (0..S) |lane| {
-                values[lane] = if (std.math.isFinite(coord_0[lane]) and
-                    std.math.isFinite(coord_1[lane]))
-                    comm.evalSpeckle2D(
-                        .{ coord_0[lane], coord_1[lane] },
-                        params.settings.speckle,
-                    )
-                else
-                    params.settings.speckle.background;
-            }
-            break :blk @as(VecSF, values);
+            const p = params.settings.speckle;
+            const eval = comm.evalSpeckle2DWithSoftEdges;
+            break :blk if (comm.speckleSoftness(p) > 0.0)
+                evalSpeckleSIMD(true, eval, coord, p, p.background)
+            else
+                evalSpeckleSIMD(false, eval, coord, p, p.background);
         },
     };
     return comm.applyFuncShaderOutputParamsSIMD(v_value, params);
 }
 
-inline fn evalPreparedSpeckleListSIMD(
+inline fn evalSpeckleSIMD(
+    comptime soft_edges: bool,
+    comptime eval: anytype,
     coord: comm.FuncCoordSIMD,
-    speckles: comm.SpeckleList2D,
-    params: comm.FuncShaderParams,
+    input: anytype,
+    background: F,
 ) VecSF {
     const coord_0: [S]F = coord.coord_0;
     const coord_1: [S]F = coord.coord_1;
@@ -418,11 +412,11 @@ inline fn evalPreparedSpeckleListSIMD(
     for (0..S) |lane| {
         values[lane] = if (std.math.isFinite(coord_0[lane]) and
             std.math.isFinite(coord_1[lane]))
-            comm.evalSpeckleList2D(.{ coord_0[lane], coord_1[lane] }, speckles)
+            eval(soft_edges, coord_0[lane], coord_1[lane], input)
         else
-            speckles.params.background;
+            background;
     }
-    return comm.applyFuncShaderOutputParamsSIMD(values, params);
+    return values;
 }
 
 inline fn evalPreparedClassifiedSpeckleSIMD(
@@ -492,7 +486,9 @@ inline fn evalPreparedClassifiedSpeckleSIMD(
             state_values[lane] == @intFromEnum(comm.SpeckleClassificationState.ambiguous))
         {
             values[lane] = comm.evalSpeckleList2DIndexed(
-                .{ coord.coord_0[lane], coord.coord_1[lane] },
+                false,
+                coord.coord_0[lane],
+                coord.coord_1[lane],
                 classified.speckles,
             );
         }
@@ -654,7 +650,13 @@ fn evalFuncShaderGreyPreparedSIMD(
             .cell_hash => {},
             .list_naive, .list_indexed => {
                 if (shader.speckle_list) |speckles| {
-                    return evalPreparedSpeckleListSIMD(coord, speckles, shader.params);
+                    const p = speckles.params;
+                    const eval = comm.evalSpeckleList2DWithSoftEdges;
+                    const v_value = if (comm.speckleSoftness(p) > 0.0)
+                        evalSpeckleSIMD(true, eval, coord, speckles, p.background)
+                    else
+                        evalSpeckleSIMD(false, eval, coord, speckles, p.background);
+                    return comm.applyFuncShaderOutputParamsSIMD(v_value, shader.params);
                 }
             },
             .classified_indexed => {

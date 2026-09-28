@@ -40,17 +40,20 @@ test "selected speckle evaluator prepares its production resources" {
         null,
     );
     const uvs = try uvio.loadUVMap(allocator, io, data_dir ++ "uvs.csv");
+    const evaluator = buildconfig.speckle_evaluator;
     const params = shaderops.Speckle2DParams{
         .seed = 12345,
         .cells_per_uv = .{ 24.0, 20.0 },
         .occupancy = 0.8,
         .radius_mean = 0.42,
-        .radius_jitter = switch (comptime buildconfig.speckle_evaluator) {
+        .radius_jitter = switch (comptime evaluator) {
             .classified_indexed, .direct_fixed => 0.0,
             else => 0.06,
         },
-        .edge_softness = if (buildconfig.speckle_shape == .disk and
-            buildconfig.speckle_boundary_blur) 0.03 else 0.0,
+        .edge_softness = if (buildconfig.speckle_shape == .disk) switch (evaluator) {
+            .cell_hash, .list_naive, .list_indexed, .mask_u8 => 0.03,
+            else => 0.0,
+        } else 0.0,
     };
     const mesh_input = meshpipeline.MeshInput{
         .mesh_type = .tri3,
@@ -73,7 +76,6 @@ test "selected speckle evaluator prepares its production resources" {
         else => return error.UnexpectedShaderVariant,
     };
 
-    const evaluator = buildconfig.speckle_evaluator;
     try std.testing.expectEqual(
         evaluator == .list_naive or evaluator == .list_indexed,
         func_static.speckle_list != null,

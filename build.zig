@@ -19,7 +19,6 @@ const TestEntry = struct {
 };
 
 const SpeckleConfig = struct {
-    boundary_blur: bool = false,
     neighbor_count: u8 = 9,
     evaluator: []const u8,
     shape: []const u8,
@@ -30,7 +29,6 @@ const BuildOptions = struct {
     simd: []const u8,
     newton_solver: []const u8,
     simd_vector_width: u32,
-    speckle_boundary_blur: bool,
     speckle_neighbor_count: u8,
     speckle_evaluator: []const u8,
     speckle_shape: []const u8,
@@ -38,7 +36,6 @@ const BuildOptions = struct {
 
     fn withSpeckleConfig(self: BuildOptions, config: SpeckleConfig) BuildOptions {
         var result = self;
-        result.speckle_boundary_blur = config.boundary_blur;
         result.speckle_neighbor_count = config.neighbor_count;
         result.speckle_evaluator = config.evaluator;
         result.speckle_shape = config.shape;
@@ -66,11 +63,6 @@ pub fn build(b: *std.Build) void {
         "simd-vector-width",
         "SIMD vector width (0 to use default for precision)",
     ) orelse 0;
-    options.speckle_boundary_blur = b.option(
-        bool,
-        "speckle-boundary-blur",
-        "Enable smooth procedural speckle boundaries",
-    ) orelse false;
     options.speckle_neighbor_count = b.option(
         u8,
         "speckle-neighbor-count",
@@ -101,7 +93,6 @@ pub fn build(b: *std.Build) void {
     validateSpeckleEvaluatorConfig(
         options.speckle_evaluator,
         options.speckle_shape,
-        options.speckle_boundary_blur,
         options.speckle_neighbor_count,
     );
 
@@ -202,20 +193,12 @@ pub fn build(b: *std.Build) void {
         .{
             .step_name = "test-speckle-mask-u8",
             .description = "Run focused Gaussian u8 speckle mask tests",
-            .config = .{
-                .boundary_blur = options.speckle_boundary_blur,
-                .evaluator = "mask-u8",
-                .shape = "gaussian",
-            },
+            .config = .{ .evaluator = "mask-u8", .shape = "gaussian" },
         },
         .{
             .step_name = "test-speckle-mask-perlin",
             .description = "Run focused Perlin u8 speckle mask tests",
-            .config = .{
-                .boundary_blur = options.speckle_boundary_blur,
-                .evaluator = "mask-u8",
-                .shape = "perlin",
-            },
+            .config = .{ .evaluator = "mask-u8", .shape = "perlin" },
         },
     };
     for (mask_tests) |mask_test| {
@@ -497,13 +480,12 @@ fn addTestRunStep(
         \\simd="$4"
         \\newton_solver="$5"
         \\simd_vector_width="$6"
-        \\speckle_boundary_blur="$7"
-        \\speckle_neighbor_count="$8"
-        \\speckle_evaluator="$9"
-        \\speckle_shape="${10}"
-        \\speckle_mask_samples_per_cell="${11}"
-        \\zigexe="${12}"
-        \\opt="${13}"
+        \\speckle_neighbor_count="$7"
+        \\speckle_evaluator="$8"
+        \\speckle_shape="$9"
+        \\speckle_mask_samples_per_cell="${10}"
+        \\zigexe="${11}"
+        \\opt="${12}"
         \\cache_root=".zig-cache/riley-test"
         \\mkdir -p "$cache_root"
         \\src_hash="$(
@@ -513,7 +495,10 @@ fn addTestRunStep(
         \\    sha256sum |
         \\    cut -d' ' -f1
         \\)"
-        \\tree_dir="${cache_root}/${step_name}_${precision}_${simd}_${newton_solver}_${simd_vector_width}_${speckle_boundary_blur}_${speckle_neighbor_count}_${speckle_evaluator}_${speckle_shape}_${speckle_mask_samples_per_cell}_${opt}_${src_hash}"
+        \\tree_dir="${cache_root}/${step_name}_${precision}_${simd}_${newton_solver}"
+        \\tree_dir="${tree_dir}_${simd_vector_width}_${speckle_neighbor_count}"
+        \\tree_dir="${tree_dir}_${speckle_evaluator}_${speckle_shape}"
+        \\tree_dir="${tree_dir}_${speckle_mask_samples_per_cell}_${opt}_${src_hash}"
         \\if [ ! -d "$tree_dir" ]; then
         \\    lock_dir="${tree_dir}.lock"
         \\    while ! mkdir "$lock_dir" 2>/dev/null; do
@@ -533,7 +518,6 @@ fn addTestRunStep(
         \\            printf 'pub const simd = "%s";\n' "$simd"
         \\            printf 'pub const newton_solver = "%s";\n' "$newton_solver"
         \\            printf 'pub const simd_vector_width: comptime_int = %s;\n' "$simd_vector_width"
-        \\            printf 'pub const speckle_boundary_blur = %s;\n' "$speckle_boundary_blur"
         \\            printf 'pub const speckle_neighbor_count: comptime_int = %s;\n' "$speckle_neighbor_count"
         \\            printf 'pub const speckle_evaluator = "%s";\n' "$speckle_evaluator"
         \\            printf 'pub const speckle_shape = "%s";\n' "$speckle_shape"
@@ -555,7 +539,6 @@ fn addTestRunStep(
         options.simd,
         options.newton_solver,
         b.fmt("{d}", .{options.simd_vector_width}),
-        if (options.speckle_boundary_blur) "true" else "false",
         b.fmt("{d}", .{options.speckle_neighbor_count}),
         options.speckle_evaluator,
         options.speckle_shape,
@@ -627,7 +610,6 @@ fn createBuildOptionsModule(b: *std.Build, build_options: BuildOptions) *std.Bui
     options.addOption([]const u8, "simd", build_options.simd);
     options.addOption([]const u8, "newton_solver", build_options.newton_solver);
     options.addOption(u32, "simd_vector_width", build_options.simd_vector_width);
-    options.addOption(bool, "speckle_boundary_blur", build_options.speckle_boundary_blur);
     options.addOption(u8, "speckle_neighbor_count", build_options.speckle_neighbor_count);
     options.addOption([]const u8, "speckle_evaluator", build_options.speckle_evaluator);
     options.addOption([]const u8, "speckle_shape", build_options.speckle_shape);
@@ -746,7 +728,6 @@ fn validateSpeckleEvaluator(evaluator: []const u8) void {
 fn validateSpeckleEvaluatorConfig(
     evaluator: []const u8,
     shape: []const u8,
-    boundary_blur: bool,
     neighbor_count: u8,
 ) void {
     if (std.mem.eql(u8, shape, "perlin") and
@@ -755,19 +736,25 @@ fn validateSpeckleEvaluatorConfig(
         @panic("-Dspeckle-shape=perlin requires -Dspeckle-evaluator=mask-u8.");
     }
     if (std.mem.eql(u8, evaluator, "mask-1bit") and
-        (!std.mem.eql(u8, shape, "disk") or boundary_blur))
+        !std.mem.eql(u8, shape, "disk"))
     {
-        @panic("-Dspeckle-evaluator=mask-1bit requires -Dspeckle-shape=disk and -Dspeckle-boundary-blur=false.");
+        @panic("-Dspeckle-evaluator=mask-1bit requires -Dspeckle-shape=disk.");
     }
     if (std.mem.eql(u8, evaluator, "classified-indexed") and
-        (!std.mem.eql(u8, shape, "disk") or boundary_blur or neighbor_count != 9))
+        (!std.mem.eql(u8, shape, "disk") or neighbor_count != 9))
     {
-        @panic("-Dspeckle-evaluator=classified-indexed requires -Dspeckle-shape=disk, -Dspeckle-boundary-blur=false, and -Dspeckle-neighbor-count=9.");
+        @panic(
+            "-Dspeckle-evaluator=classified-indexed requires -Dspeckle-shape=disk " ++
+                "and -Dspeckle-neighbor-count=9.",
+        );
     }
     if (std.mem.eql(u8, evaluator, "direct-fixed") and
-        (!std.mem.eql(u8, shape, "disk") or boundary_blur or neighbor_count != 1))
+        (!std.mem.eql(u8, shape, "disk") or neighbor_count != 1))
     {
-        @panic("-Dspeckle-evaluator=direct-fixed requires -Dspeckle-shape=disk, -Dspeckle-boundary-blur=false, and -Dspeckle-neighbor-count=1.");
+        @panic(
+            "-Dspeckle-evaluator=direct-fixed requires -Dspeckle-shape=disk " ++
+                "and -Dspeckle-neighbor-count=1.",
+        );
     }
 }
 

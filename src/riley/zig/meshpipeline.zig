@@ -604,7 +604,6 @@ fn prepUVs(
         outer_alloc,
         &[_]usize{ elems_num, 2, nodes_per_elem },
     );
-    @memset(elem_uv_arr.slice, 0.0);
 
     for (0..elems_num) |ee| {
         const coord_inds = connect.getElem(ee);

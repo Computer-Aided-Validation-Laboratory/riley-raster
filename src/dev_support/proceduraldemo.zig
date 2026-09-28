@@ -120,11 +120,6 @@ pub fn printProceduralConfig(
         " (not used by Perlin)"
     else
         "";
-    const effective_boundary_blur = if (buildconfig.speckle_shape == .disk and
-        buildconfig.speckle_boundary_blur)
-        params.edge_softness
-    else
-        0.0;
 
     std.debug.print(
         "  evaluator (compile-time): {s}\n",
@@ -137,7 +132,7 @@ pub fn printProceduralConfig(
     );
     std.debug.print(
         "  effective boundary blur: {d} cell units\n",
-        .{effective_boundary_blur},
+        .{params.edge_softness},
     );
     std.debug.print("  seed: {d} (0x{x})\n", .{ params.seed, params.seed });
     std.debug.print(
@@ -253,7 +248,7 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\Softness constraints:
         \\  Must be finite and nonnegative.
         \\  Must be 0 for Gaussian/Perlin and classified-indexed/direct-fixed/mask-1bit.
-        \\  Positive disk softness only takes effect with -Dspeckle-boundary-blur=true.
+        \\  Positive disk softness enables smooth boundaries; 0 keeps hard edges.
         \\
     , .{});
 }

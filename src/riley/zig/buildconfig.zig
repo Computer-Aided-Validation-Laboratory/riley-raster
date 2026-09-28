@@ -45,7 +45,6 @@ pub const Scalar = Scal;
 pub const default_simd = parseSimd(build_options.simd);
 pub const default_newton_solver_mode =
     parseNewtonSolverMode(build_options.newton_solver);
-pub const speckle_boundary_blur = buildOptionsSpeckleBoundaryBlur();
 pub const speckle_neighbor_count = buildOptionsSpeckleNeighborCount();
 pub const speckle_mask_samples_per_cell = buildOptionsSpeckleMaskSamplesPerCell();
 pub const speckle_evaluator_name = buildOptionsSpeckleEvaluator();
@@ -53,25 +52,22 @@ pub const speckle_evaluator = parseSpeckleEvaluator(speckle_evaluator_name);
 pub const speckle_shape = parseSpeckleShape(buildOptionsSpeckleShape());
 
 comptime {
-    if (speckle_evaluator == .mask_1bit and
-        (speckle_shape != .disk or speckle_boundary_blur))
-    {
-        @compileError(
-            "speckle evaluator mask-1bit requires disk shape and boundary blur false.",
-        );
+    if (speckle_evaluator == .mask_1bit and speckle_shape != .disk) {
+        @compileError("speckle evaluator mask-1bit requires disk shape.");
     }
     if (speckle_evaluator == .classified_indexed and
-        (speckle_shape != .disk or speckle_boundary_blur or speckle_neighbor_count != 9))
+        (speckle_shape != .disk or speckle_neighbor_count != 9))
     {
         @compileError(
-            "speckle evaluator classified-indexed requires disk shape, boundary blur false, and neighbor count 9.",
+            "speckle evaluator classified-indexed requires disk shape " ++
+                "and neighbor count 9.",
         );
     }
     if (speckle_evaluator == .direct_fixed and
-        (speckle_shape != .disk or speckle_boundary_blur or speckle_neighbor_count != 1))
+        (speckle_shape != .disk or speckle_neighbor_count != 1))
     {
         @compileError(
-            "speckle evaluator direct-fixed requires disk shape, boundary blur false, and neighbor count 1.",
+            "speckle evaluator direct-fixed requires disk shape and neighbor count 1.",
         );
     }
     if (speckle_shape == .perlin and speckle_evaluator != .mask_u8) {
@@ -235,13 +231,6 @@ fn buildOptionsSpeckleMaskSamplesPerCell() comptime_int {
         @compileError("build_options.speckle_mask_samples_per_cell must be 8, 12, or 16.");
     }
     return samples;
-}
-
-fn buildOptionsSpeckleBoundaryBlur() bool {
-    if (@hasDecl(build_options, "speckle_boundary_blur")) {
-        return build_options.speckle_boundary_blur;
-    }
-    return false;
 }
 
 fn buildOptionsSimdVecWidth() comptime_int {
