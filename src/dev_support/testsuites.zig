@@ -14,10 +14,10 @@ pub fn durationToSeconds(start: std.Io.Clock.Timestamp, end: std.Io.Clock.Timest
 }
 
 pub fn runSuite(
-    comptime name: []const u8,
+    name: []const u8,
     allocator: std.mem.Allocator,
     io: std.Io,
-    comptime run: fn (std.mem.Allocator, std.Io) anyerror!void,
+    run: *const fn (std.mem.Allocator, std.Io) anyerror!void,
 ) !void {
     std.debug.print("Running {s} suite...\n", .{name});
     const start = std.Io.Clock.Timestamp.now(io, .awake);
@@ -28,10 +28,10 @@ pub fn runSuite(
 }
 
 pub fn runCase(
-    comptime name: []const u8,
+    name: []const u8,
     allocator: std.mem.Allocator,
     io: std.Io,
-    comptime run: fn (std.mem.Allocator, std.Io) anyerror!void,
+    run: *const fn (std.mem.Allocator, std.Io) anyerror!void,
 ) !void {
     std.debug.print("Running verification case: {s}...\n", .{name});
     const start = std.Io.Clock.Timestamp.now(io, .awake);

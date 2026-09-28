@@ -1,21 +1,29 @@
+// --------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: scepticalrabbit (Lloyd Fletcher)
+// --------------------------------------------------------------------------
 const std = @import("std");
 
-const buildconfig = @import("riley/zig/buildconfig.zig");
+const riley = @import("riley/zig/riley.zig");
 const camera = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshio = @import("riley/zig/meshio.zig");
-const mo = @import("riley/zig/meshpipeline.zig");
-const riley = @import("riley/zig/riley.zig");
+const meshpipe = @import("riley/zig/meshpipeline.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
 
+const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 
 pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(init.gpa);
     defer arena.deinit();
-    const allocator = arena.allocator();
+    const arena_alloc = arena.allocator();
 
     // -------------------------------------------------------------------------
     // 1. Create the mesh geometry and shader
@@ -28,7 +36,8 @@ pub fn main(init: std.process.Init) !void {
     var connect_values = [_]usize{ 0, 1, 2 };
     const coords = meshio.Coords.init(&coord_values, 3);
     const connect = meshio.Connect.init(&connect_values, 1, 3);
-    const mesh = mo.MeshInput{
+
+    const mesh_input = meshpipe.MeshInput{
         .mesh_type = .tri3opt,
         .coords = coords,
         .connect = connect,
@@ -51,7 +60,9 @@ pub fn main(init: std.process.Init) !void {
     const pixels_size = [2]F{ 0.02, 0.02 };
     const focal_length: F = 1.0;
     const rotation = Rotation.init(0.0, 0.0, 0.0);
+
     const target = sceneops.boundsCenter(&coords);
+
     const position = cameraops.posFillFrameFromRotAndTarg(
         &coords,
         target,
@@ -61,6 +72,7 @@ pub fn main(init: std.process.Init) !void {
         rotation,
         1.0,
     );
+
     const camera_input = camera.CameraInput{
         .pixels_num = pixels_num,
         .pixels_size = pixels_size,
@@ -81,21 +93,24 @@ pub fn main(init: std.process.Init) !void {
             .{ .format = iio.ImageFormat.bmp, .bits = 8, .scaling = .none },
         },
     };
+
     const groups = [_]riley.RenderGroupSpec{.{ .io = init.io, .workers = 1 }};
 
     // -------------------------------------------------------------------------
     // 4. Render the scene
     // -------------------------------------------------------------------------
-    if (try riley.raster(
-        allocator,
+    const images = try riley.raster(
+        arena_alloc,
         &groups,
         &.{camera_input},
-        &.{mesh},
+        &.{mesh_input},
         config,
         "./out/demo0_quickstart",
-    )) |images| {
-        allocator.free(images.slice);
-        var images_mut = images;
-        images_mut.deinit(allocator);
+    );
+
+    if (images) |img| {
+        arena_alloc.free(img.slice);
+        img.deinit(arena_alloc);
     }
+
 }

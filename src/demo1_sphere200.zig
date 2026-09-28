@@ -40,8 +40,8 @@ pub fn main(init: std.process.Init) !void {
     const data_dir = "data/min/tri6_sphere200/";
     const out_dir_root = "./out/demo1_sphere200";
 
-    const pixel_num = [_]u32{ 800, 500 };
-    const pixel_size = [_]F{
+    const pixels_num = [_]u32{ 800, 500 };
+    const pixels_size = [_]F{
         @floatCast(5.3e-6),
         @floatCast(5.3e-6),
     };
@@ -109,38 +109,25 @@ pub fn main(init: std.process.Init) !void {
     // 3. Position and create camera
     // -------------------------------------------------------------------------
     std.debug.print("Setting up camera...\n", .{});
+
     const roi_pos = sceneops.boundsCenter(&sim_data.coords);
     const cam_pos = cameraops.posFillFrameFromRot(
         &sim_data.coords,
-        pixel_num,
-        pixel_size,
+        pixels_num,
+        pixels_size,
         focal_leng,
         rot,
         fov_scale_factor,
     );
-    const camera = try CameraPrepared.init(
-        arena_alloc,
-        .{
-            .pixels_num = pixel_num,
-            .pixels_size = pixel_size,
-            .pos_world = cam_pos,
-            .rot_world = rot,
-            .roi_cent_world = roi_pos,
-            .focal_length = focal_leng,
-            .sub_sample = 2,
-        },
-    );
-    defer camera.deinit(arena_alloc);
-
+    
     const camera_input = CameraInput{
-        .pixels_num = camera.pixels_num,
-        .pixels_size = camera.pixels_size,
-        .pos_world = camera.pos_world,
-        .rot_world = camera.rot_world,
-        .roi_cent_world = camera.roi_cent_world,
-        .focal_length = camera.focal_length,
-        .sub_sample = camera.sub_sample,
-        .distortion = camera_mod.distortionParamsFromModel(camera.distortion),
+        .pixels_num = pixels_num,
+        .pixels_size = pixels_size,
+        .pos_world = cam_pos,
+        .rot_world = rot,
+        .roi_cent_world = roi_pos,
+        .focal_length = focal_leng,
+        .sub_sample = 2,
     };
 
     // -------------------------------------------------------------------------
@@ -155,6 +142,7 @@ pub fn main(init: std.process.Init) !void {
         },
         .report = .bench,
     };
+    
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
@@ -163,12 +151,12 @@ pub fn main(init: std.process.Init) !void {
     // 5. Render sphere scene
     // -------------------------------------------------------------------------
     std.debug.print("Rendering sphere to {s}/...\n", .{out_dir_root});
-    const meshes = [_]MeshInput{mesh_input};
+
     const images = try riley.raster(
         arena_alloc,
         &render_groups,
-        &[_]@TypeOf(camera_input){camera_input},
-        &meshes,
+        &.{camera_input},
+        &.{mesh_input},
         config,
         out_dir_root,
     );

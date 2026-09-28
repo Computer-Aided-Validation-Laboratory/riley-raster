@@ -12,6 +12,10 @@ This project follows the Computer Aided Validation Laboratory style guides for P
 Riley provides a layered testing architecture designed for fast routine verification, rigorous mathematical validation, and exhaustive factorial test coverage:
 
 ### Quick Commands
+
+All test targets default to Debug and honor `-Doptimize`. Select
+`-Doptimize=ReleaseSafe` explicitly for optimized runs with safety checks.
+
 ```shell
 # 1. Combined Verification and Basic Suites (preferred routine/CI command)
 zig build test-verif-basic -Doptimize=ReleaseSafe
