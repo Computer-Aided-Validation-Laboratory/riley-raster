@@ -51,23 +51,22 @@ def test_load_exodus_platehole() -> None:
     sim = riley.load_exodus(
         riley.data.platehole_exodus_path(),
         disp_keys=("disp_x", "disp_y", "disp_z"),
-        nodal_keys=("stress_yy", "vonmises_stress"),
+        nodal_keys=("vonmises_stress",),
     )
     block = sim.elem_blocks["connect1"]
-    assert sim.coords.shape == (4032, 3)
+    assert sim.coords.shape == (3456, 3)
     assert sim.coords.dtype == np.float64
     assert sim.coords.flags.c_contiguous
-    assert block.connect.shape == (672, 20)
+    assert block.connect.shape == (576, 20)
     assert block.connect.dtype == np.int64
     assert block.elem_type is riley.EElemType.HEX20
     assert sim.disp is not None
     assert len(sim.disp) == 3
     for component in sim.disp:
-        assert component.shape == (4032, 64)
+        assert component.shape == (3456, 8)
     assert sim.time is not None
-    assert sim.time.shape == (64,)
-    assert sim.nodal_vars["stress_yy"].shape == (4032, 64)
-    assert sim.nodal_vars["vonmises_stress"].shape == (4032, 64)
+    assert sim.time.shape == (8,)
+    assert sim.nodal_vars["vonmises_stress"].shape == (3456, 8)
 
 
 def test_load_exodus_nodal_keys_all() -> None:
@@ -75,7 +74,7 @@ def test_load_exodus_nodal_keys_all() -> None:
         riley.data.platehole_exodus_path(), nodal_keys="all"
     )
     expected = {
-        "disp_x", "disp_y", "disp_z", "stress_yy", "vonmises_stress",
+        "disp_x", "disp_y", "disp_z", "vonmises_stress",
     }
     assert expected.issubset(sim.nodal_vars)
 

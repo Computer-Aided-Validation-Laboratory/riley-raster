@@ -34,6 +34,8 @@ const F = buildconfig.F;
 // - so for the wrapper path, W_0 = total_threads and T_total_max = total_threads
 
 pub const RasterConfig = struct {
+    pub const default_output_name_format =
+        "cam{camera}_frame{frame}_field{field}";
     // Outer scheduling mode for frame-camera jobs.
     render_mode: RenderMode = .in_order,
     // Single-render-group compatibility budget. User-facing thread counts
@@ -56,6 +58,9 @@ pub const RasterConfig = struct {
     image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
+    /// Basename template for rendered images. The image format supplies the
+    /// extension. See imageio.formatFrameFieldBaseName for supported fields.
+    output_name_format: []const u8 = default_output_name_format,
     tile_size_override: ?u16 = null,
     tile_size_min: u16 = 1,
     tile_size_max: u16 = 256,
@@ -73,9 +78,16 @@ pub const RasterConfig = struct {
     hull_mode: HullMode = .on_no_fallback,
     newton_seed_mode: NewtonSeedMode = .centroid,
     newton_seed_reuse: NewtonSeedReuse = .off,
+    validate_input: ValidateInput = .fast,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
     save_frame_buff_count: usize = buildconfig.SaveFrameBuffCount,
+};
+
+pub const ValidateInput = enum(u32) {
+    off = 0,
+    fast = 1,
+    full = 2,
 };
 
 pub const BufferMode = enum {

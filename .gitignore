@@ -12,6 +12,7 @@ out_riley_py/
 out-riley-py/
 bin/
 .*
+.*/
 !.gitignore
 !.github/
 
@@ -52,27 +53,23 @@ maths/
 !data/min/**/*.csv
 !data/cubes/
 !data/cubes/**/*.csv
-!data/cubes/*/cube_out.e
 !data/shapes/**/*.csv
-!src/riley/data/feature_zoo/
-!src/riley/data/feature_zoo/**/*.csv
-!src/riley/data/feature_zoo/
-!src/riley/data/feature_zoo/**/*.csv
-!src/riley/data/feature_zoo/**/*.fimg
 !data/shapes/**/*.msh
 !data/shapes/**/*.e
-!data/feature_zoo/**/*.csv
-!data/feature_zoo/*.fimg
 !gold/min/
 !gold/min/**/*.fimg
 !gold/min/**/*.bmp
 !gold/min/**/*.csv
+!gold/basic/
+!gold/basic/**/*.fimg
 !gold/perf_stats_ref/
 !gold/perf_stats_ref/**/
 !gold/perf_stats_ref/**/*.csv
 !gold/perf_stats_ref/**/*.json
 !gold/perf_stats_ref/**/*.txt
 !gold/perf_stats_ref/**/*.md
+!gold/verif/
+!gold/verif/**
 
 # Keep our other test suite data committed to the repo
 !data/small/**/*.csv
@@ -81,8 +78,8 @@ maths/
 
 # Other mesh data to keep
 !data/rabbits/**/*.csv
-!data/FE/platehole3d_2mr_63f/*.csv
-!data/FE/platehole3d_2mr_63f.e
+!data/FE/platehole3d_2mr_7f/*.csv
+!data/FE/platehole3d_2mr_7f.e
 !data/calplate/**/*.csv
 
 # We need to keep the textures for the tests

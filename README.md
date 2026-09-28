@@ -1,70 +1,47 @@
 # Riley
-`Riley` is a software rasteriser written in Zig for digital image correlation uncertainty quantification (DIC UQ). It renders deformed speckle pattern images from finite element simulations and supports higher order surface elements including `tri3`, `tri6`, `quad4`, `quad8` and `quad9`. `Riley` supports nodal, texture and analytic function shaders, including higher order texture sampling and mixed scenes with multiple mesh and shader types.
 
-We chose Zig because it gives us explicit memory control, strong compile-time specialisation and direct SIMD support. `Riley` uses `comptime` to generate specialised raster paths for geometry, shader and build-policy combinations so the hot loop avoids runtime dispatch.
+Riley is a high performance Zig software rasteriser for digital image correlation uncertainty quantification (DIC UQ). It synthesises deformed speckle images from finite element simulations, with higher order surface elements (`tri3`, `tri6`, `quad4`, `quad8`, and `quad9`), camera models and distortion, texture/nodal/analytic shaders, and mixed scenes.
 
-## Getting Started: Zig
-`Riley` currently targets Zig `0.16.0`, available [here](https://ziglang.org/download/).
+Riley's Zig core uses `comptime` specialisation and SIMD with `@Vector` to keep its rendering path direct. It is available as a Zig library and executable, a C compatible ABI, and the [`riley-raster`](https://pypi.org/project/riley-raster/) Python package.
 
-The first check to run is the minimal regression suite:
+## Quick start: Zig
 
-```shell
-zig test -O ReleaseSafe ./src/test_min.zig
-```
-
-or with the build system:
+Riley targets [Zig 0.16.0](https://ziglang.org/download/). Clone the repository, then build and run the smallest demo:
 
 ```shell
-zig build test-min -Doptimize=ReleaseSafe
+zig build demo0-quickstart -Doptimize=ReleaseFast
 ```
 
-Plain `zig run` and `zig test` on files under `./src/` default to the standard Riley configuration:
-
-- precision: `f64`
-- SIMD: `on`
-- Newton solver: `fast`
-
-The build system can override these defaults:
+Renders are written below `out/`. Run the combined smoke suite with:
 
 ```shell
-zig build <STEP> -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
-zig build <STEP> -Dprecision=f64 -Dsimd=off -Doptimize=ReleaseSafe
-zig build <STEP> -Dprecision=f32 -Dsimd=on -Doptimize=ReleaseSafe
-zig build <STEP> -Dnewton-solver=robust -Doptimize=ReleaseSafe
-zig build <STEP> -Dsimd-vector-width=8 -Doptimize=ReleaseSafe
+zig build test-verif-basic -Doptimize=ReleaseSafe
 ```
 
-Run `zig build --help` to see the available build steps.
+## Quick start: Python
 
-The min suite contains two high-signal cases:
-
-- `multimesh`: two elements of each supported type in one scene, rendered with nodal and texture shading
-- `sphere200`: a sphere rendered across shader combinations and element orientations
-
-These are the quickest correctness checks and should be your first stop before running wider gold or benchmark suites.
-
-Only the main production-path min gold is kept in the repository by default, so the min suite is intended primarily for `f64` with SIMD enabled. The min suite also requires `.simd = .on`; the scalar min orchestration is not implemented.
-
-For deeper test, gold generation and benchmark workflows, see [dev/README.md](./dev/README.md).
-
-## Getting Started: Python
-We provide Python bindings to the Riley C ABI through Cython, and publish a `riley-raster` package on PyPI.
-
-Install from PyPI with:
+Install the published package, The package builds Riley from Zig source locally, so installation can take a several minutes.:
 
 ```shell
-pip install riley-raster
+python -m pip install riley-raster
+python -m riley demo0_quickstart
 ```
-
-This builds Riley from Zig source on your local machine, so installation can take a minute or two depending on hardware.
-
-For local development, clone the repository, create a virtual environment and install from source:
+Python renders are written below `out_riley_py/`. For development from a checkout, install it in editable mode:
 
 ```shell
-pip install -e .
+python -m pip install -e .
 ```
 
-Python demos live in `src/riley/pydemos/` and the Python tests live in `src/riley/pytests/`.
+## Verification and regression tests
+
+The Zig test suites are intentionally separated by purpose. The focused verification suite requires the production `f64` and SIMD configuration; run `zig build --help` for the complete target list and configuration options.
+
+| Command | Purpose |
+| --- | --- |
+| `zig build test-verif-basic -Doptimize=ReleaseSafe` | Fast combination of focused analytic verification and BASIC regression tests. |
+| `zig build test-verif -Doptimize=ReleaseSafe` | Analytic verification of the solver, silhouettes, depth buffer, and camera distortion. |
+| `zig build test-basic -Doptimize=ReleaseSafe` | BASIC regression suite. |
+| `zig build test-full -Doptimize=ReleaseSafe` | Full regression suite. |
 
 Run the packaged Python test suite with:
 
@@ -72,87 +49,51 @@ Run the packaged Python test suite with:
 python -m pytest --pyargs riley.pytests -s
 ```
 
-or through Riley's module entry point:
+or:
 
 ```shell
 python -m riley test
 ```
 
-The repo parity test inside `riley.pytests` compares Python demo output against Zig demo output. It runs when the repository assets are available from the current working directory and skips cleanly otherwise.
+The repository parity tests compare Python and Zig demo output when the repository assets and Zig compiler are available; they skip when installed from a clean PyPI package.
 
-## Capability Demonstration
-We include several demonstration scripts in `./src/` and Python equivalents in `./src/riley/pydemos/`.
+## Examples
 
-In Zig:
-
-```shell
-zig run -O ReleaseFast ./src/demoN_<CASE>.zig
-```
-
-or with the build system:
+Riley keeps the Zig path first. For example, render the rabbits with:
 
 ```shell
-zig build demoN-<CASE> -Doptimize=ReleaseFast
+zig build demo3-rabbits -Doptimize=ReleaseFast
 ```
 
-Use one of the numbered demo names listed below. Zig output is written to
-`./out/demoN_CASE/`.
-The `psf` demo writes separate `global_subpx_full` and `global_subpx_stripe` subdirectories.
-
-Zig demo source on GitHub:
-
-- [`demo0_quickstart.zig`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/demo0_quickstart.zig)
-- [`demo1_sphere200.zig`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/demo1_sphere200.zig)
-- [`demo2_psf.zig`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/demo2_psf.zig)
-- [`demo3_rabbits.zig`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/demo3_rabbits.zig)
-- [`demo4_rabbits_rgb.zig`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/demo4_rabbits_rgb.zig)
-- [`demo5_rabbits_fields.zig`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/demo5_rabbits_fields.zig)
-- [`demo6_dicuq.zig`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/demo6_dicuq.zig)
-- [`demo8_stereocal.zig`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/demo8_stereocal.zig)
-- [`demo9_feature_zoo.zig`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/demo9_feature_zoo.zig)
-
-In Python:
+The equivalent Python demo is:
 
 ```shell
-python -m riley demoN_<CASE>
+python -m riley demo3_rabbits
 ```
 
-Python demo output is written to `Path.cwd() / "out_riley_py" / "demoN_CASE"`.
+Browse the complete [Zig demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src) or [Python demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src/riley/pydemos). The image links below are absolute GitHub URLs so they render both on GitHub and on PyPI.
 
-Python demo source on GitHub:
+### Rabbits
 
-- [`demo0_quickstart.py`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/riley/pydemos/demo0_quickstart.py)
-- [`demo1_sphere200.py`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/riley/pydemos/demo1_sphere200.py)
-- [`demo2_psf.py`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/riley/pydemos/demo2_psf.py)
-- [`demo3_rabbits.py`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/riley/pydemos/demo3_rabbits.py)
-- [`demo6_dicuq.py`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/riley/pydemos/demo6_dicuq.py)
-- [`demo7_dic_from_exodus.py`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/riley/pydemos/demo7_dic_from_exodus.py)
-- [`demo8_stereocal.py`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/riley/pydemos/demo8_stereocal.py)
-- [`demo9_feature_zoo.py`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/riley/pydemos/demo9_feature_zoo.py)
+The rabbit scene combines all supported element types and the principal shader families in a single render.
 
-### Demo 1: Speckle Sphere
-For this demonstration we import a sphere mesh and apply a speckle pattern texture shader. This is a representative single-mesh, single-shader case.
+![Rendered rabbits](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/demo_rabbitrender.bmp)
 
-![fig_sphere](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/demo_sphere200.bmp)
+### Digital image correlation UQ
 
-### Demo 3: Rendering Rabbits
-This demonstration renders rabbit meshes composed of all supported element types: `tri3`, `tri6`, `quad4`, `quad8` and `quad9`. It also exercises the main shader families in one scene.
-
-![fig_rabbit_render](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/demo_rabbitrender.bmp)
-
-### Demo 3: Digital Image Correlation Uncertainty Quantification
-This case demonstrates a representative stereo DIC UQ rendering of a plate with a hole in tension. The input FE model is in `./data/FE/`.
+A representative stereo DIC UQ render of a plate with a hole in tension.
 
 | Camera 0 | Camera 1 |
-|:---:|:---:|
+| :---: | :---: |
 | ![DIC Camera 0](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/dicuq_cam0_frame0_field0.bmp) | ![DIC Camera 1](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/dicuq_cam1_frame0_field0.bmp) |
 
-### Demo 4: Stereo Calibration
-This demonstration uses the stereo setup from the DIC UQ case and renders stereo calibration target images. The input meshes are in `./data/calplate/`.
+### Stereo calibration targets
+
+Stereo calibration target renders using the DIC UQ camera setup.
 
 | Camera 0 | Camera 1 |
-|:---:|:---:|
-| ![Cal Camera 0](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/cal_cam0_frame0_field0.bmp) | ![Cal Camera 1](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/cal_cam1_frame0_field0.bmp) |
+| :---: | :---: |
+| ![Calibration camera 0](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/cal_cam0_frame0_field0.bmp) | ![Calibration camera 1](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/cal_cam1_frame0_field0.bmp) |
 
 ## Project Layout
 The main Zig entry point for the rendering pipeline is the `raster(...)` family in `./src/riley/zig/riley.zig`.
@@ -175,9 +116,7 @@ For a mathematical and architectural overview, see the engrXiv preprint: [Riley:
 ## C Interface
 `Riley` provides a C-compatible API for use from other languages. The Python bindings use this interface through Cython, but it can also be called from C or from any language with a C FFI.
 
-The public C ABI is intentionally fixed to the production Riley build with: precision=`f64`, SIMD=`on`.
-
-This keeps the exported ABI stable for downstream callers. The extern types and functions live in [`src/riley/zig/c-riley.zig`](./src/riley/zig/c-riley.zig).
+The public C ABI is intentionally fixed to the production Riley build with: precision=`f64`, SIMD=`on`. The extern types and functions live in [`src/riley/zig/c-riley.zig`](./src/riley/zig/c-riley.zig).
 
 ## Citing Riley
 If you have found `Riley` useful you can cite it using:
@@ -201,6 +140,8 @@ If you have found `Riley` useful you can cite it using:
 - Lloyd Fletcher ([ScepticalRabbit](https://github.com/ScepticalRabbit)), UK Atomic Energy Authority
 - Joel Hirst ([JoelPhys](https://github.com/JoelPhys)), UK Atomic Energy Authority
 - Wiera Bielajewa ([WieraB](https://github.com/WieraB)), UK Atomic Energy Authority
+- James Panayis ([james-panayis](https://github.com/james-panayis)), UK Atomic Energy Authority
+- Megan Sampson ([meganasampson](https://github.com/meganasampson)), UK Atomic Energy Authority
 
 ## Dedication
 Named in memory of Riley, and for Feebee, her sister and bondmate. Without your love and support, this project would never have happened.

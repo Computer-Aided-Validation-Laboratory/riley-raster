@@ -32,7 +32,7 @@ PANEL_CBAR_RECT = [0.76, 0.14, 0.03, 0.72]
 STEREOCAL_DIR = Path("out/demo-stereocal-nodist")
 DICUQ_DIR = Path("out/demo-dicuq-nodist")
 DIC_RESULTS_DIR = Path("out/pyvale-stereo-dic-res")
-EXODUS_PATH = Path("data/FE/platehole3d_2mr_63f.e")
+EXODUS_PATH = Path("data/FE/platehole3d_2mr_7f.e")
 
 CAL_CAM0_BMP = STEREOCAL_DIR / "cam0_frame0_field0.bmp"
 CAL_CAM1_BMP = STEREOCAL_DIR / "cam1_frame0_field0.bmp"
@@ -40,7 +40,7 @@ RENDER_CAM0_BMP = DICUQ_DIR / "cam0_frame0_field0.bmp"
 RENDER_CAM1_BMP = DICUQ_DIR / "cam1_frame0_field0.bmp"
 
 DIC_REFERENCE_FRAME = 1
-DIC_FINAL_FRAME = 63
+DIC_FINAL_FRAME = 7
 FE_FINAL_FRAME_INDEX = -1
 
 CMAP = "coolwarm"

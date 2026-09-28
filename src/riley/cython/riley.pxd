@@ -226,6 +226,7 @@ cdef extern from "riley.h":
         uint32_t hull_mode
         uint32_t newton_seed_mode
         uint32_t newton_seed_reuse
+        uint32_t validate_input
         uint32_t report
         uint16_t tile_size_min
         uint16_t tile_size_max
@@ -258,6 +259,7 @@ cdef extern from "riley.h":
         uint8_t full_stats_save_pixel_occupancy_map
         uint8_t full_stats_save_normals_map
         uint32_t buffer_mode
+        const char* output_name_format
 
     size_t rileyGetLastError(uint8_t* out_buf, size_t out_buf_len)
 

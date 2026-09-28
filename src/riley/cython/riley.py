@@ -140,6 +140,7 @@ class RasterConfig:
     hull_mode: int = 1
     newton_seed_mode: int = 0
     newton_seed_reuse: int = 0
+    validate_input: int = 1
     report: int = 1
     tile_size_min: int = 1
     tile_size_max: int = 256
@@ -172,14 +173,16 @@ class RasterConfig:
     full_stats_save_pixel_occupancy_map: bool = True
     full_stats_save_normals_map: bool = False
     buffer_mode: int = 0
+    output_name_format: str = (
+        "cam{camera}_frame{frame}_field{field}"
+    )
 
 
 class MeshType(IntEnum):
     tri3 = 0
     tri3opt = 1
     tri6 = 2
-    quad4ibi = 3
-    quad4newton = 4
+    quad4 = 4
     quad8 = 5
     quad9 = 6
 
@@ -309,6 +312,12 @@ class NewtonSeedMode(IntEnum):
 class NewtonSeedReuse(IntEnum):
     off = 0
     last_converged = 1
+
+
+class ValidateInput(IntEnum):
+    off = 0
+    fast = 1
+    full = 2
 
 
 class CameraCoordSys(IntEnum):
@@ -541,7 +550,7 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
 
 
 @cython.cfunc
-def _make_raster_config(config: Any) -> cr.CRasterConfig:
+def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
     config_out: cr.CRasterConfig
     config_out.render_mode = int(config.render_mode)
     config_out.total_threads = int(config.total_threads)
@@ -561,6 +570,7 @@ def _make_raster_config(config: Any) -> cr.CRasterConfig:
     config_out.hull_mode = int(config.hull_mode)
     config_out.newton_seed_mode = int(config.newton_seed_mode)
     config_out.newton_seed_reuse = int(config.newton_seed_reuse)
+    config_out.validate_input = int(config.validate_input)
     config_out.report = int(config.report)
     config_out.tile_size_min = int(config.tile_size_min)
     config_out.tile_size_max = int(config.tile_size_max)
@@ -627,6 +637,9 @@ def _make_raster_config(config: Any) -> cr.CRasterConfig:
         config.full_stats_save_normals_map,
     )
     config_out.buffer_mode = int(config.buffer_mode)
+    output_name_format = config.output_name_format.encode("utf-8")
+    config_out.output_name_format = output_name_format
+    keepalive.append(output_name_format)
     return config_out
 
 
@@ -1530,7 +1543,7 @@ def raster(
         cython.pointer[cr.CCameraInput],
         malloc(cameras_len * cython.sizeof(cr.CCameraInput)),
     )
-    config_c: cr.CRasterConfig = _make_raster_config(config)
+    config_c: cr.CRasterConfig
     image_np: np.ndarray | None = None
     image_ptr: cython.pointer[cr.CImageBuffF64] = cython.cast(
         cython.pointer[cr.CImageBuffF64],
@@ -1538,6 +1551,7 @@ def raster(
     )
     image_c: cr.CImageBuffF64
     keepalive: list[Any] = []
+    config_c = _make_raster_config(config, keepalive)
 
     if mesh_array == cython.NULL or camera_array == cython.NULL:
         if mesh_array != cython.NULL:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import warnings
+
 import netCDF4
 import numpy as np
 
@@ -30,18 +32,24 @@ def write_minimal_exodus(
     connect_values: tuple[int | float, ...] = (1, 2, 3),
     elem_type: str | None = "TRI3",
 ) -> None:
-    with netCDF4.Dataset(path, "w") as dataset:
-        dataset.createDimension("num_nodes", 3)
-        dataset.createDimension("num_dim", 2)
-        dataset.createDimension("num_elem", 1)
-        dataset.createDimension("num_nodes_per_elem", 3)
-        coord = dataset.createVariable(
-            "coord", "f8", ("num_dim", "num_nodes")
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r".*Setting the shape on a NumPy array.*",
+            category=DeprecationWarning,
         )
-        coord[:] = ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
-        connect = dataset.createVariable(
-            "connect1", connect_dtype, ("num_elem", "num_nodes_per_elem")
-        )
-        connect[:] = connect_values
-        if elem_type is not None:
-            connect.elem_type = elem_type
+        with netCDF4.Dataset(path, "w") as dataset:
+            dataset.createDimension("num_nodes", 3)
+            dataset.createDimension("num_dim", 2)
+            dataset.createDimension("num_elem", 1)
+            dataset.createDimension("num_nodes_per_elem", 3)
+            coord = dataset.createVariable(
+                "coord", "f8", ("num_dim", "num_nodes")
+            )
+            coord[:] = ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+            connect = dataset.createVariable(
+                "connect1", connect_dtype, ("num_elem", "num_nodes_per_elem")
+            )
+            connect[:] = connect_values
+            if elem_type is not None:
+                connect.elem_type = elem_type

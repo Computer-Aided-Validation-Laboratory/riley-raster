@@ -292,6 +292,7 @@ pub const CRasterConfig = extern struct {
     hull_mode: u32,
     newton_seed_mode: u32,
     newton_seed_reuse: u32,
+    validate_input: u32,
     report: u32,
     tile_size_min: u16,
     tile_size_max: u16,
@@ -324,6 +325,7 @@ pub const CRasterConfig = extern struct {
     full_stats_save_pixel_occupancy_map: u8,
     full_stats_save_normals_map: u8,
     buffer_mode: u32,
+    output_name_format: ?[*:0]const u8,
 };
 
 const MeshInputBuilt = struct {
@@ -468,8 +470,7 @@ fn meshTypeFromC(mesh_type: u32) !gk.MeshType {
         @intFromEnum(gk.MeshType.tri3) => .tri3,
         @intFromEnum(gk.MeshType.tri3opt) => .tri3opt,
         @intFromEnum(gk.MeshType.tri6) => .tri6,
-        @intFromEnum(gk.MeshType.quad4ibi) => .quad4ibi,
-        @intFromEnum(gk.MeshType.quad4newton) => .quad4newton,
+        @intFromEnum(gk.MeshType.quad4) => .quad4,
         @intFromEnum(gk.MeshType.quad8) => .quad8,
         @intFromEnum(gk.MeshType.quad9) => .quad9,
         else => error.InvalidMeshType,
@@ -567,6 +568,17 @@ fn newtonSeedReuseFromC(
         @intFromEnum(rastcfg.NewtonSeedReuse.off) => .off,
         @intFromEnum(rastcfg.NewtonSeedReuse.last_conv) => .last_conv,
         else => error.InvalidNewtonSeedReuse,
+    };
+}
+
+fn validateInputFromC(
+    validate_input: u32,
+) !rastcfg.ValidateInput {
+    return switch (validate_input) {
+        @intFromEnum(rastcfg.ValidateInput.off) => .off,
+        @intFromEnum(rastcfg.ValidateInput.fast) => .fast,
+        @intFromEnum(rastcfg.ValidateInput.full) => .full,
+        else => error.InvalidValidateInputMode,
     };
 }
 
@@ -1527,6 +1539,9 @@ fn buildRasterConfig(
     config.newton_seed_reuse = try newtonSeedReuseFromC(
         in_config.newton_seed_reuse,
     );
+    config.validate_input = try validateInputFromC(
+        in_config.validate_input,
+    );
     config.report = try reportModeFromC(in_config.report);
     config.buffer_mode = try bufferModeFromC(in_config.buffer_mode);
     config.tile_size_min = if (in_config.tile_size_min == 0)
@@ -1587,6 +1602,9 @@ fn buildRasterConfig(
         ),
     };
     config.image_save_opts = save_opts;
+    if (in_config.output_name_format) |format| {
+        config.output_name_format = std.mem.span(format);
+    }
     config.full_stats_opts = .{
         .save_solver_csv = in_config.full_stats_save_solver_csv != 0,
         .save_iter_map = in_config.full_stats_save_iter_map != 0,

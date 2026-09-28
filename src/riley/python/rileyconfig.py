@@ -21,6 +21,7 @@ from riley.cython.riley import (
     ReportMode,
     SaveStrategy,
     ScaleStrategy,
+    ValidateInput,
 )
 
 
@@ -28,6 +29,10 @@ def create_raster_config(
     num_frames: int,
     total_threads: int = 1,
     save_strategy: SaveStrategy = SaveStrategy.both,
+    validate_input: ValidateInput = ValidateInput.fast,
+    output_name_format: str = (
+        "cam{camera}_frame{frame}_field{field}"
+    ),
 ) -> RasterConfig:
     """Create an offline RasterConfig balanced across frames and workers.
 
@@ -39,6 +44,10 @@ def create_raster_config(
         Total number of worker threads available. Must be positive.
     save_strategy : SaveStrategy, default=SaveStrategy.both
         Strategy for retaining and writing rendered frame buffers.
+    output_name_format : str, optional
+        Basename template for saved images. Available fields are ``camera``,
+        ``frame``, and ``field``. Fields accept zero padding, for example
+        ``"frame{frame:04}_{camera}"``. Riley appends the image extension.
 
     Returns
     -------
@@ -65,6 +74,15 @@ def create_raster_config(
 
     if not isinstance(save_strategy, SaveStrategy):
         raise TypeError("save_strategy must be a SaveStrategy member.")
+
+    if not isinstance(validate_input, ValidateInput):
+        raise TypeError("validate_input must be a ValidateInput member.")
+
+    if not isinstance(output_name_format, str):
+        raise TypeError("output_name_format must be a string.")
+
+    if not output_name_format:
+        raise ValueError("output_name_format must not be empty.")
 
     if num_frames <= 0:
         raise ValueError("num_frames must be positive.")
@@ -98,10 +116,12 @@ def create_raster_config(
         hull_mode=HullMode.on_no_fallback,
         newton_seed_mode=NewtonSeedMode.centroid,
         newton_seed_reuse=NewtonSeedReuse.off,
+        validate_input=validate_input,
         report=ReportMode.bench,
         save_format=ImageFormat.bmp,
         save_bits=8,
         save_scaling=ScaleStrategy.auto,
+        output_name_format=output_name_format,
     )
 
 

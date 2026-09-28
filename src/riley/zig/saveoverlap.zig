@@ -505,6 +505,7 @@ pub fn completeSaveSlot(
         &output_frame_arr,
         imageSaveChannelsOverride(config.image_save_mode),
         config.image_save_opts,
+        config.output_name_format,
     );
     const time_end_save = Timestamp.now(save_io, .awake);
 
