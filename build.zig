@@ -102,44 +102,44 @@ pub fn build(b: *std.Build) void {
             .source_path = "src/demo0_quickstart.zig",
         },
         .{
-            .step_name = "demo1-sphere200",
-            .description = "Run the sphere200 demo",
-            .source_path = "src/demo1_sphere200.zig",
+            .step_name = "demo1-sphere",
+            .description = "Run the sphere demo",
+            .source_path = "src/demo1_sphere.zig",
         },
         .{
-            .step_name = "demo2-psf",
-            .description = "Run the Gaussian PSF demo",
-            .source_path = "src/demo2_psf.zig",
-        },
-        .{
-            .step_name = "demo3-rabbits",
+            .step_name = "demo2a-rabbits-mono",
             .description = "Run the rabbits demo",
-            .source_path = "src/demo3_rabbits.zig",
+            .source_path = "src/demo2a_rabbits_mono.zig",
         },
         .{
-            .step_name = "demo4-rabbits-rgb",
+            .step_name = "demo2b-rabbits-rgb",
             .description = "Run the rabbits RGB demo",
-            .source_path = "src/demo4_rabbits_rgb.zig",
+            .source_path = "src/demo2b_rabbits_rgb.zig",
         },
         .{
-            .step_name = "demo5-rabbits-fields",
+            .step_name = "demo2c-rabbits-fields",
             .description = "Run the rabbits fields demo",
-            .source_path = "src/demo5_rabbits_fields.zig",
+            .source_path = "src/demo2c_rabbits_fields.zig",
         },
         .{
-            .step_name = "demo6-dicuq",
+            .step_name = "demo3-dicuq",
             .description = "Run the DIC UQ demo",
-            .source_path = "src/demo6_dicuq.zig",
+            .source_path = "src/demo3_dicuq.zig",
         },
         .{
-            .step_name = "demo8-stereocal",
+            .step_name = "demo4-stereocal",
             .description = "Run the stereo calibration demo",
-            .source_path = "src/demo8_stereocal.zig",
+            .source_path = "src/demo4_stereocal.zig",
         },
         .{
-            .step_name = "demo9-feature-zoo",
+            .step_name = "demo5-cameramodels",
+            .description = "Run all camera distortion and PSF models",
+            .source_path = "src/demo5_cameramodels.zig",
+        },
+        .{
+            .step_name = "demo6-featurezoo",
             .description = "Run the complete feature-zoo demo",
-            .source_path = "src/demo9_feature_zoo.zig",
+            .source_path = "src/demo6_featurezoo.zig",
         },
     };
 
@@ -320,6 +320,10 @@ fn addRileySharedLibrary(
     const shared_lib = b.addLibrary(.{
         .linkage = .dynamic,
         .name = "riley",
+        // Zig 0.16's self-hosted Debug backend mispasses floating-point C
+        // struct arguments in the camera helpers. Keep the C ABI on LLVM;
+        // native demos/tests still use the default backend and optimization.
+        .use_llvm = true,
         .root_module = createRootModule(
             b,
             target,
@@ -362,10 +366,14 @@ fn addTestRunStep(
         .root_module = test_module,
         .test_runner = .{
             .path = b.path("src/dev_support/testrunner.zig"),
-            .mode = .server,
+            .mode = .simple,
         },
     });
     const run_tests = b.addRunArtifact(tests);
+    // Use the stock terminal runner rather than its stdout server protocol.
+    // Inherit both streams so progress is live and stderr is not mislabelled
+    // as a failed command on successful runs. Nonzero exits still fail the build.
+    run_tests.stdio = .inherit;
     // Suites read gold and runtime assets and may write failure diagnostics.
     // Cache compilation, but execute the tests on every invocation.
     run_tests.has_side_effects = true;

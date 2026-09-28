@@ -29,16 +29,17 @@ const F = buildconfig.F;
 // For `.auto`, the mode resolves at runtime from the scene size in
 // `scalingpolicy.resolveGeometrySchedulingMode(...)`.
 // Compatibility note:
-// - `total_threads` below is only the single-render-group wrapper budget
+// - `total_threads` below is the convenience-wrapper render-thread budget
 // - render-group topology itself lives outside RasterConfig
-// - so for the wrapper path, W_0 = total_threads and T_total_max = total_threads
+// - managed/C/Python wrappers distribute it so sum_g W_g = total_threads
+// - explicit render groups are not resized by changing RasterConfig.total_threads
 
 pub const RasterConfig = struct {
     pub const default_output_name_format =
         "cam{camera}_frame{frame}_field{field}";
     // Outer scheduling mode for frame-camera jobs.
     render_mode: RenderMode = .in_order,
-    // Single-render-group compatibility budget. User-facing thread counts
+    // Convenience-wrapper render-thread budget. User-facing thread counts
     // always include the caller thread.
     total_threads: u16 = 1,
     // Maximum number of frame-camera jobs assigned to one render group batch.

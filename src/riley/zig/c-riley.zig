@@ -1650,66 +1650,6 @@ fn buildRasterConfig(
     return config;
 }
 
-const RenderGroupRuntime = struct {
-    managed_ios: []std.Io.Threaded,
-    render_groups: []riley.RenderGroupSpec,
-
-    fn deinit(
-        self: *RenderGroupRuntime,
-        allocator: std.mem.Allocator,
-    ) void {
-        for (self.managed_ios) |*managed_io| {
-            managed_io.deinit();
-        }
-        allocator.free(self.managed_ios);
-        allocator.free(self.render_groups);
-    }
-};
-
-fn initRenderGroups(
-    allocator: std.mem.Allocator,
-    total_threads_in: u16,
-    num_frames: usize,
-) !RenderGroupRuntime {
-    const total_threads = @max(@as(u16, 1), total_threads_in);
-    const frames_available = @max(@as(usize, 1), num_frames);
-    var render_group_count: u16 = 1;
-    if (total_threads < frames_available) {
-        render_group_count = total_threads;
-    } else {
-        for (1..frames_available + 1) |group_count| {
-            if (@as(usize, total_threads) % group_count == 0) {
-                render_group_count = @intCast(group_count);
-            }
-        }
-    }
-    const workers_per_group = total_threads / render_group_count;
-
-    const managed_ios = try allocator.alloc(std.Io.Threaded, render_group_count);
-    errdefer allocator.free(managed_ios);
-    const render_groups = try allocator.alloc(
-        riley.RenderGroupSpec,
-        render_group_count,
-    );
-    errdefer allocator.free(render_groups);
-
-    for (0..render_group_count) |gg| {
-        managed_ios[gg] = initThreadedIo(
-            allocator,
-            workers_per_group,
-        );
-        render_groups[gg] = .{
-            .io = managed_ios[gg].io(),
-            .workers = workers_per_group,
-        };
-    }
-
-    return .{
-        .managed_ios = managed_ios,
-        .render_groups = render_groups,
-    };
-}
-
 fn buildImageBuff(
     allocator: std.mem.Allocator,
     in_buff: *const CImageBuffF64,
@@ -1963,12 +1903,23 @@ fn rasterSceneInternal(
         image_arr.deinit(allocator);
     };
 
-    var render_group_runtime = try initRenderGroups(
-        std.heap.smp_allocator,
-        raster_config.total_threads,
-        cameras_len,
+    // Offline work spans camera/frame jobs; in-order work spans cameras only.
+    const jobs_available = cameras_len *| (if (raster_config.render_mode == .offline)
+        mo.countFrames(mesh_inputs)
+    else
+        1);
+    const jobs_limit = @max(@as(usize, 1), jobs_available);
+    const groups_limit = @min(@as(usize, raster_config.total_threads), jobs_limit);
+    const outer_alloc = std.heap.smp_allocator;
+    var render_group_runtime = try riley.ManagedRenderGroups.init(
+        outer_alloc,
+        null,
+        .{
+            .thread_budget = raster_config.total_threads,
+            .max_groups = @intCast(groups_limit),
+        },
     );
-    defer render_group_runtime.deinit(std.heap.smp_allocator);
+    defer render_group_runtime.deinit(outer_alloc);
 
     const out_dir_path_slice = if (out_dir_path) |path|
         std.mem.span(path)
@@ -1976,8 +1927,8 @@ fn rasterSceneInternal(
         null;
 
     try riley.rasterInto(
-        std.heap.smp_allocator,
-        render_group_runtime.render_groups,
+        outer_alloc,
+        render_group_runtime.specs,
         camera_inputs,
         mesh_inputs,
         raster_config,

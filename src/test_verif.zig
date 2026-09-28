@@ -27,7 +27,7 @@ test "focused analytic verification suite" {
     const io = std.testing.io;
     const start = std.Io.Clock.Timestamp.now(io, .awake);
 
-    std.debug.print("\nRunning verification tests.\n\n", .{});
+    try testsuites.printStatus(io, "\nRunning verification tests.\n\n", .{});
     try testsuites.runCase("solver", allocator, io, solver.run);
     try testsuites.runCase("silhouette", allocator, io, silhouette.run);
     try testsuites.runCase("depth buffer", allocator, io, depth.run);
@@ -46,5 +46,5 @@ test "focused analytic verification suite" {
 
     const end = std.Io.Clock.Timestamp.now(io, .awake);
     const elapsed_s = testsuites.durationToSeconds(start, end);
-    std.debug.print("\nVerification tests took {d:.3} seconds.\n", .{elapsed_s});
+    try testsuites.printStatus(io, "\nVerification tests took {d:.3} seconds.\n", .{elapsed_s});
 }

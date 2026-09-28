@@ -7,16 +7,16 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const demo_common = @import("demo_common.zig");
 
-const demoframes = @import("dev_support/demoframes.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const RasterConfig = riley.RasterConfig;
 const meshio = @import("riley/zig/meshio.zig");
 const uvio = @import("riley/zig/uvio.zig");
 const iio = @import("riley/zig/imageio.zig");
-const mo = @import("riley/zig/meshpipeline.zig");
-const MeshInput = mo.MeshInput;
+const meshpipe = @import("riley/zig/meshpipeline.zig");
+const MeshInput = meshpipe.MeshInput;
 const camera_mod = @import("riley/zig/camera.zig");
 const CameraInput = camera_mod.CameraInput;
 const cameraio = @import("riley/zig/cameraio.zig");
@@ -30,52 +30,14 @@ const BrownConradyExt = camera_mod.BrownConradyExt;
 const StereoPairInput = camera_mod.StereoPairInput;
 const F = buildconfig.F;
 
-const DATA_DIR = "data/calplate/tri3_calplate3d/";
-const TEXTURE_PATH = "texture/cal_target.tiff";
-const OUT_DIR_ROOT = "./out/demo8_stereocal";
-const PIXELS_NUM = [2]u32{ 2464, 2056 };
-const PIXELS_SIZE = [2]F{
-    @floatCast(3.45e-6),
-    @floatCast(3.45e-6),
-};
-const FOCAL_LENGTH: F = @floatCast(50.0e-3);
-const FOV_SCALE_FACTOR: F = 1.0;
-const STEREO_ANGLE_DEG: F = 20.0;
-const SUB_SAMPLE: u32 = 2;
-const FRAMES_MAX: usize = 8;
-
-const MATCHED_ROI = [3]F{
-    @floatCast(0.0125),
-    @floatCast(0.0175),
-    @floatCast(0.0005),
-};
-const MATCHED_CAM0_POS = [3]F{
-    @floatCast(0.0125),
-    @floatCast(0.0175),
-    @floatCast(0.160864856482),
-};
-const MATCHED_CAM1_POS = [3]F{
-    @floatCast(0.067348011198),
-    @floatCast(0.0175),
-    @floatCast(0.151193672270),
-};
-
-const TOTAL_THREADS: u16 = 8;
-const RENDER_GROUP_COUNT: u16 = 8;
-const WORKERS_PER_GROUP: u16 = 1;
-
 const DistortionCase = enum {
     none,
     brown_conrady,
     brown_conrady_ext,
 };
 
-const DISTORTION_CASE: DistortionCase = .brown_conrady;
-
-const STEREO_FILE_NAME = "stereo_data_opengl.csv";
-
-fn buildDistortion() DistortionModel {
-    return switch (DISTORTION_CASE) {
+fn buildDistortion(distortion_case: DistortionCase) DistortionModel {
+    return switch (distortion_case) {
         .none => .none,
         .brown_conrady => .{ .brown_conrady = BrownConrady.Params{
             .k1 = -0.2,
@@ -102,15 +64,21 @@ pub fn main(init: std.process.Init) !void {
 
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
-    const aa = arena.allocator();
+    const local_alloc = arena.allocator();
 
     // -------------------------------------------------------------------------
     // 1. Setup paths and parameters
     // -------------------------------------------------------------------------
+    const data_dir = "data/calplate/tri3_calplate3d/";
+    const texture_path = "texture/cal_target.tiff";
+    const out_dir_root = "./out/demo4_stereocal";
+
+    const total_threads: u16 = 8;
+
     var coord_sys = camera_mod.CameraCoordSys.opengl;
     var arg_it = try std.process.Args.Iterator.initAllocator(
         init.minimal.args,
-        aa,
+        local_alloc,
     );
     defer arg_it.deinit();
     _ = arg_it.next();
@@ -124,128 +92,83 @@ pub fn main(init: std.process.Init) !void {
     else
         "stereo_data_opengl.csv";
 
-    const coord_path = DATA_DIR ++ "coords.csv";
-    const conn_path = DATA_DIR ++ "connect.csv";
-    const uv_path = DATA_DIR ++ "uvs.csv";
+    const coord_path = data_dir ++ "coords.csv";
+    const conn_path = data_dir ++ "connect.csv";
+    const uv_path = data_dir ++ "uvs.csv";
     const disp_paths = &[_][]const u8{
-        DATA_DIR ++ "field_disp_x.csv",
-        DATA_DIR ++ "field_disp_y.csv",
-        DATA_DIR ++ "field_disp_z.csv",
+        data_dir ++ "field_disp_x.csv",
+        data_dir ++ "field_disp_y.csv",
+        data_dir ++ "field_disp_z.csv",
     };
 
-    const managed_ios = try outer_alloc.alloc(std.Io.Threaded, RENDER_GROUP_COUNT);
-    defer {
-        for (managed_ios) |*managed_io| {
-            managed_io.deinit();
-        }
-        outer_alloc.free(managed_ios);
-    }
+    var groups = try riley.ManagedRenderGroups.init(outer_alloc, init.minimal, .{
+        .thread_budget = total_threads,
+    });
+    defer groups.deinit(outer_alloc);
+    const io = groups.specs[0].io;
 
-    const render_groups = try outer_alloc.alloc(
-        riley.RenderGroupSpec,
-        RENDER_GROUP_COUNT,
-    );
-    defer outer_alloc.free(render_groups);
-
-    for (0..RENDER_GROUP_COUNT) |gg| {
-        managed_ios[gg] = riley.getThreadedIo(
-            outer_alloc,
-            init.minimal,
-            WORKERS_PER_GROUP,
-        );
-        render_groups[gg] = .{
-            .io = managed_ios[gg].io(),
-            .workers = WORKERS_PER_GROUP,
-        };
-    }
-    const io = render_groups[0].io;
-
-    const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, "out", .default_dir) catch |err| {
-        if (err != error.PathAlreadyExists) return err;
-    };
-    cwd.deleteTree(io, OUT_DIR_ROOT) catch |err| {
-        if (err != error.FileNotFound) return err;
-    };
-    cwd.createDir(io, OUT_DIR_ROOT, .default_dir) catch |err| {
-        if (err != error.PathAlreadyExists) return err;
-    };
-    var out_dir = try cwd.openDir(io, OUT_DIR_ROOT, .{});
+    var out_dir = try demo_common.resetOutputDir(io, out_dir_root);
     defer out_dir.close(io);
-    out_dir.deleteFile(io, "cameradata.csv") catch |err| {
-        if (err != error.FileNotFound) return err;
-    };
 
     // -------------------------------------------------------------------------
     // 2. Load calibration plate mesh, sample frames, and apply texture
     // -------------------------------------------------------------------------
     var sim_data = try meshio.loadSimData(
-        aa,
+        local_alloc,
         io,
         coord_path,
         conn_path,
         null,
         disp_paths,
     );
-    defer sim_data.deinit(aa);
+    defer sim_data.deinit(local_alloc);
     const disp_source = sim_data.disp orelse return error.MissingDisplacement;
-    const frame_indices = try demoframes.evenlySpacedIndices(
-        aa,
+    const frames_max: usize = 8;
+    const frame_indices = try sceneops.selectEvenlySpacedFrameIndices(
+        local_alloc,
         disp_source.getTimeN(),
-        FRAMES_MAX,
+        frames_max,
     );
-    var selected_disp = try demoframes.selectFieldFrames(
-        aa,
+    var selected_disp = try sceneops.selectFieldFrames(
+        local_alloc,
         &disp_source,
         frame_indices,
     );
-    defer selected_disp.deinit(aa);
+    defer selected_disp.deinit(local_alloc);
 
-    var uvs = try uvio.loadUVMap(aa, io, uv_path);
-    defer uvs.deinit(aa);
+    var uvs = try uvio.loadUVMap(local_alloc, io, uv_path);
+    defer uvs.deinit(local_alloc);
 
     var texture = try iio.loadImage(
         u8,
         1,
-        aa,
+        local_alloc,
         io,
-        TEXTURE_PATH,
+        texture_path,
         .tiff,
     );
-    defer texture.deinit(aa);
+    defer texture.deinit(local_alloc);
 
-    const distortion = buildDistortion();
+    const distortion_case: DistortionCase = .brown_conrady;
+    const distortion = buildDistortion(distortion_case);
 
-    const target_roi = vecstack.initVec3(
-        F,
-        MATCHED_ROI[0],
-        MATCHED_ROI[1],
-        MATCHED_ROI[2],
-    );
-    const roi_pos_orig = sceneops.boundsCenter(&sim_data.coords);
-    const roi_shift = target_roi.sub(roi_pos_orig);
-    for (0..sim_data.coords.mat.rows_num) |nn| {
-        sim_data.coords.mat.set(
-            nn,
-            0,
-            sim_data.coords.mat.get(nn, 0) + roi_shift.get(0),
-        );
-        sim_data.coords.mat.set(
-            nn,
-            1,
-            sim_data.coords.mat.get(nn, 1) + roi_shift.get(1),
-        );
-        sim_data.coords.mat.set(
-            nn,
-            2,
-            sim_data.coords.mat.get(nn, 2) + roi_shift.get(2),
-        );
-    }
+    const matched_roi = [3]F{ 0.0125, 0.0175, 0.0005 };
+
+    const target_roi = vecstack.Vec3f.initSlice(matched_roi[0..]);
+    sceneops.centerCoordsAt(&sim_data.coords, target_roi.vec);
     const roi_pos = sceneops.boundsCenter(&sim_data.coords);
 
     // -------------------------------------------------------------------------
     // 3. Create, save, and reload stereo camera pair
     // -------------------------------------------------------------------------
+    const pixels_num = [2]u32{ 2464, 2056 };
+    const pixels_size = [2]F{ 3.45e-6, 3.45e-6 };
+    const focal_length: F = 50.0e-3;
+    const stereo_angle_deg: F = 20.0;
+    const sub_sample: u32 = 2;
+    const matched_cam0_pos = [3]F{ 0.0125, 0.0175, 0.160864856482 };
+    const matched_cam1_pos = [3]F{ 0.067348011198, 0.0175, 0.151193672270 };
+
     const cam0_rot = Rotation.init(
         std.math.degreesToRadians(0.0),
         std.math.degreesToRadians(0.0),
@@ -253,31 +176,21 @@ pub fn main(init: std.process.Init) !void {
     );
     const cam1_rot = Rotation.init(
         std.math.degreesToRadians(0.0),
-        std.math.degreesToRadians(STEREO_ANGLE_DEG),
+        std.math.degreesToRadians(stereo_angle_deg),
         std.math.degreesToRadians(0.0),
     );
 
-    const cam0_pos = vecstack.initVec3(
-        F,
-        MATCHED_CAM0_POS[0],
-        MATCHED_CAM0_POS[1],
-        MATCHED_CAM0_POS[2],
-    );
-    const cam1_pos = vecstack.initVec3(
-        F,
-        MATCHED_CAM1_POS[0],
-        MATCHED_CAM1_POS[1],
-        MATCHED_CAM1_POS[2],
-    );
+    const cam0_pos = vecstack.Vec3f.initSlice(matched_cam0_pos[0..]);
+    const cam1_pos = vecstack.Vec3f.initSlice(matched_cam1_pos[0..]);
 
     const cam0_in = CameraInput{
-        .pixels_num = PIXELS_NUM,
-        .pixels_size = PIXELS_SIZE,
+        .pixels_num = pixels_num,
+        .pixels_size = pixels_size,
         .pos_world = cam0_pos,
         .rot_world = cam0_rot,
         .roi_cent_world = roi_pos,
-        .focal_length = FOCAL_LENGTH,
-        .sub_sample = SUB_SAMPLE,
+        .focal_length = focal_length,
+        .sub_sample = sub_sample,
         .distortion = distortion,
     };
     var cam1_in = cam0_in;
@@ -292,7 +205,7 @@ pub fn main(init: std.process.Init) !void {
     try cameraio.saveStereoPair(io, out_dir, stereo_file_name, stereo_pair);
 
     // Load stereo pair back from output directory (standalone test)
-    stereo_pair = try cameraio.loadStereoPair(aa, io, out_dir, stereo_file_name);
+    stereo_pair = try cameraio.loadStereoPair(local_alloc, io, out_dir, stereo_file_name);
 
     // -------------------------------------------------------------------------
     // 4. Build mesh and raster configuration
@@ -316,9 +229,9 @@ pub fn main(init: std.process.Init) !void {
 
     const config = RasterConfig{
         .render_mode = .offline,
-        .total_threads = TOTAL_THREADS,
-        .frame_batch_size_per_group = FRAMES_MAX,
-        .max_geom_jobs_in_flight_per_group = FRAMES_MAX,
+        .total_threads = total_threads,
+        .frame_batch_size_per_group = frames_max,
+        .max_geom_jobs_in_flight_per_group = frames_max,
         .max_geom_workers_per_job = 1,
         .geom_scheduling_mode = .spread,
         .max_raster_workers_per_job = 1,
@@ -337,16 +250,16 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const meshes = [_]MeshInput{mesh_input};
     const images = try riley.raster(
-        aa,
-        render_groups,
+        outer_alloc,
+        groups.specs,
         &stereo_pair.cameras,
         &meshes,
         config,
-        OUT_DIR_ROOT,
+        out_dir_root,
     );
 
     if (images) |img| {
-        aa.free(img.slice);
-        img.deinit(aa);
+        outer_alloc.free(img.slice);
+        img.deinit(outer_alloc);
     }
 }

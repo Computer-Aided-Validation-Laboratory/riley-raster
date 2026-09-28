@@ -25,6 +25,7 @@ const imageops = @import("imageops.zig");
 const pce = @import("parachunkexec.zig");
 const saveoverlap = @import("saveoverlap.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
+const rendergroups = @import("rendergroups.zig");
 const valarr = @import("validatearrays.zig");
 const valinp = @import("validateinput.zig");
 
@@ -53,11 +54,9 @@ const F = buildconfig.F;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const RenderGroupSpec = struct {
-    io: std.Io,
-    save_frame_io: ?std.Io = null,
-    workers: u16,
-};
+pub const RenderGroupSpec = rendergroups.RenderGroupSpec;
+pub const RenderGroupOptions = rendergroups.RenderGroupOptions;
+pub const ManagedRenderGroups = rendergroups.ManagedRenderGroups;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func

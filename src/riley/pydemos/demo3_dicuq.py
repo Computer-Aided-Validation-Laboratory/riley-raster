@@ -9,9 +9,9 @@
 from __future__ import annotations
 
 import copy
+import shutil
 from dataclasses import replace
 from pathlib import Path
-import shutil
 from time import perf_counter
 
 import numpy as np
@@ -25,7 +25,7 @@ def main() -> None:
     # --------------------------------------------------------------------------
     data_dir = riley.data.platehole_csv_case_path()
     texture_path = riley.data.speckle_texture_path()
-    out_dir = Path.cwd() / "out_riley_py" / "demo6_dicuq"
+    out_dir = Path.cwd() / "out_riley_py" / "demo3_dicuq"
     shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True)
 
@@ -53,8 +53,7 @@ def main() -> None:
     connect = riley.load_csv(data_dir / "connect.csv", dtype=np.int64)
     uvs = riley.load_csv(data_dir / "uvs.csv")
     disp_components = tuple(
-        riley.load_csv(data_dir / f"field_disp_{axis}.csv")
-        for axis in "xyz"
+        riley.load_csv(data_dir / f"field_disp_{axis}.csv") for axis in "xyz"
     )
 
     frame_indices = riley.frames_first_last_idxs(
@@ -122,11 +121,16 @@ def main() -> None:
     # --------------------------------------------------------------------------
     config = riley.create_raster_config(
         num_frames=mesh.disp.shape[0],
+        num_cameras=2,
         total_threads=total_threads,
         save_strategy=riley.SaveStrategy.disk,
     )
     config.background_value = 128.0
+    config.tile_size_min = 8
+    config.tile_size_max = 128
     config.save_scaling = riley.ScaleStrategy.none
+    config.max_geom_workers_per_job = 1
+    config.max_raster_workers_per_job = 1
 
     start_time = perf_counter()
     riley.raster([mesh], [camera_0, camera_1], config, out_dir=str(out_dir))

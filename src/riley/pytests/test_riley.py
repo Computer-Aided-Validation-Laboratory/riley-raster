@@ -21,7 +21,6 @@ import numpy as np
 import pytest
 from PIL import Image
 
-
 PROJECT_ROOT = Path.cwd()
 PYTHON_EXE = Path(sys.executable)
 EXACT_8BIT_COMPARE = True
@@ -36,54 +35,75 @@ STANDARD_DEMO_CASES = (
         None,
     ),
     (
-        "sphere200",
-        [str(PYTHON_EXE), "-m", "riley", "demo1_sphere200"],
-        "out/demo1_sphere200",
-        "out_riley_py/demo1_sphere200",
+        "sphere",
+        [str(PYTHON_EXE), "-m", "riley", "demo1_sphere"],
+        "out/demo1_sphere",
+        "out_riley_py/demo1_sphere",
         None,
     ),
     (
-        "psf",
-        [str(PYTHON_EXE), "-m", "riley", "demo2_psf"],
-        "out/demo2_psf",
-        "out_riley_py/demo2_psf",
+        "rabbits_mono",
+        [str(PYTHON_EXE), "-m", "riley", "demo2a_rabbits_mono"],
+        "out/demo2a_rabbits_mono",
+        "out_riley_py/demo2a_rabbits_mono",
         None,
     ),
     (
-        "rabbits",
-        [str(PYTHON_EXE), "-m", "riley", "demo3_rabbits"],
-        "out/demo3_rabbits",
-        "out_riley_py/demo3_rabbits",
+        "rabbits_rgb",
+        [str(PYTHON_EXE), "-m", "riley", "demo2b_rabbits_rgb"],
+        "out/demo2b_rabbits_rgb",
+        "out_riley_py/demo2b_rabbits_rgb",
+        None,
+    ),
+    (
+        "rabbits_fields",
+        [str(PYTHON_EXE), "-m", "riley", "demo2c_rabbits_fields"],
+        "out/demo2c_rabbits_fields",
+        "out_riley_py/demo2c_rabbits_fields",
         None,
     ),
     (
         "dicuq",
-        [str(PYTHON_EXE), "-m", "riley", "demo6_dicuq"],
-        "out/demo6_dicuq",
-        "out_riley_py/demo6_dicuq",
+        [str(PYTHON_EXE), "-m", "riley", "demo3_dicuq"],
+        "out/demo3_dicuq",
+        "out_riley_py/demo3_dicuq",
         2,
     ),
     (
+        "stereocal",
+        [str(PYTHON_EXE), "-m", "riley", "demo4_stereocal"],
+        "out/demo4_stereocal",
+        "out_riley_py/demo4_stereocal",
+        8,
+    ),
+    (
+        "cameramodels",
+        [str(PYTHON_EXE), "-m", "riley", "demo5_cameramodels"],
+        "out/demo5_cameramodels",
+        "out_riley_py/demo5_cameramodels",
+        None,
+    ),
+    (
         "feature_zoo",
-        [str(PYTHON_EXE), "-m", "riley", "demo9_feature_zoo"],
-        "out/demo9_feature_zoo",
-        "out_riley_py/demo9_feature_zoo",
+        [str(PYTHON_EXE), "-m", "riley", "demo6_featurezoo"],
+        "out/demo6_featurezoo",
+        "out_riley_py/demo6_featurezoo",
         None,
     ),
 )
 
 EXODUS_DEMO_CASE = (
     "dic_from_exodus",
-    [str(PYTHON_EXE), "-m", "riley", "demo7_dic_from_exodus"],
-    "out/demo6_dicuq",
-    "out_riley_py/demo7_dic_from_exodus",
+    [str(PYTHON_EXE), "-m", "riley", "demo3_dicuq_from_exodus"],
+    "out/demo3_dicuq",
+    "out_riley_py/demo3_dicuq_from_exodus",
     2,
 )
 
 CALIBRATION_DEMO_CASE = (
     "stereocal",
-    [str(PYTHON_EXE), "-m", "riley", "demo8_stereocal"],
-    "out_riley_py/demo8_stereocal",
+    [str(PYTHON_EXE), "-m", "riley", "demo4_stereocal"],
+    "out_riley_py/demo4_stereocal",
     8,
 )
 
@@ -154,10 +174,39 @@ def _has_renders(dir_path: Path) -> bool:
     return dir_path.is_dir() and bool(_render_paths(dir_path))
 
 
+def _has_cameramodel_renders(dir_path: Path) -> bool:
+    """Require the complete distortion/PSF/buffer matrix, not a partial render."""
+    distortions = (
+        "none",
+        "brown_conrady",
+        "brown_conrady_ext",
+        "polynomial",
+        "brown_conrady_polynomial",
+        "brown_conrady_ext_polynomial",
+    )
+    psfs = (
+        "pixel_box",
+        "gaussian_separable",
+        "gaussian_nonseparable",
+        "anisotropic_separable",
+        "anisotropic_rotated",
+    )
+    modes = ("tile_local", "global_subpx_full", "global_subpx_stripe")
+    expected = set()
+    for distortion in distortions:
+        for psf in psfs:
+            for mode in modes:
+                expected.add(Path(distortion) / psf / mode / "cam0_frame0_field0.bmp")
+    actual = {path.relative_to(dir_path) for path in _render_paths(dir_path)}
+    return actual == expected
+
+
 def _has_expected_demo_renders(
     dir_path: Path,
     frames_num: int | None,
 ) -> bool:
+    if dir_path.name == "demo5_cameramodels":
+        return _has_cameramodel_renders(dir_path)
     if frames_num is None:
         return _has_renders(dir_path)
     expected = {
@@ -165,10 +214,11 @@ def _has_expected_demo_renders(
         for camera in range(2)
         for frame in range(frames_num)
     }
-    actual = {
-        path.relative_to(dir_path)
-        for path in _render_paths(dir_path)
-    } if dir_path.is_dir() else set()
+    actual = (
+        {path.relative_to(dir_path) for path in _render_paths(dir_path)}
+        if dir_path.is_dir()
+        else set()
+    )
     return actual == expected
 
 
@@ -177,6 +227,7 @@ def _run_command(label: str, cmd: list[str], env: dict[str, str]) -> float:
     start_time = perf_counter()
     res = subprocess.run(
         cmd,
+        check=False,
         cwd=PROJECT_ROOT,
         env=env,
         capture_output=True,
@@ -209,9 +260,7 @@ def _compare_renders(path_a: Path, path_b: Path) -> None:
         and arr_b_raw.dtype == np.uint8
     ):
         if not np.array_equal(arr_a_raw, arr_b_raw):
-            diff = np.abs(
-                arr_a_raw.astype(np.int16) - arr_b_raw.astype(np.int16)
-            )
+            diff = np.abs(arr_a_raw.astype(np.int16) - arr_b_raw.astype(np.int16))
             raise AssertionError(
                 f"render mismatch for {path_a.name}: "
                 f"max_abs_diff={int(np.max(diff))}, "
@@ -230,16 +279,10 @@ def _compare_renders(path_a: Path, path_b: Path) -> None:
 
 
 def _compare_render_dirs(dir_a: Path, dir_b: Path) -> None:
-    files_a = sorted(
-        path_a.relative_to(dir_a) for path_a in _render_paths(dir_a)
-    )
-    files_b = sorted(
-        path_b.relative_to(dir_b) for path_b in _render_paths(dir_b)
-    )
+    files_a = sorted(path_a.relative_to(dir_a) for path_a in _render_paths(dir_a))
+    files_b = sorted(path_b.relative_to(dir_b) for path_b in _render_paths(dir_b))
     if files_a != files_b:
-        raise AssertionError(
-            f"output file mismatch: zig={files_a}, python={files_b}"
-        )
+        raise AssertionError(f"output file mismatch: zig={files_a}, python={files_b}")
 
     print(f"Comparing renders in {dir_a} against {dir_b}...")
     start_time = perf_counter()
@@ -247,6 +290,19 @@ def _compare_render_dirs(dir_a: Path, dir_b: Path) -> None:
         _compare_renders(dir_a / rel_path, dir_b / rel_path)
     elapsed_time = perf_counter() - start_time
     print(f"Compare completed in {elapsed_time:.3f}s.")
+
+
+def _verify_rabbit_coverage(dir_path: Path) -> None:
+    images = _render_paths(dir_path)
+    assert images, f"no rabbit renders in {dir_path}"
+    for image_path in images:
+        image = np.asarray(Image.open(image_path))
+        foreground = np.any(image != 128, axis=2) if image.ndim == 3 else image != 128
+        coverage = np.count_nonzero(foreground) / foreground.size
+        assert coverage > 0.10, (
+            f"rabbit foreground coverage for {image_path} is "
+            f"{coverage:.2%}; expected more than 10%"
+        )
 
 
 def _verify_feature_zoo_coverage(dir_path: Path) -> None:
@@ -284,8 +340,7 @@ def ensure_zig_demo_renders() -> None:
         return
     if not _has_zig_compiler():
         pytest.skip(
-            "Zig compiler is not available to render Zig demos for "
-            "comparison.",
+            "Zig compiler is not available to render Zig demos for comparison.",
             allow_module_level=True,
         )
 
@@ -323,6 +378,12 @@ def _run_demo_case(
     print(f"Testing demo case: {case_name}")
     _run_command(f"python render {case_name}", python_cmd, silent_env)
     _compare_render_dirs(PROJECT_ROOT / zig_dir, py_dir_path)
+    if case_name in ("rabbits_mono", "rabbits_rgb", "rabbits_fields"):
+        _verify_rabbit_coverage(PROJECT_ROOT / zig_dir)
+        _verify_rabbit_coverage(py_dir_path)
+    if case_name == "cameramodels":
+        assert _has_cameramodel_renders(PROJECT_ROOT / zig_dir)
+        assert _has_cameramodel_renders(py_dir_path)
     if case_name == "feature_zoo":
         _verify_feature_zoo_coverage(PROJECT_ROOT / zig_dir)
         _verify_feature_zoo_coverage(py_dir_path)
@@ -348,12 +409,12 @@ def test_demo_parity(
     find_spec("netCDF4") is None,
     reason="netCDF4 is required for the exodus Python demo parity test.",
 )
-def test_demo7_dic_from_exodus_parity() -> None:
+def test_demo3_dicuq_from_exodus_parity() -> None:
     case_name, python_cmd, zig_dir, py_dir, _ = EXODUS_DEMO_CASE
     _run_demo_case(case_name, python_cmd, zig_dir, py_dir)
 
 
-def test_demo8_stereocal_motion() -> None:
+def test_demo4_stereocal_motion() -> None:
     """The Python calibration helper drives the stereocal demonstration."""
     case_name, python_cmd, py_dir, frames_num = CALIBRATION_DEMO_CASE
     silent_env = dict(os.environ)

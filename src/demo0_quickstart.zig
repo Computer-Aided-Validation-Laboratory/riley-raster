@@ -21,10 +21,6 @@ const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 
 pub fn main(init: std.process.Init) !void {
-    var arena = std.heap.ArenaAllocator.init(init.gpa);
-    defer arena.deinit();
-    const arena_alloc = arena.allocator();
-
     // -------------------------------------------------------------------------
     // 1. Create the mesh geometry and shader
     // -------------------------------------------------------------------------
@@ -80,7 +76,7 @@ pub fn main(init: std.process.Init) !void {
         .rot_world = rotation,
         .roi_cent_world = target,
         .focal_length = focal_length,
-        .sub_sample = 1,
+        .sub_sample = 2,
     };
 
     // -------------------------------------------------------------------------
@@ -94,14 +90,17 @@ pub fn main(init: std.process.Init) !void {
         },
     };
 
-    const groups = [_]riley.RenderGroupSpec{.{ .io = init.io, .workers = 1 }};
+    var groups = try riley.ManagedRenderGroups.init(init.gpa, init.minimal, .{
+        .thread_budget = 1,
+    });
+    defer groups.deinit(init.gpa);
 
     // -------------------------------------------------------------------------
     // 4. Render the scene
     // -------------------------------------------------------------------------
     const images = try riley.raster(
-        arena_alloc,
-        &groups,
+        init.gpa,
+        groups.specs,
         &.{camera_input},
         &.{mesh_input},
         config,
@@ -109,8 +108,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     if (images) |img| {
-        arena_alloc.free(img.slice);
-        img.deinit(arena_alloc);
+        init.gpa.free(img.slice);
+        img.deinit(init.gpa);
     }
-
 }

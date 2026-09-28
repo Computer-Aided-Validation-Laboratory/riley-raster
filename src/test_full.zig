@@ -26,7 +26,7 @@ test "full test suite" {
     const io = std.testing.io;
     const start = std.Io.Clock.Timestamp.now(io, .awake);
 
-    std.debug.print("\nRunning full test suite.\n\n", .{});
+    try testsuites.printStatus(io, "\nRunning full test suite.\n\n", .{});
     try testsuites.runSuite("input_verif", allocator, io, input_verif_suite.run);
     try testsuites.runSuite("shader", allocator, io, shader_suite.run);
     try testsuites.runSuite("texture", allocator, io, texture_suite.run);
@@ -49,7 +49,8 @@ test "full test suite" {
 
     const end = std.Io.Clock.Timestamp.now(io, .awake);
     const elapsed_s = testsuites.durationToSeconds(start, end);
-    std.debug.print(
+    try testsuites.printStatus(
+        io,
         "\nFull test suite complete. Took {d:.3} seconds.\n\n",
         .{elapsed_s},
     );

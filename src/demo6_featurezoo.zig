@@ -1,4 +1,13 @@
+// --------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: scepticalrabbit (Lloyd Fletcher)
+// --------------------------------------------------------------------------
 const std = @import("std");
+const demo_common = @import("demo_common.zig");
 
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const camera = @import("riley/zig/camera.zig");
@@ -6,7 +15,7 @@ const cameraops = @import("riley/zig/cameraops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshio = @import("riley/zig/meshio.zig");
-const mo = @import("riley/zig/meshpipeline.zig");
+const meshpipe = @import("riley/zig/meshpipeline.zig");
 const riley = @import("riley/zig/riley.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
@@ -15,33 +24,20 @@ const texops = @import("riley/zig/textureops.zig");
 const uvio = @import("riley/zig/uvio.zig");
 
 const F = buildconfig.F;
-const MeshInput = mo.MeshInput;
-const out_dir_root = "./out/demo9_feature_zoo";
-const pixel_size = [2]F{ @floatCast(5.3e-6), @floatCast(5.3e-6) };
-const focal_length: F = @floatCast(50.0e-3);
+const MeshInput = meshpipe.MeshInput;
 
-const Case = struct {
+const MeshShape = struct {
     shape: []const u8,
     elem: []const u8,
     mesh_type: gk.MeshType,
 };
 
-const cases = [_]Case{
-    .{ .shape = "cube_surf", .elem = "quad9", .mesh_type = .quad9 },
-    .{ .shape = "cube_surf", .elem = "tri6", .mesh_type = .tri6 },
-    .{ .shape = "cylinder_surf", .elem = "quad8", .mesh_type = .quad8 },
-    .{ .shape = "cylinder_surf", .elem = "tri6", .mesh_type = .tri6 },
-    .{ .shape = "platewithhole_surf", .elem = "quad4", .mesh_type = .quad4 },
-    .{ .shape = "platewithhole_surf", .elem = "tri3", .mesh_type = .tri3 },
-};
-
-const mesh_centers = [cases.len][3]F{
-    .{ -0.015, 0.0075, 0.0 },
-    .{ 0.0, 0.0075, 0.0 },
-    .{ 0.015, 0.0075, 0.0 },
-    .{ -0.015, -0.0075, 0.0 },
-    .{ 0.0, -0.0075, 0.0 },
-    .{ 0.015, -0.0075, 0.0 },
+const DemoOptions = struct {
+    out_dir_root: []const u8,
+    pixel_size: [2]F,
+    focal_length: F,
+    mesh_shapes: []const MeshShape,
+    mesh_centers: []const [3]F,
 };
 
 fn buildRgbField(
@@ -96,23 +92,26 @@ fn loadMesh(
     comptime bits: u8,
     allocator: std.mem.Allocator,
     io: std.Io,
-    case: Case,
-    case_index: usize,
+    mesh_shape: MeshShape,
+    mesh_index: usize,
     texture: texops.Tex(T, C),
 ) !MeshInput {
     const dir = try std.fmt.allocPrint(
         allocator,
         "data/shapes/{s}/{s}/",
-        .{ case.shape, case.elem },
+        .{ mesh_shape.shape, mesh_shape.elem },
     );
+
     const temp_files = &[_][]const u8{
         try std.fmt.allocPrint(allocator, "{s}temperature.csv", .{dir}),
     };
+
     const disp_files = &[_][]const u8{
         try std.fmt.allocPrint(allocator, "{s}disp_x.csv", .{dir}),
         try std.fmt.allocPrint(allocator, "{s}disp_y.csv", .{dir}),
         try std.fmt.allocPrint(allocator, "{s}disp_z.csv", .{dir}),
     };
+
     const sim = try meshio.loadSimData(
         allocator,
         io,
@@ -126,22 +125,23 @@ fn loadMesh(
         io,
         try std.fmt.allocPrint(allocator, "{s}uvs.csv", .{dir}),
     );
+
     const temp = sim.field orelse return error.MissingTemperature;
     const disp = sim.disp orelse return error.MissingDisplacement;
-    const normal_type: shaderops.NormalType = switch (case_index % 3) {
+    const normal_type: shaderops.NormalType = switch (mesh_index % 3) {
         0 => .none,
         1 => .exact,
         else => .avg,
     };
 
-    const shader: shaderops.ShaderInput = switch (case_index) {
+    const shader: shaderops.ShaderInput = switch (mesh_index) {
         0, 2 => textureShader(
             T,
             C,
             texture,
             uvs,
             bits,
-            case_index != 0,
+            mesh_index != 0,
             normal_type,
         ),
         1, 5 => blk: {
@@ -153,7 +153,7 @@ fn loadMesh(
                 .field = field,
                 .bits = bits,
                 .scaling = .auto,
-                .scale_over = if (case_index == 1)
+                .scale_over = if (mesh_index == 1)
                     .over_frames
                 else
                     .within_frames,
@@ -161,7 +161,7 @@ fn loadMesh(
             } };
         },
         3, 4 => blk: {
-            const params = if (case_index == 3)
+            const params = if (mesh_index == 3)
                 shaderops.FuncShaderParams{
                     .coord_scale = .{ 1000.0, 1000.0 },
                     .settings = .{ .checker = .{} },
@@ -174,11 +174,11 @@ fn loadMesh(
                     } },
                 };
             const input = shaderops.FuncInput{
-                .coord_mode = if (case_index == 3)
+                .coord_mode = if (mesh_index == 3)
                     .world_reference
                 else
                     .world_deformed,
-                .builtin = if (case_index == 3) .checker else .eggbox,
+                .builtin = if (mesh_index == 3) .checker else .eggbox,
                 .params = params,
                 .bits = bits,
                 .scaling = .auto,
@@ -192,10 +192,10 @@ fn loadMesh(
         else => unreachable,
     };
     return .{
-        .mesh_type = case.mesh_type,
+        .mesh_type = mesh_shape.mesh_type,
         .coords = sim.coords,
         .connect = sim.connect,
-        .disp = if (case_index % 2 == 1) disp else null,
+        .disp = if (mesh_index % 2 == 1) disp else null,
         .shader = shader,
     };
 }
@@ -207,15 +207,16 @@ fn buildScene(
     allocator: std.mem.Allocator,
     io: std.Io,
     texture: texops.Tex(T, C),
+    options: DemoOptions,
 ) ![]MeshInput {
     var meshes = std.ArrayList(MeshInput).empty;
     var groups = std.ArrayList(sceneops.MeshGroup).empty;
-    for (cases, 0..) |case, index| {
+    for (options.mesh_shapes, 0..) |mesh_shape, mesh_index| {
         try meshes.append(
             allocator,
-            try loadMesh(T, C, bits, allocator, io, case, index, texture),
+            try loadMesh(T, C, bits, allocator, io, mesh_shape, mesh_index, texture),
         );
-        try groups.append(allocator, sceneops.meshGroupSingle(index));
+        try groups.append(allocator, sceneops.meshGroupSingle(mesh_index));
     }
     const plate = &meshes.items[5];
     for (0..plate.coords.mat.rows_num) |node| {
@@ -224,7 +225,7 @@ fn buildScene(
         plate.coords.mat.set(node, 0, -y);
         plate.coords.mat.set(node, 1, x);
     }
-    for (groups.items, mesh_centers) |group, center| {
+    for (groups.items, options.mesh_centers) |group, center| {
         sceneops.centerMeshGroupAt(meshes.items, group, center);
     }
     return try meshes.toOwnedSlice(allocator);
@@ -232,6 +233,7 @@ fn buildScene(
 
 fn makeCamera(
     meshes: []MeshInput,
+    options: DemoOptions,
     pixels_num: [2]u32,
     rot: Rotation,
     sub_sample: u32,
@@ -241,26 +243,26 @@ fn makeCamera(
     const target = sceneops.boundsCenterOverMeshes(meshes);
     return .{
         .pixels_num = pixels_num,
-        .pixels_size = pixel_size,
+        .pixels_size = options.pixel_size,
         .pos_world = cameraops.posFillFrameFromRotOverMeshesAndTarg(
             meshes,
             target,
             pixels_num,
-            pixel_size,
-            focal_length,
+            options.pixel_size,
+            options.focal_length,
             rot,
             1.1,
         ),
         .rot_world = rot,
         .roi_cent_world = target,
-        .focal_length = focal_length,
+        .focal_length = options.focal_length,
         .sub_sample = sub_sample,
         .distortion = distortion,
         .psf = psf,
     };
 }
 
-fn buildCameras(meshes: []MeshInput) [6]camera.CameraInput {
+fn buildCameras(meshes: []MeshInput, options: DemoOptions) [6]camera.CameraInput {
     const deg = std.math.degreesToRadians;
     const brown: camera.DistortionParams = .{ .brown_conrady = .{
         .k1 = -0.12,
@@ -275,6 +277,7 @@ fn buildCameras(meshes: []MeshInput) [6]camera.CameraInput {
     return .{
         makeCamera(
             meshes,
+            options,
             .{ 1024, 1024 },
             Rotation.init(0, 0, 0),
             1,
@@ -283,6 +286,7 @@ fn buildCameras(meshes: []MeshInput) [6]camera.CameraInput {
         ),
         makeCamera(
             meshes,
+            options,
             .{ 1024, 1024 },
             Rotation.init(0, deg(25.0), 0),
             4,
@@ -291,6 +295,7 @@ fn buildCameras(meshes: []MeshInput) [6]camera.CameraInput {
         ),
         makeCamera(
             meshes,
+            options,
             .{ 1024, 1229 },
             Rotation.init(0, deg(-28.0), 0),
             4,
@@ -299,6 +304,7 @@ fn buildCameras(meshes: []MeshInput) [6]camera.CameraInput {
         ),
         makeCamera(
             meshes,
+            options,
             .{ 1229, 1024 },
             Rotation.init(deg(90.0), deg(25.0), 0),
             4,
@@ -307,6 +313,7 @@ fn buildCameras(meshes: []MeshInput) [6]camera.CameraInput {
         ),
         makeCamera(
             meshes,
+            options,
             .{ 1024, 1024 },
             Rotation.init(deg(18.0), deg(38.0), deg(26.0)),
             4,
@@ -320,6 +327,7 @@ fn buildCameras(meshes: []MeshInput) [6]camera.CameraInput {
         ),
         makeCamera(
             meshes,
+            options,
             .{ 1229, 1024 },
             Rotation.init(deg(-90.0), deg(-20.0), deg(5.0)),
             4,
@@ -333,10 +341,13 @@ fn renderCase(
     comptime T: type,
     comptime C: usize,
     comptime bits: u8,
-    allocator: std.mem.Allocator,
+    local_alloc: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
+    render_groups: []const riley.RenderGroupSpec,
     texture_path: []const u8,
     case_name: []const u8,
+    options: DemoOptions,
 ) !void {
     // -------------------------------------------------------------------------
     // 1. Build scene meshes and cameras
@@ -345,15 +356,15 @@ fn renderCase(
         const tex_u8 = try iio.loadImage(
             u8,
             3,
-            allocator,
+            local_alloc,
             io,
             "texture/speck128_rgb_u8.bmp",
             .bmp,
         );
-        defer tex_u8.deinit(allocator);
+        defer tex_u8.deinit(local_alloc);
 
         var tex_u16 = try texops.Tex(u16, 3).init(
-            allocator,
+            local_alloc,
             tex_u8.rows_num,
             tex_u8.cols_num,
         );
@@ -365,22 +376,22 @@ fn renderCase(
         break :blk try iio.loadImage(
             T,
             C,
-            allocator,
+            local_alloc,
             io,
             texture_path,
             if (T == u8) .bmp else .tiff,
         );
     };
-    defer texture.deinit(allocator);
-    const meshes = try buildScene(T, C, bits, allocator, io, texture);
-    const cameras = buildCameras(meshes);
+    defer texture.deinit(local_alloc);
+    const meshes = try buildScene(T, C, bits, local_alloc, io, texture, options);
+    const cameras = buildCameras(meshes, options);
 
     // -------------------------------------------------------------------------
     // 2. Configure raster settings and output directory
     // -------------------------------------------------------------------------
     const out_dir = try std.fs.path.join(
-        allocator,
-        &.{ out_dir_root, case_name },
+        local_alloc,
+        &.{ options.out_dir_root, case_name },
     );
     const config = riley.RasterConfig{
         .render_mode = .offline,
@@ -397,71 +408,113 @@ fn renderCase(
             },
         },
     };
-    const groups = [_]riley.RenderGroupSpec{.{ .io = io, .workers = 4 }};
 
     // -------------------------------------------------------------------------
     // 3. Render the multi-mesh multi-camera case
     // -------------------------------------------------------------------------
     if (try riley.raster(
-        allocator,
-        &groups,
+        outer_alloc,
+        render_groups,
         &cameras,
         meshes,
         config,
         out_dir,
     )) |images| {
-        allocator.free(images.slice);
+        outer_alloc.free(images.slice);
         var images_mut = images;
-        images_mut.deinit(allocator);
+        images_mut.deinit(outer_alloc);
     }
 }
 
 pub fn main(init: std.process.Init) !void {
+    const out_dir_root = "./out/demo6_featurezoo";
+    const pixel_size = [2]F{ 5.3e-6, 5.3e-6 };
+    const focal_length: F = 50.0e-3;
+    const mesh_shapes = [_]MeshShape{
+        .{ .shape = "cube_surf", .elem = "quad9", .mesh_type = .quad9 },
+        .{ .shape = "cube_surf", .elem = "tri6", .mesh_type = .tri6 },
+        .{ .shape = "cylinder_surf", .elem = "quad8", .mesh_type = .quad8 },
+        .{ .shape = "cylinder_surf", .elem = "tri6", .mesh_type = .tri6 },
+        .{ .shape = "platewithhole_surf", .elem = "quad4", .mesh_type = .quad4 },
+        .{ .shape = "platewithhole_surf", .elem = "tri3", .mesh_type = .tri3 },
+    };
+
+    const mesh_centers = [mesh_shapes.len][3]F{
+        .{ -0.015, 0.0075, 0.0 },
+        .{ 0.0, 0.0075, 0.0 },
+        .{ 0.015, 0.0075, 0.0 },
+        .{ -0.015, -0.0075, 0.0 },
+        .{ 0.0, -0.0075, 0.0 },
+        .{ 0.015, -0.0075, 0.0 },
+    };
+    const options = DemoOptions{
+        .out_dir_root = out_dir_root,
+        .pixel_size = pixel_size,
+        .focal_length = focal_length,
+        .mesh_shapes = &mesh_shapes,
+        .mesh_centers = &mesh_centers,
+    };
+
     var arena = std.heap.ArenaAllocator.init(init.gpa);
     defer arena.deinit();
-    const allocator = arena.allocator();
-    const io = init.io;
+    const local_alloc = arena.allocator();
+    var groups = try riley.ManagedRenderGroups.init(init.gpa, init.minimal, .{
+        .thread_budget = 4,
+    });
+    defer groups.deinit(init.gpa);
+    const io = groups.specs[0].io;
 
     // -------------------------------------------------------------------------
     // Clean output root and render all combinations
     // -------------------------------------------------------------------------
-    std.Io.Dir.cwd().deleteTree(io, out_dir_root) catch |err| {
-        if (err != error.FileNotFound) return err;
-    };
+    var output_root = try demo_common.resetOutputDir(io, out_dir_root);
+    defer output_root.close(io);
     try renderCase(
         u8,
         1,
         8,
-        allocator,
+        local_alloc,
+        init.gpa,
         io,
+        groups.specs,
         "texture/speck128_mono_u8.bmp",
         "mono-u8",
+        options,
     );
     try renderCase(
         u16,
         1,
         16,
-        allocator,
+        local_alloc,
+        init.gpa,
         io,
+        groups.specs,
         "texture/speck128_mono_u16.tiff",
         "mono-u16",
+        options,
     );
     try renderCase(
         u8,
         3,
         8,
-        allocator,
+        local_alloc,
+        init.gpa,
         io,
+        groups.specs,
         "texture/speck128_rgb_u8.bmp",
         "rgb-u8",
+        options,
     );
     try renderCase(
         u16,
         3,
         16,
-        allocator,
+        local_alloc,
+        init.gpa,
         io,
+        groups.specs,
         "texture/speck128_rgb_u8.bmp",
         "rgb-u16",
+        options,
     );
 }

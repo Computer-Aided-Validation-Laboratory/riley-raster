@@ -9,9 +9,9 @@
 from __future__ import annotations
 
 import copy
+import shutil
 from dataclasses import replace
 from pathlib import Path
-import shutil
 from time import perf_counter
 
 import numpy as np
@@ -25,7 +25,7 @@ def main() -> None:
     # --------------------------------------------------------------------------
     exodus_path = riley.data.platehole_exodus_path()
     texture_path = riley.data.speckle_texture_path()
-    out_dir = Path.cwd() / "out_riley_py" / "demo7_dic_from_exodus"
+    out_dir = Path.cwd() / "out_riley_py" / "demo3_dicuq_from_exodus"
     shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True)
 
@@ -128,6 +128,7 @@ def main() -> None:
     # --------------------------------------------------------------------------
     config = riley.create_raster_config(
         num_frames=mesh.disp.shape[0],
+        num_cameras=2,
         total_threads=total_threads,
         save_strategy=riley.SaveStrategy.disk,
     )

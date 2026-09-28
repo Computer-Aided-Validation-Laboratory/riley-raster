@@ -23,6 +23,11 @@ runs on each invocation so changes to gold data and runtime assets are checked.
 runner root used by `buildconfig.zig` and delegates execution to Zig's standard
 test runner. This keeps precision, SIMD, solver, and vector-width options active
 without modifying or copying suite source files.
+Suite targets use Zig's standard terminal test runner with inherited console
+streams. Status and suite/case timings are written to stdout using a buffered
+`std.Io` writer flushed after each message; failure diagnostics remain on stderr.
+The test runner reports test counts; use `--summary all` for build/run timings.
+Clearing `.zig-cache` is safe and only forces a rebuild.
 
 ```shell
 # 1. Combined Verification and Basic Suites (preferred routine/CI command)
@@ -255,25 +260,88 @@ python -m pytest --pyargs riley.pytests.test_riley -s
 To force a fresh Zig render instead of reusing cached demo BMPs:
 
 ```shell
-python ./pyscripts/test_riley.py --force-zig-render
+RILEY_FORCE_ZIG_RENDER=1 python -m pytest --pyargs riley.pytests.test_riley -s
 ```
 
 Run a packaged Python demo directly with:
 
 ```shell
 python -m riley demo0_quickstart
-python -m riley demo1_sphere200
-python -m riley demo2_psf
-python -m riley demo3_rabbits
-python -m riley demo6_dicuq
-python -m riley demo7_dic_from_exodus
-python -m riley demo8_stereocal
-python -m riley demo9_feature_zoo
+python -m riley demo1_sphere
+python -m riley demo2a_rabbits_mono
+python -m riley demo2b_rabbits_rgb
+python -m riley demo2c_rabbits_fields
+python -m riley demo3_dicuq
+python -m riley demo3_dicuq_from_exodus
+python -m riley demo4_stereocal
+python -m riley demo5_cameramodels
+python -m riley demo6_featurezoo
 ```
 
 Python demo output is written to `Path.cwd() / "out_riley_py" / "<demo-name>"`.
 
+The Zig demos use the same numbered names and ordering. The three rabbit demos
+share mesh loading, shader setup, and layout in `src/demo_rabbits_common.zig`;
+the Python variants share `demo_rabbits_common.py`. Camera inputs are constructed
+directly; Riley prepares them internally.
+
+Rabbit parity checks also require more than 10% foreground coverage in every
+render, so matching blank images cannot pass verification.
+
+Demos that clear previous output share `src/demo_common.zig`:
+
+```zig
+var out_dir = try demo_common.resetOutputDir(io, out_dir_root);
+defer out_dir.close(io);
+```
+
+This removes the named demo output directory, recreates it (including missing
+parents), and returns an open handle for metadata exports. It does not clear the
+parent output directory. Absolute paths, parent traversal, and empty/current
+directory paths are rejected. Helper regression tests run with `test-basic`.
+
+`demo5_cameramodels` renders all six distortion families with pixel-box,
+separable/non-separable Gaussian, aligned separable anisotropic Gaussian, and
+rotated non-separable anisotropic Gaussian PSFs. Each of the 30 combinations is
+rendered through all three buffer modes, producing 90 comparison images under
+`<distortion>/<psf>/<buffer-mode>/`. Demo parity checks require the full matrix.
+
 ## Notes
+
+### Managed render groups
+
+Use the public owner to create render groups from a render-thread budget:
+
+```zig
+var groups = try riley.ManagedRenderGroups.init(init.gpa, init.minimal, .{
+    .thread_budget = 8,
+});
+defer groups.deinit(init.gpa);
+// Pass groups.specs to riley.raster(...).
+```
+
+By default this creates eight caller-only groups. Set `.max_groups = 1` for a
+single-frame demo with four raster workers (`.thread_budget = 4`), or cap groups
+to limit simultaneous frame memory or match available jobs. Remaining workers
+are distributed evenly: budget 12 capped to five groups gives `3, 3, 2, 2, 2`.
+`RasterConfig.max_raster_workers_per_job` must also allow the desired worker
+count. The helper does not change raster settings.
+
+Budgets include group callers, exclude disk-save overlap threads, and must be
+positive (as must an explicit group cap). Use a thread-safe backing allocator,
+not a shared arena. The owner, allocator and process metadata must outlive all
+uses of `groups.specs`; finish rendering before `deinit`, and do not copy the
+owning value. Pass `null` instead of process metadata when embedding Riley.
+Pass the same allocator to `init` and `deinit`; the owner does not store it.
+
+Python keeps `create_raster_config`, with optional `num_cameras` for camera/frame
+job budgeting. The C runtime uses the same managed-group owner and balanced
+remainder policy, without changing the C ABI. The sphere, rabbit, and camera-model demos use four
+raster workers; quickstart uses one. Multi-frame demos prefer independent jobs.
+The shared C library explicitly uses LLVM even in Debug: Zig 0.16's self-hosted
+Debug backend mispasses floating-point struct arguments at the C boundary in
+camera helpers. Native demo/test backend selection is unchanged.
+
 - Plain `zig run` and `zig test` under `./src/` use the default Riley path of `f64` with SIMD enabled. Run the four suite drivers through `zig build` to select precision, SIMD, solver, or vector-width options.
 - The public C ABI is fixed to that same production path.
 - Some older benchmark helper scripts remain in `./scripts/` for historical studies. Prefer the current commands above unless you specifically need an archived workflow.

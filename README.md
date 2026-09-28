@@ -62,13 +62,13 @@ The repository parity tests compare Python and Zig demo output when the reposito
 Riley provides a series of capability demos in Zig and Python. For example, render the rabbits demo with:
 
 ```shell
-zig build demo3-rabbits -Doptimize=ReleaseFast
+zig build demo2a-rabbits-mono -Doptimize=ReleaseFast
 ```
 
 The equivalent Python demo is:
 
 ```shell
-python -m riley demo3_rabbits
+python -m riley demo2a_rabbits_mono
 ```
 
 Browse the complete [Zig demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src) or [Python demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src/riley/pydemos). The image links below are absolute GitHub URLs so they render both on GitHub and on PyPI.

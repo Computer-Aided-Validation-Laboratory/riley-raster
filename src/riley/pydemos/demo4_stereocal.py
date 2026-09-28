@@ -9,23 +9,19 @@
 from __future__ import annotations
 
 import copy
-from pathlib import Path
 import shutil
+from pathlib import Path
 from time import perf_counter
 
 import numpy as np
 
 import riley
 
-FRAMES_MAX = 8
-
-MATCHED_ROI = (0.0125, 0.0175, 0.0005)
-MATCHED_CAM0_POS = (0.0125, 0.0175, 0.160864856482)
-MATCHED_CAM1_POS = (0.067348011198, 0.0175, 0.151193672270)
-
 
 def create_stereo_cameras(
     roi_pos: tuple[float, float, float] | np.ndarray,
+    matched_cam0_pos: tuple[float, float, float],
+    matched_cam1_pos: tuple[float, float, float],
 ) -> tuple[riley.Camera, riley.Camera]:
     """Create stereo camera pair matching the DICUQ demo parameters."""
     pixels_num = (2464, 2056)
@@ -49,7 +45,7 @@ def create_stereo_cameras(
     camera_0 = riley.Camera(
         pixels_num=pixels_num,
         pixels_size=pixels_size,
-        pos_world=MATCHED_CAM0_POS,
+        pos_world=matched_cam0_pos,
         rot_world=cam0_rot,
         roi_cent_world=tuple(roi_pos),
         focal_length=focal_length,
@@ -57,22 +53,28 @@ def create_stereo_cameras(
         **distortion_model,
     )
 
-    # Camera 1: stereo angle 
+    # Camera 1: stereo angle
     cam1_rot = (0.0, float(np.deg2rad(stereo_angle_deg)), 0.0)
     camera_1 = copy.deepcopy(camera_0)
-    camera_1.pos_world = MATCHED_CAM1_POS
+    camera_1.pos_world = matched_cam1_pos
     camera_1.rot_world = cam1_rot
 
     return camera_0, camera_1
 
 
 def main() -> None:
+    frames_max = 8
+
+    matched_roi = (0.0125, 0.0175, 0.0005)
+    matched_cam0_pos = (0.0125, 0.0175, 0.160864856482)
+    matched_cam1_pos = (0.067348011198, 0.0175, 0.151193672270)
+
     # --------------------------------------------------------------------------
     # 1. Setup paths and parameters
     # --------------------------------------------------------------------------
     data_dir = riley.data.stereocal_case_path()
     texture_path = riley.data.cal_target_texture_path()
-    out_dir = Path.cwd() / "out_riley_py" / "demo8_stereocal"
+    out_dir = Path.cwd() / "out_riley_py" / "demo4_stereocal"
     shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True)
     total_threads = 8
@@ -87,36 +89,30 @@ def main() -> None:
 
     # Shift calibration plate to match the DICUQ specimen center
     roi_pos_orig = riley.roi_cent_from_coords(coords)
-    roi_shift = np.array(MATCHED_ROI) - np.array(roi_pos_orig)
+    roi_shift = np.array(matched_roi) - np.array(roi_pos_orig)
     coords = coords + roi_shift
     roi_pos = riley.roi_cent_from_coords(coords)
 
     # --------------------------------------------------------------------------
     # 3. Create, save, and reload stereo camera pair
     # --------------------------------------------------------------------------
-    camera_0, camera_1 = create_stereo_cameras(roi_pos)
+    camera_0, camera_1 = create_stereo_cameras(
+        roi_pos, matched_cam0_pos, matched_cam1_pos
+    )
 
     stereo_file = "stereo_data_opengl.csv"
     riley.save_stereo_pair(str(out_dir), stereo_file, camera_0, camera_1)
     camera_0, camera_1 = riley.load_stereo_pair(str(out_dir), stereo_file)
 
-    motion_limits = riley.CalTargetMotionLimits(
-        translation=(
-            (-1.0e-3, 1.0e-3),
-            (-1.0e-3, 1.0e-3),
-            (-1.0e-3, 1.0e-3),
-        ),
-        rotation_deg=((-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)),
+    # Match Zig: select evenly spaced poses from the bundled calibration data.
+    disp_components = tuple(
+        riley.load_csv(data_dir / f"field_disp_{axis}.csv") for axis in "xyz"
     )
-    disp_components = riley.caltarget_motion_from_fov(
-        coords,
-        camera_0,
-        FRAMES_MAX,
-        limits=motion_limits,
-        fov_fraction=0.8,
-        sampling=riley.ECalTargetMotionSampling.HYPERCUBE,
-        seed=8,
+    frame_indices = riley.frames_evenly_spaced_idxs(
+        disp_components[0].shape[1],
+        frames_max,
     )
+    disp_components = tuple(item[:, frame_indices] for item in disp_components)
 
     # --------------------------------------------------------------------------
     # 4. Build mesh and raster configuration
@@ -137,10 +133,17 @@ def main() -> None:
 
     config = riley.create_raster_config(
         num_frames=mesh.disp.shape[0],
+        num_cameras=2,
         total_threads=total_threads,
         save_strategy=riley.SaveStrategy.disk,
     )
     config.background_value = 128.0
+    config.frame_batch_size_per_group = frames_max
+    config.max_geom_jobs_in_flight_per_group = frames_max
+    config.tile_size_min = 8
+    config.tile_size_max = 128
+    config.max_geom_workers_per_job = 1
+    config.max_raster_workers_per_job = 1
 
     # --------------------------------------------------------------------------
     # 5. Render stereocal poses
@@ -149,7 +152,7 @@ def main() -> None:
     riley.raster([mesh], [camera_0, camera_1], config, out_dir=str(out_dir))
     elapsed_time = perf_counter() - start_time
     print(f"Riley render time: {elapsed_time:.6f} s")
-    print(f"rendered stereocal to {out_dir}")
+    print(f"Rendered stereocal to {out_dir}")
 
 
 if __name__ == "__main__":
