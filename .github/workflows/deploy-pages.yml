@@ -44,11 +44,11 @@ jobs:
         run: zig build docs
 
       - name: Build Sphinx
-        run: sphinx-build -b html _build docs/_build/html
+        run: sphinx-build -b html docs build/_build/html
 
       - name: Merge docs
         run: |
-          cp -r zig-out/docs docs/_build/html/zig-api
+          cp -r zig-out/docs build/_build/html/zig-api
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
