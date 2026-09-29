@@ -401,7 +401,7 @@ fn buildCentroidCameraInput(ref_coords: *const meshio.Coords) cam.CameraInput {
         .roi_cent_world = roi_cent_world,
         .focal_length = orch.default_focal_length,
         .sub_sample = 1,
-        .distortion = .none,
+        .distort = .none,
     };
 }
 
@@ -455,7 +455,7 @@ fn buildCentroidCameraInputOverFrames(
         .roi_cent_world = roi_cent_world,
         .focal_length = orch.default_focal_length,
         .sub_sample = 1,
-        .distortion = .none,
+        .distort = .none,
     };
 }
 

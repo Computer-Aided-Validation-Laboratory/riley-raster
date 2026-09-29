@@ -312,12 +312,12 @@ def _validate_camera(camera: Camera) -> None:
         raise ValueError("camera.focal_length must be positive and finite.")
     if camera.coord_sys != 0:
         raise ValueError("caltarget_motion_from_fov requires an OpenGL camera.")
-    if camera.distortion_model not in (0, 1, 2):
+    if camera.distort_model not in (0, 1, 2):
         raise ValueError(
             "caltarget_motion_from_fov supports no distortion, Brown-Conrady, "
             "and Brown-Conrady-Ext cameras."
         )
-    if camera.distortion_tau_x != 0.0 or camera.distortion_tau_y != 0.0:
+    if camera.distort_tau_x != 0.0 or camera.distort_tau_y != 0.0:
         raise ValueError("caltarget_motion_from_fov does not support sensor tilt.")
 
 
@@ -435,48 +435,48 @@ def _project_world_points(coords: np.ndarray, camera: Camera) -> np.ndarray:
         return np.full((coords.shape[0], 2), np.nan, dtype=np.float64)
     norm_x = cam_coords[:, 0] / depth
     norm_y = cam_coords[:, 1] / depth
-    dist_x, dist_y = _apply_brown_conrady(norm_x, norm_y, camera)
+    dist_x, dist_y = _apply_brown_con(norm_x, norm_y, camera)
     focal_px = camera.focal_length / np.asarray(camera.pixels_size, dtype=np.float64)
     pixels_num = np.asarray(camera.pixels_num, dtype=np.float64)
     return np.column_stack((0.5 * pixels_num[0] + focal_px[0] * dist_x,
                             0.5 * pixels_num[1] - focal_px[1] * dist_y))
 
 
-def _apply_brown_conrady(
+def _apply_brown_con(
     x: np.ndarray,
     y: np.ndarray,
     camera: Camera,
 ) -> tuple[np.ndarray, np.ndarray]:
-    if camera.distortion_model not in (1, 2):
+    if camera.distort_model not in (1, 2):
         return x, y
     r2 = x * x + y * y
     radial_num = (
         1.0
-        + camera.distortion_k1 * r2
-        + camera.distortion_k2 * r2 * r2
-        + camera.distortion_k3 * r2 * r2 * r2
+        + camera.distort_k1 * r2
+        + camera.distort_k2 * r2 * r2
+        + camera.distort_k3 * r2 * r2 * r2
     )
     radial = radial_num
-    if camera.distortion_model == 2:
+    if camera.distort_model == 2:
         radial_den = (
             1.0
-            + camera.distortion_k4 * r2
-            + camera.distortion_k5 * r2 * r2
-            + camera.distortion_k6 * r2 * r2 * r2
+            + camera.distort_k4 * r2
+            + camera.distort_k5 * r2 * r2
+            + camera.distort_k6 * r2 * r2 * r2
         )
         radial = radial_num / radial_den
     xy = x * y
     x_out = (
         x * radial
-        + 2.0 * camera.distortion_p1 * xy
-        + camera.distortion_p2 * (r2 + 2.0 * x * x)
+        + 2.0 * camera.distort_p1 * xy
+        + camera.distort_p2 * (r2 + 2.0 * x * x)
     )
     y_out = (
         y * radial
-        + camera.distortion_p1 * (r2 + 2.0 * y * y)
-        + 2.0 * camera.distortion_p2 * xy
+        + camera.distort_p1 * (r2 + 2.0 * y * y)
+        + 2.0 * camera.distort_p2 * xy
     )
-    if camera.distortion_model == 2:
-        x_out += camera.distortion_s1 * r2 + camera.distortion_s2 * r2 * r2
-        y_out += camera.distortion_s3 * r2 + camera.distortion_s4 * r2 * r2
+    if camera.distort_model == 2:
+        x_out += camera.distort_s1 * r2 + camera.distort_s2 * r2 * r2
+        y_out += camera.distort_s3 * r2 + camera.distort_s4 * r2 * r2
     return x_out, y_out

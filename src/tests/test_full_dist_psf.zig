@@ -66,7 +66,7 @@ pub fn runFullDistPsfCaseTest(
 
     var camera_input = prep.camera_input;
     camera_input.sub_sample = ssaa;
-    camera_input.distortion = dist_case.distortion;
+    camera_input.distort = dist_case.distort;
     camera_input.psf = psf_case.psf;
 
     var run_config = config;
@@ -195,7 +195,7 @@ pub fn runFullDistPsfCaseTest(
             }
         }
         if (max_base_diff < 1.0e-3) {
-            return error.DistortionOrPsfHadNoEffect;
+            return error.DistortOrPsfHadNoEffect;
         }
     }
 
@@ -248,34 +248,30 @@ fn runAdditionalDistPsfTests(
 
     const extra_dist_cases = [_]struct {
         tag: []const u8,
-        distortion: camera.DistortionParams,
+        distort: camera.DistortParams,
     }{
         .{
-            .tag = "standalone_polynomial",
-            .distortion = .{
-                .polynomial = .{
-                    .forward_map = common_full.getRepresentativePolynomialMap(),
-                },
+            .tag = "standalone_poly",
+            .distort = .{
+                .poly = common_full.getRepresentativePolyMap(),
             },
         },
         .{
             .tag = "brown_conrady_ext_polynomial",
-            .distortion = .{
-                .brown_conrady_ext_polynomial = .{
-                    .brown_conrady_ext = .{
+            .distort = .{
+                .brown_con_ext_poly = .{
+                    .brown_con_ext = .{
                         .k1 = -1000.0,
                         .k4 = 200.0,
                     },
-                    .polynomial = .{
-                        .forward_map = common_full.getRepresentativePolynomialMap(),
-                    },
+                    .poly = common_full.getRepresentativePolyMap(),
                 },
             },
         },
         .{
             .tag = "mixed_tangential_bc",
-            .distortion = .{
-                .brown_conrady = .{
+            .distort = .{
+                .brown_con = .{
                     .k1 = -1000.0,
                     .p1 = 0.02,
                     .p2 = -0.02,
@@ -313,7 +309,7 @@ fn runAdditionalDistPsfTests(
     for (extra_dist_cases) |dist_case| {
         var cam_tile = prep.camera_input;
         cam_tile.sub_sample = 2;
-        cam_tile.distortion = dist_case.distortion;
+        cam_tile.distort = dist_case.distort;
         cam_tile.psf = .{ .pixel_box = .{} };
 
         var config_tile = config;
@@ -358,7 +354,7 @@ fn runAdditionalDistPsfTests(
         }
     }
 
-    try runBrownConradyPolynomialEquivalenceRender(
+    try runBrownConPolyEquivalenceRender(
         allocator,
         io,
         prep,
@@ -369,7 +365,7 @@ fn runAdditionalDistPsfTests(
     for (extra_psf_cases) |psf_case| {
         var cam_tile = prep.camera_input;
         cam_tile.sub_sample = 2;
-        cam_tile.distortion = .none;
+        cam_tile.distort = .none;
         cam_tile.psf = psf_case.psf;
 
         var config_tile = config;
@@ -415,7 +411,7 @@ fn runAdditionalDistPsfTests(
     }
 }
 
-fn runBrownConradyPolynomialEquivalenceRender(
+fn runBrownConPolyEquivalenceRender(
     allocator: std.mem.Allocator,
     io: std.Io,
     prep: *const common_full.Scene1Prepared,
@@ -423,18 +419,18 @@ fn runBrownConradyPolynomialEquivalenceRender(
 ) !void {
     const mesh = fullcase_dist_psf.buildScene1Mesh(prep);
     const meshes = [_]MeshInput{mesh};
-    const equivalent = common_full.getEquivalentBrownConradyPolynomial();
+    const equivalent = common_full.getEquivalentBrownConPoly();
 
     var brown_camera = prep.camera_input;
     brown_camera.sub_sample = 4;
-    brown_camera.distortion = .{ .brown_conrady = equivalent.brown_conrady };
+    brown_camera.distort = .{ .brown_con = equivalent.brown_con };
     brown_camera.psf = .{ .gaussian = .{
         .sigma_px = 1.5,
         .supp_rad_px = 4.5,
         .separable = .yes,
     } };
-    var polynomial_camera = brown_camera;
-    polynomial_camera.distortion = .{ .polynomial = equivalent.polynomial };
+    var poly_camera = brown_camera;
+    poly_camera.distort = .{ .poly = equivalent.poly };
 
     var run_config = config;
     run_config.save_strategy = .memory;
@@ -450,7 +446,7 @@ fn runBrownConradyPolynomialEquivalenceRender(
     const result = try riley.raster(
         aa,
         &render_groups,
-        &[_]CameraInput{ brown_camera, polynomial_camera },
+        &[_]CameraInput{ brown_camera, poly_camera },
         &meshes,
         run_config,
         null,
@@ -470,7 +466,7 @@ fn runBrownConradyPolynomialEquivalenceRender(
         aa.free(brown_image.slice);
         brown_image.deinit(aa);
     }
-    var polynomial_image = try common_test.extractFrameImage(
+    var poly_image = try common_test.extractFrameImage(
         aa,
         &render_result,
         1,
@@ -479,12 +475,12 @@ fn runBrownConradyPolynomialEquivalenceRender(
         1,
     );
     defer {
-        aa.free(polynomial_image.slice);
-        polynomial_image.deinit(aa);
+        aa.free(poly_image.slice);
+        poly_image.deinit(aa);
     }
     try common_test.expectImagesEquivalent(
         &brown_image,
-        &polynomial_image,
+        &poly_image,
         tcfg.EQUIV_REL_TOL,
         tcfg.EQUIV_ABS_TOL,
     );

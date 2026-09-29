@@ -579,4 +579,3 @@ fn runUVBoundaryRasterPipelineTests(
         try std.testing.expect(has_nonzero);
     }
 }
-

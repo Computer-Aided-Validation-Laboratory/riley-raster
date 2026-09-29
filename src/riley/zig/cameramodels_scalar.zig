@@ -19,32 +19,32 @@ const F = buildconfig.F;
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub fn forwardDistortionModel(
-    distortion: common.DistortionModel,
+pub fn fordDistortModel(
+    distort: common.DistortModel,
     x: F,
     y: F,
-) common.DistortionCoords {
-    return switch (distortion) {
+) common.DistortCoords {
+    return switch (distort) {
         .none => .{ .x = x, .y = y },
-        .brown_conrady => |params| common.BrownConrady.forward(params, x, y),
-        .brown_conrady_ext => |model| model.forward(x, y),
-        .polynomial => |poly| poly.forward(x, y),
-        .brown_conrady_polynomial => |chain| chain.forward(x, y),
-        .brown_conrady_ext_polynomial => |chain| chain.forward(x, y),
+        .brown_con => |params| common.BrownCon.ford(params, x, y),
+        .brown_con_ext => |model| model.ford(x, y),
+        .poly => |poly| poly.ford(x, y),
+        .brown_con_poly => |chain| chain.ford(x, y),
+        .brown_con_ext_poly => |chain| chain.ford(x, y),
     };
 }
 
-pub fn invDistortionModel(
-    distortion: common.DistortionModel,
+pub fn invDistortModel(
+    distort: common.DistortModel,
     x_d: F,
     y_d: F,
-) !common.DistortionCoords {
-    return switch (distortion) {
+) !common.DistortCoords {
+    return switch (distort) {
         .none => .{ .x = x_d, .y = y_d },
-        .brown_conrady => |params| try common.BrownConrady.inv(params, x_d, y_d),
-        .brown_conrady_ext => |model| try model.inv(x_d, y_d),
-        .polynomial => |poly| try poly.inv(x_d, y_d),
-        .brown_conrady_polynomial => |chain| try chain.inv(x_d, y_d),
-        .brown_conrady_ext_polynomial => |chain| try chain.inv(x_d, y_d),
+        .brown_con => |params| try common.BrownCon.inv(params, x_d, y_d),
+        .brown_con_ext => |model| try model.inv(x_d, y_d),
+        .poly => |poly| try poly.inv(x_d, y_d),
+        .brown_con_poly => |chain| try chain.inv(x_d, y_d),
+        .brown_con_ext_poly => |chain| try chain.inv(x_d, y_d),
     };
 }

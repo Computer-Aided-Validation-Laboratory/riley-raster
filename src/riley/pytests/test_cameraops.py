@@ -10,7 +10,7 @@ import pytest
 import riley
 
 
-def test_extended_distortion_camera_io_roundtrip(tmp_path: Path) -> None:
+def test_extended_distort_camera_io_roundtrip(tmp_path: Path) -> None:
     camera = riley.Camera(
         pixels_num=(100, 80),
         pixels_size=(1.0e-5, 1.1e-5),
@@ -19,23 +19,23 @@ def test_extended_distortion_camera_io_roundtrip(tmp_path: Path) -> None:
         roi_cent_world=(0.0, 0.0, 0.0),
         focal_length=0.05,
         sub_sample=1,
-        distortion_model=2,
-        distortion_s1=1.1e-3,
-        distortion_s2=-1.2e-3,
-        distortion_s3=1.3e-3,
-        distortion_s4=-1.4e-3,
-        distortion_tau_x=0.021,
-        distortion_tau_y=-0.034,
+        distort_model=2,
+        distort_s1=1.1e-3,
+        distort_s2=-1.2e-3,
+        distort_s3=1.3e-3,
+        distort_s4=-1.4e-3,
+        distort_tau_x=0.021,
+        distort_tau_y=-0.034,
     )
     riley.save_camera(str(tmp_path), "camera.csv", 0, camera)
     loaded = riley.load_camera(str(tmp_path), "camera.csv")
 
-    assert loaded.distortion_s1 == pytest.approx(camera.distortion_s1)
-    assert loaded.distortion_s2 == pytest.approx(camera.distortion_s2)
-    assert loaded.distortion_s3 == pytest.approx(camera.distortion_s3)
-    assert loaded.distortion_s4 == pytest.approx(camera.distortion_s4)
-    assert loaded.distortion_tau_x == pytest.approx(camera.distortion_tau_x)
-    assert loaded.distortion_tau_y == pytest.approx(camera.distortion_tau_y)
+    assert loaded.distort_s1 == pytest.approx(camera.distort_s1)
+    assert loaded.distort_s2 == pytest.approx(camera.distort_s2)
+    assert loaded.distort_s3 == pytest.approx(camera.distort_s3)
+    assert loaded.distort_s4 == pytest.approx(camera.distort_s4)
+    assert loaded.distort_tau_x == pytest.approx(camera.distort_tau_x)
+    assert loaded.distort_tau_y == pytest.approx(camera.distort_tau_y)
 
 
 def test_stereo_camera_io_reports_physical_opencv_baseline(

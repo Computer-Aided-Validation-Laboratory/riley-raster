@@ -11,7 +11,6 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const NDArray = @import("ndarray.zig").NDArray;
 
-
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
@@ -65,7 +64,6 @@ pub fn hasPackedChannels(line: []const u8) bool {
     }
     return false;
 }
-
 
 pub fn loadScalarCsv2D(
     allocator: std.mem.Allocator,

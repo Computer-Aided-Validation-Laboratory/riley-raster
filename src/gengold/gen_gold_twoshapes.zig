@@ -397,7 +397,7 @@ pub fn generateTwoShapesCase(
         .roi_cent_world = target,
         .focal_length = focal_length_twoshapes,
         .sub_sample = 2,
-        .distortion = .none,
+        .distort = .none,
     };
 
     var run_config = config;

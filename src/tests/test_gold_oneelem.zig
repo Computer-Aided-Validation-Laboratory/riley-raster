@@ -92,7 +92,7 @@ pub fn runOneElemCaseTest(
         .roi_cent_world = prepared.camera.roi_cent_world,
         .focal_length = prepared.camera.focal_length,
         .sub_sample = 1,
-        .distortion = .none,
+        .distort = .none,
     };
 
     var run_config = config;

@@ -346,7 +346,7 @@ fn runCase(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .distortion = cammod.distortionParamsFromModel(camera.distortion),
+        .distort = camera.distort.paramsFromModel(),
     };
 
     const front_centroid = sceneops.boundsForCoords(&front_mesh.coords).center;

@@ -19,7 +19,7 @@ const SubPixelCenterMap = camera.SubPixelCenterMap;
 
 pub const DistCase = struct {
     tag: []const u8,
-    distortion: camera.DistortionParams,
+    distort: camera.DistortParams,
 };
 
 pub const PsfCase = struct {
@@ -35,12 +35,12 @@ pub const PxMapCase = struct {
 pub const dist_cases = [_]DistCase{
     .{
         .tag = "dist_bc",
-        .distortion = .{ .brown_conrady = .{ .k1 = -1500.0, .k2 = 5.0e6 } },
+        .distort = .{ .brown_con = .{ .k1 = -1500.0, .k2 = 5.0e6 } },
     },
     .{
         .tag = "dist_bce",
-        .distortion = .{
-            .brown_conrady_ext = .{
+        .distort = .{
+            .brown_con_ext = .{
                 .k1 = 1500.0,
                 .k2 = -5.0e6,
                 .k4 = 200.0,
@@ -49,12 +49,10 @@ pub const dist_cases = [_]DistCase{
     },
     .{
         .tag = "dist_poly_bc",
-        .distortion = .{
-            .brown_conrady_polynomial = .{
-                .brown_conrady = .{ .k1 = -1000.0 },
-                .polynomial = .{
-                    .forward_map = common_full.getRepresentativePolynomialMap(),
-                },
+        .distort = .{
+            .brown_con_poly = .{
+                .brown_con = .{ .k1 = -1000.0 },
+                .poly = common_full.getRepresentativePolyMap(),
             },
         },
     },

@@ -142,7 +142,7 @@ pub fn saveCamera(
         "avg_pixel_per_leng",
         metrics.avg_pixel_per_leng,
     });
-    try writeDistortion(writer, camera_input.distortion);
+    try writeDistort(writer, camera_input.distort);
     try file_writer.flush();
 }
 
@@ -205,7 +205,7 @@ pub fn loadCamera(
             try requireValue(&kv, "sub_sample"),
             10,
         ),
-        .distortion = try loadDistortion(&kv),
+        .distort = try loadDistort(&kv),
         .coord_sys = coord_sys,
     };
 
@@ -423,10 +423,10 @@ fn requireValue(
     return kv.get(key) orelse error.MissingCameraField;
 }
 
-fn writePolynomialMap(
+fn writePolyMap(
     writer: *std.Io.Writer,
     prefix: []const u8,
-    poly_map: cam.PolynomialMap,
+    poly_map: cam.PolyMap,
 ) !void {
     var key_buf: [64]u8 = undefined;
     const term_count = poly_map.order.termCount();
@@ -446,39 +446,10 @@ fn writePolynomialMap(
     }
 }
 
-fn writePolynomialMetadata(
-    writer: *std.Io.Writer,
-    polynomial: ?cam.BidirectionalPolynomial,
-) !void {
-    if (polynomial) |poly| {
-        const order = if (poly.forward_map) |forward_map|
-            forward_map.order
-        else if (poly.inv_map) |inv_map|
-            inv_map.order
-        else
-            cam.PolynomialOrder.quadratic;
-        try writer.print("{s},{d}\n", .{ "poly_order", @intFromEnum(order) });
-        try writer.print("{s},{d}\n", .{
-            "poly_has_forward",
-            @intFromBool(poly.forward_map != null),
-        });
-        try writer.print("{s},{d}\n", .{
-            "poly_has_inv",
-            @intFromBool(poly.inv_map != null),
-        });
-        if (poly.forward_map) |forward_map| {
-            try writePolynomialMap(writer, "poly_forward", forward_map);
-        }
-        if (poly.inv_map) |inv_map| {
-            try writePolynomialMap(writer, "poly_inv", inv_map);
-        }
-    } else {
-        try writer.print("{s},{d}\n", .{
-            "poly_order",
-            @intFromEnum(cam.PolynomialOrder.quadratic),
-        });
-        try writer.print("{s},{d}\n", .{ "poly_has_forward", 0 });
-        try writer.print("{s},{d}\n", .{ "poly_has_inv", 0 });
+fn writePolyMetadata(writer: *std.Io.Writer, poly_params: ?cam.PolyMap) !void {
+    if (poly_params) |poly| {
+        try writer.print("{s},{d}\n", .{ "poly_order", @intFromEnum(poly.order) });
+        try writePolyMap(writer, "poly", poly);
     }
 }
 
@@ -502,11 +473,11 @@ fn parseOptionalFloatValue(
     return def;
 }
 
-fn writeExtendedDistortion(
+fn writeExtendedDistort(
     writer: *std.Io.Writer,
-    model: ?cam.BrownConradyExt.Params,
+    model: ?cam.BrownConExt.Params,
 ) !void {
-    const ext = model orelse cam.BrownConradyExt.Params{};
+    const ext = model orelse cam.BrownConExt.Params{};
     try writer.print("{s},{d:.12}\n", .{ "s1", ext.s1 });
     try writer.print("{s},{d:.12}\n", .{ "s2", ext.s2 });
     try writer.print("{s},{d:.12}\n", .{ "s3", ext.s3 });
@@ -515,12 +486,12 @@ fn writeExtendedDistortion(
     try writer.print("{s},{d:.12}\n", .{ "tau_y", ext.tau_y });
 }
 
-fn parsePolynomialMap(
+fn parsePolyMap(
     kv: *const std.StringHashMap([]const u8),
     prefix: []const u8,
-    order: cam.PolynomialOrder,
-) !cam.PolynomialMap {
-    var map: cam.PolynomialMap = .{ .order = order };
+    order: cam.PolyOrder,
+) !cam.PolyMap {
+    var map: cam.PolyMap = .{ .order = order };
     var key_buf: [64]u8 = undefined;
     const term_count = order.termCount();
     for (0..term_count) |ii| {
@@ -540,41 +511,32 @@ fn parsePolynomialMap(
     return map;
 }
 
-fn loadPolynomial(
-    kv: *const std.StringHashMap([]const u8),
-) !?cam.BidirectionalPolynomial {
-    const has_forward = (try parseOptionalU8Value(kv, "poly_has_forward", 0)) != 0;
-    const has_inv = (try parseOptionalU8Value(kv, "poly_has_inv", 0)) != 0;
-    if (!has_forward and !has_inv) {
-        return null;
+fn loadPoly(kv: *const std.StringHashMap([]const u8)) !?cam.PolyMap {
+    // Old inverse calibrations must not silently become forward calibrations.
+    if ((try parseOptionalU8Value(kv, "poly_has_inv", 0)) != 0 or
+        kv.contains("poly_inv_u_0") or kv.contains("poly_inv_v_0"))
+    {
+        return error.UnsupportedInvPoly;
     }
-    const order_val = try parseOptionalU8Value(
-        kv,
-        "poly_order",
-        @intFromEnum(cam.PolynomialOrder.quadratic),
-    );
-    const order: cam.PolynomialOrder = switch (order_val) {
+    const model = kv.get("distortion_model") orelse return null;
+    if (!std.mem.eql(u8, model, "polynomial") and
+        !std.mem.eql(u8, model, "brown_conrady_polynomial") and
+        !std.mem.eql(u8, model, "brown_conrady_ext_polynomial")) return null;
+    const order_val = try parseOptionalU8Value(kv, "poly_order", 2);
+    const order: cam.PolyOrder = switch (order_val) {
         1 => .linear,
         2 => .quadratic,
         3 => .cubic,
-        else => return error.InvalidPolynomialOrder,
+        else => return error.InvalidPolyOrder,
     };
-
-    var polynomial: cam.BidirectionalPolynomial = .{};
-    if (has_forward) {
-        polynomial.forward_map = try parsePolynomialMap(kv, "poly_forward", order);
-    }
-    if (has_inv) {
-        polynomial.inv_map = try parsePolynomialMap(kv, "poly_inv", order);
-    }
-    return polynomial;
+    return try parsePolyMap(kv, "poly", order);
 }
 
-fn writeDistortion(
+fn writeDistort(
     writer: *std.Io.Writer,
-    distortion: cam.DistortionParams,
+    distort: cam.DistortParams,
 ) !void {
-    switch (distortion) {
+    switch (distort) {
         .none => {
             try writer.print("{s},{s}\n", .{ "distortion_model", "none" });
             try writer.print("{s},{d:.12}\n", .{ "k1", 0.0 });
@@ -585,10 +547,10 @@ fn writeDistortion(
             try writer.print("{s},{d:.12}\n", .{ "k6", 0.0 });
             try writer.print("{s},{d:.12}\n", .{ "p1", 0.0 });
             try writer.print("{s},{d:.12}\n", .{ "p2", 0.0 });
-            try writeExtendedDistortion(writer, null);
-            try writePolynomialMetadata(writer, null);
+            try writeExtendedDistort(writer, null);
+            try writePolyMetadata(writer, null);
         },
-        .brown_conrady => |model| {
+        .brown_con => |model| {
             try writer.print("{s},{s}\n", .{
                 "distortion_model",
                 "brown_conrady",
@@ -601,10 +563,10 @@ fn writeDistortion(
             try writer.print("{s},{d:.12}\n", .{ "k6", 0.0 });
             try writer.print("{s},{d:.12}\n", .{ "p1", model.p1 });
             try writer.print("{s},{d:.12}\n", .{ "p2", model.p2 });
-            try writeExtendedDistortion(writer, null);
-            try writePolynomialMetadata(writer, null);
+            try writeExtendedDistort(writer, null);
+            try writePolyMetadata(writer, null);
         },
-        .brown_conrady_ext => |model| {
+        .brown_con_ext => |model| {
             try writer.print("{s},{s}\n", .{
                 "distortion_model",
                 "brown_conrady_ext",
@@ -617,10 +579,10 @@ fn writeDistortion(
             try writer.print("{s},{d:.12}\n", .{ "k6", model.k6 });
             try writer.print("{s},{d:.12}\n", .{ "p1", model.p1 });
             try writer.print("{s},{d:.12}\n", .{ "p2", model.p2 });
-            try writeExtendedDistortion(writer, model);
-            try writePolynomialMetadata(writer, null);
+            try writeExtendedDistort(writer, model);
+            try writePolyMetadata(writer, null);
         },
-        .polynomial => |poly| {
+        .poly => |poly| {
             try writer.print("{s},{s}\n", .{ "distortion_model", "polynomial" });
             try writer.print("{s},{d:.12}\n", .{ "k1", 0.0 });
             try writer.print("{s},{d:.12}\n", .{ "k2", 0.0 });
@@ -630,78 +592,78 @@ fn writeDistortion(
             try writer.print("{s},{d:.12}\n", .{ "k6", 0.0 });
             try writer.print("{s},{d:.12}\n", .{ "p1", 0.0 });
             try writer.print("{s},{d:.12}\n", .{ "p2", 0.0 });
-            try writeExtendedDistortion(writer, null);
-            try writePolynomialMetadata(writer, poly);
+            try writeExtendedDistort(writer, null);
+            try writePolyMetadata(writer, poly);
         },
-        .brown_conrady_polynomial => |chain| {
+        .brown_con_poly => |chain| {
             try writer.print("{s},{s}\n", .{
                 "distortion_model",
                 "brown_conrady_polynomial",
             });
-            try writer.print("{s},{d:.12}\n", .{ "k1", chain.brown_conrady.k1 });
-            try writer.print("{s},{d:.12}\n", .{ "k2", chain.brown_conrady.k2 });
-            try writer.print("{s},{d:.12}\n", .{ "k3", chain.brown_conrady.k3 });
+            try writer.print("{s},{d:.12}\n", .{ "k1", chain.brown_con.k1 });
+            try writer.print("{s},{d:.12}\n", .{ "k2", chain.brown_con.k2 });
+            try writer.print("{s},{d:.12}\n", .{ "k3", chain.brown_con.k3 });
             try writer.print("{s},{d:.12}\n", .{ "k4", 0.0 });
             try writer.print("{s},{d:.12}\n", .{ "k5", 0.0 });
             try writer.print("{s},{d:.12}\n", .{ "k6", 0.0 });
-            try writer.print("{s},{d:.12}\n", .{ "p1", chain.brown_conrady.p1 });
-            try writer.print("{s},{d:.12}\n", .{ "p2", chain.brown_conrady.p2 });
-            try writeExtendedDistortion(writer, null);
-            try writePolynomialMetadata(writer, chain.polynomial);
+            try writer.print("{s},{d:.12}\n", .{ "p1", chain.brown_con.p1 });
+            try writer.print("{s},{d:.12}\n", .{ "p2", chain.brown_con.p2 });
+            try writeExtendedDistort(writer, null);
+            try writePolyMetadata(writer, chain.poly);
         },
-        .brown_conrady_ext_polynomial => |chain| {
+        .brown_con_ext_poly => |chain| {
             try writer.print("{s},{s}\n", .{
                 "distortion_model",
                 "brown_conrady_ext_polynomial",
             });
             try writer.print("{s},{d:.12}\n", .{
                 "k1",
-                chain.brown_conrady_ext.k1,
+                chain.brown_con_ext.k1,
             });
             try writer.print("{s},{d:.12}\n", .{
                 "k2",
-                chain.brown_conrady_ext.k2,
+                chain.brown_con_ext.k2,
             });
             try writer.print("{s},{d:.12}\n", .{
                 "k3",
-                chain.brown_conrady_ext.k3,
+                chain.brown_con_ext.k3,
             });
             try writer.print("{s},{d:.12}\n", .{
                 "k4",
-                chain.brown_conrady_ext.k4,
+                chain.brown_con_ext.k4,
             });
             try writer.print("{s},{d:.12}\n", .{
                 "k5",
-                chain.brown_conrady_ext.k5,
+                chain.brown_con_ext.k5,
             });
             try writer.print("{s},{d:.12}\n", .{
                 "k6",
-                chain.brown_conrady_ext.k6,
+                chain.brown_con_ext.k6,
             });
             try writer.print("{s},{d:.12}\n", .{
                 "p1",
-                chain.brown_conrady_ext.p1,
+                chain.brown_con_ext.p1,
             });
             try writer.print("{s},{d:.12}\n", .{
                 "p2",
-                chain.brown_conrady_ext.p2,
+                chain.brown_con_ext.p2,
             });
-            try writeExtendedDistortion(writer, chain.brown_conrady_ext);
-            try writePolynomialMetadata(writer, chain.polynomial);
+            try writeExtendedDistort(writer, chain.brown_con_ext);
+            try writePolyMetadata(writer, chain.poly);
         },
     }
 }
 
-fn loadDistortion(
+fn loadDistort(
     kv: *const std.StringHashMap([]const u8),
-) !cam.DistortionParams {
+) !cam.DistortParams {
     const model_name = try requireValue(kv, "distortion_model");
-    const polynomial = try loadPolynomial(kv);
+    const poly = try loadPoly(kv);
     if (std.mem.eql(u8, model_name, "none")) {
         return .none;
     }
     if (std.mem.eql(u8, model_name, "brown_conrady")) {
-        return .{ .brown_conrady = .{
+        return .{ .brown_con = .{
             .k1 = try std.fmt.parseFloat(F, try requireValue(kv, "k1")),
             .k2 = try std.fmt.parseFloat(F, try requireValue(kv, "k2")),
             .k3 = try std.fmt.parseFloat(F, try requireValue(kv, "k3")),
@@ -710,7 +672,7 @@ fn loadDistortion(
         } };
     }
     if (std.mem.eql(u8, model_name, "brown_conrady_ext")) {
-        return .{ .brown_conrady_ext = .{
+        return .{ .brown_con_ext = .{
             .k1 = try std.fmt.parseFloat(F, try requireValue(kv, "k1")),
             .k2 = try std.fmt.parseFloat(F, try requireValue(kv, "k2")),
             .k3 = try std.fmt.parseFloat(F, try requireValue(kv, "k3")),
@@ -728,23 +690,23 @@ fn loadDistortion(
         } };
     }
     if (std.mem.eql(u8, model_name, "polynomial")) {
-        return .{ .polynomial = polynomial orelse return error.MissingPolynomialMap };
+        return .{ .poly = poly orelse return error.MissingPolyMap };
     }
     if (std.mem.eql(u8, model_name, "brown_conrady_polynomial")) {
-        return .{ .brown_conrady_polynomial = .{
-            .brown_conrady = .{
+        return .{ .brown_con_poly = .{
+            .brown_con = .{
                 .k1 = try std.fmt.parseFloat(F, try requireValue(kv, "k1")),
                 .k2 = try std.fmt.parseFloat(F, try requireValue(kv, "k2")),
                 .k3 = try std.fmt.parseFloat(F, try requireValue(kv, "k3")),
                 .p1 = try std.fmt.parseFloat(F, try requireValue(kv, "p1")),
                 .p2 = try std.fmt.parseFloat(F, try requireValue(kv, "p2")),
             },
-            .polynomial = polynomial orelse return error.MissingPolynomialMap,
+            .poly = poly orelse return error.MissingPolyMap,
         } };
     }
     if (std.mem.eql(u8, model_name, "brown_conrady_ext_polynomial")) {
-        return .{ .brown_conrady_ext_polynomial = .{
-            .brown_conrady_ext = .{
+        return .{ .brown_con_ext_poly = .{
+            .brown_con_ext = .{
                 .k1 = try std.fmt.parseFloat(F, try requireValue(kv, "k1")),
                 .k2 = try std.fmt.parseFloat(F, try requireValue(kv, "k2")),
                 .k3 = try std.fmt.parseFloat(F, try requireValue(kv, "k3")),
@@ -760,10 +722,10 @@ fn loadDistortion(
                 .tau_x = try parseOptionalFloatValue(kv, "tau_x", 0.0),
                 .tau_y = try parseOptionalFloatValue(kv, "tau_y", 0.0),
             },
-            .polynomial = polynomial orelse return error.MissingPolynomialMap,
+            .poly = poly orelse return error.MissingPolyMap,
         } };
     }
-    return error.InvalidDistortionModel;
+    return error.InvalidDistortModel;
 }
 
 // --------------------------------------------------------------------------------------
@@ -896,4 +858,58 @@ test "camera I/O preserves physical stereo baseline across OpenGL and OpenCV exp
     const tol: F = if (F == f32) 1.0e-5 else 1.0e-11;
     try testing.expectApproxEqAbs(expected_baseline_len, opengl_summary.length, tol);
     try testing.expectApproxEqAbs(expected_baseline_len, opencv_summary.length, tol);
+}
+
+test "polynomial CSV rejects inverse metadata and invalid forward metadata" {
+    const allocator = std.testing.allocator;
+    var kv = std.StringHashMap([]const u8).init(allocator);
+    defer kv.deinit();
+    try kv.put("poly_has_inv", "1");
+    try std.testing.expectError(error.UnsupportedInvPoly, loadPoly(&kv));
+    try kv.put("poly_has_inv", "0");
+    try kv.put("poly_inv_u_0", "0");
+    try std.testing.expectError(error.UnsupportedInvPoly, loadPoly(&kv));
+    _ = kv.remove("poly_inv_u_0");
+    try kv.put("distortion_model", "polynomial");
+    try kv.put("poly_order", "4");
+    try std.testing.expectError(error.InvalidPolyOrder, loadPoly(&kv));
+    try kv.put("poly_order", "1");
+    try std.testing.expectError(error.MissingCameraField, loadPoly(&kv));
+}
+
+test "polynomial camera CSV round trips each order and chained model" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    for ([_]cam.PolyOrder{ .linear, .quadratic, .cubic }) |order| {
+        var poly = cam.PolyMap{ .order = order };
+        for (0..order.termCount()) |ii| {
+            poly.coeffs_u[ii] = @as(F, @floatFromInt(ii + 1)) * 0.001;
+            poly.coeffs_v[ii] = -poly.coeffs_u[ii];
+        }
+        const variants = [_]cam.DistortParams{
+            .{ .poly = poly },
+            .{ .brown_con_poly = .{ .poly = poly } },
+            .{ .brown_con_ext_poly = .{ .poly = poly } },
+        };
+        for (variants) |distort| {
+            var camera_input = initTestCamera(.{ 0.0, 0.0, 0.2 }, 0.0, 0.0, 0.0, .opengl);
+            camera_input.distort = distort;
+            try saveCamera(io, tmp.dir, "camera.csv", 0, camera_input);
+            const loaded = try loadCamera(allocator, io, tmp.dir, "camera.csv");
+            const loaded_model = try cam.DistortModel.init(loaded.distort);
+            const actual = switch (loaded_model) {
+                .poly => |map| map,
+                .brown_con_poly => |chain| chain.poly,
+                .brown_con_ext_poly => |chain| chain.poly,
+                else => return error.TestUnexpectedResult,
+            };
+            try testing.expectEqual(order, actual.order);
+            for (0..10) |ii| {
+                try testing.expectApproxEqAbs(poly.coeffs_u[ii], actual.coeffs_u[ii], 1e-7);
+                try testing.expectApproxEqAbs(poly.coeffs_v[ii], actual.coeffs_v[ii], 1e-7);
+            }
+        }
+    }
 }

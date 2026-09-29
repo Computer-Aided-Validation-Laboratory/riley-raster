@@ -70,10 +70,10 @@ pub fn main(init: std.process.Init) !void {
     );
     defer threaded_io.deinit();
     const io = threaded_io.io();
-    const distortion_model = switch (bench_args.distortion) {
-        .none => cam.DistortionModel.none,
-        .brown => cam.DistortionModel{
-            .brown_conrady = .{
+    const distort_model = switch (bench_args.distort) {
+        .none => cam.DistortModel.none,
+        .brown => cam.DistortModel{
+            .brown_con = .{
                 .k1 = -0.08,
                 .k2 = 0.01,
                 .k3 = -0.002,
@@ -81,8 +81,8 @@ pub fn main(init: std.process.Init) !void {
                 .p2 = -0.0007,
             },
         },
-        .brownext => cam.DistortionModel{
-            .brown_conrady_ext = .{
+        .brownext => cam.DistortModel{
+            .brown_con_ext = .{
                 .k1 = -0.09,
                 .k2 = 0.012,
                 .k3 = -0.0015,
@@ -102,7 +102,7 @@ pub fn main(init: std.process.Init) !void {
         .pixels_size = DEFAULT_PIXELS_SIZE,
         .fov_scale = DEFAULT_FOV_SCALE,
         .rot = DEFAULT_ROT,
-        .distortion = distortion_model,
+        .distort = distort_model,
     };
 
     const mesh_types = comptime std.enums.values(gk.MeshType);
@@ -270,7 +270,7 @@ fn runBenchmarksForTextureType(
         if (!shouldRunMeshType(bench_args.mesh_subset, mt)) {
             continue;
         }
-        if (mt == .tri3opt and !cam.isNoDistortion(render_defaults.distortion)) {
+        if (mt == .tri3opt and !cam.isNoDistort(render_defaults.distort)) {
             continue;
         }
         const selected_shader_types = if (bench_args.shader_subset == .texture)
@@ -505,8 +505,8 @@ fn writeStudyMetadata(
     try writer.print("mesh_subset={s}\n", .{
         @tagName(bench_args.mesh_subset),
     });
-    try writer.print("distortion={s}\n", .{
-        @tagName(bench_args.distortion),
+    try writer.print("distort={s}\n", .{
+        @tagName(bench_args.distort),
     });
     try buffered_writer.flush();
 }

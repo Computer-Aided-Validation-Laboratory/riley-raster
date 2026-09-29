@@ -76,18 +76,16 @@ typedef struct c_image_buff_f64 {
     CDims5Usize dims;
 } CImageBuffF64;
 
-typedef struct c_distortion {
-    uint32_t distortion_model;
-    double distortion_k1, distortion_k2, distortion_k3;
-    double distortion_k4, distortion_k5, distortion_k6;
-    double distortion_p1, distortion_p2;
-    double distortion_s1, distortion_s2, distortion_s3, distortion_s4;
-    double distortion_tau_x, distortion_tau_y;
-    uint32_t distortion_poly_order;
-    uint8_t distortion_poly_has_forward, distortion_poly_has_inv;
-    double distortion_poly_forward_u[10], distortion_poly_forward_v[10];
-    double distortion_poly_inv_u[10], distortion_poly_inv_v[10];
-} CDistortion;
+typedef struct c_distort {
+    uint32_t distort_model;
+    double distort_k1, distort_k2, distort_k3;
+    double distort_k4, distort_k5, distort_k6;
+    double distort_p1, distort_p2;
+    double distort_s1, distort_s2, distort_s3, distort_s4;
+    double distort_tau_x, distort_tau_y;
+    uint32_t distort_poly_order;
+    double distort_poly_u[10], distort_poly_v[10];
+} CDistort;
 
 typedef struct c_psf {
     uint32_t psf_type;
@@ -103,7 +101,7 @@ typedef struct c_camera_input {
     CVec3F64 roi_cent_world;
     double focal_length;
     uint32_t sub_sample;
-    CDistortion distortion;
+    CDistort distort;
     CPSF psf;
     uint32_t coord_sys;
     uint32_t subpixel_center_map;

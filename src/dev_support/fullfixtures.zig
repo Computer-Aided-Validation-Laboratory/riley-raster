@@ -210,7 +210,7 @@ pub fn createScene0Camera(meshes: []const MeshInput) CameraInput {
         .roi_cent_world = target,
         .focal_length = focal_length_scene0,
         .sub_sample = 2,
-        .distortion = .none,
+        .distort = .none,
     };
 }
 
@@ -473,8 +473,8 @@ pub const Scene1Prepared = struct {
     }
 };
 
-pub fn getRepresentativePolynomialMap() camera.PolynomialMap {
-    var poly_map = camera.PolynomialMap{
+pub fn getRepresentativePolyMap() camera.PolyMap {
+    var poly_map = camera.PolyMap{
         .order = .quadratic,
     };
     poly_map.coeffs_u[1] = 0.03;
@@ -484,32 +484,30 @@ pub fn getRepresentativePolynomialMap() camera.PolynomialMap {
     return poly_map;
 }
 
-pub const EquivalentBrownConradyPolynomial = struct {
-    brown_conrady: camera.BrownConrady.Params,
-    polynomial: camera.BidirectionalPolynomial,
+pub const EquivalentBrownConPoly = struct {
+    brown_con: camera.BrownCon.Params,
+    poly: camera.PolyMap,
 };
 
 /// A cubic polynomial representation of a Brown-Conrady model with radial
 /// k1 and both tangential terms.  The polynomial model is forward-only: its
 /// inverse is deliberately solved from the same forward map as Brown-Conrady.
-pub fn getEquivalentBrownConradyPolynomial() EquivalentBrownConradyPolynomial {
-    const brown_conrady = camera.BrownConrady.Params{
+pub fn getEquivalentBrownConPoly() EquivalentBrownConPoly {
+    const brown_con = camera.BrownCon.Params{
         .k1 = -1200.0,
         .p1 = 0.25,
         .p2 = -0.20,
     };
     return .{
-        .brown_conrady = brown_conrady,
-        .polynomial = .{
-            .forward_map = .{
-                .order = .cubic,
-                // u displacement: 3*p2*x^2 + 2*p1*x*y + p2*y^2
-                //               + k1*x^3 + k1*x*y^2.
-                .coeffs_u = .{ 0.0, 0.0, 0.0, -0.60, 0.50, -0.20, -1200.0, 0.0, -1200.0, 0.0 },
-                // v displacement: p1*x^2 + 2*p2*x*y + 3*p1*y^2
-                //               + k1*x^2*y + k1*y^3.
-                .coeffs_v = .{ 0.0, 0.0, 0.0, 0.25, -0.40, 0.75, 0.0, -1200.0, 0.0, -1200.0 },
-            },
+        .brown_con = brown_con,
+        .poly = .{
+            .order = .cubic,
+            // u displacement: 3*p2*x^2 + 2*p1*x*y + p2*y^2
+            //               + k1*x^3 + k1*x*y^2.
+            .coeffs_u = .{ 0.0, 0.0, 0.0, -0.60, 0.50, -0.20, -1200.0, 0.0, -1200.0, 0.0 },
+            // v displacement: p1*x^2 + 2*p2*x*y + 3*p1*y^2
+            //               + k1*x^2*y + k1*y^3.
+            .coeffs_v = .{ 0.0, 0.0, 0.0, 0.25, -0.40, 0.75, 0.0, -1200.0, 0.0, -1200.0 },
         },
     };
 }
@@ -539,7 +537,7 @@ pub fn createScene1Camera(meshes: []const MeshInput) CameraInput {
         .roi_cent_world = target,
         .focal_length = focal_length_scene1,
         .sub_sample = 1,
-        .distortion = .none,
+        .distort = .none,
     };
 }
 
@@ -648,7 +646,7 @@ pub fn createScene2Camera(
         .roi_cent_world = vec.initVec3(F, 0.0, 0.0, 0.0),
         .focal_length = focal_length_scene0,
         .sub_sample = sub_sample,
-        .distortion = .none,
+        .distort = .none,
     };
 }
 
@@ -1220,7 +1218,7 @@ pub fn createScene3Cameras() [8]CameraInput {
         .roi_cent_world = vec.initVec3(F, 0.0, 0.0, 0.0),
         .focal_length = focal_length_scene3,
         .sub_sample = 2,
-        .distortion = .none,
+        .distort = .none,
         .psf = .{ .pixel_box = .{} },
     };
 
@@ -1234,7 +1232,7 @@ pub fn createScene3Cameras() [8]CameraInput {
         .roi_cent_world = vec.initVec3(F, 0.0, 0.0, 0.0),
         .focal_length = focal_length_scene3,
         .sub_sample = 2,
-        .distortion = .none,
+        .distort = .none,
         .psf = .{
             .gaussian = .{
                 .sigma_px = 1.5,
@@ -1252,8 +1250,8 @@ pub fn createScene3Cameras() [8]CameraInput {
         .roi_cent_world = vec.initVec3(F, 0.0, 0.0, 0.0),
         .focal_length = focal_length_scene3,
         .sub_sample = 2,
-        .distortion = .{
-            .brown_conrady = .{
+        .distort = .{
+            .brown_con = .{
                 .k1 = -0.45,
                 .k2 = 0.0,
                 .k3 = 0.0,
@@ -1272,8 +1270,8 @@ pub fn createScene3Cameras() [8]CameraInput {
         .roi_cent_world = vec.initVec3(F, 0.0, 0.0, 0.0),
         .focal_length = focal_length_scene3,
         .sub_sample = 2,
-        .distortion = .{
-            .brown_conrady = .{
+        .distort = .{
+            .brown_con = .{
                 .k1 = -0.45,
                 .k2 = 0.0,
                 .k3 = 0.0,
@@ -1306,7 +1304,7 @@ pub fn createScene3Cameras() [8]CameraInput {
         .roi_cent_world = vec.initVec3(F, 0.0, 0.0, 0.0),
         .focal_length = focal_length_scene3,
         .sub_sample = 2,
-        .distortion = .none,
+        .distort = .none,
         .psf = .{ .pixel_box = .{} },
     };
 
@@ -1325,7 +1323,7 @@ pub fn createScene3Cameras() [8]CameraInput {
         .roi_cent_world = vec.initVec3(F, 0.0, 0.0, 0.0),
         .focal_length = focal_length_scene3,
         .sub_sample = 2,
-        .distortion = .none,
+        .distort = .none,
         .psf = .{ .pixel_box = .{} },
     };
 
@@ -1345,7 +1343,7 @@ pub fn createScene3Cameras() [8]CameraInput {
         .roi_cent_world = vec.initVec3(F, 0.0, 0.0, 0.0),
         .focal_length = focal_length_scene3,
         .sub_sample = 2,
-        .distortion = .none,
+        .distort = .none,
         .psf = .{ .pixel_box = .{} },
     };
 
@@ -1373,7 +1371,7 @@ pub fn createScene2ImageOutputCamera(meshes: []const MeshInput) CameraInput {
         .roi_cent_world = target,
         .focal_length = focal_length_scene0,
         .sub_sample = 2,
-        .distortion = .none,
+        .distort = .none,
     };
 }
 

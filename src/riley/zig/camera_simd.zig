@@ -34,7 +34,7 @@ pub fn calcPinholeRasterPointSIMD(
     v_observed_y_px: VecSF,
     v_lane_active: VecSB,
 ) !struct { x: VecSF, y: VecSF } {
-    if (common.isNoDistortion(camera.distortion)) {
+    if (common.isNoDistort(camera.distort)) {
         return .{ .x = v_observed_x_px, .y = v_observed_y_px };
     }
 
@@ -45,8 +45,8 @@ pub fn calcPinholeRasterPointSIMD(
     const v_y_dist = (v_observed_y_px - @as(VecSF, @splat(offsets.y_off))) /
         @as(VecSF, @splat(focal_px.fy));
 
-    const solved = try cameramodels.invDistortionModelSIMD(
-        camera.distortion,
+    const solved = try cameramodels.invDistortModelSIMD(
+        camera.distort,
         v_x_dist,
         v_y_dist,
         v_lane_active,
@@ -81,7 +81,7 @@ pub fn fillTileIdealCentersPerTile(
     const step = 1.0 / @as(F, @floatFromInt(camera.sub_sample));
     const off = 0.5 / @as(F, @floatFromInt(camera.sub_sample));
 
-    if (common.isNoDistortion(camera.distortion)) {
+    if (common.isNoDistort(camera.distort)) {
         for (0..tile_h) |jj| {
             const global_y = start_y + @as(i32, @intCast(jj));
             const observed_y = @as(F, @floatFromInt(global_y)) * step + off;
@@ -185,7 +185,7 @@ pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
             const v_x_plus = v_center_x + @as(VecSF, @splat(eps));
             const v_x_minus = v_center_x - @as(VecSF, @splat(eps));
 
-            if (common.isNoDistortion(camera.distortion)) {
+            if (common.isNoDistort(camera.distort)) {
                 const center_arr: [S]F = v_center_x;
                 for (0..lane_count) |ll| {
                     const px = ii + ll;
@@ -265,8 +265,8 @@ pub fn calcPinholeRasterPoint(
     const x_dist = (observed_x_px - offsets.x_off) / focal_px.fx;
     const y_dist = (observed_y_px - offsets.y_off) / focal_px.fy;
 
-    const solved = try cameramodels.invDistortionModelScal(
-        camera.distortion,
+    const solved = try cameramodels.invDistortModelScal(
+        camera.distort,
         x_dist,
         y_dist,
     );

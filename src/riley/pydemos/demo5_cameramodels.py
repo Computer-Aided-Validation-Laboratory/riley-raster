@@ -84,11 +84,10 @@ def main() -> None:
     # 4. Compare every distortion family and PSF path across buffer modes
     # --------------------------------------------------------------------------
     # Polynomial coefficients describe displacement, not the full mapped point.
-    polynomial = {
-        "distortion_poly_order": 2,
-        "distortion_poly_has_forward": True,
-        "distortion_poly_forward_u": (0.0, 0.02, 0.01, 0.01, 0.005, -0.005, 0, 0, 0, 0),
-        "distortion_poly_forward_v": (
+    poly = {
+        "distort_poly_order": 2,
+        "distort_poly_u": (0.0, 0.02, 0.01, 0.01, 0.005, -0.005, 0, 0, 0, 0),
+        "distort_poly_v": (
             0.0,
             -0.01,
             -0.015,
@@ -102,29 +101,29 @@ def main() -> None:
         ),
     }
     brown = {
-        "distortion_k1": -0.12,
-        "distortion_k2": 0.035,
-        "distortion_p1": 0.0002,
-        "distortion_p2": -0.0001,
+        "distort_k1": -0.12,
+        "distort_k2": 0.035,
+        "distort_p1": 0.0002,
+        "distort_p2": -0.0001,
     }
     brown_ext = {
         **brown,
-        "distortion_k4": -0.04,
-        "distortion_k5": 0.018,
-        "distortion_s1": 0.00001,
-        "distortion_s2": -0.000002,
-        "distortion_tau_x": 0.005,
-        "distortion_tau_y": -0.003,
+        "distort_k4": -0.04,
+        "distort_k5": 0.018,
+        "distort_s1": 0.00001,
+        "distort_s2": -0.000002,
+        "distort_tau_x": 0.005,
+        "distort_tau_y": -0.003,
     }
-    distortions = (
-        ("none", {"distortion_model": 0}),
-        ("brown_conrady", {"distortion_model": 1, **brown}),
-        ("brown_conrady_ext", {"distortion_model": 2, **brown_ext}),
-        ("polynomial", {"distortion_model": 3, **polynomial}),
-        ("brown_conrady_polynomial", {"distortion_model": 4, **brown, **polynomial}),
+    distorts = (
+        ("none", {"distort_model": 0}),
+        ("brown_conrady", {"distort_model": 1, **brown}),
+        ("brown_conrady_ext", {"distort_model": 2, **brown_ext}),
+        ("polynomial", {"distort_model": 3, **poly}),
+        ("brown_conrady_polynomial", {"distort_model": 4, **brown, **poly}),
         (
             "brown_conrady_ext_polynomial",
-            {"distortion_model": 5, **brown_ext, **polynomial},
+            {"distort_model": 5, **brown_ext, **poly},
         ),
     )
     psfs = (
@@ -182,12 +181,12 @@ def main() -> None:
         save_strategy=riley.SaveStrategy.disk,
     )
 
-    for distortion_name, distortion in distortions:
+    for distort_name, distort in distorts:
         for psf_name, psf in psfs:
-            case_camera = replace(camera, **distortion, **psf)
+            case_camera = replace(camera, **distort, **psf)
             for mode in modes:
                 config.buffer_mode = mode
-                out_dir = out_dir_root / distortion_name / psf_name / mode.name
+                out_dir = out_dir_root / distort_name / psf_name / mode.name
                 out_dir.mkdir(parents=True, exist_ok=True)
                 print(f"Rendering {distortion_name}/{psf_name}/{mode.name}...")
                 start_time = perf_counter()

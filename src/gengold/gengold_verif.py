@@ -8,7 +8,7 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
-from distortion_oracle import generate_distortion_oracles
+from distortion_oracle import generate_distort_oracles
 
 def get_repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
@@ -63,7 +63,7 @@ def generate_oracles() -> list[Path]:
     with out_path.open("w", newline="") as out_file:
         writer = csv.writer(out_file, lineterminator="\n")
         writer.writerows(rows)
-    return [out_path, *generate_distortion_oracles(gold_root)]
+    return [out_path, *generate_distort_oracles(gold_root)]
 
 
 def main() -> int:

@@ -31,13 +31,13 @@ def create_stereo_cameras(
     sub_sample = 2
 
     # Brown-Conrady distortion
-    distortion_model = {
-        "distortion_model": 1,
-        "distortion_k1": -0.2,
-        "distortion_k2": 0.1,
-        "distortion_k3": 0.0,
-        "distortion_p1": 0.0001,
-        "distortion_p2": -0.0001,
+    distort_model = {
+        "distort_model": 1,
+        "distort_k1": -0.2,
+        "distort_k2": 0.1,
+        "distort_k3": 0.0,
+        "distort_p1": 0.0001,
+        "distort_p2": -0.0001,
     }
 
     # Camera 0: face on
@@ -50,7 +50,7 @@ def create_stereo_cameras(
         roi_cent_world=tuple(roi_pos),
         focal_length=focal_length,
         sub_sample=sub_sample,
-        **distortion_model,
+        **distort_model,
     )
 
     # Camera 1: stereo angle

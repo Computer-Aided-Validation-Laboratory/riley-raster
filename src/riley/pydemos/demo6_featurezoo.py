@@ -213,12 +213,12 @@ def build_cameras(meshes: list[riley.Mesh], options: DemoOptions) -> list[riley.
         cam.rot_world = rotation
         cam.sub_sample = sub_sample
 
-        if optics in ("distortion", "both", "ring"):
-            cam.distortion_model = 1
-            cam.distortion_k1 = -0.12
-            cam.distortion_k2 = 0.035
-            cam.distortion_p1 = 0.0002
-            cam.distortion_p2 = -0.0001
+        if optics in ("distort", "both", "ring"):
+            cam.distort_model = 1
+            cam.distort_k1 = -0.12
+            cam.distort_k2 = 0.035
+            cam.distort_p1 = 0.0002
+            cam.distort_p2 = -0.0001
 
         if optics in ("psf", "both"):
             cam.psf_type = riley.PsfType.gaussian
@@ -294,7 +294,7 @@ def main() -> None:
 
     camera_cases = (
         ((1024, 1024), (0.0, 0.0, 0.0), 1, "none"),
-        ((1024, 1024), (0.0, np.deg2rad(25.0), 0.0), 4, "distortion"),
+        ((1024, 1024), (0.0, np.deg2rad(25.0), 0.0), 4, "distort"),
         ((1024, 1229), (0.0, np.deg2rad(-28.0), 0.0), 4, "psf"),
         (
             (1229, 1024),

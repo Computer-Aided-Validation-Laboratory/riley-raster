@@ -37,13 +37,13 @@ def main() -> None:
     stereo_angle_deg = 20.0
     total_threads = 8
 
-    distortion_model = {
-        "distortion_model": 1,
-        "distortion_k1": -0.2,
-        "distortion_k2": 0.1,
-        "distortion_k3": 0.0,
-        "distortion_p1": 0.0001,
-        "distortion_p2": -0.0001,
+    distort_model = {
+        "distort_model": 1,
+        "distort_k1": -0.2,
+        "distort_k2": 0.1,
+        "distort_k3": 0.0,
+        "distort_p1": 0.0001,
+        "distort_p2": -0.0001,
     }
 
     # --------------------------------------------------------------------------
@@ -99,7 +99,7 @@ def main() -> None:
         roi_cent_world=roi_pos,
         focal_length=focal_length,
         sub_sample=sub_sample,
-        **distortion_model,
+        **distort_model,
     )
 
     camera_1_rot = (0.0, float(np.deg2rad(stereo_angle_deg)), 0.0)

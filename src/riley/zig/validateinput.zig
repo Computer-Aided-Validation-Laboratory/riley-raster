@@ -46,9 +46,9 @@ pub const InputValidationError = error{
     InvalidCameraSubSample,
     InvalidCameraRoi,
     InvalidCameraRotation,
-    InvalidCameraDistortion,
+    InvalidCameraDistort,
     InvalidCameraPsf,
-    DistortionNotSuppedWithTri3Opt,
+    DistortNotSuppedWithTri3Opt,
     NoMeshes,
     ZeroCoordinateCount,
     ZeroElementCount,
@@ -343,8 +343,8 @@ fn checkMeshesMetadata(
 
         if (mesh.mesh_type == .tri3opt) {
             for (cam_inps) |cam_inp| {
-                if (!cam.isNoDistortion(cam_inp.distortion)) {
-                    return error.DistortionNotSuppedWithTri3Opt;
+                if (!cam.isNoDistort(cam_inp.distort)) {
+                    return error.DistortNotSuppedWithTri3Opt;
                 }
             }
         }
@@ -408,8 +408,8 @@ fn checkCamInp(cam_inp: cam.CameraInput) InputValidationError!void {
     if (!isValidRotationMatrix(cam_inp.rot_world.matrix)) {
         return error.InvalidCameraRotation;
     }
-    if (!isValidDistortion(cam_inp.distortion)) {
-        return error.InvalidCameraDistortion;
+    if (!isValidDistort(cam_inp.distort)) {
+        return error.InvalidCameraDistort;
     }
     if (!isValidPsf(cam_inp.psf)) {
         return error.InvalidCameraPsf;
@@ -791,36 +791,23 @@ fn validAllFramesBuff(
 // Low-Level Distortion & PSF Validators
 // --------------------------------------------------------------------------------------
 
-fn isValidPolynomialMap(map: cam.PolynomialMap) bool {
+fn isValidPolyMap(map: cam.PolyMap) bool {
     const term_count = map.order.termCount();
     return isFiniteSlice(map.coeffs_u[0..term_count]) and
         isFiniteSlice(map.coeffs_v[0..term_count]);
 }
 
-fn isValidBidirectionalPolynomial(poly: cam.BidirectionalPolynomial) bool {
-    if (poly.forward_map == null and poly.inv_map == null) {
-        return false;
-    }
-    if (poly.forward_map) |forward_map| {
-        if (!isValidPolynomialMap(forward_map)) return false;
-    }
-    if (poly.inv_map) |inv_map| {
-        if (!isValidPolynomialMap(inv_map)) return false;
-    }
-    return true;
-}
-
-fn isValidDistortion(distortion: cam.DistortionParams) bool {
-    return switch (distortion) {
+fn isValidDistort(distort: cam.DistortParams) bool {
+    return switch (distort) {
         .none => true,
-        .brown_conrady => |bc| isFiniteSlice(&[_]F{
+        .brown_con => |bc| isFiniteSlice(&[_]F{
             bc.k1,
             bc.k2,
             bc.k3,
             bc.p1,
             bc.p2,
         }),
-        .brown_conrady_ext => |bc| isFiniteSlice(&[_]F{
+        .brown_con_ext => |bc| isFiniteSlice(&[_]F{
             bc.k1,
             bc.k2,
             bc.k3,
@@ -836,30 +823,30 @@ fn isValidDistortion(distortion: cam.DistortionParams) bool {
             bc.tau_x,
             bc.tau_y,
         }),
-        .polynomial => |poly| isValidBidirectionalPolynomial(poly),
-        .brown_conrady_polynomial => |chain| isFiniteSlice(&[_]F{
-            chain.brown_conrady.k1,
-            chain.brown_conrady.k2,
-            chain.brown_conrady.k3,
-            chain.brown_conrady.p1,
-            chain.brown_conrady.p2,
-        }) and isValidBidirectionalPolynomial(chain.polynomial),
-        .brown_conrady_ext_polynomial => |chain| isFiniteSlice(&[_]F{
-            chain.brown_conrady_ext.k1,
-            chain.brown_conrady_ext.k2,
-            chain.brown_conrady_ext.k3,
-            chain.brown_conrady_ext.k4,
-            chain.brown_conrady_ext.k5,
-            chain.brown_conrady_ext.k6,
-            chain.brown_conrady_ext.p1,
-            chain.brown_conrady_ext.p2,
-            chain.brown_conrady_ext.s1,
-            chain.brown_conrady_ext.s2,
-            chain.brown_conrady_ext.s3,
-            chain.brown_conrady_ext.s4,
-            chain.brown_conrady_ext.tau_x,
-            chain.brown_conrady_ext.tau_y,
-        }) and isValidBidirectionalPolynomial(chain.polynomial),
+        .poly => |poly| isValidPolyMap(poly),
+        .brown_con_poly => |chain| isFiniteSlice(&[_]F{
+            chain.brown_con.k1,
+            chain.brown_con.k2,
+            chain.brown_con.k3,
+            chain.brown_con.p1,
+            chain.brown_con.p2,
+        }) and isValidPolyMap(chain.poly),
+        .brown_con_ext_poly => |chain| isFiniteSlice(&[_]F{
+            chain.brown_con_ext.k1,
+            chain.brown_con_ext.k2,
+            chain.brown_con_ext.k3,
+            chain.brown_con_ext.k4,
+            chain.brown_con_ext.k5,
+            chain.brown_con_ext.k6,
+            chain.brown_con_ext.p1,
+            chain.brown_con_ext.p2,
+            chain.brown_con_ext.s1,
+            chain.brown_con_ext.s2,
+            chain.brown_con_ext.s3,
+            chain.brown_con_ext.s4,
+            chain.brown_con_ext.tau_x,
+            chain.brown_con_ext.tau_y,
+        }) and isValidPolyMap(chain.poly),
     };
 }
 

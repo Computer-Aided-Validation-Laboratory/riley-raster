@@ -18,45 +18,41 @@ const simd = @import("cameramodels_simd.zig");
 // Brown Conrady
 // --------------------------------------------------------------------------------------
 
-pub const BrownConrady = common.BrownConrady;
-pub const BrownConradyParams = common.BrownConradyParams;
-pub const BrownConradyExt = common.BrownConradyExt;
-pub const BrownConradyExtParams = common.BrownConradyExtParams;
-pub const DistortionCoords = common.DistortionCoords;
-pub const DistortionForwardJacResult = common.DistortionForwardJacResult;
+pub const BrownCon = common.BrownCon;
+pub const BrownConParams = common.BrownConParams;
+pub const BrownConExt = common.BrownConExt;
+pub const BrownConExtParams = common.BrownConExtParams;
+pub const DistortCoords = common.DistortCoords;
+pub const DistortFordJacResult = common.DistortFordJacResult;
 
 // --------------------------------------------------------------------------------------
 // Polynomial Distortion
 // --------------------------------------------------------------------------------------
 
-pub const PolynomialOrder = common.PolynomialOrder;
-pub const PolynomialMap = common.PolynomialMap;
-pub const BidirectionalPolynomial = common.BidirectionalPolynomial;
-pub const BrownConradyPolynomial = common.BrownConradyPolynomial;
-pub const BrownConradyExtPolynomial = common.BrownConradyExtPolynomial;
-pub const BrownConradyExtPolynomialParams = common.BrownConradyExtPolynomialParams;
+pub const PolyOrder = common.PolyOrder;
+pub const PolyMap = common.PolyMap;
+pub const BrownConPoly = common.BrownConPoly;
+pub const BrownConExtPoly = common.BrownConExtPoly;
+pub const BrownConExtPolyParams = common.BrownConExtPolyParams;
 
 // --------------------------------------------------------------------------------------
 // Distortion Unions
 // --------------------------------------------------------------------------------------
 
-pub const DistortionModel = common.DistortionModel;
-pub const DistortionParams = common.DistortionParams;
-pub const initDistortionModel = common.initDistortionModel;
-pub const distortionParamsFromModel = common.distortionParamsFromModel;
-pub const forwardDistortionModelScal = scal.forwardDistortionModel;
-pub const invDistortionModelScal = scal.invDistortionModel;
-pub const DistortionForwardJacSIMDResult = simd.DistortionForwardJacSIMDResult;
-pub const DistortionCoordsSIMD = simd.DistortionCoordsSIMD;
-pub const BrownConradySIMD = simd.BrownConradySIMD;
-pub const BrownConradyExtSIMD = simd.BrownConradyExtSIMD;
-pub const PolynomialMapSIMD = simd.PolynomialMapSIMD;
-pub const BidirectionalPolynomialSIMD = simd.BidirectionalPolynomialSIMD;
-pub const forwardDistortionSIMD = simd.forwardDistortionSIMD;
-pub const forwardDistortionWithJacSIMD = simd.forwardDistortionWithJacSIMD;
-pub const invDistortionSIMD = simd.invDistortionSIMD;
-pub const forwardDistortionModelSIMD = simd.forwardDistortionModelSIMD;
-pub const invDistortionModelSIMD = simd.invDistortionModelSIMD;
+pub const DistortModel = common.DistortModel;
+pub const DistortParams = common.DistortParams;
+pub const fordDistortModelScal = scal.fordDistortModel;
+pub const invDistortModelScal = scal.invDistortModel;
+pub const DistortFordJacSIMDResult = simd.DistortFordJacSIMDResult;
+pub const DistortCoordsSIMD = simd.DistortCoordsSIMD;
+pub const BrownConSIMD = simd.BrownConSIMD;
+pub const BrownConExtSIMD = simd.BrownConExtSIMD;
+pub const PolyMapSIMD = simd.PolyMapSIMD;
+pub const fordDistortSIMD = simd.fordDistortSIMD;
+pub const fordDistortWithJacSIMD = simd.fordDistortWithJacSIMD;
+pub const invDistortSIMD = simd.invDistortSIMD;
+pub const fordDistortModelSIMD = simd.fordDistortModelSIMD;
+pub const invDistortModelSIMD = simd.invDistortModelSIMD;
 
 // --------------------------------------------------------------------------------------
 // Point Spread Func

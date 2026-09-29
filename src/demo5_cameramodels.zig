@@ -127,22 +127,20 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 4. Compare every distortion family and PSF path across buffer modes
     // -------------------------------------------------------------------------
-    const polynomial = camera.BidirectionalPolynomial{
-        .forward_map = .{
-            .order = .quadratic,
-            .coeffs_u = .{ 0.0, 0.02, 0.01, 0.01, 0.005, -0.005, 0, 0, 0, 0 },
-            .coeffs_v = .{ 0.0, -0.01, -0.015, 0.005, -0.005, 0.01, 0, 0, 0, 0 },
-        },
+    const poly = camera.PolyMap{
+        .order = .quadratic,
+        .coeffs_u = .{ 0.0, 0.02, 0.01, 0.01, 0.005, -0.005, 0, 0, 0, 0 },
+        .coeffs_v = .{ 0.0, -0.01, -0.015, 0.005, -0.005, 0.01, 0, 0, 0, 0 },
     };
 
-    const brown = camera.BrownConrady.Params{
+    const brown = camera.BrownCon.Params{
         .k1 = -0.12,
         .k2 = 0.035,
         .p1 = 0.0002,
         .p2 = -0.0001,
     };
 
-    const brown_ext = camera.BrownConradyExt.Params{
+    const brown_ext = camera.BrownConExt.Params{
         .k1 = brown.k1,
         .k2 = brown.k2,
         .k4 = -0.04,
@@ -155,18 +153,18 @@ pub fn main(init: std.process.Init) !void {
         .tau_y = -0.003,
     };
 
-    const distortions = [_]camera.DistortionParams{
+    const distorts = [_]camera.DistortParams{
         .none,
-        .{ .brown_conrady = brown },
-        .{ .brown_conrady_ext = brown_ext },
-        .{ .polynomial = polynomial },
-        .{ .brown_conrady_polynomial = .{
-            .brown_conrady = brown,
-            .polynomial = polynomial,
+        .{ .brown_con = brown },
+        .{ .brown_con_ext = brown_ext },
+        .{ .poly = poly },
+        .{ .brown_con_poly = .{
+            .brown_con = brown,
+            .poly = poly,
         } },
-        .{ .brown_conrady_ext_polynomial = .{
-            .brown_conrady_ext = brown_ext,
-            .polynomial = polynomial,
+        .{ .brown_con_ext_poly = .{
+            .brown_con_ext = brown_ext,
+            .poly = poly,
         } },
     };
 
@@ -206,21 +204,21 @@ pub fn main(init: std.process.Init) !void {
     var output_root = try demo_common.resetOutputDir(io, out_dir_root);
     defer output_root.close(io);
 
-    for (distortions) |distortion| {
+    for (distorts) |distort| {
         for (psfs, psf_names) |psf, psf_name| {
             for (modes) |mode| {
                 var config = config_base;
                 config.buffer_mode = mode;
                 var cam = camera_input;
-                cam.distortion = distortion;
+                cam.distort = distort;
                 cam.psf = psf;
 
                 const out_dir = try std.fs.path.join(local_alloc, &.{
-                    out_dir_root, @tagName(distortion), psf_name, @tagName(mode),
+                    out_dir_root, @tagName(distort), psf_name, @tagName(mode),
                 });
 
                 std.debug.print("Rendering {s}/{s}/{s}...\n", .{
-                    @tagName(distortion), psf_name, @tagName(mode),
+                    @tagName(distort), psf_name, @tagName(mode),
                 });
 
                 if (try riley.raster(

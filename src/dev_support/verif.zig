@@ -90,7 +90,7 @@ pub fn ElementNodes(comptime N: usize) type {
     };
 }
 
-pub fn forwardMapWorld(
+pub fn fordMapWorld(
     comptime N: usize,
     xi: F,
     eta: F,
@@ -128,7 +128,7 @@ pub fn forwardMapWorld(
     };
 }
 
-pub fn forwardMapWorldForMeshType(
+pub fn fordMapWorldForMeshType(
     comptime mesh_type: gk.MeshType,
     xi: F,
     eta: F,
@@ -140,7 +140,7 @@ pub fn forwardMapWorldForMeshType(
     var node_values: [N]F = undefined;
     var deriv_xi: [N]F = undefined;
     var deriv_eta: [N]F = undefined;
-    return forwardMapWorld(
+    return fordMapWorld(
         N,
         xi,
         eta,
@@ -188,8 +188,8 @@ pub fn idealToObservedRaster(
     const x_norm = (ideal_xy[0] - offsets.x_off) / focal_px.fx;
     const y_norm = (ideal_xy[1] - offsets.y_off) / focal_px.fy;
 
-    const distorted = cam.forwardDistortionModelScal(
-        camera.distortion,
+    const distorted = cam.fordDistortModelScal(
+        camera.distort,
         x_norm,
         y_norm,
     );
@@ -208,8 +208,8 @@ pub fn observedToIdealRaster(
     const x_dist = (observed_xy[0] - offsets.x_off) / focal_px.fx;
     const y_dist = (observed_xy[1] - offsets.y_off) / focal_px.fy;
 
-    const solved = try cam.invDistortionModelScal(
-        camera.distortion,
+    const solved = try cam.invDistortModelScal(
+        camera.distort,
         x_dist,
         y_dist,
     );

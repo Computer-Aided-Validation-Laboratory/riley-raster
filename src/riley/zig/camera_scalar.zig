@@ -43,7 +43,7 @@ pub fn fillTileIdealCentersPerTile(
     const step = 1.0 / @as(F, @floatFromInt(camera.sub_sample));
     const off = 0.5 / @as(F, @floatFromInt(camera.sub_sample));
 
-    if (common.isNoDistortion(camera.distortion)) {
+    if (common.isNoDistort(camera.distort)) {
         for (0..tile_h) |jj| {
             const global_y = start_y + @as(i32, @intCast(jj));
             const observed_y = @as(F, @floatFromInt(global_y)) * step + off;
@@ -112,7 +112,7 @@ pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
     const jac_slice = jac.slice;
     const jac_field_stride = jac.strides[2];
 
-    if (common.isNoDistortion(camera.distortion)) {
+    if (common.isNoDistort(camera.distort)) {
         for (0..camera.pixels_num[1]) |jj| {
             for (0..camera.pixels_num[0]) |ii| {
                 const jac_px_base = jac.subBase2(jj, ii);
@@ -165,8 +165,8 @@ pub fn calcPinholeRasterPoint(
     const x_dist = (observed_x_px - offsets.x_off) / focal_px.fx;
     const y_dist = (observed_y_px - offsets.y_off) / focal_px.fy;
 
-    const solved = try cm.invDistortionModelScal(
-        camera.distortion,
+    const solved = try cm.invDistortModelScal(
+        camera.distort,
         x_dist,
         y_dist,
     );

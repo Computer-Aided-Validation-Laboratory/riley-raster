@@ -57,7 +57,7 @@ pub fn runFullSsaaPxmapCaseTest(
 
     var camera_input = prep.camera_input;
     camera_input.sub_sample = ssaa;
-    camera_input.distortion = dist_case.distortion;
+    camera_input.distort = dist_case.distort;
     camera_input.psf = psf_case.psf;
     camera_input.subpixel_center_map = pxmap_case.map_mode;
 
@@ -204,7 +204,7 @@ fn runPxmapEquivalenceTests(
 
         var cam_input = prep.camera_input;
         cam_input.sub_sample = 2;
-        cam_input.distortion = .none;
+        cam_input.distort = .none;
         cam_input.psf = .{ .pixel_box = .{} };
         cam_input.subpixel_center_map = mode;
 

@@ -24,29 +24,29 @@ const cameraops = @import("riley/zig/cameraops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const vecstack = @import("riley/zig/vecstack.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const DistortionModel = camera_mod.DistortionParams;
-const BrownConrady = camera_mod.BrownConrady;
-const BrownConradyExt = camera_mod.BrownConradyExt;
+const DistortModel = camera_mod.DistortParams;
+const BrownCon = camera_mod.BrownCon;
+const BrownConExt = camera_mod.BrownConExt;
 const StereoPairInput = camera_mod.StereoPairInput;
 const F = buildconfig.F;
 
-const DistortionCase = enum {
+const DistortCase = enum {
     none,
-    brown_conrady,
-    brown_conrady_ext,
+    brown_con,
+    brown_con_ext,
 };
 
-fn buildDistortion(distortion_case: DistortionCase) DistortionModel {
-    return switch (distortion_case) {
+fn buildDistort(distort_case: DistortCase) DistortModel {
+    return switch (distort_case) {
         .none => .none,
-        .brown_conrady => .{ .brown_conrady = BrownConrady.Params{
+        .brown_con => .{ .brown_con = BrownCon.Params{
             .k1 = -0.2,
             .k2 = 0.1,
             .k3 = 0.0,
             .p1 = 0.0001,
             .p2 = -0.0001,
         } },
-        .brown_conrady_ext => .{ .brown_conrady_ext = BrownConradyExt.Params{
+        .brown_con_ext => .{ .brown_con_ext = BrownConExt.Params{
             .k1 = -0.2,
             .k2 = 0.1,
             .k3 = -0.01,
@@ -149,8 +149,8 @@ pub fn main(init: std.process.Init) !void {
     );
     defer texture.deinit(local_alloc);
 
-    const distortion_case: DistortionCase = .brown_conrady;
-    const distortion = buildDistortion(distortion_case);
+    const distort_case: DistortCase = .brown_con;
+    const distort = buildDistort(distort_case);
 
     const matched_roi = [3]F{ 0.0125, 0.0175, 0.0005 };
 
@@ -191,7 +191,7 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = roi_pos,
         .focal_length = focal_length,
         .sub_sample = sub_sample,
-        .distortion = distortion,
+        .distort = distort,
     };
     var cam1_in = cam0_in;
     cam1_in.rot_world = cam1_rot;

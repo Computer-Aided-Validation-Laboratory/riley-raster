@@ -27,34 +27,26 @@ class Camera:
     roi_cent_world: tuple[float, float, float]
     focal_length: float
     sub_sample: int
-    distortion_model: int = 0
-    distortion_k1: float = 0.0
-    distortion_k2: float = 0.0
-    distortion_k3: float = 0.0
-    distortion_k4: float = 0.0
-    distortion_k5: float = 0.0
-    distortion_k6: float = 0.0
-    distortion_p1: float = 0.0
-    distortion_p2: float = 0.0
-    distortion_s1: float = 0.0
-    distortion_s2: float = 0.0
-    distortion_s3: float = 0.0
-    distortion_s4: float = 0.0
-    distortion_tau_x: float = 0.0
-    distortion_tau_y: float = 0.0
-    distortion_poly_order: int = 2
-    distortion_poly_has_forward: bool = False
-    distortion_poly_has_inverse: bool = False
-    distortion_poly_forward_u: tuple[float, float, float, float, float, float, float, float, float, float] = (
+    distort_model: int = 0
+    distort_k1: float = 0.0
+    distort_k2: float = 0.0
+    distort_k3: float = 0.0
+    distort_k4: float = 0.0
+    distort_k5: float = 0.0
+    distort_k6: float = 0.0
+    distort_p1: float = 0.0
+    distort_p2: float = 0.0
+    distort_s1: float = 0.0
+    distort_s2: float = 0.0
+    distort_s3: float = 0.0
+    distort_s4: float = 0.0
+    distort_tau_x: float = 0.0
+    distort_tau_y: float = 0.0
+    distort_poly_order: int = 2
+    distort_poly_u: tuple[float, float, float, float, float, float, float, float, float, float] = (
         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
     )
-    distortion_poly_forward_v: tuple[float, float, float, float, float, float, float, float, float, float] = (
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    )
-    distortion_poly_inverse_u: tuple[float, float, float, float, float, float, float, float, float, float] = (
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    )
-    distortion_poly_inverse_v: tuple[float, float, float, float, float, float, float, float, float, float] = (
+    distort_poly_v: tuple[float, float, float, float, float, float, float, float, float, float] = (
         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
     )
     coord_sys: int = 0
@@ -454,6 +446,8 @@ def _make_cvec2_u32(vec_in: tuple[int, int]) -> cr.CVec2U32:
 def _make_camera_input(camera: Any) -> cr.CCameraInput:
     camera_out: cr.CCameraInput
     idx: cython.Py_ssize_t
+    if len(camera.distort_poly_u) != 10 or len(camera.distort_poly_v) != 10:
+        raise ValueError("polynomial distortion requires ten coefficients per axis")
     camera_out.pixels_num = _make_cvec2_u32(camera.pixels_num)
     camera_out.pixels_size = _make_cvec2_f64(camera.pixels_size)
     camera_out.pos_world = _make_cvec3(camera.pos_world)
@@ -461,36 +455,28 @@ def _make_camera_input(camera: Any) -> cr.CCameraInput:
     camera_out.roi_cent_world = _make_cvec3(camera.roi_cent_world)
     camera_out.focal_length = float(camera.focal_length)
     camera_out.sub_sample = int(camera.sub_sample)
-    camera_out.distortion.distortion_model = int(camera.distortion_model)
-    camera_out.distortion.distortion_k1 = float(camera.distortion_k1)
-    camera_out.distortion.distortion_k2 = float(camera.distortion_k2)
-    camera_out.distortion.distortion_k3 = float(camera.distortion_k3)
-    camera_out.distortion.distortion_k4 = float(camera.distortion_k4)
-    camera_out.distortion.distortion_k5 = float(camera.distortion_k5)
-    camera_out.distortion.distortion_k6 = float(camera.distortion_k6)
-    camera_out.distortion.distortion_p1 = float(camera.distortion_p1)
-    camera_out.distortion.distortion_p2 = float(camera.distortion_p2)
-    camera_out.distortion.distortion_s1 = float(camera.distortion_s1)
-    camera_out.distortion.distortion_s2 = float(camera.distortion_s2)
-    camera_out.distortion.distortion_s3 = float(camera.distortion_s3)
-    camera_out.distortion.distortion_s4 = float(camera.distortion_s4)
-    camera_out.distortion.distortion_tau_x = float(camera.distortion_tau_x)
-    camera_out.distortion.distortion_tau_y = float(camera.distortion_tau_y)
-    camera_out.distortion.distortion_poly_order = int(camera.distortion_poly_order)
-    camera_out.distortion.distortion_poly_has_forward = int(camera.distortion_poly_has_forward)
-    camera_out.distortion.distortion_poly_has_inv = int(camera.distortion_poly_has_inverse)
+    camera_out.distort.distort_model = int(camera.distort_model)
+    camera_out.distort.distort_k1 = float(camera.distort_k1)
+    camera_out.distort.distort_k2 = float(camera.distort_k2)
+    camera_out.distort.distort_k3 = float(camera.distort_k3)
+    camera_out.distort.distort_k4 = float(camera.distort_k4)
+    camera_out.distort.distort_k5 = float(camera.distort_k5)
+    camera_out.distort.distort_k6 = float(camera.distort_k6)
+    camera_out.distort.distort_p1 = float(camera.distort_p1)
+    camera_out.distort.distort_p2 = float(camera.distort_p2)
+    camera_out.distort.distort_s1 = float(camera.distort_s1)
+    camera_out.distort.distort_s2 = float(camera.distort_s2)
+    camera_out.distort.distort_s3 = float(camera.distort_s3)
+    camera_out.distort.distort_s4 = float(camera.distort_s4)
+    camera_out.distort.distort_tau_x = float(camera.distort_tau_x)
+    camera_out.distort.distort_tau_y = float(camera.distort_tau_y)
+    camera_out.distort.distort_poly_order = int(camera.distort_poly_order)
     for idx in range(10):
-        camera_out.distortion.distortion_poly_forward_u[idx] = float(
-            camera.distortion_poly_forward_u[idx]
+        camera_out.distort.distort_poly_u[idx] = float(
+            camera.distort_poly_u[idx]
         )
-        camera_out.distortion.distortion_poly_forward_v[idx] = float(
-            camera.distortion_poly_forward_v[idx]
-        )
-        camera_out.distortion.distortion_poly_inv_u[idx] = float(
-            camera.distortion_poly_inverse_u[idx]
-        )
-        camera_out.distortion.distortion_poly_inv_v[idx] = float(
-            camera.distortion_poly_inverse_v[idx]
+        camera_out.distort.distort_poly_v[idx] = float(
+            camera.distort_poly_v[idx]
         )
     camera_out.coord_sys = int(camera.coord_sys)
     camera_out.subpixel_center_map = int(camera.subpixel_center_map)
@@ -505,15 +491,11 @@ def _make_camera_input(camera: Any) -> cr.CCameraInput:
 
 def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
     idx: cython.Py_ssize_t
-    forward_u = [0.0] * 10
-    forward_v = [0.0] * 10
-    inverse_u = [0.0] * 10
-    inverse_v = [0.0] * 10
+    ford_u = [0.0] * 10
+    ford_v = [0.0] * 10
     for idx in range(10):
-        forward_u[idx] = camera_in.distortion.distortion_poly_forward_u[idx]
-        forward_v[idx] = camera_in.distortion.distortion_poly_forward_v[idx]
-        inverse_u[idx] = camera_in.distortion.distortion_poly_inv_u[idx]
-        inverse_v[idx] = camera_in.distortion.distortion_poly_inv_v[idx]
+        ford_u[idx] = camera_in.distort.distort_poly_u[idx]
+        ford_v[idx] = camera_in.distort.distort_poly_v[idx]
     return Camera(
         pixels_num=(camera_in.pixels_num.x, camera_in.pixels_num.y),
         pixels_size=(camera_in.pixels_size.x, camera_in.pixels_size.y),
@@ -534,28 +516,24 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
         ),
         focal_length=camera_in.focal_length,
         sub_sample=camera_in.sub_sample,
-        distortion_model=camera_in.distortion.distortion_model,
-        distortion_k1=camera_in.distortion.distortion_k1,
-        distortion_k2=camera_in.distortion.distortion_k2,
-        distortion_k3=camera_in.distortion.distortion_k3,
-        distortion_k4=camera_in.distortion.distortion_k4,
-        distortion_k5=camera_in.distortion.distortion_k5,
-        distortion_k6=camera_in.distortion.distortion_k6,
-        distortion_p1=camera_in.distortion.distortion_p1,
-        distortion_p2=camera_in.distortion.distortion_p2,
-        distortion_s1=camera_in.distortion.distortion_s1,
-        distortion_s2=camera_in.distortion.distortion_s2,
-        distortion_s3=camera_in.distortion.distortion_s3,
-        distortion_s4=camera_in.distortion.distortion_s4,
-        distortion_tau_x=camera_in.distortion.distortion_tau_x,
-        distortion_tau_y=camera_in.distortion.distortion_tau_y,
-        distortion_poly_order=camera_in.distortion.distortion_poly_order,
-        distortion_poly_has_forward=bool(camera_in.distortion.distortion_poly_has_forward),
-        distortion_poly_has_inverse=bool(camera_in.distortion.distortion_poly_has_inv),
-        distortion_poly_forward_u=tuple(forward_u),
-        distortion_poly_forward_v=tuple(forward_v),
-        distortion_poly_inverse_u=tuple(inverse_u),
-        distortion_poly_inverse_v=tuple(inverse_v),
+        distort_model=camera_in.distort.distort_model,
+        distort_k1=camera_in.distort.distort_k1,
+        distort_k2=camera_in.distort.distort_k2,
+        distort_k3=camera_in.distort.distort_k3,
+        distort_k4=camera_in.distort.distort_k4,
+        distort_k5=camera_in.distort.distort_k5,
+        distort_k6=camera_in.distort.distort_k6,
+        distort_p1=camera_in.distort.distort_p1,
+        distort_p2=camera_in.distort.distort_p2,
+        distort_s1=camera_in.distort.distort_s1,
+        distort_s2=camera_in.distort.distort_s2,
+        distort_s3=camera_in.distort.distort_s3,
+        distort_s4=camera_in.distort.distort_s4,
+        distort_tau_x=camera_in.distort.distort_tau_x,
+        distort_tau_y=camera_in.distort.distort_tau_y,
+        distort_poly_order=camera_in.distort.distort_poly_order,
+        distort_poly_u=tuple(ford_u),
+        distort_poly_v=tuple(ford_v),
         coord_sys=camera_in.coord_sys,
         subpixel_center_map=camera_in.subpixel_center_map,
         psf_type=camera_in.psf.psf_type,

@@ -44,7 +44,7 @@ def test_numbered_demo_cli_modules_are_importable() -> None:
 def test_cameramodel_cache_rejects_partial_matrices(tmp_path: Path) -> None:
     from riley.pytests.test_riley import _has_cameramodel_renders
 
-    distortions = (
+    distorts = (
         "none",
         "brown_conrady",
         "brown_conrady_ext",
@@ -61,11 +61,11 @@ def test_cameramodel_cache_rejects_partial_matrices(tmp_path: Path) -> None:
     )
     modes = ("tile_local", "global_subpx_full", "global_subpx_stripe")
     assert not _has_cameramodel_renders(tmp_path)
-    for distortion in distortions:
+    for distort in distorts:
         for psf in psfs:
             for mode in modes:
                 assert not _has_cameramodel_renders(tmp_path)
-                path = tmp_path / distortion / psf / mode / "cam0_frame0_field0.bmp"
+                path = tmp_path / distort / psf / mode / "cam0_frame0_field0.bmp"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.touch()
     assert _has_cameramodel_renders(tmp_path)

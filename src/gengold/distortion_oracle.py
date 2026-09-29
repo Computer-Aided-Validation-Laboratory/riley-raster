@@ -14,9 +14,9 @@ from numpy.polynomial import polynomial as nppoly
 MODEL_NONE = 0
 MODEL_BROWN = 1
 MODEL_BROWN_EXT = 2
-MODEL_POLYNOMIAL = 3
-MODEL_BROWN_POLYNOMIAL = 4
-MODEL_BROWN_EXT_POLYNOMIAL = 5
+MODEL_POLY = 3
+MODEL_BROWN_POLY = 4
+MODEL_BROWN_EXT_POLY = 5
 COEFFS_NUM = 10
 
 
@@ -28,10 +28,8 @@ class OracleCase:
     model: int
     brown: tuple[float, ...] = (0.0,) * 14
     order: int = 1
-    forward_u: tuple[float, ...] | None = None
-    forward_v: tuple[float, ...] | None = None
-    inverse_u: tuple[float, ...] | None = None
-    inverse_v: tuple[float, ...] | None = None
+    ford_u: tuple[float, ...] | None = None
+    ford_v: tuple[float, ...] | None = None
 
 
 def _coeffs(*values: float) -> tuple[float, ...]:
@@ -53,8 +51,6 @@ def get_cases() -> list[OracleCase]:
         -4.0e-4, 2.0e-3, -6.0e-3, -5.0e-3, 1.0e-2,
         8.0e-3, -7.0e-3, 5.0e-3, -1.2e-2, 6.0e-3,
     )
-    inverse_u = _coeffs(-4.0e-4, -4.0e-3, 2.0e-3, -5.0e-3, 7.0e-3, 3.0e-3)
-    inverse_v = _coeffs(6.0e-4, -2.0e-3, 5.0e-3, 4.0e-3, -6.0e-3, -8.0e-3)
 
     cases = [
         OracleCase("none", MODEL_NONE),
@@ -114,102 +110,53 @@ def get_cases() -> list[OracleCase]:
             ),
         ),
         OracleCase(
-            "polynomial_linear",
-            MODEL_POLYNOMIAL,
+            "poly_linear",
+            MODEL_POLY,
             order=1,
-            forward_u=poly_linear_u,
-            forward_v=poly_linear_v,
+            ford_u=poly_linear_u,
+            ford_v=poly_linear_v,
         ),
         OracleCase(
-            "polynomial_quadratic",
-            MODEL_POLYNOMIAL,
+            "poly_quadratic",
+            MODEL_POLY,
             order=2,
-            forward_u=poly_quad_u,
-            forward_v=poly_quad_v,
+            ford_u=poly_quad_u,
+            ford_v=poly_quad_v,
         ),
         OracleCase(
-            "polynomial_cubic",
-            MODEL_POLYNOMIAL,
+            "poly_cubic",
+            MODEL_POLY,
             order=3,
-            forward_u=poly_cubic_u,
-            forward_v=poly_cubic_v,
+            ford_u=poly_cubic_u,
+            ford_v=poly_cubic_v,
         ),
         OracleCase(
-            "polynomial_inverse_only",
-            MODEL_POLYNOMIAL,
-            order=2,
-            inverse_u=inverse_u,
-            inverse_v=inverse_v,
-        ),
-        OracleCase(
-            "polynomial_both_maps",
-            MODEL_POLYNOMIAL,
-            order=2,
-            forward_u=poly_quad_u,
-            forward_v=poly_quad_v,
-            inverse_u=inverse_u,
-            inverse_v=inverse_v,
-        ),
-        OracleCase(
-            "brown_polynomial",
-            MODEL_BROWN_POLYNOMIAL,
+            "brown_poly",
+            MODEL_BROWN_POLY,
             (-0.09, 0.025, 9.0e-4, -1.3e-3, -0.006) + (0.0,) * 9,
             order=3,
-            forward_u=poly_cubic_u,
-            forward_v=poly_cubic_v,
+            ford_u=poly_cubic_u,
+            ford_v=poly_cubic_v,
         ),
         OracleCase(
-            "brown_ext_polynomial",
-            MODEL_BROWN_EXT_POLYNOMIAL,
+            "brown_ext_poly",
+            MODEL_BROWN_EXT_POLY,
             (-0.08, 0.02, 8.0e-4, -1.1e-3, -0.005, 0.035, -0.012, 0.004)
             + (0.0,) * 6,
             order=2,
-            forward_u=poly_quad_u,
-            forward_v=poly_quad_v,
+            ford_u=poly_quad_u,
+            ford_v=poly_quad_v,
         ),
         OracleCase(
-            "brown_ext_full14_polynomial",
-            MODEL_BROWN_EXT_POLYNOMIAL,
+            "brown_ext_full14_poly",
+            MODEL_BROWN_EXT_POLY,
             (
                 -0.08, 0.02, 8.0e-4, -1.1e-3, -0.005, 0.035, -0.012,
                 0.004, 1.5e-3, -8.0e-4, 1.2e-3, -7.0e-4, 0.027, -0.041,
             ),
             order=3,
-            forward_u=poly_cubic_u,
-            forward_v=poly_cubic_v,
-        ),
-        OracleCase(
-            "brown_polynomial_inverse_only",
-            MODEL_BROWN_POLYNOMIAL,
-            (-0.07, 0.018, 7.0e-4, -9.0e-4, -0.004) + (0.0,) * 9,
-            order=2,
-            inverse_u=inverse_u,
-            inverse_v=inverse_v,
-        ),
-        OracleCase(
-            "brown_ext_polynomial_both_maps",
-            MODEL_BROWN_EXT_POLYNOMIAL,
-            (
-                -0.06,
-                0.016,
-                6.0e-4,
-                -8.0e-4,
-                -0.003,
-                0.025,
-                -0.009,
-                0.003,
-                1.0e-3,
-                -6.0e-4,
-                9.0e-4,
-                -5.0e-4,
-                0.019,
-                -0.029,
-            ),
-            order=2,
-            forward_u=poly_quad_u,
-            forward_v=poly_quad_v,
-            inverse_u=inverse_u,
-            inverse_v=inverse_v,
+            ford_u=poly_cubic_u,
+            ford_v=poly_cubic_v,
         ),
     ]
 
@@ -223,11 +170,11 @@ def get_cases() -> list[OracleCase]:
             zero = (0.0,) * COEFFS_NUM
             cases.append(
                 OracleCase(
-                    f"polynomial_basis_{output_name}_{power_x}_{power_y}",
-                    MODEL_POLYNOMIAL,
+                    f"poly_basis_{output_name}_{power_x}_{power_y}",
+                    MODEL_POLY,
                     order=1 if coeff_idx < 3 else 2 if coeff_idx < 6 else 3,
-                    forward_u=coeffs if output_name == "u" else zero,
-                    forward_v=coeffs if output_name == "v" else zero,
+                    ford_u=coeffs if output_name == "u" else zero,
+                    ford_v=coeffs if output_name == "v" else zero,
                 )
             )
     return cases
@@ -260,7 +207,7 @@ def _coefficient_matrix(coefficients: tuple[float, ...], order: int) -> np.ndarr
     return matrix
 
 
-def evaluate_polynomial(
+def evaluate_poly(
     points: np.ndarray,
     coefficients_u: tuple[float, ...],
     coefficients_v: tuple[float, ...],
@@ -280,11 +227,11 @@ def evaluate_polynomial(
     )
 
 
-def evaluate_polynomial_jacobian(case: OracleCase, points: np.ndarray) -> np.ndarray:
+def evaluate_poly_jacobian(case: OracleCase, points: np.ndarray) -> np.ndarray:
     """Evaluate polynomial Jacobians using NumPy's analytic derivatives."""
 
-    matrix_u = _coefficient_matrix(case.forward_u or (0.0,) * COEFFS_NUM, case.order)
-    matrix_v = _coefficient_matrix(case.forward_v or (0.0,) * COEFFS_NUM, case.order)
+    matrix_u = _coefficient_matrix(case.ford_u or (0.0,) * COEFFS_NUM, case.order)
+    matrix_v = _coefficient_matrix(case.ford_v or (0.0,) * COEFFS_NUM, case.order)
     du_dx = nppoly.polyder(matrix_u, axis=0)
     du_dy = nppoly.polyder(matrix_u, axis=1)
     dv_dx = nppoly.polyder(matrix_v, axis=0)
@@ -313,96 +260,21 @@ def evaluate_brown(case: OracleCase, points: np.ndarray) -> np.ndarray:
     return projected.reshape((-1, 2))
 
 
-def _invert_polynomial(case: OracleCase, targets: np.ndarray) -> np.ndarray:
-    """Invert an inverse-map polynomial with NumPy-derived Newton Jacobians."""
-
-    inverse_case = OracleCase(
-        case.name,
-        MODEL_POLYNOMIAL,
-        order=case.order,
-        forward_u=case.inverse_u,
-        forward_v=case.inverse_v,
-    )
-    values = targets.copy()
-    for _ in range(30):
-        mapped = evaluate_polynomial(
-            values,
-            inverse_case.forward_u or (0.0,) * COEFFS_NUM,
-            inverse_case.forward_v or (0.0,) * COEFFS_NUM,
-            inverse_case.order,
-        )
-        residual = mapped - targets
-        if np.max(np.abs(residual)) < 1.0e-14:
-            return values
-        jac = evaluate_polynomial_jacobian(inverse_case, values)
-        delta = np.linalg.solve(jac, -residual[..., np.newaxis]).squeeze(-1)
-        values += delta
-    raise RuntimeError(f"polynomial oracle inversion failed for {case.name}")
-
-
 def evaluate_case(case: OracleCase, points: np.ndarray) -> np.ndarray:
     """Evaluate one complete forward distortion case independently."""
 
     values = points
     if case.model in (MODEL_BROWN, MODEL_BROWN_EXT,
-                      MODEL_BROWN_POLYNOMIAL, MODEL_BROWN_EXT_POLYNOMIAL):
+                      MODEL_BROWN_POLY, MODEL_BROWN_EXT_POLY):
         values = evaluate_brown(case, values)
-    if case.model in (MODEL_POLYNOMIAL, MODEL_BROWN_POLYNOMIAL,
-                      MODEL_BROWN_EXT_POLYNOMIAL):
-        if case.forward_u is not None and case.forward_v is not None:
-            values = evaluate_polynomial(
-                values, case.forward_u, case.forward_v, case.order
-            )
-        elif case.inverse_u is not None and case.inverse_v is not None:
-            values = _invert_polynomial(case, values)
-        else:
-            raise ValueError(f"missing polynomial map for {case.name}")
-    return values.copy()
-
-
-def evaluate_inverse_case(case: OracleCase, observed: np.ndarray) -> np.ndarray:
-    """Evaluate Riley's declared inverse-stage order using independent tools."""
-
-    if case.forward_u is None or case.inverse_u is None:
-        raise ValueError("declared inverse evaluation requires both polynomial maps")
-
-    values = observed
-    if case.model in (
-        MODEL_POLYNOMIAL,
-        MODEL_BROWN_POLYNOMIAL,
-        MODEL_BROWN_EXT_POLYNOMIAL,
-    ):
-        if case.inverse_u is not None and case.inverse_v is not None:
-            values = evaluate_polynomial(
-                values,
-                case.inverse_u,
-                case.inverse_v,
-                case.order,
-            )
-        elif case.forward_u is not None and case.forward_v is not None:
-            values = _invert_polynomial(
-                OracleCase(
-                    case.name,
-                    MODEL_POLYNOMIAL,
-                    order=case.order,
-                    inverse_u=case.forward_u,
-                    inverse_v=case.forward_v,
-                ),
-                values,
+    if case.model in (MODEL_POLY, MODEL_BROWN_POLY,
+                      MODEL_BROWN_EXT_POLY):
+        if case.ford_u is not None and case.ford_v is not None:
+            values = evaluate_poly(
+                values, case.ford_u, case.ford_v, case.order
             )
         else:
             raise ValueError(f"missing polynomial map for {case.name}")
-    if case.model in (
-        MODEL_BROWN,
-        MODEL_BROWN_EXT,
-        MODEL_BROWN_POLYNOMIAL,
-        MODEL_BROWN_EXT_POLYNOMIAL,
-    ):
-        values = cv2.undistortPoints(
-            values.reshape((-1, 1, 2)),
-            np.eye(3),
-            np.asarray(case.brown, dtype=np.float64),
-        ).reshape((-1, 2))
     return values.copy()
 
 
@@ -421,25 +293,19 @@ def evaluate_numerical_jacobian(case: OracleCase, points: np.ndarray) -> np.ndar
 
 
 def _manifest_row(case_id: int, case: OracleCase) -> list[float | int]:
-    forward_u = case.forward_u or (0.0,) * COEFFS_NUM
-    forward_v = case.forward_v or (0.0,) * COEFFS_NUM
-    inverse_u = case.inverse_u or (0.0,) * COEFFS_NUM
-    inverse_v = case.inverse_v or (0.0,) * COEFFS_NUM
+    ford_u = case.ford_u or (0.0,) * COEFFS_NUM
+    ford_v = case.ford_v or (0.0,) * COEFFS_NUM
     return [
         case_id,
         case.model,
         case.order,
-        int(case.forward_u is not None),
-        int(case.inverse_u is not None),
         *case.brown,
-        *forward_u,
-        *forward_v,
-        *inverse_u,
-        *inverse_v,
+        *ford_u,
+        *ford_v,
     ]
 
 
-def generate_distortion_oracles(gold_root: Path) -> list[Path]:
+def generate_distort_oracles(gold_root: Path) -> list[Path]:
     """Generate compact committed distortion oracle CSV files."""
 
     gold_root.mkdir(parents=True, exist_ok=True)
@@ -459,21 +325,17 @@ def generate_distortion_oracles(gold_root: Path) -> list[Path]:
         writer = csv.writer(out_file, lineterminator="\n")
         for case_id, case in enumerate(cases):
             observed = evaluate_case(case, points)
-            recovered = (
-                evaluate_inverse_case(case, observed)
-                if case.forward_u is not None and case.inverse_u is not None
-                else points
-            )
-            for point_id, (ideal, distorted, inverse) in enumerate(
+            recovered = points
+            for point_id, (ideal, distorted, inv) in enumerate(
                 zip(points, observed, recovered)
             ):
-                writer.writerow([case_id, point_id, *ideal, *distorted, *inverse])
+                writer.writerow([case_id, point_id, *ideal, *distorted, *inv])
 
     with jacobians_path.open("w", newline="") as out_file:
         writer = csv.writer(out_file, lineterminator="\n")
         for case_id, case in enumerate(cases):
-            if case.model == MODEL_POLYNOMIAL and case.forward_u is not None:
-                jacobians = evaluate_polynomial_jacobian(case, jacobian_points)
+            if case.model == MODEL_POLY and case.ford_u is not None:
+                jacobians = evaluate_poly_jacobian(case, jacobian_points)
             else:
                 jacobians = evaluate_numerical_jacobian(case, jacobian_points)
             for point_id, (ideal, jac) in enumerate(zip(jacobian_points, jacobians)):

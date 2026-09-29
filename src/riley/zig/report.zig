@@ -1862,7 +1862,7 @@ pub fn standardReport(
         camera.pixels_num[1],
     });
     try writer.print("Camera Distortion          = {s}\n", .{
-        @tagName(camera.distortion),
+        @tagName(camera.distort),
     });
     try writer.print("Camera PSF                 = {s}\n", .{@tagName(camera.psf)});
     try writer.print("Camera Subsamples          = {d}x{d}\n", .{

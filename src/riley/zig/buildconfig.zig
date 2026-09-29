@@ -33,7 +33,7 @@ pub const Config = struct {
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,
     raster_newton_iter_max: comptime_int = 10,
-    distortion_newton_iter_max: comptime_int = 15,
+    distort_newton_iter_max: comptime_int = 15,
     interp_lut_size: comptime_int = 1024,
     save_frame_buff_count: comptime_int = 3,
     precision: type = F,
@@ -211,7 +211,7 @@ pub const NewtonTol = struct {
     max_para_step: Scal = 0.5,
 };
 
-pub const DistortionTol = struct {
+pub const DistortTol = struct {
     resid: Scal = 1e-10,
     delta: Scal = 1e-10,
     det: Scal = 1e-12,
@@ -253,7 +253,7 @@ pub const Tol = struct {
     culling: CullingTol = .{},
     normals: NormalTol = .{},
     newton: NewtonTol = .{},
-    distortion: DistortionTol = .{},
+    distort: DistortTol = .{},
     newton_seed: NewtonSeedTol = .{},
     geometry: GeometryTol = .{},
     tex: TexTol = .{},
@@ -294,7 +294,7 @@ pub const tol_f32 = Tol{
         .para_step_rel = 2e-6,
         .max_para_step = 0.5,
     },
-    .distortion = .{
+    .distort = .{
         .resid = 1e-5,
         .delta = 1e-5,
         .det = 1e-7,

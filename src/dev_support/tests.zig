@@ -833,7 +833,7 @@ pub fn runSingleMeshSuiteDriver(
                 .roi_cent_world = prepared.camera.roi_cent_world,
                 .focal_length = prepared.camera.focal_length,
                 .sub_sample = prepared.camera.sub_sample,
-                .distortion = prepared.camera.distortion,
+                .distort = prepared.camera.distort,
             };
 
             if (mode == .test_gold and tcfg.TEST_CASE_VERBOSE) {
@@ -985,7 +985,7 @@ pub fn runSingleMeshSuiteDriver(
                     .roi_cent_world = prepared.camera.roi_cent_world,
                     .focal_length = prepared.camera.focal_length,
                     .sub_sample = prepared.camera.sub_sample,
-                    .distortion = prepared.camera.distortion,
+                    .distort = prepared.camera.distort,
                 };
 
                 if (mode == .test_gold and tcfg.TEST_CASE_VERBOSE) {
@@ -1227,7 +1227,7 @@ pub fn runMultimeshTestExt(
             .roi_cent_world = camera.roi_cent_world,
             .focal_length = camera.focal_length,
             .sub_sample = camera.sub_sample,
-            .distortion = camera.distortion,
+            .distort = camera.distort,
         };
         const case_name = if (mode == .nodal)
             "multimesh_allelem_nodal"
@@ -1386,7 +1386,7 @@ pub fn runMultimeshMixedTestExt(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .distortion = camera.distortion,
+        .distort = camera.distort,
     };
 
     const time_start = Timestamp.now(io, .awake);
@@ -1525,7 +1525,7 @@ pub fn runMultimeshMixedRGBTestExt(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .distortion = camera.distortion,
+        .distort = camera.distort,
     };
 
     const time_start = Timestamp.now(io, .awake);
@@ -1688,7 +1688,7 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
         .roi_cent_world = prepared.camera.roi_cent_world,
         .focal_length = prepared.camera.focal_length,
         .sub_sample = prepared.camera.sub_sample,
-        .distortion = prepared.camera.distortion,
+        .distort = prepared.camera.distort,
     };
 
     if (mode == .test_gold and tcfg.TEST_CASE_VERBOSE) {
@@ -1837,7 +1837,7 @@ fn runDistortEdgeTexFuncTestForHullModeExt(
     pixel_num: [2]u32,
     hull_mode: ?rastcfg.HullMode,
 ) !void {
-    const distortion_cases = [_]struct {
+    const distort_cases = [_]struct {
         name: []const u8,
         supports: *const fn (gk.MeshType) bool,
     }{
@@ -1848,12 +1848,12 @@ fn runDistortEdgeTexFuncTestForHullModeExt(
         .{ .name = "distort_rot", .supports = supportsAnyDistortMesh },
     };
 
-    for (distortion_cases) |distortion_case| {
-        if (!distortion_case.supports(mesh_type)) continue;
+    for (distort_cases) |distort_case| {
+        if (!distort_case.supports(mesh_type)) continue;
         try runEdgeTexFuncConstantCaseForHullModeExt(
             allocator,
             io,
-            distortion_case.name,
+            distort_case.name,
             mesh_type,
             gold_dir_root,
             data_dir_root,

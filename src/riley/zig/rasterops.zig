@@ -944,15 +944,15 @@ fn distortIdealRasterCoords(
     const offsets = camera.calcRasterOffsets();
     var coords_distorted = coords_ideal;
 
-    if (cam.isNoDistortion(camera.distortion)) {
+    if (cam.isNoDistort(camera.distort)) {
         return coords_distorted;
     }
 
     for (0..N) |nn| {
         const x_ideal = (coords_ideal.x[nn] - offsets.x_off) / focal_px.fx;
         const y_ideal = (coords_ideal.y[nn] - offsets.y_off) / focal_px.fy;
-        const distorted = cam.forwardDistortionModelScal(
-            camera.distortion,
+        const distorted = cam.fordDistortModelScal(
+            camera.distort,
             x_ideal,
             y_ideal,
         );
@@ -1052,10 +1052,10 @@ fn boundIndMaxSigned(val: F, max: i32) i32 {
 fn initTestCullCamera(
     allocator: std.mem.Allocator,
 ) !cam.CameraPrepared {
-    return try initTestCullCameraWithDistortion(
+    return try initTestCullCameraWithDistort(
         allocator,
         .{
-            .brown_conrady = .{
+            .brown_con = .{
                 .k1 = 0.0,
                 .k2 = 0.0,
                 .k3 = 0.0,
@@ -1066,9 +1066,9 @@ fn initTestCullCamera(
     );
 }
 
-fn initTestCullCameraWithDistortion(
+fn initTestCullCameraWithDistort(
     allocator: std.mem.Allocator,
-    distortion: cam.DistortionModel,
+    distort: cam.DistortModel,
 ) !cam.CameraPrepared {
     const Vec3f = @import("vecstack.zig").Vec3f;
     const Rotation = @import("rotation.zig").Rotation;
@@ -1082,7 +1082,7 @@ fn initTestCullCameraWithDistortion(
             .roi_cent_world = Vec3f.initZeros(),
             .focal_length = 1.0,
             .sub_sample = 1,
-            .distortion = cam.distortionParamsFromModel(distortion),
+            .distort = distort.paramsFromModel(),
         },
     );
 }
@@ -1118,7 +1118,7 @@ fn initElemCoords(
 // Tests
 // --------------------------------------------------------------------------------------
 
-fn initTestCullCameraManual(distortion: cam.DistortionModel) cam.CameraPrepared {
+fn initTestCullCameraManual(distort: cam.DistortModel) cam.CameraPrepared {
     const Vec3f = @import("vecstack.zig").Vec3f;
     const Rotation = @import("rotation.zig").Rotation;
     const Mat44f = @import("matstack.zig").Mat44f;
@@ -1136,7 +1136,7 @@ fn initTestCullCameraManual(distortion: cam.DistortionModel) cam.CameraPrepared 
         .image_dist = 1.0,
         .cam_to_world_mat = Mat44f.initIdentity(),
         .world_to_cam_mat = Mat44f.initIdentity(),
-        .distortion = distortion,
+        .distort = distort,
         .psf = .{ .pixel_box = .{} },
         .prep_psf = .{},
         .coord_sys = .opengl,
@@ -1469,8 +1469,8 @@ test "calcVisibleNodeBBoxHighOrd noninvertible_z" {
 
 test "calcVisibleNodeBBoxTri3 distorted_on_screen_shift" {
     const allocator = std.testing.allocator;
-    const distortion = cam.DistortionModel{
-        .brown_conrady = .{
+    const distort = cam.DistortModel{
+        .brown_con = .{
             .k1 = 0.05,
             .k2 = 0.0,
             .k3 = 0.0,
@@ -1479,7 +1479,7 @@ test "calcVisibleNodeBBoxTri3 distorted_on_screen_shift" {
         },
     };
     var camera = initTestCullCameraManual(.{
-        .brown_conrady = .{},
+        .brown_con = .{},
     });
 
     var connect = try initSingleElemConnect(3, allocator);
@@ -1495,7 +1495,7 @@ test "calcVisibleNodeBBoxTri3 distorted_on_screen_shift" {
     defer allocator.free(coords.mem);
 
     const bbox_none = calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0).?;
-    camera.distortion = distortion;
+    camera.distort = distort;
     const bbox_distorted = calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0).?;
 
     try std.testing.expect(
@@ -1508,8 +1508,8 @@ test "calcVisibleNodeBBoxTri3 distorted_on_screen_shift" {
 
 test "calcVisibleNodeBBoxTri3 distorted_off_screen_shift" {
     const allocator = std.testing.allocator;
-    const distortion = cam.DistortionModel{
-        .brown_conrady = .{
+    const distort = cam.DistortModel{
+        .brown_con = .{
             .k1 = 0.0,
             .k2 = 0.0,
             .k3 = 0.0,
@@ -1518,9 +1518,9 @@ test "calcVisibleNodeBBoxTri3 distorted_off_screen_shift" {
         },
     };
     const camera_none = initTestCullCameraManual(.{
-        .brown_conrady = .{},
+        .brown_con = .{},
     });
-    const camera_distorted = initTestCullCameraManual(distortion);
+    const camera_distorted = initTestCullCameraManual(distort);
 
     var connect = try initSingleElemConnect(3, allocator);
     defer connect.deinit(allocator);
@@ -1553,8 +1553,8 @@ test "calcVisibleNodeBBoxTri3 distorted_off_screen_shift" {
 }
 
 test "high_order_distorted_hull_shift" {
-    const distortion = cam.DistortionModel{
-        .brown_conrady = .{
+    const distort = cam.DistortModel{
+        .brown_con = .{
             .k1 = 0.0,
             .k2 = 0.0,
             .k3 = 0.0,
@@ -1563,7 +1563,7 @@ test "high_order_distorted_hull_shift" {
         },
     };
     var camera = initTestCullCameraManual(.{
-        .brown_conrady = .{},
+        .brown_con = .{},
     });
     const coords_clip = GatheredElemCoords(6){
         .x = .{ 5.5, 6.5, 7.0, 6.0, 6.8, 6.2 },
@@ -1578,7 +1578,7 @@ test "high_order_distorted_hull_shift" {
         false,
     );
     const hull_ideal_raster = packHullPointsAsRasterCoords(6, hull_points_ideal);
-    camera.distortion = distortion;
+    camera.distort = distort;
     const hull_distorted = distortIdealRasterCoords(6, &camera, hull_ideal_raster);
 
     var changed_coord = false;
@@ -1596,8 +1596,8 @@ test "high_order_distorted_hull_shift" {
 
 test "calcVisibleNodeBBoxHighOrd distorted_off_screen_shift" {
     const allocator = std.testing.allocator;
-    const distortion = cam.DistortionModel{
-        .brown_conrady = .{
+    const distort = cam.DistortModel{
+        .brown_con = .{
             .k1 = 0.2,
             .k2 = 0.0,
             .k3 = 0.0,
@@ -1605,7 +1605,7 @@ test "calcVisibleNodeBBoxHighOrd distorted_off_screen_shift" {
             .p2 = 0.0,
         },
     };
-    const camera_distorted = initTestCullCameraManual(distortion);
+    const camera_distorted = initTestCullCameraManual(distort);
 
     var connect = try initSingleElemConnect(6, allocator);
     defer connect.deinit(allocator);
@@ -1632,8 +1632,8 @@ test "calcVisibleNodeBBoxHighOrd distorted_off_screen_shift" {
 
 test "calcVisibleNodeBBoxHighOrd backface_uses_ideal_pinhole" {
     const allocator = std.testing.allocator;
-    const distortion = try cam.DistortionModel.init(.{
-        .brown_conrady_ext = .{
+    const distort = try cam.DistortModel.init(.{
+        .brown_con_ext = .{
             .k1 = -0.2,
             .k2 = 0.05,
             .k3 = 0.0,
@@ -1644,7 +1644,7 @@ test "calcVisibleNodeBBoxHighOrd backface_uses_ideal_pinhole" {
             .p2 = -0.01,
         },
     });
-    const camera = initTestCullCameraManual(distortion);
+    const camera = initTestCullCameraManual(distort);
 
     var connect = try initSingleElemConnect(6, allocator);
     defer connect.deinit(allocator);

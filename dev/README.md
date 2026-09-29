@@ -308,6 +308,31 @@ rendered through all three buffer modes, producing 90 comparison images under
 
 ## Notes
 
+### Polynomial camera distortion
+
+Polynomial coefficients describe a forward displacement map in normalized
+camera coordinates: `(x, y)` maps to `(x + du(x, y), y + dv(x, y))`. The basis is
+`[1, x, y, x², xy, y², x³, x²y, xy², y³]`; linear, quadratic, and cubic orders
+use the first 3, 6, and 10 terms. Zero coefficients give identity distortion.
+
+Use `PolyMap`, `DistortParams`, and `DistortModel.init(...)` in Zig. Evaluation
+methods are `ford(...)` and `inv(...)`, following `dev/ABBREVIATIONS.md`.
+Prepared models expose `paramsFromModel()`. Inversion solves the same forward
+map; it reports singularity, non-finite arithmetic, or non-convergence as errors.
+Small Newton steps alone do not imply convergence. Chained models apply
+Brown–Conrady first, then the polynomial; inversion reverses that order.
+
+Python cameras and the C ABI expose `distort_model`, `distort_poly_order`,
+`distort_poly_u`, and `distort_poly_v` (ten coefficients per axis). There are no
+direction flags or inverse coefficient arrays. Camera CSVs use `poly_order`,
+`poly_u_<index>`, and `poly_v_<index>`; conventional serialized model tags such
+as `brown_conrady_polynomial` are unchanged. Inverse-map calibrations are rejected
+and require offline refitting to the forward convention.
+
+This is a breaking ABI/API change: rebuild the native library, Cython extension,
+and any C clients together. Old forward-map CSVs must also be re-exported using
+the new coefficient keys. No automatic coefficient reinterpretation is provided.
+
 ### Managed render groups
 
 Use the public owner to create render groups from a render-thread budget:

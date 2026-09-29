@@ -176,7 +176,7 @@ def _has_renders(dir_path: Path) -> bool:
 
 def _has_cameramodel_renders(dir_path: Path) -> bool:
     """Require the complete distortion/PSF/buffer matrix, not a partial render."""
-    distortions = (
+    distorts = (
         "none",
         "brown_conrady",
         "brown_conrady_ext",
@@ -193,10 +193,10 @@ def _has_cameramodel_renders(dir_path: Path) -> bool:
     )
     modes = ("tile_local", "global_subpx_full", "global_subpx_stripe")
     expected = set()
-    for distortion in distortions:
+    for distort in distorts:
         for psf in psfs:
             for mode in modes:
-                expected.add(Path(distortion) / psf / mode / "cam0_frame0_field0.bmp")
+                expected.add(Path(distort) / psf / mode / "cam0_frame0_field0.bmp")
     actual = {path.relative_to(dir_path) for path in _render_paths(dir_path)}
     return actual == expected
 

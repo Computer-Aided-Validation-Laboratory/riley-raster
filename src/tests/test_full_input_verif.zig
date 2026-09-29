@@ -224,15 +224,15 @@ fn testNoMeshes(
 // Mesh & Solver Compatibility Tests
 // --------------------------------------------------------------------------
 
-fn testDistortionNotSuppedWithTri3Opt(
+fn testDistortNotSuppedWithTri3Opt(
     allocator: std.mem.Allocator,
     io: std.Io,
     fixture: *const BaselineFixture,
 ) !void {
     _ = allocator;
     var cam_inps = common_full.createScene3Cameras();
-    cam_inps[0].distortion = .{
-        .brown_conrady = .{
+    cam_inps[0].distort = .{
+        .brown_con = .{
             .k1 = 0.01,
             .k2 = 0.0,
             .k3 = 0.0,
@@ -245,7 +245,7 @@ fn testDistortionNotSuppedWithTri3Opt(
 
     const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
     try std.testing.expectError(
-        error.DistortionNotSuppedWithTri3Opt,
+        error.DistortNotSuppedWithTri3Opt,
         runRender(&render_groups, &cam_inps, &mesh_inps, fixture.config),
     );
 }
@@ -611,15 +611,15 @@ fn testInvalidCameraRotation(
     try expectCameraError(io, fixture, &cam_inps, error.InvalidCameraRotation);
 }
 
-fn testInvalidCameraDistortion(
+fn testInvalidCameraDistort(
     allocator: std.mem.Allocator,
     io: std.Io,
     fixture: *const BaselineFixture,
 ) !void {
     _ = allocator;
     var cam_inps = common_full.createScene3Cameras();
-    cam_inps[0].distortion = .{
-        .brown_conrady = .{
+    cam_inps[0].distort = .{
+        .brown_con = .{
             .k1 = std.math.nan(F),
             .k2 = 0.0,
             .k3 = 0.0,
@@ -627,7 +627,7 @@ fn testInvalidCameraDistortion(
             .p2 = 0.0,
         },
     };
-    try expectCameraError(io, fixture, &cam_inps, error.InvalidCameraDistortion);
+    try expectCameraError(io, fixture, &cam_inps, error.InvalidCameraDistort);
 }
 
 fn testInvalidCameraPsf(
@@ -1344,7 +1344,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     try testNoMeshes(allocator, io, &fixture);
 
     // Compatibility
-    try testDistortionNotSuppedWithTri3Opt(allocator, io, &fixture);
+    try testDistortNotSuppedWithTri3Opt(allocator, io, &fixture);
 
     // Render Groups & Threading
     try testInvalidRenderGroupWorkers(allocator, io, &fixture);
@@ -1382,7 +1382,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     try testInvalidCameraSubSample(allocator, io, &fixture);
     try testInvalidCameraRoi(allocator, io, &fixture);
     try testInvalidCameraRotation(allocator, io, &fixture);
-    try testInvalidCameraDistortion(allocator, io, &fixture);
+    try testInvalidCameraDistort(allocator, io, &fixture);
     try testInvalidCameraPsf(allocator, io, &fixture);
 
     // Mesh and shader structural parameters

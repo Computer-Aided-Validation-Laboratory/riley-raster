@@ -18,7 +18,7 @@ const sample_grid_rows_num: usize = 250;
 const sample_grid_cols_num: usize = 250;
 const verif_subdir_name = "verif_5";
 
-pub const DistortionRoundTripRecord = struct {
+pub const DistortRoundTripRecord = struct {
     ideal_x_true: F,
     ideal_y_true: F,
     ideal_x_rec: F,
@@ -45,7 +45,7 @@ pub const PixelSample = struct {
     col_idx: usize,
 };
 
-const DistortionInverseResult = struct {
+const DistortInvResult = struct {
     x: F,
     y: F,
     iters: u8,
@@ -62,27 +62,27 @@ fn statsFileName(buf: []u8) ![]const u8 {
     return std.fmt.bufPrint(buf, "roundtrip_stats.csv", .{});
 }
 
-fn inverseDistortionWithIters(
+fn invDistortWithIters(
     comptime Evaluator: type,
-    distortion: anytype,
+    distort: anytype,
     x_dist: F,
     y_dist: F,
-) !DistortionInverseResult {
+) !DistortInvResult {
     const tol = buildconfig.config.tol;
-    const max_iters = buildconfig.config.distortion_newton_iter_max;
+    const max_iters = buildconfig.config.distort_newton_iter_max;
 
     var x_guess = x_dist;
     var y_guess = y_dist;
 
     for (0..max_iters) |ii| {
-        const fwd = if (Evaluator == cam.BrownConradyExt)
-            distortion.forwardWithJac(x_guess, y_guess)
+        const fwd = if (Evaluator == cam.BrownConExt)
+            distort.fordWithJac(x_guess, y_guess)
         else
-            Evaluator.forwardWithJac(distortion, x_guess, y_guess);
+            Evaluator.fordWithJac(distort, x_guess, y_guess);
         const resid_x = fwd.coords.x - x_dist;
         const resid_y = fwd.coords.y - y_dist;
 
-        if (@max(@abs(resid_x), @abs(resid_y)) < tol.distortion.resid) {
+        if (@max(@abs(resid_x), @abs(resid_y)) < tol.distort.resid) {
             return .{
                 .x = x_guess,
                 .y = y_guess,
@@ -96,7 +96,7 @@ fn inverseDistortionWithIters(
         const jac11 = fwd.jac.get(1, 1);
         const det = jac00 * jac11 - jac01 * jac10;
 
-        if (@abs(det) < tol.distortion.det) {
+        if (@abs(det) < tol.distort.det) {
             return error.SingularJacobian;
         }
 
@@ -106,7 +106,7 @@ fn inverseDistortionWithIters(
         x_guess += delta_x;
         y_guess += delta_y;
 
-        if (@max(@abs(delta_x), @abs(delta_y)) < tol.distortion.delta) {
+        if (@max(@abs(delta_x), @abs(delta_y)) < tol.distort.delta) {
             return .{
                 .x = x_guess,
                 .y = y_guess,
@@ -115,28 +115,28 @@ fn inverseDistortionWithIters(
         }
     }
 
-    return error.DistortionInverseFailed;
+    return error.DistortInvFailed;
 }
 
 fn observedToIdealRasterWithIters(
     camera: *const cam.CameraPrepared,
     observed_xy: [2]F,
-) !DistortionInverseResult {
+) !DistortInvResult {
     const focal_px = camera.calcFocalPx();
     const offsets = camera.calcRasterOffsets();
     const x_dist = (observed_xy[0] - offsets.x_off) / focal_px.fx;
     const y_dist = (observed_xy[1] - offsets.y_off) / focal_px.fy;
 
-    return switch (camera.distortion) {
+    return switch (camera.distort) {
         .none => .{
             .x = observed_xy[0],
             .y = observed_xy[1],
             .iters = 0,
         },
-        .brown_conrady => |distortion| blk: {
-            const solved = try inverseDistortionWithIters(
-                cam.BrownConrady,
-                distortion,
+        .brown_con => |distort| blk: {
+            const solved = try invDistortWithIters(
+                cam.BrownCon,
+                distort,
                 x_dist,
                 y_dist,
             );
@@ -146,10 +146,10 @@ fn observedToIdealRasterWithIters(
                 .iters = solved.iters,
             };
         },
-        .brown_conrady_ext => |distortion| blk: {
-            const solved = try inverseDistortionWithIters(
-                cam.BrownConradyExt,
-                distortion,
+        .brown_con_ext => |distort| blk: {
+            const solved = try invDistortWithIters(
+                cam.BrownConExt,
+                distort,
                 x_dist,
                 y_dist,
             );
@@ -159,12 +159,12 @@ fn observedToIdealRasterWithIters(
                 .iters = solved.iters,
             };
         },
-        .polynomial,
-        .brown_conrady_polynomial,
-        .brown_conrady_ext_polynomial,
+        .poly,
+        .brown_con_poly,
+        .brown_con_ext_poly,
         => blk: {
-            const solved = try cam.invDistortionModelScal(
-                camera.distortion,
+            const solved = try cam.invDistortModelScal(
+                camera.distort,
                 x_dist,
                 y_dist,
             );
@@ -232,7 +232,7 @@ pub fn evalPixelSample(
     camera: *const cam.CameraPrepared,
     camera_input: cam.CameraInput,
     sample: PixelSample,
-) DistortionRoundTripRecord {
+) DistortRoundTripRecord {
     const nan = std.math.nan(F);
     const observed_xy = verif.idealToObservedRaster(
         camera,
@@ -406,7 +406,7 @@ fn saveFieldMaps(
 fn writeRoundTripStatsCsv(
     io: std.Io,
     out_dir: std.Io.Dir,
-    records: []const DistortionRoundTripRecord,
+    records: []const DistortRoundTripRecord,
 ) !void {
     var file_name_buf: [128]u8 = undefined;
     const file_name = try statsFileName(&file_name_buf);
@@ -453,9 +453,9 @@ fn writeRoundTripStatsCsv(
     try file_writer.flush();
 }
 
-fn runDistortionCase(
+fn runDistortCase(
     case_spec: vconst.DistortCase,
-    distortion_case: vconst.CameraDistortionCase,
+    distort_case: vconst.CameraDistortCase,
     allocator: std.mem.Allocator,
     io: std.Io,
 ) !void {
@@ -463,9 +463,9 @@ fn runDistortionCase(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const camera_input = vconst.cameraInputWithDistortion(
+    const camera_input = vconst.cameraInputWithDistort(
         case_spec.camera_input,
-        distortion_case,
+        distort_case,
     );
     const camera = try cam.CameraPrepared.init(aa, camera_input);
     var sample_list = try buildPixelSampleGrid(aa, camera_input);
@@ -480,7 +480,7 @@ fn runDistortionCase(
             verif_subdir_name,
             mesh_name,
             case_spec.case_name,
-            distortion_case.case_name,
+            distort_case.case_name,
         },
     );
     var out_dir = try orch.openDirEnsured(io, out_dir_path);
@@ -494,7 +494,7 @@ fn runDistortionCase(
     @memset(ideal_x_rec_map, std.math.nan(F));
     @memset(ideal_y_rec_map, std.math.nan(F));
 
-    var records: std.ArrayList(DistortionRoundTripRecord) = .empty;
+    var records: std.ArrayList(DistortRoundTripRecord) = .empty;
     defer records.deinit(allocator);
     try records.ensureTotalCapacity(allocator, sample_list.items.len);
 
@@ -532,7 +532,7 @@ fn runDistortionCase(
             .{
                 mesh_name,
                 case_spec.case_name,
-                distortion_case.case_name,
+                distort_case.case_name,
                 err_stats.max,
             },
         );
@@ -542,7 +542,7 @@ fn runDistortionCase(
             .{
                 mesh_name,
                 case_spec.case_name,
-                distortion_case.case_name,
+                distort_case.case_name,
             },
         );
     }
@@ -561,10 +561,10 @@ pub fn main(init: std.process.Init) !void {
     defer root_dir.close(io);
 
     for (vconst.distort_cases) |case_spec| {
-        for (vconst.camera_distortion_cases) |distortion_case| {
-            try runDistortionCase(
+        for (vconst.camera_distort_cases) |distort_case| {
+            try runDistortCase(
                 case_spec,
-                distortion_case,
+                distort_case,
                 allocator,
                 io,
             );
