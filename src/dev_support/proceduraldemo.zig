@@ -9,7 +9,7 @@
 const std = @import("std");
 
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const shaderops = @import("../riley/zig/shaderops_common.zig");
+const speckleops = @import("../riley/zig/speckleops.zig");
 
 const F = buildconfig.F;
 
@@ -33,17 +33,10 @@ pub const DemoSpec = struct {
 };
 
 pub const DemoArgs = struct {
-    params: shaderops.Speckle2DParams = defaultParams(),
+    params: speckleops.Speckle2DParams = .{},
     out_dir: []const u8,
     pixels_num: [2]u32,
 };
-
-pub fn defaultParams() shaderops.Speckle2DParams {
-    return if (buildconfig.speckle_evaluator == .direct_fixed)
-        .{ .radius_jitter = 0.0 }
-    else
-        .{};
-}
 
 pub fn parseDemoArgs(raw_args: anytype, comptime spec: DemoSpec) !?DemoArgs {
     var args = DemoArgs{
@@ -99,7 +92,7 @@ pub fn parseDemoArgs(raw_args: anytype, comptime spec: DemoSpec) !?DemoArgs {
 }
 
 pub fn printProceduralConfig(
-    params: shaderops.Speckle2DParams,
+    params: speckleops.Speckle2DParams,
     pixels_num: [2]u32,
     comptime spec: DemoSpec,
 ) void {

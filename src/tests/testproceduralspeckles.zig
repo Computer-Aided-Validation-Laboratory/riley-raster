@@ -12,7 +12,7 @@ const buildconfig = @import("../riley/zig/buildconfig.zig");
 const expected_config = @import("expected_speckle_config.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const meshpipeline = @import("../riley/zig/meshpipeline.zig");
-const shaderops = @import("../riley/zig/shaderops_common.zig");
+const speckleops = @import("../riley/zig/speckleops.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 
 test "selected speckle evaluator prepares its production resources" {
@@ -41,7 +41,7 @@ test "selected speckle evaluator prepares its production resources" {
     );
     const uvs = try uvio.loadUVMap(allocator, io, data_dir ++ "uvs.csv");
     const evaluator = buildconfig.speckle_evaluator;
-    const params = shaderops.Speckle2DParams{
+    const params = speckleops.Speckle2DParams{
         .seed = 12345,
         .cells_per_uv = .{ 24.0, 20.0 },
         .occupancy = 0.8,
@@ -64,7 +64,7 @@ test "selected speckle evaluator prepares its production resources" {
             .uvs = uvs.array,
             .coord_mode = .uv,
             .builtin = .speckle,
-            .params = params.toFuncShaderParams(),
+            .params = .{ .settings = .{ .speckle = params } },
             .bits = 8,
             .scaling = .auto,
             .normal_type = .none,
@@ -78,18 +78,18 @@ test "selected speckle evaluator prepares its production resources" {
 
     try std.testing.expectEqual(
         evaluator == .list_naive or evaluator == .list_indexed,
-        func_static.speckle_list != null,
+        func_static.speckle_resources.list != null,
     );
     try std.testing.expectEqual(
         evaluator == .classified_indexed,
-        func_static.speckle_classified != null,
+        func_static.speckle_resources.classified != null,
     );
     try std.testing.expectEqual(
         evaluator == .direct_fixed,
-        func_static.speckle_direct_fixed != null,
+        func_static.speckle_resources.direct_fixed != null,
     );
     try std.testing.expectEqual(
         evaluator == .mask_1bit or evaluator == .mask_u8,
-        func_static.speckle_mask != null,
+        func_static.speckle_resources.mask != null,
     );
 }

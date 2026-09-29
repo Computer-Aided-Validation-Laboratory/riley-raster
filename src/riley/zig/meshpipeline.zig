@@ -30,7 +30,8 @@ const sceneops = @import("sceneops.zig");
 const texops = @import("textureops.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 
-const shaderops = @import("shaderops.zig");
+const shaderops = @import("shaderops_common.zig");
+const speckleops = @import("speckleops.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
 
@@ -403,8 +404,12 @@ pub fn initMeshStatic(
                 func_input.builtin,
                 func_input.params,
             );
-            var func_static: shaderops.FuncStatic = .{
+            const func_static: shaderops.FuncStatic = .{
                 .elem_uvs = elem_uvs,
+                .speckle_resources = if (func_input.builtin == .speckle)
+                    try speckleops.generateResources(allocator, params.settings.speckle)
+                else
+                    .{},
                 .coord_mode = func_input.coord_mode,
                 .builtin = func_input.builtin,
                 .params = params,
@@ -412,39 +417,7 @@ pub fn initMeshStatic(
                 .scaling = func_input.scaling,
                 .normal_type = func_input.normal_type,
             };
-            // Non-selected evaluator resources stay null so only the compile-time evaluator
-            // owns generated storage.
-            if (func_input.builtin == .speckle) {
-                switch (comptime buildconfig.speckle_evaluator) {
-                    .cell_hash => {},
-                    .list_naive, .list_indexed => {
-                        func_static.speckle_list = try shaderops.generateSpeckleList2D(
-                            allocator,
-                            params.settings.speckle,
-                        );
-                    },
-                    .classified_indexed => {
-                        func_static.speckle_classified =
-                            try shaderops.generateClassifiedIndexedSpeckle2D(
-                                allocator,
-                                params.settings.speckle,
-                            );
-                    },
-                    .direct_fixed => {
-                        func_static.speckle_direct_fixed =
-                            try shaderops.generateDirectFixedSpeckle2D(
-                                allocator,
-                                params.settings.speckle,
-                            );
-                    },
-                    .mask_1bit, .mask_u8 => {
-                        func_static.speckle_mask = try shaderops.generateSpeckleMask2D(
-                            allocator,
-                            params.settings.speckle,
-                        );
-                    },
-                }
-            }
+
             shader_static = switch (mesh_input.shader) {
                 .func => .{ .func = func_static },
                 .func_rgb => .{ .func_rgb = func_static },
@@ -1544,10 +1517,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
             const func_prepared: shaderops.FuncPrepared = .{
                 .elem_uvs = elem_uvs,
-                .speckle_list = func_static.speckle_list,
-                .speckle_classified = func_static.speckle_classified,
-                .speckle_direct_fixed = func_static.speckle_direct_fixed,
-                .speckle_mask = func_static.speckle_mask,
+                .speckle_resources = func_static.speckle_resources,
                 .elem_world_ref = elem_world_ref,
                 .elem_world_def = elem_world_def,
                 .coord_mode = func_static.coord_mode,

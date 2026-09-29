@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------------------
 
 test {
+    _ = @import("riley/zig/speckleops.zig");
     _ = @import("riley/zig/shaderops_common.zig");
     _ = @import("riley/zig/shaderops_scalar.zig");
     _ = @import("riley/zig/shaderops_simd.zig");

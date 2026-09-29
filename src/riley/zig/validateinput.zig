@@ -324,7 +324,7 @@ fn checkMeshesMetadata(
         }
         if (mesh.connect.table.cols_num != expected_nodes_per_elem or
             mesh.connect.table_mem.len !=
-            mesh.connect.table.rows_num * mesh.connect.table.cols_num)
+                mesh.connect.table.rows_num * mesh.connect.table.cols_num)
         {
             return error.InvalidConnectivityDimensions;
         }
@@ -335,7 +335,7 @@ fn checkMeshesMetadata(
                 disp_field.array.dims[1] != mesh.coords.mat.rows_num or
                 disp_field.array.dims[2] != 3 or
                 disp_field.array_mem.len !=
-                disp_field.array.dims[0] * disp_field.array.dims[1] * disp_field.array.dims[2])
+                    disp_field.array.dims[0] * disp_field.array.dims[1] * disp_field.array.dims[2])
             {
                 return error.InvalidDisplacementDimensions;
             }
@@ -709,6 +709,9 @@ fn checkFuncParams(
             {
                 return error.InvalidFuncShaderParams;
             }
+        },
+        .speckle => |speckle| {
+            speckle.validate() catch return error.InvalidFuncShaderParams;
         },
     }
 }

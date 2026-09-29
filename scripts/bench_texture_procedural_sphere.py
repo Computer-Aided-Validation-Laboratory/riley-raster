@@ -22,7 +22,7 @@ DEFAULT_ROUNDS = 10
 NUMBER = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
 METRICS = (
     ("setup_ms", "Setup", r"(?:Riley\s+)?Setup Time"),
-    ("raster_loop_ms", "Raster loop", r"Raster loop time"),
+    ("raster_loop_ms", "Raster loop", r"Raster Loop(?: time)?"),
     ("total_render_ms", "Total render", r"Total Render Time"),
 )
 TIMING_PATTERNS = {

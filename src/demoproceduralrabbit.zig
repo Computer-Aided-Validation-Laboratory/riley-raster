@@ -82,7 +82,7 @@ pub fn main(init: std.process.Init) !void {
             .uvs = uvs.array,
             .coord_mode = .uv,
             .builtin = .speckle,
-            .params = args.params.toFuncShaderParams(),
+            .params = .{ .settings = .{ .speckle = args.params } },
             .bits = 8,
             .scaling = .auto,
             .normal_type = .none,
