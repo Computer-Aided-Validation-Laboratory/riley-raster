@@ -79,9 +79,10 @@ cdef extern from "riley.h":
         double distort_s4
         double distort_tau_x
         double distort_tau_y
-        uint32_t distort_poly_order
-        double distort_poly_u[10]
-        double distort_poly_v[10]
+        uint32_t distort_poly_degree
+        uint32_t distort_poly_mode
+        const double* distort_poly_coeffs
+        size_t distort_poly_coeffs_len
 
     ctypedef struct CPSF:
         uint32_t psf_type
@@ -393,6 +394,8 @@ cdef extern from "riley.h":
     int rileyLoadCamera(
         const char* dir_path,
         const char* file_name,
+        double* coeffs,
+        size_t coeffs_capacity,
         CCameraInput* camera_out,
     )
 
@@ -406,6 +409,10 @@ cdef extern from "riley.h":
     int rileyLoadStereoPair(
         const char* dir_path,
         const char* stereo_file_name,
+        double* cam0_coeffs,
+        size_t cam0_capacity,
+        double* cam1_coeffs,
+        size_t cam1_capacity,
         CCameraInput* cam0_out,
         CCameraInput* cam1_out,
     )

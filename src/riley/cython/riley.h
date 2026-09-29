@@ -83,8 +83,9 @@ typedef struct c_distort {
     double distort_p1, distort_p2;
     double distort_s1, distort_s2, distort_s3, distort_s4;
     double distort_tau_x, distort_tau_y;
-    uint32_t distort_poly_order;
-    double distort_poly_u[10], distort_poly_v[10];
+    uint32_t distort_poly_degree, distort_poly_mode;
+    const double* distort_poly_coeffs;
+    size_t distort_poly_coeffs_len;
 } CDistort;
 
 typedef struct c_psf {
@@ -403,9 +404,16 @@ int rileySaveCamera(
     const CCameraInput* camera_in
 );
 
+/* Loading borrows caller-owned output storage, never a temporary arena.
+ * NULL/zero queries metadata/count and returns a NULL coefficient pointer.
+ * A final load validates capacity again; keep the buffer alive through use.
+ * Polynomial mode: 0 coordinate, 1 displacement. Length counts doubles.
+ */
 int rileyLoadCamera(
     const char* dir_path,
     const char* file_name,
+    double* coeffs,
+    size_t coeffs_capacity,
     CCameraInput* camera_out
 );
 
@@ -419,6 +427,10 @@ int rileySaveStereoPair(
 int rileyLoadStereoPair(
     const char* dir_path,
     const char* stereo_file_name,
+    double* cam0_coeffs,
+    size_t cam0_capacity,
+    double* cam1_coeffs,
+    size_t cam1_capacity,
     CCameraInput* cam0_out,
     CCameraInput* cam1_out
 );

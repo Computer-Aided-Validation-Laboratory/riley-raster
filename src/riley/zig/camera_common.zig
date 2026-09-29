@@ -315,8 +315,8 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             scratch_y_px_max: i32,
             subpx_tile_size: usize,
             ideal_pixel_centers: []F,
-        ) void {
-            CameraBackend.fillTileIdealCentersAffineJac(
+        ) !void {
+            try CameraBackend.fillTileIdealCentersAffineJac(
                 self,
                 scratch_x_px_min,
                 scratch_x_px_max,
@@ -553,9 +553,9 @@ test "BrownConradyExt.forwardInv" {
 test "Polynomial.forwardOnlyRoundTrip" {
     const model = cm.DistortModel{
         .poly = .{
-            .order = .linear,
-            .coeffs_u = .{ 0.0, 0.04, -0.015 } ++ [_]F{0.0} ** 7,
-            .coeffs_v = .{ 0.0, 0.01, 0.03 } ++ [_]F{0.0} ** 7,
+            .degree = 1,
+            .mode = .displacement,
+            .coeffs = &.{ 0.0, 0.0, 0.04, 0.01, -0.015, 0.03 },
         },
     };
 
@@ -587,9 +587,12 @@ test "BrownConradyPolynomial.forwardInv" {
                 .p2 = -0.0007,
             },
             .poly = .{
-                .order = .quadratic,
-                .coeffs_u = .{ 0.0, 0.01, -0.005, 0.002, 0.001, -0.001 } ++ [_]F{0.0} ** 4,
-                .coeffs_v = .{ 0.0, -0.004, 0.012, 0.001, -0.002, 0.0015 } ++ [_]F{0.0} ** 4,
+                .degree = 2,
+                .mode = .displacement,
+                .coeffs = &.{
+                    0.0,   0.0,   0.01,  -0.004, -0.005, 0.012,
+                    0.002, 0.001, 0.001, -0.002, -0.001, 0.0015,
+                },
             },
         },
     };
@@ -817,8 +820,9 @@ test "camera preparation propagates polynomial inverse errors without leaking" {
             .sub_sample = 1,
             .subpixel_center_map = mode,
             .distort = .{ .poly = .{
-                .order = .linear,
-                .coeffs_u = .{ 0.0, -1.0, 0.0 } ++ [_]F{0.0} ** 7,
+                .degree = 1,
+                .mode = .displacement,
+                .coeffs = &.{ 0.0, 0, -1.0, 0, 0.0, 0 },
             } },
         }));
     }

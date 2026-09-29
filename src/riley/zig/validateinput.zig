@@ -792,9 +792,8 @@ fn validAllFramesBuff(
 // --------------------------------------------------------------------------------------
 
 fn isValidPolyMap(map: cam.PolyMap) bool {
-    const term_count = map.order.termCount();
-    return isFiniteSlice(map.coeffs_u[0..term_count]) and
-        isFiniteSlice(map.coeffs_v[0..term_count]);
+    map.validate() catch return false;
+    return true;
 }
 
 fn isValidDistort(distort: cam.DistortParams) bool {

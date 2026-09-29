@@ -352,13 +352,9 @@ pub fn invDistortSIMD(
 // Polynomial Distortion
 // --------------------------------------------------------------------------------------
 
-fn evaluatePolyMapSIMD(
-    poly: common.PolyMap,
-    x: VecSF,
-    y: VecSF,
-) DistortCoordsSIMD {
-    const ford = evaluatePolyMapWithJacSIMD(poly, x, y);
-    return ford.coords;
+fn evaluatePolyMapSIMD(poly: common.PolyMap, x: VecSF, y: VecSF) DistortCoordsSIMD {
+    const result = common.evalPoly(VecSF, false, poly, x, y);
+    return .{ .x = result.x, .y = result.y };
 }
 
 fn evaluatePolyMapWithJacSIMD(
@@ -366,46 +362,10 @@ fn evaluatePolyMapWithJacSIMD(
     x: VecSF,
     y: VecSF,
 ) DistortFordJacSIMDResult {
-    var du: VecSF = @splat(0.0);
-    var dv: VecSF = @splat(0.0);
-    var ddu_dx: VecSF = @splat(0.0);
-    var ddu_dy: VecSF = @splat(0.0);
-    var ddv_dx: VecSF = @splat(0.0);
-    var ddv_dy: VecSF = @splat(0.0);
-    const term_count = poly.order.termCount();
-
-    for (0..term_count) |ii| {
-        const pu = common.poly_powers_u[ii];
-        const pv = common.poly_powers_v[ii];
-        const basis = powSmallSIMD(x, pu) * powSmallSIMD(y, pv);
-        du += @as(VecSF, @splat(poly.coeffs_u[ii])) * basis;
-        dv += @as(VecSF, @splat(poly.coeffs_v[ii])) * basis;
-
-        if (pu > 0) {
-            const basis_dx = @as(VecSF, @splat(@as(F, @floatFromInt(pu)))) *
-                powSmallSIMD(x, pu - 1) *
-                powSmallSIMD(y, pv);
-            ddu_dx += @as(VecSF, @splat(poly.coeffs_u[ii])) * basis_dx;
-            ddv_dx += @as(VecSF, @splat(poly.coeffs_v[ii])) * basis_dx;
-        }
-
-        if (pv > 0) {
-            const basis_dy = @as(VecSF, @splat(@as(F, @floatFromInt(pv)))) *
-                powSmallSIMD(x, pu) *
-                powSmallSIMD(y, pv - 1);
-            ddu_dy += @as(VecSF, @splat(poly.coeffs_u[ii])) * basis_dy;
-            ddv_dy += @as(VecSF, @splat(poly.coeffs_v[ii])) * basis_dy;
-        }
-    }
-
+    const result = common.evalPoly(VecSF, true, poly, x, y);
     return .{
-        .coords = .{ .x = x + du, .y = y + dv },
-        .jac = .{
-            .xx = @as(VecSF, @splat(1.0)) + ddu_dx,
-            .xy = ddu_dy,
-            .yx = ddv_dx,
-            .yy = @as(VecSF, @splat(1.0)) + ddv_dy,
-        },
+        .coords = .{ .x = result.x, .y = result.y },
+        .jac = .{ .xx = result.xx, .xy = result.xy, .yx = result.yx, .yy = result.yy },
     };
 }
 
@@ -474,17 +434,6 @@ fn invPolySIMD(
     return .{ .x = v_x, .y = v_y };
 }
 
-fn powSmallSIMD(
-    x: VecSF,
-    power: u8,
-) VecSF {
-    var out: VecSF = @splat(1.0);
-    for (0..power) |_| {
-        out *= x;
-    }
-    return out;
-}
-
 // --------------------------------------------------------------------------------------
 // Distortion Unions
 // --------------------------------------------------------------------------------------
@@ -513,7 +462,7 @@ pub fn fordDistortModelSIMD(
         },
         .brown_con_ext_poly => |chain| blk: {
             const brown = BrownConExtSIMD.ford(chain.brown_con_ext, x, y);
-            break :blk try PolyMapSIMD.ford(
+            break :blk PolyMapSIMD.ford(
                 chain.poly,
                 brown.x,
                 brown.y,
@@ -642,13 +591,15 @@ fn isFiniteSIMD(values: VecSF) VecSB {
 }
 
 test "polynomial scalar and SIMD forward agree for every order" {
-    const orders = [_]common.PolyOrder{ .linear, .quadratic, .cubic };
-    for (orders) |order| {
-        const poly = common.PolyMap{
-            .order = order,
-            .coeffs_u = .{ 0.01, -0.02, 0.03, 0.04, -0.05, 0.06, 0.07, -0.08, 0.09, 0.10 },
-            .coeffs_v = .{ -0.01, 0.02, -0.03, 0.04, 0.05, -0.06, 0.07, 0.08, -0.09, 0.10 },
-        };
+    const degrees = [_]u8{ 1, 2, 3, 4, 5, 6, 7 };
+    var coeffs = [_]F{0} ** 72;
+    for (&coeffs, 0..) |*coeff, ii| coeff.* = @as(F, @floatFromInt(ii % 7)) * 0.001;
+    for (degrees) |degree| {
+        const poly = try common.PolyMap.init(
+            degree,
+            .displacement,
+            coeffs[0 .. 2 * common.polyTermCount(degree)],
+        );
         const scalar = poly.ford(0.12, -0.23);
         const simd = PolyMapSIMD.ford(poly, @splat(0.12), @splat(-0.23));
         const recovered = try PolyMapSIMD.inv(poly, simd.x, simd.y, @splat(true));
@@ -657,18 +608,35 @@ test "polynomial scalar and SIMD forward agree for every order" {
         const inv_x: [S]F = recovered.x;
         const inv_y: [S]F = recovered.y;
         for (0..S) |lane| {
-            try std.testing.expectApproxEqAbs(scalar.x, ford_x[lane], 1e-12);
-            try std.testing.expectApproxEqAbs(scalar.y, ford_y[lane], 1e-12);
-            try std.testing.expectApproxEqAbs(@as(F, 0.12), inv_x[lane], 1e-9);
-            try std.testing.expectApproxEqAbs(@as(F, -0.23), inv_y[lane], 1e-9);
+            try std.testing.expectApproxEqAbs(
+                scalar.x,
+                ford_x[lane],
+                if (F == f32) 1e-6 else 1e-12,
+            );
+            try std.testing.expectApproxEqAbs(
+                scalar.y,
+                ford_y[lane],
+                if (F == f32) 1e-6 else 1e-12,
+            );
+            try std.testing.expectApproxEqAbs(
+                @as(F, 0.12),
+                inv_x[lane],
+                if (F == f32) 2e-5 else 1e-9,
+            );
+            try std.testing.expectApproxEqAbs(
+                @as(F, -0.23),
+                inv_y[lane],
+                if (F == f32) 2e-5 else 1e-9,
+            );
         }
     }
 }
 
 test "polynomial SIMD reports failures only in active lanes" {
     const singular = common.PolyMap{
-        .order = .linear,
-        .coeffs_u = .{ 0.0, -1.0, 0.0 } ++ [_]F{0.0} ** 7,
+        .degree = 1,
+        .mode = .displacement,
+        .coeffs = &.{ 0.0, 0, -1.0, 0, 0.0, 0 },
     };
     try std.testing.expectError(
         error.SingularJac,
@@ -676,11 +644,13 @@ test "polynomial SIMD reports failures only in active lanes" {
     );
     _ = try PolyMapSIMD.inv(singular, @splat(0.3), @splat(-0.2), @splat(false));
     const stalled = common.PolyMap{
-        .coeffs_u = .{ 0.0, 0.0, 0.0, 1e22 } ++ [_]F{0.0} ** 6,
+        .degree = 2,
+        .mode = .displacement,
+        .coeffs = &.{ 0.0, 0, 0.0, 0, 0.0, 0, 1e22, 0, 0, 0, 0, 0 },
     };
     try std.testing.expectError(
         error.DistortInvFailed,
-        PolyMapSIMD.inv(stalled, @splat(1e-11), @splat(0.0), @splat(true)),
+        PolyMapSIMD.inv(stalled, @splat(if (F == f32) 0.1 else 1e-11), @splat(0.0), @splat(true)),
     );
     try std.testing.expectError(
         error.NonFiniteDistort,

@@ -62,6 +62,11 @@ pub fn build(b: *std.Build) void {
 
     const tests = [_]TestEntry{
         .{
+            .step_name = "test-poly",
+            .description = "Run camera-model unit tests across supported build configurations",
+            .source_path = "src/test_poly.zig",
+        },
+        .{
             .step_name = "test-verif-basic",
             .description = "Run the verification and BASIC test suites in one build",
             .source_path = "src/test_verif_basic.zig",
@@ -214,6 +219,11 @@ pub fn build(b: *std.Build) void {
     gen_verif_step.dependOn(&gen_verif_python.step);
 
     const benches = [_]RunEntry{
+        .{
+            .step_name = "bench-poly",
+            .description = "Benchmark polynomial forward, Jacobian and inverse kernels",
+            .source_path = "src/benchpoly.zig",
+        },
         .{
             .step_name = "bench-dicuq",
             .description = "Run the DIC UQ benchmark",

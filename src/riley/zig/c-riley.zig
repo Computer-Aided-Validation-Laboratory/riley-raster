@@ -140,9 +140,10 @@ pub const CDistort = extern struct {
     distort_s4: F,
     distort_tau_x: F,
     distort_tau_y: F,
-    distort_poly_order: u32,
-    distort_poly_u: [10]F,
-    distort_poly_v: [10]F,
+    distort_poly_degree: u32,
+    distort_poly_mode: u32,
+    distort_poly_coeffs: [*c]const F,
+    distort_poly_coeffs_len: usize,
 };
 
 pub const CPSF = extern struct {
@@ -631,17 +632,25 @@ fn psfFromC(in_camera: *const CPSF) !cam.PointSpreadFunc {
 }
 
 fn distortFromC(in_camera: *const CDistort) !cam.DistortParams {
-    const poly_order: cam.PolyOrder = switch (in_camera.distort_poly_order) {
-        0, 2 => .quadratic,
-        1 => .linear,
-        3 => .cubic,
-        else => return error.InvalidPolyOrder,
-    };
-    const poly = cam.PolyMap{
-        .order = poly_order,
-        .coeffs_u = in_camera.distort_poly_u,
-        .coeffs_v = in_camera.distort_poly_v,
-    };
+    var poly = cam.PolyMap{};
+    if (in_camera.distort_model >= 3 and in_camera.distort_model <= 5) {
+        const degree = std.math.cast(u8, in_camera.distort_poly_degree) orelse
+            return error.InvalidPolyDegree;
+        const mode: cam.PolyMode = switch (in_camera.distort_poly_mode) {
+            0 => .coordinate,
+            1 => .displacement,
+            else => return error.InvalidPolyMode,
+        };
+        if (degree < 1 or degree > cam.POLY_MAX_DEGREE) return error.InvalidPolyDegree;
+        if (in_camera.distort_poly_coeffs_len != 2 * cam.polyTermCount(degree))
+            return error.InvalidPolyCoeffCount;
+        if (in_camera.distort_poly_coeffs == null) return error.NullPointer;
+        poly = try cam.PolyMap.init(
+            degree,
+            mode,
+            in_camera.distort_poly_coeffs[0..in_camera.distort_poly_coeffs_len],
+        );
+    }
 
     return switch (in_camera.distort_model) {
         0 => .none,
@@ -1704,9 +1713,10 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
             .distort_s4 = 0.0,
             .distort_tau_x = 0.0,
             .distort_tau_y = 0.0,
-            .distort_poly_order = @intFromEnum(cam.PolyOrder.quadratic),
-            .distort_poly_u = [_]F{0.0} ** 10,
-            .distort_poly_v = [_]F{0.0} ** 10,
+            .distort_poly_degree = 0,
+            .distort_poly_mode = 1,
+            .distort_poly_coeffs = null,
+            .distort_poly_coeffs_len = 0,
         },
         .psf = .{
             .psf_type = 0,
@@ -1749,9 +1759,10 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
         },
         .poly => |poly| {
             out_camera.distort.distort_model = 3;
-            out_camera.distort.distort_poly_order = @intFromEnum(poly.order);
-            out_camera.distort.distort_poly_u = poly.coeffs_u;
-            out_camera.distort.distort_poly_v = poly.coeffs_v;
+            out_camera.distort.distort_poly_degree = poly.degree;
+            out_camera.distort.distort_poly_mode = @intFromEnum(poly.mode);
+            out_camera.distort.distort_poly_coeffs = poly.coeffs.ptr;
+            out_camera.distort.distort_poly_coeffs_len = poly.coeffs.len;
         },
         .brown_con_poly => |chain| {
             out_camera.distort.distort_model = 4;
@@ -1760,9 +1771,10 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
             out_camera.distort.distort_k3 = chain.brown_con.k3;
             out_camera.distort.distort_p1 = chain.brown_con.p1;
             out_camera.distort.distort_p2 = chain.brown_con.p2;
-            out_camera.distort.distort_poly_order = @intFromEnum(chain.poly.order);
-            out_camera.distort.distort_poly_u = chain.poly.coeffs_u;
-            out_camera.distort.distort_poly_v = chain.poly.coeffs_v;
+            out_camera.distort.distort_poly_degree = chain.poly.degree;
+            out_camera.distort.distort_poly_mode = @intFromEnum(chain.poly.mode);
+            out_camera.distort.distort_poly_coeffs = chain.poly.coeffs.ptr;
+            out_camera.distort.distort_poly_coeffs_len = chain.poly.coeffs.len;
         },
         .brown_con_ext_poly => |chain| {
             out_camera.distort.distort_model = 5;
@@ -1780,9 +1792,10 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
             out_camera.distort.distort_s4 = chain.brown_con_ext.s4;
             out_camera.distort.distort_tau_x = chain.brown_con_ext.tau_x;
             out_camera.distort.distort_tau_y = chain.brown_con_ext.tau_y;
-            out_camera.distort.distort_poly_order = @intFromEnum(chain.poly.order);
-            out_camera.distort.distort_poly_u = chain.poly.coeffs_u;
-            out_camera.distort.distort_poly_v = chain.poly.coeffs_v;
+            out_camera.distort.distort_poly_degree = chain.poly.degree;
+            out_camera.distort.distort_poly_mode = @intFromEnum(chain.poly.mode);
+            out_camera.distort.distort_poly_coeffs = chain.poly.coeffs.ptr;
+            out_camera.distort.distort_poly_coeffs_len = chain.poly.coeffs.len;
         },
     }
 
@@ -2372,9 +2385,34 @@ pub export fn rileySaveCamera(
     return 0;
 }
 
+/// Null buffer with zero capacity queries metadata/count without returning a borrowed pointer.
+fn copyLoadedCamera(
+    camera_input: cam.CameraInput,
+    coeffs: [*c]F,
+    capacity: usize,
+    out: *CCameraInput,
+) !void {
+    var result = cameraInputToC(camera_input);
+    const count = result.distort.distort_poly_coeffs_len;
+    if (coeffs == null and capacity == 0) {
+        result.distort.distort_poly_coeffs = null;
+        out.* = result;
+        return;
+    }
+    if (capacity < count) return error.InsufficientPolyCapacity;
+    if (count > 0) {
+        if (coeffs == null) return error.NullPointer;
+        @memcpy(coeffs[0..count], result.distort.distort_poly_coeffs[0..count]);
+    }
+    result.distort.distort_poly_coeffs = if (count == 0) null else coeffs;
+    out.* = result;
+}
+
 pub export fn rileyLoadCamera(
     dir_path: [*:0]const u8,
     file_name: [*:0]const u8,
+    coeffs: [*c]F,
+    coeffs_capacity: usize,
     camera_out: *CCameraInput,
 ) c_int {
     clearLastError();
@@ -2397,7 +2435,7 @@ pub export fn rileyLoadCamera(
     };
     defer dir.close(io);
 
-    const camera = cameraio.loadCamera(
+    const loaded = cameraio.LoadedCamera.init(
         arena.allocator(),
         io,
         dir,
@@ -2406,7 +2444,11 @@ pub export fn rileyLoadCamera(
         setLastError(err);
         return 1;
     };
-    camera_out.* = cameraInputToC(camera);
+    defer loaded.deinit(arena.allocator());
+    copyLoadedCamera(loaded.camera_input, coeffs, coeffs_capacity, camera_out) catch |err| {
+        setLastError(err);
+        return 1;
+    };
     return 0;
 }
 
@@ -2468,6 +2510,10 @@ pub export fn rileySaveStereoPair(
 pub export fn rileyLoadStereoPair(
     dir_path: [*:0]const u8,
     stereo_file_name: [*:0]const u8,
+    cam0_coeffs: [*c]F,
+    cam0_capacity: usize,
+    cam1_coeffs: [*c]F,
+    cam1_capacity: usize,
     cam0_out: *CCameraInput,
     cam1_out: *CCameraInput,
 ) c_int {
@@ -2492,7 +2538,7 @@ pub export fn rileyLoadStereoPair(
     };
     defer dir.close(io);
 
-    const stereo_pair = cameraio.loadStereoPair(
+    const loaded = cameraio.LoadedStereoPair.init(
         aa,
         io,
         dir,
@@ -2501,8 +2547,25 @@ pub export fn rileyLoadStereoPair(
         setLastError(err);
         return 1;
     };
-    cam0_out.* = cameraInputToC(stereo_pair.cameras[0]);
-    cam1_out.* = cameraInputToC(stereo_pair.cameras[1]);
+    defer loaded.deinit(aa);
+    copyLoadedCamera(
+        loaded.stereo_pair.cameras[0],
+        cam0_coeffs,
+        cam0_capacity,
+        cam0_out,
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    copyLoadedCamera(
+        loaded.stereo_pair.cameras[1],
+        cam1_coeffs,
+        cam1_capacity,
+        cam1_out,
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
     return 0;
 }
 

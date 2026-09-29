@@ -29,7 +29,9 @@ pub const DistortFordJacResult = common.DistortFordJacResult;
 // Polynomial Distortion
 // --------------------------------------------------------------------------------------
 
-pub const PolyOrder = common.PolyOrder;
+pub const PolyMode = common.PolyMode;
+pub const polyTermCount = common.polyTermCount;
+pub const POLY_MAX_DEGREE = common.POLY_MAX_DEGREE;
 pub const PolyMap = common.PolyMap;
 pub const BrownConPoly = common.BrownConPoly;
 pub const BrownConExtPoly = common.BrownConExtPoly;

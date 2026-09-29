@@ -205,7 +205,14 @@ pub fn main(init: std.process.Init) !void {
     try cameraio.saveStereoPair(io, out_dir, stereo_file_name, stereo_pair);
 
     // Load stereo pair back from output directory (standalone test)
-    stereo_pair = try cameraio.loadStereoPair(local_alloc, io, out_dir, stereo_file_name);
+    const loaded_stereo = try cameraio.LoadedStereoPair.init(
+        local_alloc,
+        io,
+        out_dir,
+        stereo_file_name,
+    );
+    defer loaded_stereo.deinit(local_alloc);
+    stereo_pair = loaded_stereo.stereo_pair;
 
     // -------------------------------------------------------------------------
     // 4. Build mesh and raster configuration

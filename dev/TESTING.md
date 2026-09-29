@@ -258,3 +258,35 @@ The **Python Test Suite** provides 520+ automated test cases covering:
 2. **File I/O & Exodus Pipeline**: Multi-block Exodus II `.e` and CSV file reading/writing.
 3. **Texture & UV Tools**: Image loading/saving (BMP, TIFF) and centered planar UV projection.
 4. **End-to-End Demo Parity**: Verification that Python demos produce identical pixel output to the corresponding Zig demo binaries.
+
+## Polynomial verification
+
+`zig build test-poly` runs camera/model/loader unit tests without rendering
+the full regression scenes and accepts the normal precision/SIMD build options.
+Use it for f32/f64 and scalar/SIMD development checks. `test-verif` remains
+the production f64/SIMD analytic suite.
+
+The committed distortion oracle covers degrees 1–7, coordinate/displacement
+modes, each isolated monomial, dense asymmetric maps and BC/BCExt composition.
+Expected polynomial values/Jacobians come from NumPy `polyval2d`/`polyder`,
+not Riley. Inverse expected values are known preimages of independently
+generated forward outputs on well-conditioned cases. Cases equivalent to BC
+use OpenCV forward outputs and independent numerical Jacobians, covering
+tangential terms, radial k1/k2/k3 and the polynomial BCExt thin-prism subset.
+General rational/tilted BCExt is checked as composition, not polynomial equivalence.
+
+Oracle case CSV rows have 90 columns: ID, model, degree, mode, 14 Brown
+coefficients, and 36 interleaved coefficient pairs. Padding is fixture transport
+only; evaluated maps borrow exactly their validated active coefficient prefix.
+Fixtures remain alive for all model evaluations. Generation is explicit via
+`zig build gen-gold-verif`; ordinary tests never regenerate expected results.
+
+Python polynomial tests cover all 42 degree/mode/model combinations, invalid
+input, tiny-coefficient serialization precision, caller-buffer C loading,
+loaded storage lifetime, stereo ownership, and BC-equivalent flat-plate renders
+through all subpixel-map modes and one/four workers. These render checks are
+integration equivalence tests, not a proof of arbitrary curved-boundary culling.
+
+`zig build bench-poly -Doptimize=ReleaseFast` measures runtime-selected
+degree-1/3/5/7 scalar/SIMD forward, Jacobian and inverse kernels in both modes.
+It reports warm-start repeated timings, checksums and descriptor sizes.

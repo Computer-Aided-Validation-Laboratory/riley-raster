@@ -148,8 +148,8 @@ pub fn fillTileIdealCentersAffineJac(
     scratch_y_px_max: i32,
     subpx_tile_size: usize,
     ideal_pixel_centers: []F,
-) void {
-    fillTileIdealCentersPerTile(
+) !void {
+    try fillTileIdealCentersPerTile(
         camera,
         scratch_x_px_min,
         scratch_x_px_max,
@@ -157,7 +157,7 @@ pub fn fillTileIdealCentersAffineJac(
         scratch_y_px_max,
         subpx_tile_size,
         ideal_pixel_centers,
-    ) catch unreachable;
+    );
 }
 
 pub fn initPixelCenterJac(camera: *CameraPrepared) !void {

@@ -128,9 +128,12 @@ pub fn main(init: std.process.Init) !void {
     // 4. Compare every distortion family and PSF path across buffer modes
     // -------------------------------------------------------------------------
     const poly = camera.PolyMap{
-        .order = .quadratic,
-        .coeffs_u = .{ 0.0, 0.02, 0.01, 0.01, 0.005, -0.005, 0, 0, 0, 0 },
-        .coeffs_v = .{ 0.0, -0.01, -0.015, 0.005, -0.005, 0.01, 0, 0, 0, 0 },
+        .degree = 2,
+        .mode = .displacement,
+        .coeffs = &.{
+            0,    0,     0.02,  -0.01,  0.01,   -0.015,
+            0.01, 0.005, 0.005, -0.005, -0.005, 0.01,
+        },
     };
 
     const brown = camera.BrownCon.Params{
@@ -166,6 +169,15 @@ pub fn main(init: std.process.Init) !void {
             .brown_con_ext = brown_ext,
             .poly = poly,
         } },
+    };
+
+    const distort_names = [_][]const u8{
+        "none",
+        "brown_conrady",
+        "brown_conrady_ext",
+        "polynomial",
+        "brown_conrady_polynomial",
+        "brown_conrady_ext_polynomial",
     };
 
     const psf_names = [_][]const u8{
@@ -204,7 +216,7 @@ pub fn main(init: std.process.Init) !void {
     var output_root = try demo_common.resetOutputDir(io, out_dir_root);
     defer output_root.close(io);
 
-    for (distorts) |distort| {
+    for (distorts, distort_names) |distort, distort_name| {
         for (psfs, psf_names) |psf, psf_name| {
             for (modes) |mode| {
                 var config = config_base;
@@ -214,11 +226,11 @@ pub fn main(init: std.process.Init) !void {
                 cam.psf = psf;
 
                 const out_dir = try std.fs.path.join(local_alloc, &.{
-                    out_dir_root, @tagName(distort), psf_name, @tagName(mode),
+                    out_dir_root, distort_name, psf_name, @tagName(mode),
                 });
 
                 std.debug.print("Rendering {s}/{s}/{s}...\n", .{
-                    @tagName(distort), psf_name, @tagName(mode),
+                    distort_name, psf_name, @tagName(mode),
                 });
 
                 if (try riley.raster(

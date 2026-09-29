@@ -707,7 +707,7 @@ fn fillTileIdealCent(
             subpx_tile_size,
             subpx_scratch.ideal_pix_cent,
         ),
-        .affine_jac => ctx_rast.camera.fillTileIdealCentersAffineJac(
+        .affine_jac => try ctx_rast.camera.fillTileIdealCentersAffineJac(
             tile.scratch_x_px_min,
             tile.scratch_x_px_max,
             tile.scratch_y_px_min,

@@ -474,14 +474,11 @@ pub const Scene1Prepared = struct {
 };
 
 pub fn getRepresentativePolyMap() camera.PolyMap {
-    var poly_map = camera.PolyMap{
-        .order = .quadratic,
+    return .{
+        .degree = 2,
+        .mode = .displacement,
+        .coeffs = &.{ 0, 0, 0.03, 0, 0, -0.03, 0, 5, 5, 0, 0, 0 },
     };
-    poly_map.coeffs_u[1] = 0.03;
-    poly_map.coeffs_u[4] = 5.0;
-    poly_map.coeffs_v[2] = -0.03;
-    poly_map.coeffs_v[3] = 5.0;
-    return poly_map;
 }
 
 pub const EquivalentBrownConPoly = struct {
@@ -501,13 +498,12 @@ pub fn getEquivalentBrownConPoly() EquivalentBrownConPoly {
     return .{
         .brown_con = brown_con,
         .poly = .{
-            .order = .cubic,
-            // u displacement: 3*p2*x^2 + 2*p1*x*y + p2*y^2
-            //               + k1*x^3 + k1*x*y^2.
-            .coeffs_u = .{ 0.0, 0.0, 0.0, -0.60, 0.50, -0.20, -1200.0, 0.0, -1200.0, 0.0 },
-            // v displacement: p1*x^2 + 2*p2*x*y + 3*p1*y^2
-            //               + k1*x^2*y + k1*y^3.
-            .coeffs_v = .{ 0.0, 0.0, 0.0, 0.25, -0.40, 0.75, 0.0, -1200.0, 0.0, -1200.0 },
+            .degree = 3,
+            .mode = .displacement,
+            .coeffs = &.{
+                0,     0,    0,     0, 0, 0,     -0.60, 0.25, 0.50, -0.40,
+                -0.20, 0.75, -1200, 0, 0, -1200, -1200, 0,    0,    -1200,
+            },
         },
     };
 }

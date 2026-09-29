@@ -15,31 +15,28 @@ const VecSF = buildconfig.VecSF;
 const cam = @import("../riley/zig/camera.zig");
 const csvio = @import("../riley/zig/csvio.zig");
 const fullfixtures = @import("../dev_support/fullfixtures.zig");
+const cm = @import("../riley/zig/cameramodels.zig");
 const Mat22f = @import("../riley/zig/matstack.zig").Mat22f;
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const cases_path = "gold/verif/distortion_oracle_cases.csv";
 const points_path = "gold/verif/distortion_oracle_points.csv";
 const jacobians_path = "gold/verif/distortion_oracle_jacobians.csv";
-const case_cols_num: usize = 37;
+const case_cols_num: usize = 90;
 const points_cols_num: usize = 8;
 const jac_cols_num: usize = 8;
-const brown_start: usize = 3;
-const ford_u_start: usize = 17;
-const ford_v_start: usize = 27;
+const brown_start: usize = 4;
+const coeffs_start: usize = 18;
 
-fn copyCoefficients(row: []const F, start: usize) [10]F {
-    var coefficients: [10]F = undefined;
-    @memcpy(&coefficients, row[start .. start + coefficients.len]);
-    return coefficients;
-}
-
-fn buildPoly(row: []const F) cam.PolyMap {
-    return .{
-        .order = @enumFromInt(@as(u8, @intFromFloat(row[2]))),
-        .coeffs_u = copyCoefficients(row, ford_u_start),
-        .coeffs_v = copyCoefficients(row, ford_v_start),
+fn buildPoly(row: []const F) !cam.PolyMap {
+    const degree: u8 = @intFromFloat(row[2]);
+    const mode: cam.PolyMode = switch (@as(u8, @intFromFloat(row[3]))) {
+        0 => .coordinate,
+        1 => .displacement,
+        else => return error.InvalidPolyMode,
     };
+    if (degree < 1 or degree > cam.POLY_MAX_DEGREE) return error.InvalidPolyDegree;
+    return cam.PolyMap.init(degree, mode, row[coeffs_start..][0 .. 2 * cam.polyTermCount(degree)]);
 }
 
 fn buildBrown(row: []const F) cam.BrownCon.Params {
@@ -77,14 +74,14 @@ fn buildModel(row: []const F) !cam.DistortModel {
         0 => .none,
         1 => .{ .brown_con = buildBrown(row) },
         2 => .{ .brown_con_ext = buildBrownExt(row) },
-        3 => .{ .poly = buildPoly(row) },
+        3 => .{ .poly = try buildPoly(row) },
         4 => .{ .brown_con_poly = .{
             .brown_con = buildBrown(row),
-            .poly = buildPoly(row),
+            .poly = try buildPoly(row),
         } },
         5 => .{ .brown_con_ext_poly = .{
             .brown_con_ext = buildBrownExt(row),
-            .poly = buildPoly(row),
+            .poly = try buildPoly(row),
         } },
         else => return error.InvalidOracleModel,
     };
@@ -183,7 +180,8 @@ fn checkSIMDPoints(cases: anytype, points: anytype) !void {
         const case_id: usize = @intFromFloat(first_row[0]);
         var lane_count: usize = 0;
         while (lane_count < S and row_start + lane_count < points.dims[0]) {
-            const row = points.slice[(row_start + lane_count) * points_cols_num ..][0..points_cols_num];
+            const row_offset = (row_start + lane_count) * points_cols_num;
+            const row = points.slice[row_offset..][0..points_cols_num];
             if (@as(usize, @intFromFloat(row[0])) != case_id) break;
             lane_count += 1;
         }
@@ -194,7 +192,8 @@ fn checkSIMDPoints(cases: anytype, points: anytype) !void {
         var observed_y = [_]F{0.0} ** S;
         var active = [_]bool{false} ** S;
         for (0..lane_count) |lane| {
-            const row = points.slice[(row_start + lane) * points_cols_num ..][0..points_cols_num];
+            const row_offset = (row_start + lane) * points_cols_num;
+            const row = points.slice[row_offset..][0..points_cols_num];
             ideal_x[lane] = row[2];
             ideal_y[lane] = row[3];
             observed_x[lane] = row[4];
@@ -204,26 +203,17 @@ fn checkSIMDPoints(cases: anytype, points: anytype) !void {
 
         const case_row = cases.slice[case_id * case_cols_num ..][0..case_cols_num];
         const model = try buildModel(case_row);
-        const actual_ford = switch (model) {
-            .brown_con => |brown| cam.fordDistortSIMD(
-                cam.BrownCon.Params,
-                brown,
-                @as(VecSF, ideal_x),
-                @as(VecSF, ideal_y),
-            ),
-            .brown_con_ext => |brown| cam.fordDistortSIMD(
-                cam.BrownConExt,
-                brown,
-                @as(VecSF, ideal_x),
-                @as(VecSF, ideal_y),
-            ),
-            else => null,
-        };
+        const actual_ford: ?cm.DistortCoordsSIMD = cam.fordDistortModelSIMD(
+            model,
+            @as(VecSF, ideal_x),
+            @as(VecSF, ideal_y),
+        );
         if (actual_ford) |ford| {
             const ford_x: [S]F = ford.x;
             const ford_y: [S]F = ford.y;
             for (0..lane_count) |lane| {
-                const row = points.slice[(row_start + lane) * points_cols_num ..][0..points_cols_num];
+                const row_offset = (row_start + lane) * points_cols_num;
+                const row = points.slice[row_offset..][0..points_cols_num];
                 try expectPairApprox(
                     "SIMD forward",
                     case_id,
@@ -262,8 +252,46 @@ fn modelJacobian(model: cam.DistortModel, x: F, y: F) ?Mat22f {
         .brown_con => |brown| cam.BrownCon.fordWithJac(brown, x, y).jac,
         .brown_con_ext => |brown| cam.BrownConExt.fordWithJac(brown, x, y).jac,
         .poly => |poly| poly.fordWithJac(x, y).jac,
+        .brown_con_poly => |chain| chain.fordWithJac(x, y).jac,
+        .brown_con_ext_poly => |chain| chain.fordWithJac(x, y).jac,
         else => null,
     };
+}
+
+fn polyJacobianSIMD(model: cam.DistortModel, x: F, y: F) ?cm.DistortFordJacSIMDResult {
+    const vx: VecSF = @splat(x);
+    const vy: VecSF = @splat(y);
+    const poly = switch (model) {
+        .poly => |map| return cm.PolyMapSIMD.fordWithJac(map, vx, vy),
+        .brown_con_poly => |chain| chain.poly,
+        .brown_con_ext_poly => |chain| chain.poly,
+        else => return null,
+    };
+    const brown = switch (model) {
+        .brown_con_poly => |chain| cm.fordDistortWithJacSIMD(
+            cam.BrownCon.Params,
+            chain.brown_con,
+            vx,
+            vy,
+        ),
+        .brown_con_ext_poly => |chain| cm.fordDistortWithJacSIMD(
+            cam.BrownConExt,
+            chain.brown_con_ext,
+            vx,
+            vy,
+        ),
+        else => unreachable,
+    };
+    var result = cm.PolyMapSIMD.fordWithJac(poly, brown.coords.x, brown.coords.y);
+    const p = result.jac;
+    const b = brown.jac;
+    result.jac = .{
+        .xx = p.xx * b.xx + p.xy * b.yx,
+        .xy = p.xx * b.xy + p.xy * b.yy,
+        .yx = p.yx * b.xx + p.yy * b.yx,
+        .yy = p.yx * b.xy + p.yy * b.yy,
+    };
+    return result;
 }
 
 fn checkJacobians(cases: anytype, jacobians: anytype) !void {
@@ -278,6 +306,17 @@ fn checkJacobians(cases: anytype, jacobians: anytype) !void {
             .{ row[4], row[5] },
             .{ row[6], row[7] },
         };
+        if (polyJacobianSIMD(model, row[2], row[3])) |simd| {
+            const values = [_]VecSF{ simd.jac.xx, simd.jac.xy, simd.jac.yx, simd.jac.yy };
+            for (values, 0..) |value, index| {
+                const target = expected[index / 2][index % 2];
+                const allowed = @max(
+                    tolerance.jac_abs,
+                    tolerance.jac_rel * @max(1.0, @abs(target)),
+                );
+                try std.testing.expectApproxEqAbs(target, value[0], allowed);
+            }
+        }
         for (0..2) |jj| {
             for (0..2) |ii| {
                 const scale = @max(1.0, @abs(expected[jj][ii]));

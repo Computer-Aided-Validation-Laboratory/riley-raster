@@ -275,87 +275,133 @@ fn applyHomography(matrix: Mat33f, x: F, y: F) !TiltResult {
 // Polynomial Distortion
 // --------------------------------------------------------------------------------------
 
-pub const poly_powers_u = [10]u8{ 0, 1, 0, 2, 1, 0, 3, 2, 1, 0 };
-pub const poly_powers_v = [10]u8{ 0, 0, 1, 0, 1, 2, 0, 1, 2, 3 };
+pub const POLY_MAX_DEGREE: u8 = 7;
+pub const PolyMode = enum(u8) { coordinate = 0, displacement = 1 };
+pub const PolyPowers = struct { px: u8, py: u8 };
 
-pub const PolyOrder = enum(u8) {
-    linear = 1,
-    quadratic = 2,
-    cubic = 3,
+/// Call with a validated degree (1 through POLY_MAX_DEGREE).
+pub fn polyTermCount(degree: u8) usize {
+    const n: usize = degree;
+    return (n + 1) * (n + 2) / 2;
+}
 
-    pub fn termCount(self: PolyOrder) usize {
-        return switch (self) {
-            .linear => 3,
-            .quadratic => 6,
-            .cubic => 10,
-        };
+fn generatePolyPowers() [polyTermCount(POLY_MAX_DEGREE)]PolyPowers {
+    var out: [polyTermCount(POLY_MAX_DEGREE)]PolyPowers = undefined;
+    var ii: usize = 0;
+    for (0..POLY_MAX_DEGREE + 1) |total| {
+        for (0..total + 1) |py| {
+            out[ii] = .{ .px = @intCast(total - py), .py = @intCast(py) };
+            ii += 1;
+        }
     }
-};
+    return out;
+}
+
+pub const poly_powers = generatePolyPowers();
+const identity_poly_coeffs = [_]F{0} ** 6;
 
 pub const PolyMap = struct {
     pub const Params = @This();
-    order: PolyOrder = .quadratic,
-    coeffs_u: [10]F = [_]F{0.0} ** 10,
-    coeffs_v: [10]F = [_]F{0.0} ** 10,
+    degree: u8 = 1,
+    mode: PolyMode = .displacement,
+    /// Borrowed immutable row-major [term_count, 2] coefficients.
+    /// Caller storage must remain alive and unchanged until all workers finish.
+    coeffs: []const F = &identity_poly_coeffs,
 
-    /// Ideal to distorted normalized coordinates, using displacement coefficients.
-    pub fn ford(
-        self: PolyMap,
-        x: F,
-        y: F,
-    ) DistortCoords {
-        const poly = evalPolyDisplacement(self, x, y);
-        return .{ .x = x + poly.du, .y = y + poly.dv };
+    pub fn init(degree: u8, mode: PolyMode, coeffs: []const F) !PolyMap {
+        const self = PolyMap{ .degree = degree, .mode = mode, .coeffs = coeffs };
+        try self.validate();
+        return self;
     }
 
-    pub fn fordWithJac(
-        self: PolyMap,
-        x: F,
-        y: F,
-    ) DistortFordJacResult {
-        const distorted = self.ford(x, y);
-        var ddu_dx: F = 0.0;
-        var ddu_dy: F = 0.0;
-        var ddv_dx: F = 0.0;
-        var ddv_dy: F = 0.0;
-        const term_count = self.order.termCount();
-
-        for (0..term_count) |ii| {
-            const pu = poly_powers_u[ii];
-            const pv = poly_powers_v[ii];
-
-            if (pu > 0) {
-                const basis_dx = @as(F, @floatFromInt(pu)) *
-                    powSmall(x, pu - 1) *
-                    powSmall(y, pv);
-                ddu_dx += self.coeffs_u[ii] * basis_dx;
-                ddv_dx += self.coeffs_v[ii] * basis_dx;
-            }
-
-            if (pv > 0) {
-                const basis_dy = @as(F, @floatFromInt(pv)) *
-                    powSmall(x, pu) *
-                    powSmall(y, pv - 1);
-                ddu_dy += self.coeffs_u[ii] * basis_dy;
-                ddv_dy += self.coeffs_v[ii] * basis_dy;
-            }
+    pub fn validate(self: PolyMap) !void {
+        if (self.degree < 1 or self.degree > POLY_MAX_DEGREE)
+            return error.InvalidPolyDegree;
+        if (self.coeffs.len != 2 * polyTermCount(self.degree))
+            return error.InvalidPolyCoeffCount;
+        for (self.coeffs) |coeff| {
+            if (!std.math.isFinite(coeff)) return error.NonFinitePolyCoeff;
         }
+    }
 
+    pub fn ford(self: PolyMap, x: F, y: F) DistortCoords {
+        const result = evalPoly(F, false, self, x, y);
+        return .{ .x = result.x, .y = result.y };
+    }
+
+    pub fn fordWithJac(self: PolyMap, x: F, y: F) DistortFordJacResult {
+        const result = evalPoly(F, true, self, x, y);
         return .{
-            .coords = distorted,
+            .coords = .{ .x = result.x, .y = result.y },
             .jac = Mat22f.initRows(.{
-                .{ 1.0 + ddu_dx, ddu_dy },
-                .{ ddv_dx, 1.0 + ddv_dy },
+                .{ result.xx, result.xy },
+                .{ result.yx, result.yy },
             }),
         };
     }
 
-    /// Numerically invert the forward map. Singular, non-finite, or non-convergent
-    /// mappings return an error rather than claiming a valid inverse.
+    /// Local numerical inversion of the same forward map; uniqueness is not guaranteed.
     pub fn inv(self: PolyMap, x_d: F, y_d: F) !DistortCoords {
         return invFromFordWithJac(PolyMap, self, x_d, y_d);
     }
 };
+
+fn polyValue(comptime T: type, value: F) T {
+    if (T == F) return value;
+    return @splat(value);
+}
+
+/// Shared scalar/SIMD arithmetic. Derivatives are eliminated at comptime for ford().
+pub fn evalPoly(
+    comptime T: type,
+    comptime with_jac: bool,
+    poly: PolyMap,
+    x: T,
+    y: T,
+) struct { x: T, y: T, xx: T, xy: T, yx: T, yy: T } {
+    std.debug.assert(poly.degree >= 1 and poly.degree <= POLY_MAX_DEGREE);
+    std.debug.assert(poly.coeffs.len == 2 * polyTermCount(poly.degree));
+    var xp: [POLY_MAX_DEGREE + 1]T = undefined;
+    var yp: [POLY_MAX_DEGREE + 1]T = undefined;
+    xp[0] = polyValue(T, 1);
+    yp[0] = polyValue(T, 1);
+    for (1..@as(usize, poly.degree) + 1) |ii| {
+        xp[ii] = xp[ii - 1] * x;
+        yp[ii] = yp[ii - 1] * y;
+    }
+    const zero = polyValue(T, 0);
+    var out = .{ .x = zero, .y = zero, .xx = zero, .xy = zero, .yx = zero, .yy = zero };
+    for (poly_powers[0..polyTermCount(poly.degree)], 0..) |powers, ii| {
+        const cu = polyValue(T, poly.coeffs[2 * ii]);
+        const cv = polyValue(T, poly.coeffs[2 * ii + 1]);
+        const basis = xp[powers.px] * yp[powers.py];
+        out.x += cu * basis;
+        out.y += cv * basis;
+        if (with_jac) {
+            if (powers.px > 0) {
+                const dx = polyValue(T, @floatFromInt(powers.px)) *
+                    xp[powers.px - 1] * yp[powers.py];
+                out.xx += cu * dx;
+                out.yx += cv * dx;
+            }
+            if (powers.py > 0) {
+                const dy = polyValue(T, @floatFromInt(powers.py)) *
+                    xp[powers.px] * yp[powers.py - 1];
+                out.xy += cu * dy;
+                out.yy += cv * dy;
+            }
+        }
+    }
+    if (poly.mode == .displacement) {
+        out.x += x;
+        out.y += y;
+        if (with_jac) {
+            out.xx += polyValue(T, 1);
+            out.yy += polyValue(T, 1);
+        }
+    }
+    return .{ .x = out.x, .y = out.y, .xx = out.xx, .xy = out.xy, .yx = out.yx, .yy = out.yy };
+}
 
 pub const BrownConPoly = struct {
     brown_con: BrownCon.Params = .{},
@@ -368,6 +414,12 @@ pub const BrownConPoly = struct {
     ) DistortCoords {
         const brown = BrownCon.ford(self.brown_con, x, y);
         return self.poly.ford(brown.x, brown.y);
+    }
+
+    pub fn fordWithJac(self: BrownConPoly, x: F, y: F) DistortFordJacResult {
+        const brown = BrownCon.fordWithJac(self.brown_con, x, y);
+        const poly = self.poly.fordWithJac(brown.coords.x, brown.coords.y);
+        return .{ .coords = poly.coords, .jac = poly.jac.mulMat(brown.jac) };
     }
 
     pub fn inv(
@@ -390,6 +442,7 @@ pub const BrownConExtPoly = struct {
     poly: PolyMap = .{},
 
     pub fn init(params: BrownConExtPolyParams) !@This() {
+        try params.poly.validate();
         return .{
             .brown_con_ext = try BrownConExt.init(params.brown_con_ext),
             .poly = params.poly,
@@ -403,6 +456,12 @@ pub const BrownConExtPoly = struct {
     ) DistortCoords {
         const brown = self.brown_con_ext.ford(x, y);
         return self.poly.ford(brown.x, brown.y);
+    }
+
+    pub fn fordWithJac(self: BrownConExtPoly, x: F, y: F) DistortFordJacResult {
+        const brown = self.brown_con_ext.fordWithJac(x, y);
+        const poly = self.poly.fordWithJac(brown.coords.x, brown.coords.y);
+        return .{ .coords = poly.coords, .jac = poly.jac.mulMat(brown.jac) };
     }
 
     pub fn inv(
@@ -441,8 +500,14 @@ pub const DistortModel = union(enum) {
             .none => .none,
             .brown_con => |brown| .{ .brown_con = brown },
             .brown_con_ext => |brown| .{ .brown_con_ext = try BrownConExt.init(brown) },
-            .poly => |poly| .{ .poly = poly },
-            .brown_con_poly => |chain| .{ .brown_con_poly = chain },
+            .poly => |poly| blk: {
+                try poly.validate();
+                break :blk .{ .poly = poly };
+            },
+            .brown_con_poly => |chain| blk: {
+                try chain.poly.validate();
+                break :blk .{ .brown_con_poly = chain };
+            },
             .brown_con_ext_poly => |chain| .{
                 .brown_con_ext_poly = try BrownConExtPoly.init(chain),
             },
@@ -637,36 +702,6 @@ fn invFromFordWithJac(
         if (!std.math.isFinite(x) or !std.math.isFinite(y)) return error.NonFiniteDistort;
     }
     return error.DistortInvFailed;
-}
-
-fn evalPolyDisplacement(
-    poly: PolyMap,
-    x: F,
-    y: F,
-) struct { du: F, dv: F } {
-    var du: F = 0.0;
-    var dv: F = 0.0;
-    const term_count = poly.order.termCount();
-
-    for (0..term_count) |ii| {
-        const basis = powSmall(x, poly_powers_u[ii]) *
-            powSmall(y, poly_powers_v[ii]);
-        du += poly.coeffs_u[ii] * basis;
-        dv += poly.coeffs_v[ii] * basis;
-    }
-
-    return .{ .du = du, .dv = dv };
-}
-
-fn powSmall(
-    x: F,
-    power: u8,
-) F {
-    var out: F = 1.0;
-    for (0..power) |_| {
-        out *= x;
-    }
-    return out;
 }
 
 fn distortFordFromRadialScale(
@@ -907,7 +942,7 @@ test "BrownConradyExt cached tilt matrices compose to identity" {
             try std.testing.expectApproxEqAbs(
                 identity_mat[row][col],
                 product_mat[row][col],
-                1.0e-14,
+                if (F == f32) 2e-6 else 1e-14,
             );
         }
     }
@@ -937,8 +972,9 @@ test "BrownConradyExt rational pole propagates non-finite forward value" {
 
 test "PolynomialMap inverse rejects a singular Jacobian" {
     const singular = PolyMap{
-        .order = .linear,
-        .coeffs_u = .{ 0.0, -1.0, 0.0 } ++ [_]F{0.0} ** 7,
+        .degree = 1,
+        .mode = .displacement,
+        .coeffs = &.{ 0.0, 0, -1.0, 0, 0.0, 0 },
     };
     try std.testing.expectError(error.SingularJac, singular.inv(0.3, -0.2));
 }
@@ -951,11 +987,16 @@ test "PolynomialMap identity and inverse failures are explicit" {
         try identity.inv(0.3, -0.2),
     );
     const stalled = PolyMap{
-        .coeffs_u = .{ 0.0, 0.0, 0.0, 1e22 } ++ [_]F{0.0} ** 6,
+        .degree = 2,
+        .mode = .displacement,
+        .coeffs = &.{ 0.0, 0, 0.0, 0, 0.0, 0, 1e22, 0, 0, 0, 0, 0 },
     };
     // A tiny Newton step is not evidence that this residual has converged.
-    try std.testing.expectError(error.DistortInvFailed, stalled.inv(1e-11, 0.0));
-    const invalid = PolyMap{ .coeffs_u = .{std.math.nan(F)} ++ [_]F{0.0} ** 9 };
+    try std.testing.expectError(
+        error.DistortInvFailed,
+        stalled.inv(if (F == f32) 0.1 else 1e-11, 0.0),
+    );
+    const invalid = PolyMap{ .coeffs = &.{ std.math.nan(F), 0, 0, 0, 0, 0 } };
     try std.testing.expectError(error.NonFiniteDistort, invalid.inv(0.3, -0.2));
     try std.testing.expectError(error.NonFiniteDistort, identity.inv(std.math.inf(F), 0.0));
     try std.testing.expectError(error.NonFiniteDistort, identity.inv(std.math.nan(F), 0.0));
@@ -965,7 +1006,7 @@ test "PolynomialMap identity and inverse failures are explicit" {
 }
 
 test "DistortionModel paramsFromModel round trips every variant" {
-    const poly = PolyMap{ .coeffs_u = .{0.01} ++ [_]F{0.0} ** 9 };
+    const poly = PolyMap{ .coeffs = &.{ 0.01, 0, 0, 0, 0, 0 } };
     const cases = [_]DistortParams{
         .none,
         .{ .brown_con = .{ .k1 = -0.12 } },
@@ -980,5 +1021,136 @@ test "DistortionModel paramsFromModel round trips every variant" {
     for (cases) |params| {
         const model = try DistortModel.init(params);
         try std.testing.expectEqualDeep(params, model.paramsFromModel());
+    }
+}
+
+test "polynomial table ordering and checked construction" {
+    const counts = [_]usize{ 3, 6, 10, 15, 21, 28, 36 };
+    var index: usize = 0;
+    for (0..8) |total| {
+        for (0..total + 1) |py| {
+            try std.testing.expectEqual(@as(u8, @intCast(total - py)), poly_powers[index].px);
+            try std.testing.expectEqual(@as(u8, @intCast(py)), poly_powers[index].py);
+            index += 1;
+        }
+    }
+    for (counts, 1..) |count, degree| {
+        try std.testing.expectEqual(count, polyTermCount(@intCast(degree)));
+    }
+    try std.testing.expectError(error.InvalidPolyDegree, PolyMap.init(0, .coordinate, &.{}));
+    try std.testing.expectError(error.InvalidPolyDegree, PolyMap.init(8, .displacement, &.{}));
+    try std.testing.expectError(error.InvalidPolyCoeffCount, PolyMap.init(1, .coordinate, &.{0}));
+    try std.testing.expectError(
+        error.InvalidPolyCoeffCount,
+        PolyMap.init(1, .coordinate, &([_]F{0} ** 8)),
+    );
+    for ([_]F{ std.math.nan(F), std.math.inf(F), -std.math.inf(F) }) |invalid| {
+        try std.testing.expectError(
+            error.NonFinitePolyCoeff,
+            PolyMap.init(1, .coordinate, &.{ invalid, 0, 0, 0, 0, 0 }),
+        );
+    }
+    const coeffs = [_]F{ 0.01, -0.02, 1.1, 0.03, -0.04, 0.9 };
+    const map = try PolyMap.init(1, .coordinate, &coeffs);
+    try std.testing.expect(map.coeffs.ptr == &coeffs);
+    const observed = map.ford(0.2, -0.1);
+    const recovered = try map.inv(observed.x, observed.y);
+    const allowed: F = if (F == f32) 2e-5 else 1e-10;
+    try std.testing.expectApproxEqAbs(@as(F, 0.2), recovered.x, allowed);
+    try std.testing.expectApproxEqAbs(@as(F, -0.1), recovered.y, allowed);
+    const zero = try PolyMap.init(1, .coordinate, &.{ 0, 0, 0, 0, 0, 0 });
+    try std.testing.expectEqualDeep(DistortCoords{ .x = 0, .y = 0 }, zero.ford(0.3, -0.2));
+    try std.testing.expectError(error.SingularJac, zero.inv(1, 0));
+    const identity = try PolyMap.init(1, .coordinate, &.{ 0, 0, 1, 0, 0, 1 });
+    try std.testing.expectEqualDeep(identity.fordWithJac(0, 0), (PolyMap{}).fordWithJac(0, 0));
+}
+
+test "degree seven polynomial matches BC and polynomial BCExt subset" {
+    const cases = [_]struct { degree: u8, brown: BrownConExtParams }{
+        .{ .degree = 2, .brown = .{ .p1 = 0.003, .p2 = -0.002 } },
+        .{ .degree = 3, .brown = .{ .k1 = -0.05 } },
+        .{ .degree = 5, .brown = .{ .k2 = 0.02 } },
+        .{ .degree = 7, .brown = .{ .k3 = -0.01 } },
+        .{ .degree = 7, .brown = .{
+            .k1 = -0.05,
+            .k2 = 0.02,
+            .k3 = -0.01,
+            .p1 = 0.003,
+            .p2 = -0.002,
+        } },
+        .{ .degree = 7, .brown = .{
+            .k1 = -0.05,
+            .k2 = 0.02,
+            .k3 = -0.01,
+            .p1 = 0.003,
+            .p2 = -0.002,
+            .s1 = 0.001,
+            .s2 = -0.002,
+            .s3 = -0.003,
+            .s4 = 0.001,
+        } },
+    };
+    const allowed: F = if (F == f32) 3e-6 else 1e-12;
+    const inv_allowed: F = if (F == f32) 3e-5 else 1e-9;
+    for (cases) |case| {
+        const p = case.brown;
+        var coeffs = [_]F{0} ** 72;
+        // Independent, explicit binomial expansion in the documented term order.
+        coeffs[2 * 3] = 3 * p.p2 + p.s1;
+        coeffs[2 * 3 + 1] = p.p1 + p.s3;
+        coeffs[2 * 4] = 2 * p.p1;
+        coeffs[2 * 4 + 1] = 2 * p.p2;
+        coeffs[2 * 5] = p.p2 + p.s1;
+        coeffs[2 * 5 + 1] = 3 * p.p1 + p.s3;
+        for ([_]usize{ 10, 12, 14 }, [_]F{ 1, 2, 1 }) |term, factor| {
+            coeffs[2 * term] = factor * p.s2;
+            coeffs[2 * term + 1] = factor * p.s4;
+        }
+        for ([_]usize{ 6, 8 }, [_]usize{ 7, 9 }) |u, v| {
+            coeffs[2 * u] = p.k1;
+            coeffs[2 * v + 1] = p.k1;
+        }
+        for ([_]usize{ 15, 17, 19 }, [_]usize{ 16, 18, 20 }, [_]F{ 1, 2, 1 }) |u, v, factor| {
+            coeffs[2 * u] = factor * p.k2;
+            coeffs[2 * v + 1] = factor * p.k2;
+        }
+        for (
+            [_]usize{ 28, 30, 32, 34 },
+            [_]usize{ 29, 31, 33, 35 },
+            [_]F{ 1, 3, 3, 1 },
+        ) |u, v, factor| {
+            coeffs[2 * u] = factor * p.k3;
+            coeffs[2 * v + 1] = factor * p.k3;
+        }
+        const brown = try BrownConExt.init(p);
+        for ([_]PolyMode{ .displacement, .coordinate }) |mode| {
+            coeffs[2] = if (mode == .coordinate) 1 else 0;
+            coeffs[5] = if (mode == .coordinate) 1 else 0;
+            const map = try PolyMap.init(
+                case.degree,
+                mode,
+                coeffs[0 .. 2 * polyTermCount(case.degree)],
+            );
+            for ([_]F{ -0.8, -0.3, 0, 0.4, 0.8 }) |x| {
+                for ([_]F{ -0.6, 0, 0.2, 0.6 }) |y| {
+                    const expected = brown.fordWithJac(x, y);
+                    const actual = map.fordWithJac(x, y);
+                    try std.testing.expectApproxEqAbs(expected.coords.x, actual.coords.x, allowed);
+                    try std.testing.expectApproxEqAbs(expected.coords.y, actual.coords.y, allowed);
+                    for (0..2) |rr| {
+                        for (0..2) |cc| {
+                            try std.testing.expectApproxEqAbs(
+                                expected.jac.get(rr, cc),
+                                actual.jac.get(rr, cc),
+                                allowed,
+                            );
+                        }
+                    }
+                    const recovered = try map.inv(expected.coords.x, expected.coords.y);
+                    try std.testing.expectApproxEqAbs(x, recovered.x, inv_allowed);
+                    try std.testing.expectApproxEqAbs(y, recovered.y, inv_allowed);
+                }
+            }
+        }
     }
 }

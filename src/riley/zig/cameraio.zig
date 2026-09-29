@@ -146,76 +146,87 @@ pub fn saveCamera(
     try file_writer.flush();
 }
 
-pub fn loadCamera(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    dir: std.Io.Dir,
-    file_name: []const u8,
-) !cam.CameraInput {
-    var kv = try parseKeyValueCsv(allocator, io, dir, file_name);
-    defer deinitKeyValueCsv(allocator, &kv);
+/// Owns CSV-loaded coefficient storage; keep alive until rendering completes.
+pub const LoadedCamera = struct {
+    camera_input: cam.CameraInput,
+    coeffs: ?[]const F,
 
-    const coord_sys = blk: {
-        if (kv.get("coord_sys")) |sys_str| {
-            if (std.mem.eql(u8, sys_str, "opencv")) {
-                break :blk cam.CameraCoordSys.opencv;
+    pub fn init(
+        outer_alloc: std.mem.Allocator,
+        io: std.Io,
+        dir: std.Io.Dir,
+        file_name: []const u8,
+    ) !LoadedCamera {
+        var kv = try parseKeyValueCsv(outer_alloc, io, dir, file_name);
+        defer deinitKeyValueCsv(outer_alloc, &kv);
+
+        const poly = try loadPoly(outer_alloc, &kv);
+        errdefer if (poly) |map| outer_alloc.free(map.coeffs);
+        const coord_sys = blk: {
+            if (kv.get("coord_sys")) |sys_str| {
+                if (std.mem.eql(u8, sys_str, "opencv")) {
+                    break :blk cam.CameraCoordSys.opencv;
+                }
             }
+            break :blk cam.CameraCoordSys.opengl;
+        };
+
+        var camera_input = cam.CameraInput{
+            .pixels_num = .{
+                try std.fmt.parseInt(u32, try requireValue(&kv, "pixels_x"), 10),
+                try std.fmt.parseInt(u32, try requireValue(&kv, "pixels_y"), 10),
+            },
+            .pixels_size = .{
+                try std.fmt.parseFloat(F, try requireValue(&kv, "pixel_size_x_m")),
+                try std.fmt.parseFloat(F, try requireValue(&kv, "pixel_size_y_m")),
+            },
+            .pos_world = @import("vecstack.zig").initVec3(
+                F,
+                try std.fmt.parseFloat(F, try requireValue(&kv, "pos_x_m")),
+                try std.fmt.parseFloat(F, try requireValue(&kv, "pos_y_m")),
+                try std.fmt.parseFloat(F, try requireValue(&kv, "pos_z_m")),
+            ),
+            .rot_world = @import("rotation.zig").Rotation.init(
+                std.math.degreesToRadians(
+                    try std.fmt.parseFloat(F, try requireValue(&kv, "rot_alpha_z_deg")),
+                ),
+                std.math.degreesToRadians(
+                    try std.fmt.parseFloat(F, try requireValue(&kv, "rot_beta_y_deg")),
+                ),
+                std.math.degreesToRadians(
+                    try std.fmt.parseFloat(F, try requireValue(&kv, "rot_gamma_x_deg")),
+                ),
+            ),
+            .roi_cent_world = @import("vecstack.zig").initVec3(
+                F,
+                try std.fmt.parseFloat(F, try requireValue(&kv, "roi_cent_x_m")),
+                try std.fmt.parseFloat(F, try requireValue(&kv, "roi_cent_y_m")),
+                try std.fmt.parseFloat(F, try requireValue(&kv, "roi_cent_z_m")),
+            ),
+            .focal_length = try std.fmt.parseFloat(
+                F,
+                try requireValue(&kv, "focal_length_m"),
+            ),
+            .sub_sample = try std.fmt.parseInt(
+                u32,
+                try requireValue(&kv, "sub_sample"),
+                10,
+            ),
+            .distort = try loadDistort(&kv, poly),
+            .coord_sys = coord_sys,
+        };
+
+        if (coord_sys == .opencv) {
+            camera_input = cameraops.toOpenGLInput(camera_input);
+            camera_input.coord_sys = .opencv;
         }
-        break :blk cam.CameraCoordSys.opengl;
-    };
 
-    var camera_input = cam.CameraInput{
-        .pixels_num = .{
-            try std.fmt.parseInt(u32, try requireValue(&kv, "pixels_x"), 10),
-            try std.fmt.parseInt(u32, try requireValue(&kv, "pixels_y"), 10),
-        },
-        .pixels_size = .{
-            try std.fmt.parseFloat(F, try requireValue(&kv, "pixel_size_x_m")),
-            try std.fmt.parseFloat(F, try requireValue(&kv, "pixel_size_y_m")),
-        },
-        .pos_world = @import("vecstack.zig").initVec3(
-            F,
-            try std.fmt.parseFloat(F, try requireValue(&kv, "pos_x_m")),
-            try std.fmt.parseFloat(F, try requireValue(&kv, "pos_y_m")),
-            try std.fmt.parseFloat(F, try requireValue(&kv, "pos_z_m")),
-        ),
-        .rot_world = @import("rotation.zig").Rotation.init(
-            std.math.degreesToRadians(
-                try std.fmt.parseFloat(F, try requireValue(&kv, "rot_alpha_z_deg")),
-            ),
-            std.math.degreesToRadians(
-                try std.fmt.parseFloat(F, try requireValue(&kv, "rot_beta_y_deg")),
-            ),
-            std.math.degreesToRadians(
-                try std.fmt.parseFloat(F, try requireValue(&kv, "rot_gamma_x_deg")),
-            ),
-        ),
-        .roi_cent_world = @import("vecstack.zig").initVec3(
-            F,
-            try std.fmt.parseFloat(F, try requireValue(&kv, "roi_cent_x_m")),
-            try std.fmt.parseFloat(F, try requireValue(&kv, "roi_cent_y_m")),
-            try std.fmt.parseFloat(F, try requireValue(&kv, "roi_cent_z_m")),
-        ),
-        .focal_length = try std.fmt.parseFloat(
-            F,
-            try requireValue(&kv, "focal_length_m"),
-        ),
-        .sub_sample = try std.fmt.parseInt(
-            u32,
-            try requireValue(&kv, "sub_sample"),
-            10,
-        ),
-        .distort = try loadDistort(&kv),
-        .coord_sys = coord_sys,
-    };
-
-    if (coord_sys == .opencv) {
-        camera_input = cameraops.toOpenGLInput(camera_input);
-        camera_input.coord_sys = .opencv;
+        return .{ .camera_input = camera_input, .coeffs = if (poly) |map| map.coeffs else null };
     }
-
-    return camera_input;
-}
+    pub fn deinit(self: *const LoadedCamera, outer_alloc: std.mem.Allocator) void {
+        if (self.coeffs) |coeffs| outer_alloc.free(coeffs);
+    }
+};
 
 pub fn saveStereoPair(
     io: std.Io,
@@ -332,25 +343,33 @@ pub fn saveStereoPair(
     try file_writer.flush();
 }
 
-pub fn loadStereoPair(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    dir: std.Io.Dir,
-    stereo_file_name: []const u8,
-) !cam.StereoPairInput {
-    var kv = try parseKeyValueCsv(allocator, io, dir, stereo_file_name);
-    defer deinitKeyValueCsv(allocator, &kv);
+pub const LoadedStereoPair = struct {
+    loaded_cameras: [2]LoadedCamera,
+    stereo_pair: cam.StereoPairInput,
 
-    const cam0_file = try requireValue(&kv, "cam0_file");
-    const cam1_file = try requireValue(&kv, "cam1_file");
+    pub fn init(
+        outer_alloc: std.mem.Allocator,
+        io: std.Io,
+        dir: std.Io.Dir,
+        stereo_file_name: []const u8,
+    ) !LoadedStereoPair {
+        var kv = try parseKeyValueCsv(outer_alloc, io, dir, stereo_file_name);
+        defer deinitKeyValueCsv(outer_alloc, &kv);
+        const cam0_file = try requireValue(&kv, "cam0_file");
+        const cam1_file = try requireValue(&kv, "cam1_file");
+        const cam0 = try LoadedCamera.init(outer_alloc, io, dir, cam0_file);
+        errdefer cam0.deinit(outer_alloc);
+        const cam1 = try LoadedCamera.init(outer_alloc, io, dir, cam1_file);
+        return .{
+            .loaded_cameras = .{ cam0, cam1 },
+            .stereo_pair = .{ .cameras = .{ cam0.camera_input, cam1.camera_input } },
+        };
+    }
 
-    return .{
-        .cameras = .{
-            try loadCamera(allocator, io, dir, cam0_file),
-            try loadCamera(allocator, io, dir, cam1_file),
-        },
-    };
-}
+    pub fn deinit(self: *const LoadedStereoPair, outer_alloc: std.mem.Allocator) void {
+        for (&self.loaded_cameras) |*camera| camera.deinit(outer_alloc);
+    }
+};
 
 fn calculateStereoBaseline(stereo_pair: cam.StereoPairInput) vec.Vec3f {
     const cam0 = stereo_pair.cameras[0];
@@ -423,33 +442,21 @@ fn requireValue(
     return kv.get(key) orelse error.MissingCameraField;
 }
 
-fn writePolyMap(
-    writer: *std.Io.Writer,
-    prefix: []const u8,
-    poly_map: cam.PolyMap,
-) !void {
-    var key_buf: [64]u8 = undefined;
-    const term_count = poly_map.order.termCount();
-    for (0..term_count) |ii| {
-        const key_u = try std.fmt.bufPrint(
-            key_buf[0..],
-            "{s}_u_{d}",
-            .{ prefix, ii },
-        );
-        try writer.print("{s},{d:.12}\n", .{ key_u, poly_map.coeffs_u[ii] });
-        const key_v = try std.fmt.bufPrint(
-            key_buf[0..],
-            "{s}_v_{d}",
-            .{ prefix, ii },
-        );
-        try writer.print("{s},{d:.12}\n", .{ key_v, poly_map.coeffs_v[ii] });
-    }
-}
-
 fn writePolyMetadata(writer: *std.Io.Writer, poly_params: ?cam.PolyMap) !void {
     if (poly_params) |poly| {
-        try writer.print("{s},{d}\n", .{ "poly_order", @intFromEnum(poly.order) });
-        try writePolyMap(writer, "poly", poly);
+        try poly.validate();
+        try writer.print("poly_degree,{d}\npoly_mode,{s}\n", .{ poly.degree, @tagName(poly.mode) });
+        var key_buf: [64]u8 = undefined;
+        for (0..cam.polyTermCount(poly.degree)) |ii| {
+            for (0..2) |axis| {
+                const key = try std.fmt.bufPrint(
+                    &key_buf,
+                    "poly_coeff_{d}_{s}",
+                    .{ ii, if (axis == 0) "x" else "y" },
+                );
+                try writer.print("{s},{e}\n", .{ key, poly.coeffs[2 * ii + axis] });
+            }
+        }
     }
 }
 
@@ -486,50 +493,47 @@ fn writeExtendedDistort(
     try writer.print("{s},{d:.12}\n", .{ "tau_y", ext.tau_y });
 }
 
-fn parsePolyMap(
+fn loadPoly(
+    outer_alloc: std.mem.Allocator,
     kv: *const std.StringHashMap([]const u8),
-    prefix: []const u8,
-    order: cam.PolyOrder,
-) !cam.PolyMap {
-    var map: cam.PolyMap = .{ .order = order };
-    var key_buf: [64]u8 = undefined;
-    const term_count = order.termCount();
-    for (0..term_count) |ii| {
-        const key_u = try std.fmt.bufPrint(
-            key_buf[0..],
-            "{s}_u_{d}",
-            .{ prefix, ii },
-        );
-        map.coeffs_u[ii] = try std.fmt.parseFloat(F, try requireValue(kv, key_u));
-        const key_v = try std.fmt.bufPrint(
-            key_buf[0..],
-            "{s}_v_{d}",
-            .{ prefix, ii },
-        );
-        map.coeffs_v[ii] = try std.fmt.parseFloat(F, try requireValue(kv, key_v));
-    }
-    return map;
-}
-
-fn loadPoly(kv: *const std.StringHashMap([]const u8)) !?cam.PolyMap {
-    // Old inverse calibrations must not silently become forward calibrations.
+) !?cam.PolyMap {
     if ((try parseOptionalU8Value(kv, "poly_has_inv", 0)) != 0 or
         kv.contains("poly_inv_u_0") or kv.contains("poly_inv_v_0"))
-    {
         return error.UnsupportedInvPoly;
-    }
     const model = kv.get("distortion_model") orelse return null;
     if (!std.mem.eql(u8, model, "polynomial") and
         !std.mem.eql(u8, model, "brown_conrady_polynomial") and
         !std.mem.eql(u8, model, "brown_conrady_ext_polynomial")) return null;
-    const order_val = try parseOptionalU8Value(kv, "poly_order", 2);
-    const order: cam.PolyOrder = switch (order_val) {
-        1 => .linear,
-        2 => .quadratic,
-        3 => .cubic,
-        else => return error.InvalidPolyOrder,
-    };
-    return try parsePolyMap(kv, "poly", order);
+    const degree = try std.fmt.parseInt(u8, try requireValue(kv, "poly_degree"), 10);
+    if (degree < 1 or degree > cam.POLY_MAX_DEGREE) return error.InvalidPolyDegree;
+    const mode_str = try requireValue(kv, "poly_mode");
+    const mode = std.meta.stringToEnum(cam.PolyMode, mode_str) orelse return error.InvalidPolyMode;
+    const coeffs = try outer_alloc.alloc(F, 2 * cam.polyTermCount(degree));
+    errdefer outer_alloc.free(coeffs);
+    var key_buf: [64]u8 = undefined;
+    for (0..cam.polyTermCount(degree)) |ii| {
+        for (0..2) |axis| {
+            const key = try std.fmt.bufPrint(
+                &key_buf,
+                "poly_coeff_{d}_{s}",
+                .{ ii, if (axis == 0) "x" else "y" },
+            );
+            coeffs[2 * ii + axis] = try std.fmt.parseFloat(F, try requireValue(kv, key));
+        }
+    }
+    var keys = kv.keyIterator();
+    while (keys.next()) |key| {
+        if (!std.mem.startsWith(u8, key.*, "poly_coeff_")) continue;
+        const suffix = key.*["poly_coeff_".len..];
+        const sep = std.mem.indexOfScalar(u8, suffix, '_') orelse
+            return error.InvalidPolyCoeffCount;
+        const index = std.fmt.parseInt(usize, suffix[0..sep], 10) catch
+            return error.InvalidPolyCoeffCount;
+        if (index >= cam.polyTermCount(degree) or
+            (!std.mem.eql(u8, suffix[sep + 1 ..], "x") and
+                !std.mem.eql(u8, suffix[sep + 1 ..], "y"))) return error.InvalidPolyCoeffCount;
+    }
+    return try cam.PolyMap.init(degree, mode, coeffs);
 }
 
 fn writeDistort(
@@ -656,9 +660,9 @@ fn writeDistort(
 
 fn loadDistort(
     kv: *const std.StringHashMap([]const u8),
+    poly: ?cam.PolyMap,
 ) !cam.DistortParams {
     const model_name = try requireValue(kv, "distortion_model");
-    const poly = try loadPoly(kv);
     if (std.mem.eql(u8, model_name, "none")) {
         return .none;
     }
@@ -807,16 +811,18 @@ test "camera I/O preserves physical stereo baseline across OpenGL and OpenCV exp
     const expected_baseline = cam1.pos_world.sub(cam0.pos_world);
 
     try saveCamera(io, out_dir, "camera_opengl.csv", 0, cam0);
-    const loaded_opengl = try loadCamera(allocator, io, out_dir, "camera_opengl.csv");
-    try expectVecApproxEqual(cam0.pos_world, loaded_opengl.pos_world);
+    const loaded_opengl = try LoadedCamera.init(allocator, io, out_dir, "camera_opengl.csv");
+    defer loaded_opengl.deinit(allocator);
+    try expectVecApproxEqual(cam0.pos_world, loaded_opengl.camera_input.pos_world);
 
     var cam0_opencv = cam0;
     var cam1_opencv = cam1;
     cam0_opencv.coord_sys = .opencv;
     cam1_opencv.coord_sys = .opencv;
     try saveCamera(io, out_dir, "camera_opencv.csv", 0, cam0_opencv);
-    const loaded_opencv = try loadCamera(allocator, io, out_dir, "camera_opencv.csv");
-    try expectVecApproxEqual(cam0.pos_world, loaded_opencv.pos_world);
+    const loaded_opencv = try LoadedCamera.init(allocator, io, out_dir, "camera_opencv.csv");
+    defer loaded_opencv.deinit(allocator);
+    try expectVecApproxEqual(cam0.pos_world, loaded_opencv.camera_input.pos_world);
 
     try saveStereoPair(
         io,
@@ -831,14 +837,15 @@ test "camera I/O preserves physical stereo baseline across OpenGL and OpenCV exp
         .{ .cameras = .{ cam0_opencv, cam1_opencv } },
     );
 
-    const loaded_stereo = try loadStereoPair(
+    const loaded_stereo = try LoadedStereoPair.init(
         allocator,
         io,
         out_dir,
         "stereo_data_opencv.csv",
     );
-    try expectVecApproxEqual(cam0.pos_world, loaded_stereo.cameras[0].pos_world);
-    try expectVecApproxEqual(cam1.pos_world, loaded_stereo.cameras[1].pos_world);
+    defer loaded_stereo.deinit(allocator);
+    try expectVecApproxEqual(cam0.pos_world, loaded_stereo.stereo_pair.cameras[0].pos_world);
+    try expectVecApproxEqual(cam1.pos_world, loaded_stereo.stereo_pair.cameras[1].pos_world);
 
     const opengl_summary = try readSummaryBaseline(
         allocator,
@@ -865,16 +872,16 @@ test "polynomial CSV rejects inverse metadata and invalid forward metadata" {
     var kv = std.StringHashMap([]const u8).init(allocator);
     defer kv.deinit();
     try kv.put("poly_has_inv", "1");
-    try std.testing.expectError(error.UnsupportedInvPoly, loadPoly(&kv));
+    try std.testing.expectError(error.UnsupportedInvPoly, loadPoly(allocator, &kv));
     try kv.put("poly_has_inv", "0");
     try kv.put("poly_inv_u_0", "0");
-    try std.testing.expectError(error.UnsupportedInvPoly, loadPoly(&kv));
+    try std.testing.expectError(error.UnsupportedInvPoly, loadPoly(allocator, &kv));
     _ = kv.remove("poly_inv_u_0");
     try kv.put("distortion_model", "polynomial");
-    try kv.put("poly_order", "4");
-    try std.testing.expectError(error.InvalidPolyOrder, loadPoly(&kv));
-    try kv.put("poly_order", "1");
-    try std.testing.expectError(error.MissingCameraField, loadPoly(&kv));
+    try kv.put("poly_degree", "8");
+    try std.testing.expectError(error.InvalidPolyDegree, loadPoly(allocator, &kv));
+    try kv.put("poly_degree", "1");
+    try std.testing.expectError(error.MissingCameraField, loadPoly(allocator, &kv));
 }
 
 test "polynomial camera CSV round trips each order and chained model" {
@@ -882,33 +889,37 @@ test "polynomial camera CSV round trips each order and chained model" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    for ([_]cam.PolyOrder{ .linear, .quadratic, .cubic }) |order| {
-        var poly = cam.PolyMap{ .order = order };
-        for (0..order.termCount()) |ii| {
-            poly.coeffs_u[ii] = @as(F, @floatFromInt(ii + 1)) * 0.001;
-            poly.coeffs_v[ii] = -poly.coeffs_u[ii];
-        }
-        const variants = [_]cam.DistortParams{
-            .{ .poly = poly },
-            .{ .brown_con_poly = .{ .poly = poly } },
-            .{ .brown_con_ext_poly = .{ .poly = poly } },
-        };
-        for (variants) |distort| {
-            var camera_input = initTestCamera(.{ 0.0, 0.0, 0.2 }, 0.0, 0.0, 0.0, .opengl);
-            camera_input.distort = distort;
-            try saveCamera(io, tmp.dir, "camera.csv", 0, camera_input);
-            const loaded = try loadCamera(allocator, io, tmp.dir, "camera.csv");
-            const loaded_model = try cam.DistortModel.init(loaded.distort);
-            const actual = switch (loaded_model) {
-                .poly => |map| map,
-                .brown_con_poly => |chain| chain.poly,
-                .brown_con_ext_poly => |chain| chain.poly,
-                else => return error.TestUnexpectedResult,
+    for ([_]u8{ 1, 2, 3, 4, 5, 6, 7 }) |degree| {
+        for ([_]cam.PolyMode{ .coordinate, .displacement }) |mode| {
+            var coeffs = [_]F{0} ** 72;
+            for (coeffs[0 .. 2 * cam.polyTermCount(degree)], 0..) |*value, ii|
+                value.* = @as(F, @floatFromInt(ii + 1)) * 1e-15;
+            const poly = try cam.PolyMap.init(
+                degree,
+                mode,
+                coeffs[0 .. 2 * cam.polyTermCount(degree)],
+            );
+            const variants = [_]cam.DistortParams{
+                .{ .poly = poly },
+                .{ .brown_con_poly = .{ .poly = poly } },
+                .{ .brown_con_ext_poly = .{ .poly = poly } },
             };
-            try testing.expectEqual(order, actual.order);
-            for (0..10) |ii| {
-                try testing.expectApproxEqAbs(poly.coeffs_u[ii], actual.coeffs_u[ii], 1e-7);
-                try testing.expectApproxEqAbs(poly.coeffs_v[ii], actual.coeffs_v[ii], 1e-7);
+            for (variants) |distort| {
+                var camera_input = initTestCamera(.{ 0.0, 0.0, 0.2 }, 0.0, 0.0, 0.0, .opengl);
+                camera_input.distort = distort;
+                try saveCamera(io, tmp.dir, "camera.csv", 0, camera_input);
+                const loaded = try LoadedCamera.init(allocator, io, tmp.dir, "camera.csv");
+                defer loaded.deinit(allocator);
+                const loaded_model = try cam.DistortModel.init(loaded.camera_input.distort);
+                const actual = switch (loaded_model) {
+                    .poly => |map| map,
+                    .brown_con_poly => |chain| chain.poly,
+                    .brown_con_ext_poly => |chain| chain.poly,
+                    else => return error.TestUnexpectedResult,
+                };
+                try testing.expectEqual(degree, actual.degree);
+                try testing.expectEqual(mode, actual.mode);
+                try testing.expectEqualSlices(F, poly.coeffs, actual.coeffs);
             }
         }
     }

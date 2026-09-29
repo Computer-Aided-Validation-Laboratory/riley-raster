@@ -84,16 +84,34 @@ fn brownConradyExtDistort(
     };
 }
 
+fn fixturePolyCoeffs(
+    comptime degree: u8,
+    comptime cu: [10]F,
+    comptime cv: [10]F,
+) []const F {
+    const Storage = struct {
+        const pairs = blk: {
+            var data: [2 * cam.polyTermCount(degree)]F = undefined;
+            for (0..cam.polyTermCount(degree)) |ii| {
+                data[2 * ii] = cu[ii];
+                data[2 * ii + 1] = cv[ii];
+            }
+            break :blk data;
+        };
+    };
+    return &Storage.pairs;
+}
+
 fn standalonePolyDistort(
-    order: cam.PolyOrder,
-    coeffs_u: [10]F,
-    coeffs_v: [10]F,
+    comptime degree: u8,
+    comptime coeffs_u: [10]F,
+    comptime coeffs_v: [10]F,
 ) cam.DistortParams {
     return .{
         .poly = .{
-            .order = order,
-            .coeffs_u = coeffs_u,
-            .coeffs_v = coeffs_v,
+            .degree = degree,
+            .mode = .displacement,
+            .coeffs = fixturePolyCoeffs(degree, coeffs_u, coeffs_v),
         },
     };
 }
@@ -104,9 +122,9 @@ fn brownConradyPolyDistort(
     k3: F,
     p1: F,
     p2: F,
-    order: cam.PolyOrder,
-    coeffs_u: [10]F,
-    coeffs_v: [10]F,
+    comptime degree: u8,
+    comptime coeffs_u: [10]F,
+    comptime coeffs_v: [10]F,
 ) cam.DistortParams {
     return .{
         .brown_con_poly = .{
@@ -118,9 +136,9 @@ fn brownConradyPolyDistort(
                 .p2 = p2,
             },
             .poly = .{
-                .order = order,
-                .coeffs_u = coeffs_u,
-                .coeffs_v = coeffs_v,
+                .degree = degree,
+                .mode = .displacement,
+                .coeffs = fixturePolyCoeffs(degree, coeffs_u, coeffs_v),
             },
         },
     };
@@ -135,9 +153,9 @@ fn brownConradyExtPolyDistort(
     k6: F,
     p1: F,
     p2: F,
-    order: cam.PolyOrder,
-    coeffs_u: [10]F,
-    coeffs_v: [10]F,
+    comptime degree: u8,
+    comptime coeffs_u: [10]F,
+    comptime coeffs_v: [10]F,
 ) cam.DistortParams {
     return .{
         .brown_con_ext_poly = .{
@@ -152,9 +170,9 @@ fn brownConradyExtPolyDistort(
                 .p2 = p2,
             },
             .poly = .{
-                .order = order,
-                .coeffs_u = coeffs_u,
-                .coeffs_v = coeffs_v,
+                .degree = degree,
+                .mode = .displacement,
+                .coeffs = fixturePolyCoeffs(degree, coeffs_u, coeffs_v),
             },
         },
     };
@@ -221,7 +239,7 @@ pub const camera_distort_cases = [_]CameraDistortCase{
     .{
         .case_name = "poly_quadratic",
         .distort = standalonePolyDistort(
-            .quadratic,
+            2,
             [_]F{ 0.0, 0.01, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0 },
             [_]F{ 0.0, 0.0, -0.01, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 },
         ),
@@ -229,7 +247,7 @@ pub const camera_distort_cases = [_]CameraDistortCase{
     .{
         .case_name = "poly_cubic",
         .distort = standalonePolyDistort(
-            .cubic,
+            3,
             [_]F{ 0.0, 0.01, 0.0, 0.0, 0.5, 0.0, 2.0, 0.0, 0.0, 0.0 },
             [_]F{ 0.0, 0.0, -0.01, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, -2.0 },
         ),
@@ -242,7 +260,7 @@ pub const camera_distort_cases = [_]CameraDistortCase{
             0.0,
             1.0e-3,
             -1.0e-3,
-            .quadratic,
+            2,
             [_]F{ 0.0, 0.01, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0 },
             [_]F{ 0.0, 0.0, -0.01, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 },
         ),
@@ -258,7 +276,7 @@ pub const camera_distort_cases = [_]CameraDistortCase{
             0.0,
             1.0e-3,
             -1.0e-3,
-            .quadratic,
+            2,
             [_]F{ 0.0, 0.01, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0 },
             [_]F{ 0.0, 0.0, -0.01, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 },
         ),

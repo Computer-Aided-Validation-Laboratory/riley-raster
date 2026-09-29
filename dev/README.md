@@ -310,28 +310,79 @@ rendered through all three buffer modes, producing 90 comparison images under
 
 ### Polynomial camera distortion
 
-Polynomial coefficients describe a forward displacement map in normalized
-camera coordinates: `(x, y)` maps to `(x + du(x, y), y + dv(x, y))`. The basis is
-`[1, x, y, x², xy, y², x³, x²y, xy², y³]`; linear, quadratic, and cubic orders
-use the first 3, 6, and 10 terms. Zero coefficients give identity distortion.
+Polynomial maps support total degrees 1 through 7. Supply one forward map in
+dimensionless normalized camera coordinates, in the same direction as
+Brown–Conrady. Inversion numerically solves that same map; there are no supplied
+inverse coefficients or direction flags.
 
-Use `PolyMap`, `DistortParams`, and `DistortModel.init(...)` in Zig. Evaluation
-methods are `ford(...)` and `inv(...)`, following `dev/ABBREVIATIONS.md`.
-Prepared models expose `paramsFromModel()`. Inversion solves the same forward
-map; it reports singularity, non-finite arithmetic, or non-convergence as errors.
-Small Newton steps alone do not imply convergence. Chained models apply
-Brown–Conrady first, then the polynomial; inversion reverses that order.
+Coefficients are a row-major paired buffer with logical shape
+`[term_count, 2]`, where `term_count = (degree + 1) * (degree + 2) / 2`.
+Terms are ordered by increasing total degree, then descending x exponent:
+`1, x, y, x², xy, y², ...`. Each term stores its x-output and y-output
+coefficient next to each other. Degrees 1–7 use 3, 6, 10, 15, 21, 28, 36 pairs.
 
-Python cameras and the C ABI expose `distort_model`, `distort_poly_order`,
-`distort_poly_u`, and `distort_poly_v` (ten coefficients per axis). There are no
-direction flags or inverse coefficient arrays. Camera CSVs use `poly_order`,
-`poly_u_<index>`, and `poly_v_<index>`; conventional serialized model tags such
-as `brown_conrady_polynomial` are unchanged. Inverse-map calibrations are rejected
-and require offline refitting to the forward convention.
+Choose `PolyMode.coordinate` for `(P(x,y), Q(x,y))` or
+`PolyMode.displacement` for `(x + P(x,y), y + Q(x,y))`.
+Coordinate identity needs x/y linear coefficients of one; zero coordinate
+coefficients describe a zero map. Zero displacement coefficients describe identity.
 
-This is a breaking ABI/API change: rebuild the native library, Cython extension,
-and any C clients together. Old forward-map CSVs must also be re-exported using
-the new coefficient keys. No automatic coefficient reinterpretation is provided.
+```zig
+const coeffs = [_]F{ 0, 0, 0.01, 0, 0, -0.01 };
+const poly = try cam.PolyMap.init(1, .displacement, &coeffs);
+const distort = try cam.DistortModel.init(.{ .poly = poly });
+```
+
+Native maps borrow `[]const F`: construction validates but does not allocate.
+Keep coefficient storage alive and unchanged until preparation/rendering and
+all workers complete. Struct copies and `paramsFromModel()` do not extend its
+lifetime. Native empty map defaults retain displacement identity semantics.
+
+Evaluation methods are `ford`, `fordWithJac`, and `inv`. Forward-only does
+not compute derivatives. Inversion reports singularity, nonfinite arithmetic,
+or nonconvergence, and only residual convergence is success. Arbitrary maps
+need not be invertible; root uniqueness and convergence are not guaranteed.
+BC/BCExt composition applies Brown–Conrady first, then the polynomial.
+Inversion reverses that order.
+
+CSV loading returns an owner rather than a self-contained camera input:
+
+```zig
+const loaded = try cameraio.LoadedCamera.init(outer_alloc, io, dir, "camera.csv");
+defer loaded.deinit(outer_alloc);
+// Render loaded.camera_input before deinitializing the owner.
+```
+
+Stereo loading uses `LoadedStereoPair.init/deinit` and `.stereo_pair`.
+Neither owner stores an allocator; callers pass the same allocator to deinit.
+CSV metadata is `poly_degree`, `poly_mode`, and
+`poly_coeff_<term>_x` / `poly_coeff_<term>_y`. Coefficients are written with
+roundtrip-safe scientific precision. Conventional model tags are unchanged.
+
+Python cameras use `distort_poly=riley.PolyMap(degree, mode, coeffs)`, with
+`mode=riley.EPolyMode.coordinate` or `.displacement`. Coefficients have
+shape `(term_count, 2)`. The binding takes a contiguous owned f64 snapshot for
+each native call, accepts strided/real numeric arrays, and never silently
+reshapes, truncates or pads wrong-shaped data. Python-loaded maps own their arrays.
+
+The C ABI exposes `distort_poly_degree`, `distort_poly_mode` (0 coordinate,
+1 displacement), `distort_poly_coeffs` and `distort_poly_coeffs_len`.
+Render/save calls borrow the caller's buffers through worker completion.
+`rileyLoadCamera` accepts caller storage/capacity; null storage with zero
+capacity queries metadata and required count, returning a null coefficient
+pointer. Load again with sufficient caller-owned storage. Capacity is checked
+on the final load even if the file changes between calls. Stereo loading
+accepts independent buffers for each camera. No returned pointer references
+the loader's temporary arena.
+
+This is a breaking ABI/API/schema change: rebuild the native library, Cython
+extension and C clients together. To migrate old degree-1–3 displacement data,
+interleave only the active u/v coefficients and explicitly select displacement.
+No automatic padding or compatibility shim is provided.
+
+Adaptive hulls and conservative distorted curved-boundary bounds are outside
+this update. Flat/low-curvature plate rendering is the intended immediate use;
+pointwise polynomial correctness does not establish conservative raster bounds.
+See `plans/bug_distorted_curved_hull.md` for the existing limitation.
 
 ### Managed render groups
 

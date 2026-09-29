@@ -85,19 +85,19 @@ def main() -> None:
     # --------------------------------------------------------------------------
     # Polynomial coefficients describe displacement, not the full mapped point.
     poly = {
-        "distort_poly_order": 2,
-        "distort_poly_u": (0.0, 0.02, 0.01, 0.01, 0.005, -0.005, 0, 0, 0, 0),
-        "distort_poly_v": (
-            0.0,
-            -0.01,
-            -0.015,
-            0.005,
-            -0.005,
-            0.01,
-            0,
-            0,
-            0,
-            0,
+        "distort_poly": riley.PolyMap(
+            degree=2,
+            mode=riley.EPolyMode.displacement,
+            coeffs=np.array(
+                [
+                    [0, 0],
+                    [0.02, -0.01],
+                    [0.01, -0.015],
+                    [0.01, 0.005],
+                    [0.005, -0.005],
+                    [-0.005, 0.01],
+                ]
+            ),
         ),
     }
     brown = {
@@ -188,7 +188,7 @@ def main() -> None:
                 config.buffer_mode = mode
                 out_dir = out_dir_root / distort_name / psf_name / mode.name
                 out_dir.mkdir(parents=True, exist_ok=True)
-                print(f"Rendering {distortion_name}/{psf_name}/{mode.name}...")
+                print(f"Rendering {distort_name}/{psf_name}/{mode.name}...")
                 start_time = perf_counter()
                 riley.raster(mesh, case_camera, config, out_dir=str(out_dir))
                 elapsed_time = perf_counter() - start_time

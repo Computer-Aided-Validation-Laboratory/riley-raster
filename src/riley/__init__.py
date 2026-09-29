@@ -29,6 +29,8 @@ if platform.system().lower() == "windows":
 from riley.cython.riley import (
     BufferMode,
     Camera,
+    PolyMap,
+    EPolyMode,
     CameraCoordSys,
     CameraInput,
     EFrameFit,
@@ -175,6 +177,8 @@ __all__ = [
     "BufferMode",
     "CalTargetMotionLimits",
     "Camera",
+    "PolyMap",
+    "EPolyMode",
     "CameraCoordSys",
     "CameraInput",
     "ConnectConvention",
