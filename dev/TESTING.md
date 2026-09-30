@@ -19,6 +19,21 @@ zig build gen-gold-full -Doptimize=ReleaseSafe
 zig build test-full -Doptimize=ReleaseSafe
 ```
 
+The basic and full gold suites continue after image-comparison failures:
+each failed camera/frame/field writes actual, reference, and (when dimensions
+match) difference images under `fails/`. All remaining cases and sub-suites
+still run. The command exits unsuccessfully only after printing the total
+comparison and other suite-failure counts. Gold files are never updated by a
+test run. Rendering, setup, or artifact-write errors still abort the current
+sub-suite, but the next sub-suite runs.
+The focused verification suite likewise continues through its remaining
+verification cases and reports failure at the end.
+After reviewing and approving distortion failures, run
+`zig build gen-gold-failed-distortion -Doptimize=ReleaseSafe` to regenerate
+only the distinct distortion/PSF and SSAA/pixel-map gold cases represented
+in `fails/`. The generator writes both `.fimg` and `.bmp` references; it does
+not select or modify unrelated full-suite cases.
+
 > [!NOTE]
 > Running `gen-gold-full` and `test-full` with `-Doptimize=ReleaseSafe` is strongly recommended for high throughput, generating and verifying thousands of cases in seconds while maintaining safety checks.
 
@@ -188,7 +203,7 @@ change the production Newton solver tolerances.
 - **Scene**: Scene 1 (Cube `tri3`)
 - **Coverage** (72 cases):
   - **SSAA Levels**: $1, 2, 3, 4$ ($1, 4, 9, 16$ subpixels per pixel).
-  - **Subpixel Center Mapping Engines**: `full_in_mem` (precomputed global grid), `per_tile` (on-the-fly tile evaluation), and `affine_jac` (first-order Jacobian local approximation).
+  - **Subpixel Center Mapping Engines**: `full_in_mem` (precomputed global grid) and `per_tile` (on-the-fly tile evaluation).
   - **Distortion Models**: Brown-Conrady, Brown-Conrady-Ext, and Brown-Conrady-Polynomial.
   - **PSFs & Halos**: Pixel box and Gaussian halo filtering ($\sigma = 1.5\text{ px}$, $5\text{ px}$ halo margin).
 
@@ -284,8 +299,14 @@ Fixtures remain alive for all model evaluations. Generation is explicit via
 Python polynomial tests cover all 42 degree/mode/model combinations, invalid
 input, tiny-coefficient serialization precision, caller-buffer C loading,
 loaded storage lifetime, stereo ownership, and BC-equivalent flat-plate renders
-through all subpixel-map modes and one/four workers. These render checks are
-integration equivalence tests, not a proof of arbitrary curved-boundary culling.
+through both subpixel-map modes and one/four workers. The distortion-frontend
+regressions render the analytic Brown-Conrady k1 triangle whose observed
+interior extends beyond the distorted vertex bounds, across scalar/SIMD,
+subpixel-map, buffer and SSAA choices. Direct tests compare scalar/SIMD fixed
+edge sampling, including a smooth between-sample radial extremum. These
+checks are integration regressions, not a proof for arbitrary sharply varying
+distortion or an ideal hull that fails to enclose its element. Distortion-enabled
+full-suite gold images may change; inspect `fails/` before regenerating gold.
 
 `zig build bench-poly -Doptimize=ReleaseFast` measures runtime-selected
 degree-1/3/5/7 scalar/SIMD forward, Jacobian and inverse kernels in both modes.

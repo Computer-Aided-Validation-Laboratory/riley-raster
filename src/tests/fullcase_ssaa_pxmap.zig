@@ -78,7 +78,6 @@ pub const psf_cases = [_]PsfCase{
 pub const pxmap_cases = [_]PxMapCase{
     .{ .tag = "full_in_mem", .map_mode = .full_in_mem },
     .{ .tag = "per_tile", .map_mode = .per_tile },
-    .{ .tag = "affine_jac", .map_mode = .affine_jac },
 };
 
 pub const ssaa_levels = [_]u32{ 1, 2, 3, 4 };

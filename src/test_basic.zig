@@ -22,6 +22,7 @@ test "basic test suite" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
     const start = std.Io.Clock.Timestamp.now(io, .awake);
+    testsuites.beginSuiteRun();
 
     try testsuites.printStatus(io, "\nRunning basic test suite.\n\n", .{});
     try testsuites.runSuite("oneelem", allocator, io, oneelem.run);
@@ -35,4 +36,5 @@ test "basic test suite" {
         "\nBasic test suite complete. Took {d:.3} seconds.\n\n",
         .{elapsed_s},
     );
+    try testsuites.finishSuiteRun(io);
 }

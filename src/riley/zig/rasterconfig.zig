@@ -66,6 +66,8 @@ pub const RasterConfig = struct {
     tile_size_min: u16 = 1,
     tile_size_max: u16 = 256,
     buffer_mode: BufferMode = .tile_local,
+    /// Maximum spacing along ideal-raster rectangle edges before distortion.
+    edge_spacing_px: F = 1.0,
     global_subpx_tile_size_override: ?u16 = null,
     global_subpx_tile_size_min: u16 = 64,
     global_subpx_tile_size_max: u16 = 1024,

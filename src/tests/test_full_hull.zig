@@ -204,7 +204,7 @@ fn runOneElemHullCaseTest(
                     .{ case_dir_name, ff, duration_ms },
                 );
             }
-            return err;
+            try common.recordGoldFailure(err);
         };
     }
 
@@ -331,7 +331,7 @@ fn runScene2HullCaseTest(
                     .{ case_dir_name, ff, duration_ms },
                 );
             }
-            return err;
+            try common.recordGoldFailure(err);
         };
     }
 

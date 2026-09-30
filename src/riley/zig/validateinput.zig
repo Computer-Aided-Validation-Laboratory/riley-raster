@@ -74,6 +74,7 @@ pub const InputValidationError = error{
     InvalidTileSizeMax,
     InvalidTileSizeRange,
     InvalidTileSizeOverride,
+    InvalidDistortEdgeSpacing,
     InvalidGlobalSubpxTileSizeMin,
     InvalidGlobalSubpxTileSizeMax,
     InvalidGlobalSubpxTileSizeRange,
@@ -217,6 +218,11 @@ fn checkTopLevelAndRenderGroups(
 }
 
 fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
+    if (!std.math.isFinite(config.edge_spacing_px) or
+        config.edge_spacing_px <= 0.0)
+    {
+        return error.InvalidDistortEdgeSpacing;
+    }
     if (config.total_threads == 0) {
         return error.InvalidTotalThreads;
     }
@@ -895,4 +901,15 @@ fn isFinite2D(comptime N1: usize, comptime N2: usize, arr: *const [N1][N2]F) boo
 
 fn isFiniteVec3(vec_val: anytype) bool {
     return isFiniteSlice(vec_val.asSlice());
+}
+
+test "raster configuration rejects invalid distortion edge spacing" {
+    var config = rastcfg.RasterConfig{};
+    for ([_]F{ 0.0, -1.0, std.math.nan(F), std.math.inf(F) }) |spacing| {
+        config.edge_spacing_px = spacing;
+        try std.testing.expectError(
+            error.InvalidDistortEdgeSpacing,
+            checkRasterConfig(config),
+        );
+    }
 }

@@ -133,7 +133,7 @@ pub fn runFullSsaaPxmapCaseTest(
                 .{ case_name, duration_ms },
             );
         }
-        return err;
+        try common_test.recordGoldFailure(err);
     };
 
     if (tcfg.TEST_CASE_VERBOSE) {
@@ -183,17 +183,16 @@ fn runPxmapEquivalenceTests(
     const mesh = fullcase_ssaa_pxmap.buildScene1Mesh(prep);
     const meshes = [_]MeshInput{mesh};
 
-    // 1. No-distortion control: full_in_mem, per_tile, and affine_jac must match exactly
+    // 1. No-distortion control: full_in_mem and per_tile must match exactly.
     const pxmap_modes = [_]camera.SubPixelCenterMap{
         .full_in_mem,
         .per_tile,
-        .affine_jac,
     };
 
-    var base_renders: [3]?ndarray.NDArray(F) = [_]?ndarray.NDArray(F){ null, null, null };
-    var arenas: [3]std.heap.ArenaAllocator = undefined;
+    var base_renders: [2]?ndarray.NDArray(F) = [_]?ndarray.NDArray(F){ null, null };
+    var arenas: [2]std.heap.ArenaAllocator = undefined;
     defer {
-        for (0..3) |ii| {
+        for (0..2) |ii| {
             if (base_renders[ii]) |_| arenas[ii].deinit();
         }
     }
@@ -229,7 +228,7 @@ fn runPxmapEquivalenceTests(
     }
 
     const ref_img = base_renders[0] orelse return error.NoResult;
-    for (1..3) |ii| {
+    for (1..2) |ii| {
         const test_img = base_renders[ii] orelse return error.NoResult;
         try std.testing.expectEqualSlices(usize, ref_img.dims, test_img.dims);
         for (ref_img.slice, test_img.slice) |ref_val, test_val| {

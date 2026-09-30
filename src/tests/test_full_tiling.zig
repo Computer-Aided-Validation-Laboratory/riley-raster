@@ -175,7 +175,7 @@ fn runTilingCaseTest(
                 .{ case_tag, duration_ms },
             );
         }
-        return err;
+        try common.recordGoldFailure(err);
     };
 
     if (tcfg.TEST_CASE_VERBOSE) {

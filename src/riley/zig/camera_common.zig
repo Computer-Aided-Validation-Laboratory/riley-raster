@@ -51,7 +51,6 @@ pub const CameraCoordSys = enum {
 pub const SubPixelCenterMap = enum {
     full_in_mem,
     per_tile,
-    affine_jac,
 };
 
 pub const FOVScaling = struct {
@@ -138,7 +137,6 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         prep_psf: cm.PreparedPSF,
         coord_sys: CameraCoordSys,
         ideal_pixel_centers: ndarray.NDArray(F),
-        pixel_center_jac: ndarray.NDArray(F),
         subpixel_center_map: SubPixelCenterMap,
 
         pub fn init(
@@ -192,27 +190,6 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
                     );
                 },
             };
-            const pixel_center_jac = switch (subpixel_center_map) {
-                .affine_jac => blk: {
-                    const dims = [_]usize{
-                        input.pixels_num[1],
-                        input.pixels_num[0],
-                        6,
-                    };
-                    break :blk try ndarray.NDArray(F).initFlat(
-                        allocator,
-                        dims[0..],
-                    );
-                },
-                else => blk: {
-                    const dims = [_]usize{ 0, 0, 6 };
-                    break :blk try ndarray.NDArray(F).initFlat(
-                        allocator,
-                        dims[0..],
-                    );
-                },
-            };
-
             var self = Self{
                 .pixels_num = input.pixels_num,
                 .pixels_size = input.pixels_size,
@@ -235,14 +212,12 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
                 ),
                 .coord_sys = input.coord_sys,
                 .ideal_pixel_centers = ideal_pixel_centers,
-                .pixel_center_jac = pixel_center_jac,
                 .subpixel_center_map = subpixel_center_map,
             };
             errdefer self.deinit(allocator);
 
             switch (subpixel_center_map) {
                 .full_in_mem => try self.initFullIdealPixelCenters(),
-                .affine_jac => try CameraBackend.initPixelCenterJac(&self),
                 .per_tile => {},
             }
 
@@ -257,8 +232,6 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             prep_psf.deinit(allocator);
             allocator.free(self.ideal_pixel_centers.slice);
             self.ideal_pixel_centers.deinit(allocator);
-            allocator.free(self.pixel_center_jac.slice);
-            self.pixel_center_jac.deinit(allocator);
         }
 
         pub inline fn calcPinholeRasterPoint(
@@ -297,26 +270,6 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             ideal_pixel_centers: []F,
         ) !void {
             return CameraBackend.fillTileIdealCentersPerTile(
-                self,
-                scratch_x_px_min,
-                scratch_x_px_max,
-                scratch_y_px_min,
-                scratch_y_px_max,
-                subpx_tile_size,
-                ideal_pixel_centers,
-            );
-        }
-
-        pub inline fn fillTileIdealCentersAffineJac(
-            self: *const Self,
-            scratch_x_px_min: i32,
-            scratch_x_px_max: i32,
-            scratch_y_px_min: i32,
-            scratch_y_px_max: i32,
-            subpx_tile_size: usize,
-            ideal_pixel_centers: []F,
-        ) !void {
-            try CameraBackend.fillTileIdealCentersAffineJac(
                 self,
                 scratch_x_px_min,
                 scratch_x_px_max,
@@ -808,22 +761,30 @@ test "PreparedPSF isotropic gaussian separable matches non-separable outer produ
 }
 
 test "camera preparation propagates polynomial inverse errors without leaking" {
-    const modes = [_]SubPixelCenterMap{ .full_in_mem, .affine_jac };
-    for (modes) |mode| {
-        try std.testing.expectError(error.SingularJac, CameraPrepared.init(std.testing.allocator, .{
-            .pixels_num = .{ 2, 2 },
-            .pixels_size = .{ 0.001, 0.001 },
-            .pos_world = @import("vecstack.zig").Vec3f.initSlice(&.{ 0.0, 0.0, 1.0 }),
-            .rot_world = @import("rotation.zig").Rotation.init(0.0, 0.0, 0.0),
-            .roi_cent_world = @import("vecstack.zig").Vec3f.initZeros(),
-            .focal_length = 0.1,
-            .sub_sample = 1,
-            .subpixel_center_map = mode,
-            .distort = .{ .poly = .{
-                .degree = 1,
-                .mode = .displacement,
-                .coeffs = &.{ 0.0, 0, -1.0, 0, 0.0, 0 },
-            } },
-        }));
-    }
+    var input = CameraInput{
+        .pixels_num = .{ 2, 2 },
+        .pixels_size = .{ 0.001, 0.001 },
+        .pos_world = @import("vecstack.zig").Vec3f.initSlice(&.{ 0.0, 0.0, 1.0 }),
+        .rot_world = @import("rotation.zig").Rotation.init(0.0, 0.0, 0.0),
+        .roi_cent_world = @import("vecstack.zig").Vec3f.initZeros(),
+        .focal_length = 0.1,
+        .sub_sample = 1,
+        .subpixel_center_map = .full_in_mem,
+        .distort = .{ .poly = .{
+            .degree = 1,
+            .mode = .displacement,
+            .coeffs = &.{ 0.0, 0, -1.0, 0, 0.0, 0 },
+        } },
+    };
+    try std.testing.expectError(
+        error.SingularJac,
+        CameraPrepared.init(std.testing.allocator, input),
+    );
+    input.subpixel_center_map = .per_tile;
+    const prepared = try CameraPrepared.init(std.testing.allocator, input);
+    defer prepared.deinit(std.testing.allocator);
+    try std.testing.expectError(
+        error.SingularJac,
+        prepared.calcPinholeRasterPoint(0.5, 0.5),
+    );
 }

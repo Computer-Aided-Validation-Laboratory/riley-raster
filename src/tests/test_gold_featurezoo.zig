@@ -226,13 +226,30 @@ pub fn runZooCase(
                     tcfg.REL_TOL,
                     tcfg.ABS_TOL,
                 ) catch |err| {
+                    const fail_dir = try std.fmt.allocPrint(
+                        local_alloc,
+                        "basic_featurezoo/{s}/{s}",
+                        .{ suite_tag, case.name },
+                    );
+                    try common.saveComparisonArtifactsFromResult(
+                        local_alloc,
+                        io,
+                        common.default_fails_root,
+                        fail_dir,
+                        &render_result,
+                        cc,
+                        ff,
+                        ch,
+                        gold_path,
+                        1,
+                    );
                     if (tcfg.TEST_CASE_VERBOSE) {
                         std.debug.print(
                             "FAIL {s} {s} cam {d} frame {d} ch {d} ({d:.2} ms)\n",
                             .{ suite_tag, case.name, cc, ff, ch, duration_ms },
                         );
                     }
-                    return err;
+                    try common.recordGoldFailure(err);
                 };
             }
         }

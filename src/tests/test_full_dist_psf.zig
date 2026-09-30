@@ -142,7 +142,7 @@ pub fn runFullDistPsfCaseTest(
                 .{ case_name, buf_case.tag, duration_ms },
             );
         }
-        return err;
+        try common_test.recordGoldFailure(err);
     };
 
     // Verify that distortion and PSF cases differ from the base (none/box) reference

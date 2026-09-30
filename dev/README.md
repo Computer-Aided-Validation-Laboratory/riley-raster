@@ -379,10 +379,19 @@ extension and C clients together. To migrate old degree-1–3 displacement data,
 interleave only the active u/v coefficients and explicitly select displacement.
 No automatic padding or compatibility shim is provided.
 
-Adaptive hulls and conservative distorted curved-boundary bounds are outside
-this update. Flat/low-curvature plate rendering is the intended immediate use;
-pointwise polynomial correctness does not establish conservative raster bounds.
-See `plans/bug_distorted_curved_hull.md` for the existing limitation.
+The distortion-aware raster frontend now builds an ideal-space element box
+from the triangle nodes or adaptive hull, clips it to the inverse-mapped
+sensor envelope, then samples all four box edges through the forward model.
+`RasterConfig.edge_spacing_px` controls the fixed ideal-pixel sample spacing
+(default 1). Scalar and SIMD paths use the same sample locations; integer
+binning bounds are formed first, but tile overlap uses the floating bounds
+before its final outward rounding. The old
+`affine_jac` subpixel-map mode was removed; use `full_in_mem` or `per_tile`.
+This addresses the node-only distorted-bounds bug for elements enclosed by
+their ideal adaptive hull. Fixed edge sampling is an engineering tolerance,
+not a formal bound for arbitrary sharp or singular distortion maps, and it
+cannot repair any independent failure of the ideal hull to enclose an element.
+See `plans/riley_adaptive_hull_distortion_summary.md` for that distinction.
 
 ### Managed render groups
 

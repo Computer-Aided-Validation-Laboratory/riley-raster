@@ -25,6 +25,7 @@ test "full test suite" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
     const start = std.Io.Clock.Timestamp.now(io, .awake);
+    testsuites.beginSuiteRun();
 
     try testsuites.printStatus(io, "\nRunning full test suite.\n\n", .{});
     try testsuites.runSuite("input_verif", allocator, io, input_verif_suite.run);
@@ -54,4 +55,5 @@ test "full test suite" {
         "\nFull test suite complete. Took {d:.3} seconds.\n\n",
         .{elapsed_s},
     );
+    try testsuites.finishSuiteRun(io);
 }

@@ -26,6 +26,7 @@ const MeshType = geomkerns.MeshType;
 const hull = @import("hull.zig");
 const shaderops = @import("shaderops.zig");
 const report = @import("report.zig");
+const distortbounds = @import("distortbounds.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -93,6 +94,111 @@ pub const ElemBBox = struct {
     y_min: i32,
     y_max: i32,
 };
+
+pub const DistortBounds = distortbounds.Bounds;
+pub const DistortElemBBox = struct {
+    integer: ElemBBox,
+    floating: DistortBounds,
+};
+
+pub fn calcIdealSensorBounds(
+    camera: *const cam.CameraPrepared,
+    raster_halo_px: u16,
+) !DistortBounds {
+    return distortbounds.idealSensorBounds(camera, raster_halo_px);
+}
+
+pub fn calcVisibleDistortBBox(
+    comptime MT: MeshType,
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
+    elem_idx: usize,
+    hull_convex_fallback_on: bool,
+    hull_on: bool,
+    raster_halo_px: u16,
+    ideal_sensor: DistortBounds,
+    edge_spacing_px: F,
+) !?DistortElemBBox {
+    const N = comptime MT.getNodesNum();
+    const coords = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
+    if (isElemBehindCamera(N, coords) or !isNodeZInvertible(N, coords)) {
+        return null;
+    }
+
+    var ideal_bounds = DistortBounds.initEmpty();
+    if (comptime MT == .tri3 or MT == .tri3opt) {
+        const nodes = RasterCoords2D(N){ .x = coords.x, .y = coords.y };
+        if (isTri3BackfaceRaster(nodes)) return null;
+        for (0..N) |nn| try ideal_bounds.include(nodes.x[nn], nodes.y[nn]);
+    } else {
+        const nodes = projectClipToIdealRaster(N, camera, coords);
+        if (isHighOrdBackface(N, nodes)) return null;
+        if (hull_on) {
+            const NH = comptime MT.getNumHullPoints();
+            const points = hull.buildAdaptiveHullPointsFromClip(
+                N,
+                camera,
+                coords,
+                hull_convex_fallback_on,
+            );
+            for (0..NH) |nn| {
+                try ideal_bounds.include(points.x[nn], points.y[nn]);
+            }
+        } else {
+            for (0..N) |nn| try ideal_bounds.include(nodes.x[nn], nodes.y[nn]);
+        }
+    }
+
+    const walk = ideal_bounds.intersect(ideal_sensor) orelse return null;
+    var observed = try distortbounds.sampleRect(camera, walk, edge_spacing_px);
+    if (comptime MT != .tri3 and MT != .tri3opt) {
+        if (!hull_on) {
+            const dx = observed.x_max - observed.x_min;
+            const dy = observed.y_max - observed.y_min;
+            const pad = tol.hull.no_hull_bbox_rel_pad * @max(dx, dy);
+            observed.x_min -= pad;
+            observed.x_max += pad;
+            observed.y_min -= pad;
+            observed.y_max += pad;
+        }
+    }
+    if (!isOnScreen(
+        camera,
+        observed.x_min,
+        observed.x_max,
+        observed.y_min,
+        observed.y_max,
+        raster_halo_px,
+    )) return null;
+
+    const halo: F = @floatFromInt(raster_halo_px);
+    const width: F = @floatFromInt(camera.pixels_num[0]);
+    const height: F = @floatFromInt(camera.pixels_num[1]);
+    observed = observed.intersect(.{
+        .x_min = -halo,
+        .x_max = width + halo,
+        .y_min = -halo,
+        .y_max = height + halo,
+    }) orelse return null;
+
+    return .{
+        .integer = .{
+            .elem_idx = elem_idx,
+            .x_min = boundIndMinSigned(observed.x_min, -@as(i32, raster_halo_px)),
+            .x_max = boundIndMaxSigned(
+                observed.x_max,
+                @as(i32, @intCast(camera.pixels_num[0])) + raster_halo_px,
+            ),
+            .y_min = boundIndMinSigned(observed.y_min, -@as(i32, raster_halo_px)),
+            .y_max = boundIndMaxSigned(
+                observed.y_max,
+                @as(i32, @intCast(camera.pixels_num[1])) + raster_halo_px,
+            ),
+        },
+        .floating = observed,
+    };
+}
 
 pub const RasterContext = struct {
     camera: *const cam.CameraPrepared,
@@ -518,6 +624,35 @@ pub const OverlapBBox = struct {
     y_max: i32,
 };
 
+pub fn clipElemBBoxToTile(
+    elem_bbox: ElemBBox,
+    floating: ?DistortBounds,
+    mesh_idx: usize,
+    scratch_x_min: i32,
+    scratch_x_max: i32,
+    scratch_y_min: i32,
+    scratch_y_max: i32,
+) OverlapBBox {
+    if (floating) |bounds| {
+        return .{
+            .mesh_idx = mesh_idx,
+            .elem_idx = elem_bbox.elem_idx,
+            .x_min = boundIndMinSigned(@max(bounds.x_min, @as(F, @floatFromInt(scratch_x_min))), scratch_x_min),
+            .x_max = boundIndMaxSigned(@min(bounds.x_max, @as(F, @floatFromInt(scratch_x_max))), scratch_x_max),
+            .y_min = boundIndMinSigned(@max(bounds.y_min, @as(F, @floatFromInt(scratch_y_min))), scratch_y_min),
+            .y_max = boundIndMaxSigned(@min(bounds.y_max, @as(F, @floatFromInt(scratch_y_max))), scratch_y_max),
+        };
+    }
+    return .{
+        .mesh_idx = mesh_idx,
+        .elem_idx = elem_bbox.elem_idx,
+        .x_min = @max(elem_bbox.x_min, scratch_x_min),
+        .x_max = @min(elem_bbox.x_max, scratch_x_max),
+        .y_min = @max(elem_bbox.y_min, scratch_y_min),
+        .y_max = @min(elem_bbox.y_max, scratch_y_max),
+    };
+}
+
 pub const ActiveTile = struct {
     overlap_start: usize,
     overlap_count: usize,
@@ -558,6 +693,7 @@ pub fn sceneTileElemOverlap(
     halo_px: u16,
     elems_in_image_by_mesh: []const usize,
     elem_bboxes_by_mesh: []const []ElemBBox,
+    elem_float_bboxes_by_mesh: []const []DistortBounds,
 ) !TilingOverlaps {
     const tiles_num = tiles_num_x * tiles_num_y;
 
@@ -656,6 +792,7 @@ pub fn sceneTileElemOverlap(
             .halo_px = halo_px,
             .mesh_idx = mesh_idx,
             .elem_bbox_slice = elem_bboxes_by_mesh[mesh_idx],
+            .float_bbox_slice = elem_float_bboxes_by_mesh[mesh_idx],
         };
 
         const chunk_size = scalingpolicy.tilingChunkSize(
@@ -722,6 +859,7 @@ const TilingFillStage = struct {
     halo_px: u16,
     mesh_idx: usize,
     elem_bbox_slice: []const ElemBBox,
+    float_bbox_slice: []const DistortBounds,
 };
 
 fn runTilingFill(
@@ -735,6 +873,10 @@ fn runTilingFill(
 
     for (range_start..range_end) |ee| {
         const elem_bbox = tiling.elem_bbox_slice[ee];
+        const floating: ?DistortBounds = if (tiling.float_bbox_slice.len == 0)
+            null
+        else
+            tiling.float_bbox_slice[ee];
         const tile_range = calcElemTileRange(elem_bbox, tiling.tile_size, tiling.halo_px, tiling.tiles_num_x, tiling.tiles_num_y);
         const tx_start = tile_range.tx_start;
         const tx_end = tile_range.tx_end;
@@ -750,9 +892,6 @@ fn runTilingFill(
             const scratch_px_min_y: i32 = @as(i32, tile_px_min_y) - tiling.halo_px;
             const scratch_px_max_y: i32 = @as(i32, tile_px_max_y) + tiling.halo_px;
 
-            const overlap_y_min = @max(elem_bbox.y_min, scratch_px_min_y);
-            const overlap_y_max = @min(elem_bbox.y_max, scratch_px_max_y);
-
             for (tx_start..tx_end) |tx| {
                 const tile_px_min_x = @as(u16, @intCast(tx * tiling.tile_size));
                 const tile_px_max_x = @as(
@@ -765,14 +904,15 @@ fn runTilingFill(
                 const tile_idx = ty * tiling.tiles_num_x + tx;
                 const write_idx = tiling.tile_write_inds[tile_idx].fetchAdd(1, .monotonic);
 
-                tiling.overlaps[write_idx] = .{
-                    .mesh_idx = tiling.mesh_idx,
-                    .elem_idx = elem_bbox.elem_idx,
-                    .x_min = @max(elem_bbox.x_min, scratch_px_min_x),
-                    .x_max = @min(elem_bbox.x_max, scratch_px_max_x),
-                    .y_min = overlap_y_min,
-                    .y_max = overlap_y_max,
-                };
+                tiling.overlaps[write_idx] = clipElemBBoxToTile(
+                    elem_bbox,
+                    floating,
+                    tiling.mesh_idx,
+                    scratch_px_min_x,
+                    scratch_px_max_x,
+                    scratch_px_min_y,
+                    scratch_px_max_y,
+                );
             }
         }
     }
@@ -1141,9 +1281,139 @@ fn initTestCullCameraManual(distort: cam.DistortModel) cam.CameraPrepared {
         .prep_psf = .{},
         .coord_sys = .opengl,
         .ideal_pixel_centers = undefined,
-        .pixel_center_jac = undefined,
         .subpixel_center_map = .full_in_mem,
     };
+}
+
+test "fixed scalar and SIMD bounds recover the distorted triangle interior" {
+    const outer_alloc = std.testing.allocator;
+    var camera = initTestCullCameraManual(.{ .brown_con = .{
+        .k1 = 1.0,
+        .k2 = 0.0,
+        .k3 = 0.0,
+        .p1 = 0.0,
+        .p2 = 0.0,
+    } });
+    camera.pixels_num = .{ 200, 200 };
+
+    var coords = try initElemCoords(
+        3,
+        outer_alloc,
+        .{ 110.0, 110.0, 120.0 },
+        .{ 50.0, 150.0, 100.0 },
+        .{ 1.0, 1.0, 1.0 },
+    );
+    defer outer_alloc.free(coords.mem);
+    var connect = try initSingleElemConnect(3, outer_alloc);
+    defer connect.deinit(outer_alloc);
+
+    const sensor = DistortBounds{
+        .x_min = 0.0,
+        .x_max = 200.0,
+        .y_min = 0.0,
+        .y_max = 200.0,
+    };
+    const bbox = (try calcVisibleDistortBBox(
+        .tri3,
+        &camera,
+        &coords,
+        &connect,
+        0,
+        false,
+        true,
+        0,
+        sensor,
+        1.0,
+    )).?;
+    const old_bbox = calcVisibleNodeBBoxTri3(
+        .tri3,
+        &camera,
+        &coords,
+        &connect,
+        0,
+    ).?;
+    try std.testing.expectEqual(@as(i32, 112), old_bbox.x_min);
+    try std.testing.expectEqual(@as(i32, 110), bbox.integer.x_min);
+    const overlap = clipElemBBoxToTile(
+        bbox.integer,
+        bbox.floating,
+        0,
+        0,
+        200,
+        0,
+        200,
+    );
+    try std.testing.expect(overlap.x_min <= 110 and overlap.x_max > 110);
+    try std.testing.expect(overlap.y_min <= 100 and overlap.y_max > 100);
+    const ideal = try camera.calcPinholeRasterPoint(110.5, 100.5);
+    try std.testing.expect(ideal[0] > 110.0 and ideal[0] < 120.0);
+    try std.testing.expect(ideal[1] > 50.0 and ideal[1] < 150.0);
+
+    const rect = DistortBounds{
+        .x_min = 110.0,
+        .x_max = 120.0,
+        .y_min = 50.0,
+        .y_max = 150.0,
+    };
+    const scalar = try distortbounds.sampleRectScalar(&camera, rect, 1.0);
+    const simd = try distortbounds.sampleRectSIMD(&camera, rect, 1.0);
+    const bound_tol: F = if (F == f32) 1e-4 else 1e-10;
+    try std.testing.expectApproxEqAbs(scalar.x_min, simd.x_min, bound_tol);
+    try std.testing.expectApproxEqAbs(scalar.x_max, simd.x_max, bound_tol);
+    try std.testing.expectApproxEqAbs(scalar.y_min, simd.y_min, bound_tol);
+    try std.testing.expectApproxEqAbs(scalar.y_max, simd.y_max, bound_tol);
+}
+
+test "fixed distortion bounds reject non-finite active output" {
+    var camera = initTestCullCameraManual(.{ .poly = .{
+        .degree = 1,
+        .mode = .displacement,
+        .coeffs = &.{ std.math.nan(F), 0, 0, 0, 0, 0 },
+    } });
+    camera.pixels_num = .{ 200, 200 };
+    const rect = DistortBounds{
+        .x_min = 110.0,
+        .x_max = 112.0,
+        .y_min = 90.0,
+        .y_max = 92.0,
+    };
+    try std.testing.expectError(
+        error.NonFiniteDistortBound,
+        distortbounds.sampleRectScalar(&camera, rect, 1.0),
+    );
+    try std.testing.expectError(
+        error.NonFiniteDistortBound,
+        distortbounds.sampleRectSIMD(&camera, rect, 1.0),
+    );
+}
+
+test "one-pixel fixed spacing resolves a smooth between-sample radial minimum" {
+    var camera = initTestCullCameraManual(.{ .brown_con = .{
+        .k1 = 0.3,
+        .k2 = 0.0,
+        .k3 = 0.0,
+        .p1 = 0.0,
+        .p2 = 0.0,
+    } });
+    camera.pixels_num = .{ 2000, 2000 };
+    camera.pixels_size = .{ 0.001, 0.001 };
+    const rect = DistortBounds{
+        .x_min = 1600.0,
+        .x_max = 1700.0,
+        .y_min = 560.3,
+        .y_max = 1560.3,
+    };
+    const scalar = try distortbounds.sampleRectScalar(&camera, rect, 1.0);
+    const simd = try distortbounds.sampleRectSIMD(&camera, rect, 1.0);
+    const exact_min: F = 1000.0 + 1000.0 * 0.6 * (1.0 + 0.3 * 0.6 * 0.6);
+    const error_limit: F = if (F == f32) 0.002 else 0.0001;
+    try std.testing.expect(scalar.x_min >= exact_min - error_limit);
+    try std.testing.expect(scalar.x_min <= exact_min + error_limit);
+    try std.testing.expectApproxEqAbs(scalar.x_min, simd.x_min, error_limit);
+    try std.testing.expectEqual(
+        @as(i32, 1664),
+        boundIndMinSigned(scalar.x_min, 0),
+    );
 }
 
 test "calcVisibleNodeBBoxTri3 on_screen" {

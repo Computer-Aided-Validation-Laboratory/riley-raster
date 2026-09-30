@@ -329,6 +329,7 @@ pub const CRasterConfig = extern struct {
     full_stats_save_normals_map: u8,
     buffer_mode: u32,
     output_name_format: ?[*:0]const u8,
+    edge_spacing_px: F,
 };
 
 const MeshInputBuilt = struct {
@@ -540,7 +541,6 @@ fn subpxCenterMapFromC(subpx_map: u32) !cam.SubPixelCenterMap {
     return switch (subpx_map) {
         @intFromEnum(cam.SubPixelCenterMap.full_in_mem) => .full_in_mem,
         @intFromEnum(cam.SubPixelCenterMap.per_tile) => .per_tile,
-        @intFromEnum(cam.SubPixelCenterMap.affine_jac) => .affine_jac,
         else => error.InvalidSubPixelCenterMap,
     };
 }
@@ -1559,6 +1559,7 @@ fn buildRasterConfig(
     );
     config.report = try reportModeFromC(in_config.report);
     config.buffer_mode = try bufferModeFromC(in_config.buffer_mode);
+    config.edge_spacing_px = in_config.edge_spacing_px;
     config.tile_size_min = if (in_config.tile_size_min == 0)
         config.tile_size_min
     else

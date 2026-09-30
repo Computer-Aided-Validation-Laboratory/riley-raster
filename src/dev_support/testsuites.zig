@@ -8,6 +8,35 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 
+var comparison_failures = std.atomic.Value(usize).init(0);
+var suite_failures = std.atomic.Value(usize).init(0);
+
+pub fn beginSuiteRun() void {
+    comparison_failures.store(0, .monotonic);
+    suite_failures.store(0, .monotonic);
+}
+
+/// Continue after gold differences, but do not hide rendering or I/O errors.
+pub fn recordGoldFailure(err: anyerror) !void {
+    switch (err) {
+        error.PixelMismatch, error.GoldRowsMismatch, error.GoldColsMismatch => {
+            _ = comparison_failures.fetchAdd(1, .monotonic);
+        },
+        else => return err,
+    }
+}
+
+pub fn finishSuiteRun(io: std.Io) !void {
+    const comparisons = comparison_failures.load(.monotonic);
+    const suites = suite_failures.load(.monotonic);
+    try printStatus(
+        io,
+        "Suite result: {d} gold comparison failures, {d} other suite failures.\n",
+        .{ comparisons, suites },
+    );
+    if (comparisons != 0 or suites != 0) return error.TestSuiteFailures;
+}
+
 /// Flush each status message so long-running suites show progress immediately.
 /// Suite build targets use the terminal runner: stdout is not a protocol stream.
 pub fn printStatus(io: std.Io, comptime format: []const u8, args: anytype) !void {
@@ -32,7 +61,10 @@ pub fn runSuite(
 ) !void {
     try printStatus(io, "Running {s} suite...\n", .{name});
     const start = std.Io.Clock.Timestamp.now(io, .awake);
-    try run(local_alloc, io);
+    run(local_alloc, io) catch |err| {
+        _ = suite_failures.fetchAdd(1, .monotonic);
+        try printStatus(io, "{s} suite failed: {s}\n", .{ name, @errorName(err) });
+    };
     const end = std.Io.Clock.Timestamp.now(io, .awake);
     const elapsed_s = durationToSeconds(start, end);
     try printStatus(io, "{s} suite took {d:.3} seconds.\n", .{ name, elapsed_s });
@@ -46,8 +78,23 @@ pub fn runCase(
 ) !void {
     try printStatus(io, "Running verification case: {s}...\n", .{name});
     const start = std.Io.Clock.Timestamp.now(io, .awake);
-    try run(local_alloc, io);
+    run(local_alloc, io) catch |err| {
+        _ = suite_failures.fetchAdd(1, .monotonic);
+        try printStatus(io, "Verification case {s} failed: {s}\n", .{ name, @errorName(err) });
+    };
     const end = std.Io.Clock.Timestamp.now(io, .awake);
     const elapsed_s = durationToSeconds(start, end);
     try printStatus(io, "Verification case {s} took {d:.3} seconds.\n", .{ name, elapsed_s });
+}
+
+test "gold comparison failures are reported at the end" {
+    beginSuiteRun();
+    try recordGoldFailure(error.PixelMismatch);
+    try std.testing.expectError(error.TestSuiteFailures, finishSuiteRun(std.testing.io));
+    beginSuiteRun();
+    try finishSuiteRun(std.testing.io);
+    try std.testing.expectError(
+        error.OutOfMemory,
+        recordGoldFailure(error.OutOfMemory),
+    );
 }

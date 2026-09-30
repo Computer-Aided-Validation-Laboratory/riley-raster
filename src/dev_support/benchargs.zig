@@ -301,7 +301,6 @@ test "parse bench args defaults" {
         .max_geom_workers_per_job = 2,
         .max_raster_workers_per_job = 3,
         .hull_mode = .on_convex_fallback,
-        .subpixel_center_map = .affine_jac,
     };
     const bench_args = try parseArgs(
         args[0..],
@@ -337,7 +336,7 @@ test "parse bench args named options" {
         "--hull-mode",
         "off",
         "--subpixel-center-map",
-        "affine_jac",
+        "per_tile",
         "--save-strategy",
         "memory",
         "--sample",
@@ -392,7 +391,7 @@ test "parse bench args named options" {
     );
     try std.testing.expectEqual(rastcfg.HullMode.off, bench_args.hull_mode);
     try std.testing.expectEqual(
-        cam.SubPixelCenterMap.affine_jac,
+        cam.SubPixelCenterMap.per_tile,
         bench_args.subpixel_center_map,
     );
     try std.testing.expectEqual(

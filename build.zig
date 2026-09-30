@@ -174,6 +174,11 @@ pub fn build(b: *std.Build) void {
             .source_path = "src/gen_gold_full.zig",
         },
         .{
+            .step_name = "gen-gold-failed-distortion",
+            .description = "Regenerate only distortion gold cases listed in fails/",
+            .source_path = "src/gen_gold_failed_distortion.zig",
+        },
+        .{
             .step_name = "gen-gold-verif-zig",
             .description = "Generate the Zig verification oracle inputs",
             .source_path = "src/gen_gold_verif.zig",

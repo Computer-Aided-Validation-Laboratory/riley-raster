@@ -183,7 +183,7 @@ def test_public_poly_c_buffer_protocol(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("mode", tuple(riley.EPolyMode))
-@pytest.mark.parametrize("subpixel_mode", (0, 1, 2))
+@pytest.mark.parametrize("subpixel_mode", (0, 1))
 @pytest.mark.parametrize("threads", (1, 4))
 def test_flat_plate_bc_poly_render_equivalence(
     mode: riley.EPolyMode, subpixel_mode: int, threads: int

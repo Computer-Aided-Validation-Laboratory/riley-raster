@@ -198,6 +198,7 @@ class RasterConfig:
     full_stats_save_normals_map: bool = False
     buffer_mode: int = 0
     output_name_format: str = "cam{camera}_frame{frame}_field{field}"
+    edge_spacing_px: float = 1.0
 
 
 class MeshType(IntEnum):
@@ -263,7 +264,6 @@ class BufferMode(IntEnum):
 class SubPixelCenterMap(IntEnum):
     full_in_mem = 0
     per_tile = 1
-    affine_jac = 2
 
 
 class TextureSample(IntEnum):
@@ -681,6 +681,7 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
         config.full_stats_save_normals_map,
     )
     config_out.buffer_mode = int(config.buffer_mode)
+    config_out.edge_spacing_px = float(config.edge_spacing_px)
     output_name_format = config.output_name_format.encode("utf-8")
     config_out.output_name_format = output_name_format
     keepalive.append(output_name_format)

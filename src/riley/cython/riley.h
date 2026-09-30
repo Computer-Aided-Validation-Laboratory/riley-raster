@@ -275,6 +275,7 @@ typedef struct c_raster_config {
     uint8_t full_stats_save_normals_map;
     uint32_t buffer_mode;
     const char* output_name_format;
+    double edge_spacing_px;
 } CRasterConfig;
 
 size_t rileyGetLastError(uint8_t* out_buf, size_t out_buf_len);

@@ -32,6 +32,9 @@ const cfg = buildconfig.config;
 const csvio = @import("../riley/zig/csvio.zig");
 const policy = @import("testpolicy.zig");
 const tcfg = @import("testconfig.zig");
+const testsuites = @import("testsuites.zig");
+
+pub const recordGoldFailure = testsuites.recordGoldFailure;
 
 pub const default_fails_root = "fails";
 pub const impl_suffix = if (cfg.simd == .on) "_simd" else "_scalar";
@@ -554,6 +557,10 @@ pub fn calculateDiffImage(
     actual: *const NDArray(F),
     gold: *const NDArray(F),
 ) !NDArray(F) {
+    if (actual.dims.len != gold.dims.len) return error.ArrayDimensionMismatch;
+    for (actual.dims, gold.dims) |actual_dim, gold_dim| {
+        if (actual_dim != gold_dim) return error.ArrayDimensionMismatch;
+    }
     var diff = try NDArray(F).initFlat(allocator, actual.dims);
     for (0..actual.slice.len) |ii| {
         diff.slice[ii] = @abs(actual.slice[ii] - gold.slice[ii]);
@@ -689,12 +696,6 @@ pub fn saveComparisonArtifactsFromResult(
         gold.deinit(allocator);
     }
 
-    var diff = try calculateDiffImage(allocator, &actual, &gold);
-    defer {
-        allocator.free(diff.slice);
-        diff.deinit(allocator);
-    }
-
     const base_name = try std.fmt.allocPrint(
         allocator,
         "cam{d}_frame{d}_field{d}",
@@ -708,9 +709,19 @@ pub fn saveComparisonArtifactsFromResult(
     defer allocator.free(ref_name);
     try saveImageArtifacts(allocator, io, out_dir, ref_name, &gold);
 
-    const diff_name = try std.fmt.allocPrint(allocator, "{s}_diff", .{base_name});
-    defer allocator.free(diff_name);
-    try saveImageArtifacts(allocator, io, out_dir, diff_name, &diff);
+    if (calculateDiffImage(allocator, &actual, &gold)) |image| {
+        var diff = image;
+        defer {
+            allocator.free(diff.slice);
+            diff.deinit(allocator);
+        }
+        const diff_name = try std.fmt.allocPrint(allocator, "{s}_diff", .{base_name});
+        defer allocator.free(diff_name);
+        try saveImageArtifacts(allocator, io, out_dir, diff_name, &diff);
+    } else |err| switch (err) {
+        error.ArrayDimensionMismatch => {},
+        else => return err,
+    }
 }
 
 pub fn saveComparisonArtifactsFromImages(
@@ -733,15 +744,19 @@ pub fn saveComparisonArtifactsFromImages(
     var out_dir = try openFailsSubDir(allocator, io, fails_root, prepended_dir);
     defer out_dir.close(io);
 
-    var diff = try calculateDiffImage(allocator, actual, gold);
-    defer {
-        allocator.free(diff.slice);
-        diff.deinit(allocator);
-    }
-
     try saveImageArtifacts(allocator, io, out_dir, "cam0_frame0_field0", actual);
     try saveImageArtifacts(allocator, io, out_dir, "cam0_frame0_field0_ref", gold);
-    try saveImageArtifacts(allocator, io, out_dir, "cam0_frame0_field0_diff", &diff);
+    if (calculateDiffImage(allocator, actual, gold)) |image| {
+        var diff = image;
+        defer {
+            allocator.free(diff.slice);
+            diff.deinit(allocator);
+        }
+        try saveImageArtifacts(allocator, io, out_dir, "cam0_frame0_field0_diff", &diff);
+    } else |err| switch (err) {
+        error.ArrayDimensionMismatch => {},
+        else => return err,
+    }
 }
 
 pub const ShaderFilter = enum { nodal, tex, both };
@@ -922,10 +937,10 @@ pub fn runSingleMeshSuiteDriver(
                             fname,
                             1,
                         );
+                        try recordGoldFailure(err);
                     };
                 }
-                if (first_err) |err| return err;
-                if (tcfg.TEST_CASE_VERBOSE) {
+                if (first_err == null and tcfg.TEST_CASE_VERBOSE) {
                     std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
                 }
             }
@@ -1074,10 +1089,10 @@ pub fn runSingleMeshSuiteDriver(
                                 fname,
                                 1,
                             );
+                            try recordGoldFailure(err);
                         };
                     }
-                    if (first_err) |err| return err;
-                    if (tcfg.TEST_CASE_VERBOSE) {
+                    if (first_err == null and tcfg.TEST_CASE_VERBOSE) {
                         std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
                     }
                 }
@@ -1304,7 +1319,7 @@ pub fn runMultimeshTestExt(
                     fname,
                     1,
                 );
-                return err;
+                try recordGoldFailure(err);
             };
         }
         if (tcfg.TEST_CASE_VERBOSE) {
@@ -1446,7 +1461,7 @@ pub fn runMultimeshMixedTestExt(
                 fname,
                 1,
             );
-            return err;
+            try recordGoldFailure(err);
         };
     }
 }
@@ -1585,7 +1600,7 @@ pub fn runMultimeshMixedRGBTestExt(
                 fname,
                 3,
             );
-            return err;
+            try recordGoldFailure(err);
         };
     }
     if (tcfg.TEST_CASE_VERBOSE) {
@@ -1780,10 +1795,10 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
                     gold_path,
                     1,
                 );
+                try recordGoldFailure(err);
             };
         }
-        if (first_err) |err| return err;
-        if (tcfg.TEST_CASE_VERBOSE) {
+        if (first_err == null and tcfg.TEST_CASE_VERBOSE) {
             std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
         }
     }

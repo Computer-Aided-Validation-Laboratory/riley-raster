@@ -150,13 +150,30 @@ pub fn runOneElemCaseTest(
             tcfg.REL_TOL,
             tcfg.ABS_TOL,
         ) catch |err| {
+            const fail_dir = try std.fmt.allocPrint(
+                aa,
+                "basic_oneelem/{s}",
+                .{case_dir_name},
+            );
+            try common.saveComparisonArtifactsFromResult(
+                aa,
+                io,
+                common.default_fails_root,
+                fail_dir,
+                &render_result,
+                0,
+                ff,
+                0,
+                gold_path,
+                1,
+            );
             if (tcfg.TEST_CASE_VERBOSE) {
                 std.debug.print(
                     "FAIL {s} frame {d} ({d:.2} ms)\n",
                     .{ case_dir_name, ff, duration_ms },
                 );
             }
-            return err;
+            try common.recordGoldFailure(err);
         };
     }
 
