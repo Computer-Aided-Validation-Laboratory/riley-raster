@@ -46,7 +46,6 @@ pub fn main(init: std.process.Init) !void {
     const allocator = arena.allocator();
 
     const args = (try pdemo.parseDemoArgs(init.minimal.args.vector, demo_spec)) orelse return;
-    try args.params.validate();
 
     const config = rastcfg.RasterConfig{
         .save_strategy = .disk,

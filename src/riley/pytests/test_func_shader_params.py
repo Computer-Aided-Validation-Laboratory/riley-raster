@@ -165,14 +165,106 @@ def test_speckle_odd_width_buffer_modes_match(speckle_mesh: bindings.Mesh) -> No
         np.testing.assert_allclose(image, images[0], rtol=0.0, atol=1e-12)
 
 
-@pytest.mark.parametrize("edge_softness", [-0.1, float("nan"), float("inf")])
-def test_speckle_render_rejects_invalid_softness(
+# These cases target the default f64/classified-indexed/disk/nine-neighbor binding.
+@pytest.mark.parametrize(
+    "params",
+    [
+        pytest.param(
+            bindings.Speckle2DParams(cells_per_uv=(0.0, 10.0)), id="cells-u-zero",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(cells_per_uv=(12.0, -1.0)), id="cells-v-negative",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(cells_per_uv=(float("nan"), 10.0)),
+            id="cells-u-nan",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(cells_per_uv=(12.0, float("inf"))),
+            id="cells-v-infinite",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(uv_offset=(float("nan"), 0.0)), id="offset-u-nan",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(uv_offset=(0.0, float("inf"))),
+            id="offset-v-infinite",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(cells_per_uv=(2.0**45, 10.0)),
+            id="cells-exceed-coordinate-limit",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(uv_offset=(-(2.0**45), 0.0)),
+            id="offset-below-coordinate-limit",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(uv_offset=(0.0, 2.0**45)),
+            id="offset-above-coordinate-limit",
+        ),
+        pytest.param(bindings.Speckle2DParams(occupancy=-0.1), id="occupancy-negative"),
+        pytest.param(bindings.Speckle2DParams(occupancy=1.1), id="occupancy-above-one"),
+        pytest.param(
+            bindings.Speckle2DParams(occupancy=float("nan")), id="occupancy-nan",
+        ),
+        pytest.param(bindings.Speckle2DParams(radius_mean=0.0), id="radius-zero"),
+        pytest.param(
+            bindings.Speckle2DParams(radius_mean=float("nan")), id="radius-nan",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(radius_jitter=-0.1), id="jitter-negative",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(radius_jitter=float("nan")), id="jitter-nan",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(radius_jitter=0.5), id="jitter-exceeds-radius",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(radius_mean=0.6, radius_jitter=0.5),
+            id="support-exceeds-neighborhood",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(edge_softness=-0.1), id="softness-negative",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(edge_softness=float("nan")), id="softness-nan",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(edge_softness=float("inf")),
+            id="softness-infinite",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(edge_softness=0.01),
+            id="classified-indexed-requires-hard-disks",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(foreground=-0.1), id="foreground-negative",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(foreground=1.1), id="foreground-above-one",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(foreground=float("nan")), id="foreground-nan",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(background=-0.1), id="background-negative",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(background=1.1), id="background-above-one",
+        ),
+        pytest.param(
+            bindings.Speckle2DParams(background=float("inf")), id="background-infinite",
+        ),
+    ],
+)
+def test_speckle_render_rejects_invalid_params(
     speckle_mesh: bindings.Mesh,
-    edge_softness: float,
+    params: bindings.Speckle2DParams,
 ) -> None:
     shader = speckle_mesh.shader
     assert isinstance(shader, bindings.FunctionShader)
-    shader.params.speckle.edge_softness = edge_softness
+    shader.params.speckle = params
 
     # Default fast validation maps speckle parameter errors to this public error.
     with pytest.raises(RuntimeError, match="InvalidFuncShaderParams"):

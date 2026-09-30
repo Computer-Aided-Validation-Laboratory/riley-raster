@@ -27,21 +27,50 @@ const max_direct_fixed_speckle_bytes = 256 * 1024 * 1024;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+/// Capabilities of the compile-time shape/evaluator, shared by validation and sampling.
+pub const supports_soft_edges = speckle_shape == .disk and switch (buildconfig.speckle_evaluator) {
+    .cell_hash, .list_naive, .list_indexed, .mask_u8 => true,
+    .classified_indexed, .direct_fixed, .mask_1bit => false,
+};
+/// Maximum disk/Gaussian support in cell units; Perlin does not use this limit.
+pub const support_radius_limit: F = if (speckle_neighbor_count == 1) 0.5 else 1.0;
+/// Hard disks must avoid upper cell boundaries owned by an unexamined neighboring cell.
+pub const strict_hard_radius_limit = speckle_neighbor_count != 9 and speckle_shape == .disk;
+
+/// Runtime settings for the compile-time shape and evaluator in buildconfig.
+/// UVs are clamped to [0, 1], then mapped to cells as uv * cells_per_uv + uv_offset.
+/// For disk/Gaussian shapes, radius_mean + radius_jitter + edge_softness must not
+/// exceed support_radius_limit; the bound is strict for hard disks with 1 or 4 neighbors.
+/// Ignored shape-specific fields are not validated; all other floating values must be finite.
+/// On each axis, [uv_offset - 1, uv_offset + cells_per_uv + 1] must fit within
+/// [-2^16, 2^16] for f32 or [-2^45, 2^45] for f64 to retain sub-cell precision.
 pub const Speckle2DParams = struct {
+    /// Deterministic seed; no automatic random seeding.
     seed: u32 = 0xa511e9b3,
+    /// Positive cell counts per UV unit along each axis; noninteger values are supported.
     cells_per_uv: [2]F = .{ 192.0, 160.0 },
+    /// Offsets in cell units, applied after scaling; coordinate magnitude limits also apply.
     uv_offset: [2]F = .{ 0.0, 0.0 },
+    /// Active-cell probability in [0, 1], not image coverage; ignored by Perlin.
     occupancy: F = 0.9,
+    /// Positive disk radius or Gaussian three-sigma support, in cell units; ignored by Perlin.
     radius_mean: F = 0.45,
+    /// Radius variation half-range in [0, radius_mean]; zero for direct-fixed; ignored by Perlin.
     radius_jitter: F = 0.0,
-    /// Disk boundary half-width in cell units; requires a compatible evaluator.
-    /// Zero selects hard boundaries; positive values select smooth boundaries.
+    /// Nonnegative disk boundary half-width in cell units; zero selects hard boundaries.
+    /// Must be zero unless supports_soft_edges; unlike radii, this is checked for every shape.
     edge_softness: F = 0.0,
+    /// Perlin noise threshold; ignored by disk/Gaussian shapes.
     perlin_coverage_threshold: F = 0.0,
+    /// Nonnegative Perlin transition width; zero selects a hard threshold.
+    /// Ignored by disk/Gaussian shapes.
     perlin_coverage_transition_width: F = 0.12,
+    /// Foreground intensity in [0, 1], before renderer output scaling.
     foreground: F = 0.0,
+    /// Background intensity in [0, 1], before renderer output scaling.
     background: F = 1.0,
 
+    /// Validate values and interactions; generators additionally enforce allocation-size limits.
     pub fn validate(self: Speckle2DParams) !void {
         for (self.cells_per_uv) |cell_count| {
             if (!std.math.isFinite(cell_count) or cell_count <= 0.0) {
@@ -60,12 +89,7 @@ pub const Speckle2DParams = struct {
             if (comptime speckle_shape != .disk) {
                 return error.SpeckleEdgeSoftnessRequiresDisk;
             }
-            switch (comptime buildconfig.speckle_evaluator) {
-                .classified_indexed, .direct_fixed, .mask_1bit => {
-                    return error.SpeckleEvaluatorRequiresHardEdges;
-                },
-                .cell_hash, .list_naive, .list_indexed, .mask_u8 => {},
-            }
+            if (comptime !supports_soft_edges) return error.SpeckleEvaluatorRequiresHardEdges;
         }
         if (comptime speckle_shape == .perlin) {
             if (!std.math.isFinite(self.perlin_coverage_threshold)) {
@@ -88,32 +112,20 @@ pub const Speckle2DParams = struct {
             if (!std.math.isFinite(self.radius_jitter) or self.radius_jitter < 0.0) {
                 return error.InvalidSpeckleRadiusJitter;
             }
-            switch (comptime buildconfig.speckle_evaluator) {
-                .direct_fixed => {
-                    if (self.radius_jitter != 0.0) {
-                        return error.InvalidDirectFixedSpeckleRadiusJitter;
-                    }
-                    if (self.radius_mean >= 0.5) {
-                        return error.InvalidDirectFixedSpeckleRadius;
-                    }
-                },
-                .cell_hash,
-                .list_naive,
-                .list_indexed,
-                .classified_indexed,
-                .mask_1bit,
-                .mask_u8,
-                => {
-                    if (self.radius_jitter > self.radius_mean) {
-                        return error.InvalidSpeckleRadiusRange;
-                    }
-                },
+            if (buildconfig.speckle_evaluator == .direct_fixed and self.radius_jitter != 0.0) {
+                return error.InvalidDirectFixedSpeckleRadiusJitter;
             }
-            const edge_softness = speckleSoftness(self);
-            if (comptime buildconfig.speckle_evaluator != .direct_fixed) {
-                if (self.radius_mean + self.radius_jitter + edge_softness > 1.0) {
-                    return error.InvalidSpeckleNeighborhoodRadius;
-                }
+            if (self.radius_jitter > self.radius_mean) return error.InvalidSpeckleRadiusRange;
+
+            const max_radius = self.radius_mean + self.radius_jitter + self.edge_softness;
+            const strict_limit = strict_hard_radius_limit and self.edge_softness == 0.0;
+            if (max_radius > support_radius_limit or
+                (strict_limit and max_radius == support_radius_limit))
+            {
+                return if (buildconfig.speckle_evaluator == .direct_fixed)
+                    error.InvalidDirectFixedSpeckleRadius
+                else
+                    error.InvalidSpeckleNeighborhoodRadius;
             }
         }
         if (!std.math.isFinite(self.foreground) or
@@ -368,11 +380,7 @@ fn randomUnitFromHash(hash: u64, comptime shift: u6) F {
 }
 
 inline fn speckleSoftness(params: Speckle2DParams) F {
-    if (comptime speckle_shape != .disk) return 0.0;
-    return switch (comptime buildconfig.speckle_evaluator) {
-        .classified_indexed, .direct_fixed, .mask_1bit => 0.0,
-        .cell_hash, .list_naive, .list_indexed, .mask_u8 => params.edge_softness,
-    };
+    return if (supports_soft_edges) params.edge_softness else 0.0;
 }
 
 const SpeckleCellBounds = struct {
@@ -426,10 +434,7 @@ fn speckleDiskFromHash(
 ) SpeckleDisk2D {
     const radius_variation = 2.0 * randomUnitFromHash(hash, 48) - 1.0;
     const edge_softness = if (soft_edges) params.edge_softness else 0.0;
-    var radius = params.radius_mean + params.radius_jitter * radius_variation;
-    if (comptime speckle_neighbor_count == 1) {
-        radius = @min(radius, 0.5 - edge_softness);
-    }
+    const radius = params.radius_mean + params.radius_jitter * radius_variation;
     const center_min = if (comptime speckle_neighbor_count == 1)
         radius + edge_softness
     else
@@ -1970,6 +1975,59 @@ test "procedural speckle hash has stable known vectors" {
     );
 }
 
+test "procedural speckle validates common parameter ranges" {
+    const coord_limit: F = if (F == f32) 65_536.0 else 35_184_372_088_832.0;
+    const cases = [_]struct { params: Speckle2DParams, err: anyerror }{
+        .{
+            .params = .{ .cells_per_uv = .{ 0.0, 1.0 } },
+            .err = error.InvalidSpeckleCellsPerUV,
+        },
+        .{
+            .params = .{ .cells_per_uv = .{ 1.0, std.math.nan(F) } },
+            .err = error.InvalidSpeckleCellsPerUV,
+        },
+        .{
+            .params = .{ .uv_offset = .{ std.math.inf(F), 0.0 } },
+            .err = error.InvalidSpeckleUVOffset,
+        },
+        .{
+            .params = .{ .cells_per_uv = .{ coord_limit, 1.0 } },
+            .err = error.SpeckleCellCoordinateOutOfRange,
+        },
+        .{
+            .params = .{ .uv_offset = .{ -coord_limit, 0.0 } },
+            .err = error.SpeckleCellCoordinateOutOfRange,
+        },
+        .{
+            .params = .{ .foreground = 1.1 },
+            .err = error.InvalidSpeckleForeground,
+        },
+        .{
+            .params = .{ .background = -0.1 },
+            .err = error.InvalidSpeckleBackground,
+        },
+        .{
+            .params = .{ .background = std.math.nan(F) },
+            .err = error.InvalidSpeckleBackground,
+        },
+    };
+    for (cases) |case| try testing.expectError(case.err, case.params.validate());
+}
+
+test "disk and Gaussian speckles validate probability and radius ranges" {
+    if (comptime speckle_shape == .perlin) return;
+    const cases = [_]struct { params: Speckle2DParams, err: anyerror }{
+        .{ .params = .{ .occupancy = -0.1 }, .err = error.InvalidSpeckleOccupancy },
+        .{ .params = .{ .occupancy = 1.1 }, .err = error.InvalidSpeckleOccupancy },
+        .{ .params = .{ .occupancy = std.math.nan(F) }, .err = error.InvalidSpeckleOccupancy },
+        .{ .params = .{ .radius_mean = 0.0 }, .err = error.InvalidSpeckleRadiusMean },
+        .{ .params = .{ .radius_mean = std.math.inf(F) }, .err = error.InvalidSpeckleRadiusMean },
+        .{ .params = .{ .radius_jitter = -0.1 }, .err = error.InvalidSpeckleRadiusJitter },
+        .{ .params = .{ .radius_jitter = std.math.nan(F) }, .err = error.InvalidSpeckleRadiusJitter },
+    };
+    for (cases) |case| try testing.expectError(case.err, case.params.validate());
+}
+
 test "procedural speckle parameters validate shape-specific settings" {
     var invalid = Speckle2DParams{};
     if (comptime buildconfig.speckle_evaluator == .direct_fixed) {
@@ -1978,17 +2036,27 @@ test "procedural speckle parameters validate shape-specific settings" {
     try testing.expectEqual(@as(F, 0.0), invalid.edge_softness);
     try invalid.validate();
     if (comptime speckle_shape == .perlin) {
-        invalid.perlin_coverage_transition_width = -0.01;
-        try testing.expectError(
-            error.InvalidSpecklePerlinCoverageTransitionWidth,
-            invalid.validate(),
-        );
+        invalid.perlin_coverage_threshold = std.math.nan(F);
+        try testing.expectError(error.InvalidSpecklePerlinCoverageThreshold, invalid.validate());
+        invalid.perlin_coverage_threshold = 0.0;
+        for ([_]F{ -0.01, std.math.nan(F), std.math.inf(F) }) |width| {
+            invalid.perlin_coverage_transition_width = width;
+            try testing.expectError(
+                error.InvalidSpecklePerlinCoverageTransitionWidth,
+                invalid.validate(),
+            );
+        }
+        invalid.perlin_coverage_transition_width = 0.0;
+        try invalid.validate();
         invalid = Speckle2DParams{};
         invalid.occupancy = -1.0;
         invalid.radius_mean = -1.0;
         invalid.radius_jitter = -1.0;
         try invalid.validate();
     } else {
+        invalid.perlin_coverage_threshold = std.math.nan(F);
+        invalid.perlin_coverage_transition_width = -1.0;
+        try invalid.validate();
         if (comptime buildconfig.speckle_evaluator == .direct_fixed) {
             invalid.radius_jitter = 0.01;
             try testing.expectError(
@@ -2009,8 +2077,12 @@ test "procedural speckle parameters validate shape-specific settings" {
                 invalid.validate(),
             );
         } else {
-            invalid.radius_mean = 0.9;
-            invalid.radius_jitter = 0.15;
+            invalid.radius_mean = if (speckle_neighbor_count == 1) 0.5 else 1.0;
+            if (speckle_neighbor_count != 9 and speckle_shape == .disk) {
+                invalid.radius_mean = std.math.nextAfter(F, invalid.radius_mean, 0.0);
+            }
+            try invalid.validate();
+            invalid.radius_mean = std.math.nextAfter(F, invalid.radius_mean, std.math.inf(F));
             try testing.expectError(
                 error.InvalidSpeckleNeighborhoodRadius,
                 invalid.validate(),
@@ -2055,10 +2127,23 @@ test "procedural speckle softness expands support bounds" {
         .classified_indexed, .direct_fixed, .mask_1bit => return,
         .cell_hash, .list_naive, .list_indexed, .mask_u8 => {},
     }
-    var params: Speckle2DParams = .{ .radius_mean = 0.9, .edge_softness = 0.2 };
+    const radius_limit: F = if (speckle_neighbor_count == 1) 0.5 else 1.0;
+    var params: Speckle2DParams = .{
+        .radius_mean = radius_limit - 0.125,
+        .edge_softness = 0.125,
+    };
+    try params.validate();
+    params.edge_softness = 0.25;
     try testing.expectError(error.InvalidSpeckleNeighborhoodRadius, params.validate());
     params.edge_softness = 0.0;
-    try params.validate();
+    params.radius_jitter = 0.125;
+    if (speckle_neighbor_count != 9) {
+        try testing.expectError(error.InvalidSpeckleNeighborhoodRadius, params.validate());
+    } else {
+        try params.validate();
+    }
+    params.edge_softness = 0.125;
+    try testing.expectError(error.InvalidSpeckleNeighborhoodRadius, params.validate());
 }
 
 test "speckle generators reject invalid softness before allocating" {

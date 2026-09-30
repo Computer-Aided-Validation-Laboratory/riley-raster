@@ -38,6 +38,7 @@ pub const DemoArgs = struct {
     pixels_num: [2]u32,
 };
 
+/// Parse and validate runtime settings before callers load meshes or prepare resources.
 pub fn parseDemoArgs(raw_args: anytype, comptime spec: DemoSpec) !?DemoArgs {
     var args = DemoArgs{
         .out_dir = spec.output_default,
@@ -88,6 +89,7 @@ pub fn parseDemoArgs(raw_args: anytype, comptime spec: DemoSpec) !?DemoArgs {
         }
         arg_idx += 2;
     }
+    try args.params.validate();
     return args;
 }
 
@@ -124,7 +126,7 @@ pub fn printProceduralConfig(
         .{ buildconfig.speckle_neighbor_count, perlin_note },
     );
     std.debug.print(
-        "  effective boundary blur: {d} cell units\n",
+        "  boundary half-width: {d} cell units\n",
         .{params.edge_softness},
     );
     std.debug.print("  seed: {d} (0x{x})\n", .{ params.seed, params.seed });
@@ -212,11 +214,11 @@ fn printUsage(comptime spec: DemoSpec) void {
     }
     std.debug.print(
         \\Options:
-        \\  --size <value>        Mean radius in cell units (disk/Gaussian)
+        \\  --size <value>        Mean radius in cell units (Gaussian: 3-sigma support)
         \\  --occupancy <value>   Active-cell probability (disk/Gaussian)
         \\  --cells-u <value>     Procedural cell count across U
         \\  --cells-v <value>     Procedural cell count across V
-        \\  --jitter <value>      Radius variation in cell units (disk/Gaussian)
+        \\  --jitter <value>      Radius half-range in cell units (disk/Gaussian)
         \\  --softness <value>    Boundary half-width in cell units (disk only; default: 0)
         \\  --threshold <value>   Coverage threshold (Perlin only)
         \\  --transition <value>  Coverage transition width (Perlin only)
@@ -234,14 +236,49 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\  --output <path>       Output directory
         \\  --help                Show this help
         \\
-        \\Disk/Gaussian constraints:
-        \\  jitter <= size
-        \\  size + jitter + effective boundary blur <= 1
-        \\
-        \\Softness constraints:
-        \\  Must be finite and nonnegative.
-        \\  Must be 0 for Gaussian/Perlin and classified-indexed/direct-fixed/mask-1bit.
-        \\  Positive disk softness enables smooth boundaries; 0 keeps hard edges.
+        \\Value constraints:
+        \\  Cell counts must be positive and finite; seed is an unsigned 32-bit integer.
         \\
     , .{});
+    if (buildconfig.speckle_shape == .perlin) {
+        std.debug.print(
+            \\  Threshold must be finite; transition must be finite and nonnegative.
+            \\  Transition 0 selects a hard threshold. Size, jitter and occupancy are ignored.
+            \\
+        , .{});
+    } else {
+        std.debug.print(
+            \\  Size must be positive; 0 <= jitter <= size; 0 <= occupancy <= 1 (all finite).
+            \\  Size + jitter + softness <= {d} cell units for this neighborhood.
+            \\
+        , .{speckleops.support_radius_limit});
+        if (speckleops.strict_hard_radius_limit) {
+            std.debug.print(
+                "  With softness 0, size + jitter must be strictly less than {d}.\n",
+                .{speckleops.support_radius_limit},
+            );
+        }
+        if (buildconfig.speckle_evaluator == .direct_fixed) {
+            std.debug.print("  direct-fixed requires jitter == 0.\n", .{});
+        }
+    }
+    std.debug.print(if (speckleops.supports_soft_edges)
+        "  Softness must be finite and nonnegative; 0 selects hard disk boundaries.\n\n"
+    else
+        "  Softness must be 0 for this shape/evaluator.\n\n", .{});
+}
+
+test "demo arguments validate runtime speckle settings" {
+    const spec: DemoSpec = .{
+        .command_name = "demo-procedural-speckles",
+        .output_default = "out",
+        .pixels_num_default = .{ 32, 32 },
+        .mask_report_label = "mask",
+    };
+    const valid = [_][*:0]const u8{ "demo", "--cells-u", "3.25" };
+    const parsed = (try parseDemoArgs(&valid, spec)).?;
+    try std.testing.expectEqual(@as(F, 3.25), parsed.params.cells_per_uv[0]);
+
+    const invalid = [_][*:0]const u8{ "demo", "--cells-v", "nan" };
+    try std.testing.expectError(error.InvalidSpeckleCellsPerUV, parseDemoArgs(&invalid, spec));
 }

@@ -1,4 +1,5 @@
 const std = @import("std");
+const speckleconfig = @import("src/riley/zig/speckleconfig.zig");
 
 const riley_version = std.SemanticVersion{
     .major = 2026,
@@ -19,7 +20,7 @@ const TestEntry = struct {
 };
 
 const SpeckleConfig = struct {
-    neighbor_count: u8 = 9,
+    neighbor_count: u8 = speckleconfig.default_neighbor_count,
     evaluator: []const u8,
     shape: []const u8,
 };
@@ -67,34 +68,27 @@ pub fn build(b: *std.Build) void {
         u8,
         "speckle-neighbor-count",
         "Procedural speckle candidate cell count: 9, 4, or 1",
-    ) orelse 9;
+    ) orelse speckleconfig.default_neighbor_count;
     options.speckle_evaluator = b.option(
         []const u8,
         "speckle-evaluator",
         "Procedural speckle evaluator: cell-hash, list-naive, list-indexed, classified-indexed, direct-fixed, mask-1bit, or mask-u8",
-    ) orelse "classified-indexed";
+    ) orelse speckleconfig.default_evaluator;
     options.speckle_shape = b.option(
         []const u8,
         "speckle-shape",
         "Procedural speckle shape: disk, gaussian, or perlin",
-    ) orelse "disk";
+    ) orelse speckleconfig.default_shape;
     options.speckle_mask_samples_per_cell = b.option(
         u8,
         "speckle-mask-samples-per-cell",
         "Speckle mask/classification resolution per cell: 8, 12, or 16",
-    ) orelse 12;
+    ) orelse speckleconfig.default_mask_samples_per_cell;
     validatePrecision(options.precision);
     validateSimd(options.simd);
     validateNewtonSolver(options.newton_solver);
-    validateSpeckleNeighborCount(options.speckle_neighbor_count);
-    validateSpeckleEvaluator(options.speckle_evaluator);
-    validateSpeckleShape(options.speckle_shape);
-    validateSpeckleMaskSamplesPerCell(options.speckle_mask_samples_per_cell);
-    validateSpeckleEvaluatorConfig(
-        options.speckle_evaluator,
-        options.speckle_shape,
-        options.speckle_neighbor_count,
-    );
+    // Each compiled artifact checks compatibility after applying its configuration overrides.
+    validateSpeckleOptions(options);
 
     const build_options_module = createBuildOptionsModule(b, options);
     const shared_lib = addRileySharedLibrary(
@@ -707,65 +701,17 @@ fn buildWrapperImports(
     return imports.items;
 }
 
-fn validateSpeckleShape(shape: []const u8) void {
-    if (std.mem.eql(u8, shape, "disk") or
-        std.mem.eql(u8, shape, "gaussian") or
-        std.mem.eql(u8, shape, "perlin")) return;
-    @panic("Supported -Dspeckle-shape values are disk, gaussian, and perlin.");
-}
-
-fn validateSpeckleEvaluator(evaluator: []const u8) void {
-    if (std.mem.eql(u8, evaluator, "cell-hash") or
-        std.mem.eql(u8, evaluator, "list-naive") or
-        std.mem.eql(u8, evaluator, "list-indexed") or
-        std.mem.eql(u8, evaluator, "classified-indexed") or
-        std.mem.eql(u8, evaluator, "direct-fixed") or
-        std.mem.eql(u8, evaluator, "mask-1bit") or
-        std.mem.eql(u8, evaluator, "mask-u8")) return;
-    @panic("Supported -Dspeckle-evaluator values are cell-hash, list-naive, list-indexed, classified-indexed, direct-fixed, mask-1bit, and mask-u8.");
-}
-
-fn validateSpeckleEvaluatorConfig(
-    evaluator: []const u8,
-    shape: []const u8,
-    neighbor_count: u8,
-) void {
-    if (std.mem.eql(u8, shape, "perlin") and
-        !std.mem.eql(u8, evaluator, "mask-u8"))
-    {
-        @panic("-Dspeckle-shape=perlin requires -Dspeckle-evaluator=mask-u8.");
+fn validateSpeckleOptions(options: BuildOptions) void {
+    if (!speckleconfig.isValidNeighborCount(options.speckle_neighbor_count)) {
+        @panic("Supported -Dspeckle-neighbor-count values are 9, 4, and 1.");
     }
-    if (std.mem.eql(u8, evaluator, "mask-1bit") and
-        !std.mem.eql(u8, shape, "disk"))
-    {
-        @panic("-Dspeckle-evaluator=mask-1bit requires -Dspeckle-shape=disk.");
+    _ = speckleconfig.parseEvaluator(options.speckle_evaluator) orelse
+        @panic("Supported -Dspeckle-evaluator values are cell-hash, list-naive, list-indexed, classified-indexed, direct-fixed, mask-1bit, and mask-u8.");
+    _ = speckleconfig.parseShape(options.speckle_shape) orelse
+        @panic("Supported -Dspeckle-shape values are disk, gaussian, and perlin.");
+    if (!speckleconfig.isValidMaskSamplesPerCell(options.speckle_mask_samples_per_cell)) {
+        @panic("Supported -Dspeckle-mask-samples-per-cell values are 8, 12, and 16.");
     }
-    if (std.mem.eql(u8, evaluator, "classified-indexed") and
-        (!std.mem.eql(u8, shape, "disk") or neighbor_count != 9))
-    {
-        @panic(
-            "-Dspeckle-evaluator=classified-indexed requires -Dspeckle-shape=disk " ++
-                "and -Dspeckle-neighbor-count=9.",
-        );
-    }
-    if (std.mem.eql(u8, evaluator, "direct-fixed") and
-        (!std.mem.eql(u8, shape, "disk") or neighbor_count != 1))
-    {
-        @panic(
-            "-Dspeckle-evaluator=direct-fixed requires -Dspeckle-shape=disk " ++
-                "and -Dspeckle-neighbor-count=1.",
-        );
-    }
-}
-
-fn validateSpeckleMaskSamplesPerCell(samples: u8) void {
-    if (samples == 8 or samples == 12 or samples == 16) return;
-    @panic("Supported -Dspeckle-mask-samples-per-cell values are 8, 12, and 16.");
-}
-
-fn validateSpeckleNeighborCount(count: u8) void {
-    if (count == 9 or count == 4 or count == 1) return;
-    @panic("Supported -Dspeckle-neighbor-count values are 9, 4, and 1.");
 }
 
 fn validatePrecision(precision: []const u8) void {

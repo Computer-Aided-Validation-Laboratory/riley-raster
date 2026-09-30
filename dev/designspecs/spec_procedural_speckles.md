@@ -12,6 +12,14 @@ The aim of this project is to develop a performant procedural speckle pattern ge
 
 **NOTE:** The specification below is given based on my initial thoughts and does not include the reality of actually developing the speckle shader. I fully expect there to be significant changes as long as we maintain: 1) correctness and 2) performance.     
 
+**Current prototype:** The implemented shader is UV-based 2D generation with a fixed
+unsigned 32-bit seed; a null/automatic seed is not supported. Its current parameter
+contracts are documented on `Speckle2DParams` in
+[`speckleops.zig`](../../src/riley/zig/speckleops.zig) and the
+[Python binding](../../src/riley/cython/riley.py). Build choices are defined in
+[`speckleconfig.zig`](../../src/riley/zig/speckleconfig.zig); demo `--help` reports the
+constraints of the selected build. The UV-free pipeline below remains a design goal.
+
 ## Software & Research Challenges
 The shader is invoked after all the visibility and in/out testing, when we need to fill and colour a sub-pixel (`Riley` uses sub-pixel anti-aliasing for pixel integration). Once these tests all pass, we know the parametric coordinates of the hit location in the element (`xi`, `eta`). Using the element shape functions, we can then use (`xi`, `eta`) to interpolate nodal attributes to this location, including world coordinates (deformed/undeformed), normals, and UVs.
 

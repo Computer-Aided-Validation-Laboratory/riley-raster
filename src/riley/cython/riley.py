@@ -66,6 +66,87 @@ CameraInput = Camera
 
 @dataclass(slots=True)
 class Speckle2DParams:
+    """Configure the built-in two-dimensional procedural speckle shader.
+
+    Parameters
+    ----------
+    seed : int, optional
+        Fixed unsigned 32-bit seed in ``[0, 2**32 - 1]``. Defaults to
+        ``0xA511E9B3``; there is no automatic random seeding.
+    cells_per_uv : tuple[float, float], optional
+        Positive finite scales along u and v, in cells per UV unit.
+        Noninteger values are supported. Defaults to ``(192.0, 160.0)``.
+    uv_offset : tuple[float, float], optional
+        Finite offsets along u and v in procedural cell units, not UV units.
+        Defaults to ``(0.0, 0.0)``. See Notes for the coordinate transform.
+    occupancy : float, optional
+        Probability of placing a disk or Gaussian blob in each cell, finite
+        and in ``[0, 1]``. This is not the image coverage fraction. Ignored
+        for Perlin. Defaults to ``0.9``.
+    radius_mean : float, optional
+        Positive finite disk radius or Gaussian support radius in cell units.
+        Gaussian support is truncated at three standard deviations. Ignored
+        for Perlin. Defaults to ``0.45``. See Notes for joint support limits.
+    radius_jitter : float, optional
+        Uniform radius variation half-range in cell units, finite and in
+        ``[0, radius_mean]`` for disks and Gaussian blobs. Must be zero for
+        ``direct-fixed``; ignored for Perlin. Defaults to ``0.0``.
+    edge_softness : float, optional
+        Disk boundary transition half-width in cell units, finite and
+        nonnegative for every shape. Zero gives hard disk edges. Positive
+        values are allowed only for disks with ``cell-hash``, ``list-naive``,
+        ``list-indexed``, or ``mask-u8`` evaluators. Gaussian and Perlin shapes
+        require zero, as do ``classified-indexed``, ``direct-fixed``, and
+        ``mask-1bit`` evaluators. Defaults to ``0.0``.
+    perlin_coverage_threshold : float, optional
+        Finite noise threshold for Perlin coverage. Ignored for disks and
+        Gaussian blobs. Defaults to ``0.0``.
+    perlin_coverage_transition_width : float, optional
+        Finite, nonnegative width of the smooth coverage transition centred
+        on the Perlin threshold. Zero selects a hard threshold. Ignored for
+        disks and Gaussian blobs. Defaults to ``0.12``.
+    foreground : float, optional
+        Speckle intensity, finite and in ``[0, 1]`` for every shape, before
+        function-shader output scaling. Defaults to ``0.0``.
+    background : float, optional
+        Uncovered intensity, finite and in ``[0, 1]`` for every shape, before
+        function-shader output scaling. Defaults to ``1.0``.
+
+    Notes
+    -----
+    Procedural coordinates are computed componentwise as
+    ``clip(uv, 0, 1) * cells_per_uv + uv_offset``.
+
+    For disks and Gaussian blobs, the maximum support radius is
+    ``radius_mean + radius_jitter + edge_softness``. It must be at most
+    ``0.5`` with one neighbor, or at most ``1.0`` with four or nine neighbors.
+    Hard disks require a strict bound below ``0.5`` with one neighbor and
+    below ``1.0`` with four neighbors to avoid ambiguous cell-boundary
+    ownership. Soft disks and Gaussian blobs allow equality at these limits.
+    The ``direct-fixed`` evaluator requires hard disks, zero jitter, and
+    ``radius_mean < 0.5``. Perlin ignores occupancy, radius, jitter, and the
+    neighbor count, but still requires ``edge_softness == 0``.
+
+    Shape, evaluator, neighbor count, and mask/classification resolution are
+    compile-time choices, not constructor parameters. The default compiled
+    configuration is ``classified-indexed`` / ``disk`` / nine neighbors,
+    with 12 samples per cell, so it rejects positive ``edge_softness``.
+    Supported neighbor counts are 1, 4, and 9; resolutions are 8, 12, and 16
+    samples per cell. ``classified-indexed`` requires disks and nine
+    neighbors; ``direct-fixed`` requires disks and one neighbor;
+    ``mask-1bit`` requires disks; Perlin requires ``mask-u8``.
+
+    The Python binding uses f64. On each axis, the padded procedural interval
+    ``[uv_offset - 1, uv_offset + cells_per_uv + 1]`` must remain within
+    ``[-2**45, 2**45]`` to retain sub-cell precision. Native resource generation
+    also rejects patterns exceeding the selected evaluator's size limits.
+
+    Construction and ``to_func_shader_params`` do not validate these values.
+    Validation occurs in the native rendering/resource-generation path.
+    With default fast input validation, native parameter-validation failures
+    raise ``RuntimeError`` containing ``InvalidFuncShaderParams``.
+    """
+
     seed: int = 0xA511E9B3
     cells_per_uv: tuple[float, float] = (192.0, 160.0)
     uv_offset: tuple[float, float] = (0.0, 0.0)
@@ -79,6 +160,13 @@ class Speckle2DParams:
     background: float = 1.0
 
     def to_func_shader_params(self) -> "FuncShaderParams":
+        """Wrap these settings without copying or validating them.
+
+        Returns
+        -------
+        FuncShaderParams
+            Function-shader parameters referencing this instance.
+        """
         return FuncShaderParams(speckle=self)
 
 
