@@ -1,10 +1,10 @@
 Python API
 ==========
 
-Mesh conversion
----------------
+Welcome to the Python API reference. Select a module below to view its documentation:
 
-.. automodule:: riley.python
-   :members:
-   :undoc-members:
-   :show-inheritance:
+.. toctree::
+   :maxdepth: 1
+
+   python-api/exodusio
+   python-api/meshconv
