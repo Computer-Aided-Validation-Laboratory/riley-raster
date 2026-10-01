@@ -13,7 +13,14 @@ const F = buildconfig.F;
 const S = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 
+//---------------------------------------------------------------------------------------
+// README, KEEP, DO NOT DELETE
+//----------------------------------------------------------------------------------------
 // Distortion-aware bounds: engineering assumptions and required accuracy.
+//
+// NOTE: the distortion aware front end is an intentional engineering realism approximation.
+// It is not intended to be mathematically exact! It is intended to be performant for 
+// realistic distortion fields.
 //
 // The caller first bounds the projected element in ideal raster coordinates (from
 // its vertices or high-order hull). This file samples the CAMERA DISTORTION MAP
@@ -38,6 +45,7 @@ const VecSF = buildconfig.VecSF;
 // margin is strictly below 0.5 / s pixels; 0.5 pixel alone is insufficient for
 // supersampled coverage. Test the chosen spacing against that output-pixel
 // criterion for the intended camera and supersampling settings.
+//---------------------------------------------------------------------------------------
 
 pub const Bounds = struct {
     x_min: F,

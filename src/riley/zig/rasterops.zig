@@ -634,13 +634,18 @@ pub fn clipElemBBoxToTile(
     scratch_y_max: i32,
 ) OverlapBBox {
     if (floating) |bounds| {
+        const clamp_x_min = @max(bounds.x_min, @as(F, @floatFromInt(scratch_x_min)));
+        const clamp_x_max = @min(bounds.x_max, @as(F, @floatFromInt(scratch_x_max)));
+        const clamp_y_min = @max(bounds.y_min, @as(F, @floatFromInt(scratch_y_min)));
+        const clamp_y_max = @min(bounds.y_max, @as(F, @floatFromInt(scratch_y_max)));
+
         return .{
             .mesh_idx = mesh_idx,
             .elem_idx = elem_bbox.elem_idx,
-            .x_min = boundIndMinSigned(@max(bounds.x_min, @as(F, @floatFromInt(scratch_x_min))), scratch_x_min),
-            .x_max = boundIndMaxSigned(@min(bounds.x_max, @as(F, @floatFromInt(scratch_x_max))), scratch_x_max),
-            .y_min = boundIndMinSigned(@max(bounds.y_min, @as(F, @floatFromInt(scratch_y_min))), scratch_y_min),
-            .y_max = boundIndMaxSigned(@min(bounds.y_max, @as(F, @floatFromInt(scratch_y_max))), scratch_y_max),
+            .x_min = boundIndMinSigned(clamp_x_min, scratch_x_min),
+            .x_max = boundIndMaxSigned(clamp_x_max, scratch_x_max),
+            .y_min = boundIndMinSigned(clamp_y_min, scratch_y_min),
+            .y_max = boundIndMaxSigned(clamp_y_max, scratch_y_max),
         };
     }
     return .{

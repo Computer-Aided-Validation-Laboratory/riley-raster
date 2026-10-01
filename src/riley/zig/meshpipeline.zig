@@ -33,6 +33,7 @@ const Timestamp = std.Io.Clock.Timestamp;
 const shaderops = @import("shaderops.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
+const distortbounds = @import("distortbounds.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -508,7 +509,7 @@ pub fn prepMeshFrames(
 }
 
 pub fn prepMeshFrame(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     chunk_exec: *pce.ParaChunkExecutor,
     workers_num: usize,
     camera: *const cam.CameraPrepared,
@@ -519,7 +520,7 @@ pub fn prepMeshFrame(
     timing: *GeomTimes,
 ) !MeshFrame {
     return prepMeshFrameWithHalo(
-        allocator,
+        outer_alloc,
         chunk_exec,
         workers_num,
         camera,
@@ -533,7 +534,7 @@ pub fn prepMeshFrame(
 }
 
 pub fn prepMeshFrameWithHalo(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     chunk_exec: *pce.ParaChunkExecutor,
     workers_num: usize,
     camera: *const cam.CameraPrepared,
@@ -549,7 +550,7 @@ pub fn prepMeshFrameWithHalo(
     else
         try rops.calcIdealSensorBounds(camera, raster_halo_px);
     return prepMeshFrameWithSensor(
-        allocator,
+        outer_alloc,
         chunk_exec,
         workers_num,
         camera,
@@ -564,7 +565,7 @@ pub fn prepMeshFrameWithHalo(
 }
 
 fn prepMeshFrameWithSensor(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     chunk_exec: *pce.ParaChunkExecutor,
     workers_num: usize,
     camera: *const cam.CameraPrepared,
@@ -579,7 +580,7 @@ fn prepMeshFrameWithSensor(
     return switch (mesh_static.mesh_type) {
         inline else => |MT| {
             var pipeline = try FrameMeshPipeline(MT).init(
-                allocator,
+                outer_alloc,
                 camera,
                 raster_halo_px,
                 ideal_sensor,
@@ -773,7 +774,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             ).raw.nanoseconds);
 
             const time_start_cull = Timestamp.now(self.chunk_exec.io, .awake);
-            try self.cullVis();
+            try self.cullVis(self.allocator);
             var mesh_prep = try self.gatherVisCoords();
             const time_end_cull = Timestamp.now(self.chunk_exec.io, .awake);
             timing.cull_ops += @intCast(time_start_cull.durationTo(
@@ -987,28 +988,27 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             stage.vis_counts_by_chunk[chunk_idx] = vis_count;
         }
 
-        fn cullVis(self: *FrameMeshPipelineType) !void {
-            const distortbounds = @import("distortbounds.zig");
+        fn cullVis(self: *FrameMeshPipelineType, outer_alloc: std.mem.Allocator) !void {
             try distortbounds.validateSpacing(self.edge_spacing_px);
             const ideal_sensor = self.ideal_sensor;
             const cached_distort_bboxes: []?rops.DistortElemBBox = if (ideal_sensor != null)
-                try self.allocator.alloc(?rops.DistortElemBBox, self.elems_num)
+                try outer_alloc.alloc(?rops.DistortElemBBox, self.elems_num)
             else
                 &.{};
-            defer if (ideal_sensor != null) self.allocator.free(cached_distort_bboxes);
+            defer if (ideal_sensor != null) outer_alloc.free(cached_distort_bboxes);
             const errors_by_chunk: []?anyerror = if (ideal_sensor != null)
-                try self.allocator.alloc(?anyerror, self.elem_chunks_num)
+                try outer_alloc.alloc(?anyerror, self.elem_chunks_num)
             else
                 &.{};
-            defer if (ideal_sensor != null) self.allocator.free(errors_by_chunk);
+            defer if (ideal_sensor != null) outer_alloc.free(errors_by_chunk);
             if (ideal_sensor != null) @memset(errors_by_chunk, null);
 
-            self.mesh_workspace.vis_counts_by_chunk = try self.allocator.alloc(
+            self.mesh_workspace.vis_counts_by_chunk = try outer_alloc.alloc(
                 usize,
                 self.elem_chunks_num,
             );
 
-            self.mesh_workspace.vis_offsets_by_chunk = try self.allocator.alloc(
+            self.mesh_workspace.vis_offsets_by_chunk = try outer_alloc.alloc(
                 usize,
                 self.elem_chunks_num,
             );
@@ -1044,13 +1044,13 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             prefixVisCounts(&self.mesh_workspace);
 
             self.mesh_workspace.vis_orig_elem_inds =
-                try self.allocator.alloc(usize, self.mesh_workspace.elems_in_image);
-            self.mesh_workspace.elem_bboxes = try self.allocator.alloc(
+                try outer_alloc.alloc(usize, self.mesh_workspace.elems_in_image);
+            self.mesh_workspace.elem_bboxes = try outer_alloc.alloc(
                 rops.ElemBBox,
                 self.mesh_workspace.elems_in_image,
             );
             if (ideal_sensor != null) {
-                self.mesh_workspace.elem_float_bboxes = try self.allocator.alloc(
+                self.mesh_workspace.elem_float_bboxes = try outer_alloc.alloc(
                     rops.DistortBounds,
                     self.mesh_workspace.elems_in_image,
                 );
