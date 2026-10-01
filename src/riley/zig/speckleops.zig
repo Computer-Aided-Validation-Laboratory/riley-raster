@@ -420,6 +420,51 @@ fn speckleSampleIntervalDims(params: Speckle2DParams) ?[2]usize {
     return intervals;
 }
 
+const SpeckleCenter = struct { coordinate: F, unit: u16 };
+
+inline fn speckleCenter(
+    cell: i64,
+    unit: u16,
+    center_min: F,
+    extent: F,
+    support2: F,
+) SpeckleCenter {
+    const cell_f: F = @floatFromInt(cell);
+    const base = cell_f + center_min;
+    const raw: SpeckleCenter = .{
+        .coordinate = base + (@as(F, @floatFromInt(unit)) / 65_536.0) * extent,
+        .unit = unit,
+    };
+    if (comptime speckle_neighbor_count == 9) return raw;
+    const upper = cell_f + 1.0;
+    const gap = upper - raw.coordinate;
+    if (gap * gap >= support2) return raw;
+    return @call(.never_inline, repairSpeckleCenter, .{ base, extent, upper, support2, unit });
+}
+
+// Upper excluded samples start at cell + 1; equality is safe for open support.
+// Below the lower face, the preceding float stays excluded at validated integer origins.
+// Decoding is monotone; find the nearest safe unit in at most 16 iterations.
+fn repairSpeckleCenter(base: F, extent: F, upper: F, support2: F, unit: u16) SpeckleCenter {
+    @branchHint(.cold);
+    var low: u16 = 0;
+    var high = unit;
+    while (low < high) {
+        const mid = high - (high - low) / 2;
+        const coordinate = base + (@as(F, @floatFromInt(mid)) / 65_536.0) * extent;
+        const gap = upper - coordinate;
+        if (gap * gap >= support2) {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    return .{
+        .coordinate = base + (@as(F, @floatFromInt(low)) / 65_536.0) * extent,
+        .unit = low,
+    };
+}
+
 fn speckleDiskFromHash(
     comptime soft_edges: bool,
     cell_x: i64,
@@ -430,22 +475,33 @@ fn speckleDiskFromHash(
     const radius_variation = 2.0 * randomUnitFromHash(hash, 48) - 1.0;
     const edge_softness = if (soft_edges) params.edge_softness else 0.0;
     const radius = params.radius_mean + params.radius_jitter * radius_variation;
+    const support = radius + edge_softness;
     const center_min = if (comptime speckle_neighbor_count == 1)
-        radius + edge_softness
+        support
     else
         0.0;
     const center_extent = switch (comptime speckle_neighbor_count) {
         1 => 1.0 - 2.0 * center_min,
-        4 => 1.0 - radius - edge_softness,
+        4 => 1.0 - support,
         9 => 1.0,
         else => unreachable,
     };
     return .{
         .center = .{
-            @as(F, @floatFromInt(cell_x)) + center_min +
-                randomUnitFromHash(hash, 16) * center_extent,
-            @as(F, @floatFromInt(cell_y)) + center_min +
-                randomUnitFromHash(hash, 32) * center_extent,
+            speckleCenter(
+                cell_x,
+                @truncate(hash >> 16),
+                center_min,
+                center_extent,
+                support * support,
+            ).coordinate,
+            speckleCenter(
+                cell_y,
+                @truncate(hash >> 32),
+                center_min,
+                center_extent,
+                support * support,
+            ).coordinate,
         },
         .radius = radius,
     };
@@ -532,8 +588,19 @@ fn generateSpeckleList2DImpl(
 const direct_fixed_center_bits: u64 = 0x0000_ffff_ffff_0000;
 const direct_fixed_active_bit: u64 = 1;
 
-inline fn directFixedSpeckleDescriptor(hash: u64) u64 {
-    return (hash & direct_fixed_center_bits) | direct_fixed_active_bit;
+fn directFixedSpeckleDescriptor(cell_x: i64, cell_y: i64, hash: u64, radius: F) u64 {
+    var descriptor: u64 = direct_fixed_active_bit;
+    for ([2]i64{ cell_x, cell_y }, [_]u6{ 16, 32 }) |cell, shift| {
+        const center = speckleCenter(
+            cell,
+            @truncate(hash >> shift),
+            radius,
+            1.0 - 2.0 * radius,
+            radius * radius,
+        );
+        descriptor |= @as(u64, center.unit) << shift;
+    }
+    return descriptor;
 }
 
 fn directFixedSpeckleCenter(
@@ -581,7 +648,7 @@ pub fn generateDirectFixedSpeckle2D(
                     randomUnitFromHash(hash, 0) < params.occupancy)
                 {
                     cells[yy * cell_bounds.dims[0] + xx] =
-                        directFixedSpeckleDescriptor(hash);
+                        directFixedSpeckleDescriptor(cell_x, cell_y, hash, params.radius_mean);
                 }
                 cell_x += 1;
             }
@@ -1490,18 +1557,19 @@ fn evalSpeckleList2DIndexedImpl(
         [_]i64{ 0, 1 }
     else
         [_]i64{ -1, 0, 1 };
+    // Subtract the face directly: 1 - frac can round a genuinely inside point out.
     const min_delta_x = if (comptime speckle_neighbor_count == 1)
         [_]F{0.0}
     else if (comptime speckle_neighbor_count == 4)
-        [_]F{ 0.0, 1.0 - frac_x }
+        [_]F{ 0.0, cell_x_f + 1.0 - proc_x }
     else
-        [_]F{ frac_x, 0.0, 1.0 - frac_x };
+        [_]F{ frac_x, 0.0, cell_x_f + 1.0 - proc_x };
     const min_delta_y = if (comptime speckle_neighbor_count == 1)
         [_]F{0.0}
     else if (comptime speckle_neighbor_count == 4)
-        [_]F{ 0.0, 1.0 - frac_y }
+        [_]F{ 0.0, cell_y_f + 1.0 - proc_y }
     else
-        [_]F{ frac_y, 0.0, 1.0 - frac_y };
+        [_]F{ frac_y, 0.0, cell_y_f + 1.0 - proc_y };
     const edge_softness = if (soft_edges) params.edge_softness else 0.0;
     const max_outer_radius = params.radius_mean + params.radius_jitter +
         edge_softness;
@@ -1643,18 +1711,19 @@ fn evalSpeckle2DImpl(
         [_]i64{ 0, 1 }
     else
         [_]i64{ -1, 0, 1 };
+    // Match indexed culling without the cancelling 1 - frac subtraction.
     const min_delta_x = if (comptime speckle_neighbor_count == 1)
         [_]F{0.0}
     else if (comptime speckle_neighbor_count == 4)
-        [_]F{ 0.0, 1.0 - frac_x }
+        [_]F{ 0.0, cell_x_f + 1.0 - proc_x }
     else
-        [_]F{ frac_x, 0.0, 1.0 - frac_x };
+        [_]F{ frac_x, 0.0, cell_x_f + 1.0 - proc_x };
     const min_delta_y = if (comptime speckle_neighbor_count == 1)
         [_]F{0.0}
     else if (comptime speckle_neighbor_count == 4)
-        [_]F{ 0.0, 1.0 - frac_y }
+        [_]F{ 0.0, cell_y_f + 1.0 - proc_y }
     else
-        [_]F{ frac_y, 0.0, 1.0 - frac_y };
+        [_]F{ frac_y, 0.0, cell_y_f + 1.0 - proc_y };
     const edge_softness = if (soft_edges) params.edge_softness else 0.0;
     const max_outer_radius = params.radius_mean + params.radius_jitter +
         edge_softness;
@@ -2275,18 +2344,29 @@ test "generated speckle list validates before coordinate conversion" {
 
 test "generated speckle list matches hard and soft cell hash evaluation" {
     if (comptime speckle_shape == .perlin) return;
-    const softnesses: []const F = if (supports_soft_edges) &.{ 0.0, 0.035 } else &.{0.0};
+    const softnesses: []const F = if (!supports_soft_edges)
+        &.{0.0}
+    else if (speckle_neighbor_count == 4)
+        &.{ 0.0, 0.035, 0.2 }
+    else
+        &.{ 0.0, 0.035 };
     for (softnesses) |softness| {
         const params: Speckle2DParams = .{
             .cells_per_uv = .{ 4.0, 3.0 },
             .uv_offset = .{ -0.25, 0.4 },
             .occupancy = 0.7,
+            .radius_mean = if (softness == 0.2) 0.8 else 0.45,
             .edge_softness = softness,
         };
         try testing.expectEqual(softness, speckleSoftness(params));
         const speckles = try generateSpeckleList2D(testing.allocator, params);
         defer testing.allocator.free(speckles.disk_by_cell);
         defer testing.allocator.free(speckles.disks);
+        if (softness == 0.2) {
+            for (speckles.disks) |disk| {
+                for (disk.center) |coordinate| try testing.expectEqual(@floor(coordinate), coordinate);
+            }
+        }
         var found_intermediate = false;
         for (0..9) |yy| {
             for (0..9) |xx| {
@@ -2301,6 +2381,58 @@ test "generated speckle list matches hard and soft cell hash evaluation" {
         }
         if (speckle_shape == .disk) {
             try testing.expectEqual(softness > 0.0, found_intermediate);
+        }
+    }
+}
+
+test "rounded speckle support excludes omitted cells" {
+    if (comptime speckle_neighbor_count == 9 or speckle_shape == .perlin) return;
+    const large: i64 = if (F == f32) 65_528 else 35_184_372_088_824;
+    const cases = [_]struct { cell: i64, unit: u16, support: F }{
+        .{ .cell = 1000, .unit = 65535, .support = 0.3 },
+        .{ .cell = large, .unit = 65535, .support = 0.499 },
+        .{ .cell = -large, .unit = 0, .support = 0.499 },
+        .{ .cell = -1, .unit = 0, .support = std.math.floatMin(F) },
+        .{ .cell = 0, .unit = 65535, .support = std.math.floatEps(F) },
+        .{ .cell = large, .unit = 0, .support = support_radius_limit },
+        .{ .cell = -large, .unit = 65535, .support = support_radius_limit },
+    };
+    for (cases) |case| {
+        const min = if (speckle_neighbor_count == 1) case.support else 0.0;
+        const extent = if (speckle_neighbor_count == 1) 1.0 - 2.0 * min else 1.0 - case.support;
+        const center = speckleCenter(case.cell, case.unit, min, extent, case.support * case.support);
+        const cell: F = @floatFromInt(case.cell);
+        const lower_face = cell - @as(F, if (speckle_neighbor_count == 1) 0.0 else 1.0);
+        const lower_gap = center.coordinate - std.math.nextAfter(F, lower_face, -std.math.inf(F));
+        const upper_gap = cell + 1.0 - center.coordinate;
+        try testing.expect(lower_gap * lower_gap >= case.support * case.support);
+        try testing.expect(upper_gap * upper_gap >= case.support * case.support);
+        try testing.expect(center.unit <= case.unit);
+    }
+}
+
+test "rounded speckle faces preserve naive hash and indexed membership" {
+    if (comptime speckle_shape != .disk or speckle_neighbor_count == 1) return;
+    const cases = [_]Speckle2DParams{
+        .{ .seed = 66434, .radius_mean = 0.3, .cells_per_uv = .{ 2.0, 1.0 }, .uv_offset = .{ 1000.0, 0.0 } },
+        .{ .seed = 283701, .radius_mean = std.math.nextAfter(F, 0.1, std.math.inf(F)), .cells_per_uv = .{ 1.0, 1.0 }, .uv_offset = .{ -0.1, 0.0 } },
+    };
+    for (cases, 0..) |params, ii| {
+        if (ii == 0 and (F != f32 or speckle_neighbor_count != 4)) continue;
+        const owner = speckleDiskForCell(false, if (ii == 0) 1000 else 0, 0, params).?;
+        const uv: [2]F = .{ if (ii == 0) 0.5 else 0.0, owner.center[1] };
+        const expected = if (ii == 0) params.background else params.foreground;
+        if (ii == 1) {
+            const dx = params.uv_offset[0] - owner.center[0];
+            try testing.expect(dx * dx < owner.radius * owner.radius);
+        }
+        const speckles = try generateSpeckleList2D(testing.allocator, params);
+        defer testing.allocator.free(speckles.disk_by_cell);
+        defer testing.allocator.free(speckles.disks);
+        try testing.expectEqual(expected, evalSpeckleList2DNaiveImpl(false, uv[0], uv[1], speckles));
+        try testing.expectEqual(expected, evalSpeckle2D(uv, params));
+        if (comptime buildconfig.speckle_evaluator != .list_naive) {
+            try testing.expectEqual(expected, evalSpeckleList2DIndexedImpl(false, uv[0], uv[1], speckles));
         }
     }
 }
@@ -2392,6 +2524,22 @@ test "direct fixed generation is contained and exact" {
         evalDirectFixedSpeckle2D(.{ 0.0, 1.0 }, first),
         evalDirectFixedSpeckle2D(.{ -2.0, 3.0 }, first),
     );
+
+    const q: F = if (F == f32) 65_528.0 else 35_184_372_088_824.0;
+    const repair_params: Speckle2DParams = .{
+        .seed = if (F == f32) 58 else 27,
+        .cells_per_uv = .{ 1.0, 1.0 },
+        .uv_offset = .{ q, q },
+        .occupancy = 1.0,
+        .radius_mean = 0.499,
+    };
+    var repaired = try generateResources(testing.allocator, repair_params);
+    defer repaired.deinit(testing.allocator);
+    const raw = hashSpeckleCell(@intFromFloat(q), @intFromFloat(q), repair_params.seed);
+    try testing.expect(repaired.direct_fixed.?.cells[0] != (raw & direct_fixed_center_bits) | 1);
+    try testing.expectEqual(repair_params.foreground, sampleScal(0.00390625, 0.5, repair_params, &repaired));
+    const values: [S]F = sampleSIMD(@splat(0.00390625), @splat(0.5), @splat(true), repair_params, &repaired);
+    for (values) |value| try testing.expectEqual(repair_params.foreground, value);
 }
 
 test "packed speckle classification helpers round trip" {
