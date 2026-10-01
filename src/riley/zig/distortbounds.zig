@@ -13,6 +13,32 @@ const F = buildconfig.F;
 const S = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 
+// Distortion-aware bounds: engineering assumptions and required accuracy.
+//
+// The caller first bounds the projected element in ideal raster coordinates (from
+// its vertices or high-order hull). This file samples the CAMERA DISTORTION MAP
+// around that ideal-space rectangle; it does not sample the element's coordinate
+// map. The separate element/hull bound must already enclose the projected shape.
+//
+// We assume the camera distortion is locally invertible and varies smoothly and
+// slowly at the default one-pixel sampling scale throughout the rendered domain.
+// Fixed edge samples are an engineering approximation, not exact extrema for an
+// arbitrary polynomial. Reduce edge_spacing_px when a camera model changes
+// appreciably within one pixel. That setting controls the forward rectangle
+// samples only: the inverse sensor perimeter is sampled at one-pixel intervals
+// independently and gets a one-pixel ideal-space margin.
+//
+// These bounds only select integer pixel ranges for tile/element overlap. The
+// raster loop performs the actual subpixel coverage test. Downstream code floors
+// sampled minima and ceils sampled maxima, so the practical requirement is to
+// retain every pixel containing a potentially covered subpixel sample, not to
+// reproduce the exact floating-point extremum. For one sample per pixel, an
+// extremum error strictly below 0.5 pixel is a phase-independent sufficient
+// margin for that pixel-center grid. With s samples per axis, the corresponding
+// margin is strictly below 0.5 / s pixels; 0.5 pixel alone is insufficient for
+// supersampled coverage. Test the chosen spacing against that output-pixel
+// criterion for the intended camera and supersampling settings.
+
 pub const Bounds = struct {
     x_min: F,
     x_max: F,
