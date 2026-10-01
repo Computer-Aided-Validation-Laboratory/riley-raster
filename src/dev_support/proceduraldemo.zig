@@ -250,14 +250,9 @@ fn printUsage(comptime spec: DemoSpec) void {
         std.debug.print(
             \\  Size must be positive; 0 <= jitter <= size; 0 <= occupancy <= 1 (all finite).
             \\  Size + jitter + softness <= {d} cell units for this neighborhood.
+            \\  Hard disks exclude their circumference; zero-radius draws are empty.
             \\
         , .{speckleops.support_radius_limit});
-        if (speckleops.strict_hard_radius_limit) {
-            std.debug.print(
-                "  With softness 0, size + jitter must be strictly less than {d}.\n",
-                .{speckleops.support_radius_limit},
-            );
-        }
         if (buildconfig.speckle_evaluator == .direct_fixed) {
             std.debug.print("  direct-fixed requires jitter == 0.\n", .{});
         }

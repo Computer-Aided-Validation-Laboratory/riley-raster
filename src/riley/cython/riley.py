@@ -117,15 +117,11 @@ class Speckle2DParams:
     Procedural coordinates are computed componentwise as
     ``clip(uv, 0, 1) * cells_per_uv + uv_offset``.
 
-    For disks and Gaussian blobs, the maximum support radius is
-    ``radius_mean + radius_jitter + edge_softness``. It must be at most
-    ``0.5`` with one neighbor, or at most ``1.0`` with four or nine neighbors.
-    Hard disks require a strict bound below ``0.5`` with one neighbor and
-    below ``1.0`` with four neighbors to avoid ambiguous cell-boundary
-    ownership. Soft disks and Gaussian blobs allow equality at these limits.
-    The ``direct-fixed`` evaluator requires hard disks, zero jitter, and
-    ``radius_mean < 0.5``. Perlin ignores occupancy, radius, jitter, and the
-    neighbor count, but still requires ``edge_softness == 0``.
+    For disks and Gaussian blobs, all evaluators require
+    ``radius_mean + radius_jitter + edge_softness <= 0.5`` with one neighbor
+    or ``<= 1.0`` with four or nine neighbors. Hard disks cover only points
+    where ``distance**2 < radius**2``; zero-radius draws are empty.
+    Perlin ignores the neighbor count.
 
     Shape, evaluator, neighbor count, and mask/classification resolution are
     compile-time choices, not constructor parameters. The default compiled
