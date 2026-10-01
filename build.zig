@@ -264,6 +264,11 @@ pub fn build(b: *std.Build) void {
             .description = "Run the threaded geom benchmark",
             .source_path = "src/bench_thread_geom.zig",
         },
+        .{
+            .step_name = "bench-dist-psf",
+            .description = "Run the distortion and PSF benchmark",
+            .source_path = "src/bench_dist_psf.zig",
+        },
     };
 
     const bench_runs_step = b.step("benches", "Run all benchmark entrypoints");

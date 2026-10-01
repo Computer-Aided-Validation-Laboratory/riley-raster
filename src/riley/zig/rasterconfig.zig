@@ -38,7 +38,7 @@ pub const RasterConfig = struct {
     pub const default_output_name_format =
         "cam{camera}_frame{frame}_field{field}";
     // Outer scheduling mode for frame-camera jobs.
-    render_mode: RenderMode = .in_order,
+    render_mode: RenderMode = .offline,
     // Convenience-wrapper render-thread budget. User-facing thread counts
     // always include the caller thread.
     total_threads: u16 = 1,
