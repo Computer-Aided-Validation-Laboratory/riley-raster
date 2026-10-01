@@ -491,7 +491,7 @@ pub fn main(init: std.process.Init) !void {
                     .roi_cent_world = camera.roi_cent_world,
                     .focal_length = camera.focal_length,
                     .sub_sample = camera.sub_sample,
-                    .distort = camera.distort,
+                    .distort = render_defaults.distort,
                 };
 
                 // --- Experiment 1 ---

@@ -70,9 +70,9 @@ pub fn main(init: std.process.Init) !void {
     );
     defer threaded_io.deinit();
     const io = threaded_io.io();
-    const distort_model = switch (bench_args.distort) {
-        .none => cam.DistortModel.none,
-        .brown => cam.DistortModel{
+    const distort_model: cam.DistortParams = switch (bench_args.distort) {
+        .none => .none,
+        .brown => .{
             .brown_con = .{
                 .k1 = -0.08,
                 .k2 = 0.01,
@@ -81,7 +81,7 @@ pub fn main(init: std.process.Init) !void {
                 .p2 = -0.0007,
             },
         },
-        .brownext => cam.DistortModel{
+        .brownext => .{
             .brown_con_ext = .{
                 .k1 = -0.09,
                 .k2 = 0.012,
@@ -91,6 +91,12 @@ pub fn main(init: std.process.Init) !void {
                 .k6 = 0.00015,
                 .p1 = 0.0005,
                 .p2 = -0.0006,
+                .s1 = 0.0,
+                .s2 = 0.0,
+                .s3 = 0.0,
+                .s4 = 0.0,
+                .tau_x = 0.0,
+                .tau_y = 0.0,
             },
         },
     };

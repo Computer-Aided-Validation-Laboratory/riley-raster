@@ -9,6 +9,7 @@ from perf_common import repo_root
 
 BENCH_NAMES = [
     "bench_dicuq",
+    "bench_dist_psf",
     "bench_fullraster",
     "bench_tiltraster",
     "bench_geom",
