@@ -11,6 +11,8 @@ const Timestamp = std.Io.Clock.Timestamp;
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
+const vecstack = @import("vecstack.zig");
+const rotation = @import("rotation.zig");
 
 const sliceops = @import("sliceops.zig");
 
@@ -272,6 +274,7 @@ fn rasterReportIntoValidated(
         for (cams) |cam_prep| cam_prep.deinit(outer_alloc);
         outer_alloc.free(cams);
     }
+    const ideal_sensor_bounds = try prepareIdealSensorBounds(static_alloc, cams, config);
 
     const num_time = valid_summary.num_time;
     const num_fields = valid_summary.raw_num_fields;
@@ -308,6 +311,7 @@ fn rasterReportIntoValidated(
             outer_alloc,
             render_groups,
             cams,
+            ideal_sensor_bounds,
             config,
             out_dir,
             out_dir_path,
@@ -323,6 +327,7 @@ fn rasterReportIntoValidated(
             outer_alloc,
             render_groups,
             cams,
+            ideal_sensor_bounds,
             config,
             out_dir,
             out_dir_path,
@@ -352,6 +357,25 @@ fn rasterReportIntoValidated(
         end_to_end_times,
         if (bench_capt) |capt| capt else null,
     );
+}
+
+fn prepareIdealSensorBounds(
+    outer_alloc: std.mem.Allocator,
+    cameras: []const cam.CameraPrepared,
+    config: RasterConfig,
+) ![]const ?rops.DistortBounds {
+    const bounds = try outer_alloc.alloc(?rops.DistortBounds, cameras.len);
+    errdefer outer_alloc.free(bounds);
+    for (cameras, bounds) |*camera, *slot| {
+        slot.* = if (cam.isNoDistort(camera.distort))
+            null
+        else
+            try rops.calcIdealSensorBounds(
+                camera,
+                config.raster_halo_px_override orelse camera.prep_psf.halo_px,
+            );
+    }
+    return bounds;
 }
 
 pub fn calcAllFramesImageDims(
@@ -430,6 +454,7 @@ const FrameJobErrorState = struct {
 const OfflineDispatchShared = struct {
     outer_alloc: std.mem.Allocator,
     cameras: []const cam.CameraPrepared,
+    ideal_sensor_bounds: []const ?rops.DistortBounds,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     out_dir_path: ?[]const u8,
@@ -449,6 +474,7 @@ fn dispatchFrameJobsOffline(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
     cameras: []const cam.CameraPrepared,
+    ideal_sensor_bounds: []const ?rops.DistortBounds,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     out_dir_path: ?[]const u8,
@@ -463,6 +489,7 @@ fn dispatchFrameJobsOffline(
     var shared = OfflineDispatchShared{
         .outer_alloc = outer_alloc,
         .cameras = cameras,
+        .ideal_sensor_bounds = ideal_sensor_bounds,
         .config = config,
         .out_dir = out_dir,
         .out_dir_path = out_dir_path,
@@ -543,6 +570,7 @@ fn processOfflineRenderGroupLoop(
         const jobs = try prepareJobBatch(
             group_alloc,
             shared.cameras,
+            shared.ideal_sensor_bounds,
             shared.config,
             shared.out_dir,
             shared.out_dir_path,
@@ -585,6 +613,7 @@ fn processOfflineRenderGroupLoop(
 const InOrderDispatchShared = struct {
     outer_alloc: std.mem.Allocator,
     cameras: []const cam.CameraPrepared,
+    ideal_sensor_bounds: []const ?rops.DistortBounds,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     out_dir_path: ?[]const u8,
@@ -605,6 +634,7 @@ fn dispatchFrameJobsInOrder(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
     cameras: []const cam.CameraPrepared,
+    ideal_sensor_bounds: []const ?rops.DistortBounds,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     out_dir_path: ?[]const u8,
@@ -623,6 +653,7 @@ fn dispatchFrameJobsInOrder(
         var shared = InOrderDispatchShared{
             .outer_alloc = outer_alloc,
             .cameras = cameras,
+            .ideal_sensor_bounds = ideal_sensor_bounds,
             .config = config,
             .out_dir = out_dir,
             .out_dir_path = out_dir_path,
@@ -710,6 +741,7 @@ fn processInOrderRenderGroupLoop(
         const jobs = try prepareJobBatch(
             group_alloc,
             shared.cameras,
+            shared.ideal_sensor_bounds,
             shared.config,
             shared.out_dir,
             shared.out_dir_path,
@@ -752,6 +784,7 @@ fn processInOrderRenderGroupLoop(
 fn prepareJobBatch(
     group_alloc: std.mem.Allocator,
     cameras: []const cam.CameraPrepared,
+    ideal_sensor_bounds: []const ?rops.DistortBounds,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     out_dir_path: ?[]const u8,
@@ -762,6 +795,7 @@ fn prepareJobBatch(
     bench_capture: ?[]report.FrameBenchCapture,
     job_indices: []const usize,
 ) ![]PreparedFrameJob {
+    std.debug.assert(ideal_sensor_bounds.len == cameras.len);
     const jobs = try group_alloc.alloc(PreparedFrameJob, job_indices.len);
 
     const can_write_result_direct = images_arr != null and
@@ -775,6 +809,7 @@ fn prepareJobBatch(
             group_alloc,
             .{
                 .camera = &cameras[camera_idx],
+                .ideal_sensor = ideal_sensor_bounds[camera_idx],
                 .camera_idx = camera_idx,
                 .frame_idx = frame_idx,
                 .num_fields = num_fields,
@@ -1030,12 +1065,13 @@ fn runGeometryStage(
     var timing = mo.GeomTimes{};
     const raster_halo_px = job.desc.config.raster_halo_px_override orelse
         job.desc.camera.prep_psf.halo_px;
-    const geo_res = try mo.prepMeshFrames(
+    const geo_res = try mo.prepMeshFramesWithSensor(
         arena_alloc,
         &chunk_exec,
         scalingpolicy.geometryWorkers(geom_workers),
         job.desc.camera,
         raster_halo_px,
+        job.desc.ideal_sensor,
         job.desc.config,
         job.desc.frame_idx,
         job.desc.mesh_static,
@@ -1464,6 +1500,7 @@ fn initFrameReportStorage(
 // --------------------------------------------------------------------------------------
 const FrameJobDesc = struct {
     camera: *const cam.CameraPrepared,
+    ideal_sensor: ?rops.DistortBounds,
     camera_idx: usize,
     frame_idx: usize,
     num_fields: u8,
@@ -1981,6 +2018,44 @@ fn renderGroupSaveIo(render_group: RenderGroupSpec) std.Io {
 
 fn saveOverlapEnabled(config: RasterConfig) bool {
     return config.save_strategy == .disk and config.disk_save_overlap;
+}
+
+test "ideal sensor bounds are prepared once per camera with effective halo" {
+    const outer_alloc = std.testing.allocator;
+    const base_input = cam.CameraInput{
+        .pixels_num = .{ 8, 6 },
+        .pixels_size = .{ 0.01, 0.01 },
+        .pos_world = vecstack.Vec3f.initSlice(&.{ 0.0, 0.0, 1.0 }),
+        .rot_world = rotation.Rotation.init(0.0, 0.0, 0.0),
+        .roi_cent_world = vecstack.Vec3f.initZeros(),
+        .focal_length = 1.0,
+        .sub_sample = 2,
+    };
+    const undistorted = try cam.CameraPrepared.init(outer_alloc, base_input);
+    defer undistorted.deinit(outer_alloc);
+
+    for ([_]cam.SubPixelCenterMap{ .full_in_mem, .per_tile }) |map_mode| {
+        var distorted_input = base_input;
+        distorted_input.subpixel_center_map = map_mode;
+        distorted_input.distort = .{ .brown_con = .{ .k1 = 0.1 } };
+        distorted_input.psf = .{ .gaussian = .{
+            .sigma_px = 1.0,
+            .supp_rad_px = 2.0,
+        } };
+        const distorted = try cam.CameraPrepared.init(outer_alloc, distorted_input);
+        defer distorted.deinit(outer_alloc);
+        const cameras = [_]cam.CameraPrepared{ undistorted, distorted };
+
+        for ([_]?u16{ null, 0, 3 }) |halo_override| {
+            const config = RasterConfig{ .raster_halo_px_override = halo_override };
+            const cached = try prepareIdealSensorBounds(outer_alloc, &cameras, config);
+            defer outer_alloc.free(cached);
+            try std.testing.expect(cached[0] == null);
+            const effective_halo = halo_override orelse distorted.prep_psf.halo_px;
+            const expected = try rops.calcIdealSensorBounds(&distorted, effective_halo);
+            try std.testing.expectEqualDeep(expected, cached[1].?);
+        }
+    }
 }
 
 test "global sub-pixel tiles own disjoint cores and retain halo only at frame edges" {

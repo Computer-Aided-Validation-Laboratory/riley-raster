@@ -24,7 +24,7 @@ from perf_common import command_path, repo_root
 
 DEFAULT_OUT_ROOT: Path = Path("out") / "bench_stats_dist_psf"
 DEFAULT_IMAGE_OUT_DIR: Path = Path("out") / "bench_images_dist_psf"
-DEFAULT_RUNS: int = 10
+DEFAULT_RUNS: int = 25
 DEFAULT_FRAMES: int = 2
 DEFAULT_TOTAL_THREADS: int = 1
 DEFAULT_MAX_RASTER_WORKERS_PER_JOB: int = 1

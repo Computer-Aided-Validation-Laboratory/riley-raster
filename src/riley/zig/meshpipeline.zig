@@ -458,15 +458,46 @@ pub fn prepMeshFrames(
     frame_meshes: []MeshFrame,
     timing: *GeomTimes,
 ) !FrameGeomResult {
-    var res = FrameGeomResult{
-        .total_elems_num = 0,
-        .total_elems_in_image = 0,
-    };
     const ideal_sensor = if (cam.isNoDistort(camera.distort))
         null
     else
         try rops.calcIdealSensorBounds(camera, raster_halo_px);
+    return prepMeshFramesWithSensor(
+        arena_alloc,
+        chunk_exec,
+        workers_num,
+        camera,
+        raster_halo_px,
+        ideal_sensor,
+        config,
+        frame_idx,
+        static_meshes,
+        nodal_global_scaling,
+        frame_meshes,
+        timing,
+    );
+}
 
+/// Use a bound prepared from this camera and raster_halo_px for the render call.
+pub fn prepMeshFramesWithSensor(
+    arena_alloc: std.mem.Allocator,
+    chunk_exec: *pce.ParaChunkExecutor,
+    workers_num: usize,
+    camera: *const cam.CameraPrepared,
+    raster_halo_px: u16,
+    ideal_sensor: ?rops.DistortBounds,
+    config: rastcfg.RasterConfig,
+    frame_idx: usize,
+    static_meshes: []const MeshStatic,
+    nodal_global_scaling: []const ?imageops.ScalingParams,
+    frame_meshes: []MeshFrame,
+    timing: *GeomTimes,
+) !FrameGeomResult {
+    std.debug.assert(cam.isNoDistort(camera.distort) == (ideal_sensor == null));
+    var res = FrameGeomResult{
+        .total_elems_num = 0,
+        .total_elems_in_image = 0,
+    };
     for (static_meshes, 0..) |*mesh_static, ii| {
         // Only needed for nodal interpolation shading and only if not .none. If .none we
         // directly render float fields unscaled.
