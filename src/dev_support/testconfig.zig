@@ -31,11 +31,6 @@ pub const RENDER_MODE: RenderMode = .in_order;
 pub const HULL_MODE: HullMode = .on_no_fallback;
 // Includes the caller thread. TOTAL_THREADS = 3 means caller + 2 helpers.
 pub const TOTAL_THREADS: u16 = 3;
-pub const FRAME_BATCH_SIZE_PER_GROUP: u16 = 1;
-pub const MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP: u16 = 1;
-pub const MAX_GEOM_WORKERS_PER_JOB: u16 = 1;
-pub const MAX_RASTER_WORKERS_PER_JOB: u16 = 3;
-pub const GEOM_SCHEDULING_MODE: rastcfg.GeometrySchedulingMode = .auto;
 pub const TEST_CASE_VERBOSE: bool = false;
 
 pub const VerifTol = struct {
@@ -88,42 +83,28 @@ pub const RasterConfigMode = enum {
 
 pub fn getRasterConfig(mode: RasterConfigMode) rastcfg.RasterConfig {
     var config = rastcfg.RasterConfig{
-        .render_mode = RENDER_MODE,
-        .frame_batch_size_per_group = FRAME_BATCH_SIZE_PER_GROUP,
-        .max_geom_jobs_in_flight_per_group = MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP,
-        .max_geom_workers_per_job = MAX_GEOM_WORKERS_PER_JOB,
-        .geom_scheduling_mode = GEOM_SCHEDULING_MODE,
-        .max_raster_workers_per_job = MAX_RASTER_WORKERS_PER_JOB,
-        .hull_mode = HULL_MODE,
+        .advanced = .{
+            .solver = .{
+                .hull_mode = HULL_MODE,
+            },
+        },
     };
 
     switch (mode) {
         .gold_gen, .preview => {
-            config.total_threads = 1;
-            config.max_geom_workers_per_job = 1;
-            config.max_raster_workers_per_job = 1;
-            config.max_geom_jobs_in_flight_per_group = 1;
-            config.frame_batch_size_per_group = 1;
-            config.report = .off;
+            config.parallel = .serial;
+            config.report = .{ .mode = .off };
         },
         .testing => {
-            config.total_threads = TOTAL_THREADS;
-            config.max_geom_workers_per_job = MAX_GEOM_WORKERS_PER_JOB;
-            config.max_raster_workers_per_job = MAX_RASTER_WORKERS_PER_JOB;
-            config.max_geom_jobs_in_flight_per_group =
-                MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP;
-            config.frame_batch_size_per_group = FRAME_BATCH_SIZE_PER_GROUP;
-            config.report = .off;
+            config.parallel = .{ .threads = TOTAL_THREADS };
+            config.report = .{ .mode = .off };
         },
         .bench => {
-            config.total_threads = 1;
-            config.max_geom_workers_per_job = 1;
-            config.max_raster_workers_per_job = 1;
-            config.max_geom_jobs_in_flight_per_group = 1;
-            config.frame_batch_size_per_group = 1;
-            config.report = .bench;
+            config.parallel = .serial;
+            config.report = .{ .mode = .bench };
         },
     }
 
     return config;
 }
+

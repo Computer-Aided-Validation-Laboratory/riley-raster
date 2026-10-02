@@ -497,7 +497,7 @@ fn rasterNewtonImpl(
 
             ctx_report.recordSolverCalls(1);
             const result = blk: {
-                if (ctx_rast.config.newton_seed_mode == .hull) {
+                if (ctx_rast.config.advanced.solver.newton_seed_mode == .hull) {
                     if (hull_seed) |seed| {
                         const seed_quality = newton.evaluateSeedQuality(
                             Geom.nodes_num,
@@ -515,11 +515,11 @@ fn rasterNewtonImpl(
                     }
                 }
                 const base_seed = Geom.initSeed(
-                    ctx_rast.config.newton_seed_mode,
+                    ctx_rast.config.advanced.solver.newton_seed_mode,
                     hull_seed,
                 );
                 const selected_seed = newton.selectSeed(
-                    ctx_rast.config.newton_seed_reuse,
+                    ctx_rast.config.advanced.solver.newton_seed_reuse,
                     base_seed,
                     seed_state,
                 );
@@ -615,7 +615,7 @@ fn rasterNewtonImpl(
                 );
             }
 
-            if (ctx_rast.config.newton_seed_reuse == .last_conv) {
+            if (ctx_rast.config.advanced.solver.newton_seed_reuse == .last_conv) {
                 newton.updateSeedState(
                     &seed_state,
                     result.xi_out,

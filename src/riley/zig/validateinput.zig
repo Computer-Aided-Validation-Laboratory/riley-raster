@@ -146,7 +146,7 @@ pub fn checkRenderInps(
     }
 
     const out_num_fields = try calcOutFieldsForImgSaveMode(
-        config.image_save_mode,
+        config.output.image_save_mode,
         raw_num_fields,
     );
     const img_dims = calcAllFramesImgDims(
@@ -178,7 +178,7 @@ pub fn summariseRenderInpsAssumeValid(
     const num_time = if (meshes.len > 0) mo.countFrames(meshes) else 1;
     const raw_num_fields = if (meshes.len > 0) mo.countOutputFields(meshes) else 1;
     const out_num_fields = calcOutFieldsForImgSaveMode(
-        config.image_save_mode,
+        config.output.image_save_mode,
         raw_num_fields,
     ) catch raw_num_fields;
     const img_dims = if (cam_inps.len > 0)
@@ -209,79 +209,70 @@ fn checkTopLevelAndRenderGroups(
         if (render_group.workers == 0) {
             return error.InvalidRenderGroupWorkers;
         }
-        if (config.report == .full_stats and
-            @min(render_group.workers, config.max_raster_workers_per_job) > 1)
-        {
+        if (config.report.mode == .full_stats and render_group.workers > 1) {
             return error.FullStatsRequiresSingleRasterWorker;
         }
     }
 }
 
 fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
-    if (!std.math.isFinite(config.edge_spacing_px) or
-        config.edge_spacing_px <= 0.0)
+    if (!std.math.isFinite(config.advanced.distortion.edge_spacing_px) or
+        config.advanced.distortion.edge_spacing_px <= 0.0)
     {
         return error.InvalidDistortEdgeSpacing;
     }
-    if (config.total_threads == 0) {
-        return error.InvalidTotalThreads;
+    switch (config.parallel) {
+        .threads => |t| if (t == 0) return error.InvalidTotalThreads,
+        else => {},
     }
-    if (config.frame_batch_size_per_group == 0) {
-        return error.InvalidFrameBatchSize;
-    }
-    if (config.max_geom_jobs_in_flight_per_group == 0) {
-        return error.InvalidGeomJobsInFlight;
-    }
-    if (config.max_geom_workers_per_job == 0) {
-        return error.InvalidGeomWorkersPerJob;
-    }
-    if (config.max_raster_workers_per_job == 0) {
-        return error.InvalidRasterWorkersPerJob;
-    }
-    if (config.tile_size_min == 0) {
+    if (config.advanced.raster.tile_size_min == 0) {
         return error.InvalidTileSizeMin;
     }
-    if (config.tile_size_max == 0) {
+    if (config.advanced.raster.tile_size_max == 0) {
         return error.InvalidTileSizeMax;
     }
-    if (config.tile_size_min > config.tile_size_max) {
+    if (config.advanced.raster.tile_size_min > config.advanced.raster.tile_size_max) {
         return error.InvalidTileSizeRange;
     }
-    if (config.tile_size_override) |tile_size_override| {
-        if (tile_size_override < config.tile_size_min or
-            tile_size_override > config.tile_size_max)
+    if (config.advanced.raster.tile_size_override) |tile_size_override| {
+        if (tile_size_override < config.advanced.raster.tile_size_min or
+            tile_size_override > config.advanced.raster.tile_size_max)
         {
             return error.InvalidTileSizeOverride;
         }
     }
-    if (config.global_subpx_tile_size_min == 0) {
+    if (config.advanced.raster.global_subpx_tile_size_min == 0) {
         return error.InvalidGlobalSubpxTileSizeMin;
     }
-    if (config.global_subpx_tile_size_max == 0) {
+    if (config.advanced.raster.global_subpx_tile_size_max == 0) {
         return error.InvalidGlobalSubpxTileSizeMax;
     }
-    if (config.global_subpx_tile_size_min > config.global_subpx_tile_size_max) {
+    if (config.advanced.raster.global_subpx_tile_size_min >
+        config.advanced.raster.global_subpx_tile_size_max)
+    {
         return error.InvalidGlobalSubpxTileSizeRange;
     }
-    if (config.global_subpx_tile_size_override) |tile_size_override| {
-        if (tile_size_override < config.global_subpx_tile_size_min or
-            tile_size_override > config.global_subpx_tile_size_max)
+    if (config.advanced.raster.global_subpx_tile_size_override) |tile_size_override| {
+        if (tile_size_override < config.advanced.raster.global_subpx_tile_size_min or
+            tile_size_override > config.advanced.raster.global_subpx_tile_size_max)
         {
             return error.InvalidGlobalSubpxTileSizeOverride;
         }
     }
-    if (config.global_subpx_stripe_size_min == 0) {
+    if (config.advanced.raster.global_subpx_stripe_size_min == 0) {
         return error.InvalidGlobalSubpxStripeSizeMin;
     }
-    if (config.global_subpx_stripe_size_max == 0) {
+    if (config.advanced.raster.global_subpx_stripe_size_max == 0) {
         return error.InvalidGlobalSubpxStripeSizeMax;
     }
-    if (config.global_subpx_stripe_size_min > config.global_subpx_stripe_size_max) {
+    if (config.advanced.raster.global_subpx_stripe_size_min >
+        config.advanced.raster.global_subpx_stripe_size_max)
+    {
         return error.InvalidGlobalSubpxStripeSizeRange;
     }
-    if (config.global_subpx_stripe_size_override) |stripe_size_override| {
-        if (stripe_size_override < config.global_subpx_stripe_size_min or
-            stripe_size_override > config.global_subpx_stripe_size_max)
+    if (config.advanced.raster.global_subpx_stripe_size_override) |stripe_size_override| {
+        if (stripe_size_override < config.advanced.raster.global_subpx_stripe_size_min or
+            stripe_size_override > config.advanced.raster.global_subpx_stripe_size_max)
         {
             return error.InvalidGlobalSubpxStripeSizeOverride;
         }
@@ -289,15 +280,17 @@ fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
     if (!std.math.isFinite(config.background_value)) {
         return error.InvalidBackgroundValue;
     }
-    if (config.save_frame_buff_count == 0) {
+    if (config.output.save_frame_buff_count == 0) {
         return error.InvalidSaveFrameBuffCount;
     }
     if ((config.save_strategy == .disk or config.save_strategy == .both) and
-        config.image_save_opts.len == 0)
+        config.output.image_save_opts.len == 0)
     {
         return error.InvalidImageSaveOpts;
     }
-    if (config.report == .full_stats and config.full_stats_opts.formats.len == 0) {
+    if (config.report.mode == .full_stats and
+        config.report.full_stats_opts.formats.len == 0)
+    {
         return error.InvalidFullStatsFormats;
     }
 }
@@ -341,7 +334,9 @@ fn checkMeshesMetadata(
                 disp_field.array.dims[1] != mesh.coords.mat.rows_num or
                 disp_field.array.dims[2] != 3 or
                 disp_field.array_mem.len !=
-                    disp_field.array.dims[0] * disp_field.array.dims[1] * disp_field.array.dims[2])
+                    disp_field.array.dims[0] *
+                    disp_field.array.dims[1] *
+                    disp_field.array.dims[2])
             {
                 return error.InvalidDisplacementDimensions;
             }
@@ -470,16 +465,17 @@ fn checkGlobalSubpxAlignment(
     config: rastcfg.RasterConfig,
     sub_samp: u32,
 ) InputValidationError!void {
-    if (config.buffer_mode == .tile_local) return;
+    if (config.advanced.raster.buffer_mode == .tile_local) return;
 
-    const tile_size = config.global_subpx_tile_size_override orelse
-        config.global_subpx_tile_size_min;
+    const tile_size = config.advanced.raster.global_subpx_tile_size_override orelse
+        config.advanced.raster.global_subpx_tile_size_min;
     if (@mod(tile_size, sub_samp) != 0) {
         return error.GlobalSubpxTileSizeNotAligned;
     }
-    if (config.buffer_mode == .global_subpx_stripe) {
-        const stripe_size = config.global_subpx_stripe_size_override orelse
-            config.global_subpx_stripe_size_min;
+    if (config.advanced.raster.buffer_mode == .global_subpx_stripe) {
+        const stripe_size =
+            config.advanced.raster.global_subpx_stripe_size_override orelse
+            config.advanced.raster.global_subpx_stripe_size_min;
         if (@mod(stripe_size, sub_samp) != 0) {
             return error.GlobalSubpxStripeSizeNotAligned;
         }
@@ -906,7 +902,7 @@ fn isFiniteVec3(vec_val: anytype) bool {
 test "raster configuration rejects invalid distortion edge spacing" {
     var config = rastcfg.RasterConfig{};
     for ([_]F{ 0.0, -1.0, std.math.nan(F), std.math.inf(F) }) |spacing| {
-        config.edge_spacing_px = spacing;
+        config.advanced.distortion.edge_spacing_px = spacing;
         try std.testing.expectError(
             error.InvalidDistortEdgeSpacing,
             checkRasterConfig(config),

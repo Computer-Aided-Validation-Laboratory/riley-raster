@@ -100,13 +100,9 @@ pub fn runOneElemCaseTest(
     run_config.background_value = 127.5;
 
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
-
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         &[_]MeshInput{mesh_input},
         run_config,

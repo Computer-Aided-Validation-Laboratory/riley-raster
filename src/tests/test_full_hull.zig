@@ -126,18 +126,14 @@ fn runOneElemHullCaseTest(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.hull_mode = hull_case.mode;
-    run_config.newton_seed_mode = seed_case.seed_mode;
-    run_config.newton_seed_reuse = seed_case.seed_reuse;
+    run_config.advanced.solver.hull_mode = hull_case.mode;
+    run_config.advanced.solver.newton_seed_mode = seed_case.seed_mode;
+    run_config.advanced.solver.newton_seed_reuse = seed_case.seed_reuse;
 
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
-
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{cam_inp},
         &[_]MeshInput{mesh_input},
         run_config,
@@ -253,18 +249,14 @@ fn runScene2HullCaseTest(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.hull_mode = hull_case.mode;
-    run_config.newton_seed_mode = seed_case.seed_mode;
-    run_config.newton_seed_reuse = seed_case.seed_reuse;
+    run_config.advanced.solver.hull_mode = hull_case.mode;
+    run_config.advanced.solver.newton_seed_mode = seed_case.seed_mode;
+    run_config.advanced.solver.newton_seed_reuse = seed_case.seed_reuse;
 
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
-
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{cam_inp},
         &meshes,
         run_config,
@@ -370,17 +362,41 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
         is_offscreen: bool,
     }{
         .{ .name = "distort_rot", .mesh_types = &newton_mesh_types, .is_offscreen = false },
-        .{ .name = "distort_shear", .mesh_types = &newton_mesh_types, .is_offscreen = false },
+        .{
+            .name = "distort_shear",
+            .mesh_types = &newton_mesh_types,
+            .is_offscreen = false,
+        },
         .{
             .name = "distort_stretch",
             .mesh_types = &newton_mesh_types,
             .is_offscreen = false,
         },
-        .{ .name = "distort_bulge", .mesh_types = &midside_mesh_types, .is_offscreen = false },
-        .{ .name = "distort_tan", .mesh_types = &midside_mesh_types, .is_offscreen = false },
-        .{ .name = "vertbulge", .mesh_types = &midside_mesh_types, .is_offscreen = false },
-        .{ .name = "bulgein_rot", .mesh_types = &midside_mesh_types, .is_offscreen = false },
-        .{ .name = "bulgeout_rot", .mesh_types = &midside_mesh_types, .is_offscreen = false },
+        .{
+            .name = "distort_bulge",
+            .mesh_types = &midside_mesh_types,
+            .is_offscreen = false,
+        },
+        .{
+            .name = "distort_tan",
+            .mesh_types = &midside_mesh_types,
+            .is_offscreen = false,
+        },
+        .{
+            .name = "vertbulge",
+            .mesh_types = &midside_mesh_types,
+            .is_offscreen = false,
+        },
+        .{
+            .name = "bulgein_rot",
+            .mesh_types = &midside_mesh_types,
+            .is_offscreen = false,
+        },
+        .{
+            .name = "bulgeout_rot",
+            .mesh_types = &midside_mesh_types,
+            .is_offscreen = false,
+        },
         .{
             .name = "vertbulge_offscreen",
             .mesh_types = &midside_mesh_types,
@@ -487,17 +503,13 @@ fn runNewtonSeedMatrixTests(
 
                 var run_config = config;
                 run_config.save_strategy = .memory;
-                run_config.hull_mode = .on_no_fallback;
-                run_config.newton_seed_mode = seed_mode;
-                run_config.newton_seed_reuse = seed_reuse;
-
-                const render_groups = [_]riley.RenderGroupSpec{
-                    .{ .io = io, .workers = 1 },
-                };
+                run_config.advanced.solver.hull_mode = .on_no_fallback;
+                run_config.advanced.solver.newton_seed_mode = seed_mode;
+                run_config.advanced.solver.newton_seed_reuse = seed_reuse;
 
                 const result = try riley.raster(
                     aa,
-                    &render_groups,
+                    io,
                     &[_]CameraInput{cam_inp},
                     &meshes,
                     run_config,

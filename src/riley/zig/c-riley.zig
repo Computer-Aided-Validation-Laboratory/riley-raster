@@ -1533,75 +1533,73 @@ fn buildRasterConfig(
 ) !riley.RasterConfig {
     var config = riley.RasterConfig{};
     config.render_mode = try renderModeFromC(in_config.render_mode);
-    config.total_threads = @max(@as(u16, 1), in_config.total_threads);
-    config.frame_batch_size_per_group =
-        @max(@as(u16, 1), in_config.frame_batch_size_per_group);
-    config.max_geom_jobs_in_flight_per_group =
-        @max(@as(u16, 1), in_config.max_geom_jobs_in_flight_per_group);
-    config.max_geom_workers_per_job =
-        @max(@as(u16, 1), in_config.max_geom_workers_per_job);
-    config.geom_scheduling_mode = try geometrySchedulingModeFromC(
-        in_config.geom_scheduling_mode,
-    );
-    config.max_raster_workers_per_job =
-        @max(@as(u16, 1), in_config.max_raster_workers_per_job);
+    config.parallel = if (in_config.total_threads == 1)
+        .serial
+    else if (in_config.total_threads > 1)
+        .{ .threads = in_config.total_threads }
+    else
+        .auto;
     config.save_strategy = try saveStrategyFromC(in_config.save_strategy);
-    config.image_save_mode = try imageSaveModeFromC(in_config.image_save_mode);
-    config.hull_mode = try hullModeFromC(in_config.hull_mode);
-    config.newton_seed_mode = try newtonSeedModeFromC(
+    config.output.image_save_mode = try imageSaveModeFromC(in_config.image_save_mode);
+    config.advanced.solver.hull_mode = try hullModeFromC(in_config.hull_mode);
+    config.advanced.solver.newton_seed_mode = try newtonSeedModeFromC(
         in_config.newton_seed_mode,
     );
-    config.newton_seed_reuse = try newtonSeedReuseFromC(
+    config.advanced.solver.newton_seed_reuse = try newtonSeedReuseFromC(
         in_config.newton_seed_reuse,
     );
-    config.validate_input = try validateInputFromC(
+    config.validation = try validateInputFromC(
         in_config.validate_input,
     );
-    config.report = try reportModeFromC(in_config.report);
-    config.buffer_mode = try bufferModeFromC(in_config.buffer_mode);
-    config.edge_spacing_px = in_config.edge_spacing_px;
-    config.tile_size_min = if (in_config.tile_size_min == 0)
-        config.tile_size_min
+    config.report.mode = try reportModeFromC(in_config.report);
+    config.advanced.raster.buffer_mode = try bufferModeFromC(in_config.buffer_mode);
+    config.advanced.distortion.edge_spacing_px = in_config.edge_spacing_px;
+    config.advanced.raster.tile_size_min = if (in_config.tile_size_min == 0)
+        config.advanced.raster.tile_size_min
     else
         in_config.tile_size_min;
-    config.tile_size_max = if (in_config.tile_size_max == 0)
-        config.tile_size_max
+    config.advanced.raster.tile_size_max = if (in_config.tile_size_max == 0)
+        config.advanced.raster.tile_size_max
     else
         in_config.tile_size_max;
     config.background_value = in_config.background_value;
-    config.disk_save_overlap = in_config.disk_save_overlap != 0;
-    config.tile_size_override = if (in_config.tile_size_override == 0)
+    config.output.disk_save_overlap = in_config.disk_save_overlap != 0;
+    config.advanced.raster.tile_size_override = if (in_config.tile_size_override == 0)
         null
     else
         in_config.tile_size_override;
-    config.global_subpx_tile_size_min = if (in_config.global_subpx_tile_size_min == 0)
-        config.global_subpx_tile_size_min
-    else
-        in_config.global_subpx_tile_size_min;
-    config.global_subpx_tile_size_max = if (in_config.global_subpx_tile_size_max == 0)
-        config.global_subpx_tile_size_max
-    else
-        in_config.global_subpx_tile_size_max;
-    config.global_subpx_tile_size_override =
+    config.advanced.raster.global_subpx_tile_size_min =
+        if (in_config.global_subpx_tile_size_min == 0)
+            config.advanced.raster.global_subpx_tile_size_min
+        else
+            in_config.global_subpx_tile_size_min;
+    config.advanced.raster.global_subpx_tile_size_max =
+        if (in_config.global_subpx_tile_size_max == 0)
+            config.advanced.raster.global_subpx_tile_size_max
+        else
+            in_config.global_subpx_tile_size_max;
+    config.advanced.raster.global_subpx_tile_size_override =
         if (in_config.global_subpx_tile_size_override == 0)
             null
         else
             in_config.global_subpx_tile_size_override;
-    config.global_subpx_stripe_size_min = if (in_config.global_subpx_stripe_size_min == 0)
-        config.global_subpx_stripe_size_min
-    else
-        in_config.global_subpx_stripe_size_min;
-    config.global_subpx_stripe_size_max = if (in_config.global_subpx_stripe_size_max == 0)
-        config.global_subpx_stripe_size_max
-    else
-        in_config.global_subpx_stripe_size_max;
-    config.global_subpx_stripe_size_override =
+    config.advanced.raster.global_subpx_stripe_size_min =
+        if (in_config.global_subpx_stripe_size_min == 0)
+            config.advanced.raster.global_subpx_stripe_size_min
+        else
+            in_config.global_subpx_stripe_size_min;
+    config.advanced.raster.global_subpx_stripe_size_max =
+        if (in_config.global_subpx_stripe_size_max == 0)
+            config.advanced.raster.global_subpx_stripe_size_max
+        else
+            in_config.global_subpx_stripe_size_max;
+    config.advanced.raster.global_subpx_stripe_size_override =
         if (in_config.global_subpx_stripe_size_override == 0)
             null
         else
             in_config.global_subpx_stripe_size_override;
     if (in_config.save_frame_buff_count != 0) {
-        config.save_frame_buff_count = in_config.save_frame_buff_count;
+        config.output.save_frame_buff_count = in_config.save_frame_buff_count;
     }
 
     const save_opts = try allocator.alloc(iio.ImageSaveOpts, 1);
@@ -1617,11 +1615,11 @@ fn buildRasterConfig(
             in_config.save_scaling_max,
         ),
     };
-    config.image_save_opts = save_opts;
+    config.output.image_save_opts = save_opts;
     if (in_config.output_name_format) |format| {
         config.output_name_format = std.mem.span(format);
     }
-    config.full_stats_opts = .{
+    config.report.full_stats_opts = .{
         .save_solver_csv = in_config.full_stats_save_solver_csv != 0,
         .save_iter_map = in_config.full_stats_save_iter_map != 0,
         .save_xi_map = in_config.full_stats_save_xi_map != 0,
@@ -1866,23 +1864,15 @@ fn rasterSceneInternal(
         image_arr.deinit(allocator);
     };
 
-    // Offline work spans camera/frame jobs; in-order work spans cameras only.
-    const jobs_available = cameras_len *| (if (raster_config.render_mode == .offline)
-        mo.countFrames(mesh_inputs)
-    else
-        1);
-    const jobs_limit = @max(@as(usize, 1), jobs_available);
-    const groups_limit = @min(@as(usize, raster_config.total_threads), jobs_limit);
     const outer_alloc = std.heap.smp_allocator;
-    var render_group_runtime = try riley.ManagedRenderGroups.init(
-        outer_alloc,
-        null,
-        .{
-            .thread_budget = raster_config.total_threads,
-            .max_groups = @intCast(groups_limit),
-        },
-    );
-    defer render_group_runtime.deinit(outer_alloc);
+    var threaded_io = std.Io.Threaded.init(outer_alloc, .{
+        .argv0 = .empty,
+        .environ = .empty,
+        .async_limit = .nothing,
+        .concurrent_limit = .nothing,
+    });
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
 
     const out_dir_path_slice = if (out_dir_path) |path|
         std.mem.span(path)
@@ -1891,7 +1881,7 @@ fn rasterSceneInternal(
 
     try riley.rasterInto(
         outer_alloc,
-        render_group_runtime.specs,
+        io,
         camera_inputs,
         mesh_inputs,
         raster_config,
@@ -2386,7 +2376,8 @@ pub export fn rileySaveCamera(
     return 0;
 }
 
-/// Null buffer with zero capacity queries metadata/count without returning a borrowed pointer.
+/// Null buffer with zero capacity queries metadata/count without returning
+/// a borrowed pointer.
 fn copyLoadedCamera(
     camera_input: cam.CameraInput,
     coeffs: [*c]F,

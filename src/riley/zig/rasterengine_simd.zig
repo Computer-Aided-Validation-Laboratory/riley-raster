@@ -660,7 +660,7 @@ fn rasterNewtonSIMDImpl(
                     v_ideal_y_pix,
                 );
                 const init_seed = Geom.initSeedSIMD(
-                    ctx_rast.config.newton_seed_mode,
+                    ctx_rast.config.advanced.solver.newton_seed_mode,
                     .{
                         .v_xi = v_hull_res.v_seed_xi,
                         .v_eta = v_hull_res.v_seed_eta,
@@ -688,7 +688,10 @@ fn rasterNewtonSIMDImpl(
                 );
                 ctx_report.recordTessPasses(@intCast(@reduce(.Add, v_tess_pass_u8)));
             } else {
-                const init_seed = Geom.initSeed(ctx_rast.config.newton_seed_mode, null);
+                const init_seed = Geom.initSeed(
+                    ctx_rast.config.advanced.solver.newton_seed_mode,
+                    null,
+                );
                 @memset(&xi_arr, init_seed.xi);
                 @memset(&eta_arr, init_seed.eta);
             }
@@ -704,7 +707,7 @@ fn rasterNewtonSIMDImpl(
 
                 var seed_xi = xi_arr[ss];
                 var seed_eta = eta_arr[ss];
-                if (ctx_rast.config.newton_seed_mode == .hull) {
+                if (ctx_rast.config.advanced.solver.newton_seed_mode == .hull) {
                     const hull_seed = newton.NewtonSeed{ .xi = seed_xi, .eta = seed_eta };
                     const seed_quality = newton.evaluateSeedQuality(
                         Geom.nodes_num,
@@ -718,7 +721,7 @@ fn rasterNewtonSIMDImpl(
                     );
                     if (!seed_quality.is_usable) {
                         const centroid_seed = Geom.initSeed(
-                            ctx_rast.config.newton_seed_mode,
+                            ctx_rast.config.advanced.solver.newton_seed_mode,
                             null,
                         );
                         seed_xi = centroid_seed.xi;
@@ -764,7 +767,7 @@ fn rasterNewtonSIMDImpl(
 
     for (0..subpx_simd_chunk_count) |chunk_idx| {
         var subpx_simd_chunk = subpx_scratch.simd_chunks[chunk_idx];
-        if (ctx_rast.config.newton_seed_reuse == .last_conv) {
+        if (ctx_rast.config.advanced.solver.newton_seed_reuse == .last_conv) {
             newton.applySeedReuseInPlace(
                 subpx_simd_chunk.count,
                 seed_state,
@@ -851,7 +854,7 @@ fn rasterNewtonSIMDImpl(
             subpx_scratch.mask[scratch_idx] = true;
         }
 
-        if (ctx_rast.config.newton_seed_reuse == .last_conv) {
+        if (ctx_rast.config.advanced.solver.newton_seed_reuse == .last_conv) {
             newton.updateSeedStateFromSIMDResult(
                 &seed_state,
                 v_chunk_mask,

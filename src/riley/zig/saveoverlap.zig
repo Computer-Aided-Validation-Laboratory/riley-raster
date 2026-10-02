@@ -127,7 +127,7 @@ pub const SaveOverlap = struct {
             session.arena.allocator(),
             cameras,
             num_fields,
-            @max(@as(usize, 1), config.save_frame_buff_count),
+            @max(@as(usize, 1), config.output.save_frame_buff_count),
         );
 
         const coordinator = try outer_alloc.create(SaveCoordinator);
@@ -342,12 +342,12 @@ pub fn buildOutputFrameView(
 ) !ndarray.NDArray(F) {
     std.debug.assert(raw_frame_arr.dims.len == 3);
     const raw_num_fields: u8 = @intCast(raw_frame_arr.dims[0]);
-    if (!needsOutputTransform(config.image_save_mode, raw_num_fields)) {
+    if (!needsOutputTransform(config.output.image_save_mode, raw_num_fields)) {
         return raw_frame_arr.*;
     }
 
     const out_num_fields = try outputFieldsForImageSaveMode(
-        config.image_save_mode,
+        config.output.image_save_mode,
         raw_num_fields,
     );
     var output_frame_arr = try ndarray.NDArray(F).initFlat(
@@ -359,7 +359,7 @@ pub fn buildOutputFrameView(
         },
     );
 
-    switch (config.image_save_mode) {
+    switch (config.output.image_save_mode) {
         .multifield => unreachable,
         .grey => {
             std.debug.assert(raw_num_fields == 3);
@@ -505,8 +505,8 @@ pub fn completeSaveSlot(
         @intCast(output_frame_arr.dims[0]),
         slot.pixels_num,
         &output_frame_arr,
-        imageSaveChannelsOverride(config.image_save_mode),
-        config.image_save_opts,
+        imageSaveChannelsOverride(config.output.image_save_mode),
+        config.output.image_save_opts,
         config.output_name_format,
     );
     const time_end_save = Timestamp.now(save_io, .awake);

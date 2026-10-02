@@ -442,8 +442,8 @@ fn runCameraBenchmarkWithImageOut(
     };
 
     var config_run = config;
-    config_run.report = .bench;
-    config_run.image_save_mode = if (calcTexFuncChannels(shader_type) == 3)
+    config_run.report = .{ .mode = .bench };
+    config_run.output.image_save_mode = if (calcTexFuncChannels(shader_type) == 3)
         .rgb
     else
         .grey;
@@ -539,7 +539,7 @@ pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
     var base_raster_config = tcfg.getRasterConfig(.bench);
-    base_raster_config.image_save_opts = &[_]iio.ImageSaveOpts{
+    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
     base_raster_config.background_value = DEFAULT_BACKGROUND_VALUE;

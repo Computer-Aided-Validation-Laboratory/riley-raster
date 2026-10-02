@@ -24,10 +24,10 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
     config.render_mode = .in_order;
-    config.image_save_mode = .grey;
+    config.output.image_save_mode = .grey;
     config.background_value = 32767.5;
-    config.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
+    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .fimg, .bits = null, .scaling = .auto },
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
 
@@ -53,13 +53,9 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
         var out_dir = try orch.openDirEnsured(io, cam_dir_name);
         out_dir.close(io);
 
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = 1 },
-        };
-
         _ = try riley.raster(
             allocator,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_inp},
             &meshes,
             config,
