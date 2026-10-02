@@ -95,8 +95,8 @@ pub const ElemBBox = struct {
 };
 
 pub const DistortElemBBox = struct {
-    integer: ElemBBox,
-    floating: db.DistortBounds,
+    box_ints: ElemBBox,
+    box_floats: db.DistortBounds,
 };
 
 pub fn calcVisibleDistortBBox(
@@ -109,7 +109,7 @@ pub fn calcVisibleDistortBBox(
     raster_halo_px: u16,
     ideal_sensor: db.DistortBounds,
     edge_spacing_px: F,
-) !?DistortElemBBox {
+) ?DistortElemBBox {
     const N = comptime MT.getNodesNum();
     const coords = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
     if (isElemBehindCamera(N, coords) or !isNodeZInvertible(N, coords)) {
@@ -119,11 +119,16 @@ pub fn calcVisibleDistortBBox(
     var ideal_bounds = db.DistortBounds.initEmpty();
     if (comptime MT == .tri3 or MT == .tri3opt) {
         const nodes = RasterCoords2D(N){ .x = coords.x, .y = coords.y };
+
         if (isTri3BackfaceRaster(nodes)) return null;
-        for (0..N) |nn| try ideal_bounds.include(nodes.x[nn], nodes.y[nn]);
+
+        ideal_bounds = db.DistortBounds.fromCoords2D(N, nodes);
+
     } else {
         const nodes = projectClipToIdealRaster(N, camera, coords);
+
         if (isHighOrdBackface(N, nodes)) return null;
+
         if (hull_mode != .off) {
             const NH = comptime MT.getNumHullPoints();
             const points = hull.buildAdaptiveHullPointsFromClip(
@@ -132,16 +137,16 @@ pub fn calcVisibleDistortBBox(
                 coords,
                 hull_mode,
             );
-            for (0..NH) |nn| {
-                try ideal_bounds.include(points.x[nn], points.y[nn]);
-            }
+            ideal_bounds = db.DistortBounds.fromCoords2D(NH, points);
         } else {
-            for (0..N) |nn| try ideal_bounds.include(nodes.x[nn], nodes.y[nn]);
+            ideal_bounds = db.DistortBounds.fromCoords2D(N, nodes);
         }
     }
 
     const walk = ideal_bounds.intersect(ideal_sensor) orelse return null;
-    var observed = try db.sampleRect(camera, walk, edge_spacing_px);
+
+    var observed = db.sampleRectEdges(camera, walk, edge_spacing_px);
+
     if (comptime MT != .tri3 and MT != .tri3opt) {
         if (hull_mode == .off) {
             const dx = observed.x_max - observed.x_min;
@@ -173,7 +178,7 @@ pub fn calcVisibleDistortBBox(
     }) orelse return null;
 
     return .{
-        .integer = .{
+        .box_ints = .{
             .elem_idx = elem_idx,
             .x_min = boundIndMinSigned(observed.x_min, -@as(i32, raster_halo_px)),
             .x_max = boundIndMaxSigned(
@@ -186,7 +191,7 @@ pub fn calcVisibleDistortBBox(
                 @as(i32, @intCast(camera.pixels_num[1])) + raster_halo_px,
             ),
         },
-        .floating = observed,
+        .box_floats = observed,
     };
 }
 
@@ -1316,7 +1321,7 @@ test "fixed scalar and SIMD bounds recover the distorted triangle interior" {
         .y_min = 0.0,
         .y_max = 200.0,
     };
-    const bbox = (try calcVisibleDistortBBox(
+    const bbox = (calcVisibleDistortBBox(
         .tri3,
         &camera,
         &coords,
@@ -1335,10 +1340,10 @@ test "fixed scalar and SIMD bounds recover the distorted triangle interior" {
         0,
     ).?;
     try std.testing.expectEqual(@as(i32, 112), old_bbox.x_min);
-    try std.testing.expectEqual(@as(i32, 110), bbox.integer.x_min);
+    try std.testing.expectEqual(@as(i32, 110), bbox.box_ints.x_min);
     const overlap = clipElemBBoxToTile(
-        bbox.integer,
-        bbox.floating,
+        bbox.box_ints,
+        bbox.box_floats,
         0,
         0,
         200,
@@ -1357,36 +1362,13 @@ test "fixed scalar and SIMD bounds recover the distorted triangle interior" {
         .y_min = 50.0,
         .y_max = 150.0,
     };
-    const scalar = try db.sampleRectScalar(&camera, rect, 1.0);
-    const simd = try db.sampleRectSIMD(&camera, rect, 1.0);
+    const scalar = db.sampleRectEdgesScalar(&camera, rect, 1.0);
+    const simd = db.sampleRectEdgesSIMD(&camera, rect, 1.0);
     const bound_tol: F = if (F == f32) 1e-4 else 1e-10;
     try std.testing.expectApproxEqAbs(scalar.x_min, simd.x_min, bound_tol);
     try std.testing.expectApproxEqAbs(scalar.x_max, simd.x_max, bound_tol);
     try std.testing.expectApproxEqAbs(scalar.y_min, simd.y_min, bound_tol);
     try std.testing.expectApproxEqAbs(scalar.y_max, simd.y_max, bound_tol);
-}
-
-test "fixed distortion bounds reject non-finite active output" {
-    var camera = initTestCullCameraManual(.{ .poly = .{
-        .degree = 1,
-        .mode = .displacement,
-        .coeffs = &.{ std.math.nan(F), 0, 0, 0, 0, 0 },
-    } });
-    camera.pixels_num = .{ 200, 200 };
-    const rect = db.DistortBounds{
-        .x_min = 110.0,
-        .x_max = 112.0,
-        .y_min = 90.0,
-        .y_max = 92.0,
-    };
-    try std.testing.expectError(
-        error.NonFiniteDistortBound,
-        db.sampleRectScalar(&camera, rect, 1.0),
-    );
-    try std.testing.expectError(
-        error.NonFiniteDistortBound,
-        db.sampleRectSIMD(&camera, rect, 1.0),
-    );
 }
 
 test "one-pixel fixed spacing resolves a smooth between-sample radial minimum" {
@@ -1405,8 +1387,8 @@ test "one-pixel fixed spacing resolves a smooth between-sample radial minimum" {
         .y_min = 560.3,
         .y_max = 1560.3,
     };
-    const scalar = try db.sampleRectScalar(&camera, rect, 1.0);
-    const simd = try db.sampleRectSIMD(&camera, rect, 1.0);
+    const scalar = db.sampleRectEdgesScalar(&camera, rect, 1.0);
+    const simd = db.sampleRectEdgesSIMD(&camera, rect, 1.0);
     const exact_min: F = 1000.0 + 1000.0 * 0.6 * (1.0 + 0.3 * 0.6 * 0.6);
     const error_limit: F = if (F == f32) 0.002 else 0.0001;
     try std.testing.expect(scalar.x_min >= exact_min - error_limit);

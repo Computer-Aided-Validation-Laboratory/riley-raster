@@ -841,7 +841,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             coords_nodes: *const meshio.Coords,
             vis_counts_by_chunk: []usize,
             cached_distort_bboxes: ?[]?rops.DistortElemBBox,
-            errors_by_chunk: ?[]?anyerror,
             hull_mode: rastcfg.HullMode,
         };
 
@@ -867,12 +866,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         stage.camera.prep_psf.halo_px,
                         ideal_sensor,
                         stage.edge_spacing_px,
-                    ) catch |err| {
-                        if (stage.errors_by_chunk) |errs| errs[chunk_idx] = err;
-                        return;
-                    };
+                    );
                     if (stage.cached_distort_bboxes) |cached| cached[ee] = distorted;
-                    break :blk if (distorted) |value| value.integer else null;
+                    break :blk if (distorted) |value| value.box_ints else null;
                 } else if (MT == .tri3 or MT == .tri3opt)
                     rops.calcVisibleNodeBBoxTri3WithHalo(
                         MT,
@@ -914,18 +910,13 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             const has_distort = self.camera.ideal_sensor_bounds != null;
 
             var cached_distort_bboxes: ?[]?rops.DistortElemBBox = null;
-            var errors_by_chunk: ?[]?anyerror = null;
             if (has_distort) {
                 cached_distort_bboxes = try outer_alloc.alloc(
                     ?rops.DistortElemBBox,
                     self.elems_num,
                 );
-                const errors = try outer_alloc.alloc(?anyerror, self.elem_chunks_num);
-                @memset(errors, null);
-                errors_by_chunk = errors;
             }
             defer if (cached_distort_bboxes) |bboxes| outer_alloc.free(bboxes);
-            defer if (errors_by_chunk) |errors| outer_alloc.free(errors);
 
             self.mesh_workspace.vis_counts_by_chunk = try outer_alloc.alloc(
                 usize,
@@ -945,7 +936,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
                 .vis_counts_by_chunk = self.mesh_workspace.vis_counts_by_chunk,
                 .cached_distort_bboxes = cached_distort_bboxes,
-                .errors_by_chunk = errors_by_chunk,
                 .hull_mode = self.hull_mode,
             };
 
@@ -956,12 +946,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 self.elems_num,
                 self.elem_chunk_size,
             );
-
-            if (errors_by_chunk) |errors| {
-                for (errors) |maybe_err| {
-                    if (maybe_err) |err| return err;
-                }
-            }
 
             prefixVisCounts(&self.mesh_workspace);
 
@@ -1029,9 +1013,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 if (stage.cached_distort_bboxes) |cached| {
                     if (cached[ee]) |value| {
                         stage.vis_orig_elem_inds[write_idx] = ee;
-                        stage.elem_bboxes[write_idx] = value.integer;
+                        stage.elem_bboxes[write_idx] = value.box_ints;
                         if (stage.elem_float_bboxes) |float_bboxes| {
-                            float_bboxes[write_idx] = value.floating;
+                            float_bboxes[write_idx] = value.box_floats;
                         }
                         write_idx += 1;
                     }
