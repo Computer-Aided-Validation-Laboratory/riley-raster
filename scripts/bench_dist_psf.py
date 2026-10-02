@@ -15,12 +15,49 @@ import shlex
 import subprocess
 import time
 
+import numpy as np
+
 from perf_common import command_path, repo_root
 
 
 # -----------------------------------------------------------------------------
 # Configuration Constants
 # -----------------------------------------------------------------------------
+
+PARAMETER_FIELDNAMES: list[str] = [
+    "study_group",
+    "case_name",
+    "mesh_type",
+    "mesh_density",
+    "distort",
+    "psf",
+    "subpixel_center_map",
+]
+
+CSV_METRIC_MAP: list[tuple[str, str]] = [
+    ("Total Elems", "total_elems"),
+    ("Vis Elems", "vis_elems"),
+    ("Total Px", "total_px"),
+    ("Shaded Px", "shaded_px"),
+    ("Setup F Buff [ms]", "setup_f_buff_ms"),
+    ("Prep Frame [ms]", "prep_frame_ms"),
+    ("Geom Time [ms]", "geom_time_ms"),
+    ("Coord Ops [ms]", "coord_ops_ms"),
+    ("Cull Ops [ms]", "cull_ops_ms"),
+    ("Prep Hulls Shaders [ms]", "prep_hulls_shaders_ms"),
+    ("Remap Inds [ms]", "remap_inds_ms"),
+    ("Cam Inv Time [ms]", "cam_inv_time_ms"),
+    ("Elem Loop Time [ms]", "elem_loop_time_ms"),
+    ("Resolve Time [ms]", "resolve_time_ms"),
+    ("Raster Time [ms]", "raster_time_ms"),
+    ("Save Time [ms]", "save_time_ms"),
+    ("Frame Time [ms]", "frame_time_ms"),
+    ("E2E Time [ms]", "e2e_time_ms"),
+    ("Geom TP [MElem/s]", "geom_tp_melem_s"),
+    ("Raster TP [MPx/s]", "raster_tp_mpx_s"),
+    ("Frame TP [MPx/s]", "frame_tp_mpx_s"),
+    ("E2E TP [MPx/s]", "e2e_tp_mpx_s"),
+]
 
 DEFAULT_OUT_ROOT: Path = Path("out") / "bench_stats_dist_psf"
 DEFAULT_IMAGE_OUT_DIR: Path = Path("out") / "bench_images_dist_psf"
@@ -190,6 +227,146 @@ def write_timing_csv(
         for row in rows:
             writer.writerow(row)
     return csv_path
+
+
+def load_case_run_metrics(
+    case_dir: Path,
+    runs: int,
+) -> dict[str, np.ndarray]:
+    """Load metric samples across all runs from a case directory."""
+    raw_metric_lists: dict[str, list[float]] = {
+        out_name: [] for _, out_name in CSV_METRIC_MAP
+    }
+    for rr in range(runs):
+        run_file = case_dir / f"bench_run{rr}.csv"
+        if not run_file.exists():
+            continue
+        with run_file.open("r", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                for csv_header, out_name in CSV_METRIC_MAP:
+                    val_str = row.get(csv_header, "0")
+                    try:
+                        raw_metric_lists[out_name].append(float(val_str))
+                    except ValueError:
+                        raw_metric_lists[out_name].append(0.0)
+                break
+
+    return {
+        key: np.array(vals, dtype=np.float64)
+        for key, vals in raw_metric_lists.items()
+    }
+
+
+def compute_case_stat_rows(
+    case: dict[str, object],
+    run_root: Path,
+    runs: int,
+) -> dict[str, dict[str, object]]:
+    """Compute summary statistic rows (median, mad, mean, std, min, max) for a case."""
+    case_name = str(case["case_name"])
+    case_dir = run_root / case_name
+    metrics_map = load_case_run_metrics(case_dir, runs)
+
+    stat_kinds = ["median", "mad", "mean", "std", "min", "max"]
+    stat_rows: dict[str, dict[str, object]] = {}
+
+    for kind in stat_kinds:
+        row: dict[str, object] = {
+            "study_group": case["study_group"],
+            "case_name": case["case_name"],
+            "mesh_type": case["mesh_type"],
+            "mesh_density": case["mesh_density"],
+            "distort": case["distort"],
+            "psf": case["psf"],
+            "subpixel_center_map": case.get("subpixel_center_map", "per_tile"),
+        }
+        for _, out_name in CSV_METRIC_MAP:
+            vals = metrics_map.get(out_name, np.array([], dtype=np.float64))
+            if len(vals) == 0:
+                row[out_name] = "0.000000"
+                continue
+            if kind == "median":
+                stat_val = float(np.median(vals))
+            elif kind == "mad":
+                med = float(np.median(vals))
+                stat_val = float(np.median(np.abs(vals - med)))
+            elif kind == "mean":
+                stat_val = float(np.mean(vals))
+            elif kind == "std":
+                stat_val = float(np.std(vals))
+            elif kind == "min":
+                stat_val = float(np.min(vals))
+            elif kind == "max":
+                stat_val = float(np.max(vals))
+            else:
+                stat_val = 0.0
+            row[out_name] = f"{stat_val:.6f}"
+        stat_rows[kind] = row
+
+    return stat_rows
+
+
+def write_consolidated_summary_csvs(
+    all_case_stat_rows: list[dict[str, dict[str, object]]],
+    run_root: Path,
+    timestamp: str,
+) -> dict[str, Path]:
+    """Write consolidated summary CSVs per statistic and per experiment."""
+    out_dir = repo_root() / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fieldnames = PARAMETER_FIELDNAMES + [out_name for _, out_name in CSV_METRIC_MAP]
+
+    written_paths: dict[str, Path] = {}
+    stat_kinds = ["median", "mad", "mean", "std", "min", "max"]
+
+    # 1. Overall summary files across all active cases
+    for kind in stat_kinds:
+        rows = [c_stats[kind] for c_stats in all_case_stat_rows if kind in c_stats]
+        csv_path = run_root / f"summary_stats_{kind}.csv"
+        with csv_path.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for r in rows:
+                writer.writerow(r)
+        written_paths[f"all_{kind}"] = csv_path
+
+    # Also write a timestamped median summary file directly into out/ for easy lookup
+    median_rows = [
+        c_stats["median"] for c_stats in all_case_stat_rows if "median" in c_stats
+    ]
+    out_median_csv = out_dir / f"summary_bench_dist_psf_median_{timestamp}.csv"
+    with out_median_csv.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for r in median_rows:
+            writer.writerow(r)
+    written_paths["out_median"] = out_median_csv
+
+    # 2. Per-experiment grouped summary files (e.g. experiment1, experiment2, experiment3)
+    study_groups = sorted(
+        {
+            str(c_stats["median"]["study_group"])
+            for c_stats in all_case_stat_rows
+            if "median" in c_stats
+        }
+    )
+    for group in study_groups:
+        for kind in ("median", "mad"):
+            group_rows = [
+                c_stats[kind]
+                for c_stats in all_case_stat_rows
+                if kind in c_stats and str(c_stats[kind]["study_group"]) == group
+            ]
+            group_csv = run_root / f"summary_stats_{group}_{kind}.csv"
+            with group_csv.open("w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for r in group_rows:
+                    writer.writerow(r)
+            written_paths[f"{group}_{kind}"] = group_csv
+
+    return written_paths
 
 
 def run_case(
@@ -379,9 +556,17 @@ def main() -> None:
     total_elapsed = time.perf_counter() - total_start
     if not args.dry_run:
         csv_file = write_timing_csv(timing_rows, timestamp)
+        all_case_stat_rows = [
+            compute_case_stat_rows(case, run_root=run_root, runs=args.runs)
+            for case in active_cases
+        ]
+        summary_paths = write_consolidated_summary_csvs(
+            all_case_stat_rows, run_root=run_root, timestamp=timestamp
+        )
         print(f"\nBenchmark completed in {total_elapsed:.2f} s.")
         print(f"Stats written to: {run_root}")
         print(f"Summary timing CSV: {csv_file}")
+        print(f"Consolidated median summary CSV: {summary_paths['out_median']}")
 
 
 if __name__ == "__main__":

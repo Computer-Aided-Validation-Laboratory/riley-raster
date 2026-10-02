@@ -678,8 +678,8 @@ pub fn main(init: std.process.Init) !void {
                                 .e2e_ms = frame_e2e_ms,
                                 .geom_ms = geom_ms,
                                 .raster_ms = raster_ms,
-                                .cam_ms = 0.0,
-                                .resolve_ms = 0.0,
+                                .cam_ms = frame_times.cam_invert / 1e6,
+                                .resolve_ms = frame_times.scratch_resolve / 1e6,
                                 .fps = if (frame_e2e_ms > 0) 1000.0 / frame_e2e_ms else 0,
                                 .total_elems = total_elems,
                                 .vis_elems = vis_elems,
@@ -740,5 +740,14 @@ pub fn main(init: std.process.Init) !void {
     }
 
     try stats.writeRunCSVs(outer_alloc, io, bench_args.out_dir);
+    try common.writeBenchmarkReport(
+        outer_alloc,
+        io,
+        "Distortion & PSF Benchmark",
+        bench_args.out_dir,
+        DEFAULT_PIXELS_NUM,
+        stats.stats_list.items,
+        32,
+    );
     std.debug.print("Benchmark complete. Results written to {s}/\n", .{bench_args.out_dir});
 }
