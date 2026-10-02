@@ -18,7 +18,7 @@ pub fn sampleRect(
     rect: DistortBounds,
     spacing_px: F,
 ) !DistortBounds {
-    try common.validateSpacing(spacing_px);
+    std.debug.assert(std.math.isFinite(spacing_px) and spacing_px > 0.0);
     var result = DistortBounds.initEmpty();
     const corners = [_][4]F{
         .{ rect.x_min, rect.y_min, rect.x_max, rect.y_min },

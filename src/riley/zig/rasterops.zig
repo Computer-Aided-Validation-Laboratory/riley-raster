@@ -105,8 +105,7 @@ pub fn calcVisibleDistortBBox(
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     elem_idx: usize,
-    hull_convex_fallback_on: bool,
-    hull_on: bool,
+    hull_mode: rastcfg.HullMode,
     raster_halo_px: u16,
     ideal_sensor: db.DistortBounds,
     edge_spacing_px: F,
@@ -125,13 +124,13 @@ pub fn calcVisibleDistortBBox(
     } else {
         const nodes = projectClipToIdealRaster(N, camera, coords);
         if (isHighOrdBackface(N, nodes)) return null;
-        if (hull_on) {
+        if (hull_mode != .off) {
             const NH = comptime MT.getNumHullPoints();
             const points = hull.buildAdaptiveHullPointsFromClip(
                 N,
                 camera,
                 coords,
-                hull_convex_fallback_on,
+                hull_mode,
             );
             for (0..NH) |nn| {
                 try ideal_bounds.include(points.x[nn], points.y[nn]);
@@ -144,7 +143,7 @@ pub fn calcVisibleDistortBBox(
     const walk = ideal_bounds.intersect(ideal_sensor) orelse return null;
     var observed = try db.sampleRect(camera, walk, edge_spacing_px);
     if (comptime MT != .tri3 and MT != .tri3opt) {
-        if (!hull_on) {
+        if (hull_mode == .off) {
             const dx = observed.x_max - observed.x_min;
             const dy = observed.y_max - observed.y_min;
             const pad = tol.hull.no_hull_bbox_rel_pad * @max(dx, dy);
@@ -394,9 +393,17 @@ pub fn calcVisibleNodeBBoxHighOrd(
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     elem_idx: usize,
-    hull_convex_fallback_on: bool,
+    hull_mode: rastcfg.HullMode,
 ) ?ElemBBox {
-    return calcVisibleNodeBBoxHighOrdWithHalo(MT, camera, coords_nodes, connect, elem_idx, hull_convex_fallback_on, 0);
+    return calcVisibleNodeBBoxHighOrdWithHalo(
+        MT,
+        camera,
+        coords_nodes,
+        connect,
+        elem_idx,
+        hull_mode,
+        0,
+    );
 }
 
 pub fn calcVisibleNodeBBoxHighOrdWithHalo(
@@ -405,7 +412,7 @@ pub fn calcVisibleNodeBBoxHighOrdWithHalo(
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     elem_idx: usize,
-    hull_convex_fallback_on: bool,
+    hull_mode: rastcfg.HullMode,
     raster_halo_px: u16,
 ) ?ElemBBox {
     comptime {
@@ -434,7 +441,7 @@ pub fn calcVisibleNodeBBoxHighOrdWithHalo(
         N,
         camera,
         coords_clip,
-        hull_convex_fallback_on,
+        hull_mode,
     );
     const hull_ideal_raster = packHullPointsAsRasterCoords(NH, hull_points_ideal);
     const hull_distorted = distortIdealRasterCoords(
@@ -569,7 +576,7 @@ pub fn prepareVisibleRasterHullsRange(
     camera: *const cam.CameraPrepared,
     elem_coords: *const ndarray.NDArray(F),
     raster_hull: *ndarray.NDArray(F),
-    hull_convex_fallback_on: bool,
+    hull_mode: rastcfg.HullMode,
     visible_start: usize,
     visible_end: usize,
 ) void {
@@ -593,7 +600,7 @@ pub fn prepareVisibleRasterHullsRange(
             N,
             camera,
             coords_elem,
-            hull_convex_fallback_on,
+            hull_mode,
         );
         for (0..NH) |nn| {
             raster_hull.set(&[_]usize{ pp, 0, nn }, hull_points.x[nn]);
@@ -689,7 +696,7 @@ pub fn sceneTileElemOverlap(
     halo_px: u16,
     elems_in_image_by_mesh: []const usize,
     elem_bboxes_by_mesh: []const []ElemBBox,
-    elem_float_bboxes_by_mesh: []const []db.DistortBounds,
+    elem_float_bboxes_by_mesh: []const ?[]db.DistortBounds,
 ) !TilingOverlaps {
     const tiles_num = tiles_num_x * tiles_num_y;
 
@@ -855,7 +862,7 @@ const TilingFillStage = struct {
     halo_px: u16,
     mesh_idx: usize,
     elem_bbox_slice: []const ElemBBox,
-    float_bbox_slice: []const db.DistortBounds,
+    float_bbox_slice: ?[]const db.DistortBounds,
 };
 
 fn runTilingFill(
@@ -869,10 +876,10 @@ fn runTilingFill(
 
     for (range_start..range_end) |ee| {
         const elem_bbox = tiling.elem_bbox_slice[ee];
-        const floating: ?db.DistortBounds = if (tiling.float_bbox_slice.len == 0)
-            null
+        const floating: ?db.DistortBounds = if (tiling.float_bbox_slice) |float_bboxes|
+            float_bboxes[ee]
         else
-            tiling.float_bbox_slice[ee];
+            null;
         const tile_range = calcElemTileRange(elem_bbox, tiling.tile_size, tiling.halo_px, tiling.tiles_num_x, tiling.tiles_num_y);
         const tx_start = tile_range.tx_start;
         const tx_end = tile_range.tx_end;
@@ -1315,8 +1322,7 @@ test "fixed scalar and SIMD bounds recover the distorted triangle interior" {
         &coords,
         &connect,
         0,
-        false,
-        true,
+        .on_no_fallback,
         0,
         sensor,
         1.0,
@@ -1650,7 +1656,7 @@ test "calcVisibleNodeBBoxHighOrd on_screen" {
         &coords,
         &connect,
         0,
-        false,
+        .on_no_fallback,
     );
     try std.testing.expect(bbox != null);
 }
@@ -1700,7 +1706,7 @@ test "calcVisibleNodeBBoxHighOrd behind_camera" {
         &coords,
         &connect,
         0,
-        false,
+        .on_no_fallback,
     );
     try std.testing.expect(bbox == null);
 }
@@ -1728,7 +1734,7 @@ test "calcVisibleNodeBBoxHighOrd noninvertible_z" {
         &coords,
         &connect,
         0,
-        false,
+        .on_no_fallback,
     );
     try std.testing.expect(bbox == null);
 }
@@ -1841,7 +1847,7 @@ test "high_order_distorted_hull_shift" {
         6,
         &camera,
         coords_clip,
-        false,
+        .on_no_fallback,
     );
     const hull_ideal_raster = packHullPointsAsRasterCoords(6, hull_points_ideal);
     camera.distort = distort;
@@ -1891,7 +1897,7 @@ test "calcVisibleNodeBBoxHighOrd distorted_off_screen_shift" {
         &coords,
         &connect,
         0,
-        false,
+        .on_no_fallback,
     );
     try std.testing.expect(bbox == null);
 }
@@ -1930,7 +1936,7 @@ test "calcVisibleNodeBBoxHighOrd backface_uses_ideal_pinhole" {
         &coords,
         &connect,
         0,
-        false,
+        .on_no_fallback,
     );
     try std.testing.expect(bbox != null);
 }

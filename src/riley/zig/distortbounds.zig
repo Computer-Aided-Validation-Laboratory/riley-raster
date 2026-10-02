@@ -18,7 +18,6 @@ const impl = if (cfg.simd == .on) distortbounds_simd else distortbounds_scalar;
 
 pub const DistortBounds = common.DistortBounds;
 pub const Bounds = common.DistortBounds;
-pub const validateSpacing = common.validateSpacing;
 pub const edgeIntervalCount = common.edgeIntervalCount;
 pub const idealSensorBounds = common.idealSensorBounds;
 pub const sampleRectScalar = distortbounds_scalar.sampleRect;

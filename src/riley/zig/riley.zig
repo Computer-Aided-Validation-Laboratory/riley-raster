@@ -1151,20 +1151,25 @@ fn sceneGlobalTileElemOverlap(
     halo_px: u16,
     elems_in_image_by_mesh: []const usize,
     elem_bboxes_by_mesh: []const []rops.ElemBBox,
-    elem_float_bboxes_by_mesh: []const []db.DistortBounds,
+    elem_float_bboxes_by_mesh: []const ?[]db.DistortBounds,
 ) !rops.TilingOverlaps {
+
     const tiles_x = try std.math.divCeil(usize, screen_px_x, tile_size);
     std.debug.assert(core_y_px_min < core_y_px_max);
     std.debug.assert(core_y_px_max <= screen_px_y);
+
     const tiles_y = try std.math.divCeil(
         usize,
         core_y_px_max - core_y_px_min,
         tile_size,
     );
+
     var tiles: std.ArrayList(rops.ActiveTile) = .empty;
     defer tiles.deinit(outer_alloc);
+
     var overlaps: std.ArrayList(rops.OverlapBBox) = .empty;
     defer overlaps.deinit(outer_alloc);
+
     const sub_samp: i32 = @intCast(sub_sample);
 
     for (0..tiles_y) |ty| {
@@ -1185,12 +1190,12 @@ fn sceneGlobalTileElemOverlap(
             const overlap_start = overlaps.items.len;
 
             for (elem_bboxes_by_mesh, 0..) |elem_bboxes, mesh_idx| {
-                const float_bboxes = elem_float_bboxes_by_mesh[mesh_idx];
+                const maybe_float_bboxes = elem_float_bboxes_by_mesh[mesh_idx];
                 for (elem_bboxes[0..elems_in_image_by_mesh[mesh_idx]], 0..) |elem_bbox, ee| {
-                    const floating: ?db.DistortBounds = if (float_bboxes.len == 0)
-                        null
+                    const floating: ?db.DistortBounds = if (maybe_float_bboxes) |fb|
+                        fb[ee]
                     else
-                        float_bboxes[ee];
+                        null;
                     const overlap = rops.clipElemBBoxToTile(
                         elem_bbox,
                         floating,
@@ -1493,7 +1498,7 @@ const FrameContext = struct {
     frame_meshes: []mo.MeshFrame = &.{},
     prep_meshes: []mo.MeshPrepared = &.{},
     elem_bboxes_by_mesh: [][]rops.ElemBBox = &.{},
-    elem_float_bboxes_by_mesh: [][]db.DistortBounds = &.{},
+    elem_float_bboxes_by_mesh: []?[]db.DistortBounds = &.{},
     elems_in_image_by_mesh: []usize = &.{},
     raster_hulls: []?ndarray.NDArray(F) = &.{},
     tiling: ?rops.TilingOverlaps = null,
@@ -1556,7 +1561,7 @@ fn prepareFrameContext(
     ctx.frame_meshes = try outer_alloc.alloc(mo.MeshFrame, mesh_n);
     ctx.prep_meshes = try outer_alloc.alloc(mo.MeshPrepared, mesh_n);
     ctx.elem_bboxes_by_mesh = try outer_alloc.alloc([]rops.ElemBBox, mesh_n);
-    ctx.elem_float_bboxes_by_mesh = try outer_alloc.alloc([]db.DistortBounds, mesh_n);
+    ctx.elem_float_bboxes_by_mesh = try outer_alloc.alloc(?[]db.DistortBounds, mesh_n);
     ctx.elems_in_image_by_mesh = try outer_alloc.alloc(usize, mesh_n);
     ctx.raster_hulls = try outer_alloc.alloc(?ndarray.NDArray(F), mesh_n);
 }
@@ -2027,7 +2032,7 @@ test "global sub-pixel tiles own disjoint cores and retain halo only at frame ed
     }};
     const elems_in_image = [_]usize{1};
     const elem_bboxes_by_mesh = [_][]rops.ElemBBox{elem_bboxes[0..]};
-    const elem_float_bboxes_by_mesh = [_][]db.DistortBounds{&.{}};
+    const elem_float_bboxes_by_mesh = [_]?[]db.DistortBounds{null};
     const sub_sample: u32 = 2;
     const halo_px: u16 = 2;
     const screen_w_px: u16 = 10;

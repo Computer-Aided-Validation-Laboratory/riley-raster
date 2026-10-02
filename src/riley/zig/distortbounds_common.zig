@@ -84,12 +84,6 @@ pub const DistortBounds = struct {
     }
 };
 
-pub fn validateSpacing(spacing_px: F) !void {
-    if (!std.math.isFinite(spacing_px) or spacing_px <= 0.0) {
-        return error.InvalidDistortEdgeSpacing;
-    }
-}
-
 pub fn edgeIntervalCount(length: F, spacing_px: F) !usize {
     const raw_count = @ceil(length / spacing_px);
     if (!std.math.isFinite(raw_count) or raw_count > 1_000_000.0) {
@@ -139,7 +133,7 @@ pub fn idealSensorBounds(
     return bounds;
 }
 
-test "fixed edge counts and spacing errors" {
+test "fixed edge counts" {
     try std.testing.expectEqual(@as(usize, 1), try edgeIntervalCount(0.0, 1.0));
     try std.testing.expectEqual(@as(usize, 1), try edgeIntervalCount(1.0, 1.0));
     try std.testing.expectEqual(@as(usize, 2), try edgeIntervalCount(1.01, 1.0));
@@ -148,10 +142,4 @@ test "fixed edge counts and spacing errors" {
         error.DistortEdgeSampleLimit,
         edgeIntervalCount(1_000_001.0, 1.0),
     );
-    for ([_]F{ 0.0, -1.0, std.math.nan(F), std.math.inf(F) }) |spacing| {
-        try std.testing.expectError(
-            error.InvalidDistortEdgeSpacing,
-            validateSpacing(spacing),
-        );
-    }
 }
