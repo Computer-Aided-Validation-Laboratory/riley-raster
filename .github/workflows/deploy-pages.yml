@@ -32,12 +32,19 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
+
+    
 
       - name: Install dependancies
         run: |
           python -m pip install --upgrade pip
           pip install sphinx
+
+      - name: Install riley-raster
+        run: |
+          pip install -e .
+
 
 
       - name: Build zig documentation
