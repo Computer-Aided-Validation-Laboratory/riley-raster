@@ -255,9 +255,9 @@ pub fn calcActualTileSize(
     halo_px: u16,
 ) u16 {
     return scalingpolicy.tileSize(
-        config.tile_size_override,
-        config.tile_size_min,
-        config.tile_size_max,
+        config.advanced.raster.tile_size_override,
+        config.advanced.raster.tile_size_min,
+        config.advanced.raster.tile_size_max,
         pixel_num,
         sub_sample,
         halo_px,
@@ -362,71 +362,20 @@ pub fn writeBenchmarkConfig(
     const active_threads_total = calcActiveThreadsTotal(
         render_group_workers,
     );
-    const active_threads_raster = calcActiveThreadsRaster(
-        render_group_workers,
-        config.max_raster_workers_per_job,
-    );
-    const active_threads_geom_spread = calcActiveThreadsGeomSpread(
-        render_group_workers,
-        config.max_geom_jobs_in_flight_per_group,
-        config.max_geom_workers_per_job,
-    );
-    const active_threads_geom_pack = calcActiveThreadsGeomPack(
-        render_group_workers,
-        config.max_geom_workers_per_job,
-    );
-    const active_threads_geom_effective = switch (config.geom_scheduling_mode) {
-        .spread => active_threads_geom_spread,
-        .pack => active_threads_geom_pack,
+    const total_threads = switch (config.parallel) {
         .auto => 0,
+        .serial => 1,
+        .threads => |t| t,
     };
-    try writer.print("total_threads={d}\n", .{config.total_threads});
+    try writer.print("total_threads={d}\n", .{total_threads});
     try writer.print(
         "active_threads_total_max={d}\n",
         .{active_threads_total},
     );
     try writer.print(
-        "active_threads_raster_max={d}\n",
-        .{active_threads_raster},
+        "hull_mode={s}\n",
+        .{@tagName(config.advanced.solver.hull_mode)},
     );
-    try writer.print(
-        "active_threads_geom_spread_max={d}\n",
-        .{active_threads_geom_spread},
-    );
-    try writer.print(
-        "active_threads_geom_pack_max={d}\n",
-        .{active_threads_geom_pack},
-    );
-    try writer.print(
-        "active_threads_geom_effective_max={d}\n",
-        .{active_threads_geom_effective},
-    );
-    try writer.print(
-        "frame_batch_size_per_group={d}\n",
-        .{config.frame_batch_size_per_group},
-    );
-    try writer.print(
-        "max_geom_jobs_in_flight_per_group={d}\n",
-        .{config.max_geom_jobs_in_flight_per_group},
-    );
-    try writer.print(
-        "max_geom_workers_per_job={d}\n",
-        .{config.max_geom_workers_per_job},
-    );
-    try writer.print(
-        "geom_scheduling_mode={s}\n",
-        .{@tagName(config.geom_scheduling_mode)},
-    );
-    if (config.geom_scheduling_mode == .auto) {
-        try writer.writeAll(
-            "geom_scheduling_mode_auto_note=spread if total_scene_elems < 100000 else pack\n",
-        );
-    }
-    try writer.print(
-        "max_raster_workers_per_job={d}\n",
-        .{config.max_raster_workers_per_job},
-    );
-    try writer.print("hull_mode={s}\n", .{@tagName(config.hull_mode)});
     try writer.print(
         "subpixel_center_map={s}\n",
         .{@tagName(subpixel_center_map)},
@@ -437,8 +386,14 @@ pub fn writeBenchmarkConfig(
     try writer.print("sub_sample={d}\n", .{sub_sample});
     try writer.print("runs={d}\n", .{runs});
     try writer.print("fov_scale={d:.6}\n", .{fov_scale});
-    try writer.print("tile_size_min={d}\n", .{config.tile_size_min});
-    try writer.print("tile_size_max={d}\n", .{config.tile_size_max});
+    try writer.print(
+        "tile_size_min={d}\n",
+        .{config.advanced.raster.tile_size_min},
+    );
+    try writer.print(
+        "tile_size_max={d}\n",
+        .{config.advanced.raster.tile_size_max},
+    );
     try writer.print("actual_tile_size={d}\n", .{actual_tile_size});
     try writer.print("build_simd={s}\n", .{
         @tagName(buildconfig.config.simd),
@@ -1021,7 +976,7 @@ fn runBenchmarkInternal(
     };
 
     var config_run = config;
-    config_run.report = report_mode;
+    config_run.report = .{ .mode = report_mode };
 
     if (stats_out_dir_base.len > 0) {
         var out_dir = try orch.openDirEnsured(io, stats_out_dir_base);
@@ -1070,12 +1025,9 @@ fn runBenchmarkInternal(
     }
 
     const e2e_start = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config_run.total_threads) },
-    };
     try riley.rasterReportInto(
         outer_alloc,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         &[_]mo.MeshInput{mesh_input},
         config_run,

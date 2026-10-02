@@ -102,19 +102,15 @@ fn runTilingCaseTest(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.tile_size_override = tile_size;
-    run_config.buffer_mode = buffer_mode;
-    run_config.total_threads = workers;
-    run_config.max_raster_workers_per_job = workers;
+    run_config.advanced.raster.tile_size_override = tile_size;
+    run_config.advanced.raster.buffer_mode = buffer_mode;
+    run_config.parallel = .{ .threads = workers };
 
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = workers },
-    };
 
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{cam_inp},
         meshes,
         run_config,
@@ -252,17 +248,13 @@ fn runAdditionalTilingAndParityTests(
         var run_config = config;
         run_config.save_strategy = .memory;
 
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = 1 },
-        };
-
         var arena_tri3 = std.heap.ArenaAllocator.init(allocator);
         defer arena_tri3.deinit();
         const aa_tri3 = arena_tri3.allocator();
 
         const result_tri3 = try riley.raster(
             aa_tri3,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_inp},
             &meshes_tri3,
             run_config,
@@ -276,7 +268,7 @@ fn runAdditionalTilingAndParityTests(
 
         const result_opt = try riley.raster(
             aa_opt,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_inp},
             &meshes_tri3opt,
             run_config,
@@ -299,14 +291,10 @@ fn runAdditionalTilingAndParityTests(
 
         var config_tile = config;
         config_tile.save_strategy = .memory;
-        config_tile.buffer_mode = .tile_local;
+        config_tile.advanced.raster.buffer_mode = .tile_local;
 
         var config_global = config_tile;
-        config_global.buffer_mode = .global_subpx_full;
-
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = 1 },
-        };
+        config_global.advanced.raster.buffer_mode = .global_subpx_full;
 
         var arena_tile = std.heap.ArenaAllocator.init(allocator);
         defer arena_tile.deinit();
@@ -314,7 +302,7 @@ fn runAdditionalTilingAndParityTests(
 
         const res_tile = try riley.raster(
             aa_tile,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_inp},
             &meshes,
             config_tile,
@@ -328,7 +316,7 @@ fn runAdditionalTilingAndParityTests(
 
         const res_global = try riley.raster(
             aa_global,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_inp},
             &meshes,
             config_global,
@@ -352,10 +340,6 @@ fn runAdditionalTilingAndParityTests(
         const tile_overrides = [_]u16{ 64, 128 };
         const stripe_overrides = [_]u16{ 256, 512 };
 
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = 1 },
-        };
-
         for (tile_overrides) |to_val| {
             var arena = std.heap.ArenaAllocator.init(allocator);
             defer arena.deinit();
@@ -363,12 +347,12 @@ fn runAdditionalTilingAndParityTests(
 
             var run_config = config;
             run_config.save_strategy = .memory;
-            run_config.buffer_mode = .global_subpx_full;
-            run_config.global_subpx_tile_size_override = to_val;
+            run_config.advanced.raster.buffer_mode = .global_subpx_full;
+            run_config.advanced.raster.global_subpx_tile_size_override = to_val;
 
             const res = try riley.raster(
                 aa,
-                &render_groups,
+                io,
                 &[_]CameraInput{cam_inp},
                 &meshes,
                 run_config,
@@ -385,12 +369,12 @@ fn runAdditionalTilingAndParityTests(
 
             var run_config = config;
             run_config.save_strategy = .memory;
-            run_config.buffer_mode = .global_subpx_stripe;
-            run_config.global_subpx_stripe_size_override = so_val;
+            run_config.advanced.raster.buffer_mode = .global_subpx_stripe;
+            run_config.advanced.raster.global_subpx_stripe_size_override = so_val;
 
             const res = try riley.raster(
                 aa,
-                &render_groups,
+                io,
                 &[_]CameraInput{cam_inp},
                 &meshes,
                 run_config,

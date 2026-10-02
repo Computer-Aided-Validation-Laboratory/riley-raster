@@ -47,7 +47,7 @@ pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
     var base_raster_config = tcfg.getRasterConfig(.bench);
-    base_raster_config.image_save_opts = &[_]iio.ImageSaveOpts{
+    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
     base_raster_config.save_strategy = .memory;

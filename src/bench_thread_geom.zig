@@ -228,13 +228,6 @@ fn runAndRecord(
         };
     }
 
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{
-            .io = io,
-            .workers = @max(@as(u16, 1), config.total_threads),
-        },
-    };
-
     const out_path: ?[]const u8 = if (config.save_strategy == .disk or
         config.save_strategy == .both)
         "out/debug_images"
@@ -245,7 +238,7 @@ fn runAndRecord(
 
     var image_arr = try riley.rasterReport(
         ra,
-        &render_groups,
+        io,
         camera_inputs[0..1],
         &[_]mo.MeshInput{duplicated_mesh},
         config,
@@ -283,7 +276,7 @@ pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
     var base_raster_config = tcfg.getRasterConfig(.bench);
-    base_raster_config.image_save_opts = &[_]iio.ImageSaveOpts{
+    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
     var filtered_args: std.ArrayList([*:0]const u8) = .empty;
@@ -504,10 +497,7 @@ pub fn main(init: std.process.Init) !void {
                     while (ii < sweep_len) : (ii += 1) {
                         const max_workers = sweep_vals[ii];
                         var run_config = bench_raster_config;
-                        run_config.geom_scheduling_mode = .spread;
-                        run_config.max_geom_jobs_in_flight_per_group = 1;
-                        run_config.max_geom_workers_per_job = max_workers;
-                        run_config.max_raster_workers_per_job = total_threads;
+                        run_config.parallel = .{ .threads = max_workers };
 
                         var timing = RunTiming{
                             .geom_prep_ms = 0.0,
@@ -558,10 +548,7 @@ pub fn main(init: std.process.Init) !void {
                                 const max_workers = sweep_vals[kk];
 
                                 var run_config = bench_raster_config;
-                                run_config.geom_scheduling_mode = mode;
-                                run_config.max_geom_jobs_in_flight_per_group = max_jobs;
-                                run_config.max_geom_workers_per_job = max_workers;
-                                run_config.max_raster_workers_per_job = total_threads;
+                                run_config.parallel = .{ .threads = max_workers };
 
                                 var timing = RunTiming{
                                     .geom_prep_ms = 0.0,
@@ -608,10 +595,7 @@ pub fn main(init: std.process.Init) !void {
                             const ww = total_threads / jj;
 
                             var run_config = bench_raster_config;
-                            run_config.geom_scheduling_mode = .spread;
-                            run_config.max_geom_jobs_in_flight_per_group = jj;
-                            run_config.max_geom_workers_per_job = ww;
-                            run_config.max_raster_workers_per_job = total_threads;
+                            run_config.parallel = .{ .threads = ww };
 
                             var timing = RunTiming{
                                 .geom_prep_ms = 0.0,

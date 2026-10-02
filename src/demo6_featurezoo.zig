@@ -344,7 +344,6 @@ fn renderCase(
     local_alloc: std.mem.Allocator,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    render_groups: []const riley.RenderGroupSpec,
     texture_path: []const u8,
     case_name: []const u8,
     options: DemoOptions,
@@ -395,16 +394,17 @@ fn renderCase(
     );
     const config = riley.RasterConfig{
         .render_mode = .offline,
-        .total_threads = 4,
-        .max_raster_workers_per_job = 1,
+        .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
-        .image_save_mode = if (C == 1) .grey else .rgb,
         .background_value = 0.5 * (@as(F, @floatFromInt((@as(u32, 1) << bits) - 1))),
-        .image_save_opts = &.{
-            .{
-                .format = if (bits == 8) .bmp else .tiff,
-                .bits = bits,
-                .scaling = .none,
+        .output = .{
+            .image_save_mode = if (C == 1) .grey else .rgb,
+            .image_save_opts = &.{
+                .{
+                    .format = if (bits == 8) .bmp else .tiff,
+                    .bits = bits,
+                    .scaling = .none,
+                },
             },
         },
     };
@@ -414,7 +414,7 @@ fn renderCase(
     // -------------------------------------------------------------------------
     if (try riley.raster(
         outer_alloc,
-        render_groups,
+        io,
         &cameras,
         meshes,
         config,
@@ -458,11 +458,7 @@ pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(init.gpa);
     defer arena.deinit();
     const local_alloc = arena.allocator();
-    var groups = try riley.ManagedRenderGroups.init(init.gpa, init.minimal, .{
-        .thread_budget = 4,
-    });
-    defer groups.deinit(init.gpa);
-    const io = groups.specs[0].io;
+    const io = init.io;
 
     // -------------------------------------------------------------------------
     // Clean output root and render all combinations
@@ -476,7 +472,6 @@ pub fn main(init: std.process.Init) !void {
         local_alloc,
         init.gpa,
         io,
-        groups.specs,
         "texture/speck128_mono_u8.bmp",
         "mono-u8",
         options,
@@ -488,7 +483,6 @@ pub fn main(init: std.process.Init) !void {
         local_alloc,
         init.gpa,
         io,
-        groups.specs,
         "texture/speck128_mono_u16.tiff",
         "mono-u16",
         options,
@@ -500,7 +494,6 @@ pub fn main(init: std.process.Init) !void {
         local_alloc,
         init.gpa,
         io,
-        groups.specs,
         "texture/speck128_rgb_u8.bmp",
         "rgb-u8",
         options,
@@ -512,7 +505,6 @@ pub fn main(init: std.process.Init) !void {
         local_alloc,
         init.gpa,
         io,
-        groups.specs,
         "texture/speck128_rgb_u8.bmp",
         "rgb-u16",
         options,

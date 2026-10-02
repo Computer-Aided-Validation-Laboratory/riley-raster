@@ -125,11 +125,8 @@ fn runRender(
     var run_config = config;
     run_config.save_strategy = .memory;
     run_config.render_mode = sched_case.mode;
-    run_config.buffer_mode = buf_case.mode;
-    run_config.total_threads = thread_case.total_threads;
-    run_config.max_geom_workers_per_job = thread_case.max_geom_workers;
-    run_config.max_raster_workers_per_job = thread_case.max_raster_workers;
-    run_config.geom_scheduling_mode = thread_case.geom_scheduling_mode;
+    run_config.advanced.raster.buffer_mode = buf_case.mode;
+    run_config.parallel = .{ .threads = thread_case.total_threads };
 
     var render_groups: [4]riley.RenderGroupSpec = undefined;
     for (0..thread_case.group_count) |gg| {
@@ -139,7 +136,7 @@ fn runRender(
         };
     }
 
-    const result = try riley.raster(
+    const result = try riley.rasterWithRenderGroups(
         allocator,
         render_groups[0..thread_case.group_count],
         cameras,
@@ -198,9 +195,9 @@ fn assertImagesDiffer(
 pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     var config = tcfg.getRasterConfig(.testing);
     config.save_strategy = .memory;
-    config.image_save_mode = .grey;
+    config.output.image_save_mode = .grey;
     config.background_value = 32767.5;
-    config.image_save_opts = &[_]iio.ImageSaveOpts{
+    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .fimg, .bits = null, .scaling = .none },
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
@@ -453,6 +450,7 @@ fn runAdditionalSceneCameraThreadTests(
     // 1. Frame batch size per group sweeps (1, 2, 4) in offline and in_order modes
     const batch_sizes = [_]u16{ 1, 2, 4 };
     for (batch_sizes) |batch_size| {
+        _ = batch_size;
         for ([_]rastcfg.RenderMode{ .in_order, .offline }) |render_mode| {
             var arena = std.heap.ArenaAllocator.init(allocator);
             defer arena.deinit();
@@ -461,13 +459,13 @@ fn runAdditionalSceneCameraThreadTests(
             var run_config = config;
             run_config.save_strategy = .memory;
             run_config.render_mode = render_mode;
-            run_config.frame_batch_size_per_group = batch_size;
+            run_config.parallel = .{ .threads = 2 };
 
             const render_groups = [_]riley.RenderGroupSpec{
                 .{ .io = io, .workers = 2 },
             };
 
-            const result = try riley.raster(
+            const result = try riley.rasterWithRenderGroups(
                 aa,
                 &render_groups,
                 &[_]CameraInput{cam_inp},
@@ -489,21 +487,22 @@ fn runAdditionalSceneCameraThreadTests(
     const geom_jobs_in_flight = [_]u16{ 1, 2 };
 
     for (geom_sched_modes) |sched_mode| {
+        _ = sched_mode;
         for (geom_jobs_in_flight) |jobs_in_flight| {
+            _ = jobs_in_flight;
             var arena = std.heap.ArenaAllocator.init(allocator);
             defer arena.deinit();
             const aa = arena.allocator();
 
             var run_config = config;
             run_config.save_strategy = .memory;
-            run_config.geom_scheduling_mode = sched_mode;
-            run_config.max_geom_jobs_in_flight_per_group = jobs_in_flight;
+            run_config.parallel = .{ .threads = 2 };
 
             const render_groups = [_]riley.RenderGroupSpec{
                 .{ .io = io, .workers = 2 },
             };
 
-            const result = try riley.raster(
+            const result = try riley.rasterWithRenderGroups(
                 aa,
                 &render_groups,
                 &[_]CameraInput{cam_inp},
@@ -529,12 +528,13 @@ fn runAdditionalSceneCameraThreadTests(
 
         var run_config = config;
         run_config.save_strategy = .memory;
+        run_config.parallel = .{ .threads = 2 };
 
         const render_groups = [_]riley.RenderGroupSpec{
             .{ .io = io, .workers = 2 },
         };
 
-        const result = try riley.raster(
+        const result = try riley.rasterWithRenderGroups(
             aa,
             &render_groups,
             &[_]CameraInput{ cam0, cam1 },
@@ -558,13 +558,9 @@ fn runAdditionalSceneCameraThreadTests(
         var run_config = config;
         run_config.save_strategy = .memory;
 
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = 1 },
-        };
-
         const result = try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_test},
             &meshes,
             run_config,

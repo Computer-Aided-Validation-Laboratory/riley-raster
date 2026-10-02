@@ -41,6 +41,13 @@ const subpxframe = @import("subpxframe.zig");
 
 const rastcfg = @import("rasterconfig.zig");
 pub const RasterConfig = rastcfg.RasterConfig;
+pub const ParallelConfig = rastcfg.ParallelConfig;
+pub const OutputConfig = rastcfg.OutputConfig;
+pub const ReportConfig = rastcfg.ReportConfig;
+pub const AdvancedConfig = rastcfg.AdvancedConfig;
+pub const RasterTuning = rastcfg.RasterTuning;
+pub const DistortionTuning = rastcfg.DistortionTuning;
+pub const SolverTuning = rastcfg.SolverTuning;
 pub const BufferMode = rastcfg.BufferMode;
 pub const ImageSaveMode = rastcfg.ImageSaveMode;
 pub const SaveStrategy = rastcfg.SaveStrategy;
@@ -48,6 +55,9 @@ pub const RenderMode = rastcfg.RenderMode;
 pub const ReportMode = rastcfg.ReportMode;
 pub const ValidateInput = rastcfg.ValidateInput;
 pub const FullStatsOpts = rastcfg.FullStatsOpts;
+pub const GeometrySchedulingMode = rastcfg.GeometrySchedulingMode;
+pub const ResolvedParallelConfig = scalingpolicy.ResolvedParallelConfig;
+pub const ParallelWorkload = scalingpolicy.ParallelWorkload;
 
 const report = @import("report.zig");
 const FrameReportStorage = report.FrameReportStorage;
@@ -65,9 +75,29 @@ pub const ManagedRenderGroups = rendergroups.ManagedRenderGroups;
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
+pub fn resolveRenderPlan(
+    cam_inps: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+) ResolvedParallelConfig {
+    const num_time = mo.countFrames(meshes);
+    const total_elems = mo.countMeshInputElems(meshes);
+    const workload = ParallelWorkload{
+        .camera_count = cam_inps.len,
+        .frame_count = num_time,
+        .element_count = total_elems,
+        .render_mode = config.render_mode,
+    };
+    return scalingpolicy.resolveParallelConfig(
+        workload,
+        config.parallel,
+        config.report.mode,
+    );
+}
+
 pub fn raster(
     outer_alloc: std.mem.Allocator,
-    render_groups: []const RenderGroupSpec,
+    io: std.Io,
     cam_inps: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: RasterConfig,
@@ -75,7 +105,7 @@ pub fn raster(
 ) !?ndarray.NDArray(F) {
     return rasterReport(
         outer_alloc,
-        render_groups,
+        io,
         cam_inps,
         meshes,
         config,
@@ -86,7 +116,7 @@ pub fn raster(
 
 pub fn rasterInto(
     outer_alloc: std.mem.Allocator,
-    render_groups: []const RenderGroupSpec,
+    io: std.Io,
     cam_inps: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: RasterConfig,
@@ -94,6 +124,112 @@ pub fn rasterInto(
     images_arr: ?*ndarray.NDArray(F),
 ) !void {
     try rasterReportInto(
+        outer_alloc,
+        io,
+        cam_inps,
+        meshes,
+        config,
+        out_dir_path,
+        images_arr,
+        null,
+    );
+}
+
+pub fn rasterReport(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    cam_inps: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+    out_dir_path: ?[]const u8,
+    bench_capt: ?[]report.FrameBenchCapture,
+) !?ndarray.NDArray(F) {
+    _ = io;
+    const resolved = resolveRenderPlan(cam_inps, meshes, config);
+    var managed_groups = try ManagedRenderGroups.init(
+        outer_alloc,
+        null,
+        .{
+            .thread_budget = resolved.total_threads,
+            .max_groups = resolved.render_group_count,
+        },
+    );
+    defer managed_groups.deinit(outer_alloc);
+
+    return rasterReportWithRenderGroups(
+        outer_alloc,
+        managed_groups.specs,
+        cam_inps,
+        meshes,
+        config,
+        out_dir_path,
+        bench_capt,
+    );
+}
+
+pub fn rasterReportInto(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    cam_inps: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+    out_dir_path: ?[]const u8,
+    images_arr: ?*ndarray.NDArray(F),
+    bench_capt: ?[]report.FrameBenchCapture,
+) !void {
+    _ = io;
+    const resolved = resolveRenderPlan(cam_inps, meshes, config);
+    var managed_groups = try ManagedRenderGroups.init(
+        outer_alloc,
+        null,
+        .{
+            .thread_budget = resolved.total_threads,
+            .max_groups = resolved.render_group_count,
+        },
+    );
+    defer managed_groups.deinit(outer_alloc);
+
+    try rasterReportIntoWithRenderGroups(
+        outer_alloc,
+        managed_groups.specs,
+        cam_inps,
+        meshes,
+        config,
+        out_dir_path,
+        images_arr,
+        bench_capt,
+    );
+}
+
+pub fn rasterWithRenderGroups(
+    outer_alloc: std.mem.Allocator,
+    render_groups: []const RenderGroupSpec,
+    cam_inps: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+    out_dir_path: ?[]const u8,
+) !?ndarray.NDArray(F) {
+    return rasterReportWithRenderGroups(
+        outer_alloc,
+        render_groups,
+        cam_inps,
+        meshes,
+        config,
+        out_dir_path,
+        null,
+    );
+}
+
+pub fn rasterIntoWithRenderGroups(
+    outer_alloc: std.mem.Allocator,
+    render_groups: []const RenderGroupSpec,
+    cam_inps: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+    out_dir_path: ?[]const u8,
+    images_arr: ?*ndarray.NDArray(F),
+) !void {
+    try rasterReportIntoWithRenderGroups(
         outer_alloc,
         render_groups,
         cam_inps,
@@ -114,7 +250,7 @@ fn validateAndSummarise(
     require_out_buff: bool,
     bench_capt: ?[]report.FrameBenchCapture,
 ) !valinp.ValidSummary {
-    return switch (config.validate_input) {
+    return switch (config.validation) {
         .off => valinp.summariseRenderInpsAssumeValid(
             cam_inps,
             meshes,
@@ -145,7 +281,7 @@ fn validateAndSummarise(
     };
 }
 
-pub fn rasterReport(
+pub fn rasterReportWithRenderGroups(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
     cam_inps: []const cam.CameraInput,
@@ -197,7 +333,7 @@ pub fn rasterReport(
     return images_arr_opt;
 }
 
-pub fn rasterReportInto(
+pub fn rasterReportIntoWithRenderGroups(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
     cam_inps: []const cam.CameraInput,
@@ -352,7 +488,7 @@ fn rasterReportIntoValidated(
         cams,
         config,
         num_time,
-        config.report,
+        config.report.mode,
         end_to_end_times,
         if (bench_capt) |capt| capt else null,
     );
@@ -369,7 +505,7 @@ pub fn calcAllFramesImageDims(
     const num_time = mo.countFrames(meshes);
     const raw_num_fields = mo.countOutputFields(meshes);
     const num_fields = try valinp.calcOutFieldsForImgSaveMode(
-        config.image_save_mode,
+        config.output.image_save_mode,
         raw_num_fields,
     );
 
@@ -477,7 +613,7 @@ fn dispatchFrameJobsOffline(
         .images_arr = images_arr,
         .bench_capture = bench_capture,
         .total_scene_elems = mo.countStaticMeshElems(mesh_static),
-        .batch_size = @max(@as(usize, 1), config.frame_batch_size_per_group),
+        .batch_size = 1,
         .err_state = &err_state,
     };
 
@@ -620,7 +756,7 @@ fn dispatchFrameJobsInOrder(
     bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
     const total_scene_elems = mo.countStaticMeshElems(mesh_static);
-    const batch_size = @max(@as(usize, 1), config.frame_batch_size_per_group);
+    const batch_size = 1;
 
     for (0..num_time) |frame_idx| {
         var err_state = FrameJobErrorState{};
@@ -770,7 +906,7 @@ fn prepareJobBatch(
 
     const can_write_result_direct = images_arr != null and
         cam.allCamerasSharePixels(cameras) and
-        !needsOutputTransform(config.image_save_mode, num_fields);
+        !needsOutputTransform(config.output.image_save_mode, num_fields);
 
     for (job_indices, 0..) |job_idx, ii| {
         const frame_idx = @divFloor(job_idx, cameras.len);
@@ -832,19 +968,6 @@ fn assignSpreadGeometryWorkers(
     return assigned;
 }
 
-fn geometryJobsPerWave(
-    config: RasterConfig,
-    group_workers: u16,
-    jobs_remaining: usize,
-) usize {
-    const requested_jobs = @max(@as(u16, 1), config.max_geom_jobs_in_flight_per_group);
-    const worker_cap = @max(@as(u16, 1), group_workers);
-    return @min(
-        jobs_remaining,
-        @as(usize, @intCast(@min(requested_jobs, worker_cap))),
-    );
-}
-
 fn processGeometryWave(
     group_alloc: std.mem.Allocator,
     io: std.Io,
@@ -901,17 +1024,26 @@ fn processGeometryBatch(
     total_scene_elems: usize,
     jobs: []PreparedFrameJob,
 ) !void {
+    _ = config;
     const geom_mode = scalingpolicy.resolveGeometrySchedulingMode(
-        config.geom_scheduling_mode,
+        .auto,
         total_scene_elems,
     );
+    const max_geom_workers: u16 = if (total_scene_elems >=
+        scalingpolicy.GEOM_THREADING_ELEMENT_THRESHOLD and group_workers > 1)
+        group_workers
+    else
+        1;
     var wave_start: usize = 0;
 
     while (wave_start < jobs.len) {
         const jobs_remaining = jobs.len - wave_start;
 
         const wave_jobs = switch (geom_mode) {
-            .spread => geometryJobsPerWave(config, group_workers, jobs_remaining),
+            .spread => @min(
+                jobs_remaining,
+                @as(usize, @max(@as(u16, 1), group_workers)),
+            ),
             .pack => @min(@as(usize, 1), jobs_remaining),
             .auto => unreachable,
         };
@@ -924,13 +1056,13 @@ fn processGeometryBatch(
                 group_alloc,
                 group_workers,
                 wave.len,
-                config.max_geom_workers_per_job,
+                max_geom_workers,
             ),
             .pack => blk: {
                 const assigned = try group_alloc.alloc(u16, 1);
                 assigned[0] = @min(
                     @max(@as(u16, 1), group_workers),
-                    @max(@as(u16, 1), config.max_geom_workers_per_job),
+                    max_geom_workers,
                 );
                 break :blk assigned;
             },
@@ -953,10 +1085,10 @@ fn processRasterBatch(
     save_overlap: ?*saveoverlap.SaveOverlap,
     jobs: []PreparedFrameJob,
 ) !void {
-    const raster_workers = @min(
-        @max(@as(u16, 1), group_workers),
-        @max(@as(u16, 1), config.max_raster_workers_per_job),
-    );
+    const raster_workers = if (config.report.mode == .full_stats)
+        @as(u16, 1)
+    else
+        @max(@as(u16, 1), group_workers);
     for (jobs) |*job| {
         defer job.deinit(group_alloc);
         if (save_overlap) |so| {
@@ -1103,7 +1235,7 @@ fn sceneTileOverlapBinning(
 
     const time_start_overlap = Timestamp.now(io, .awake);
 
-    ctx.tiling = if (job.config.buffer_mode == .tile_local)
+    ctx.tiling = if (job.config.advanced.raster.buffer_mode == .tile_local)
         try rops.sceneTileElemOverlap(
             outer_alloc,
             chunk_exec,
@@ -1269,7 +1401,7 @@ fn runRasterStage(
         time_start_fb.durationTo(time_end_fb).raw.nanoseconds,
     );
 
-    switch (job.desc.config.report) {
+    switch (job.desc.config.report.mode) {
         .off => try rasterFrame(
             .off,
             outer_alloc,
@@ -1461,7 +1593,7 @@ fn initFrameReportStorage(
     actual_tile_size: u16,
     config: RasterConfig,
 ) !report.FrameReportStorage {
-    return switch (config.report) {
+    return switch (config.report.mode) {
         .off => .{ .off = .{} },
         .bench => .{ .bench = .{} },
         .full_stats => .{ .full_stats = try report.initFullStatsLog(
@@ -1469,7 +1601,7 @@ fn initFrameReportStorage(
             camera.pixels_num,
             actual_tile_size,
             camera.sub_sample,
-            config.full_stats_opts,
+            config.report.full_stats_opts,
         ) },
     };
 }
@@ -1531,18 +1663,19 @@ fn prepareFrameContext(
     input: *const FrameJobDesc,
     ctx: *FrameContext,
 ) !void {
-    ctx.actual_tile_size = switch (input.config.buffer_mode) {
+    ctx.actual_tile_size = switch (input.config.advanced.raster.buffer_mode) {
         .tile_local => scalingpolicy.tileSize(
-            input.config.tile_size_override,
-            input.config.tile_size_min,
-            input.config.tile_size_max,
+            input.config.advanced.raster.tile_size_override,
+            input.config.advanced.raster.tile_size_min,
+            input.config.advanced.raster.tile_size_max,
             input.camera.pixels_num,
             input.camera.sub_sample,
             input.camera.prep_psf.halo_px,
         ),
         .global_subpx_full, .global_subpx_stripe => blk: {
-            const requested_subpx = input.config.global_subpx_tile_size_override orelse
-                input.config.global_subpx_tile_size_min;
+            const requested_subpx =
+                input.config.advanced.raster.global_subpx_tile_size_override orelse
+                input.config.advanced.raster.global_subpx_tile_size_min;
             break :blk @divExact(
                 requested_subpx,
                 @as(u16, @intCast(input.camera.sub_sample)),
@@ -1675,11 +1808,11 @@ fn rasterFrame(
         .tile_size = ctx.actual_tile_size,
     };
     var global_resolve_time_ns: F = 0.0;
-    if (frame_job.config.buffer_mode != .tile_local) {
+    if (frame_job.config.advanced.raster.buffer_mode != .tile_local) {
         const sub_samp: usize = @intCast(frame_job.camera.sub_sample);
         const halo_px = frame_job.camera.prep_psf.halo_px;
         ctx.frame_times.global_subpx_stats = .{
-            .mode = frame_job.config.buffer_mode,
+            .mode = frame_job.config.advanced.raster.buffer_mode,
             .output_w_subpx = @as(usize, frame_job.camera.pixels_num[0]) * sub_samp,
             .output_h_subpx = @as(usize, frame_job.camera.pixels_num[1]) * sub_samp,
             .outer_halo_subpx = @as(usize, halo_px) * sub_samp,
@@ -1690,7 +1823,7 @@ fn rasterFrame(
         };
     }
 
-    switch (frame_job.config.buffer_mode) {
+    switch (frame_job.config.advanced.raster.buffer_mode) {
         .tile_local => try rasterengine.rasterScene(
             report_mode,
             outer_alloc,
@@ -1780,8 +1913,8 @@ fn rasterFrame(
             const image_w_subpx = @as(usize, frame_job.camera.pixels_num[0]) * sub_samp;
             const image_h_subpx = @as(usize, frame_job.camera.pixels_num[1]) * sub_samp;
             const requested_stripe_subpx =
-                frame_job.config.global_subpx_stripe_size_override orelse
-                frame_job.config.global_subpx_stripe_size_min;
+                frame_job.config.advanced.raster.global_subpx_stripe_size_override orelse
+                frame_job.config.advanced.raster.global_subpx_stripe_size_min;
             const stripe_subpx: usize = requested_stripe_subpx;
             const first_core_suby_max = @min(image_h_subpx, stripe_subpx);
             const time_start_buffer_setup = Timestamp.now(io, .awake);
@@ -1925,7 +2058,7 @@ fn rasterFrame(
     ctx.frame_times.raster_loop = @floatFromInt(
         time_start_loop.durationTo(time_end_loop).raw.nanoseconds,
     );
-    if (frame_job.config.buffer_mode != .tile_local) {
+    if (frame_job.config.advanced.raster.buffer_mode != .tile_local) {
         ctx.frame_times.scratch_resolve = global_resolve_time_ns;
         if (report.getBenchLog(report_mode, report_ptr)) |bench_log| {
             ctx.frame_times.cam_invert = bench_log.cam_time_ns;
@@ -1959,8 +2092,8 @@ fn saveFrame(
             @intCast(output_frame_arr.dims[0]),
             input.camera.pixels_num,
             &output_frame_arr,
-            saveoverlap.imageSaveChannelsOverride(input.config.image_save_mode),
-            input.config.image_save_opts,
+            saveoverlap.imageSaveChannelsOverride(input.config.output.image_save_mode),
+            input.config.output.image_save_opts,
             input.config.output_name_format,
         );
     }
@@ -1984,7 +2117,7 @@ fn renderGroupSaveIo(render_group: RenderGroupSpec) std.Io {
 }
 
 fn saveOverlapEnabled(config: RasterConfig) bool {
-    return config.save_strategy == .disk and config.disk_save_overlap;
+    return config.save_strategy == .disk and config.output.disk_save_overlap;
 }
 
 test "ideal sensor bounds are prepared once per camera with effective halo" {

@@ -30,12 +30,7 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const local_alloc = arena.allocator();
 
-    var groups = try riley.ManagedRenderGroups.init(init.gpa, init.minimal, .{
-        .thread_budget = 4,
-        .max_groups = 1,
-    });
-    defer groups.deinit(init.gpa);
-    const io = groups.specs[0].io;
+    const io = init.io;
 
     // -------------------------------------------------------------------------
     // 1. Setup paths, texture, and meshes
@@ -91,13 +86,14 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const background_value: F = 0.5 * @as(F, std.math.maxInt(u8));
     const config = rastcfg.RasterConfig{
-        .total_threads = 4,
-        .max_raster_workers_per_job = 4,
+        .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
-        .image_save_mode = .grey,
         .background_value = background_value,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .none },
+        .output = .{
+            .image_save_mode = .grey,
+            .image_save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .none },
+            },
         },
     };
 
@@ -107,7 +103,7 @@ pub fn main(init: std.process.Init) !void {
     const out_dir_root = "./out/demo2a_rabbits_mono";
     const images = try riley.raster(
         init.gpa,
-        groups.specs,
+        io,
         &[_]CameraInput{camera_input},
         mesh_inputs,
         config,

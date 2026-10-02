@@ -101,11 +101,7 @@ pub fn main(init: std.process.Init) !void {
         data_dir ++ "field_disp_z.csv",
     };
 
-    var groups = try riley.ManagedRenderGroups.init(outer_alloc, init.minimal, .{
-        .thread_budget = total_threads,
-    });
-    defer groups.deinit(outer_alloc);
-    const io = groups.specs[0].io;
+    const io = init.io;
 
     var out_dir = try demo_common.resetOutputDir(io, out_dir_root);
     defer out_dir.close(io);
@@ -236,20 +232,21 @@ pub fn main(init: std.process.Init) !void {
 
     const config = RasterConfig{
         .render_mode = .offline,
-        .total_threads = total_threads,
-        .frame_batch_size_per_group = frames_max,
-        .max_geom_jobs_in_flight_per_group = frames_max,
-        .max_geom_workers_per_job = 1,
-        .geom_scheduling_mode = .spread,
-        .max_raster_workers_per_job = 1,
+        .parallel = .{ .threads = total_threads },
         .save_strategy = .disk,
-        .tile_size_min = 8,
-        .tile_size_max = 128,
         .background_value = 128.0,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
+        .output = .{
+            .image_save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            },
         },
-        .report = .bench,
+        .report = .{ .mode = .bench },
+        .advanced = .{
+            .raster = .{
+                .tile_size_min = 8,
+                .tile_size_max = 128,
+            },
+        },
     };
 
     // -------------------------------------------------------------------------
@@ -258,7 +255,7 @@ pub fn main(init: std.process.Init) !void {
     const meshes = [_]MeshInput{mesh_input};
     const images = try riley.raster(
         outer_alloc,
-        groups.specs,
+        io,
         &stereo_pair.cameras,
         &meshes,
         config,

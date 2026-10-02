@@ -383,12 +383,9 @@ fn renderScalarMap(
         },
     };
 
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-    };
     const result = (try riley.raster(
         render_allocator,
-        &render_groups,
+        io,
         &[_]cam.CameraInput{camera_input},
         &[_]mo.MeshInput{mesh_input},
         config,
@@ -524,7 +521,7 @@ fn runDistortCase(
 
     var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .memory;
-    config.report = .off;
+    config.report = .{ .mode = .off };
 
     for (0..time_steps) |frame_idx| {
         var frame_arena = std.heap.ArenaAllocator.init(allocator);
