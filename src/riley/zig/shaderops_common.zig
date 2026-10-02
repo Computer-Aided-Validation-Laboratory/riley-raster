@@ -396,68 +396,20 @@ pub inline fn normFuncShaderParams(
     builtin: FuncShaderBuiltin,
     params: FuncShaderParams,
 ) FuncShaderParams {
+    if (std.meta.activeTag(params.settings) == builtin) return params;
+
     var out = params;
     out.settings = switch (builtin) {
-        .constant => .{
-            .constant = if (params.settings == .constant)
-                params.settings.constant
-            else
-                ConstantParams{},
-        },
-        .linear => .{
-            .linear = if (params.settings == .linear)
-                params.settings.linear
-            else
-                LinearParams{},
-        },
-        .quadratic => .{
-            .quadratic = if (params.settings == .quadratic)
-                params.settings.quadratic
-            else
-                QuadraticParams{},
-        },
-        .sinusoidal => .{
-            .sinusoidal = if (params.settings == .sinusoidal)
-                params.settings.sinusoidal
-            else
-                SinusoidalParams{},
-        },
-        .sinusoidal_approx => .{
-            .sinusoidal_approx = if (params.settings == .sinusoidal_approx)
-                params.settings.sinusoidal_approx
-            else
-                SinusoidalParams{},
-        },
-        .checker => .{
-            .checker = if (params.settings == .checker)
-                params.settings.checker
-            else
-                CheckerParams{},
-        },
-        .checker_smooth => .{
-            .checker_smooth = if (params.settings == .checker_smooth)
-                params.settings.checker_smooth
-            else
-                CheckerSmoothParams{},
-        },
-        .lambertian_normal_z => .{
-            .lambertian_normal_z = if (params.settings == .lambertian_normal_z)
-                params.settings.lambertian_normal_z
-            else
-                LambertianParams{},
-        },
-        .eggbox => .{
-            .eggbox = if (params.settings == .eggbox)
-                params.settings.eggbox
-            else
-                EggboxParams{},
-        },
-        .speckle => .{
-            .speckle = if (params.settings == .speckle)
-                params.settings.speckle
-            else
-                speckle.Speckle2DParams{},
-        },
+        .constant => .{ .constant = .{} },
+        .linear => .{ .linear = .{} },
+        .quadratic => .{ .quadratic = .{} },
+        .sinusoidal => .{ .sinusoidal = .{} },
+        .sinusoidal_approx => .{ .sinusoidal_approx = .{} },
+        .checker => .{ .checker = .{} },
+        .checker_smooth => .{ .checker_smooth = .{} },
+        .lambertian_normal_z => .{ .lambertian_normal_z = .{} },
+        .eggbox => .{ .eggbox = .{} },
+        .speckle => .{ .speckle = .{} },
     };
     return out;
 }
