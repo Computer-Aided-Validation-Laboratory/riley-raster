@@ -89,6 +89,7 @@ cdef extern from "riley.h":
         double psf_supp_rad
         uint32_t psf_separable
 
+
     ctypedef struct CCameraInput:
         CVec2U32 pixels_num
         CVec2F64 pixels_size
@@ -101,6 +102,22 @@ cdef extern from "riley.h":
         CPSF psf
         uint32_t coord_sys
         uint32_t subpixel_center_map
+
+    ctypedef struct CSpeckle2DParams:
+        uint32_t seed
+        double cells_per_uv_0
+        double cells_per_uv_1
+        double uv_offset_0
+        double uv_offset_1
+        double occupancy
+        double radius_mean
+        double radius_jitter
+        double edge_softness
+        double perlin_coverage_threshold
+        double perlin_coverage_transition_width
+        double foreground
+        double background
+
 
     ctypedef struct CFuncShaderParams:
         double coord_scale_0
@@ -184,6 +201,7 @@ cdef extern from "riley.h":
         double extra_1
         double extra_2
         double extra_3
+        CSpeckle2DParams speckle
 
 
     ctypedef struct CShaderInput:

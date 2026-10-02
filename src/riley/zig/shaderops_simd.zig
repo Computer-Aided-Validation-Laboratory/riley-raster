@@ -21,14 +21,28 @@ const maths_simd = @import("maths_simd.zig");
 const texops = @import("textureops.zig");
 const TexSampConfig = texops.TexSampConfig;
 const comm = @import("shaderops_common.zig");
-const scal = @import("shaderops_scalar.zig");
+const speckle = @import("speckleops.zig");
 const simdops = @import("simdops.zig");
+const scal = if (@import("builtin").is_test)
+    @import("shaderops_scalar.zig")
+else
+    struct {};
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
+
+pub const FuncCoordSIMD = struct {
+    coord_0: VecSF,
+    coord_1: VecSF,
+    normal_x: VecSF,
+    normal_y: VecSF,
+    normal_z: VecSF,
+};
 
 // --------------------------------------------------------------------------------------
 // Nodal Interp Shader
 // --------------------------------------------------------------------------------------
-pub const fillNodalClipScal = scal.fillNodalClipScal;
-pub const fillNodalPerspScal = scal.fillNodalPerspScal;
 
 inline fn storeShadeSIMD(
     subpx_vals: []F,
@@ -130,9 +144,6 @@ pub inline fn fillNodalPerspSIMD(
 // --------------------------------------------------------------------------------------
 // Texture Shader
 // --------------------------------------------------------------------------------------
-
-pub const fillTexClipScal = scal.fillTexClipScal;
-pub const fillTexPerspScal = scal.fillTexPerspScal;
 
 fn texSimdInterpMode(
     comptime C: comptime_int,
@@ -279,15 +290,12 @@ pub inline fn fillTexPerspSIMD(
 // Function Shader
 // --------------------------------------------------------------------------------------
 
-pub const fillFuncClipScal = scal.fillFuncClipScal;
-pub const fillFuncPerspScal = scal.fillFuncPerspScal;
-
 pub inline fn evalFuncShaderGreyNormSIMD(
     builtin: comm.FuncShaderBuiltin,
-    coord: comm.FuncCoordSIMD,
+    coord: FuncCoordSIMD,
     params: comm.FuncShaderParams,
 ) VecSF {
-    const eval_coord = comm.applyFuncShaderCoordParamsSIMD(coord, params);
+    const eval_coord = applyFuncShaderCoordParamsSIMD(coord, params);
     const v_value = switch (builtin) {
         .constant => blk: {
             const p = params.settings.constant;
@@ -364,7 +372,7 @@ pub inline fn evalFuncShaderGreyNormSIMD(
                 v_half * @sin(v_freq_pi * eval_coord.coord_0);
             const v_phase_y = v_half +
                 v_half * @sin(v_freq_pi * eval_coord.coord_1);
-            break :blk comm.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
+            break :blk cubicSmoothStepSIMD(v_phase_x * v_phase_y);
         },
         .lambertian_normal_z => blk: {
             const p = params.settings.lambertian_normal_z;
@@ -387,16 +395,42 @@ pub inline fn evalFuncShaderGreyNormSIMD(
             break :blk v_mean + v_half_contrast * (v_one + @cos(v_phase_x)) *
                 (v_one + @cos(v_phase_y)) - v_contrast;
         },
+        .speckle => speckle.sampleSIMD(
+            coord.coord_0,
+            coord.coord_1,
+            @splat(true),
+            params.settings.speckle,
+            &.{},
+        ),
     };
-    return comm.applyFuncShaderOutputParamsSIMD(v_value, params);
+    return applyFuncShaderOutputParamsSIMD(v_value, params);
+}
+
+fn evalFuncShaderGreyPreparedSIMD(
+    shader: *const comm.FuncPrepared,
+    coord: FuncCoordSIMD,
+    v_mask_active: VecSB,
+) VecSF {
+    if (shader.builtin == .speckle) {
+        const v_value = speckle.sampleSIMD(
+            coord.coord_0,
+            coord.coord_1,
+            v_mask_active,
+            shader.params.settings.speckle,
+            &shader.speckle_resources,
+        );
+        return applyFuncShaderOutputParamsSIMD(v_value, shader.params);
+    }
+
+    return evalFuncShaderGreyNormSIMD(shader.builtin, coord, shader.params);
 }
 
 pub inline fn evalFuncShaderRGBNormSIMD(
     builtin: comm.FuncShaderBuiltin,
-    coord: comm.FuncCoordSIMD,
+    coord: FuncCoordSIMD,
     params: comm.FuncShaderParams,
 ) [3]VecSF {
-    const eval_coord = comm.applyFuncShaderCoordParamsSIMD(coord, params);
+    const eval_coord = applyFuncShaderCoordParamsSIMD(coord, params);
 
     const v_vals = switch (builtin) {
         .constant => blk: {
@@ -526,11 +560,11 @@ pub inline fn evalFuncShaderRGBNormSIMD(
 
             const v_phase_x = v_half + v_half * @sin(v_freq_pi * eval_coord.coord_0);
             const v_phase_y = v_half + v_half * @sin(v_freq_pi * eval_coord.coord_1);
-            const v_base = comm.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
+            const v_base = cubicSmoothStepSIMD(v_phase_x * v_phase_y);
 
             break :blk .{
                 v_base,
-                comm.cubicSmoothStepSIMD(v_one - v_base),
+                cubicSmoothStepSIMD(v_one - v_base),
                 v_half + v_half * @sin(v_two_pi * v_base),
             };
         },
@@ -571,12 +605,41 @@ pub inline fn evalFuncShaderRGBNormSIMD(
 
             break :blk .{ v_value, v_value, v_value };
         },
+        .speckle => unreachable,
     };
     return .{
-        comm.applyFuncShaderOutputParamsSIMD(v_vals[0], params),
-        comm.applyFuncShaderOutputParamsSIMD(v_vals[1], params),
-        comm.applyFuncShaderOutputParamsSIMD(v_vals[2], params),
+        applyFuncShaderOutputParamsSIMD(v_vals[0], params),
+        applyFuncShaderOutputParamsSIMD(v_vals[1], params),
+        applyFuncShaderOutputParamsSIMD(v_vals[2], params),
     };
+}
+
+inline fn applyFuncShaderCoordParamsSIMD(
+    coord: FuncCoordSIMD,
+    params: comm.FuncShaderParams,
+) FuncCoordSIMD {
+    var out = coord;
+    out.coord_0 = @as(VecSF, @splat(params.coord_scale[0])) * coord.coord_0 +
+        @as(VecSF, @splat(params.coord_offset[0]));
+    out.coord_1 = @as(VecSF, @splat(params.coord_scale[1])) * coord.coord_1 +
+        @as(VecSF, @splat(params.coord_offset[1]));
+    return out;
+}
+
+inline fn applyFuncShaderOutputParamsSIMD(
+    v_value: VecSF,
+    params: comm.FuncShaderParams,
+) VecSF {
+    return v_value * @as(VecSF, @splat(params.output_scale)) +
+        @as(VecSF, @splat(params.output_offset));
+}
+
+inline fn cubicSmoothStepSIMD(v_val: VecSF) VecSF {
+    const v_zero: VecSF = @splat(0.0);
+    const v_one: VecSF = @splat(1.0);
+    const clamped = @max(v_zero, @min(v_one, v_val));
+    return clamped * clamped * (@as(VecSF, @splat(3.0)) -
+        @as(VecSF, @splat(2.0)) * clamped);
 }
 
 fn calcNormalLaneVecs(
@@ -635,17 +698,20 @@ pub inline fn fillFuncClipSIMD(
         .para => {},
     }
 
-    const normal_vecs = calcNormalLaneVecs(
-        N,
-        shader.elem_normals != null,
-        shader_buf,
-        v_weights,
-    );
+    const normal_vecs = if (shader.builtin == .speckle)
+        [3]VecSF{ @splat(0.0), @splat(0.0), @splat(1.0) }
+    else
+        calcNormalLaneVecs(
+            N,
+            shader.elem_normals != null,
+            shader_buf,
+            v_weights,
+        );
 
     const px_stride = spx_image_scratch.cols_num;
     const scratch_idx = ctx_shade.scratch_idx;
 
-    const coord = comm.FuncCoordSIMD{
+    const coord = FuncCoordSIMD{
         .coord_0 = v_coord_0,
         .coord_1 = v_coord_1,
         .normal_x = normal_vecs[0],
@@ -655,7 +721,7 @@ pub inline fn fillFuncClipSIMD(
     const params = shader.params;
 
     if (comptime C == 1) {
-        const v_eval = evalFuncShaderGreyNormSIMD(shader.builtin, coord, params);
+        const v_eval = evalFuncShaderGreyPreparedSIMD(shader, coord, v_mask_active);
         const v_mul = @as(VecSF, @splat(shader.scale_mul));
         const v_add = @as(VecSF, @splat(shader.scale_add));
         const v_final = v_eval * v_mul + v_add;
@@ -731,16 +797,19 @@ pub inline fn fillFuncPerspSIMD(
         .para => {},
     }
 
-    const normal_vecs = calcNormalLaneVecs(
-        N,
-        shader.elem_normals != null,
-        shader_buf,
-        v_weights,
-    );
+    const normal_vecs = if (shader.builtin == .speckle)
+        [3]VecSF{ @splat(0.0), @splat(0.0), @splat(1.0) }
+    else
+        calcNormalLaneVecs(
+            N,
+            shader.elem_normals != null,
+            shader_buf,
+            v_weights,
+        );
 
     const px_stride = spx_image_scratch.cols_num;
     const scratch_idx = ctx_shade.scratch_idx;
-    const coord = comm.FuncCoordSIMD{
+    const coord = FuncCoordSIMD{
         .coord_0 = v_coord_0,
         .coord_1 = v_coord_1,
         .normal_x = normal_vecs[0],
@@ -750,7 +819,7 @@ pub inline fn fillFuncPerspSIMD(
     const params = shader.params;
 
     if (comptime C == 1) {
-        const v_eval = evalFuncShaderGreyNormSIMD(shader.builtin, coord, params);
+        const v_eval = evalFuncShaderGreyPreparedSIMD(shader, coord, v_mask_active);
         const v_mul = @as(VecSF, @splat(shader.scale_mul));
         const v_add = @as(VecSF, @splat(shader.scale_add));
         const v_final = v_eval * v_mul + v_add;
@@ -783,5 +852,64 @@ pub inline fn fillFuncPerspSIMD(
             v_mask_active,
             v_final,
         );
+    }
+}
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
+test "prepared scalar and SIMD speckles apply output scaling once" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const tol: F = if (F == f32) 1e-5 else 1e-12;
+    const params: comm.FuncShaderParams = .{
+        .output_scale = 1.75,
+        .output_offset = -0.125,
+        .settings = .{ .speckle = .{
+            .cells_per_uv = .{ 3.0, 2.0 },
+            .radius_mean = 0.25,
+            .foreground = 0.2,
+            .background = 0.8,
+        } },
+    };
+    const resources = try speckle.generateResources(
+        arena.allocator(),
+        params.settings.speckle,
+    );
+    const coord: scal.FuncCoord = .{
+        .coord_0 = 0.25,
+        .coord_1 = 0.625,
+        .normal_x = 0.0,
+        .normal_y = 0.0,
+        .normal_z = 1.0,
+    };
+    for ([_]speckle.Resources{ .{}, resources }) |prepared| {
+        const shader: comm.FuncPrepared = .{
+            .elem_uvs = null,
+            .speckle_resources = prepared,
+            .builtin = .speckle,
+            .params = params,
+        };
+        const raw = speckle.sampleScal(
+            coord.coord_0,
+            coord.coord_1,
+            params.settings.speckle,
+            &shader.speckle_resources,
+        );
+        const expected = raw * params.output_scale + params.output_offset;
+        try std.testing.expectApproxEqAbs(
+            expected,
+            scal.evalFuncShaderGreyPreparedScal(&shader, coord),
+            tol,
+        );
+        const actual: [S]F = evalFuncShaderGreyPreparedSIMD(&shader, .{
+            .coord_0 = @splat(coord.coord_0),
+            .coord_1 = @splat(coord.coord_1),
+            .normal_x = @splat(coord.normal_x),
+            .normal_y = @splat(coord.normal_y),
+            .normal_z = @splat(coord.normal_z),
+        }, @splat(true));
+        for (actual) |value| try std.testing.expectApproxEqAbs(expected, value, tol);
     }
 }

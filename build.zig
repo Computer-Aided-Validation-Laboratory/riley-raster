@@ -1,4 +1,5 @@
 const std = @import("std");
+const speckleconfig = @import("src/riley/zig/speckleconfig.zig");
 
 const riley_version = std.SemanticVersion{
     .major = 2026,
@@ -18,36 +19,78 @@ const TestEntry = struct {
     source_path: []const u8,
 };
 
+const SpeckleConfig = struct {
+    neighbor_count: u8 = speckleconfig.default_neighbor_count,
+    evaluator: []const u8,
+    shape: []const u8,
+};
+
+const BuildOptions = struct {
+    precision: []const u8,
+    simd: []const u8,
+    newton_solver: []const u8,
+    simd_vector_width: u32,
+    speckle_neighbor_count: u8,
+    speckle_evaluator: []const u8,
+    speckle_shape: []const u8,
+    speckle_mask_samples_per_cell: u8,
+
+    fn withSpeckleConfig(self: BuildOptions, config: SpeckleConfig) BuildOptions {
+        var result = self;
+        result.speckle_neighbor_count = config.neighbor_count;
+        result.speckle_evaluator = config.evaluator;
+        result.speckle_shape = config.shape;
+        return result;
+    }
+};
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const precision = b.option(
+    var options: BuildOptions = undefined;
+    options.precision = b.option(
         []const u8,
         "precision",
         "Floating point precision: f64 or f32",
     ) orelse "f64";
-    const simd = b.option([]const u8, "simd", "SIMD mode: on or off") orelse "on";
-    const newton_solver = b.option(
+    options.simd = b.option([]const u8, "simd", "SIMD mode: on or off") orelse "on";
+    options.newton_solver = b.option(
         []const u8,
         "newton-solver",
         "Newton solver mode: fast or robust",
     ) orelse "fast";
-    const simd_vector_width = b.option(
+    options.simd_vector_width = b.option(
         u32,
         "simd-vector-width",
         "SIMD vector width (0 to use default for precision)",
     ) orelse 0;
-    validatePrecision(precision);
-    validateSimd(simd);
-    validateNewtonSolver(newton_solver);
+    options.speckle_neighbor_count = b.option(
+        u8,
+        "speckle-neighbor-count",
+        "Procedural speckle candidate cell count: 9, 4, or 1",
+    ) orelse speckleconfig.default_neighbor_count;
+    options.speckle_evaluator = b.option(
+        []const u8,
+        "speckle-evaluator",
+        "Procedural speckle evaluator: cell-hash, list-naive, list-indexed, classified-indexed, direct-fixed, mask-1bit, or mask-u8",
+    ) orelse speckleconfig.default_evaluator;
+    options.speckle_shape = b.option(
+        []const u8,
+        "speckle-shape",
+        "Procedural speckle shape: disk, gaussian, or perlin",
+    ) orelse speckleconfig.default_shape;
+    options.speckle_mask_samples_per_cell = b.option(
+        u8,
+        "speckle-mask-samples-per-cell",
+        "Speckle mask/classification resolution per cell: 8, 12, or 16",
+    ) orelse speckleconfig.default_mask_samples_per_cell;
+    validatePrecision(options.precision);
+    validateSimd(options.simd);
+    validateNewtonSolver(options.newton_solver);
+    // Each compiled artifact checks compatibility after applying its configuration overrides.
+    validateSpeckleOptions(options);
 
-    const build_options_module = createBuildOptionsModule(
-        b,
-        precision,
-        simd,
-        newton_solver,
-        simd_vector_width,
-    );
+    const build_options_module = createBuildOptionsModule(b, options);
     const shared_lib = addRileySharedLibrary(
         b,
         target,
@@ -81,18 +124,84 @@ pub fn build(b: *std.Build) void {
             .description = "Run the focused analytic verification suite",
             .source_path = "src/test_verif.zig",
         },
+        .{
+            .step_name = "test-procedural-speckles",
+            .description = "Run the procedural speckle behavior tests",
+            .source_path = "src/testproceduralspeckles.zig",
+        },
     };
 
     for (tests) |entry| {
         const test_step = b.step(entry.step_name, entry.description);
+        const test_run = addTestRunStep(b, .ReleaseSafe, entry, options);
+        test_step.dependOn(&test_run.step);
+    }
+
+    const speckle_configs = [_]SpeckleConfig{
+        .{ .evaluator = "cell-hash", .shape = "gaussian" },
+        .{ .evaluator = "list-naive", .shape = "gaussian" },
+        .{ .evaluator = "list-indexed", .shape = "gaussian" },
+        .{ .evaluator = "classified-indexed", .shape = "disk" },
+        .{ .evaluator = "direct-fixed", .shape = "disk", .neighbor_count = 1 },
+        .{ .evaluator = "mask-1bit", .shape = "disk" },
+        .{ .evaluator = "mask-u8", .shape = "gaussian" },
+        .{ .evaluator = "mask-u8", .shape = "perlin" },
+    };
+    const speckle_configs_step = b.step(
+        "test-speckle-configs",
+        "Run procedural speckle production resource tests across retained configurations",
+    );
+    for (speckle_configs) |config| {
+        const entry = TestEntry{
+            .step_name = b.fmt(
+                "test-speckle-config-{s}-{s}",
+                .{ config.evaluator, config.shape },
+            ),
+            .description = "Run one procedural speckle configuration test",
+            .source_path = "src/testproceduralspeckles.zig",
+        };
         const test_run = addTestRunStep(
             b,
             .ReleaseSafe,
             entry,
-            precision,
-            simd,
-            newton_solver,
-            simd_vector_width,
+            options.withSpeckleConfig(config),
+        );
+        speckle_configs_step.dependOn(&test_run.step);
+    }
+
+    const mask_test_entry = TestEntry{
+        .step_name = "test-speckle-mask-root",
+        .description = "Run direct speckle mask tests",
+        .source_path = "src/testproceduralmasks.zig",
+    };
+    const mask_tests = [_]struct {
+        step_name: []const u8,
+        description: []const u8,
+        config: SpeckleConfig,
+    }{
+        .{
+            .step_name = "test-speckle-mask",
+            .description = "Run focused 1-bit speckle mask tests",
+            .config = .{ .evaluator = "mask-1bit", .shape = "disk" },
+        },
+        .{
+            .step_name = "test-speckle-mask-u8",
+            .description = "Run focused Gaussian u8 speckle mask tests",
+            .config = .{ .evaluator = "mask-u8", .shape = "gaussian" },
+        },
+        .{
+            .step_name = "test-speckle-mask-perlin",
+            .description = "Run focused Perlin u8 speckle mask tests",
+            .config = .{ .evaluator = "mask-u8", .shape = "perlin" },
+        },
+    };
+    for (mask_tests) |mask_test| {
+        const test_step = b.step(mask_test.step_name, mask_test.description);
+        const test_run = addTestRunStep(
+            b,
+            .ReleaseSafe,
+            mask_test_entry,
+            options.withSpeckleConfig(mask_test.config),
         );
         test_step.dependOn(&test_run.step);
     }
@@ -107,6 +216,16 @@ pub fn build(b: *std.Build) void {
             .step_name = "demo1-sphere200",
             .description = "Run the sphere200 demo",
             .source_path = "src/demo1_sphere200.zig",
+        },
+        .{
+            .step_name = "demo-procedural-sphere200",
+            .description = "Run the procedural sphere200 comparison demo",
+            .source_path = "src/demoproceduralsphere200.zig",
+        },
+        .{
+            .step_name = "demo-procedural-rabbit",
+            .description = "Run the procedural rabbit demo",
+            .source_path = "src/demoproceduralrabbit.zig",
         },
         .{
             .step_name = "demo2-psf",
@@ -142,6 +261,11 @@ pub fn build(b: *std.Build) void {
             .step_name = "demo9-feature-zoo",
             .description = "Run the complete feature-zoo demo",
             .source_path = "src/demo9_feature_zoo.zig",
+        },
+        .{
+            .step_name = "demo-procedural-speckles",
+            .description = "Run the procedural speckle prototype demo",
+            .source_path = "src/demoproceduralspeckles.zig",
         },
     };
 
@@ -280,9 +404,7 @@ pub fn build(b: *std.Build) void {
             optimize,
             build_options_module,
             entry,
-            precision,
-            simd,
-            simd_vector_width,
+            options,
         );
         install_step.dependOn(&install_artifact.step);
         bench_bins_step.dependOn(&install_artifact.step);
@@ -340,10 +462,7 @@ fn addTestRunStep(
     b: *std.Build,
     optimize: std.builtin.OptimizeMode,
     entry: TestEntry,
-    precision: []const u8,
-    simd: []const u8,
-    newton_solver: []const u8,
-    simd_vector_width: u32,
+    options: BuildOptions,
 ) *std.Build.Step.Run {
     const run_step = b.addSystemCommand(&.{
         "sh",
@@ -355,8 +474,12 @@ fn addTestRunStep(
         \\simd="$4"
         \\newton_solver="$5"
         \\simd_vector_width="$6"
-        \\zigexe="$7"
-        \\opt="$8"
+        \\speckle_neighbor_count="$7"
+        \\speckle_evaluator="$8"
+        \\speckle_shape="$9"
+        \\speckle_mask_samples_per_cell="${10}"
+        \\zigexe="${11}"
+        \\opt="${12}"
         \\cache_root=".zig-cache/riley-test"
         \\mkdir -p "$cache_root"
         \\src_hash="$(
@@ -366,8 +489,10 @@ fn addTestRunStep(
         \\    sha256sum |
         \\    cut -d' ' -f1
         \\)"
-        \\tree_dir="${cache_root}/${step_name}_${precision}_${simd}_"
-        \\tree_dir="${tree_dir}${newton_solver}_${opt}_${src_hash}"
+        \\tree_dir="${cache_root}/${step_name}_${precision}_${simd}_${newton_solver}"
+        \\tree_dir="${tree_dir}_${simd_vector_width}_${speckle_neighbor_count}"
+        \\tree_dir="${tree_dir}_${speckle_evaluator}_${speckle_shape}"
+        \\tree_dir="${tree_dir}_${speckle_mask_samples_per_cell}_${opt}_${src_hash}"
         \\if [ ! -d "$tree_dir" ]; then
         \\    lock_dir="${tree_dir}.lock"
         \\    while ! mkdir "$lock_dir" 2>/dev/null; do
@@ -380,19 +505,23 @@ fn addTestRunStep(
         \\    if [ ! -d "$tree_dir" ]; then
         \\        mkdir -p "$tree_dir"
         \\        cp -a src "$tree_dir/src"
-        \\        src_file="$tree_dir/$src"
-        \\        src_orig="${src_file}.orig"
-        \\        mv "$src_file" "$src_orig"
+        \\        override_file="$tree_dir/src/riley/zig/buildconfig_override.zig"
         \\        {
-        \\            printf 'pub const build_options = struct {\n'
-        \\            printf '    pub const precision = "%s";\n' "$precision"
-        \\            printf '    pub const simd = "%s";\n' "$simd"
-        \\            printf '    pub const newton_solver = "%s";\n' "$newton_solver"
-        \\            printf '    pub const simd_vector_width: comptime_int = '
-        \\            printf '%s;\n' "$simd_vector_width"
-        \\            printf '};\n\n'
-        \\            cat "$src_orig"
-        \\        } > "$src_file"
+        \\            printf 'pub const enabled = true;\n'
+        \\            printf 'pub const precision = "%s";\n' "$precision"
+        \\            printf 'pub const simd = "%s";\n' "$simd"
+        \\            printf 'pub const newton_solver = "%s";\n' "$newton_solver"
+        \\            printf 'pub const simd_vector_width: comptime_int = %s;\n' "$simd_vector_width"
+        \\            printf 'pub const speckle_neighbor_count: comptime_int = %s;\n' "$speckle_neighbor_count"
+        \\            printf 'pub const speckle_evaluator = "%s";\n' "$speckle_evaluator"
+        \\            printf 'pub const speckle_shape = "%s";\n' "$speckle_shape"
+        \\            printf 'pub const speckle_mask_samples_per_cell: comptime_int = %s;\n' "$speckle_mask_samples_per_cell"
+        \\        } > "$override_file"
+        \\        expected_config_file="$tree_dir/src/tests/expected_speckle_config.zig"
+        \\        {
+        \\            printf 'pub const evaluator = "%s";\n' "$speckle_evaluator"
+        \\            printf 'pub const shape = "%s";\n' "$speckle_shape"
+        \\        } > "$expected_config_file"
         \\    fi
         \\fi
         \\"$zigexe" test -lc -O "$opt" "$tree_dir/$src"
@@ -400,10 +529,14 @@ fn addTestRunStep(
         "--",
         entry.step_name,
         entry.source_path,
-        precision,
-        simd,
-        newton_solver,
-        b.fmt("{d}", .{simd_vector_width}),
+        options.precision,
+        options.simd,
+        options.newton_solver,
+        b.fmt("{d}", .{options.simd_vector_width}),
+        b.fmt("{d}", .{options.speckle_neighbor_count}),
+        options.speckle_evaluator,
+        options.speckle_shape,
+        b.fmt("{d}", .{options.speckle_mask_samples_per_cell}),
         b.graph.zig_exe,
         @tagName(optimize),
     });
@@ -429,7 +562,9 @@ fn addRunStep(
             .executable,
         ),
     });
-    return b.addRunArtifact(executable);
+    const run_artifact = b.addRunArtifact(executable);
+    if (b.args) |args| run_artifact.addArgs(args);
+    return run_artifact;
 }
 
 fn addBenchInstallStep(
@@ -438,17 +573,13 @@ fn addBenchInstallStep(
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
     entry: RunEntry,
-    precision: []const u8,
-    simd: []const u8,
-    simd_vector_width: u32,
+    options: BuildOptions,
 ) *std.Build.Step.InstallArtifact {
     const basename = std.fs.path.basename(entry.source_path);
     const binary_name = benchmarkBinaryName(
         b,
         basename[0 .. basename.len - ".zig".len],
-        precision,
-        simd,
-        simd_vector_width,
+        options,
     );
     const executable = b.addExecutable(.{
         .name = binary_name,
@@ -467,18 +598,20 @@ fn addBenchInstallStep(
     });
 }
 
-fn createBuildOptionsModule(
-    b: *std.Build,
-    precision: []const u8,
-    simd: []const u8,
-    newton_solver: []const u8,
-    simd_vector_width: u32,
-) *std.Build.Module {
+fn createBuildOptionsModule(b: *std.Build, build_options: BuildOptions) *std.Build.Module {
     const options = b.addOptions();
-    options.addOption([]const u8, "precision", precision);
-    options.addOption([]const u8, "simd", simd);
-    options.addOption([]const u8, "newton_solver", newton_solver);
-    options.addOption(u32, "simd_vector_width", simd_vector_width);
+    options.addOption([]const u8, "precision", build_options.precision);
+    options.addOption([]const u8, "simd", build_options.simd);
+    options.addOption([]const u8, "newton_solver", build_options.newton_solver);
+    options.addOption(u32, "simd_vector_width", build_options.simd_vector_width);
+    options.addOption(u8, "speckle_neighbor_count", build_options.speckle_neighbor_count);
+    options.addOption([]const u8, "speckle_evaluator", build_options.speckle_evaluator);
+    options.addOption([]const u8, "speckle_shape", build_options.speckle_shape);
+    options.addOption(
+        u8,
+        "speckle_mask_samples_per_cell",
+        build_options.speckle_mask_samples_per_cell,
+    );
     return options.createModule();
 }
 
@@ -491,11 +624,7 @@ fn createRootModule(
     link_libc: bool,
     wrapper_kind: WrapperKind,
 ) *std.Build.Module {
-    const wrapper_text = wrapperSourceText(
-        b,
-        wrapper_kind,
-        source_path,
-    );
+    const wrapper_text = wrapperSourceText(wrapper_kind);
     const wrapper_files = b.addWriteFiles();
     const wrapper_source = wrapper_files.add(
         b.fmt("{s}.wrapper.zig", .{source_path}),
@@ -508,8 +637,6 @@ fn createRootModule(
         build_options_module,
         source_path,
         link_libc,
-        wrapper_kind,
-        wrapper_text,
     );
     return b.createModule(.{
         .root_source_file = wrapper_source,
@@ -522,15 +649,10 @@ fn createRootModule(
 
 const WrapperKind = enum {
     executable,
-    test_module,
     library,
 };
 
-fn wrapperSourceText(
-    b: *std.Build,
-    wrapper_kind: WrapperKind,
-    source_path: []const u8,
-) []const u8 {
+fn wrapperSourceText(wrapper_kind: WrapperKind) []const u8 {
     return switch (wrapper_kind) {
         .executable =>
         \\const entry_source = @import("entry_source");
@@ -541,22 +663,7 @@ fn wrapperSourceText(
         \\}
         \\
         ,
-        .test_module => blk: {
-            const source_text = std.Io.Dir.cwd().readFileAlloc(
-                b.graph.io,
-                source_path,
-                b.allocator,
-                .limited(16 * 1024 * 1024),
-            ) catch @panic("Failed to read test source file.");
-            break :blk std.fmt.allocPrint(
-                b.allocator,
-                \\pub const build_options = @import("build_options");
-                \\
-                \\{s}
-            ,
-                .{source_text},
-            ) catch @panic("Failed to write test wrapper source.");
-        },
+
         .library =>
         \\const entry_source = @import("entry_source");
         \\pub const build_options = @import("build_options");
@@ -575,8 +682,6 @@ fn buildWrapperImports(
     build_options_module: *std.Build.Module,
     source_path: []const u8,
     link_libc: bool,
-    wrapper_kind: WrapperKind,
-    _: []const u8,
 ) []const std.Build.Module.Import {
     var imports: std.ArrayList(std.Build.Module.Import) = .empty;
     imports.append(b.allocator, .{
@@ -584,19 +689,29 @@ fn buildWrapperImports(
         .module = build_options_module,
     }) catch @panic("OOM building imports.");
 
-    if (wrapper_kind != .test_module) {
-        imports.append(b.allocator, .{
-            .name = "entry_source",
-            .module = b.createModule(.{
-                .root_source_file = b.path(source_path),
-                .target = target,
-                .optimize = optimize,
-                .link_libc = link_libc,
-            }),
-        }) catch @panic("OOM building entry source import.");
-        return imports.items;
-    }
+    imports.append(b.allocator, .{
+        .name = "entry_source",
+        .module = b.createModule(.{
+            .root_source_file = b.path(source_path),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = link_libc,
+        }),
+    }) catch @panic("OOM building entry source import.");
     return imports.items;
+}
+
+fn validateSpeckleOptions(options: BuildOptions) void {
+    if (!speckleconfig.isValidNeighborCount(options.speckle_neighbor_count)) {
+        @panic("Supported -Dspeckle-neighbor-count values are 9, 4, and 1.");
+    }
+    _ = speckleconfig.parseEvaluator(options.speckle_evaluator) orelse
+        @panic("Supported -Dspeckle-evaluator values are cell-hash, list-naive, list-indexed, classified-indexed, direct-fixed, mask-1bit, and mask-u8.");
+    _ = speckleconfig.parseShape(options.speckle_shape) orelse
+        @panic("Supported -Dspeckle-shape values are disk, gaussian, and perlin.");
+    if (!speckleconfig.isValidMaskSamplesPerCell(options.speckle_mask_samples_per_cell)) {
+        @panic("Supported -Dspeckle-mask-samples-per-cell values are 8, 12, and 16.");
+    }
 }
 
 fn validatePrecision(precision: []const u8) void {
@@ -629,26 +744,24 @@ fn validateNewtonSolver(newton_solver: []const u8) void {
 fn benchmarkBinaryName(
     b: *std.Build,
     base_name: []const u8,
-    precision: []const u8,
-    simd: []const u8,
-    simd_vector_width: u32,
+    options: BuildOptions,
 ) []const u8 {
-    const simd_tag = if (std.mem.eql(u8, simd, "on")) "simd" else "scalar";
-    const default_width: u32 = if (std.mem.eql(u8, precision, "f32")) 16 else 8;
+    const simd_tag = if (std.mem.eql(u8, options.simd, "on")) "simd" else "scalar";
+    const default_width: u32 = if (std.mem.eql(u8, options.precision, "f32")) 16 else 8;
 
-    if (simd_vector_width == 0 or simd_vector_width == default_width) {
+    if (options.simd_vector_width == 0 or options.simd_vector_width == default_width) {
         return b.fmt(
             "{s}_{s}_{s}",
-            .{ base_name, precision, simd_tag },
+            .{ base_name, options.precision, simd_tag },
         );
     } else {
         return b.fmt(
             "{s}_{s}_{s}_v{d}",
             .{
                 base_name,
-                precision,
+                options.precision,
                 simd_tag,
-                simd_vector_width,
+                options.simd_vector_width,
             },
         );
     }

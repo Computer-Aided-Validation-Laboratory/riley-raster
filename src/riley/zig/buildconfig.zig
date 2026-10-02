@@ -8,17 +8,15 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const root = @import("root");
+const buildconfig_override = @import("buildconfig_override.zig");
+const speckleconfig = @import("speckleconfig.zig");
 
-const build_options = if (@hasDecl(root, "build_options"))
+const build_options = if (buildconfig_override.enabled)
+    buildconfig_override
+else if (@hasDecl(root, "build_options"))
     root.build_options
 else
-    struct {
-        pub const precision = "f64";
-        pub const simd = "on";
-        pub const newton_solver = "fast";
-        pub const simd_vec_width: comptime_int = 0;
-        pub const simd_vector_width: comptime_int = 0;
-    };
+    buildconfig_override;
 
 pub const comptime_eval_branch_quota: comptime_int = 50000;
 
@@ -48,6 +46,19 @@ pub const Scalar = Scal;
 pub const default_simd = parseSimd(build_options.simd);
 pub const default_newton_solver_mode =
     parseNewtonSolverMode(build_options.newton_solver);
+pub const speckle_neighbor_count = buildOptionsSpeckleNeighborCount();
+pub const speckle_mask_samples_per_cell = buildOptionsSpeckleMaskSamplesPerCell();
+pub const speckle_evaluator_name = buildOptionsSpeckleEvaluator();
+pub const speckle_evaluator = parseSpeckleEvaluator(speckle_evaluator_name);
+pub const speckle_shape = parseSpeckleShape(buildOptionsSpeckleShape());
+
+comptime {
+    speckleconfig.validateCompatibility(
+        speckle_evaluator,
+        speckle_shape,
+        speckle_neighbor_count,
+    ) catch |err| @compileError(speckleconfig.describeCompatibilityError(err));
+}
 
 pub const config = configForPrecision(F);
 
@@ -68,6 +79,9 @@ pub const SimdTexInterpMode = enum {
     inner,
     over_pixels,
 };
+
+pub const SpeckleShape = speckleconfig.Shape;
+pub const SpeckleEvaluator = speckleconfig.Evaluator;
 
 pub const NewtonSolverMode = enum {
     fast,
@@ -135,6 +149,51 @@ fn parsePrecision(comptime precision: []const u8) type {
         return f64;
     }
     @compileError("build_options.precision must be \"f32\" or \"f64\".");
+}
+
+fn buildOptionsSpeckleShape() []const u8 {
+    if (@hasDecl(build_options, "speckle_shape")) return build_options.speckle_shape;
+    return speckleconfig.default_shape;
+}
+
+fn parseSpeckleShape(comptime shape: []const u8) SpeckleShape {
+    return speckleconfig.parseShape(shape) orelse
+        @compileError("build_options.speckle_shape must be disk, gaussian, or perlin.");
+}
+
+fn buildOptionsSpeckleEvaluator() []const u8 {
+    if (@hasDecl(build_options, "speckle_evaluator")) {
+        return build_options.speckle_evaluator;
+    }
+    return speckleconfig.default_evaluator;
+}
+
+fn parseSpeckleEvaluator(comptime evaluator: []const u8) SpeckleEvaluator {
+    return speckleconfig.parseEvaluator(evaluator) orelse @compileError(
+        "build_options.speckle_evaluator must be cell-hash, list-naive, list-indexed, classified-indexed, direct-fixed, mask-1bit, or mask-u8.",
+    );
+}
+
+fn buildOptionsSpeckleNeighborCount() comptime_int {
+    const count = if (@hasDecl(build_options, "speckle_neighbor_count"))
+        build_options.speckle_neighbor_count
+    else
+        speckleconfig.default_neighbor_count;
+    if (!speckleconfig.isValidNeighborCount(count)) {
+        @compileError("build_options.speckle_neighbor_count must be 9, 4, or 1.");
+    }
+    return count;
+}
+
+fn buildOptionsSpeckleMaskSamplesPerCell() comptime_int {
+    const samples = if (@hasDecl(build_options, "speckle_mask_samples_per_cell"))
+        build_options.speckle_mask_samples_per_cell
+    else
+        speckleconfig.default_mask_samples_per_cell;
+    if (!speckleconfig.isValidMaskSamplesPerCell(samples)) {
+        @compileError("build_options.speckle_mask_samples_per_cell must be 8, 12, or 16.");
+    }
+    return samples;
 }
 
 fn buildOptionsSimdVecWidth() comptime_int {
