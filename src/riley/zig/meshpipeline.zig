@@ -623,7 +623,7 @@ fn prepMeshFrameWithSensor(
                 chunk_exec,
                 workers_num,
             );
-            return try pipeline.run(timing);
+            return try pipeline.run(outer_alloc, timing);
         },
     };
 }
@@ -720,7 +720,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
     return struct {
         const FrameMeshPipelineType = @This();
 
-        allocator: std.mem.Allocator,
         camera: *const cam.CameraPrepared,
         raster_halo_px: u16,
         ideal_sensor: ?rops.DistortBounds,
@@ -740,7 +739,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         mesh_workspace: MeshFrameWorkspace,
 
         fn init(
-            allocator: std.mem.Allocator,
+            outer_alloc: std.mem.Allocator,
             camera: *const cam.CameraPrepared,
             raster_halo_px: u16,
             ideal_sensor: ?rops.DistortBounds,
@@ -764,7 +763,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
 
             return .{
-                .allocator = allocator,
                 .camera = camera,
                 .raster_halo_px = raster_halo_px,
                 .ideal_sensor = ideal_sensor,
@@ -786,7 +784,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 ),
                 .vis_chunk_size = 1,
                 .mesh_workspace = try initMeshFrameWorkspace(
-                    allocator,
+                    outer_alloc,
                     mesh_static,
                 ),
             };
@@ -794,6 +792,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         fn run(
             self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
             timing: *GeomTimes,
         ) !MeshFrame {
             const time_start_coords = Timestamp.now(self.chunk_exec.io, .awake);
@@ -805,16 +804,16 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             ).raw.nanoseconds);
 
             const time_start_cull = Timestamp.now(self.chunk_exec.io, .awake);
-            try self.cullVis(self.allocator);
-            var mesh_prep = try self.gatherVisCoords();
+            try self.cullVis(outer_alloc);
+            var mesh_prep = try self.gatherVisCoords(outer_alloc);
             const time_end_cull = Timestamp.now(self.chunk_exec.io, .awake);
             timing.cull_ops += @intCast(time_start_cull.durationTo(
                 time_end_cull,
             ).raw.nanoseconds);
 
             const time_start_prep = Timestamp.now(self.chunk_exec.io, .awake);
-            try self.prepareRasterHulls(&mesh_prep.coords);
-            try self.prepareShader(&mesh_prep);
+            try self.prepareRasterHulls(outer_alloc, &mesh_prep.coords);
+            try self.prepareShader(outer_alloc, &mesh_prep);
             const time_end_prep = Timestamp.now(self.chunk_exec.io, .awake);
             timing.prep_hulls_shaders += @intCast(time_start_prep.durationTo(
                 time_end_prep,
@@ -1226,11 +1225,12 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         fn gatherVisElemCoordsFromNodes(
             self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
             coords_nodes: *const meshio.Coords,
         ) !ndarray.NDArray(F) {
             const N = comptime MT.getNodesNum();
             var elem_coords = try ndarray.NDArray(F).initFlat(
-                self.allocator,
+                outer_alloc,
                 &[_]usize{ self.mesh_workspace.elems_in_image, 3, N },
             );
 
@@ -1252,8 +1252,12 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             return elem_coords;
         }
 
-        fn gatherVisCoords(self: *FrameMeshPipelineType) !MeshPrepared {
+        fn gatherVisCoords(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+        ) !MeshPrepared {
             const elem_coords = try self.gatherVisElemCoordsFromNodes(
+                outer_alloc,
                 &self.mesh_workspace.coords_nodes,
             );
 
@@ -1293,6 +1297,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         fn prepareRasterHulls(
             self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
             elem_coords: *const ndarray.NDArray(F),
         ) !void {
             if (MT == .tri3 or MT == .tri3opt) {
@@ -1307,7 +1312,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             const NH = comptime MT.getNumHullPoints();
             self.mesh_workspace.raster_hull = try ndarray.NDArray(F).initFlat(
-                self.allocator,
+                outer_alloc,
                 &[_]usize{ self.mesh_workspace.elems_in_image, 2, NH },
             );
 
@@ -1326,15 +1331,23 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
         }
 
-        fn prepareShader(self: *FrameMeshPipelineType, mesh_prep: *MeshPrepared) !void {
+        fn prepareShader(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+            mesh_prep: *MeshPrepared,
+        ) !void {
             switch (self.mesh_static.shader) {
                 .nodal => |nodal_static| {
-                    mesh_prep.shader = try self.prepareNodalShader(nodal_static);
+                    mesh_prep.shader = try self.prepareNodalShader(
+                        outer_alloc,
+                        nodal_static,
+                    );
                 },
                 .tex_u8 => |tex_static| {
                     mesh_prep.shader = try prepareTexShader(
                         u8,
                         1,
+                        outer_alloc,
                         self,
                         tex_static,
                     );
@@ -1343,17 +1356,25 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     mesh_prep.shader = try prepareTexShader(
                         u16,
                         1,
+                        outer_alloc,
                         self,
                         tex_static,
                     );
                 },
                 .tex_f => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(F, 1, self, tex_static);
+                    mesh_prep.shader = try prepareTexShader(
+                        F,
+                        1,
+                        outer_alloc,
+                        self,
+                        tex_static,
+                    );
                 },
                 .tex_rgb_u8 => |tex_static| {
                     mesh_prep.shader = try prepareTexShader(
                         u8,
                         3,
+                        outer_alloc,
                         self,
                         tex_static,
                     );
@@ -1362,18 +1383,35 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     mesh_prep.shader = try prepareTexShader(
                         u16,
                         3,
+                        outer_alloc,
                         self,
                         tex_static,
                     );
                 },
                 .tex_rgb_f => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(F, 3, self, tex_static);
+                    mesh_prep.shader = try prepareTexShader(
+                        F,
+                        3,
+                        outer_alloc,
+                        self,
+                        tex_static,
+                    );
                 },
                 .func => |func_static| {
-                    mesh_prep.shader = try prepareFuncShader(1, self, func_static);
+                    mesh_prep.shader = try prepareFuncShader(
+                        1,
+                        outer_alloc,
+                        self,
+                        func_static,
+                    );
                 },
                 .func_rgb => |func_static| {
-                    mesh_prep.shader = try prepareFuncShader(3, self, func_static);
+                    mesh_prep.shader = try prepareFuncShader(
+                        3,
+                        outer_alloc,
+                        self,
+                        func_static,
+                    );
                 },
             }
         }
@@ -1414,11 +1452,12 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         fn prepareNodalShader(
             self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
             nodal_static: shaderops.NodalStatic,
         ) !shaderops.ShaderPrepared {
             const N = comptime MT.getNodesNum();
             var elem_field = try ndarray.NDArray(F).initFlat(
-                self.allocator,
+                outer_alloc,
                 &[_]usize{
                     self.mesh_workspace.elems_in_image,
                     @as(usize, nodal_static.field.getFieldsN()),
@@ -1455,7 +1494,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .scale_mul = factors.mul,
                 .scale_add = factors.add,
                 .normal_type = nodal_static.normal_type,
-                .elem_normals = try self.prepVisNormals(nodal_static.normal_type),
+                .elem_normals = try self.prepVisNormals(
+                    outer_alloc,
+                    nodal_static.normal_type,
+                ),
             } };
         }
 
@@ -1489,6 +1531,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         fn prepareTexShader(
             comptime T: type,
             comptime C: usize,
+            outer_alloc: std.mem.Allocator,
             self: *FrameMeshPipelineType,
             tex_static: shaderops.TexStatic(T, C),
         ) !shaderops.ShaderPrepared {
@@ -1505,7 +1548,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
 
             var elem_uvs = try ndarray.NDArray(F).initFlat(
-                self.allocator,
+                outer_alloc,
                 &[_]usize{
                     self.mesh_workspace.elems_in_image,
                     2,
@@ -1527,7 +1570,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 self.vis_chunk_size,
             );
 
-            const elem_normals = try self.prepVisNormals(tex_static.normal_type);
+            const elem_normals = try self.prepVisNormals(
+                outer_alloc,
+                tex_static.normal_type,
+            );
             if (comptime T == u8 and C == 1) {
                 return .{ .tex_u8 = .{
                     .elem_uvs = elem_uvs,
@@ -1605,6 +1651,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         fn prepareFuncShader(
             comptime C: usize,
+            outer_alloc: std.mem.Allocator,
             self: *FrameMeshPipelineType,
             func_static: shaderops.FuncStatic,
         ) !shaderops.ShaderPrepared {
@@ -1618,7 +1665,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 const elem_uvs_full = func_static.elem_uvs orelse
                     return error.MissingUVsForFuncShader;
                 var elem_uvs = try ndarray.NDArray(F).initFlat(
-                    self.allocator,
+                    outer_alloc,
                     &[_]usize{
                         self.mesh_workspace.elems_in_image,
                         2,
@@ -1643,18 +1690,25 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             } else null;
 
             const elem_world_ref = if (func_static.coord_mode == .world_reference)
-                try self.gatherVisElemCoordsFromNodes(&self.mesh_static.coords_orig)
+                try self.gatherVisElemCoordsFromNodes(
+                    outer_alloc,
+                    &self.mesh_static.coords_orig,
+                )
             else
                 null;
             const elem_world_def = if (func_static.coord_mode == .world_deformed)
                 try self.gatherVisElemCoordsFromNodes(
+                    outer_alloc,
                     &(self.mesh_workspace.coords_nodes_def_world orelse
                         return error.MissingWorldDeformedCoords),
                 )
             else
                 null;
 
-            const elem_normals = try self.prepVisNormals(func_static.normal_type);
+            const elem_normals = try self.prepVisNormals(
+                outer_alloc,
+                func_static.normal_type,
+            );
             if (comptime C == 1) {
                 return .{ .func = .{
                     .elem_uvs = elem_uvs,
@@ -1696,6 +1750,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         fn prepVisNormals(
             self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
             normal_type: shaderops.NormalType,
         ) !?ndarray.MappedNDArray(F) {
             if (normal_type == .none) {
@@ -1704,7 +1759,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             return try normals.prepVisNormalsThreaded(
                 MT,
-                self.allocator,
+                outer_alloc,
                 &self.mesh_workspace.coords_nodes,
                 &self.mesh_static.connect,
                 self.mesh_workspace.vis_orig_elem_inds,

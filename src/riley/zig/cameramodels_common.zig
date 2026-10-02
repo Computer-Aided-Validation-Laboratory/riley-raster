@@ -580,6 +580,14 @@ pub const PreparedPSF = struct {
     weights_y: []F = &.{},
     weights_2d: []F = &.{},
 
+    pub fn init(
+        allocator: std.mem.Allocator,
+        psf: PointSpreadFunc,
+        sub_sample: u32,
+    ) !PreparedPSF {
+        return preparePSF(allocator, psf, sub_sample);
+    }
+
     pub fn deinit(self: *PreparedPSF, allocator: std.mem.Allocator) void {
         if (self.weights_x.len > 0) allocator.free(self.weights_x);
         if (self.weights_y.len > 0) allocator.free(self.weights_y);
@@ -981,7 +989,10 @@ test "PolynomialMap inverse rejects a singular Jacobian" {
 
 test "PolynomialMap identity and inverse failures are explicit" {
     const identity = PolyMap{};
-    try std.testing.expectEqualDeep(DistortCoords{ .x = 0.3, .y = -0.2 }, identity.ford(0.3, -0.2));
+    try std.testing.expectEqualDeep(
+        DistortCoords{ .x = 0.3, .y = -0.2 },
+        identity.ford(0.3, -0.2),
+    );
     try std.testing.expectEqualDeep(
         DistortCoords{ .x = 0.3, .y = -0.2 },
         try identity.inv(0.3, -0.2),
@@ -1000,7 +1011,10 @@ test "PolynomialMap identity and inverse failures are explicit" {
     try std.testing.expectError(error.NonFiniteDistort, invalid.inv(0.3, -0.2));
     try std.testing.expectError(error.NonFiniteDistort, identity.inv(std.math.inf(F), 0.0));
     try std.testing.expectError(error.NonFiniteDistort, identity.inv(std.math.nan(F), 0.0));
-    try std.testing.expectError(error.NonFiniteDistort, BrownCon.inv(.{}, std.math.inf(F), 0.0));
+    try std.testing.expectError(
+        error.NonFiniteDistort,
+        BrownCon.inv(.{}, std.math.inf(F), 0.0),
+    );
     const brown_ext = try BrownConExt.init(.{});
     try std.testing.expectError(error.NonFiniteDistort, brown_ext.inv(std.math.nan(F), 0.0));
 }
@@ -1039,7 +1053,10 @@ test "polynomial table ordering and checked construction" {
     }
     try std.testing.expectError(error.InvalidPolyDegree, PolyMap.init(0, .coordinate, &.{}));
     try std.testing.expectError(error.InvalidPolyDegree, PolyMap.init(8, .displacement, &.{}));
-    try std.testing.expectError(error.InvalidPolyCoeffCount, PolyMap.init(1, .coordinate, &.{0}));
+    try std.testing.expectError(
+        error.InvalidPolyCoeffCount,
+        PolyMap.init(1, .coordinate, &.{0}),
+    );
     try std.testing.expectError(
         error.InvalidPolyCoeffCount,
         PolyMap.init(1, .coordinate, &([_]F{0} ** 8)),
@@ -1135,8 +1152,16 @@ test "degree seven polynomial matches BC and polynomial BCExt subset" {
                 for ([_]F{ -0.6, 0, 0.2, 0.6 }) |y| {
                     const expected = brown.fordWithJac(x, y);
                     const actual = map.fordWithJac(x, y);
-                    try std.testing.expectApproxEqAbs(expected.coords.x, actual.coords.x, allowed);
-                    try std.testing.expectApproxEqAbs(expected.coords.y, actual.coords.y, allowed);
+                    try std.testing.expectApproxEqAbs(
+                        expected.coords.x,
+                        actual.coords.x,
+                        allowed,
+                    );
+                    try std.testing.expectApproxEqAbs(
+                        expected.coords.y,
+                        actual.coords.y,
+                        allowed,
+                    );
                     for (0..2) |rr| {
                         for (0..2) |cc| {
                             try std.testing.expectApproxEqAbs(

@@ -205,7 +205,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
                 .world_to_cam_mat = world_to_cam_mat,
                 .distort = distort,
                 .psf = input.psf,
-                .prep_psf = try cm.preparePSF(
+                .prep_psf = try cm.PreparedPSF.init(
                     allocator,
                     input.psf,
                     actual_sub_sample,
@@ -702,7 +702,7 @@ test "CameraPrepared.brownConradyExtDistortionApplied" {
 }
 
 test "PreparedPSF gaussian kernels normalize" {
-    var prep = try cm.preparePSF(
+    var prep = try cm.PreparedPSF.init(
         std.testing.allocator,
         .{ .gaussian = .{
             .sigma_px = 0.35,
@@ -724,7 +724,7 @@ test "PreparedPSF gaussian kernels normalize" {
 }
 
 test "PreparedPSF isotropic gaussian separable matches non-separable outer product" {
-    var prepared_sep = try cm.preparePSF(
+    var prepared_sep = try cm.PreparedPSF.init(
         std.testing.allocator,
         .{ .gaussian = .{
             .sigma_px = 0.35,
@@ -735,7 +735,7 @@ test "PreparedPSF isotropic gaussian separable matches non-separable outer produ
     );
     defer prepared_sep.deinit(std.testing.allocator);
 
-    var prepared_nonsep = try cm.preparePSF(
+    var prepared_nonsep = try cm.PreparedPSF.init(
         std.testing.allocator,
         .{ .gaussian = .{
             .sigma_px = 0.35,
