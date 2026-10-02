@@ -9,7 +9,17 @@
 const std = @import("std");
 
 const buildconfig = @import("../riley/zig/buildconfig.zig");
+const camera = @import("../riley/zig/camera.zig");
+const cameraops = @import("../riley/zig/cameraops.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const meshpipeline = @import("../riley/zig/meshpipeline.zig");
+const rastcfg = @import("../riley/zig/rasterconfig.zig");
+const riley = @import("../riley/zig/riley.zig");
+const rotation = @import("../riley/zig/rotation.zig");
+const sceneops = @import("../riley/zig/sceneops.zig");
 const speckleops = @import("../riley/zig/speckleops.zig");
+const uvio = @import("../riley/zig/uvio.zig");
 
 const F = buildconfig.F;
 
@@ -37,6 +47,107 @@ pub const DemoArgs = struct {
     out_dir: []const u8,
     pixels_num: [2]u32,
 };
+
+pub const StaticTri6Scene = struct {
+    coords_path: []const u8,
+    connect_path: []const u8,
+    uvs_path: []const u8,
+    rotation: rotation.Rotation,
+    fov_scale: F,
+    title: []const u8,
+    image_label: []const u8,
+};
+
+/// Run a single-frame tri6 demo, owning its temporary arena and render I/O pool.
+pub fn runStaticTri6Demo(
+    comptime spec: DemoSpec,
+    outer_alloc: std.mem.Allocator,
+    minimal: std.process.Init.Minimal,
+    scene: StaticTri6Scene,
+) !void {
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer arena.deinit();
+    const local_alloc = arena.allocator();
+
+    const args = (try parseDemoArgs(minimal.args.vector, spec)) orelse return;
+    const config = rastcfg.RasterConfig{
+        .save_strategy = .disk,
+        .total_threads = 4,
+        .max_raster_workers_per_job = 4,
+        .image_save_opts = &[_]iio.ImageSaveOpts{
+            .{ .format = .bmp, .bits = 8, .scaling = .auto },
+        },
+        .report = .bench,
+    };
+    var threaded_io = riley.getThreadedIo(local_alloc, minimal, config.total_threads);
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    std.debug.print("{s}\n", .{scene.title});
+    printProceduralConfig(args.params, args.pixels_num, spec);
+
+    const sim_data = try meshio.loadSimData(
+        local_alloc,
+        io,
+        scene.coords_path,
+        scene.connect_path,
+        null,
+        null,
+    );
+    const uvs = try uvio.loadUVMap(local_alloc, io, scene.uvs_path);
+    const mesh_input = meshpipeline.MeshInput{
+        .mesh_type = .tri6,
+        .coords = sim_data.coords,
+        .connect = sim_data.connect,
+        .disp = null,
+        .shader = .{ .func = .{
+            .uvs = uvs.array,
+            .coord_mode = .uv,
+            .builtin = .speckle,
+            .params = .{ .settings = .{ .speckle = args.params } },
+            .bits = 8,
+            .scaling = .auto,
+            .normal_type = .none,
+        } },
+    };
+
+    const pixel_size: [2]F = .{ 5.3e-6, 5.3e-6 };
+    const focal_length: F = 50.0e-3;
+    const camera_input = camera.CameraInput{
+        .pixels_num = args.pixels_num,
+        .pixels_size = pixel_size,
+        .pos_world = cameraops.posFillFrameFromRot(
+            &sim_data.coords,
+            args.pixels_num,
+            pixel_size,
+            focal_length,
+            scene.rotation,
+            scene.fov_scale,
+        ),
+        .rot_world = scene.rotation,
+        .roi_cent_world = sceneops.boundsCenter(&sim_data.coords),
+        .focal_length = focal_length,
+        .sub_sample = 2,
+    };
+    const render_groups = [_]riley.RenderGroupSpec{
+        .{ .io = io, .workers = config.total_threads },
+    };
+    const images = try riley.raster(
+        local_alloc,
+        &render_groups,
+        &[_]camera.CameraInput{camera_input},
+        &[_]meshpipeline.MeshInput{mesh_input},
+        config,
+        args.out_dir,
+    );
+    if (images) |img_const| {
+        var img = img_const;
+        local_alloc.free(img.slice);
+        img.deinit(local_alloc);
+    }
+
+    std.debug.print("{s} image saved under {s}/\n", .{ scene.image_label, args.out_dir });
+}
 
 /// Parse and validate runtime settings before callers load meshes or prepare resources.
 pub fn parseDemoArgs(raw_args: anytype, comptime spec: DemoSpec) !?DemoArgs {
