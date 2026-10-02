@@ -99,9 +99,11 @@ pub const DistortBounds = struct {
             .y_min = @max(self.y_min, other.y_min),
             .y_max = @min(self.y_max, other.y_max),
         };
+
         if (result.x_min > result.x_max or result.y_min > result.y_max) {
             return null;
         }
+
         return result;
     }
 };
