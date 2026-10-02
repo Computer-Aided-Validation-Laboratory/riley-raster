@@ -490,8 +490,7 @@ fn tileScratchSubpxSize(
     ctx_rast: rops.RasterContext,
 ) usize {
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const raster_halo_px = ctx_rast.config.raster_halo_px_override orelse
-        ctx_rast.camera.prep_psf.halo_px;
+    const raster_halo_px = ctx_rast.camera.prep_psf.halo_px;
     const scratch_tile_px: usize =
         @as(usize, @intCast(ctx_rast.tile_size)) +
         2 * @as(usize, raster_halo_px);
@@ -707,14 +706,6 @@ fn fillTileIdealCent(
             subpx_tile_size,
             subpx_scratch.ideal_pix_cent,
         ),
-        .affine_jac => ctx_rast.camera.fillTileIdealCentersAffineJac(
-            tile.scratch_x_px_min,
-            tile.scratch_x_px_max,
-            tile.scratch_y_px_min,
-            tile.scratch_y_px_max,
-            subpx_tile_size,
-            subpx_scratch.ideal_pix_cent,
-        ),
     }
 }
 
@@ -759,7 +750,7 @@ fn rasterTileComm(
     // Report aggregate worker-time for the overlap loop. Camera fill is timed
     // separately and removed below so all three raster phases share one basis.
     const time_elem_start: ?Timestamp =
-        if (comptime report_mode !=  .off)
+        if (comptime report_mode != .off)
             Timestamp.now(io, .awake)
         else
             null;

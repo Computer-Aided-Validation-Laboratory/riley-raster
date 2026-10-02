@@ -18,6 +18,31 @@ from cython.cimports.libc.stdlib import free, malloc
 from cython.cimports.riley.cython import riley as cr
 
 
+class EPolyMode(IntEnum):
+    coordinate = 0
+    displacement = 1
+
+
+@dataclass(slots=True)
+class PolyMap:
+    """Forward normalized-coordinate map with paired coefficients.
+
+    Parameters
+    ----------
+    degree
+        Total degree, from 1 through 7.
+    mode
+        Coordinate output or identity-plus-displacement interpretation.
+    coeffs
+        Shape (term_count, 2), ordered by total degree, descending x exponent.
+        Bindings take an owned contiguous float64 snapshot for each native call.
+    """
+
+    degree: int
+    mode: EPolyMode
+    coeffs: np.ndarray
+
+
 @dataclass(slots=True)
 class Camera:
     pixels_num: tuple[int, int]
@@ -27,30 +52,22 @@ class Camera:
     roi_cent_world: tuple[float, float, float]
     focal_length: float
     sub_sample: int
-    distortion_model: int = 0
-    distortion_k1: float = 0.0
-    distortion_k2: float = 0.0
-    distortion_k3: float = 0.0
-    distortion_k4: float = 0.0
-    distortion_k5: float = 0.0
-    distortion_k6: float = 0.0
-    distortion_p1: float = 0.0
-    distortion_p2: float = 0.0
-    distortion_poly_order: int = 2
-    distortion_poly_has_forward: bool = False
-    distortion_poly_has_inverse: bool = False
-    distortion_poly_forward_u: tuple[float, float, float, float, float, float, float, float, float, float] = (
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    )
-    distortion_poly_forward_v: tuple[float, float, float, float, float, float, float, float, float, float] = (
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    )
-    distortion_poly_inverse_u: tuple[float, float, float, float, float, float, float, float, float, float] = (
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    )
-    distortion_poly_inverse_v: tuple[float, float, float, float, float, float, float, float, float, float] = (
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    )
+    distort_model: int = 0
+    distort_k1: float = 0.0
+    distort_k2: float = 0.0
+    distort_k3: float = 0.0
+    distort_k4: float = 0.0
+    distort_k5: float = 0.0
+    distort_k6: float = 0.0
+    distort_p1: float = 0.0
+    distort_p2: float = 0.0
+    distort_s1: float = 0.0
+    distort_s2: float = 0.0
+    distort_s3: float = 0.0
+    distort_s4: float = 0.0
+    distort_tau_x: float = 0.0
+    distort_tau_y: float = 0.0
+    distort_poly: PolyMap | None = None
     coord_sys: int = 0
     subpixel_center_map: int = 1
     psf_type: int = 0
@@ -83,7 +100,12 @@ class FuncShaderParams:
         (0.5, 0.15, -0.15),
     )
     quadratic_coeffs: tuple[float, float, float, float, float, float] = (
-        0.35, 0.2, 0.15, 0.1, -0.08, 0.06,
+        0.35,
+        0.2,
+        0.15,
+        0.1,
+        -0.08,
+        0.06,
     )
     quadratic_coeffs_rgb: tuple[
         tuple[float, float, float, float, float, float],
@@ -100,7 +122,9 @@ class FuncShaderParams:
     sinusoidal_amplitudes: tuple[float, float] = (0.25, 0.2)
     sinusoidal_bias_rgb: tuple[float, float, float] = (0.5, 0.5, 0.5)
     sinusoidal_amplitudes_rgb: tuple[float, float, float] = (
-        0.25, 0.25, 0.2,
+        0.25,
+        0.25,
+        0.2,
     )
     checker_levels: tuple[float, float] = (0.0, 1.0)
     checker_smooth_frequency: float = 8.0
@@ -173,9 +197,8 @@ class RasterConfig:
     full_stats_save_pixel_occupancy_map: bool = True
     full_stats_save_normals_map: bool = False
     buffer_mode: int = 0
-    output_name_format: str = (
-        "cam{camera}_frame{frame}_field{field}"
-    )
+    output_name_format: str = "cam{camera}_frame{frame}_field{field}"
+    edge_spacing_px: float = 1.0
 
 
 class MeshType(IntEnum):
@@ -241,7 +264,6 @@ class BufferMode(IntEnum):
 class SubPixelCenterMap(IntEnum):
     full_in_mem = 0
     per_tile = 1
-    affine_jac = 2
 
 
 class TextureSample(IntEnum):
@@ -445,9 +467,39 @@ def _make_cvec2_u32(vec_in: tuple[int, int]) -> cr.CVec2U32:
 
 
 @cython.cfunc
-def _make_camera_input(camera: Any) -> cr.CCameraInput:
+def _make_camera_input(camera: Any, keepalive: list[Any]) -> cr.CCameraInput:
     camera_out: cr.CCameraInput
-    idx: cython.Py_ssize_t
+    poly_coeffs: cython.double[::1]
+    camera_out.distort.distort_poly_degree = 0
+    camera_out.distort.distort_poly_mode = 1
+    camera_out.distort.distort_poly_coeffs = cython.NULL
+    camera_out.distort.distort_poly_coeffs_len = 0
+    if int(camera.distort_model) in (3, 4, 5):
+        poly = camera.distort_poly
+        if poly is None:
+            raise ValueError("polynomial camera requires distort_poly")
+        if not isinstance(poly.degree, (int, np.integer)) or isinstance(
+            poly.degree, bool
+        ):
+            raise ValueError("polynomial degree must be an integer")
+        if not 1 <= poly.degree <= 7:
+            raise ValueError("polynomial degree must be between 1 and 7")
+        mode = EPolyMode(poly.mode)
+        count = (poly.degree + 1) * (poly.degree + 2) // 2
+        values = np.asarray(poly.coeffs)
+        if values.shape != (count, 2):
+            raise ValueError("polynomial coefficients require shape (term_count, 2)")
+        if np.iscomplexobj(values):
+            raise ValueError("polynomial coefficients must be real")
+        snapshot = np.array(values, dtype=np.float64, order="C", copy=True).reshape(-1)
+        if not np.isfinite(snapshot).all():
+            raise ValueError("polynomial coefficients must be finite")
+        keepalive.append(snapshot)
+        poly_coeffs = snapshot
+        camera_out.distort.distort_poly_degree = poly.degree
+        camera_out.distort.distort_poly_mode = int(mode)
+        camera_out.distort.distort_poly_coeffs = cython.address(poly_coeffs[0])
+        camera_out.distort.distort_poly_coeffs_len = poly_coeffs.shape[0]
     camera_out.pixels_num = _make_cvec2_u32(camera.pixels_num)
     camera_out.pixels_size = _make_cvec2_f64(camera.pixels_size)
     camera_out.pos_world = _make_cvec3(camera.pos_world)
@@ -455,31 +507,21 @@ def _make_camera_input(camera: Any) -> cr.CCameraInput:
     camera_out.roi_cent_world = _make_cvec3(camera.roi_cent_world)
     camera_out.focal_length = float(camera.focal_length)
     camera_out.sub_sample = int(camera.sub_sample)
-    camera_out.distortion.distortion_model = int(camera.distortion_model)
-    camera_out.distortion.distortion_k1 = float(camera.distortion_k1)
-    camera_out.distortion.distortion_k2 = float(camera.distortion_k2)
-    camera_out.distortion.distortion_k3 = float(camera.distortion_k3)
-    camera_out.distortion.distortion_k4 = float(camera.distortion_k4)
-    camera_out.distortion.distortion_k5 = float(camera.distortion_k5)
-    camera_out.distortion.distortion_k6 = float(camera.distortion_k6)
-    camera_out.distortion.distortion_p1 = float(camera.distortion_p1)
-    camera_out.distortion.distortion_p2 = float(camera.distortion_p2)
-    camera_out.distortion.distortion_poly_order = int(camera.distortion_poly_order)
-    camera_out.distortion.distortion_poly_has_forward = int(camera.distortion_poly_has_forward)
-    camera_out.distortion.distortion_poly_has_inv = int(camera.distortion_poly_has_inverse)
-    for idx in range(10):
-        camera_out.distortion.distortion_poly_forward_u[idx] = float(
-            camera.distortion_poly_forward_u[idx]
-        )
-        camera_out.distortion.distortion_poly_forward_v[idx] = float(
-            camera.distortion_poly_forward_v[idx]
-        )
-        camera_out.distortion.distortion_poly_inv_u[idx] = float(
-            camera.distortion_poly_inverse_u[idx]
-        )
-        camera_out.distortion.distortion_poly_inv_v[idx] = float(
-            camera.distortion_poly_inverse_v[idx]
-        )
+    camera_out.distort.distort_model = int(camera.distort_model)
+    camera_out.distort.distort_k1 = float(camera.distort_k1)
+    camera_out.distort.distort_k2 = float(camera.distort_k2)
+    camera_out.distort.distort_k3 = float(camera.distort_k3)
+    camera_out.distort.distort_k4 = float(camera.distort_k4)
+    camera_out.distort.distort_k5 = float(camera.distort_k5)
+    camera_out.distort.distort_k6 = float(camera.distort_k6)
+    camera_out.distort.distort_p1 = float(camera.distort_p1)
+    camera_out.distort.distort_p2 = float(camera.distort_p2)
+    camera_out.distort.distort_s1 = float(camera.distort_s1)
+    camera_out.distort.distort_s2 = float(camera.distort_s2)
+    camera_out.distort.distort_s3 = float(camera.distort_s3)
+    camera_out.distort.distort_s4 = float(camera.distort_s4)
+    camera_out.distort.distort_tau_x = float(camera.distort_tau_x)
+    camera_out.distort.distort_tau_y = float(camera.distort_tau_y)
     camera_out.coord_sys = int(camera.coord_sys)
     camera_out.subpixel_center_map = int(camera.subpixel_center_map)
     camera_out.psf.psf_type = int(camera.psf_type)
@@ -491,17 +533,19 @@ def _make_camera_input(camera: Any) -> cr.CCameraInput:
     return camera_out
 
 
+@cython.cfunc
 def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
-    idx: cython.Py_ssize_t
-    forward_u = [0.0] * 10
-    forward_v = [0.0] * 10
-    inverse_u = [0.0] * 10
-    inverse_v = [0.0] * 10
-    for idx in range(10):
-        forward_u[idx] = camera_in.distortion.distortion_poly_forward_u[idx]
-        forward_v[idx] = camera_in.distortion.distortion_poly_forward_v[idx]
-        inverse_u[idx] = camera_in.distortion.distortion_poly_inv_u[idx]
-        inverse_v[idx] = camera_in.distortion.distortion_poly_inv_v[idx]
+    poly: PolyMap | None = None
+    if camera_in.distort.distort_poly_coeffs_len:
+        count = camera_in.distort.distort_poly_coeffs_len
+        values = np.empty(count, dtype=np.float64)
+        for ii in range(count):
+            values[ii] = camera_in.distort.distort_poly_coeffs[ii]
+        poly = PolyMap(
+            degree=camera_in.distort.distort_poly_degree,
+            mode=EPolyMode(camera_in.distort.distort_poly_mode),
+            coeffs=values.reshape((-1, 2)),
+        )
     return Camera(
         pixels_num=(camera_in.pixels_num.x, camera_in.pixels_num.y),
         pixels_size=(camera_in.pixels_size.x, camera_in.pixels_size.y),
@@ -522,22 +566,22 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
         ),
         focal_length=camera_in.focal_length,
         sub_sample=camera_in.sub_sample,
-        distortion_model=camera_in.distortion.distortion_model,
-        distortion_k1=camera_in.distortion.distortion_k1,
-        distortion_k2=camera_in.distortion.distortion_k2,
-        distortion_k3=camera_in.distortion.distortion_k3,
-        distortion_k4=camera_in.distortion.distortion_k4,
-        distortion_k5=camera_in.distortion.distortion_k5,
-        distortion_k6=camera_in.distortion.distortion_k6,
-        distortion_p1=camera_in.distortion.distortion_p1,
-        distortion_p2=camera_in.distortion.distortion_p2,
-        distortion_poly_order=camera_in.distortion.distortion_poly_order,
-        distortion_poly_has_forward=bool(camera_in.distortion.distortion_poly_has_forward),
-        distortion_poly_has_inverse=bool(camera_in.distortion.distortion_poly_has_inv),
-        distortion_poly_forward_u=tuple(forward_u),
-        distortion_poly_forward_v=tuple(forward_v),
-        distortion_poly_inverse_u=tuple(inverse_u),
-        distortion_poly_inverse_v=tuple(inverse_v),
+        distort_model=camera_in.distort.distort_model,
+        distort_k1=camera_in.distort.distort_k1,
+        distort_k2=camera_in.distort.distort_k2,
+        distort_k3=camera_in.distort.distort_k3,
+        distort_k4=camera_in.distort.distort_k4,
+        distort_k5=camera_in.distort.distort_k5,
+        distort_k6=camera_in.distort.distort_k6,
+        distort_p1=camera_in.distort.distort_p1,
+        distort_p2=camera_in.distort.distort_p2,
+        distort_s1=camera_in.distort.distort_s1,
+        distort_s2=camera_in.distort.distort_s2,
+        distort_s3=camera_in.distort.distort_s3,
+        distort_s4=camera_in.distort.distort_s4,
+        distort_tau_x=camera_in.distort.distort_tau_x,
+        distort_tau_y=camera_in.distort.distort_tau_y,
+        distort_poly=poly,
         coord_sys=camera_in.coord_sys,
         subpixel_center_map=camera_in.subpixel_center_map,
         psf_type=camera_in.psf.psf_type,
@@ -637,6 +681,7 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
         config.full_stats_save_normals_map,
     )
     config_out.buffer_mode = int(config.buffer_mode)
+    config_out.edge_spacing_px = float(config.edge_spacing_px)
     output_name_format = config.output_name_format.encode("utf-8")
     config_out.output_name_format = output_name_format
     keepalive.append(output_name_format)
@@ -961,7 +1006,9 @@ def _contig_texture(
             raise ValueError("u16 texture storage requires a uint16 array")
     elif storage == int(TextureStorage.floating):
         if texture_np.dtype not in (np.float32, np.float64):
-            raise ValueError("floating texture storage requires a float32 or float64 array")
+            raise ValueError(
+                "floating texture storage requires a float32 or float64 array"
+            )
         texture_np = np.ascontiguousarray(texture_np, dtype=np.float64)
     else:
         raise ValueError("unsupported texture storage")
@@ -980,10 +1027,13 @@ def roi_cent_from_coords(coords_in: Any) -> tuple[float, float, float]:
     coords_c = _make_array_2d_f64(coords_view, rows_num, cols_num)
     out_cent: cr.CVec3F64
 
-    if cr.rileyRoiCentFromCoords(
-        cython.address(coords_c),
-        cython.address(out_cent),
-    ) != 0:
+    if (
+        cr.rileyRoiCentFromCoords(
+            cython.address(coords_c),
+            cython.address(out_cent),
+        )
+        != 0
+    ):
         _raise_last_error()
 
     return (out_cent.x, out_cent.y, out_cent.z)
@@ -1020,29 +1070,35 @@ def pos_frame_coords(
     mode_int: cython.uint = _fit_mode_to_int(fit_mode)
 
     if target is None:
-        if cr.rileyPosFrameCoords(
-            cython.address(coords_c),
-            _make_cvec2_u32(tuple(pixels_num)),
-            _make_cvec2_f64(tuple(pixels_size)),
-            float(focal_length),
-            _make_cvec3(tuple(rot_world)),
-            float(fov_scale),
-            mode_int,
-            cython.address(out_pos),
-        ) != 0:
+        if (
+            cr.rileyPosFrameCoords(
+                cython.address(coords_c),
+                _make_cvec2_u32(tuple(pixels_num)),
+                _make_cvec2_f64(tuple(pixels_size)),
+                float(focal_length),
+                _make_cvec3(tuple(rot_world)),
+                float(fov_scale),
+                mode_int,
+                cython.address(out_pos),
+            )
+            != 0
+        ):
             _raise_last_error()
     else:
-        if cr.rileyPosFrameCoordsTarg(
-            cython.address(coords_c),
-            _make_cvec3(tuple(target)),
-            _make_cvec2_u32(tuple(pixels_num)),
-            _make_cvec2_f64(tuple(pixels_size)),
-            float(focal_length),
-            _make_cvec3(tuple(rot_world)),
-            float(fov_scale),
-            mode_int,
-            cython.address(out_pos),
-        ) != 0:
+        if (
+            cr.rileyPosFrameCoordsTarg(
+                cython.address(coords_c),
+                _make_cvec3(tuple(target)),
+                _make_cvec2_u32(tuple(pixels_num)),
+                _make_cvec2_f64(tuple(pixels_size)),
+                float(focal_length),
+                _make_cvec3(tuple(rot_world)),
+                float(fov_scale),
+                mode_int,
+                cython.address(out_pos),
+            )
+            != 0
+        ):
             _raise_last_error()
 
     return (out_pos.x, out_pos.y, out_pos.z)
@@ -1143,9 +1199,7 @@ def _fill_mesh_array(
         if isinstance(shader, TextureShader):
             texture_channels = int(shader.texture.shape[0])
             shader_tag = int(
-                ShaderType.tex_rgb
-                if texture_channels == 3
-                else ShaderType.tex
+                ShaderType.tex_rgb if texture_channels == 3 else ShaderType.tex
             )
             if shader.texture.dtype == np.uint16:
                 texture_storage = int(TextureStorage.u16)
@@ -1156,16 +1210,12 @@ def _fill_mesh_array(
         elif isinstance(shader, NodalShader):
             field_channels = int(shader.field.shape[2])
             shader_tag = int(
-                ShaderType.nodal_rgb
-                if field_channels == 3
-                else ShaderType.nodal
+                ShaderType.nodal_rgb if field_channels == 3 else ShaderType.nodal
             )
             texture_storage = int(TextureStorage.u8)
         elif isinstance(shader, FunctionShader):
             shader_tag = int(
-                ShaderType.func_rgb
-                if shader.channels == 3
-                else ShaderType.func
+                ShaderType.func_rgb if shader.channels == 3 else ShaderType.func
             )
             texture_storage = int(TextureStorage.u8)
         else:
@@ -1226,19 +1276,25 @@ def _fill_mesh_array(
                 texture_view_u8: cython.uchar[:, :, ::1] = texture_np
                 mesh_array[nn].shader.tex_u8 = _make_array_3d_u8(
                     texture_view_u8,
-                    texture_shape[0], texture_shape[1], texture_shape[2],
+                    texture_shape[0],
+                    texture_shape[1],
+                    texture_shape[2],
                 )
             elif texture_storage == int(TextureStorage.u16):
                 texture_view_u16: cython.ushort[:, :, ::1] = texture_np
                 mesh_array[nn].shader.tex_u16 = _make_array_3d_u16(
                     texture_view_u16,
-                    texture_shape[0], texture_shape[1], texture_shape[2],
+                    texture_shape[0],
+                    texture_shape[1],
+                    texture_shape[2],
                 )
             else:
                 texture_view_f: cython.double[:, :, ::1] = texture_np
                 mesh_array[nn].shader.tex = _make_array_3d_f64(
                     texture_view_f,
-                    texture_shape[0], texture_shape[1], texture_shape[2],
+                    texture_shape[0],
+                    texture_shape[1],
+                    texture_shape[2],
                 )
             keepalive.append(texture_np)
 
@@ -1248,10 +1304,7 @@ def _fill_mesh_array(
         else:
             nodal_field_np = _contig_f64_3d(shader_field, "nodal_field")
             nodal_shape = _as_shape_3d(nodal_field_np)
-            if (
-                shader_tag == int(ShaderType.nodal_rgb)
-                and nodal_shape[2] != 3
-            ):
+            if shader_tag == int(ShaderType.nodal_rgb) and nodal_shape[2] != 3:
                 raise ValueError(
                     "nodal_rgb field must have shape (time, nodes, 3)",
                 )
@@ -1284,11 +1337,14 @@ def roi_cent_over_meshes(meshes: Any) -> tuple[float, float, float]:
         raise MemoryError()
     try:
         _fill_mesh_array(mesh_list, mesh_array, keepalive)
-        if cr.rileyRoiCentOverMeshes(
-            mesh_array,
-            meshes_len,
-            cython.address(out_cent),
-        ) != 0:
+        if (
+            cr.rileyRoiCentOverMeshes(
+                mesh_array,
+                meshes_len,
+                cython.address(out_cent),
+            )
+            != 0
+        ):
             _raise_last_error()
     finally:
         free(mesh_array)
@@ -1321,31 +1377,37 @@ def pos_frame_meshes(
     try:
         _fill_mesh_array(mesh_list, mesh_array, keepalive)
         if target is None:
-            if cr.rileyPosFrameMeshes(
-                mesh_array,
-                meshes_len,
-                _make_cvec2_u32(tuple(pixels_num)),
-                _make_cvec2_f64(tuple(pixels_size)),
-                float(focal_length),
-                _make_cvec3(tuple(rot_world)),
-                float(fov_scale),
-                mode_int,
-                cython.address(out_pos),
-            ) != 0:
+            if (
+                cr.rileyPosFrameMeshes(
+                    mesh_array,
+                    meshes_len,
+                    _make_cvec2_u32(tuple(pixels_num)),
+                    _make_cvec2_f64(tuple(pixels_size)),
+                    float(focal_length),
+                    _make_cvec3(tuple(rot_world)),
+                    float(fov_scale),
+                    mode_int,
+                    cython.address(out_pos),
+                )
+                != 0
+            ):
                 _raise_last_error()
         else:
-            if cr.rileyPosFrameMeshesTarg(
-                mesh_array,
-                meshes_len,
-                _make_cvec3(tuple(target)),
-                _make_cvec2_u32(tuple(pixels_num)),
-                _make_cvec2_f64(tuple(pixels_size)),
-                float(focal_length),
-                _make_cvec3(tuple(rot_world)),
-                float(fov_scale),
-                mode_int,
-                cython.address(out_pos),
-            ) != 0:
+            if (
+                cr.rileyPosFrameMeshesTarg(
+                    mesh_array,
+                    meshes_len,
+                    _make_cvec3(tuple(target)),
+                    _make_cvec2_u32(tuple(pixels_num)),
+                    _make_cvec2_f64(tuple(pixels_size)),
+                    float(focal_length),
+                    _make_cvec3(tuple(rot_world)),
+                    float(fov_scale),
+                    mode_int,
+                    cython.address(out_pos),
+                )
+                != 0
+            ):
                 _raise_last_error()
     finally:
         free(mesh_array)
@@ -1385,14 +1447,17 @@ def pos_orbit_cam(
 ) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
     out_pos: cr.CVec3F64
     out_rot: cr.CVec3F64
-    if cr.rileyPosOrbitCam(
-        _make_cvec3(tuple(target)),
-        float(azimuth_rad),
-        float(elevation_rad),
-        float(distance),
-        cython.address(out_pos),
-        cython.address(out_rot),
-    ) != 0:
+    if (
+        cr.rileyPosOrbitCam(
+            _make_cvec3(tuple(target)),
+            float(azimuth_rad),
+            float(elevation_rad),
+            float(distance),
+            cython.address(out_pos),
+            cython.address(out_rot),
+        )
+        != 0
+    ):
         _raise_last_error()
     return (
         (out_pos.x, out_pos.y, out_pos.z),
@@ -1415,16 +1480,19 @@ def pos_stereo_pair(
     cam0_rot: cr.CVec3F64
     cam1_pos: cr.CVec3F64
     cam1_rot: cr.CVec3F64
-    if cr.rileyPosStereoPair(
-        _make_cvec3(tuple(target)),
-        float(distance),
-        float(stereo_angle_rad),
-        float(baseline_angle_rad),
-        cython.address(cam0_pos),
-        cython.address(cam0_rot),
-        cython.address(cam1_pos),
-        cython.address(cam1_rot),
-    ) != 0:
+    if (
+        cr.rileyPosStereoPair(
+            _make_cvec3(tuple(target)),
+            float(distance),
+            float(stereo_angle_rad),
+            float(baseline_angle_rad),
+            cython.address(cam0_pos),
+            cython.address(cam0_rot),
+            cython.address(cam1_pos),
+            cython.address(cam1_rot),
+        )
+        != 0
+    ):
         _raise_last_error()
     return (
         (cam0_pos.x, cam0_pos.y, cam0_pos.z),
@@ -1438,13 +1506,17 @@ def calc_pixel_resolution(
     camera: Any,
     target: tuple[float, float, float],
 ) -> float:
-    cam_c = _make_camera_input(camera)
+    keepalive: list[Any] = []
+    cam_c = _make_camera_input(camera, keepalive)
     out_res: cython.double = 0.0
-    if cr.rileyCalcPixelResolution(
-        cython.address(cam_c),
-        _make_cvec3(tuple(target)),
-        cython.address(out_res),
-    ) != 0:
+    if (
+        cr.rileyCalcPixelResolution(
+            cython.address(cam_c),
+            _make_cvec3(tuple(target)),
+            cython.address(out_res),
+        )
+        != 0
+    ):
         _raise_last_error()
     return float(out_res)
 
@@ -1455,16 +1527,20 @@ def save_stereo_pair(
     camera_0: Camera,
     camera_1: Camera,
 ) -> None:
-    cam0_c = _make_camera_input(camera_0)
-    cam1_c = _make_camera_input(camera_1)
+    keepalive: list[Any] = []
+    cam0_c = _make_camera_input(camera_0, keepalive)
+    cam1_c = _make_camera_input(camera_1, keepalive)
     out_dir_bytes = out_dir.encode("utf-8")
     file_name_bytes = stereo_file_name.encode("utf-8")
-    if cr.rileySaveStereoPair(
-        out_dir_bytes,
-        file_name_bytes,
-        cython.address(cam0_c),
-        cython.address(cam1_c),
-    ) != 0:
+    if (
+        cr.rileySaveStereoPair(
+            out_dir_bytes,
+            file_name_bytes,
+            cython.address(cam0_c),
+            cython.address(cam1_c),
+        )
+        != 0
+    ):
         _raise_last_error()
 
 
@@ -1474,30 +1550,51 @@ def save_camera(
     camera_idx: int,
     camera: Camera,
 ) -> None:
-    camera_c = _make_camera_input(camera)
+    keepalive: list[Any] = []
+    camera_c = _make_camera_input(camera, keepalive)
     out_dir_bytes = out_dir.encode("utf-8")
     file_name_bytes = file_name.encode("utf-8")
-    if cr.rileySaveCamera(
-        out_dir_bytes,
-        file_name_bytes,
-        camera_idx,
-        cython.address(camera_c),
-    ) != 0:
+    if (
+        cr.rileySaveCamera(
+            out_dir_bytes,
+            file_name_bytes,
+            camera_idx,
+            cython.address(camera_c),
+        )
+        != 0
+    ):
         _raise_last_error()
 
 
-def load_camera(
-    dir_path: str,
-    file_name: str,
-) -> Camera:
+def load_camera(dir_path: str, file_name: str) -> Camera:
+    """Load a camera into Python-owned storage through the caller-buffer C API."""
     dir_bytes = dir_path.encode("utf-8")
-    file_name_bytes = file_name.encode("utf-8")
+    file_bytes = file_name.encode("utf-8")
     camera_c: cr.CCameraInput
-    if cr.rileyLoadCamera(
-        dir_bytes,
-        file_name_bytes,
-        cython.address(camera_c),
-    ) != 0:
+    if (
+        cr.rileyLoadCamera(
+            dir_bytes,
+            file_bytes,
+            cython.NULL,
+            0,
+            cython.address(camera_c),
+        )
+        != 0
+    ):
+        _raise_last_error()
+    # Maximum supported capacity also handles file changes between query and load.
+    storage = np.empty(72, dtype=np.float64)
+    coeffs: cython.double[::1] = storage
+    if (
+        cr.rileyLoadCamera(
+            dir_bytes,
+            file_bytes,
+            cython.address(coeffs[0]),
+            72,
+            cython.address(camera_c),
+        )
+        != 0
+    ):
         _raise_last_error()
     return _camera_input_from_c(camera_c)
 
@@ -1506,21 +1603,30 @@ def load_stereo_pair(
     dir_path: str,
     stereo_file_name: str,
 ) -> tuple[Camera, Camera]:
+    """Load both cameras with independent caller-owned coefficient buffers."""
     dir_bytes = dir_path.encode("utf-8")
     file_bytes = stereo_file_name.encode("utf-8")
     cam0_c: cr.CCameraInput
     cam1_c: cr.CCameraInput
-    if cr.rileyLoadStereoPair(
-        dir_bytes,
-        file_bytes,
-        cython.address(cam0_c),
-        cython.address(cam1_c),
-    ) != 0:
+    storage0 = np.empty(72, dtype=np.float64)
+    storage1 = np.empty(72, dtype=np.float64)
+    coeffs0: cython.double[::1] = storage0
+    coeffs1: cython.double[::1] = storage1
+    if (
+        cr.rileyLoadStereoPair(
+            dir_bytes,
+            file_bytes,
+            cython.address(coeffs0[0]),
+            72,
+            cython.address(coeffs1[0]),
+            72,
+            cython.address(cam0_c),
+            cython.address(cam1_c),
+        )
+        != 0
+    ):
         _raise_last_error()
-    return (
-        _camera_input_from_c(cam0_c),
-        _camera_input_from_c(cam1_c),
-    )
+    return (_camera_input_from_c(cam0_c), _camera_input_from_c(cam1_c))
 
 
 @cython.boundscheck(False)
@@ -1565,7 +1671,7 @@ def raster(
 
         nn: cython.size_t
         for nn in range(cameras_len):
-            camera_array[nn] = _make_camera_input(camera_list[nn])
+            camera_array[nn] = _make_camera_input(camera_list[nn], keepalive)
 
         out_dir_ptr: cython.p_char = cython.cast(cython.p_char, cython.NULL)
         if out_dir is not None:
@@ -1575,14 +1681,17 @@ def raster(
 
         if config.save_strategy in (SaveStrategy.memory, SaveStrategy.both):
             dims_c: cr.CDims5Usize
-            if cr.rileyCalcOutputDimsScene(
-                mesh_array,
-                meshes_len,
-                camera_array,
-                cameras_len,
-                cython.address(config_c),
-                cython.address(dims_c),
-            ) != 0:
+            if (
+                cr.rileyCalcOutputDimsScene(
+                    mesh_array,
+                    meshes_len,
+                    camera_array,
+                    cameras_len,
+                    cython.address(config_c),
+                    cython.address(dims_c),
+                )
+                != 0
+            ):
                 _raise_last_error()
 
             image_np = np.empty(
@@ -1600,15 +1709,18 @@ def raster(
             image_c.dims = dims_c
             image_ptr = cython.address(image_c)
 
-        if cr.rileyRaster(
-            mesh_array,
-            meshes_len,
-            camera_array,
-            cameras_len,
-            cython.address(config_c),
-            out_dir_ptr,
-            image_ptr,
-        ) != 0:
+        if (
+            cr.rileyRaster(
+                mesh_array,
+                meshes_len,
+                camera_array,
+                cameras_len,
+                cython.address(config_c),
+                out_dir_ptr,
+                image_ptr,
+            )
+            != 0
+        ):
             _raise_last_error()
     finally:
         free(mesh_array)
@@ -1617,11 +1729,10 @@ def raster(
     return image_np
 
 
-
-
-
 __all__ = [
     "Camera",
+    "PolyMap",
+    "EPolyMode",
     "CameraInput",
     "CameraCoordSys",
     "BufferMode",

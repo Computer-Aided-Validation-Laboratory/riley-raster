@@ -113,8 +113,13 @@ jobs:
         run: |
           version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Create clean environment
+      - name: Create clean environment (Linux)
+        if: runner.os == 'Linux'
         run: python -m venv "$RUNNER_TEMP/riley-pypi-smoke"
+      - name: Create clean environment (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python -m venv "$env:RUNNER_TEMP\riley-pypi-smoke"
       - name: Install from PyPI (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -149,7 +154,7 @@ jobs:
         if: runner.os == 'Linux'
         working-directory: ${{ runner.temp }}
         run: |
-          for demo in demo0_quickstart demo1_sphere200 demo2_psf demo3_rabbits demo6_dicuq demo7_dic_from_exodus demo8_stereocal demo9_feature_zoo; do
+          for demo in demo0_quickstart demo1_sphere demo2a_rabbits_mono demo2b_rabbits_rgb demo2c_rabbits_fields demo3_dicuq demo3_dicuq_from_exodus demo4_stereocal demo5_cameramodels demo6_featurezoo; do
             "$RUNNER_TEMP/riley-pypi-smoke/bin/python" -m "riley.pydemos.$demo"
           done
       - name: Run demos (Windows)
@@ -158,7 +163,7 @@ jobs:
         shell: pwsh
         run: |
           $python = "$env:RUNNER_TEMP\riley-pypi-smoke\Scripts\python.exe"
-          $demos = 'demo0_quickstart','demo1_sphere200','demo2_psf','demo3_rabbits','demo6_dicuq','demo7_dic_from_exodus','demo8_stereocal','demo9_feature_zoo'
+          $demos = 'demo0_quickstart','demo1_sphere','demo2a_rabbits_mono','demo2b_rabbits_rgb','demo2c_rabbits_fields','demo3_dicuq','demo3_dicuq_from_exodus','demo4_stereocal','demo5_cameramodels','demo6_featurezoo'
           foreach ($demo in $demos) {
             & $python -m "riley.pydemos.$demo"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

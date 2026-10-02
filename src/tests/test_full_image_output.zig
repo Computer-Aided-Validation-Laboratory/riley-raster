@@ -175,7 +175,7 @@ fn runBaseComparison(
         if (tcfg.TEST_CASE_VERBOSE) {
             std.debug.print("FAIL base {s} ({d:.2} ms)\n", .{ bc.tag, duration_ms });
         }
-        return err;
+        try common.recordGoldFailure(err);
     };
 
     if (tcfg.TEST_CASE_VERBOSE) {

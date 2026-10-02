@@ -63,23 +63,26 @@ cdef extern from "riley.h":
         double* elems
         CDims5Usize dims
 
-    ctypedef struct CDistortion:
-        uint32_t distortion_model
-        double distortion_k1
-        double distortion_k2
-        double distortion_k3
-        double distortion_k4
-        double distortion_k5
-        double distortion_k6
-        double distortion_p1
-        double distortion_p2
-        uint32_t distortion_poly_order
-        uint8_t distortion_poly_has_forward
-        uint8_t distortion_poly_has_inv
-        double distortion_poly_forward_u[10]
-        double distortion_poly_forward_v[10]
-        double distortion_poly_inv_u[10]
-        double distortion_poly_inv_v[10]
+    ctypedef struct CDistort:
+        uint32_t distort_model
+        double distort_k1
+        double distort_k2
+        double distort_k3
+        double distort_k4
+        double distort_k5
+        double distort_k6
+        double distort_p1
+        double distort_p2
+        double distort_s1
+        double distort_s2
+        double distort_s3
+        double distort_s4
+        double distort_tau_x
+        double distort_tau_y
+        uint32_t distort_poly_degree
+        uint32_t distort_poly_mode
+        const double* distort_poly_coeffs
+        size_t distort_poly_coeffs_len
 
     ctypedef struct CPSF:
         uint32_t psf_type
@@ -97,7 +100,7 @@ cdef extern from "riley.h":
         CVec3F64 roi_cent_world
         double focal_length
         uint32_t sub_sample
-        CDistortion distortion
+        CDistort distort
         CPSF psf
         uint32_t coord_sys
         uint32_t subpixel_center_map
@@ -260,6 +263,7 @@ cdef extern from "riley.h":
         uint8_t full_stats_save_normals_map
         uint32_t buffer_mode
         const char* output_name_format
+        double edge_spacing_px
 
     size_t rileyGetLastError(uint8_t* out_buf, size_t out_buf_len)
 
@@ -391,6 +395,8 @@ cdef extern from "riley.h":
     int rileyLoadCamera(
         const char* dir_path,
         const char* file_name,
+        double* coeffs,
+        size_t coeffs_capacity,
         CCameraInput* camera_out,
     )
 
@@ -404,6 +410,10 @@ cdef extern from "riley.h":
     int rileyLoadStereoPair(
         const char* dir_path,
         const char* stereo_file_name,
+        double* cam0_coeffs,
+        size_t cam0_capacity,
+        double* cam1_coeffs,
+        size_t cam1_capacity,
         CCameraInput* cam0_out,
         CCameraInput* cam1_out,
     )

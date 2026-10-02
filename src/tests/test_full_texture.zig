@@ -136,7 +136,7 @@ pub fn runFullTexCaseTest(
                         .{ case_dir_name, ff, ch, duration_ms },
                     );
                 }
-                return err;
+                try common_test.recordGoldFailure(err);
             };
         }
     }
@@ -579,4 +579,3 @@ fn runUVBoundaryRasterPipelineTests(
         try std.testing.expect(has_nonzero);
     }
 }
-
