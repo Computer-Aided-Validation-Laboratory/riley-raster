@@ -34,10 +34,10 @@ pub const BenchArgs = struct {
     pixels_num: [2]u32,
     sub_sample: u32,
     runs: usize,
-    distortion: DistortionMode = .none,
+    distort: DistortMode = .none,
 };
 
-pub const DistortionMode = enum {
+pub const DistortMode = enum {
     none,
     brown,
     brownext,
@@ -87,7 +87,7 @@ pub fn defaultBenchArgs(
         .pixels_num = .{ 800, 500 },
         .sub_sample = 2,
         .runs = 10,
-        .distortion = .none,
+        .distort = .none,
     };
 }
 
@@ -194,9 +194,9 @@ pub fn parseArgsWithDefaults(
                 bench_args.sub_sample = try parseInt(u32, value);
             } else if (std.mem.eql(u8, arg, "--runs")) {
                 bench_args.runs = try parseInt(usize, value);
-            } else if (std.mem.eql(u8, arg, "--distortion")) {
-                bench_args.distortion =
-                    try parseEnum(DistortionMode, value);
+            } else if (std.mem.eql(u8, arg, "--distort")) {
+                bench_args.distort =
+                    try parseEnum(DistortMode, value);
             } else {
                 return error.UnknownArgument;
             }
@@ -301,7 +301,6 @@ test "parse bench args defaults" {
         .max_geom_workers_per_job = 2,
         .max_raster_workers_per_job = 3,
         .hull_mode = .on_convex_fallback,
-        .subpixel_center_map = .affine_jac,
     };
     const bench_args = try parseArgs(
         args[0..],
@@ -337,7 +336,7 @@ test "parse bench args named options" {
         "--hull-mode",
         "off",
         "--subpixel-center-map",
-        "affine_jac",
+        "per_tile",
         "--save-strategy",
         "memory",
         "--sample",
@@ -392,7 +391,7 @@ test "parse bench args named options" {
     );
     try std.testing.expectEqual(rastcfg.HullMode.off, bench_args.hull_mode);
     try std.testing.expectEqual(
-        cam.SubPixelCenterMap.affine_jac,
+        cam.SubPixelCenterMap.per_tile,
         bench_args.subpixel_center_map,
     );
     try std.testing.expectEqual(

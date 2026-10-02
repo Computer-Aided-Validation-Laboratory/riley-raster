@@ -258,7 +258,7 @@ pub fn publishFrameResultsWithNodesPerElem(
                 frame_idx,
                 camera_idx,
                 frame_times,
-                config.raster_halo_px_override orelse camera.prep_psf.halo_px,
+                camera.prep_psf.halo_px,
                 out_dir_path,
                 total_elems_num,
                 total_elems_in_image,
@@ -1862,7 +1862,7 @@ pub fn standardReport(
         camera.pixels_num[1],
     });
     try writer.print("Camera Distortion          = {s}\n", .{
-        @tagName(camera.distortion),
+        @tagName(camera.distort),
     });
     try writer.print("Camera PSF                 = {s}\n", .{@tagName(camera.psf)});
     try writer.print("Camera Subsamples          = {d}x{d}\n", .{

@@ -9,6 +9,7 @@
 const std = @import("std");
 const rops = @import("rasterops.zig");
 const cam = @import("camera.zig");
+const rastcfg = @import("rasterconfig.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
@@ -171,7 +172,7 @@ pub fn buildAdaptiveHullPointsFromClip(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
     coords_elem: rops.GatheredElemCoords(N),
-    hull_convex_fallback_on: bool,
+    hull_mode: rastcfg.HullMode,
 ) AdaptiveHullPoints(N) {
     const x_off = 0.5 * @as(F, @floatFromInt(camera.pixels_num[0]));
     const y_off = 0.5 * @as(F, @floatFromInt(camera.pixels_num[1]));
@@ -198,7 +199,7 @@ pub fn buildAdaptiveHullPointsFromClip(
     if (N == 6) {
         var hull = buildAdaptiveHullTri6(&lx, &ly);
 
-        if (hull_convex_fallback_on) {
+        if (hull_mode == .on_convex_fallback) {
             const corner_midsides = [3][2]usize{ .{ 5, 3 }, .{ 3, 4 }, .{ 4, 5 } };
             var trigger = false;
 
@@ -225,7 +226,7 @@ pub fn buildAdaptiveHullPointsFromClip(
     if (N == 8 or N == 9) {
         var hull = buildAdaptiveHullQuad(N, &lx, &ly);
 
-        if (hull_convex_fallback_on) {
+        if (hull_mode == .on_convex_fallback) {
             const corner_midsides = [4][2]usize{ .{ 7, 4 }, .{ 4, 5 }, .{ 5, 6 }, .{ 6, 7 } };
             var trigger = false;
             for (corner_midsides, 0..) |mids, nn| {

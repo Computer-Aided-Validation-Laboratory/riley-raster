@@ -80,6 +80,80 @@ pub const RadialSpec = struct {
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
+/// Allocate the first and last source frame indices (one index for a single frame).
+/// The caller owns the returned slice and must free it with outer_alloc.
+pub fn selectFirstLastFrameIndices(
+    outer_alloc: std.mem.Allocator,
+    frames_num: usize,
+) ![]usize {
+    if (frames_num == 0) return error.NoFrames;
+
+    const selected_num: usize = if (frames_num == 1) 1 else 2;
+    const indices = try outer_alloc.alloc(usize, selected_num);
+    indices[0] = 0;
+    if (selected_num == 2) indices[1] = frames_num - 1;
+    return indices;
+}
+
+/// Allocate up to frames_max indices evenly spanning the source frame sequence.
+/// The caller owns the returned slice and must free it with outer_alloc.
+pub fn selectEvenlySpacedFrameIndices(
+    outer_alloc: std.mem.Allocator,
+    frames_num: usize,
+    frames_max: usize,
+) ![]usize {
+    if (frames_num == 0) return error.NoFrames;
+    if (frames_max == 0) return error.ZeroFrameLimit;
+
+    const selected_num = @min(frames_num, frames_max);
+    const indices = try outer_alloc.alloc(usize, selected_num);
+    if (selected_num == 1) {
+        indices[0] = 0;
+        return indices;
+    }
+
+    for (0..selected_num) |ii| {
+        indices[ii] = ii * (frames_num - 1) / (selected_num - 1);
+    }
+    return indices;
+}
+
+/// Copy selected frames, in the requested order, into a separately owned field.
+/// The caller must deinit the returned field with outer_alloc.
+pub fn selectFieldFrames(
+    outer_alloc: std.mem.Allocator,
+    field: *const meshio.Field,
+    frame_indices: []const usize,
+) !meshio.Field {
+    if (frame_indices.len == 0) return error.NoFrames;
+    for (frame_indices) |source_frame| {
+        if (source_frame >= field.getTimeN()) return error.FrameOutOfBounds;
+    }
+
+    var selected = try meshio.Field.initAlloc(
+        outer_alloc,
+        frame_indices.len,
+        field.getCoordN(),
+        field.getFieldsN(),
+    );
+    errdefer selected.deinit(outer_alloc);
+
+    for (frame_indices, 0..) |source_frame, target_frame| {
+        for (0..field.getCoordN()) |nn| {
+            for (0..field.getFieldsN()) |ff| {
+                const value = field.array.get(
+                    &[_]usize{ source_frame, nn, ff },
+                );
+                selected.array.set(
+                    &[_]usize{ target_frame, nn, ff },
+                    value,
+                );
+            }
+        }
+    }
+    return selected;
+}
+
 pub fn meshGroupSpan(
     mesh_start: usize,
     mesh_len: usize,
@@ -260,9 +334,9 @@ pub fn meanCenter(coords: *const meshio.Coords) vec.Vec3f {
     const coords_num = coords.mat.rows_num;
 
     for (0..coords_num) |nn| {
-        center_world.slice[0] += coords.mat.get(nn, 0);
-        center_world.slice[1] += coords.mat.get(nn, 1);
-        center_world.slice[2] += coords.mat.get(nn, 2);
+        center_world.vec[0] += coords.mat.get(nn, 0);
+        center_world.vec[1] += coords.mat.get(nn, 1);
+        center_world.vec[2] += coords.mat.get(nn, 2);
     }
 
     return center_world.mulScal(
@@ -801,6 +875,98 @@ fn validateMeshGroup(
 // Tests
 // --------------------------------------------------------------------------------------
 
+test "first and last indices retain both endpoints" {
+    const alloc = std.testing.allocator;
+    const indices = try selectFirstLastFrameIndices(alloc, 64);
+    defer alloc.free(indices);
+
+    try std.testing.expectEqualSlices(usize, &[_]usize{ 0, 63 }, indices);
+}
+
+test "even frame selection caps and spans the source sequence" {
+    const alloc = std.testing.allocator;
+    const indices = try selectEvenlySpacedFrameIndices(alloc, 100, 8);
+    defer alloc.free(indices);
+
+    try std.testing.expectEqualSlices(
+        usize,
+        &[_]usize{ 0, 14, 28, 42, 56, 70, 84, 99 },
+        indices,
+    );
+}
+
+test "even frame selection retains short sequences" {
+    const alloc = std.testing.allocator;
+    const indices = try selectEvenlySpacedFrameIndices(alloc, 3, 8);
+    defer alloc.free(indices);
+
+    try std.testing.expectEqualSlices(usize, &[_]usize{ 0, 1, 2 }, indices);
+}
+
+test "field selection copies the requested source frames" {
+    const alloc = std.testing.allocator;
+    var field = try meshio.Field.initAlloc(alloc, 4, 2, 1);
+    defer field.deinit(alloc);
+    for (0..4) |frame_idx| {
+        for (0..2) |node_idx| {
+            field.array.set(
+                &[_]usize{ frame_idx, node_idx, 0 },
+                @floatFromInt(10 * frame_idx + node_idx),
+            );
+        }
+    }
+
+    var selected = try selectFieldFrames(alloc, &field, &[_]usize{ 0, 3 });
+    defer selected.deinit(alloc);
+
+    try std.testing.expectEqual(@as(usize, 2), selected.getTimeN());
+    try std.testing.expectEqual(@as(F, 0.0), selected.array.get(&.{ 0, 0, 0 }));
+    try std.testing.expectEqual(@as(F, 1.0), selected.array.get(&.{ 0, 1, 0 }));
+    try std.testing.expectEqual(@as(F, 30.0), selected.array.get(&.{ 1, 0, 0 }));
+    try std.testing.expectEqual(@as(F, 31.0), selected.array.get(&.{ 1, 1, 0 }));
+}
+
+test "frame selection handles empty inputs and single frames" {
+    const alloc = std.testing.allocator;
+    try std.testing.expectError(error.NoFrames, selectFirstLastFrameIndices(alloc, 0));
+    try std.testing.expectError(error.NoFrames, selectEvenlySpacedFrameIndices(alloc, 0, 8));
+    try std.testing.expectError(error.ZeroFrameLimit, selectEvenlySpacedFrameIndices(alloc, 8, 0));
+
+    const endpoints = try selectFirstLastFrameIndices(alloc, 1);
+    defer alloc.free(endpoints);
+    try std.testing.expectEqualSlices(usize, &.{0}, endpoints);
+
+    const single = try selectEvenlySpacedFrameIndices(alloc, 8, 1);
+    defer alloc.free(single);
+    try std.testing.expectEqualSlices(usize, &.{0}, single);
+
+    const short = try selectEvenlySpacedFrameIndices(alloc, 1, 8);
+    defer alloc.free(short);
+    try std.testing.expectEqualSlices(usize, &.{0}, short);
+}
+
+test "field frame selection preserves ordering and cleans up invalid selections" {
+    const alloc = std.testing.allocator;
+    var field = try meshio.Field.initAlloc(alloc, 2, 1, 2);
+    defer field.deinit(alloc);
+    field.array.set(&.{ 0, 0, 0 }, 10.0);
+    field.array.set(&.{ 0, 0, 1 }, 11.0);
+    field.array.set(&.{ 1, 0, 0 }, 20.0);
+    field.array.set(&.{ 1, 0, 1 }, 21.0);
+
+    try std.testing.expectError(error.NoFrames, selectFieldFrames(alloc, &field, &.{}));
+    try std.testing.expectError(error.FrameOutOfBounds, selectFieldFrames(alloc, &field, &.{ 0, 2 }));
+
+    var selected = try selectFieldFrames(alloc, &field, &.{ 1, 0, 1 });
+    defer selected.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 3), selected.getTimeN());
+    try std.testing.expectEqual(@as(usize, 2), selected.getFieldsN());
+    try std.testing.expectEqual(@as(F, 21.0), selected.array.get(&.{ 0, 0, 1 }));
+    try std.testing.expectEqual(@as(F, 11.0), selected.array.get(&.{ 1, 0, 1 }));
+    try std.testing.expectEqual(@as(F, 20.0), selected.array.get(&.{ 2, 0, 0 }));
+    try std.testing.expectEqual(@as(F, 10.0), field.array.get(&.{ 0, 0, 0 }));
+}
+
 test "boundsForCoords and meanCenter" {
     var coords = try meshio.Coords.initAlloc(std.testing.allocator, 3);
     defer std.testing.allocator.free(coords.mem);
@@ -887,6 +1053,35 @@ test "translateCoords and centerCoordsAt" {
     centerCoordsAt(&coords, .{ 0.0, 0.0, 0.0 });
     const bounds = boundsForCoords(&coords);
     try std.testing.expectEqualDeep([3]F{ 0.0, 0.0, 0.0 }, bounds.center);
+}
+
+test "centerCoordsAt moves bounds to nonzero target without deforming coordinates" {
+    var coords = try meshio.Coords.initAlloc(std.testing.allocator, 3);
+    defer std.testing.allocator.free(coords.mem);
+    const original = [3][3]F{
+        .{ -2.0, 1.0, -5.0 },
+        .{ 4.0, 9.0, 7.0 },
+        .{ 0.0, 2.0, -1.0 },
+    };
+    for (original, 0..) |coord, nn| {
+        for (coord, 0..) |value, axis| coords.mat.set(nn, axis, value);
+    }
+    const before = boundsForCoords(&coords);
+    const target = [3]F{ 0.0125, 0.0175, 0.0005 };
+    const original_mem = coords.mem.ptr;
+
+    centerCoordsAt(&coords, target);
+
+    const after = boundsForCoords(&coords);
+    try std.testing.expect(coords.mem.ptr == original_mem);
+    for (0..3) |axis| {
+        try std.testing.expectApproxEqAbs(target[axis], after.center[axis], 1e-6);
+        try std.testing.expectApproxEqAbs(before.extent[axis], after.extent[axis], 1e-6);
+        for (original, 0..) |coord, nn| {
+            const expected = coord[axis] + (target[axis] - before.center[axis]);
+            try std.testing.expectApproxEqAbs(expected, coords.mat.get(nn, axis), 1e-6);
+        }
+    }
 }
 
 test "overlapMeshGroupBounds overlaps selected axes" {

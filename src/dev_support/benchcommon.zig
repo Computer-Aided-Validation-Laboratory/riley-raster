@@ -18,7 +18,7 @@ const so = @import("../riley/zig/shaderops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
-const DistortionModel = @import("../riley/zig/camera.zig").DistortionModel;
+const DistortParams = @import("../riley/zig/camera.zig").DistortParams;
 const cameraops = @import("../riley/zig/cameraops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const report = @import("../riley/zig/report.zig");
@@ -455,8 +455,8 @@ pub fn writeBenchmarkConfig(
     try writer.print("build_raster_newton_iter_max={d}\n", .{
         buildconfig.config.raster_newton_iter_max,
     });
-    try writer.print("build_distortion_newton_iter_max={d}\n", .{
-        buildconfig.config.distortion_newton_iter_max,
+    try writer.print("build_distort_newton_iter_max={d}\n", .{
+        buildconfig.config.distort_newton_iter_max,
     });
     try writer.print("build_interp_lut_size={d}\n", .{
         buildconfig.config.interp_lut_size,
@@ -497,7 +497,7 @@ pub const BenchRenderDefaults = struct {
     pixels_size: [2]F,
     fov_scale: F,
     rot: Rotation,
-    distortion: DistortionModel = .none,
+    distort: DistortParams = .none,
 };
 
 pub const RunMode = enum { all, element, texture, interpolator };
@@ -1005,7 +1005,7 @@ fn runBenchmarkInternal(
             .roi_cent_world = roi_pos,
             .focal_length = render_defaults.focal_leng,
             .sub_sample = render_defaults.sub_sample,
-            .distortion = render_defaults.distortion,
+            .distort = render_defaults.distort,
         },
     );
     defer camera.deinit(aa);
@@ -1017,7 +1017,7 @@ fn runBenchmarkInternal(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .distortion = camera.distortion,
+        .distort = render_defaults.distort,
     };
 
     var config_run = config;

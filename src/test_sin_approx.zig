@@ -137,7 +137,7 @@ fn renderSinImage(
             .roi_cent_world = roi_pos,
             .focal_length = focal_length,
             .sub_sample = sub_sample,
-            .distortion = .none,
+            .distort = .none,
         },
     );
     defer camera.deinit(aa);
@@ -150,7 +150,7 @@ fn renderSinImage(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .distortion = camera.distortion,
+        .distort = camera.distort,
     };
 
     var config = tcfg.getRasterConfig(.testing);

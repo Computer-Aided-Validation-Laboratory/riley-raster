@@ -62,7 +62,7 @@ pub fn generateDistPsfCase(
 
     var camera_input = prep.camera_input;
     camera_input.sub_sample = ssaa;
-    camera_input.distortion = dist_case.distortion;
+    camera_input.distort = dist_case.distort;
     camera_input.psf = psf_case.psf;
 
     const render_groups = [_]riley.RenderGroupSpec{

@@ -22,3 +22,15 @@ def test_create_raster_config_accepts_validate_input_modes() -> None:
     ):
         config = riley.create_raster_config(1, 1, validate_input=mode)
         assert config.validate_input is mode
+
+
+@pytest.mark.parametrize(
+    ("frames", "cameras", "budget", "workers"),
+    ((1, 1, 4, 4), (3, 1, 7, 3), (5, 1, 12, 3), (2, 2, 8, 2), (8, 2, 8, 1)),
+)
+def test_create_raster_config_balances_camera_frame_jobs(
+    frames: int, cameras: int, budget: int, workers: int,
+) -> None:
+    config = riley.create_raster_config(frames, budget, num_cameras=cameras)
+    assert config.total_threads == budget
+    assert config.max_raster_workers_per_job == workers

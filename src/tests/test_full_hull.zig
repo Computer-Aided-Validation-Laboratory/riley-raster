@@ -74,7 +74,7 @@ fn runOneElemHullCaseTest(
         .roi_cent_world = prepared.camera.roi_cent_world,
         .focal_length = prepared.camera.focal_length,
         .sub_sample = 2,
-        .distortion = .none,
+        .distort = .none,
         .psf = psf_case.psf,
     };
 
@@ -204,7 +204,7 @@ fn runOneElemHullCaseTest(
                     .{ case_dir_name, ff, duration_ms },
                 );
             }
-            return err;
+            try common.recordGoldFailure(err);
         };
     }
 
@@ -331,7 +331,7 @@ fn runScene2HullCaseTest(
                     .{ case_dir_name, ff, duration_ms },
                 );
             }
-            return err;
+            try common.recordGoldFailure(err);
         };
     }
 

@@ -43,9 +43,9 @@ const DEFAULT_ROT = Rotation.init(0, 0, 0);
 const DEFAULT_BACKGROUND_VALUE: F = 0.5;
 const CHECKER_SQUARES_PER_AXIS: F = 36.0;
 
-const DistortionCase = struct {
+const DistortCase = struct {
     tag: []const u8,
-    model: cam.DistortionModel,
+    model: cam.DistortModel,
 };
 
 const PsfCase = struct {
@@ -66,11 +66,11 @@ const shader_types = [_]common.ShaderType{
     // The checker input path below already supports it.
 };
 
-const distortion_cases = [_]DistortionCase{
+const distort_cases = [_]DistortCase{
     .{ .tag = "none", .model = .none },
     .{
         .tag = "brown_conrady",
-        .model = .{ .brown_conrady = .{
+        .model = .{ .brown_con = .{
             .k1 = -0.08,
             .k2 = 0.01,
             .k3 = -0.002,
@@ -80,7 +80,7 @@ const distortion_cases = [_]DistortionCase{
     },
     .{
         .tag = "brown_conrady_ext",
-        .model = .{ .brown_conrady_ext = .{
+        .model = .{ .brown_con_ext = .{
             .k1 = -0.09,
             .k2 = 0.012,
             .k3 = -0.0015,
@@ -144,7 +144,7 @@ const CamCaseMeta = struct {
     mesh_type: gk.MeshType,
     shader_type: common.ShaderType,
     coord_mode: common.TexFuncCoordMode,
-    distortion_tag: []const u8,
+    distort_tag: []const u8,
     psf_tag: []const u8,
 };
 
@@ -152,7 +152,7 @@ fn calcCaseName(
     allocator: std.mem.Allocator,
     mesh_type: gk.MeshType,
     shader_type: common.ShaderType,
-    distortion_case: DistortionCase,
+    distort_case: DistortCase,
     psf_case: PsfCase,
 ) ![]u8 {
     return std.fmt.allocPrint(
@@ -162,19 +162,19 @@ fn calcCaseName(
             @tagName(mesh_type),
             @tagName(shader_type),
             @tagName(tex_func_case.coord_mode),
-            distortion_case.tag,
+            distort_case.tag,
             psf_case.tag,
         },
     );
 }
 
 fn benchCamCSVHeader() []const u8 {
-    return "Case,Element,Shader,CoordMode,DistortionModel,PSF,Interpolator," ++
+    return "Case,Element,Shader,CoordMode,DistortModel,PSF,Interpolator," ++
         "Total Elems,Vis Elems,Total Px,Shaded Px," ++
         "Geom Time [ms],Raster Time [ms],Save Time [ms],Frame Time [ms]," ++
         "E2E Time [ms],Geom TP [MElem/s],Raster TP [MPx/s],Frame TP [MPx/s]," ++
         "E2E TP [MPx/s]," ++
-        "Case_end,Element_end,Shader_end,CoordMode_end,DistortionModel_end,PSF_end\n";
+        "Case_end,Element_end,Shader_end,CoordMode_end,DistortModel_end,PSF_end\n";
 }
 
 fn formatBenchCamCSVRow(
@@ -194,7 +194,7 @@ fn formatBenchCamCSVRow(
             @tagName(meta.mesh_type),
             @tagName(meta.shader_type),
             @tagName(meta.coord_mode),
-            meta.distortion_tag,
+            meta.distort_tag,
             meta.psf_tag,
             @tagName(tex_func_case.builtin),
             values.total_elems,
@@ -214,7 +214,7 @@ fn formatBenchCamCSVRow(
             @tagName(meta.mesh_type),
             @tagName(meta.shader_type),
             @tagName(meta.coord_mode),
-            meta.distortion_tag,
+            meta.distort_tag,
             meta.psf_tag,
         },
     );
@@ -399,7 +399,7 @@ fn runCameraBenchmarkWithImageOut(
     io: std.Io,
     mesh_type: gk.MeshType,
     shader_type: common.ShaderType,
-    distortion_case: DistortionCase,
+    distort_case: DistortCase,
     psf_case: PsfCase,
     data_dir: []const u8,
     render_defaults: common.BenchRenderDefaults,
@@ -437,7 +437,7 @@ fn runCameraBenchmarkWithImageOut(
         .roi_cent_world = roi_pos,
         .focal_length = render_defaults.focal_leng,
         .sub_sample = render_defaults.sub_sample,
-        .distortion = distortion_case.model,
+        .distort = distort_case.model,
         .psf = psf_case.psf,
     };
 
@@ -457,7 +457,7 @@ fn runCameraBenchmarkWithImageOut(
         aa,
         mesh_type,
         shader_type,
-        distortion_case,
+        distort_case,
         psf_case,
     );
     const out_path = if (image_out_dir_base.len > 0)
@@ -624,13 +624,13 @@ pub fn main(init: std.process.Init) !void {
 
     for (mesh_types) |mesh_type| {
         for (shader_types) |shader_type| {
-            for (distortion_cases) |distortion_case| {
+            for (distort_cases) |distort_case| {
                 for (psf_cases) |psf_case| {
                     const case_name = try calcCaseName(
                         outer_alloc,
                         mesh_type,
                         shader_type,
-                        distortion_case,
+                        distort_case,
                         psf_case,
                     );
                     defer outer_alloc.free(case_name);
@@ -665,7 +665,7 @@ pub fn main(init: std.process.Init) !void {
                             io,
                             mesh_type,
                             shader_type,
-                            distortion_case,
+                            distort_case,
                             psf_case,
                             data_dir,
                             render_defaults,
@@ -710,7 +710,7 @@ pub fn main(init: std.process.Init) !void {
                             .mesh_type = mesh_type,
                             .shader_type = shader_type,
                             .coord_mode = tex_func_case.coord_mode,
-                            .distortion_tag = distortion_case.tag,
+                            .distort_tag = distort_case.tag,
                             .psf_tag = psf_case.tag,
                         },
                     );

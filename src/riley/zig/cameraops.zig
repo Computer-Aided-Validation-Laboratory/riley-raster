@@ -88,12 +88,12 @@ pub fn toOpenGLInput(input: cam.CameraInput) cam.CameraInput {
     );
     opengl_input.pos_world = r_opencv_t.mulVec(neg_t);
     var r_riley = r_opencv_t;
-    r_riley.slice[1] = -r_riley.slice[1];
-    r_riley.slice[2] = -r_riley.slice[2];
-    r_riley.slice[4] = -r_riley.slice[4];
-    r_riley.slice[5] = -r_riley.slice[5];
-    r_riley.slice[7] = -r_riley.slice[7];
-    r_riley.slice[8] = -r_riley.slice[8];
+    r_riley.set(0, 1, -r_riley.get(0, 1));
+    r_riley.set(0, 2, -r_riley.get(0, 2));
+    r_riley.set(1, 1, -r_riley.get(1, 1));
+    r_riley.set(1, 2, -r_riley.get(1, 2));
+    r_riley.set(2, 1, -r_riley.get(2, 1));
+    r_riley.set(2, 2, -r_riley.get(2, 2));
     opengl_input.rot_world = rotation.Rotation.fromMat33(r_riley);
     opengl_input.coord_sys = .opengl;
     return opengl_input;

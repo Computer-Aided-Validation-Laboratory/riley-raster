@@ -24,8 +24,8 @@ const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const MeshInput = mo.MeshInput;
 const MeshType = gk.MeshType;
 const CameraInput = camera_mod.CameraInput;
-const DistortionModel = camera_mod.DistortionModel;
-const BrownConrady = camera_mod.BrownConrady;
+const DistortModel = camera_mod.DistortParams;
+const BrownCon = camera_mod.BrownCon;
 const PointSpreadFunc = camera_mod.PointSpreadFunc;
 const FuncShaderBuiltin = shaderops.FuncShaderBuiltin;
 const FuncShaderParams = shaderops.FuncShaderParams;
@@ -61,9 +61,9 @@ const PSF_CASES = [_]struct {
     },
 };
 
-const DISTORTION_CASES = [_]struct {
+const DISTORT_CASES = [_]struct {
     name: []const u8,
-    model: DistortionModel,
+    model: DistortModel,
 }{
     .{
         .name = "none",
@@ -71,7 +71,7 @@ const DISTORTION_CASES = [_]struct {
     },
     .{
         .name = "heavy_pincushion",
-        .model = .{ .brown_conrady = BrownConrady{
+        .model = .{ .brown_con = BrownCon.Params{
             .k1 = 12.0,
             .k2 = 40.0,
             .k3 = 0.0,
@@ -81,7 +81,7 @@ const DISTORTION_CASES = [_]struct {
     },
     .{
         .name = "heavy_barrel",
-        .model = .{ .brown_conrady = BrownConrady{
+        .model = .{ .brown_con = BrownCon.Params{
             .k1 = -12.0,
             .k2 = 40.0,
             .k3 = 0.0,
@@ -113,7 +113,7 @@ fn ensureDir(io: std.Io, dir_path: []const u8) !void {
 
 fn makeCameraInput(
     coords: *const meshio.Coords,
-    distortion: DistortionModel,
+    distort: DistortModel,
     psf: PointSpreadFunc,
 ) CameraInput {
     const roi_pos = sceneops.boundsCenter(coords);
@@ -133,7 +133,7 @@ fn makeCameraInput(
         .roi_cent_world = roi_pos,
         .focal_length = FOCAL_LENGTH,
         .sub_sample = SUB_SAMPLE,
-        .distortion = distortion,
+        .distort = distort,
         .psf = psf,
     };
 }
@@ -144,7 +144,7 @@ fn renderCase(
     threaded_io_io: std.Io,
     mesh_type: MeshType,
     mesh_name: []const u8,
-    distortion_case: @TypeOf(DISTORTION_CASES[0]),
+    distort_case: @TypeOf(DISTORT_CASES[0]),
     psf_case: @TypeOf(PSF_CASES[0]),
     sim_data: meshio.SimData,
     uvs: uvio.UVMap,
@@ -154,7 +154,7 @@ fn renderCase(
     const out_dir = try std.fmt.bufPrint(
         &out_dir_buf,
         "{s}/{s}_{s}_{s}",
-        .{ OUT_DIR_ROOT, mesh_name, distortion_case.name, psf_case.name },
+        .{ OUT_DIR_ROOT, mesh_name, distort_case.name, psf_case.name },
     );
     try ensureDir(io, out_dir);
 
@@ -175,7 +175,7 @@ fn renderCase(
     };
     const camera_input = makeCameraInput(
         &sim_data.coords,
-        distortion_case.model,
+        distort_case.model,
         psf_case.psf,
     );
     const render_groups = [_]riley.RenderGroupSpec{
@@ -184,7 +184,7 @@ fn renderCase(
 
     std.debug.print(
         "Rendering {s} {s} {s} -> {s}\n",
-        .{ mesh_name, distortion_case.name, psf_case.name, out_dir },
+        .{ mesh_name, distort_case.name, psf_case.name, out_dir },
     );
     const images = try riley.raster(
         allocator,
@@ -256,7 +256,7 @@ pub fn main(init: std.process.Init) !void {
         var uvs = try uvio.loadUVMap(aa, threaded_io.io(), uv_path);
         defer uvs.deinit(aa);
 
-        for (DISTORTION_CASES) |dist_case| {
+        for (DISTORT_CASES) |dist_case| {
             for (PSF_CASES) |psf_case| {
                 try renderCase(
                     aa,

@@ -147,7 +147,7 @@ pub fn runFullShaderCaseTest(
                         .{ case_dir_name, @tagName(mesh_type), ff, ch, duration_ms },
                     );
                 }
-                return err;
+                try common_test.recordGoldFailure(err);
             };
         }
     }

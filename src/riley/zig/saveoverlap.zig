@@ -97,7 +97,6 @@ pub const SaveSlotBuff = struct {
 };
 
 pub const SaveOverlap = struct {
-    outer_alloc: std.mem.Allocator,
     save_io: std.Io,
     config: RasterConfig,
     enabled_flag: bool,
@@ -115,7 +114,6 @@ pub const SaveOverlap = struct {
         is_enabled: bool,
     ) !SaveOverlap {
         var session = SaveOverlap{
-            .outer_alloc = outer_alloc,
             .save_io = save_io,
             .config = config,
             .enabled_flag = is_enabled,
@@ -149,7 +147,10 @@ pub const SaveOverlap = struct {
         return session;
     }
 
-    pub fn deinit(self: *SaveOverlap) void {
+    pub fn deinit(
+        self: *SaveOverlap,
+        outer_alloc: std.mem.Allocator,
+    ) void {
         if (self.coordinator) |coordinator| {
             coordinator.mutex.lockUncancelable(self.save_io);
             coordinator.done_submitting = true;
@@ -162,9 +163,9 @@ pub const SaveOverlap = struct {
                 self.thread = null;
             }
             for (coordinator.slots) |*slot| {
-                slot.resetReportStorage(self.outer_alloc, self.config);
+                slot.resetReportStorage(outer_alloc, self.config);
             }
-            self.outer_alloc.destroy(coordinator);
+            outer_alloc.destroy(coordinator);
             self.coordinator = null;
         }
         self.arena.deinit();
@@ -204,13 +205,14 @@ pub const SaveOverlap = struct {
 
     fn releaseSlot(
         self: *SaveOverlap,
+        outer_alloc: std.mem.Allocator,
         io: std.Io,
         slot: *SaveSlot,
     ) void {
         const coordinator = self.coordinator orelse unreachable;
         coordinator.mutex.lockUncancelable(io);
         defer coordinator.mutex.unlock(io);
-        slot.resetReportStorage(self.outer_alloc, self.config);
+        slot.resetReportStorage(outer_alloc, self.config);
         slot.state = .free;
         coordinator.free_cond.signal(io);
     }
@@ -232,7 +234,7 @@ pub const SaveOverlap = struct {
         comptime raster_stage_fn: anytype,
     ) !void {
         const slot = try self.acquireSlot(io);
-        errdefer self.releaseSlot(io, slot);
+        errdefer self.releaseSlot(outer_alloc, io, slot);
         job.desc.save_slot = slot;
         try raster_stage_fn(
             outer_alloc,
