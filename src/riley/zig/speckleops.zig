@@ -665,24 +665,6 @@ pub fn generateDirectFixedSpeckle2D(
     };
 }
 
-fn speckleClassificationByteCount(state_count: usize) !usize {
-    const rounded_state_count = std.math.add(usize, state_count, 3) catch
-        return error.SpeckleClassificationTooLarge;
-    return rounded_state_count / 4;
-}
-
-fn speckleClassificationDims(params: Speckle2DParams) ![2]usize {
-    const dims = speckleSampleIntervalDims(params) orelse
-        return error.SpeckleClassificationTooLarge;
-    const state_count = std.math.mul(usize, dims[0], dims[1]) catch
-        return error.SpeckleClassificationTooLarge;
-    const state_byte_count = try speckleClassificationByteCount(state_count);
-    if (state_byte_count > max_speckle_classification_bytes) {
-        return error.SpeckleClassificationTooLarge;
-    }
-    return dims;
-}
-
 fn classifySpeckleDiskMicrocell(
     disk: SpeckleDisk2D,
     box_min: [2]F,
@@ -801,16 +783,6 @@ const SpeckleClassificationIndexRange = struct {
     max: usize,
 };
 
-inline fn speckleClassificationBoundary(
-    index: usize,
-    uv_to_cell: F,
-    cells_per_uv: F,
-    uv_offset: F,
-) F {
-    const uv = @as(F, @floatFromInt(index)) / uv_to_cell;
-    return uv * cells_per_uv + uv_offset;
-}
-
 const SpeckleClassificationAxis = struct {
     dim: usize,
     uv_to_cell: F,
@@ -829,12 +801,8 @@ const SpeckleClassificationAxis = struct {
 
     inline fn boundary(self: @This(), index: usize) F {
         if (self.cached_boundaries) |boundaries| return boundaries[index];
-        return speckleClassificationBoundary(
-            index,
-            self.uv_to_cell,
-            self.cells_per_uv,
-            self.uv_offset,
-        );
+        const uv = @as(F, @floatFromInt(index)) / self.uv_to_cell;
+        return uv * self.cells_per_uv + self.uv_offset;
     }
 };
 
@@ -1043,10 +1011,16 @@ pub fn generateClassifiedIndexedSpeckle2D(
     errdefer allocator.free(speckles.disk_by_cell);
     errdefer allocator.free(speckles.disks);
 
-    const dims = try speckleClassificationDims(params);
+    const dims = speckleSampleIntervalDims(params) orelse
+        return error.SpeckleClassificationTooLarge;
     const state_count = std.math.mul(usize, dims[0], dims[1]) catch
         return error.SpeckleClassificationTooLarge;
-    const state_byte_count = try speckleClassificationByteCount(state_count);
+    const rounded_state_count = std.math.add(usize, state_count, 3) catch
+        return error.SpeckleClassificationTooLarge;
+    const state_byte_count = rounded_state_count / 4;
+    if (state_byte_count > max_speckle_classification_bytes) {
+        return error.SpeckleClassificationTooLarge;
+    }
     const states = try allocator.alloc(u8, state_byte_count);
     errdefer allocator.free(states);
     @memset(states, 0);
@@ -2761,7 +2735,7 @@ test "fixed-radius stamping handles boundary cache overflow exactly" {
         .radius_mean = 0.35,
         .radius_jitter = 0.0,
     };
-    const dims = try speckleClassificationDims(params);
+    const dims = speckleSampleIntervalDims(params) orelse return error.TestUnexpectedResult;
     try testing.expect(
         dims[0] + 1 > speckle_classification_boundary_cache_capacity,
     );
@@ -2786,7 +2760,7 @@ test "speckle classification bounds contain rounded UV lookups" {
     };
     for (cases) |params| {
         try params.validate();
-        const dims = try speckleClassificationDims(params);
+        const dims = speckleSampleIntervalDims(params) orelse return error.TestUnexpectedResult;
         const uv_to_cell = [2]F{ @floatFromInt(dims[0]), @floatFromInt(dims[1]) };
         const axes = speckleClassificationAxes(dims, uv_to_cell, params);
         for (axes) |axis| {
