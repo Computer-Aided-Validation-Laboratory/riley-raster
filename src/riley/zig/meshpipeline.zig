@@ -33,7 +33,7 @@ const Timestamp = std.Io.Clock.Timestamp;
 const shaderops = @import("shaderops.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
-const distortbounds = @import("distortbounds.zig");
+const db = @import("distortbounds.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -69,7 +69,7 @@ pub const MeshFrameWorkspace = struct {
     coords_nodes_def_world: ?meshio.Coords,
     vis_orig_elem_inds: []usize,
     elem_bboxes: []rops.ElemBBox,
-    elem_float_bboxes: []rops.DistortBounds,
+    elem_float_bboxes: []db.DistortBounds,
     elems_in_image: usize,
     raster_hull: ?ndarray.NDArray(F),
     vis_counts_by_chunk: []usize,
@@ -81,7 +81,7 @@ pub const MeshFrameWorkspace = struct {
 pub const MeshFrame = struct {
     mesh: MeshPrepared,
     elem_bboxes: []rops.ElemBBox,
-    elem_float_bboxes: []rops.DistortBounds,
+    elem_float_bboxes: []db.DistortBounds,
     elems_in_image: usize,
     total_elems_num: usize,
     raster_hull: ?ndarray.NDArray(F),
@@ -450,7 +450,6 @@ pub fn prepMeshFrames(
     chunk_exec: *pce.ParaChunkExecutor,
     workers_num: usize,
     camera: *const cam.CameraPrepared,
-    raster_halo_px: u16,
     config: rastcfg.RasterConfig,
     frame_idx: usize,
     static_meshes: []const MeshStatic,
@@ -458,42 +457,6 @@ pub fn prepMeshFrames(
     frame_meshes: []MeshFrame,
     timing: *GeomTimes,
 ) !FrameGeomResult {
-    const ideal_sensor = if (cam.isNoDistort(camera.distort))
-        null
-    else
-        try rops.calcIdealSensorBounds(camera, raster_halo_px);
-    return prepMeshFramesWithSensor(
-        arena_alloc,
-        chunk_exec,
-        workers_num,
-        camera,
-        raster_halo_px,
-        ideal_sensor,
-        config,
-        frame_idx,
-        static_meshes,
-        nodal_global_scaling,
-        frame_meshes,
-        timing,
-    );
-}
-
-/// Use a bound prepared from this camera and raster_halo_px for the render call.
-pub fn prepMeshFramesWithSensor(
-    arena_alloc: std.mem.Allocator,
-    chunk_exec: *pce.ParaChunkExecutor,
-    workers_num: usize,
-    camera: *const cam.CameraPrepared,
-    raster_halo_px: u16,
-    ideal_sensor: ?rops.DistortBounds,
-    config: rastcfg.RasterConfig,
-    frame_idx: usize,
-    static_meshes: []const MeshStatic,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
-    frame_meshes: []MeshFrame,
-    timing: *GeomTimes,
-) !FrameGeomResult {
-    std.debug.assert(cam.isNoDistort(camera.distort) == (ideal_sensor == null));
     var res = FrameGeomResult{
         .total_elems_num = 0,
         .total_elems_in_image = 0,
@@ -519,13 +482,11 @@ pub fn prepMeshFramesWithSensor(
 
         // Prepares meshes for each frame including coord transforms to camera space and
         // data reshaping to elem order for a given frame.
-        frame_meshes[ii] = try prepMeshFrameWithSensor(
+        frame_meshes[ii] = try prepMeshFrame(
             arena_alloc,
             chunk_exec,
             workers_num,
             camera,
-            raster_halo_px,
-            ideal_sensor,
             config,
             mesh_static,
             frame_idx,
@@ -550,71 +511,11 @@ pub fn prepMeshFrame(
     scaling_params: ?imageops.ScalingParams,
     timing: *GeomTimes,
 ) !MeshFrame {
-    return prepMeshFrameWithHalo(
-        outer_alloc,
-        chunk_exec,
-        workers_num,
-        camera,
-        config.raster_halo_px_override orelse camera.prep_psf.halo_px,
-        config,
-        mesh_static,
-        frame_idx,
-        scaling_params,
-        timing,
-    );
-}
-
-pub fn prepMeshFrameWithHalo(
-    outer_alloc: std.mem.Allocator,
-    chunk_exec: *pce.ParaChunkExecutor,
-    workers_num: usize,
-    camera: *const cam.CameraPrepared,
-    raster_halo_px: u16,
-    config: rastcfg.RasterConfig,
-    mesh_static: *const MeshStatic,
-    frame_idx: usize,
-    scaling_params: ?imageops.ScalingParams,
-    timing: *GeomTimes,
-) !MeshFrame {
-    const ideal_sensor = if (cam.isNoDistort(camera.distort))
-        null
-    else
-        try rops.calcIdealSensorBounds(camera, raster_halo_px);
-    return prepMeshFrameWithSensor(
-        outer_alloc,
-        chunk_exec,
-        workers_num,
-        camera,
-        raster_halo_px,
-        ideal_sensor,
-        config,
-        mesh_static,
-        frame_idx,
-        scaling_params,
-        timing,
-    );
-}
-
-fn prepMeshFrameWithSensor(
-    outer_alloc: std.mem.Allocator,
-    chunk_exec: *pce.ParaChunkExecutor,
-    workers_num: usize,
-    camera: *const cam.CameraPrepared,
-    raster_halo_px: u16,
-    ideal_sensor: ?rops.DistortBounds,
-    config: rastcfg.RasterConfig,
-    mesh_static: *const MeshStatic,
-    frame_idx: usize,
-    scaling_params: ?imageops.ScalingParams,
-    timing: *GeomTimes,
-) !MeshFrame {
     return switch (mesh_static.mesh_type) {
         inline else => |MT| {
             var pipeline = try FrameMeshPipeline(MT).init(
                 outer_alloc,
                 camera,
-                raster_halo_px,
-                ideal_sensor,
                 mesh_static,
                 frame_idx,
                 config.hull_mode,
@@ -721,8 +622,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         const FrameMeshPipelineType = @This();
 
         camera: *const cam.CameraPrepared,
-        raster_halo_px: u16,
-        ideal_sensor: ?rops.DistortBounds,
         mesh_static: *const MeshStatic,
         frame_idx: usize,
         hull_mode: rastcfg.HullMode,
@@ -741,8 +640,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         fn init(
             outer_alloc: std.mem.Allocator,
             camera: *const cam.CameraPrepared,
-            raster_halo_px: u16,
-            ideal_sensor: ?rops.DistortBounds,
             mesh_static: *const MeshStatic,
             frame_idx: usize,
             hull_mode: rastcfg.HullMode,
@@ -764,8 +661,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             return .{
                 .camera = camera,
-                .raster_halo_px = raster_halo_px,
-                .ideal_sensor = ideal_sensor,
                 .mesh_static = mesh_static,
                 .frame_idx = frame_idx,
                 .hull_mode = hull_mode,
@@ -941,8 +836,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         const CullVisibleCountStage = struct {
             camera: *const cam.CameraPrepared,
-            raster_halo_px: u16,
-            ideal_sensor: ?rops.DistortBounds,
             edge_spacing_px: F,
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
@@ -963,7 +856,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             var vis_count: usize = 0;
 
             for (range_start..range_end) |ee| {
-                const bbox: ?rops.ElemBBox = if (stage.ideal_sensor) |ideal_sensor| blk: {
+                const bbox: ?rops.ElemBBox =
+                    if (stage.camera.ideal_sensor_bounds) |ideal_sensor| blk: {
                     const distorted = rops.calcVisibleDistortBBox(
                         MT,
                         stage.camera,
@@ -972,7 +866,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         ee,
                         hull_convex_fallback_on,
                         stage.hull_mode != .off,
-                        stage.raster_halo_px,
+                        stage.camera.prep_psf.halo_px,
                         ideal_sensor,
                         stage.edge_spacing_px,
                     ) catch |err| {
@@ -988,7 +882,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         stage.coords_nodes,
                         stage.connect,
                         ee,
-                        stage.raster_halo_px,
+                        stage.camera.prep_psf.halo_px,
                     )
                 else if (stage.hull_mode == .off)
                     rops.calcVisibleNodeBBoxHighOrdNoHullWithHalo(
@@ -997,7 +891,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         stage.coords_nodes,
                         stage.connect,
                         ee,
-                        stage.raster_halo_px,
+                        stage.camera.prep_psf.halo_px,
                     )
                 else
                     rops.calcVisibleNodeBBoxHighOrdWithHalo(
@@ -1007,7 +901,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         stage.connect,
                         ee,
                         hull_convex_fallback_on,
-                        stage.raster_halo_px,
+                        stage.camera.prep_psf.halo_px,
                     );
 
                 if (bbox != null) {
@@ -1019,8 +913,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         }
 
         fn cullVis(self: *FrameMeshPipelineType, outer_alloc: std.mem.Allocator) !void {
-            try distortbounds.validateSpacing(self.edge_spacing_px);
-            const ideal_sensor = self.ideal_sensor;
+            try db.validateSpacing(self.edge_spacing_px);
+            const ideal_sensor = self.camera.ideal_sensor_bounds;
             const cached_distort_bboxes: []?rops.DistortElemBBox = if (ideal_sensor != null)
                 try outer_alloc.alloc(?rops.DistortElemBBox, self.elems_num)
             else
@@ -1048,8 +942,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             var cull_count_stage = CullVisibleCountStage{
                 .camera = self.camera,
-                .raster_halo_px = self.raster_halo_px,
-                .ideal_sensor = ideal_sensor,
                 .edge_spacing_px = self.edge_spacing_px,
                 .connect = &self.mesh_static.connect,
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
@@ -1081,14 +973,13 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
             if (ideal_sensor != null) {
                 self.mesh_workspace.elem_float_bboxes = try outer_alloc.alloc(
-                    rops.DistortBounds,
+                    db.DistortBounds,
                     self.mesh_workspace.elems_in_image,
                 );
             }
 
             var cull_fill_stage = CullVisibleFillStage{
                 .camera = self.camera,
-                .raster_halo_px = self.raster_halo_px,
                 .connect = &self.mesh_static.connect,
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
                 .hull_mode = self.hull_mode,
@@ -1117,14 +1008,13 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         const CullVisibleFillStage = struct {
             camera: *const cam.CameraPrepared,
-            raster_halo_px: u16,
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
             hull_mode: rastcfg.HullMode,
             cached_distort_bboxes: ?[]const ?rops.DistortElemBBox,
             vis_orig_elem_inds: []usize,
             elem_bboxes: []rops.ElemBBox,
-            elem_float_bboxes: []rops.DistortBounds,
+            elem_float_bboxes: []db.DistortBounds,
             vis_offsets_by_chunk: []const usize,
         };
 
@@ -1156,7 +1046,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         stage.coords_nodes,
                         stage.connect,
                         ee,
-                        stage.raster_halo_px,
+                        stage.camera.prep_psf.halo_px,
                     )
                 else if (stage.hull_mode == .off)
                     rops.calcVisibleNodeBBoxHighOrdNoHullWithHalo(
@@ -1165,7 +1055,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         stage.coords_nodes,
                         stage.connect,
                         ee,
-                        stage.raster_halo_px,
+                        stage.camera.prep_psf.halo_px,
                     )
                 else
                     rops.calcVisibleNodeBBoxHighOrdWithHalo(
@@ -1175,7 +1065,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         stage.connect,
                         ee,
                         hull_convex_fallback_on,
-                        stage.raster_halo_px,
+                        stage.camera.prep_psf.halo_px,
                     );
                 if (bbox) |b| {
                     stage.vis_orig_elem_inds[write_idx] = ee;

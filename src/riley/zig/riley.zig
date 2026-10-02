@@ -21,6 +21,7 @@ const camops = @import("cameraops.zig");
 const rops = @import("rasterops.zig");
 const mo = @import("meshpipeline.zig");
 const shaderops = @import("shaderops.zig");
+const db = @import("distortbounds.zig");
 
 const iio = @import("imageio.zig");
 const imageops = @import("imageops.zig");
@@ -275,7 +276,6 @@ fn rasterReportIntoValidated(
         for (cams) |cam_prep| cam_prep.deinit(outer_alloc);
         outer_alloc.free(cams);
     }
-    const ideal_sensor_bounds = try prepareIdealSensorBounds(static_alloc, cams, config);
 
     const num_time = valid_summary.num_time;
     const num_fields = valid_summary.raw_num_fields;
@@ -312,7 +312,6 @@ fn rasterReportIntoValidated(
             outer_alloc,
             render_groups,
             cams,
-            ideal_sensor_bounds,
             config,
             out_dir,
             out_dir_path,
@@ -328,7 +327,6 @@ fn rasterReportIntoValidated(
             outer_alloc,
             render_groups,
             cams,
-            ideal_sensor_bounds,
             config,
             out_dir,
             out_dir_path,
@@ -358,25 +356,6 @@ fn rasterReportIntoValidated(
         end_to_end_times,
         if (bench_capt) |capt| capt else null,
     );
-}
-
-fn prepareIdealSensorBounds(
-    outer_alloc: std.mem.Allocator,
-    cameras: []const cam.CameraPrepared,
-    config: RasterConfig,
-) ![]const ?rops.DistortBounds {
-    const bounds = try outer_alloc.alloc(?rops.DistortBounds, cameras.len);
-    errdefer outer_alloc.free(bounds);
-    for (cameras, bounds) |*camera, *slot| {
-        slot.* = if (cam.isNoDistort(camera.distort))
-            null
-        else
-            try rops.calcIdealSensorBounds(
-                camera,
-                config.raster_halo_px_override orelse camera.prep_psf.halo_px,
-            );
-    }
-    return bounds;
 }
 
 pub fn calcAllFramesImageDims(
@@ -455,7 +434,6 @@ const FrameJobErrorState = struct {
 const OfflineDispatchShared = struct {
     outer_alloc: std.mem.Allocator,
     cameras: []const cam.CameraPrepared,
-    ideal_sensor_bounds: []const ?rops.DistortBounds,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     out_dir_path: ?[]const u8,
@@ -475,7 +453,6 @@ fn dispatchFrameJobsOffline(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
     cameras: []const cam.CameraPrepared,
-    ideal_sensor_bounds: []const ?rops.DistortBounds,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     out_dir_path: ?[]const u8,
@@ -490,7 +467,6 @@ fn dispatchFrameJobsOffline(
     var shared = OfflineDispatchShared{
         .outer_alloc = outer_alloc,
         .cameras = cameras,
-        .ideal_sensor_bounds = ideal_sensor_bounds,
         .config = config,
         .out_dir = out_dir,
         .out_dir_path = out_dir_path,
@@ -571,7 +547,6 @@ fn processOfflineRenderGroupLoop(
         const jobs = try prepareJobBatch(
             group_alloc,
             shared.cameras,
-            shared.ideal_sensor_bounds,
             shared.config,
             shared.out_dir,
             shared.out_dir_path,
@@ -614,7 +589,6 @@ fn processOfflineRenderGroupLoop(
 const InOrderDispatchShared = struct {
     outer_alloc: std.mem.Allocator,
     cameras: []const cam.CameraPrepared,
-    ideal_sensor_bounds: []const ?rops.DistortBounds,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     out_dir_path: ?[]const u8,
@@ -635,7 +609,6 @@ fn dispatchFrameJobsInOrder(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
     cameras: []const cam.CameraPrepared,
-    ideal_sensor_bounds: []const ?rops.DistortBounds,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     out_dir_path: ?[]const u8,
@@ -654,7 +627,6 @@ fn dispatchFrameJobsInOrder(
         var shared = InOrderDispatchShared{
             .outer_alloc = outer_alloc,
             .cameras = cameras,
-            .ideal_sensor_bounds = ideal_sensor_bounds,
             .config = config,
             .out_dir = out_dir,
             .out_dir_path = out_dir_path,
@@ -742,7 +714,6 @@ fn processInOrderRenderGroupLoop(
         const jobs = try prepareJobBatch(
             group_alloc,
             shared.cameras,
-            shared.ideal_sensor_bounds,
             shared.config,
             shared.out_dir,
             shared.out_dir_path,
@@ -785,7 +756,6 @@ fn processInOrderRenderGroupLoop(
 fn prepareJobBatch(
     group_alloc: std.mem.Allocator,
     cameras: []const cam.CameraPrepared,
-    ideal_sensor_bounds: []const ?rops.DistortBounds,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     out_dir_path: ?[]const u8,
@@ -796,7 +766,6 @@ fn prepareJobBatch(
     bench_capture: ?[]report.FrameBenchCapture,
     job_indices: []const usize,
 ) ![]PreparedFrameJob {
-    std.debug.assert(ideal_sensor_bounds.len == cameras.len);
     const jobs = try group_alloc.alloc(PreparedFrameJob, job_indices.len);
 
     const can_write_result_direct = images_arr != null and
@@ -810,7 +779,6 @@ fn prepareJobBatch(
             group_alloc,
             .{
                 .camera = &cameras[camera_idx],
-                .ideal_sensor = ideal_sensor_bounds[camera_idx],
                 .camera_idx = camera_idx,
                 .frame_idx = frame_idx,
                 .num_fields = num_fields,
@@ -1068,15 +1036,11 @@ fn runGeometryStage(
     var chunk_exec = pce.ParaChunkExecutor.init(io, geom_workers);
 
     var timing = mo.GeomTimes{};
-    const raster_halo_px = job.desc.config.raster_halo_px_override orelse
-        job.desc.camera.prep_psf.halo_px;
-    const geo_res = try mo.prepMeshFramesWithSensor(
+    const geo_res = try mo.prepMeshFrames(
         arena_alloc,
         &chunk_exec,
         scalingpolicy.geometryWorkers(geom_workers),
         job.desc.camera,
-        raster_halo_px,
-        job.desc.ideal_sensor,
         job.desc.config,
         job.desc.frame_idx,
         job.desc.mesh_static,
@@ -1149,7 +1113,7 @@ fn sceneTileOverlapBinning(
             tiles_num_y,
             @intCast(job.camera.pixels_num[0]),
             @intCast(job.camera.pixels_num[1]),
-            job.config.raster_halo_px_override orelse job.camera.prep_psf.halo_px,
+            job.camera.prep_psf.halo_px,
             ctx.elems_in_image_by_mesh,
             ctx.elem_bboxes_by_mesh,
             ctx.elem_float_bboxes_by_mesh,
@@ -1163,7 +1127,7 @@ fn sceneTileOverlapBinning(
             @intCast(job.camera.pixels_num[1]),
             0,
             @intCast(job.camera.pixels_num[1]),
-            job.config.raster_halo_px_override orelse job.camera.prep_psf.halo_px,
+            job.camera.prep_psf.halo_px,
             ctx.elems_in_image_by_mesh,
             ctx.elem_bboxes_by_mesh,
             ctx.elem_float_bboxes_by_mesh,
@@ -1187,7 +1151,7 @@ fn sceneGlobalTileElemOverlap(
     halo_px: u16,
     elems_in_image_by_mesh: []const usize,
     elem_bboxes_by_mesh: []const []rops.ElemBBox,
-    elem_float_bboxes_by_mesh: []const []rops.DistortBounds,
+    elem_float_bboxes_by_mesh: []const []db.DistortBounds,
 ) !rops.TilingOverlaps {
     const tiles_x = try std.math.divCeil(usize, screen_px_x, tile_size);
     std.debug.assert(core_y_px_min < core_y_px_max);
@@ -1223,7 +1187,7 @@ fn sceneGlobalTileElemOverlap(
             for (elem_bboxes_by_mesh, 0..) |elem_bboxes, mesh_idx| {
                 const float_bboxes = elem_float_bboxes_by_mesh[mesh_idx];
                 for (elem_bboxes[0..elems_in_image_by_mesh[mesh_idx]], 0..) |elem_bbox, ee| {
-                    const floating: ?rops.DistortBounds = if (float_bboxes.len == 0)
+                    const floating: ?db.DistortBounds = if (float_bboxes.len == 0)
                         null
                     else
                         float_bboxes[ee];
@@ -1510,7 +1474,6 @@ fn initFrameReportStorage(
 // --------------------------------------------------------------------------------------
 const FrameJobDesc = struct {
     camera: *const cam.CameraPrepared,
-    ideal_sensor: ?rops.DistortBounds,
     camera_idx: usize,
     frame_idx: usize,
     num_fields: u8,
@@ -1530,7 +1493,7 @@ const FrameContext = struct {
     frame_meshes: []mo.MeshFrame = &.{},
     prep_meshes: []mo.MeshPrepared = &.{},
     elem_bboxes_by_mesh: [][]rops.ElemBBox = &.{},
-    elem_float_bboxes_by_mesh: [][]rops.DistortBounds = &.{},
+    elem_float_bboxes_by_mesh: [][]db.DistortBounds = &.{},
     elems_in_image_by_mesh: []usize = &.{},
     raster_hulls: []?ndarray.NDArray(F) = &.{},
     tiling: ?rops.TilingOverlaps = null,
@@ -1570,7 +1533,7 @@ fn prepareFrameContext(
             input.config.tile_size_max,
             input.camera.pixels_num,
             input.camera.sub_sample,
-            input.config.raster_halo_px_override orelse input.camera.prep_psf.halo_px,
+            input.camera.prep_psf.halo_px,
         ),
         .global_subpx_full, .global_subpx_stripe => blk: {
             const requested_subpx = input.config.global_subpx_tile_size_override orelse
@@ -1593,7 +1556,7 @@ fn prepareFrameContext(
     ctx.frame_meshes = try outer_alloc.alloc(mo.MeshFrame, mesh_n);
     ctx.prep_meshes = try outer_alloc.alloc(mo.MeshPrepared, mesh_n);
     ctx.elem_bboxes_by_mesh = try outer_alloc.alloc([]rops.ElemBBox, mesh_n);
-    ctx.elem_float_bboxes_by_mesh = try outer_alloc.alloc([]rops.DistortBounds, mesh_n);
+    ctx.elem_float_bboxes_by_mesh = try outer_alloc.alloc([]db.DistortBounds, mesh_n);
     ctx.elems_in_image_by_mesh = try outer_alloc.alloc(usize, mesh_n);
     ctx.raster_hulls = try outer_alloc.alloc(?ndarray.NDArray(F), mesh_n);
 }
@@ -1690,7 +1653,7 @@ fn rasterFrame(
     comptime report_mode: ReportMode,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    input: *const FrameJobDesc,
+    frame_job: *const FrameJobDesc,
     raster_workers: u16,
     ctx: *FrameContext,
 ) !void {
@@ -1701,20 +1664,19 @@ fn rasterFrame(
     ctx.frame_times.resolve_workers_requested = raster_workers;
 
     const ctx_rast = rops.RasterContext{
-        .camera = input.camera,
-        .config = input.config,
-        .frame_idx = input.frame_idx,
+        .camera = frame_job.camera,
+        .config = frame_job.config,
+        .frame_idx = frame_job.frame_idx,
         .tile_size = ctx.actual_tile_size,
     };
     var global_resolve_time_ns: F = 0.0;
-    if (input.config.buffer_mode != .tile_local) {
-        const sub_samp: usize = @intCast(input.camera.sub_sample);
-        const halo_px = input.config.raster_halo_px_override orelse
-            input.camera.prep_psf.halo_px;
+    if (frame_job.config.buffer_mode != .tile_local) {
+        const sub_samp: usize = @intCast(frame_job.camera.sub_sample);
+        const halo_px = frame_job.camera.prep_psf.halo_px;
         ctx.frame_times.global_subpx_stats = .{
-            .mode = input.config.buffer_mode,
-            .output_w_subpx = @as(usize, input.camera.pixels_num[0]) * sub_samp,
-            .output_h_subpx = @as(usize, input.camera.pixels_num[1]) * sub_samp,
+            .mode = frame_job.config.buffer_mode,
+            .output_w_subpx = @as(usize, frame_job.camera.pixels_num[0]) * sub_samp,
+            .output_h_subpx = @as(usize, frame_job.camera.pixels_num[1]) * sub_samp,
             .outer_halo_subpx = @as(usize, halo_px) * sub_samp,
             .tile_core_subpx = @as(usize, ctx.actual_tile_size) * sub_samp,
             .tile_scratch_subpx = (
@@ -1723,7 +1685,7 @@ fn rasterFrame(
         };
     }
 
-    switch (input.config.buffer_mode) {
+    switch (frame_job.config.buffer_mode) {
         .tile_local => try rasterengine.rasterScene(
             report_mode,
             outer_alloc,
@@ -1738,14 +1700,13 @@ fn rasterFrame(
         ),
         .global_subpx_full => {
             const time_start_buffer_setup = Timestamp.now(io, .awake);
-            const sub_samp: usize = @intCast(input.camera.sub_sample);
-            const halo_px = input.config.raster_halo_px_override orelse
-                input.camera.prep_psf.halo_px;
+            const sub_samp: usize = @intCast(frame_job.camera.sub_sample);
+            const halo_px = frame_job.camera.prep_psf.halo_px;
             const halo_subpx = @as(usize, halo_px) * sub_samp;
             const domain = try subpxframe.SubpxFrameDomain.init(
-                input.num_fields,
-                input.camera.pixels_num,
-                input.camera.sub_sample,
+                frame_job.num_fields,
+                frame_job.camera.pixels_num,
+                frame_job.camera.sub_sample,
                 halo_subpx,
             );
             var target = try subpxframe.SubpxTarget.init(
@@ -1753,7 +1714,7 @@ fn rasterFrame(
                 domain,
                 -@as(i32, @intCast(halo_subpx)),
                 -@as(i32, @intCast(halo_subpx)),
-                input.config.background_value,
+                frame_job.config.background_value,
             );
             defer target.deinit(outer_alloc);
             ctx.frame_times.global_subpx_times.buffer_setup += @floatFromInt(
@@ -1762,12 +1723,12 @@ fn rasterFrame(
             if (ctx.frame_times.global_subpx_stats) |*stats| {
                 const tiles_x = std.math.divCeil(
                     usize,
-                    input.camera.pixels_num[0],
+                    frame_job.camera.pixels_num[0],
                     ctx.actual_tile_size,
                 ) catch unreachable;
                 const tiles_y = std.math.divCeil(
                     usize,
-                    input.camera.pixels_num[1],
+                    frame_job.camera.pixels_num[1],
                     ctx.actual_tile_size,
                 ) catch unreachable;
                 recordGlobalTilingStats(stats, ctx.tiling.?, tiles_x * tiles_y);
@@ -1796,8 +1757,8 @@ fn rasterFrame(
                 outer_alloc,
                 io,
                 &target,
-                input.camera,
-                input.config.background_value,
+                frame_job.camera,
+                frame_job.config.background_value,
                 &ctx.frame_arr,
                 raster_workers,
             );
@@ -1808,27 +1769,26 @@ fn rasterFrame(
             ctx.frame_times.global_subpx_times.resolve += global_resolve_time_ns;
         },
         .global_subpx_stripe => {
-            const sub_samp: usize = @intCast(input.camera.sub_sample);
-            const halo_px = input.config.raster_halo_px_override orelse
-                input.camera.prep_psf.halo_px;
+            const sub_samp: usize = @intCast(frame_job.camera.sub_sample);
+            const halo_px = frame_job.camera.prep_psf.halo_px;
             const halo_subpx = @as(usize, halo_px) * sub_samp;
-            const image_w_subpx = @as(usize, input.camera.pixels_num[0]) * sub_samp;
-            const image_h_subpx = @as(usize, input.camera.pixels_num[1]) * sub_samp;
+            const image_w_subpx = @as(usize, frame_job.camera.pixels_num[0]) * sub_samp;
+            const image_h_subpx = @as(usize, frame_job.camera.pixels_num[1]) * sub_samp;
             const requested_stripe_subpx =
-                input.config.global_subpx_stripe_size_override orelse
-                input.config.global_subpx_stripe_size_min;
+                frame_job.config.global_subpx_stripe_size_override orelse
+                frame_job.config.global_subpx_stripe_size_min;
             const stripe_subpx: usize = requested_stripe_subpx;
             const first_core_suby_max = @min(image_h_subpx, stripe_subpx);
             const time_start_buffer_setup = Timestamp.now(io, .awake);
             var stripe = try subpxframe.SubpxStripe.init(
                 outer_alloc,
-                input.num_fields,
+                frame_job.num_fields,
                 image_w_subpx,
                 0,
                 @intCast(first_core_suby_max),
                 halo_subpx,
                 halo_subpx,
-                input.config.background_value,
+                frame_job.config.background_value,
             );
             defer stripe.deinit(outer_alloc);
             ctx.frame_times.global_subpx_times.buffer_setup += @floatFromInt(
@@ -1846,7 +1806,7 @@ fn rasterFrame(
                     @intCast(core_suby_min),
                     @intCast(core_suby_max),
                     halo_subpx,
-                    input.config.background_value,
+                    frame_job.config.background_value,
                 );
                 var stripe_tiling: rops.TilingOverlaps = undefined;
                 var stripe_tiling_owned = false;
@@ -1856,9 +1816,9 @@ fn rasterFrame(
                     stripe_tiling = try sceneGlobalTileElemOverlap(
                         outer_alloc,
                         ctx.actual_tile_size,
-                        input.camera.sub_sample,
-                        @intCast(input.camera.pixels_num[0]),
-                        @intCast(input.camera.pixels_num[1]),
+                        frame_job.camera.sub_sample,
+                        @intCast(frame_job.camera.pixels_num[0]),
+                        @intCast(frame_job.camera.pixels_num[1]),
                         @intCast(core_suby_min / sub_samp),
                         @intCast(core_suby_max / sub_samp),
                         halo_px,
@@ -1875,7 +1835,7 @@ fn rasterFrame(
                 if (ctx.frame_times.global_subpx_stats) |*stats| {
                     const tiles_x = std.math.divCeil(
                         usize,
-                        input.camera.pixels_num[0],
+                        frame_job.camera.pixels_num[0],
                         ctx.actual_tile_size,
                     ) catch unreachable;
                     const stripe_h_px = (core_suby_max - core_suby_min) / sub_samp;
@@ -1929,8 +1889,8 @@ fn rasterFrame(
                     outer_alloc,
                     io,
                     &stripe.target,
-                    input.camera,
-                    input.config.background_value,
+                    frame_job.camera,
+                    frame_job.config.background_value,
                     &ctx.frame_arr,
                     core_suby_min / sub_samp,
                     core_suby_max / sub_samp,
@@ -1960,7 +1920,7 @@ fn rasterFrame(
     ctx.frame_times.raster_loop = @floatFromInt(
         time_start_loop.durationTo(time_end_loop).raw.nanoseconds,
     );
-    if (input.config.buffer_mode != .tile_local) {
+    if (frame_job.config.buffer_mode != .tile_local) {
         ctx.frame_times.scratch_resolve = global_resolve_time_ns;
         if (report.getBenchLog(report_mode, report_ptr)) |bench_log| {
             ctx.frame_times.cam_invert = bench_log.cam_time_ns;
@@ -2035,27 +1995,24 @@ test "ideal sensor bounds are prepared once per camera with effective halo" {
     };
     const undistorted = try cam.CameraPrepared.init(outer_alloc, base_input);
     defer undistorted.deinit(outer_alloc);
+    try std.testing.expect(undistorted.ideal_sensor_bounds == null);
 
     for ([_]cam.SubPixelCenterMap{ .full_in_mem, .per_tile }) |map_mode| {
-        var distorted_input = base_input;
-        distorted_input.subpixel_center_map = map_mode;
-        distorted_input.distort = .{ .brown_con = .{ .k1 = 0.1 } };
-        distorted_input.psf = .{ .gaussian = .{
-            .sigma_px = 1.0,
-            .supp_rad_px = 2.0,
-        } };
-        const distorted = try cam.CameraPrepared.init(outer_alloc, distorted_input);
-        defer distorted.deinit(outer_alloc);
-        const cameras = [_]cam.CameraPrepared{ undistorted, distorted };
-
         for ([_]?u16{ null, 0, 3 }) |halo_override| {
-            const config = RasterConfig{ .raster_halo_px_override = halo_override };
-            const cached = try prepareIdealSensorBounds(outer_alloc, &cameras, config);
-            defer outer_alloc.free(cached);
-            try std.testing.expect(cached[0] == null);
-            const effective_halo = halo_override orelse distorted.prep_psf.halo_px;
-            const expected = try rops.calcIdealSensorBounds(&distorted, effective_halo);
-            try std.testing.expectEqualDeep(expected, cached[1].?);
+            var distorted_input = base_input;
+            distorted_input.subpixel_center_map = map_mode;
+            distorted_input.distort = .{ .brown_con = .{ .k1 = 0.1 } };
+            distorted_input.psf = .{ .gaussian = .{
+                .sigma_px = 1.0,
+                .supp_rad_px = 2.0,
+                .halo_px_override = halo_override,
+            } };
+            const distorted = try cam.CameraPrepared.init(outer_alloc, distorted_input);
+            defer distorted.deinit(outer_alloc);
+
+            const effective_halo = distorted.prep_psf.halo_px;
+            const expected = try db.idealSensorBounds(&distorted, effective_halo);
+            try std.testing.expectEqualDeep(expected, distorted.ideal_sensor_bounds.?);
         }
     }
 }
@@ -2070,7 +2027,7 @@ test "global sub-pixel tiles own disjoint cores and retain halo only at frame ed
     }};
     const elems_in_image = [_]usize{1};
     const elem_bboxes_by_mesh = [_][]rops.ElemBBox{elem_bboxes[0..]};
-    const elem_float_bboxes_by_mesh = [_][]rops.DistortBounds{&.{}};
+    const elem_float_bboxes_by_mesh = [_][]db.DistortBounds{&.{}};
     const sub_sample: u32 = 2;
     const halo_px: u16 = 2;
     const screen_w_px: u16 = 10;

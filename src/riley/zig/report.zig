@@ -258,7 +258,7 @@ pub fn publishFrameResultsWithNodesPerElem(
                 frame_idx,
                 camera_idx,
                 frame_times,
-                config.raster_halo_px_override orelse camera.prep_psf.halo_px,
+                camera.prep_psf.halo_px,
                 out_dir_path,
                 total_elems_num,
                 total_elems_in_image,

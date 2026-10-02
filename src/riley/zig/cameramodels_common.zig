@@ -542,12 +542,14 @@ pub const SeparablePSF = enum {
 
 pub const PixelBoxPSF = struct {
     supp_rad_px: F = 0.5,
+    halo_px_override: ?u16 = null,
 };
 
 pub const GaussianPSF = struct {
     sigma_px: F,
     supp_rad_px: F,
     separable: SeparablePSF = .yes,
+    halo_px_override: ?u16 = null,
 };
 
 pub const AnisotropicGaussianPSF = struct {
@@ -556,6 +558,7 @@ pub const AnisotropicGaussianPSF = struct {
     theta_rad: F = 0.0,
     supp_rad_px: F,
     separable: SeparablePSF = .no,
+    halo_px_override: ?u16 = null,
 };
 
 pub const PointSpreadFunc = union(enum) {
@@ -795,15 +798,27 @@ pub fn preparePSF(
 ) !PreparedPSF {
     switch (psf) {
         .pixel_box => |box| {
-            if (box.supp_rad_px <= 0.5 +
-                tol.psf.pixel_box_identity_supp_radius)
-            {
-                return .{};
-            }
-            const halo_px: u16 = @intCast(@max(
+            const default_halo_px: u16 = @intCast(@max(
                 @as(usize, 0),
                 @as(usize, @intFromFloat(@ceil(box.supp_rad_px))),
             ));
+            const halo_px = box.halo_px_override orelse default_halo_px;
+            if (box.supp_rad_px <= 0.5 +
+                tol.psf.pixel_box_identity_supp_radius and
+                box.halo_px_override == null)
+            {
+                return .{};
+            }
+            if (box.supp_rad_px <= 0.5 +
+                tol.psf.pixel_box_identity_supp_radius and
+                box.halo_px_override != null)
+            {
+                return .{
+                    .mode = .identity_fast,
+                    .halo_px = halo_px,
+                    .halo_subpx = @as(usize, halo_px) * @as(usize, sub_sample),
+                };
+            }
             const radius_subpx: usize = @intFromFloat(
                 @ceil(box.supp_rad_px * @as(F, @floatFromInt(sub_sample))),
             );
@@ -818,10 +833,11 @@ pub fn preparePSF(
             };
         },
         .gaussian => |gauss| {
-            const halo_px: u16 = @intCast(@max(
+            const default_halo_px: u16 = @intCast(@max(
                 @as(usize, 0),
                 @as(usize, @intFromFloat(@ceil(gauss.supp_rad_px))),
             ));
+            const halo_px = gauss.halo_px_override orelse default_halo_px;
             const radius_subpx: usize = @intFromFloat(
                 @ceil(gauss.supp_rad_px * @as(F, @floatFromInt(sub_sample))),
             );
@@ -852,10 +868,11 @@ pub fn preparePSF(
             };
         },
         .anisotropic_gaussian => |gauss| {
-            const halo_px: u16 = @intCast(@max(
+            const default_halo_px: u16 = @intCast(@max(
                 @as(usize, 0),
                 @as(usize, @intFromFloat(@ceil(gauss.supp_rad_px))),
             ));
+            const halo_px = gauss.halo_px_override orelse default_halo_px;
             const radius_subpx: usize = @intFromFloat(
                 @ceil(gauss.supp_rad_px * @as(F, @floatFromInt(sub_sample))),
             );
@@ -867,6 +884,7 @@ pub fn preparePSF(
                         .sigma_px = gauss.sigma_x_px,
                         .supp_rad_px = gauss.supp_rad_px,
                         .separable = .yes,
+                        .halo_px_override = halo_px,
                     },
                 };
                 const psf_y = PointSpreadFunc{
@@ -874,6 +892,7 @@ pub fn preparePSF(
                         .sigma_px = gauss.sigma_y_px,
                         .supp_rad_px = gauss.supp_rad_px,
                         .separable = .yes,
+                        .halo_px_override = halo_px,
                     },
                 };
                 return .{

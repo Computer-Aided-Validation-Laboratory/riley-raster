@@ -74,9 +74,6 @@ pub const RasterConfig = struct {
     global_subpx_stripe_size_override: ?u16 = null,
     global_subpx_stripe_size_min: u16 = 256,
     global_subpx_stripe_size_max: u16 = 4096,
-    // Test/development override for exercising the extended raster domain
-    // without changing the camera PSF or resolve operation.
-    raster_halo_px_override: ?u16 = null,
     background_value: F = 0.0,
     hull_mode: HullMode = .on_no_fallback,
     newton_seed_mode: NewtonSeedMode = .centroid,

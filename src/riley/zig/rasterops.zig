@@ -25,8 +25,7 @@ const geomkerns = @import("geometrykernels.zig");
 const MeshType = geomkerns.MeshType;
 const hull = @import("hull.zig");
 const shaderops = @import("shaderops.zig");
-const report = @import("report.zig");
-const distortbounds = @import("distortbounds.zig");
+const db = @import("distortbounds.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -95,18 +94,10 @@ pub const ElemBBox = struct {
     y_max: i32,
 };
 
-pub const DistortBounds = distortbounds.Bounds;
 pub const DistortElemBBox = struct {
     integer: ElemBBox,
-    floating: DistortBounds,
+    floating: db.DistortBounds,
 };
-
-pub fn calcIdealSensorBounds(
-    camera: *const cam.CameraPrepared,
-    raster_halo_px: u16,
-) !DistortBounds {
-    return distortbounds.idealSensorBounds(camera, raster_halo_px);
-}
 
 pub fn calcVisibleDistortBBox(
     comptime MT: MeshType,
@@ -117,7 +108,7 @@ pub fn calcVisibleDistortBBox(
     hull_convex_fallback_on: bool,
     hull_on: bool,
     raster_halo_px: u16,
-    ideal_sensor: DistortBounds,
+    ideal_sensor: db.DistortBounds,
     edge_spacing_px: F,
 ) !?DistortElemBBox {
     const N = comptime MT.getNodesNum();
@@ -126,7 +117,7 @@ pub fn calcVisibleDistortBBox(
         return null;
     }
 
-    var ideal_bounds = DistortBounds.initEmpty();
+    var ideal_bounds = db.DistortBounds.initEmpty();
     if (comptime MT == .tri3 or MT == .tri3opt) {
         const nodes = RasterCoords2D(N){ .x = coords.x, .y = coords.y };
         if (isTri3BackfaceRaster(nodes)) return null;
@@ -151,7 +142,7 @@ pub fn calcVisibleDistortBBox(
     }
 
     const walk = ideal_bounds.intersect(ideal_sensor) orelse return null;
-    var observed = try distortbounds.sampleRect(camera, walk, edge_spacing_px);
+    var observed = try db.sampleRect(camera, walk, edge_spacing_px);
     if (comptime MT != .tri3 and MT != .tri3opt) {
         if (!hull_on) {
             const dx = observed.x_max - observed.x_min;
@@ -626,7 +617,7 @@ pub const OverlapBBox = struct {
 
 pub fn clipElemBBoxToTile(
     elem_bbox: ElemBBox,
-    floating: ?DistortBounds,
+    floating: ?db.DistortBounds,
     mesh_idx: usize,
     scratch_x_min: i32,
     scratch_x_max: i32,
@@ -698,7 +689,7 @@ pub fn sceneTileElemOverlap(
     halo_px: u16,
     elems_in_image_by_mesh: []const usize,
     elem_bboxes_by_mesh: []const []ElemBBox,
-    elem_float_bboxes_by_mesh: []const []DistortBounds,
+    elem_float_bboxes_by_mesh: []const []db.DistortBounds,
 ) !TilingOverlaps {
     const tiles_num = tiles_num_x * tiles_num_y;
 
@@ -864,7 +855,7 @@ const TilingFillStage = struct {
     halo_px: u16,
     mesh_idx: usize,
     elem_bbox_slice: []const ElemBBox,
-    float_bbox_slice: []const DistortBounds,
+    float_bbox_slice: []const db.DistortBounds,
 };
 
 fn runTilingFill(
@@ -878,7 +869,7 @@ fn runTilingFill(
 
     for (range_start..range_end) |ee| {
         const elem_bbox = tiling.elem_bbox_slice[ee];
-        const floating: ?DistortBounds = if (tiling.float_bbox_slice.len == 0)
+        const floating: ?db.DistortBounds = if (tiling.float_bbox_slice.len == 0)
             null
         else
             tiling.float_bbox_slice[ee];
@@ -1312,7 +1303,7 @@ test "fixed scalar and SIMD bounds recover the distorted triangle interior" {
     var connect = try initSingleElemConnect(3, outer_alloc);
     defer connect.deinit(outer_alloc);
 
-    const sensor = DistortBounds{
+    const sensor = db.DistortBounds{
         .x_min = 0.0,
         .x_max = 200.0,
         .y_min = 0.0,
@@ -1354,14 +1345,14 @@ test "fixed scalar and SIMD bounds recover the distorted triangle interior" {
     try std.testing.expect(ideal[0] > 110.0 and ideal[0] < 120.0);
     try std.testing.expect(ideal[1] > 50.0 and ideal[1] < 150.0);
 
-    const rect = DistortBounds{
+    const rect = db.DistortBounds{
         .x_min = 110.0,
         .x_max = 120.0,
         .y_min = 50.0,
         .y_max = 150.0,
     };
-    const scalar = try distortbounds.sampleRectScalar(&camera, rect, 1.0);
-    const simd = try distortbounds.sampleRectSIMD(&camera, rect, 1.0);
+    const scalar = try db.sampleRectScalar(&camera, rect, 1.0);
+    const simd = try db.sampleRectSIMD(&camera, rect, 1.0);
     const bound_tol: F = if (F == f32) 1e-4 else 1e-10;
     try std.testing.expectApproxEqAbs(scalar.x_min, simd.x_min, bound_tol);
     try std.testing.expectApproxEqAbs(scalar.x_max, simd.x_max, bound_tol);
@@ -1376,7 +1367,7 @@ test "fixed distortion bounds reject non-finite active output" {
         .coeffs = &.{ std.math.nan(F), 0, 0, 0, 0, 0 },
     } });
     camera.pixels_num = .{ 200, 200 };
-    const rect = DistortBounds{
+    const rect = db.DistortBounds{
         .x_min = 110.0,
         .x_max = 112.0,
         .y_min = 90.0,
@@ -1384,11 +1375,11 @@ test "fixed distortion bounds reject non-finite active output" {
     };
     try std.testing.expectError(
         error.NonFiniteDistortBound,
-        distortbounds.sampleRectScalar(&camera, rect, 1.0),
+        db.sampleRectScalar(&camera, rect, 1.0),
     );
     try std.testing.expectError(
         error.NonFiniteDistortBound,
-        distortbounds.sampleRectSIMD(&camera, rect, 1.0),
+        db.sampleRectSIMD(&camera, rect, 1.0),
     );
 }
 
@@ -1402,14 +1393,14 @@ test "one-pixel fixed spacing resolves a smooth between-sample radial minimum" {
     } });
     camera.pixels_num = .{ 2000, 2000 };
     camera.pixels_size = .{ 0.001, 0.001 };
-    const rect = DistortBounds{
+    const rect = db.DistortBounds{
         .x_min = 1600.0,
         .x_max = 1700.0,
         .y_min = 560.3,
         .y_max = 1560.3,
     };
-    const scalar = try distortbounds.sampleRectScalar(&camera, rect, 1.0);
-    const simd = try distortbounds.sampleRectSIMD(&camera, rect, 1.0);
+    const scalar = try db.sampleRectScalar(&camera, rect, 1.0);
+    const simd = try db.sampleRectSIMD(&camera, rect, 1.0);
     const exact_min: F = 1000.0 + 1000.0 * 0.6 * (1.0 + 0.3 * 0.6 * 0.6);
     const error_limit: F = if (F == f32) 0.002 else 0.0001;
     try std.testing.expect(scalar.x_min >= exact_min - error_limit);

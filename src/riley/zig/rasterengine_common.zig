@@ -490,8 +490,7 @@ fn tileScratchSubpxSize(
     ctx_rast: rops.RasterContext,
 ) usize {
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const raster_halo_px = ctx_rast.config.raster_halo_px_override orelse
-        ctx_rast.camera.prep_psf.halo_px;
+    const raster_halo_px = ctx_rast.camera.prep_psf.halo_px;
     const scratch_tile_px: usize =
         @as(usize, @intCast(ctx_rast.tile_size)) +
         2 * @as(usize, raster_halo_px);

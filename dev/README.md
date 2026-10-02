@@ -13,33 +13,37 @@ Riley provides a layered testing architecture designed for fast routine verifica
 
 ### Quick Commands
 
-All test targets default to Debug and honor `-Doptimize`. Select
-`-Doptimize=ReleaseSafe` explicitly for optimized runs with safety checks.
-The four suite targets use native Zig test build steps with the original source
-files. Zig tracks imported source dependencies and build options; unrelated
-demo or Python edits do not invalidate their test binaries. Test execution still
-runs on each invocation so changes to gold data and runtime assets are checked.
-`src/dev_support/testrunner.zig` exposes the generated options at the test
-runner root used by `buildconfig.zig` and delegates execution to Zig's standard
-test runner. This keeps precision, SIMD, solver, and vector-width options active
-without modifying or copying suite source files.
-Suite targets use Zig's standard terminal test runner with inherited console
-streams. Status and suite/case timings are written to stdout using a buffered
-`std.Io` writer flushed after each message; failure diagnostics remain on stderr.
-The test runner reports test counts; use `--summary all` for build/run timings.
-Clearing `.zig-cache` is safe and only forces a rebuild.
+For day-to-day development and routine checks, the **verification** and **basic**
+suites (`test-verif`, `test-basic`, and `test-verif-basic`) should be run in
+**Debug mode without optimization flags** (the default `zig build` mode), which compiles
+much faster. The **full test suite** (`test-full`) tests multi-threaded execution
+and factorial sweeps and should be run in **ReleaseSafe mode** (`-Doptimize=ReleaseSafe`)
+for optimized execution with safety checks.
+
+The suite targets use native Zig test build steps with the original source files.
+Zig tracks imported source dependencies and build options; unrelated demo or Python
+edits do not invalidate their test binaries. Test execution still runs on each
+invocation so changes to gold data and runtime assets are checked.
+`src/dev_support/testrunner.zig` exposes the generated options at the test runner
+root used by `buildconfig.zig` and delegates execution to Zig's standard test runner.
+This keeps precision, SIMD, solver, and vector-width options active without
+modifying or copying suite source files. Suite targets use Zig's standard terminal
+test runner with inherited console streams. Status and suite/case timings are written
+to stdout using a buffered `std.Io` writer flushed after each message; failure
+diagnostics remain on stderr. The test runner reports test counts; use `--summary all`
+for build/run timings. Clearing `.zig-cache` is safe and only forces a rebuild.
 
 ```shell
-# 1. Combined Verification and Basic Suites (preferred routine/CI command)
-zig build test-verif-basic -Doptimize=ReleaseSafe
+# 1. Combined Verification and Basic Suites (preferred routine development in Debug)
+zig build test-verif-basic
 
-# 2. Analytic Verification Suite (Mathematical & Numerical Validation)
-zig build test-verif -Doptimize=ReleaseSafe
+# 2. Analytic Verification Suite (Mathematical & Numerical Validation in Debug)
+zig build test-verif
 
-# 3. Basic Test Suite (Fast Core Feature Coverage)
-zig build test-basic -Doptimize=ReleaseSafe
+# 3. Basic Test Suite (Fast Core Feature Coverage in Debug)
+zig build test-basic
 
-# 4. Full Test Suite (Exhaustive Factorial System Coverage)
+# 4. Full Test Suite (Exhaustive Factorial System & Threading Coverage in ReleaseSafe)
 zig build gen-gold-full -Doptimize=ReleaseSafe  # Generate Full gold (if needed)
 zig build test-full -Doptimize=ReleaseSafe
 
@@ -51,10 +55,10 @@ zig build test-full -Doptimize=ReleaseSafe
 
 | Suite Name | Command | Primary Role | Reference Data |
 | :--- | :--- | :--- | :--- |
-| **Combined Core Suite** | `zig build test-verif-basic` | Compiles and runs Verification and Basic together to avoid duplicate CI compile work | `gold/verif/`, `gold/basic/` |
-| **Verification Suite** | `zig build test-verif` | Inverse solver recovery, silhouette area/centroid, depth ordering, and camera distortion oracles | `gold/verif/` |
-| **Basic Suite** | `zig build test-basic` | Fast coverage across 1-element, 2-shape FE interaction, and feature zoo cases | `gold/basic/` |
-| **Full Suite** | `zig build test-full` | Exhaustive sweeps over shaders, textures, PSF/distortion, SSAA, hulls, tiling, scenes, threads, and outputs | `gold/full_*/` |
+| **Combined Core Suite** | `zig build test-verif-basic` | Fast routine development/verification in Debug mode (no optimization flags) | `gold/verif/`, `gold/basic/` |
+| **Verification Suite** | `zig build test-verif` | Inverse solver recovery, silhouette area/centroid, depth ordering, and camera distortion oracles (Debug) | `gold/verif/` |
+| **Basic Suite** | `zig build test-basic` | Fast coverage across 1-element, 2-shape FE interaction, and feature zoo cases (Debug) | `gold/basic/` |
+| **Full Suite** | `zig build test-full -Doptimize=ReleaseSafe` | Exhaustive sweeps over shaders, textures, PSF/distortion, SSAA, hulls, tiling, scenes, threads, and outputs in ReleaseSafe | `gold/full_*/` |
 | **Python Pytests** | `.venv/bin/pytest src/riley/pytests/` | Python/Cython API, mesh pipeline, Exodus conversion, and demo parity | Integrated / `gold/` |
 
 > [!NOTE]
@@ -64,31 +68,31 @@ zig build test-full -Doptimize=ReleaseSafe
 The `zig build` workflow supports direct control over precision, SIMD mode, Newton solver mode, and SIMD vector width:
 
 ```shell
-zig build <STEP> -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
-zig build <STEP> -Dprecision=f64 -Dsimd=off -Doptimize=ReleaseSafe
-zig build <STEP> -Dprecision=f32 -Dsimd=on -Doptimize=ReleaseSafe
-zig build <STEP> -Dprecision=f32 -Dsimd=off -Doptimize=ReleaseSafe
-zig build <STEP> -Dnewton-solver=robust -Doptimize=ReleaseSafe
-zig build <STEP> -Dsimd-vector-width=8 -Doptimize=ReleaseSafe
+zig build <STEP> -Dprecision=f64 -Dsimd=on
+zig build <STEP> -Dprecision=f64 -Dsimd=off
+zig build <STEP> -Dprecision=f32 -Dsimd=on
+zig build <STEP> -Dprecision=f32 -Dsimd=off
+zig build <STEP> -Dnewton-solver=robust
+zig build <STEP> -Dsimd-vector-width=8
 ```
 
-Suggested first-pass development checks on the main production path:
+Suggested first-pass development checks on the main production path (Debug for verif/basic, ReleaseSafe for full):
 
 ```shell
-zig build test-verif -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
-zig build test-basic -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+zig build test-verif -Dprecision=f64 -Dsimd=on
+zig build test-basic -Dprecision=f64 -Dsimd=on
 zig build test-full -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
 ```
 
 For broader matrix checks across precisions and SIMD modes:
 
 ```shell
-zig build test-verif -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
-zig build test-basic -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+zig build test-verif -Dprecision=f64 -Dsimd=on
+zig build test-basic -Dprecision=f64 -Dsimd=on
 
-zig build test-basic -Dprecision=f64 -Dsimd=off -Doptimize=ReleaseSafe
-zig build test-basic -Dprecision=f32 -Dsimd=on -Doptimize=ReleaseSafe
-zig build test-basic -Dprecision=f32 -Dsimd=off -Doptimize=ReleaseSafe
+zig build test-basic -Dprecision=f64 -Dsimd=off
+zig build test-basic -Dprecision=f32 -Dsimd=on
+zig build test-basic -Dprecision=f32 -Dsimd=off
 ```
 
 ## Focused Verification Suite
@@ -101,10 +105,10 @@ The focused verification suite checks independent analytic and numerical contrac
 - camera-distortion round trips plus independent OpenCV/NumPy forward, inverse,
   stacked-model, SIMD, and Jacobian oracles.
 
-The suite is intentionally fixed to the production `f64` configuration with SIMD enabled:
+The suite is intentionally fixed to the production `f64` configuration with SIMD enabled (run in Debug without optimization flags):
 
 ```shell
-zig build test-verif -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+zig build test-verif -Dprecision=f64 -Dsimd=on
 ```
 
 The ordinary test command is Zig-only. It reads compact comparison data from

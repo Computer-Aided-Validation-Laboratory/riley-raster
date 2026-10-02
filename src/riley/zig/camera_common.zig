@@ -15,6 +15,7 @@ const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cm = @import("cameramodels.zig");
+const db = @import("distortbounds.zig");
 const camera_scalar = @import("camera_scalar.zig");
 const camera_simd = @import("camera_simd.zig");
 
@@ -138,6 +139,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         coord_sys: CameraCoordSys,
         ideal_pixel_centers: ndarray.NDArray(F),
         subpixel_center_map: SubPixelCenterMap,
+        ideal_sensor_bounds: ?db.DistortBounds = null,
 
         pub fn init(
             allocator: std.mem.Allocator,
@@ -213,6 +215,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
                 .coord_sys = input.coord_sys,
                 .ideal_pixel_centers = ideal_pixel_centers,
                 .subpixel_center_map = subpixel_center_map,
+                .ideal_sensor_bounds = null,
             };
             errdefer self.deinit(allocator);
 
@@ -220,6 +223,11 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
                 .full_in_mem => try self.initFullIdealPixelCenters(),
                 .per_tile => {},
             }
+
+            self.ideal_sensor_bounds = if (isNoDistort(self.distort))
+                null
+            else
+                try db.idealSensorBounds(&self, self.prep_psf.halo_px);
 
             return self;
         }
@@ -781,10 +789,8 @@ test "camera preparation propagates polynomial inverse errors without leaking" {
         CameraPrepared.init(std.testing.allocator, input),
     );
     input.subpixel_center_map = .per_tile;
-    const prepared = try CameraPrepared.init(std.testing.allocator, input);
-    defer prepared.deinit(std.testing.allocator);
     try std.testing.expectError(
         error.SingularJac,
-        prepared.calcPinholeRasterPoint(0.5, 0.5),
+        CameraPrepared.init(std.testing.allocator, input),
     );
 }
