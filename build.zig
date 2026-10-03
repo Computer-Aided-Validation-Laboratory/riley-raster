@@ -144,6 +144,7 @@ pub fn build(b: *std.Build) void {
         .{ .evaluator = "classified-indexed", .shape = "disk" },
         .{ .evaluator = "direct-fixed", .shape = "disk", .neighbor_count = 1 },
         .{ .evaluator = "mask-1bit", .shape = "disk" },
+        .{ .evaluator = "mask-u8", .shape = "disk" },
         .{ .evaluator = "mask-u8", .shape = "gaussian" },
         .{ .evaluator = "mask-u8", .shape = "perlin" },
     };
@@ -188,6 +189,11 @@ pub fn build(b: *std.Build) void {
             .step_name = "test-speckle-mask-u8",
             .description = "Run focused Gaussian u8 speckle mask tests",
             .config = .{ .evaluator = "mask-u8", .shape = "gaussian" },
+        },
+        .{
+            .step_name = "test-speckle-mask-disk",
+            .description = "Run focused soft-disk u8 speckle mask tests",
+            .config = .{ .evaluator = "mask-u8", .shape = "disk" },
         },
         .{
             .step_name = "test-speckle-mask-perlin",

@@ -739,38 +739,7 @@ test "SIMD func builtin matches scalar builtin per lane" {
             .normal_z = 0.25,
         },
     };
-    const coord_simd = simd_impl.FuncCoordSIMD{
-        .coord_0 = .{
-            coord_scalar[0].coord_0,
-            coord_scalar[1].coord_0,
-            coord_scalar[2].coord_0,
-            coord_scalar[3].coord_0,
-        } ++ [_]F{0.0} ** (S - 4),
-        .coord_1 = .{
-            coord_scalar[0].coord_1,
-            coord_scalar[1].coord_1,
-            coord_scalar[2].coord_1,
-            coord_scalar[3].coord_1,
-        } ++ [_]F{0.0} ** (S - 4),
-        .normal_x = .{
-            coord_scalar[0].normal_x,
-            coord_scalar[1].normal_x,
-            coord_scalar[2].normal_x,
-            coord_scalar[3].normal_x,
-        } ++ [_]F{0.0} ** (S - 4),
-        .normal_y = .{
-            coord_scalar[0].normal_y,
-            coord_scalar[1].normal_y,
-            coord_scalar[2].normal_y,
-            coord_scalar[3].normal_y,
-        } ++ [_]F{0.0} ** (S - 4),
-        .normal_z = .{
-            coord_scalar[0].normal_z,
-            coord_scalar[1].normal_z,
-            coord_scalar[2].normal_z,
-            coord_scalar[3].normal_z,
-        } ++ [_]F{0.0} ** (S - 4),
-    };
+
     const params = comm.FuncShaderParams{
         .coord_scale = .{ 1.7, 0.8 },
         .coord_offset = .{ -0.1, 0.3 },
@@ -789,40 +758,62 @@ test "SIMD func builtin matches scalar builtin per lane" {
         .lambertian_normal_z,
         .eggbox,
     };
-    for (scalar_builtins) |builtin| {
-        const v_vals = simd_impl.evalFuncShaderGreyNormSIMD(
-            builtin,
-            coord_simd,
-            comm.normFuncShaderParams(builtin, params),
-        );
-        const vals_arr: [S]F = v_vals;
-        for (coord_scalar, 0..) |coord, ll| {
-            const expected = evalFuncShaderBuiltinGreyNorm(
-                builtin,
-                coord,
-                comm.normFuncShaderParams(builtin, params),
-            );
-            try testing.expectApproxEqAbs(expected, vals_arr[ll], unit_tol);
+    var batch_start: usize = 0;
+    while (batch_start < coord_scalar.len) : (batch_start += S) {
+        const coord_batch = coord_scalar[batch_start..@min(batch_start + S, coord_scalar.len)];
+        var coord_simd = simd_impl.FuncCoordSIMD{
+            .coord_0 = @splat(0.0),
+            .coord_1 = @splat(0.0),
+            .normal_x = @splat(0.0),
+            .normal_y = @splat(0.0),
+            .normal_z = @splat(0.0),
+        };
+        // Vector element writes require compile-time lane indices.
+        inline for (0..S) |ll| {
+            if (ll < coord_batch.len) {
+                const coord = coord_batch[ll];
+                coord_simd.coord_0[ll] = coord.coord_0;
+                coord_simd.coord_1[ll] = coord.coord_1;
+                coord_simd.normal_x[ll] = coord.normal_x;
+                coord_simd.normal_y[ll] = coord.normal_y;
+                coord_simd.normal_z[ll] = coord.normal_z;
+            }
         }
 
-        const v_rgb = simd_impl.evalFuncShaderRGBNormSIMD(
-            builtin,
-            coord_simd,
-            comm.normFuncShaderParams(builtin, params),
-        );
-        inline for (0..3) |ch| {
-            const vals_rgb_arr: [S]F = v_rgb[ch];
-            for (coord_scalar, 0..) |coord, ll| {
-                const expected = evalFuncShaderBuiltinRGBNorm(
+        for (scalar_builtins) |builtin| {
+            const norm_params = comm.normFuncShaderParams(builtin, params);
+            const v_vals = simd_impl.evalFuncShaderGreyNormSIMD(
+                builtin,
+                coord_simd,
+                norm_params,
+            );
+            const vals_arr: [S]F = v_vals;
+            const v_rgb = simd_impl.evalFuncShaderRGBNormSIMD(
+                builtin,
+                coord_simd,
+                norm_params,
+            );
+            for (coord_batch, 0..) |coord, ll| {
+                const expected = evalFuncShaderBuiltinGreyNorm(
                     builtin,
                     coord,
-                    comm.normFuncShaderParams(builtin, params),
-                )[ch];
-                try testing.expectApproxEqAbs(
-                    expected,
-                    vals_rgb_arr[ll],
-                    unit_tol,
+                    norm_params,
                 );
+                try testing.expectApproxEqAbs(expected, vals_arr[ll], unit_tol);
+
+                const expected_rgb = evalFuncShaderBuiltinRGBNorm(
+                    builtin,
+                    coord,
+                    norm_params,
+                );
+                inline for (0..3) |ch| {
+                    const vals_rgb_arr: [S]F = v_rgb[ch];
+                    try testing.expectApproxEqAbs(
+                        expected_rgb[ch],
+                        vals_rgb_arr[ll],
+                        unit_tol,
+                    );
+                }
             }
         }
     }

@@ -2553,17 +2553,53 @@ fn expectClassifiedSpeckleExact(
     );
 }
 
-fn expectClassifiedSpeckleDifferential(
-    stamped: ClassifiedIndexedSpeckle2D,
-    exhaustive: ClassifiedIndexedSpeckle2D,
-    uv: [2]F,
+fn expectClassifiedSpeckleSamples(
+    classified: ClassifiedIndexedSpeckle2D,
+    grid_strides: [2]usize,
 ) !void {
-    const actual = evalClassifiedIndexedSpeckle2D(uv, stamped);
-    try testing.expectEqual(
-        evalClassifiedIndexedSpeckle2D(uv, exhaustive),
-        actual,
-    );
-    try testing.expectEqual(evalSpeckle2D(uv, stamped.speckles.params), actual);
+    const params = classified.speckles.params;
+    const fixed_points = [_][2]F{
+        .{ 0.0, 0.0 },
+        .{ 1.0, 1.0 },
+        .{ 0.0, 1.0 },
+        .{ 1.0, 0.0 },
+        .{ -2.0, 0.37 },
+        .{ 3.0, 0.61 },
+        .{ -1.0, 2.0 },
+    };
+    for (fixed_points) |uv| try expectClassifiedSpeckleExact(classified, uv);
+
+    for (0..97) |ii| {
+        const uv = [2]F{
+            @as(F, @floatFromInt((ii * 73 + 19) % 257)) / 256.0,
+            @as(F, @floatFromInt((ii * 151 + 43) % 263)) / 262.0,
+        };
+        try expectClassifiedSpeckleExact(classified, uv);
+    }
+    for (grid_strides, 0..) |stride, axis| {
+        for (0..classified.dims[axis] + 1) |index| {
+            if (index % stride != 0 and index != classified.dims[axis]) continue;
+            var uv = [2]F{ 0.587, 0.413 };
+            uv[axis] = @as(F, @floatFromInt(index)) / classified.uv_to_cell[axis];
+            try expectClassifiedSpeckleExact(classified, uv);
+        }
+    }
+
+    const adjacent = 8.0 * std.math.floatEps(F);
+    for (classified.speckles.disks) |disk| {
+        const boundary_proc_x = disk.center[0] + disk.radius;
+        const boundary_u = (boundary_proc_x - params.uv_offset[0]) /
+            params.cells_per_uv[0];
+        const center_v = (disk.center[1] - params.uv_offset[1]) /
+            params.cells_per_uv[1];
+        if (boundary_u >= 0.0 and boundary_u <= 1.0 and
+            center_v >= 0.0 and center_v <= 1.0)
+        {
+            for ([_]F{ boundary_u, boundary_u - adjacent, boundary_u + adjacent }) |u| {
+                try expectClassifiedSpeckleExact(classified, .{ u, center_v });
+            }
+        }
+    }
 }
 
 fn expectFixedSpeckleStampMatchesExhaustive(params: Speckle2DParams) !void {
@@ -2583,74 +2619,8 @@ fn expectFixedSpeckleStampMatchesExhaustive(params: Speckle2DParams) !void {
     );
     try testing.expectEqualSlices(u8, exhaustive_states, stamped.states);
 
-    var exhaustive = stamped;
-    exhaustive.states = exhaustive_states;
-    const fixed_points = [_][2]F{
-        .{ 0.0, 0.0 },
-        .{ 1.0, 1.0 },
-        .{ 0.0, 1.0 },
-        .{ 1.0, 0.0 },
-        .{ -2.0, 0.37 },
-        .{ 3.0, 0.61 },
-        .{ -1.0, 2.0 },
-    };
-    for (fixed_points) |uv| {
-        try expectClassifiedSpeckleDifferential(stamped, exhaustive, uv);
-    }
-
-    for (0..97) |ii| {
-        const uv = [2]F{
-            @as(F, @floatFromInt((ii * 73 + 19) % 257)) / 256.0,
-            @as(F, @floatFromInt((ii * 151 + 43) % 263)) / 262.0,
-        };
-        try expectClassifiedSpeckleDifferential(stamped, exhaustive, uv);
-    }
-    for (0..stamped.dims[0] + 1) |xx| {
-        if (xx % 5 != 0 and xx != stamped.dims[0]) continue;
-        const u = @as(F, @floatFromInt(xx)) / stamped.uv_to_cell[0];
-        try expectClassifiedSpeckleDifferential(
-            stamped,
-            exhaustive,
-            .{ u, 0.413 },
-        );
-    }
-    for (0..stamped.dims[1] + 1) |yy| {
-        if (yy % 5 != 0 and yy != stamped.dims[1]) continue;
-        const v = @as(F, @floatFromInt(yy)) / stamped.uv_to_cell[1];
-        try expectClassifiedSpeckleDifferential(
-            stamped,
-            exhaustive,
-            .{ 0.587, v },
-        );
-    }
-
-    const adjacent = 8.0 * std.math.floatEps(F);
-    for (stamped.speckles.disks) |disk| {
-        const boundary_proc_x = disk.center[0] + disk.radius;
-        const boundary_u = (boundary_proc_x - params.uv_offset[0]) /
-            params.cells_per_uv[0];
-        const center_v = (disk.center[1] - params.uv_offset[1]) /
-            params.cells_per_uv[1];
-        if (boundary_u >= 0.0 and boundary_u <= 1.0 and
-            center_v >= 0.0 and center_v <= 1.0)
-        {
-            try expectClassifiedSpeckleDifferential(
-                stamped,
-                exhaustive,
-                .{ boundary_u, center_v },
-            );
-            try expectClassifiedSpeckleDifferential(
-                stamped,
-                exhaustive,
-                .{ boundary_u - adjacent, center_v },
-            );
-            try expectClassifiedSpeckleDifferential(
-                stamped,
-                exhaustive,
-                .{ boundary_u + adjacent, center_v },
-            );
-        }
-    }
+    // Equal state bytes imply equal evaluator results; the hash remains an independent oracle.
+    try expectClassifiedSpeckleSamples(stamped, .{ 5, 5 });
 }
 
 test "fixed-radius stamped speckle classification matches exhaustive construction" {
@@ -2854,35 +2824,7 @@ test "classified indexed speckle is exact on boundaries and varied points" {
     }
     for (found_state) |found| try testing.expect(found);
 
-    const fixed_points = [_][2]F{
-        .{ 0.0, 0.0 },
-        .{ 1.0, 1.0 },
-        .{ 0.0, 1.0 },
-        .{ 1.0, 0.0 },
-        .{ -2.0, 0.37 },
-        .{ 3.0, 0.61 },
-        .{ -1.0, 2.0 },
-    };
-    for (fixed_points) |uv| try expectClassifiedSpeckleExact(classified, uv);
-
-    for (0..97) |ii| {
-        const uv = [2]F{
-            @as(F, @floatFromInt((ii * 73 + 19) % 257)) / 256.0,
-            @as(F, @floatFromInt((ii * 151 + 43) % 263)) / 262.0,
-        };
-        try expectClassifiedSpeckleExact(classified, uv);
-    }
-
-    for (0..classified.dims[0] + 1) |xx| {
-        if (xx % 7 != 0 and xx != classified.dims[0]) continue;
-        const u = @as(F, @floatFromInt(xx)) / classified.uv_to_cell[0];
-        try expectClassifiedSpeckleExact(classified, .{ u, 0.413 });
-    }
-    for (0..classified.dims[1] + 1) |yy| {
-        if (yy % 5 != 0 and yy != classified.dims[1]) continue;
-        const v = @as(F, @floatFromInt(yy)) / classified.uv_to_cell[1];
-        try expectClassifiedSpeckleExact(classified, .{ 0.587, v });
-    }
+    try expectClassifiedSpeckleSamples(classified, .{ 7, 5 });
 
     var cell_x = @as(i64, @intFromFloat(@ceil(params.uv_offset[0])));
     const cell_x_end = @as(i64, @intFromFloat(@floor(
@@ -2901,28 +2843,6 @@ test "classified indexed speckle is exact on boundaries and varied points" {
         const v = (@as(F, @floatFromInt(cell_y)) - params.uv_offset[1]) /
             params.cells_per_uv[1];
         try expectClassifiedSpeckleExact(classified, .{ 0.681, v });
-    }
-
-    const adjacent = 8.0 * std.math.floatEps(F);
-    for (classified.speckles.disks) |disk| {
-        const boundary_proc_x = disk.center[0] + disk.radius;
-        const boundary_u = (boundary_proc_x - params.uv_offset[0]) /
-            params.cells_per_uv[0];
-        const center_v = (disk.center[1] - params.uv_offset[1]) /
-            params.cells_per_uv[1];
-        if (boundary_u >= 0.0 and boundary_u <= 1.0 and
-            center_v >= 0.0 and center_v <= 1.0)
-        {
-            try expectClassifiedSpeckleExact(classified, .{ boundary_u, center_v });
-            try expectClassifiedSpeckleExact(
-                classified,
-                .{ boundary_u - adjacent, center_v },
-            );
-            try expectClassifiedSpeckleExact(
-                classified,
-                .{ boundary_u + adjacent, center_v },
-            );
-        }
     }
 }
 
@@ -3176,6 +3096,53 @@ test "u8 speckle mask agrees with quantized indexed lattice evaluation" {
     }
 }
 
+const SpeckleSIMDCase = struct {
+    uv: [2]F,
+    active: bool = true,
+    expected: ?F = null,
+};
+
+fn expectPreparedSpeckleSIMD(
+    params: Speckle2DParams,
+    resources: *const Resources,
+    cases: []const SpeckleSIMDCase,
+) !void {
+    for (0..(cases.len + S - 1) / S) |batch| {
+        var coord_0: [S]F = undefined;
+        var coord_1: [S]F = undefined;
+        var active: [S]bool = undefined;
+        for (0..S) |lane| {
+            const case = cases[(batch * S + lane) % cases.len];
+            coord_0[lane] = case.uv[0];
+            coord_1[lane] = case.uv[1];
+            active[lane] = case.active;
+        }
+        const actual: [S]F = sampleSIMD(coord_0, coord_1, active, params, resources);
+        for (0..S) |lane| {
+            const case = cases[(batch * S + lane) % cases.len];
+            const expected = if (case.active)
+                sampleScal(case.uv[0], case.uv[1], params, resources)
+            else
+                params.background;
+            if (case.expected) |value| try testing.expectEqual(value, expected);
+            try testing.expectEqual(expected, actual[lane]);
+        }
+    }
+}
+
+fn expectPreparedSpeckleSIMDBackground(
+    params: Speckle2DParams,
+    resources: *const Resources,
+) !void {
+    try expectPreparedSpeckleSIMD(params, resources, &.{
+        .{ .uv = .{ std.math.nan(F), 0.0 }, .expected = params.background },
+        .{ .uv = .{ 0.0, std.math.inf(F) }, .expected = params.background },
+    });
+    try expectPreparedSpeckleSIMD(params, resources, &.{
+        .{ .uv = .{ 0.0, 0.0 }, .active = false },
+    });
+}
+
 test "direct fixed prepared SIMD handles active inactive and nonfinite lanes" {
     if (comptime buildconfig.speckle_evaluator != .direct_fixed) return;
 
@@ -3202,35 +3169,14 @@ test "direct fixed prepared SIMD handles active inactive and nonfinite lanes" {
         .radius2 = 0.25 * 0.25,
     };
     const resources: Resources = .{ .direct_fixed = direct };
-    const cases = [_]struct { uv: [2]F, active: bool = true, value: F }{
-        .{ .uv = .{ 0.25, 0.5 }, .value = params.foreground },
-        .{ .uv = .{ 0.375, 0.5 }, .value = params.background },
-        .{ .uv = .{ 0.1, 0.5 }, .value = params.background },
-        .{ .uv = .{ 0.75, 0.5 }, .value = params.background },
-        .{ .uv = .{ std.math.nan(F), std.math.inf(F) }, .value = params.background },
-        .{ .uv = .{ 0.25, 0.5 }, .active = false, .value = params.background },
-    };
-    for (0..(cases.len + S - 1) / S) |batch| {
-        var coord_0: [S]F = undefined;
-        var coord_1: [S]F = undefined;
-        var active: [S]bool = undefined;
-        for (0..S) |lane| {
-            const case = cases[(batch * S + lane) % cases.len];
-            coord_0[lane] = case.uv[0];
-            coord_1[lane] = case.uv[1];
-            active[lane] = case.active;
-        }
-        const actual: [S]F = sampleSIMD(coord_0, coord_1, active, params, &resources);
-        for (0..S) |lane| {
-            const case = cases[(batch * S + lane) % cases.len];
-            const expected = if (case.active)
-                sampleScal(case.uv[0], case.uv[1], params, &resources)
-            else
-                params.background;
-            try testing.expectEqual(case.value, expected);
-            try testing.expectEqual(expected, actual[lane]);
-        }
-    }
+    try expectPreparedSpeckleSIMD(params, &resources, &.{
+        .{ .uv = .{ 0.25, 0.5 }, .expected = params.foreground },
+        .{ .uv = .{ 0.375, 0.5 }, .expected = params.background },
+        .{ .uv = .{ 0.1, 0.5 }, .expected = params.background },
+        .{ .uv = .{ 0.75, 0.5 }, .expected = params.background },
+        .{ .uv = .{ std.math.nan(F), std.math.inf(F) }, .expected = params.background },
+        .{ .uv = .{ 0.25, 0.5 }, .active = false },
+    });
 }
 
 test "classified indexed prepared SIMD matches scalar for every state" {
@@ -3274,32 +3220,13 @@ test "classified indexed prepared SIMD matches scalar for every state" {
     for (found_state) |found| try testing.expect(found);
 
     const resources: Resources = .{ .classified = classified };
-    const uv_cases = [_][2]F{
-        state_uv[0],
-        state_uv[1],
-        state_uv[2],
-        state_uv[1],
-        .{ std.math.nan(F), std.math.inf(F) },
-    };
-    for (0..(uv_cases.len + S - 1) / S) |batch| {
-        var coord_0: [S]F = undefined;
-        var coord_1: [S]F = undefined;
-        var active: [S]bool = undefined;
-        for (0..S) |lane| {
-            const index = (batch * S + lane) % uv_cases.len;
-            coord_0[lane] = uv_cases[index][0];
-            coord_1[lane] = uv_cases[index][1];
-            active[lane] = index != 3;
-        }
-        const actual: [S]F = sampleSIMD(coord_0, coord_1, active, params, &resources);
-        for (0..S) |lane| {
-            const expected = if (active[lane])
-                sampleScal(coord_0[lane], coord_1[lane], params, &resources)
-            else
-                params.background;
-            try testing.expectEqual(expected, actual[lane]);
-        }
-    }
+    try expectPreparedSpeckleSIMD(params, &resources, &.{
+        .{ .uv = state_uv[0] },
+        .{ .uv = state_uv[1] },
+        .{ .uv = state_uv[2] },
+        .{ .uv = state_uv[1], .active = false },
+        .{ .uv = .{ std.math.nan(F), std.math.inf(F) } },
+    });
 }
 
 test "1-bit speckle mask SIMD matches scalar and backgrounds invalid lanes" {
@@ -3318,44 +3245,17 @@ test "1-bit speckle mask SIMD matches scalar and backgrounds invalid lanes" {
         .params = params,
     };
     const resources: Resources = .{ .mask = mask };
-    const u_cases = [_]F{ -2.0, 0.0, 0.0624, 0.0625, 0.99, 1.0, 3.0, 0.5 };
-    var coord_0: [S]F = undefined;
-    var coord_1: [S]F = undefined;
-    for (0..(u_cases.len + S - 1) / S) |batch| {
-        for (0..S) |lane| {
-            const index = (batch * S + lane) % u_cases.len;
-            coord_0[lane] = u_cases[index];
-            coord_1[lane] = @as(F, @floatFromInt(index & 1));
-        }
-        const finite: [S]F = sampleSIMD(
-            coord_0,
-            coord_1,
-            @splat(true),
-            params,
-            &resources,
-        );
-        for (0..S) |lane| {
-            const expected = sampleScal(coord_0[lane], coord_1[lane], params, &resources);
-            try testing.expectEqual(expected, finite[lane]);
-        }
-    }
-
-    for (0..S) |lane| {
-        coord_0[lane] = if (lane & 1 == 0) std.math.nan(F) else 0.0;
-        coord_1[lane] = if (lane & 1 == 0) 0.0 else std.math.inf(F);
-    }
-    const nonfinite: [S]F = sampleSIMD(coord_0, coord_1, @splat(true), params, &resources);
-    const inactive: [S]F = sampleSIMD(
-        @splat(0.0),
-        @splat(0.0),
-        @splat(false),
-        params,
-        &resources,
-    );
-    for (nonfinite, inactive) |nonfinite_value, inactive_value| {
-        try testing.expectEqual(params.background, nonfinite_value);
-        try testing.expectEqual(params.background, inactive_value);
-    }
+    try expectPreparedSpeckleSIMD(params, &resources, &.{
+        .{ .uv = .{ -2.0, 0.0 } },
+        .{ .uv = .{ 0.0, 1.0 } },
+        .{ .uv = .{ 0.0624, 0.0 } },
+        .{ .uv = .{ 0.0625, 1.0 } },
+        .{ .uv = .{ 0.99, 0.0 } },
+        .{ .uv = .{ 1.0, 1.0 } },
+        .{ .uv = .{ 3.0, 0.0 } },
+        .{ .uv = .{ 0.5, 1.0 } },
+    });
+    try expectPreparedSpeckleSIMDBackground(params, &resources);
 }
 
 test "u8 speckle mask SIMD matches scalar for active finite lanes" {
@@ -3374,53 +3274,21 @@ test "u8 speckle mask SIMD matches scalar for active finite lanes" {
         .params = params,
     };
     const resources: Resources = .{ .mask = mask };
-    const uv_cases = [_][2]F{
-        .{ -1.0, 0.0 },
-        .{ 1.0, 0.0 },
-        .{ 0.0, 1.0 },
-        .{ 1.0, 1.0 },
+    var cases = [_]SpeckleSIMDCase{
+        .{ .uv = .{ -1.0, 0.0 } },
+        .{ .uv = .{ 1.0, 0.0 } },
+        .{ .uv = .{ 0.0, 1.0 } },
+        .{ .uv = .{ 1.0, 1.0 } },
     };
-    var coord_0: [S]F = undefined;
-    var coord_1: [S]F = undefined;
-    var active: [S]bool = undefined;
     for ([_]bool{ false, true }) |all_active| {
-        for (0..(uv_cases.len + S - 1) / S) |batch| {
-            for (0..S) |lane| {
-                const index = (batch * S + lane) % uv_cases.len;
-                coord_0[lane] = uv_cases[index][0];
-                coord_1[lane] = uv_cases[index][1];
-                active[lane] = all_active or index & 1 == 0;
-            }
-            const actual: [S]F = sampleSIMD(coord_0, coord_1, active, params, &resources);
-            for (0..S) |lane| {
-                const expected = if (active[lane])
-                    sampleScal(coord_0[lane], coord_1[lane], params, &resources)
-                else
-                    params.background;
-                try testing.expectEqual(expected, actual[lane]);
-            }
-        }
+        for (&cases, 0..) |*case, index| case.active = all_active or index & 1 == 0;
+        try expectPreparedSpeckleSIMD(params, &resources, &cases);
     }
 
-    for (0..S) |lane| {
-        coord_0[lane] = if (lane & 1 == 0) std.math.nan(F) else 0.0;
-        coord_1[lane] = if (lane & 1 == 0) 0.0 else std.math.inf(F);
-    }
     var no_gather_mask = mask;
     no_gather_mask.bits = &.{};
     const no_gather: Resources = .{ .mask = no_gather_mask };
-    const nonfinite: [S]F = sampleSIMD(coord_0, coord_1, @splat(true), params, &no_gather);
-    const inactive: [S]F = sampleSIMD(
-        @splat(0.0),
-        @splat(0.0),
-        @splat(false),
-        params,
-        &no_gather,
-    );
-    for (nonfinite, inactive) |nonfinite_value, inactive_value| {
-        try testing.expectEqual(params.background, nonfinite_value);
-        try testing.expectEqual(params.background, inactive_value);
-    }
+    try expectPreparedSpeckleSIMDBackground(params, &no_gather);
 }
 
 test "speckle resources prepare sample open boundaries and release owned allocations" {
