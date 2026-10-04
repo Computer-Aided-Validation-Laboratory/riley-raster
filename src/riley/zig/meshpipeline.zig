@@ -12,6 +12,8 @@ const F = buildconfig.F;
 
 const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
+const vecslice = @import("vecslice.zig");
+const shapefun = @import("shapefun.zig");
 
 const meshio = @import("meshio.zig");
 
@@ -33,6 +35,7 @@ const Timestamp = std.Io.Clock.Timestamp;
 const shaderops = @import("shaderops.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
+const hull = @import("hull.zig");
 const db = @import("distortbounds.zig");
 
 // --------------------------------------------------------------------------------------
@@ -69,9 +72,11 @@ pub const MeshFrameWorkspace = struct {
     coords_nodes_def_world: ?meshio.Coords,
     vis_orig_elem_inds: []usize,
     elem_bboxes: []rops.ElemBBox,
+    root_classes: []rops.RootClass,
     elem_float_bboxes: ?[]db.DistortBounds = null,
     elems_in_image: usize,
     raster_hull: ?ndarray.NDArray(F),
+    multi_root: ?rops.MultiRootPrepared,
     vis_counts_by_chunk: []usize,
     vis_offsets_by_chunk: []usize,
 };
@@ -81,10 +86,12 @@ pub const MeshFrameWorkspace = struct {
 pub const MeshFrame = struct {
     mesh: MeshPrepared,
     elem_bboxes: []rops.ElemBBox,
+    root_classes: []rops.RootClass,
     elem_float_bboxes: ?[]db.DistortBounds = null,
     elems_in_image: usize,
     total_elems_num: usize,
     raster_hull: ?ndarray.NDArray(F),
+    multi_root: ?rops.MultiRootPrepared,
     frame_workspace: MeshFrameWorkspace,
 };
 
@@ -527,6 +534,7 @@ pub fn prepMeshFrame(
                 mesh_static,
                 frame_idx,
                 config.advanced.solver.hull_mode,
+                config.advanced.solver.multi_root.seed_bank_depth,
                 config.advanced.distortion.edge_spacing_px,
                 scaling_params,
                 chunk_exec,
@@ -592,9 +600,11 @@ fn initMeshFrameWorkspace(
             null,
         .vis_orig_elem_inds = &.{},
         .elem_bboxes = &.{},
+        .root_classes = &.{},
         .elem_float_bboxes = null,
         .elems_in_image = 0,
         .raster_hull = null,
+        .multi_root = null,
         .vis_counts_by_chunk = &.{},
         .vis_offsets_by_chunk = &.{},
     };
@@ -633,6 +643,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         mesh_static: *const MeshStatic,
         frame_idx: usize,
         hull_mode: rastcfg.HullMode,
+        seed_bank_depth: u8,
         edge_spacing_px: F,
         scaling_params: ?imageops.ScalingParams,
         chunk_exec: *pce.ParaChunkExecutor,
@@ -651,6 +662,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             mesh_static: *const MeshStatic,
             frame_idx: usize,
             hull_mode: rastcfg.HullMode,
+            seed_bank_depth: u8,
             edge_spacing_px: F,
             scaling_params: ?imageops.ScalingParams,
             chunk_exec: *pce.ParaChunkExecutor,
@@ -672,6 +684,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .mesh_static = mesh_static,
                 .frame_idx = frame_idx,
                 .hull_mode = hull_mode,
+                .seed_bank_depth = seed_bank_depth,
                 .edge_spacing_px = edge_spacing_px,
                 .scaling_params = scaling_params,
                 .chunk_exec = chunk_exec,
@@ -716,6 +729,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             const time_start_prep = Timestamp.now(self.chunk_exec.io, .awake);
             try self.prepareRasterHulls(outer_alloc, &mesh_prep.coords);
+            try self.prepareMultiRootData(outer_alloc, &mesh_prep.coords);
             try self.prepareShader(outer_alloc, &mesh_prep);
             const time_end_prep = Timestamp.now(self.chunk_exec.io, .awake);
             timing.prep_hulls_shaders += @intCast(time_start_prep.durationTo(
@@ -732,10 +746,12 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             return .{
                 .mesh = mesh_prep,
                 .elem_bboxes = self.mesh_workspace.elem_bboxes,
+                .root_classes = self.mesh_workspace.root_classes,
                 .elem_float_bboxes = self.mesh_workspace.elem_float_bboxes,
                 .elems_in_image = self.mesh_workspace.elems_in_image,
                 .total_elems_num = self.mesh_static.connect.getElemsNum(),
                 .raster_hull = self.mesh_workspace.raster_hull,
+                .multi_root = self.mesh_workspace.multi_root,
                 .frame_workspace = self.mesh_workspace,
             };
         }
@@ -849,6 +865,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             coords_nodes: *const meshio.Coords,
             vis_counts_by_chunk: []usize,
             cached_distort_bboxes: ?[]?rops.DistortElemBBox,
+            cached_bboxes: ?[]?rops.ElemBBox,
+            cached_root_classes: []?rops.RootClass,
             hull_mode: rastcfg.HullMode,
         };
 
@@ -864,51 +882,52 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             for (range_start..range_end) |ee| {
                 const bbox: ?rops.ElemBBox =
                     if (stage.camera.ideal_sensor_bounds) |ideal_sensor| blk: {
-                    const distorted = rops.calcVisibleDistortBBox(
-                        MT,
-                        stage.camera,
-                        stage.coords_nodes,
-                        stage.connect,
-                        ee,
-                        stage.hull_mode,
-                        stage.camera.prep_psf.halo_px,
-                        ideal_sensor,
-                        stage.edge_spacing_px,
-                    );
-                    if (stage.cached_distort_bboxes) |cached| cached[ee] = distorted;
-                    break :blk if (distorted) |value| value.box_ints else null;
-                } else if (MT == .tri3 or MT == .tri3opt)
-                    rops.calcVisibleNodeBBoxTri3WithHalo(
-                        MT,
-                        stage.camera,
-                        stage.coords_nodes,
-                        stage.connect,
-                        ee,
-                        stage.camera.prep_psf.halo_px,
-                    )
-                else if (stage.hull_mode == .off)
-                    rops.calcVisibleNodeBBoxHighOrdNoHullWithHalo(
-                        MT,
-                        stage.camera,
-                        stage.coords_nodes,
-                        stage.connect,
-                        ee,
-                        stage.camera.prep_psf.halo_px,
-                    )
-                else
-                    rops.calcVisibleNodeBBoxHighOrdWithHalo(
-                        MT,
-                        stage.camera,
-                        stage.coords_nodes,
-                        stage.connect,
-                        ee,
-                        stage.hull_mode,
-                        stage.camera.prep_psf.halo_px,
-                    );
+                        const distorted = rops.calcVisibleDistortBBox(
+                            MT,
+                            stage.camera,
+                            stage.coords_nodes,
+                            stage.connect,
+                            ee,
+                            stage.hull_mode,
+                            stage.camera.prep_psf.halo_px,
+                            ideal_sensor,
+                            stage.edge_spacing_px,
+                        );
+                        if (stage.cached_distort_bboxes) |cached| cached[ee] = distorted;
+                        break :blk if (distorted) |value| value.box_ints else null;
+                    } else if (MT == .tri3 or MT == .tri3opt)
+                        rops.calcVisibleNodeBBoxTri3WithHalo(
+                            MT,
+                            stage.camera,
+                            stage.coords_nodes,
+                            stage.connect,
+                            ee,
+                            stage.camera.prep_psf.halo_px,
+                        )
+                    else
+                        rops.calcVisibleNodeBBoxHighOrdWithHalo(
+                            MT,
+                            stage.camera,
+                            stage.coords_nodes,
+                            stage.connect,
+                            ee,
+                            stage.hull_mode,
+                            stage.camera.prep_psf.halo_px,
+                        );
 
                 if (bbox != null) {
+                    if (comptime MT != .tri3 and MT != .tri3opt) {
+                        stage.cached_root_classes[ee] = rops.classifyElemFacing(
+                            MT,
+                            stage.camera,
+                            stage.coords_nodes,
+                            stage.connect,
+                            ee,
+                        );
+                    }
                     vis_count += 1;
                 }
+                if (stage.cached_bboxes) |cached| cached[ee] = bbox;
             }
 
             stage.vis_counts_by_chunk[chunk_idx] = vis_count;
@@ -925,6 +944,17 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 );
             }
             defer if (cached_distort_bboxes) |bboxes| outer_alloc.free(bboxes);
+            const cached_bboxes = if (has_distort)
+                null
+            else
+                try outer_alloc.alloc(?rops.ElemBBox, self.elems_num);
+            defer if (cached_bboxes) |bboxes| outer_alloc.free(bboxes);
+            const cached_root_classes = if (MT == .tri3 or MT == .tri3opt)
+                &.{}
+            else
+                try outer_alloc.alloc(?rops.RootClass, self.elems_num);
+            defer if (cached_root_classes.len != 0)
+                outer_alloc.free(cached_root_classes);
 
             self.mesh_workspace.vis_counts_by_chunk = try outer_alloc.alloc(
                 usize,
@@ -944,6 +974,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
                 .vis_counts_by_chunk = self.mesh_workspace.vis_counts_by_chunk,
                 .cached_distort_bboxes = cached_distort_bboxes,
+                .cached_bboxes = cached_bboxes,
+                .cached_root_classes = cached_root_classes,
                 .hull_mode = self.hull_mode,
             };
 
@@ -963,6 +995,13 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 rops.ElemBBox,
                 self.mesh_workspace.elems_in_image,
             );
+            self.mesh_workspace.root_classes = if (MT == .tri3 or MT == .tri3opt)
+                &.{}
+            else
+                try outer_alloc.alloc(
+                    rops.RootClass,
+                    self.mesh_workspace.elems_in_image,
+                );
             self.mesh_workspace.elem_float_bboxes = if (has_distort)
                 try outer_alloc.alloc(
                     db.DistortBounds,
@@ -977,8 +1016,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
                 .hull_mode = self.hull_mode,
                 .cached_distort_bboxes = cached_distort_bboxes,
+                .cached_bboxes = cached_bboxes,
+                .cached_root_classes = cached_root_classes,
                 .vis_orig_elem_inds = self.mesh_workspace.vis_orig_elem_inds,
                 .elem_bboxes = self.mesh_workspace.elem_bboxes,
+                .root_classes = self.mesh_workspace.root_classes,
                 .elem_float_bboxes = self.mesh_workspace.elem_float_bboxes,
                 .vis_offsets_by_chunk = self.mesh_workspace.vis_offsets_by_chunk,
             };
@@ -1002,8 +1044,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             coords_nodes: *const meshio.Coords,
             hull_mode: rastcfg.HullMode,
             cached_distort_bboxes: ?[]const ?rops.DistortElemBBox,
+            cached_bboxes: ?[]const ?rops.ElemBBox,
+            cached_root_classes: []const ?rops.RootClass,
             vis_orig_elem_inds: []usize,
             elem_bboxes: []rops.ElemBBox,
+            root_classes: []rops.RootClass,
             elem_float_bboxes: ?[]db.DistortBounds,
             vis_offsets_by_chunk: []const usize,
         };
@@ -1022,6 +1067,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     if (cached[ee]) |value| {
                         stage.vis_orig_elem_inds[write_idx] = ee;
                         stage.elem_bboxes[write_idx] = value.box_ints;
+                        if (comptime MT != .tri3 and MT != .tri3opt) {
+                            stage.root_classes[write_idx] =
+                                stage.cached_root_classes[ee].?;
+                        }
                         if (stage.elem_float_bboxes) |float_bboxes| {
                             float_bboxes[write_idx] = value.box_floats;
                         }
@@ -1030,37 +1079,14 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     continue;
                 }
 
-                const bbox = if (MT == .tri3 or MT == .tri3opt)
-                    rops.calcVisibleNodeBBoxTri3WithHalo(
-                        MT,
-                        stage.camera,
-                        stage.coords_nodes,
-                        stage.connect,
-                        ee,
-                        stage.camera.prep_psf.halo_px,
-                    )
-                else if (stage.hull_mode == .off)
-                    rops.calcVisibleNodeBBoxHighOrdNoHullWithHalo(
-                        MT,
-                        stage.camera,
-                        stage.coords_nodes,
-                        stage.connect,
-                        ee,
-                        stage.camera.prep_psf.halo_px,
-                    )
-                else
-                    rops.calcVisibleNodeBBoxHighOrdWithHalo(
-                        MT,
-                        stage.camera,
-                        stage.coords_nodes,
-                        stage.connect,
-                        ee,
-                        stage.hull_mode,
-                        stage.camera.prep_psf.halo_px,
-                    );
+                const bbox = stage.cached_bboxes.?[ee];
                 if (bbox) |b| {
                     stage.vis_orig_elem_inds[write_idx] = ee;
                     stage.elem_bboxes[write_idx] = b;
+                    if (comptime MT != .tri3 and MT != .tri3opt) {
+                        stage.root_classes[write_idx] =
+                            stage.cached_root_classes[ee].?;
+                    }
                     write_idx += 1;
                 }
             }
@@ -1153,6 +1179,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             camera: *const cam.CameraPrepared,
             elem_coords: *const ndarray.NDArray(F),
             raster_hull: *ndarray.NDArray(F),
+            root_classes: []const rops.RootClass,
             hull_mode: rastcfg.HullMode,
         };
 
@@ -1169,6 +1196,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 stage.camera,
                 stage.elem_coords,
                 stage.raster_hull,
+                stage.root_classes,
                 stage.hull_mode,
                 range_start,
                 range_end,
@@ -1185,11 +1213,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 return;
             }
 
-            if (self.hull_mode == .off) {
-                self.mesh_workspace.raster_hull = null;
-                return;
-            }
-
             const NH = comptime MT.getNumHullPoints();
             self.mesh_workspace.raster_hull = try ndarray.NDArray(F).initFlat(
                 outer_alloc,
@@ -1200,6 +1223,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .camera = self.camera,
                 .elem_coords = elem_coords,
                 .raster_hull = &self.mesh_workspace.raster_hull.?,
+                .root_classes = self.mesh_workspace.root_classes,
                 .hull_mode = self.hull_mode,
             };
             pce.runStaticRange(
@@ -1207,6 +1231,166 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 &hulls_stage,
                 runPrepareRasterHulls,
                 self.mesh_workspace.elems_in_image,
+                self.vis_chunk_size,
+            );
+        }
+
+        const PrepareMultiRootStage = struct {
+            camera: *const cam.CameraPrepared,
+            elem_coords: *const ndarray.NDArray(F),
+            prepared: *rops.MultiRootPrepared,
+        };
+
+        fn runPrepareMultiRootData(
+            ctx_ptr: *anyopaque,
+            chunk_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) void {
+            _ = chunk_idx;
+            const stage: *PrepareMultiRootStage = @ptrCast(@alignCast(ctx_ptr));
+            const N = comptime MT.getNodesNum();
+            const Seed = struct { z: F, index: u8 };
+
+            for (range_start..range_end) |pp| {
+                const slot = stage.prepared.slot_by_visible_elem.get(pp);
+                if (slot == std.math.maxInt(u32)) continue;
+
+                var coords: rops.GatheredElemCoords(N) = undefined;
+                const xs = stage.elem_coords.getSlice(&.{ pp, 0, 0 }, 1);
+                const ys = stage.elem_coords.getSlice(&.{ pp, 1, 0 }, 1);
+                const zs = stage.elem_coords.getSlice(&.{ pp, 2, 0 }, 1);
+                var seeds: [geomkerns.multiRootSeedCount(N)]Seed = undefined;
+                var available: usize = 0;
+                for (0..N) |nn| {
+                    coords.x[nn] = xs[nn];
+                    coords.y[nn] = ys[nn];
+                    coords.z[nn] = zs[nn];
+                    if (std.math.isFinite(zs[nn]) and zs[nn] > 0) {
+                        seeds[available] = .{ .z = zs[nn], .index = @intCast(nn) };
+                        available += 1;
+                    }
+                }
+
+                const projected_hull = hull.buildMultiRootHullFromClip(
+                    N,
+                    stage.camera,
+                    coords,
+                );
+                const hx = stage.prepared.hull_x.getSlice(slot);
+                const hy = stage.prepared.hull_y.getSlice(slot);
+                for (0..projected_hull.count) |nn| {
+                    hx[nn] = projected_hull.x[nn];
+                    hy[nn] = projected_hull.y[nn];
+                }
+                stage.prepared.hull_count.set(slot, projected_hull.count);
+
+                for (N..geomkerns.multiRootSeedCount(N)) |seed_idx| {
+                    const seed_uv = geomkerns.multiRootSeedCoords(
+                        N,
+                        @intCast(seed_idx),
+                    );
+                    var weights: [N]F = undefined;
+                    var du: [N]F = undefined;
+                    var dv: [N]F = undefined;
+                    shapefun.shapeFunc(
+                        N,
+                        seed_uv[0],
+                        seed_uv[1],
+                        &weights,
+                        &du,
+                        &dv,
+                    );
+                    var seed_z: F = 0;
+                    for (0..N) |nn| seed_z += weights[nn] * zs[nn];
+                    if (std.math.isFinite(seed_z) and seed_z > 0) {
+                        seeds[available] = .{
+                            .z = seed_z,
+                            .index = @intCast(seed_idx),
+                        };
+                        available += 1;
+                    }
+                }
+                for (1..available) |ii| {
+                    const seed = seeds[ii];
+                    var jj = ii;
+                    while (jj > 0 and (seeds[jj - 1].z > seed.z or
+                        (seeds[jj - 1].z == seed.z and
+                            seeds[jj - 1].index > seed.index)))
+                    {
+                        seeds[jj] = seeds[jj - 1];
+                        jj -= 1;
+                    }
+                    seeds[jj] = seed;
+                }
+                const count = @min(available, stage.prepared.indices.cols_num);
+                const row = stage.prepared.indices.getSlice(slot);
+                for (0..count) |ii| row[ii] = seeds[ii].index;
+                stage.prepared.valid_depth.set(slot, @intCast(count));
+            }
+        }
+
+        fn prepareMultiRootData(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+            elem_coords: *const ndarray.NDArray(F),
+        ) !void {
+            if (comptime MT == .tri3 or MT == .tri3opt) {
+                self.mesh_workspace.multi_root = null;
+                return;
+            }
+
+            const visible_count = self.mesh_workspace.elems_in_image;
+            var multi_count: usize = 0;
+            for (self.mesh_workspace.root_classes) |root_class| {
+                if (root_class == .multi_root) multi_count += 1;
+            }
+            if (multi_count == 0) {
+                self.mesh_workspace.multi_root = null;
+                return;
+            }
+            if (multi_count >= std.math.maxInt(u32)) {
+                return error.TooManyMultiRootElements;
+            }
+
+            const N = comptime MT.getNodesNum();
+            const available = geomkerns.multiRootSeedCount(N);
+            const depth = @min(@as(usize, self.seed_bank_depth), available);
+            const slot_mem = try outer_alloc.alloc(u32, visible_count);
+            @memset(slot_mem, std.math.maxInt(u32));
+            var next_slot: u32 = 0;
+            for (self.mesh_workspace.root_classes, 0..) |root_class, pp| {
+                if (root_class != .multi_root) continue;
+                slot_mem[pp] = next_slot;
+                next_slot += 1;
+            }
+
+            self.mesh_workspace.multi_root = .{
+                .hull_x = try matslice.MatSlice(F).initAlloc(outer_alloc, multi_count, 9),
+                .hull_y = try matslice.MatSlice(F).initAlloc(outer_alloc, multi_count, 9),
+                .hull_count = vecslice.VecSlice(u8).init(
+                    try outer_alloc.alloc(u8, multi_count),
+                ),
+                .indices = try matslice.MatSlice(u8).initAlloc(
+                    outer_alloc,
+                    multi_count,
+                    depth,
+                ),
+                .valid_depth = vecslice.VecSlice(u8).init(
+                    try outer_alloc.alloc(u8, multi_count),
+                ),
+                .slot_by_visible_elem = vecslice.VecSlice(u32).init(slot_mem),
+            };
+            var stage = PrepareMultiRootStage{
+                .camera = self.camera,
+                .elem_coords = elem_coords,
+                .prepared = &self.mesh_workspace.multi_root.?,
+            };
+            pce.runStaticRange(
+                self.chunk_exec,
+                &stage,
+                runPrepareMultiRootData,
+                visible_count,
                 self.vis_chunk_size,
             );
         }

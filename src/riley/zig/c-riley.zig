@@ -293,8 +293,9 @@ pub const CRasterConfig = extern struct {
     save_strategy: u32,
     image_save_mode: u32,
     hull_mode: u32,
-    newton_seed_mode: u32,
-    newton_seed_reuse: u32,
+    one_root_seed_mode: u32,
+    one_root_seed_reuse: u32,
+    multi_root_seed_bank_depth: u8,
     validate_input: u32,
     report: u32,
     tile_size_min: u16,
@@ -547,7 +548,6 @@ fn subpxCenterMapFromC(subpx_map: u32) !cam.SubPixelCenterMap {
 
 fn hullModeFromC(hull_mode: u32) !rastcfg.HullMode {
     return switch (hull_mode) {
-        @intFromEnum(rastcfg.HullMode.off) => .off,
         @intFromEnum(rastcfg.HullMode.on_no_fallback) => .on_no_fallback,
         @intFromEnum(rastcfg.HullMode.on_convex_fallback) => .on_convex_fallback,
         else => error.InvalidHullMode,
@@ -1542,12 +1542,14 @@ fn buildRasterConfig(
     config.save_strategy = try saveStrategyFromC(in_config.save_strategy);
     config.output.image_save_mode = try imageSaveModeFromC(in_config.image_save_mode);
     config.advanced.solver.hull_mode = try hullModeFromC(in_config.hull_mode);
-    config.advanced.solver.newton_seed_mode = try newtonSeedModeFromC(
-        in_config.newton_seed_mode,
+    config.advanced.solver.one_root.mode = try newtonSeedModeFromC(
+        in_config.one_root_seed_mode,
     );
-    config.advanced.solver.newton_seed_reuse = try newtonSeedReuseFromC(
-        in_config.newton_seed_reuse,
+    config.advanced.solver.one_root.reuse = try newtonSeedReuseFromC(
+        in_config.one_root_seed_reuse,
     );
+    config.advanced.solver.multi_root.seed_bank_depth =
+        in_config.multi_root_seed_bank_depth;
     config.validation = try validateInputFromC(
         in_config.validate_input,
     );

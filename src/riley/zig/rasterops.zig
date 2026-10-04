@@ -10,6 +10,8 @@ const std = @import("std");
 const vecstack = @import("vecstack.zig");
 const vsd = @import("vecsimd.zig");
 const ndarray = @import("ndarray.zig");
+const matslice = @import("matslice.zig");
+const vecslice = @import("vecslice.zig");
 const meshio = @import("meshio.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -26,6 +28,80 @@ const MeshType = geomkerns.MeshType;
 const hull = @import("hull.zig");
 const shaderops = @import("shaderops.zig");
 const db = @import("distortbounds.zig");
+
+pub const RootClass = enum(u8) {
+    one_root,
+    multi_root,
+};
+
+pub const Bucket = enum(u8) {
+    tri3,
+    tri3opt,
+    tri6_one_root,
+    tri6_multi_root,
+    quad4_one_root,
+    quad4_multi_root,
+    quad8_one_root,
+    quad8_multi_root,
+    quad9_one_root,
+    quad9_multi_root,
+};
+
+pub const bucket_count = @typeInfo(Bucket).@"enum".fields.len;
+
+pub const BucketRange = struct {
+    start: usize = 0,
+    count: usize = 0,
+};
+
+pub fn bucketForElem(
+    mesh_type: MeshType,
+    classes: []const RootClass,
+    elem_idx: usize,
+) Bucket {
+    return switch (mesh_type) {
+        .tri3 => .tri3,
+        .tri3opt => .tri3opt,
+        .tri6 => if (classes[elem_idx] == .one_root)
+            .tri6_one_root
+        else
+            .tri6_multi_root,
+        .quad4 => if (classes[elem_idx] == .one_root)
+            .quad4_one_root
+        else
+            .quad4_multi_root,
+        .quad8 => if (classes[elem_idx] == .one_root)
+            .quad8_one_root
+        else
+            .quad8_multi_root,
+        .quad9 => if (classes[elem_idx] == .one_root)
+            .quad9_one_root
+        else
+            .quad9_multi_root,
+    };
+}
+
+pub fn bucketMeshType(comptime bucket: Bucket) MeshType {
+    return switch (bucket) {
+        .tri3 => .tri3,
+        .tri3opt => .tri3opt,
+        .tri6_one_root, .tri6_multi_root => .tri6,
+        .quad4_one_root, .quad4_multi_root => .quad4,
+        .quad8_one_root, .quad8_multi_root => .quad8,
+        .quad9_one_root, .quad9_multi_root => .quad9,
+    };
+}
+
+pub fn bucketRootClass(comptime bucket: Bucket) RootClass {
+    return switch (bucket) {
+        .tri6_multi_root,
+        .quad4_multi_root,
+        .quad8_multi_root,
+        .quad9_multi_root,
+        => .multi_root,
+        else => .one_root,
+    };
+}
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -123,13 +199,15 @@ pub fn calcVisibleDistortBBox(
         if (isTri3BackfaceRaster(nodes)) return null;
 
         ideal_bounds = db.DistortBounds.fromCoords2D(N, nodes);
-
     } else {
         const nodes = projectClipToIdealRaster(N, camera, coords);
-
-        if (isHighOrdBackface(N, nodes)) return null;
-
-        if (hull_mode != .off) {
+        const root_class = classifyHighOrdFacing(N, nodes) orelse return null;
+        if (root_class == .multi_root) {
+            const points = hull.buildMultiRootHullFromClip(N, camera, coords);
+            for (0..points.count) |nn| {
+                ideal_bounds.include(points.x[nn], points.y[nn]);
+            }
+        } else {
             const NH = comptime MT.getNumHullPoints();
             const points = hull.buildAdaptiveHullPointsFromClip(
                 N,
@@ -138,8 +216,6 @@ pub fn calcVisibleDistortBBox(
                 hull_mode,
             );
             ideal_bounds = db.DistortBounds.fromCoords2D(NH, points);
-        } else {
-            ideal_bounds = db.DistortBounds.fromCoords2D(N, nodes);
         }
     }
 
@@ -147,17 +223,6 @@ pub fn calcVisibleDistortBBox(
 
     var observed = db.sampleRectEdges(camera, walk, edge_spacing_px);
 
-    if (comptime MT != .tri3 and MT != .tri3opt) {
-        if (hull_mode == .off) {
-            const dx = observed.x_max - observed.x_min;
-            const dy = observed.y_max - observed.y_min;
-            const pad = tol.hull.no_hull_bbox_rel_pad * @max(dx, dy);
-            observed.x_min -= pad;
-            observed.x_max += pad;
-            observed.y_min -= pad;
-            observed.y_max += pad;
-        }
-    }
     if (!isOnScreen(
         camera,
         observed.x_min,
@@ -200,6 +265,16 @@ pub const RasterContext = struct {
     config: rastcfg.RasterConfig,
     frame_idx: usize,
     tile_size: u16,
+    multi_root_by_mesh: []const ?MultiRootPrepared = &.{},
+};
+
+pub const MultiRootPrepared = struct {
+    hull_x: matslice.MatSlice(F),
+    hull_y: matslice.MatSlice(F),
+    hull_count: vecslice.VecSlice(u8),
+    indices: matslice.MatSlice(u8),
+    valid_depth: vecslice.VecSlice(u8),
+    slot_by_visible_elem: vecslice.VecSlice(u32),
 };
 
 //------------------------------------------------------------------------------------------
@@ -438,8 +513,16 @@ pub fn calcVisibleNodeBBoxHighOrdWithHalo(
     }
 
     const coords_ideal_raster = projectClipToIdealRaster(N, camera, coords_clip);
-    if (isHighOrdBackface(N, coords_ideal_raster)) {
+    const root_class = classifyHighOrdFacing(N, coords_ideal_raster) orelse
         return null;
+
+    if (root_class == .multi_root) {
+        const points = hull.buildMultiRootHullFromClip(N, camera, coords_clip);
+        var bounds = db.DistortBounds.initEmpty();
+        for (0..points.count) |nn| {
+            bounds.include(points.x[nn], points.y[nn]);
+        }
+        return calcBBoxFromBounds(camera, elem_idx, bounds, raster_halo_px);
     }
 
     const hull_points_ideal = hull.buildAdaptiveHullPointsFromClip(
@@ -460,60 +543,6 @@ pub fn calcVisibleNodeBBoxHighOrdWithHalo(
         camera,
         elem_idx,
         hull_distorted,
-        raster_halo_px,
-    );
-}
-
-pub fn calcVisibleNodeBBoxHighOrdNoHull(
-    comptime MT: MeshType,
-    camera: *const cam.CameraPrepared,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
-    elem_idx: usize,
-) ?ElemBBox {
-    return calcVisibleNodeBBoxHighOrdNoHullWithHalo(MT, camera, coords_nodes, connect, elem_idx, 0);
-}
-
-pub fn calcVisibleNodeBBoxHighOrdNoHullWithHalo(
-    comptime MT: MeshType,
-    camera: *const cam.CameraPrepared,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
-    elem_idx: usize,
-    raster_halo_px: u16,
-) ?ElemBBox {
-    comptime {
-        if (MT == .tri3) {
-            @compileError("calcVisibleNodeBBoxHighOrdNoHull does not supp .tri3");
-        }
-    }
-
-    const N = comptime MT.getNodesNum();
-    const coords_clip = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
-
-    if (isElemBehindCamera(N, coords_clip)) {
-        return null;
-    }
-    if (!isNodeZInvertible(N, coords_clip)) {
-        return null;
-    }
-
-    const coords_ideal_raster = projectClipToIdealRaster(N, camera, coords_clip);
-    if (isHighOrdBackface(N, coords_ideal_raster)) {
-        return null;
-    }
-
-    const coords_distorted = distortIdealRasterCoords(
-        N,
-        camera,
-        coords_ideal_raster,
-    );
-    return calcBBoxFromRasterCoordsPadded(
-        N,
-        camera,
-        elem_idx,
-        coords_distorted,
-        tol.hull.no_hull_bbox_rel_pad,
         raster_halo_px,
     );
 }
@@ -581,6 +610,7 @@ pub fn prepareVisibleRasterHullsRange(
     camera: *const cam.CameraPrepared,
     elem_coords: *const ndarray.NDArray(F),
     raster_hull: *ndarray.NDArray(F),
+    root_classes: []const RootClass,
     hull_mode: rastcfg.HullMode,
     visible_start: usize,
     visible_end: usize,
@@ -591,6 +621,7 @@ pub fn prepareVisibleRasterHullsRange(
     const NH = comptime MT.getNumHullPoints();
 
     for (visible_start..visible_end) |pp| {
+        if (root_classes[pp] == .multi_root) continue;
         var coords_elem: GatheredElemCoords(N) = undefined;
         const sx = elem_coords.getSlice(&[_]usize{ pp, 0, 0 }, 1);
         const sy = elem_coords.getSlice(&[_]usize{ pp, 1, 0 }, 1);
@@ -664,6 +695,7 @@ pub fn clipElemBBoxToTile(
 pub const ActiveTile = struct {
     overlap_start: usize,
     overlap_count: usize,
+    buckets: [bucket_count]BucketRange = [_]BucketRange{.{}} ** bucket_count,
     x_px_min: u16,
     y_px_min: u16,
     x_px_max: u16,
@@ -702,12 +734,17 @@ pub fn sceneTileElemOverlap(
     elems_in_image_by_mesh: []const usize,
     elem_bboxes_by_mesh: []const []ElemBBox,
     elem_float_bboxes_by_mesh: []const ?[]db.DistortBounds,
+    mesh_types: []const MeshType,
+    root_classes_by_mesh: []const []RootClass,
 ) !TilingOverlaps {
     const tiles_num = tiles_num_x * tiles_num_y;
 
     // Stage 1 - Parallel Counting Pass: Determine the number of elem-tile
     // intersections across all meshes.
-    const tile_elem_counts = try allocator.alloc(std.atomic.Value(usize), tiles_num);
+    const tile_elem_counts = try allocator.alloc(
+        std.atomic.Value(usize),
+        tiles_num * bucket_count,
+    );
     defer allocator.free(tile_elem_counts);
     for (tile_elem_counts) |*count| count.* = std.atomic.Value(usize).init(0);
 
@@ -723,6 +760,8 @@ pub fn sceneTileElemOverlap(
             .halo_px = halo_px,
             .elems_num = elems_num,
             .elem_bbox_slice = elem_bboxes_by_mesh[mesh_idx],
+            .mesh_type = mesh_types[mesh_idx],
+            .root_classes = root_classes_by_mesh[mesh_idx],
         };
 
         const chunk_size = scalingpolicy.tilingChunkSize(
@@ -743,8 +782,11 @@ pub fn sceneTileElemOverlap(
     // global offsets for each tile.
     var overlap_total: usize = 0;
     var num_active_tiles: usize = 0;
-    for (tile_elem_counts) |count_atomic| {
-        const count = count_atomic.load(.monotonic);
+    for (0..tiles_num) |tile_idx| {
+        var count: usize = 0;
+        for (0..bucket_count) |bb| {
+            count += tile_elem_counts[tile_idx * bucket_count + bb].load(.monotonic);
+        }
         overlap_total += count;
         if (count > 0) num_active_tiles += 1;
     }
@@ -752,14 +794,25 @@ pub fn sceneTileElemOverlap(
     const overlaps = try allocator.alloc(OverlapBBox, overlap_total);
     const active_tiles = try allocator.alloc(ActiveTile, num_active_tiles);
 
-    const tile_write_inds = try allocator.alloc(std.atomic.Value(usize), tiles_num);
+    const tile_write_inds = try allocator.alloc(
+        std.atomic.Value(usize),
+        tiles_num * bucket_count,
+    );
     defer allocator.free(tile_write_inds);
 
     var current_off: usize = 0;
     var active_idx: usize = 0;
-    for (tile_elem_counts, 0..) |count_atomic, ii| {
-        const count = count_atomic.load(.monotonic);
-        tile_write_inds[ii] = std.atomic.Value(usize).init(current_off);
+    for (0..tiles_num) |ii| {
+        var count: usize = 0;
+        var ranges = [_]BucketRange{.{}} ** bucket_count;
+        for (0..bucket_count) |bb| {
+            const bucket_count_here =
+                tile_elem_counts[ii * bucket_count + bb].load(.monotonic);
+            ranges[bb] = .{ .start = current_off + count, .count = bucket_count_here };
+            tile_write_inds[ii * bucket_count + bb] =
+                std.atomic.Value(usize).init(current_off + count);
+            count += bucket_count_here;
+        }
 
         if (count > 0) {
             const tx = ii % tiles_num_x;
@@ -768,6 +821,7 @@ pub fn sceneTileElemOverlap(
             active_tiles[active_idx] = .{
                 .overlap_start = current_off,
                 .overlap_count = count,
+                .buckets = ranges,
                 .x_px_min = @intCast(tx * tile_size),
                 .y_px_min = @intCast(ty * tile_size),
                 .x_px_max = @min(screen_px_x, @as(u16, @intCast((tx + 1) * tile_size))),
@@ -801,6 +855,8 @@ pub fn sceneTileElemOverlap(
             .mesh_idx = mesh_idx,
             .elem_bbox_slice = elem_bboxes_by_mesh[mesh_idx],
             .float_bbox_slice = elem_float_bboxes_by_mesh[mesh_idx],
+            .mesh_type = mesh_types[mesh_idx],
+            .root_classes = root_classes_by_mesh[mesh_idx],
         };
 
         const chunk_size = scalingpolicy.tilingChunkSize(
@@ -828,6 +884,8 @@ const TilingCountStage = struct {
     halo_px: u16,
     elems_num: usize,
     elem_bbox_slice: []const ElemBBox,
+    mesh_type: MeshType,
+    root_classes: []const RootClass,
 };
 
 fn runTilingCount(
@@ -841,6 +899,11 @@ fn runTilingCount(
 
     for (range_start..range_end) |ee| {
         const elem_bbox = tiling.elem_bbox_slice[ee];
+        const bucket_idx = @intFromEnum(bucketForElem(
+            tiling.mesh_type,
+            tiling.root_classes,
+            elem_bbox.elem_idx,
+        ));
         const tile_range = calcElemTileRange(elem_bbox, tiling.tile_size, tiling.halo_px, tiling.tiles_num_x, tiling.tiles_num_y);
         const tx_start = tile_range.tx_start;
         const tx_end = tile_range.tx_end;
@@ -850,7 +913,9 @@ fn runTilingCount(
         for (ty_start..ty_end) |ty| {
             const row_off = ty * tiling.tiles_num_x;
             for (tx_start..tx_end) |tx| {
-                _ = tiling.tile_elem_counts[row_off + tx].fetchAdd(1, .monotonic);
+                _ = tiling.tile_elem_counts[
+                    (row_off + tx) * bucket_count + bucket_idx
+                ].fetchAdd(1, .monotonic);
             }
         }
     }
@@ -868,6 +933,8 @@ const TilingFillStage = struct {
     mesh_idx: usize,
     elem_bbox_slice: []const ElemBBox,
     float_bbox_slice: ?[]const db.DistortBounds,
+    mesh_type: MeshType,
+    root_classes: []const RootClass,
 };
 
 fn runTilingFill(
@@ -881,6 +948,11 @@ fn runTilingFill(
 
     for (range_start..range_end) |ee| {
         const elem_bbox = tiling.elem_bbox_slice[ee];
+        const bucket_idx = @intFromEnum(bucketForElem(
+            tiling.mesh_type,
+            tiling.root_classes,
+            elem_bbox.elem_idx,
+        ));
         const floating: ?db.DistortBounds = if (tiling.float_bbox_slice) |float_bboxes|
             float_bboxes[ee]
         else
@@ -910,7 +982,9 @@ fn runTilingFill(
                 const scratch_px_max_x: i32 = @as(i32, tile_px_max_x) + tiling.halo_px;
 
                 const tile_idx = ty * tiling.tiles_num_x + tx;
-                const write_idx = tiling.tile_write_inds[tile_idx].fetchAdd(1, .monotonic);
+                const write_idx = tiling.tile_write_inds[
+                    tile_idx * bucket_count + bucket_idx
+                ].fetchAdd(1, .monotonic);
 
                 tiling.overlaps[write_idx] = clipElemBBoxToTile(
                     elem_bbox,
@@ -992,7 +1066,7 @@ fn isElemBehindCamera(
 ) bool {
     var behind_camera = true;
     for (0..N) |nn| {
-        if (coords_elem.z[nn] > tol.culling.higher_order_backface_nz) {
+        if (coords_elem.z[nn] > tol.culling.behind_camera_z) {
             behind_camera = false;
             break;
         }
@@ -1026,10 +1100,16 @@ fn isHighOrdBackface(
     comptime N: usize,
     coords_raster: RasterCoords2D(N),
 ) bool {
-    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
-    const nz_tol = tol.culling.higher_order_backface_nz;
+    return classifyHighOrdFacing(N, coords_raster) == null;
+}
 
-    var backface = true;
+pub fn classifyHighOrdFacing(
+    comptime N: usize,
+    coords_raster: RasterCoords2D(N),
+) ?RootClass {
+    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
+    var determinants: [N + 1]F = undefined;
+    var max_abs: F = 0.0;
     for (0..N) |nn| {
         var dx_dxi: F = 0.0;
         var dx_deta: F = 0.0;
@@ -1043,15 +1123,113 @@ fn isHighOrdBackface(
             dy_deta += nodal_derivs.dNv[nn][mm] * coords_raster.y[mm];
         }
 
-        const normal_z = dx_dxi * dy_deta - dx_deta * dy_dxi;
-        const front_facing = normal_z < -nz_tol;
-        if (front_facing) {
-            backface = false;
-            break;
-        }
+        const determinant = dx_dxi * dy_deta - dx_deta * dy_dxi;
+        determinants[nn] = determinant;
+        max_abs = @max(max_abs, @abs(determinant));
     }
 
-    return backface;
+    const centroid_xi: F = if (N == 6) 1.0 / 3.0 else 0.0;
+    const centroid_eta: F = if (N == 6) 1.0 / 3.0 else 0.0;
+    determinants[N] = projectedJacDetAt(
+        N,
+        coords_raster,
+        centroid_xi,
+        centroid_eta,
+    );
+    max_abs = @max(max_abs, @abs(determinants[N]));
+
+    const margin = @max(
+        tol.culling.projected_jacobian_abs,
+        tol.culling.projected_jacobian_rel * max_abs,
+    );
+    var all_front = true;
+    var all_back = true;
+    for (determinants) |determinant| {
+        if (!std.math.isFinite(determinant)) return .multi_root;
+        if (determinant >= -margin) all_front = false;
+        if (determinant <= margin) all_back = false;
+    }
+    if (all_back) return null;
+    if (all_front) return .one_root;
+    return .multi_root;
+}
+
+pub fn classifyElemFacing(
+    comptime MT: MeshType,
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
+    elem_idx: usize,
+) ?RootClass {
+    comptime {
+        if (MT == .tri3 or MT == .tri3opt) {
+            @compileError("classifyElemFacing requires a Newton element");
+        }
+    }
+    const N = comptime MT.getNodesNum();
+    const coords_clip = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
+    const coords_raster = projectClipToIdealRaster(N, camera, coords_clip);
+    return classifyHighOrdFacing(N, coords_raster);
+}
+
+pub fn projectedJacDetAt(
+    comptime N: usize,
+    coords_raster: RasterCoords2D(N),
+    xi: F,
+    eta: F,
+) F {
+    var weights: [N]F = undefined;
+    var d_xi: [N]F = undefined;
+    var d_eta: [N]F = undefined;
+    shapefun.shapeFunc(N, xi, eta, &weights, &d_xi, &d_eta);
+    var dx_dxi: F = 0.0;
+    var dx_deta: F = 0.0;
+    var dy_dxi: F = 0.0;
+    var dy_deta: F = 0.0;
+    for (0..N) |nn| {
+        dx_dxi += d_xi[nn] * coords_raster.x[nn];
+        dx_deta += d_eta[nn] * coords_raster.x[nn];
+        dy_dxi += d_xi[nn] * coords_raster.y[nn];
+        dy_deta += d_eta[nn] * coords_raster.y[nn];
+    }
+    return dx_dxi * dy_deta - dx_deta * dy_dxi;
+}
+
+pub fn projectedJacDetPhysical(
+    comptime N: usize,
+    nodes: Vec3Slices(F),
+    xi: F,
+    eta: F,
+) F {
+    var weights: [N]F = undefined;
+    var d_xi: [N]F = undefined;
+    var d_eta: [N]F = undefined;
+    shapefun.shapeFunc(N, xi, eta, &weights, &d_xi, &d_eta);
+    var x: F = 0;
+    var y: F = 0;
+    var z: F = 0;
+    var x_xi: F = 0;
+    var x_eta: F = 0;
+    var y_xi: F = 0;
+    var y_eta: F = 0;
+    var z_xi: F = 0;
+    var z_eta: F = 0;
+    for (0..N) |nn| {
+        x += weights[nn] * nodes.x[nn];
+        y += weights[nn] * nodes.y[nn];
+        z += weights[nn] * nodes.z[nn];
+        x_xi += d_xi[nn] * nodes.x[nn];
+        x_eta += d_eta[nn] * nodes.x[nn];
+        y_xi += d_xi[nn] * nodes.y[nn];
+        y_eta += d_eta[nn] * nodes.y[nn];
+        z_xi += d_xi[nn] * nodes.z[nn];
+        z_eta += d_eta[nn] * nodes.z[nn];
+    }
+    const dx_xi = x_xi * z - x * z_xi;
+    const dx_eta = x_eta * z - x * z_eta;
+    const dy_xi = y_xi * z - y * z_xi;
+    const dy_eta = y_eta * z - y * z_eta;
+    return (dx_xi * dy_eta - dx_eta * dy_xi) / (z * z * z * z);
 }
 
 fn isOnScreen(
@@ -1135,42 +1313,26 @@ fn calcBBoxFromRasterCoords(
     const y_min = std.mem.min(F, &coords_raster.y);
     const y_max = std.mem.max(F, &coords_raster.y);
 
-    if (!isOnScreen(camera, x_min, x_max, y_min, y_max, raster_halo_px)) {
-        return null;
-    }
-
-    return .{
-        .elem_idx = elem_idx,
-        .x_min = boundIndMinSigned(x_min, -@as(i32, raster_halo_px)),
-        .x_max = boundIndMaxSigned(x_max, @as(i32, @intCast(camera.pixels_num[0])) + raster_halo_px),
-        .y_min = boundIndMinSigned(y_min, -@as(i32, raster_halo_px)),
-        .y_max = boundIndMaxSigned(y_max, @as(i32, @intCast(camera.pixels_num[1])) + raster_halo_px),
-    };
+    return calcBBoxFromBounds(
+        camera,
+        elem_idx,
+        .{ .x_min = x_min, .x_max = x_max, .y_min = y_min, .y_max = y_max },
+        raster_halo_px,
+    );
 }
 
-fn calcBBoxFromRasterCoordsPadded(
-    comptime N: usize,
+fn calcBBoxFromBounds(
     camera: *const cam.CameraPrepared,
     elem_idx: usize,
-    coords_raster: RasterCoords2D(N),
-    rel_pad: F,
+    bounds: db.DistortBounds,
     raster_halo_px: u16,
 ) ?ElemBBox {
-    const x_min = std.mem.min(F, &coords_raster.x);
-    const x_max = std.mem.max(F, &coords_raster.x);
-    const y_min = std.mem.min(F, &coords_raster.y);
-    const y_max = std.mem.max(F, &coords_raster.y);
-
-    const dx = x_max - x_min;
-    const dy = y_max - y_min;
-    const pad = rel_pad * @max(dx, dy);
-
     if (!isOnScreen(
         camera,
-        x_min - pad,
-        x_max + pad,
-        y_min - pad,
-        y_max + pad,
+        bounds.x_min,
+        bounds.x_max,
+        bounds.y_min,
+        bounds.y_max,
         raster_halo_px,
     )) {
         return null;
@@ -1178,19 +1340,27 @@ fn calcBBoxFromRasterCoordsPadded(
 
     return .{
         .elem_idx = elem_idx,
-        .x_min = boundIndMinSigned(x_min - pad, -@as(i32, raster_halo_px)),
-        .x_max = boundIndMaxSigned(x_max + pad, @as(i32, @intCast(camera.pixels_num[0])) + raster_halo_px),
-        .y_min = boundIndMinSigned(y_min - pad, -@as(i32, raster_halo_px)),
-        .y_max = boundIndMaxSigned(y_max + pad, @as(i32, @intCast(camera.pixels_num[1])) + raster_halo_px),
+        .x_min = boundIndMinSigned(bounds.x_min, -@as(i32, raster_halo_px)),
+        .x_max = boundIndMaxSigned(
+            bounds.x_max,
+            @as(i32, @intCast(camera.pixels_num[0])) + raster_halo_px,
+        ),
+        .y_min = boundIndMinSigned(bounds.y_min, -@as(i32, raster_halo_px)),
+        .y_max = boundIndMaxSigned(
+            bounds.y_max,
+            @as(i32, @intCast(camera.pixels_num[1])) + raster_halo_px,
+        ),
     };
 }
 
 fn boundIndMinSigned(val: F, min: i32) i32 {
-    return @max(min, @as(i32, @intFromFloat(@floor(val))));
+    if (val <= @as(F, @floatFromInt(min))) return min;
+    return @as(i32, @intFromFloat(@floor(val)));
 }
 
 fn boundIndMaxSigned(val: F, max: i32) i32 {
-    return @min(max, @as(i32, @intFromFloat(@ceil(val))));
+    if (val >= @as(F, @floatFromInt(max))) return max;
+    return @as(i32, @intFromFloat(@ceil(val)));
 }
 
 //------------------------------------------------------------------------------------------

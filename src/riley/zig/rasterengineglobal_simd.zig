@@ -25,6 +25,7 @@ const GlobalSubpxScratchBuffs = struct {
     image: @import("matslice.zig").MatSlice(F),
     filter_tmp: @import("matslice.zig").MatSlice(F),
     simd_chunks: []backend.SubpxSimdChunk,
+    multi_root_candidate_indices: []u32,
     mask: []align(64) bool,
     xi: []align(64) F,
     eta: []align(64) F,
@@ -71,6 +72,7 @@ const GlobalBackend = struct {
             .image = local.image,
             .filter_tmp = local.filter_tmp,
             .simd_chunks = local.simd_chunks,
+            .multi_root_candidate_indices = local.multi_root_candidate_indices,
             .mask = local.mask,
             .xi = local.xi,
             .eta = local.eta,
@@ -107,12 +109,14 @@ const GlobalBackend = struct {
         comptime Geom: type,
         comptime ShaderKern: type,
         comptime ShaderData: type,
+        comptime root_class: rops.RootClass,
     ) type {
         return backend.RasterEngineFor(
             GlobalSubpxScratchBuffs,
             Geom,
             ShaderKern,
             ShaderData,
+            root_class,
         );
     }
 };

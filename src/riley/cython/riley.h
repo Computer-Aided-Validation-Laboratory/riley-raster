@@ -239,8 +239,9 @@ typedef struct c_raster_config {
     uint32_t save_strategy;
     uint32_t image_save_mode;
     uint32_t hull_mode;
-    uint32_t newton_seed_mode;
-    uint32_t newton_seed_reuse;
+    uint32_t one_root_seed_mode;
+    uint32_t one_root_seed_reuse;
+    uint8_t multi_root_seed_bank_depth;
     uint32_t validate_input;
     uint32_t report;
     uint16_t tile_size_min;

@@ -39,6 +39,38 @@ pub const recordGoldFailure = testsuites.recordGoldFailure;
 pub const default_fails_root = "fails";
 pub const impl_suffix = if (cfg.simd == .on) "_simd" else "_scalar";
 
+/// The generated planar edge fixtures use 13 deformation steps. Their extreme
+/// steps fold the FE parameterization, so they are not valid raster gold cases.
+/// These ranges were checked against the signed mapping Jacobian over each step.
+pub fn isValidOneElemFrame(
+    case_name: []const u8,
+    mesh_type: MeshType,
+    frame: usize,
+) bool {
+    if (std.mem.eql(u8, case_name, "distort_bulge")) {
+        return switch (mesh_type) {
+            .tri6 => frame <= 8,
+            .quad8, .quad9 => frame >= 2 and frame <= 10,
+            else => true,
+        };
+    }
+    if (std.mem.eql(u8, case_name, "distort_tan")) {
+        return frame >= 2 and frame <= 10;
+    }
+    return true;
+}
+
+test "invalid one-element deformation steps are isolated" {
+    try std.testing.expect(!isValidOneElemFrame("distort_bulge", .quad8, 0));
+    try std.testing.expect(!isValidOneElemFrame("distort_bulge", .quad8, 1));
+    try std.testing.expect(isValidOneElemFrame("distort_bulge", .quad8, 2));
+    try std.testing.expect(isValidOneElemFrame("distort_bulge", .tri6, 8));
+    try std.testing.expect(!isValidOneElemFrame("distort_bulge", .tri6, 9));
+    try std.testing.expect(!isValidOneElemFrame("distort_tan", .quad9, 11));
+    try std.testing.expect(isValidOneElemFrame("distort_tan", .quad9, 10));
+    try std.testing.expect(isValidOneElemFrame("vertbulge", .quad9, 0));
+}
+
 // Default tolerances: for scientific accuracy and DIC
 // F: rel= 1e-11, abs= 1e-11
 // f32: rel= 1e-5, abs= 1e-4
@@ -400,10 +432,49 @@ pub fn extractFrameImage(
         4 => dims[3],
         else => dims[2],
     };
-    var image = try NDArray(F).initFlat(allocator, &[_]usize{ rows, cols, channels });
+    return extractFrameImageCropped(
+        allocator,
+        array,
+        camera_idx,
+        frame,
+        field_start,
+        channels,
+        rows,
+        cols,
+    );
+}
 
-    for (0..rows) |rr| {
-        for (0..cols) |cc| {
+pub fn extractFrameImageCropped(
+    outer_alloc: std.mem.Allocator,
+    array: *const NDArray(F),
+    camera_idx: usize,
+    frame: usize,
+    field_start: usize,
+    channels: usize,
+    image_rows: usize,
+    image_cols: usize,
+) !NDArray(F) {
+    const dims = array.dims;
+    const rows = switch (dims.len) {
+        5 => dims[3],
+        4 => dims[2],
+        else => dims[1],
+    };
+    const cols = switch (dims.len) {
+        5 => dims[4],
+        4 => dims[3],
+        else => dims[2],
+    };
+    if (image_rows > rows or image_cols > cols) {
+        return error.ArrayDimensionMismatch;
+    }
+    var image = try NDArray(F).initFlat(
+        outer_alloc,
+        &[_]usize{ image_rows, image_cols, channels },
+    );
+
+    for (0..image_rows) |rr| {
+        for (0..image_cols) |cc| {
             for (0..channels) |ch| {
                 const val = switch (dims.len) {
                     5 => array.get(&[_]usize{
@@ -422,6 +493,29 @@ pub fn extractFrameImage(
     }
 
     return image;
+}
+
+test "extract frame image crops a padded camera batch" {
+    const alloc = std.testing.allocator;
+    var padded = try NDArray(F).initFlat(alloc, &.{ 2, 1, 1, 4, 4 });
+    defer {
+        alloc.free(padded.slice);
+        padded.deinit(alloc);
+    }
+    @memset(padded.slice, -1);
+    padded.set(&.{ 0, 0, 0, 1, 2 }, 7);
+
+    var image = try extractFrameImageCropped(alloc, &padded, 0, 0, 0, 1, 2, 3);
+    defer {
+        alloc.free(image.slice);
+        image.deinit(alloc);
+    }
+    try std.testing.expectEqualSlices(usize, &.{ 2, 3, 1 }, image.dims);
+    try std.testing.expectEqual(@as(F, 7), image.get(&.{ 1, 2, 0 }));
+    try std.testing.expectError(
+        error.ArrayDimensionMismatch,
+        extractFrameImageCropped(alloc, &padded, 0, 0, 0, 1, 5, 3),
+    );
 }
 
 pub fn findGoldPath(
@@ -671,23 +765,25 @@ pub fn saveComparisonArtifactsFromResult(
     var out_dir = try openFailsSubDir(allocator, io, fails_root, prepended_dir);
     defer out_dir.close(io);
 
-    var actual = try extractFrameImage(
+    var gold = try loadNDArrayFromGold(allocator, io, gold_csv_path, channels);
+    defer {
+        allocator.free(gold.slice);
+        gold.deinit(allocator);
+    }
+
+    var actual = try extractFrameImageCropped(
         allocator,
         result,
         camera_idx,
         frame,
         field_start,
         channels,
+        gold.dims[0],
+        gold.dims[1],
     );
     defer {
         allocator.free(actual.slice);
         actual.deinit(allocator);
-    }
-
-    var gold = try loadNDArrayFromGold(allocator, io, gold_csv_path, channels);
-    defer {
-        allocator.free(gold.slice);
-        gold.deinit(allocator);
     }
 
     const base_name = try std.fmt.allocPrint(
@@ -1719,6 +1815,7 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
             render_result.dims[0];
         var first_err: ?anyerror = null;
         for (0..frames_num) |frame_idx| {
+            if (!isValidOneElemFrame(test_type, mesh_type, frame_idx)) continue;
             const gold_path = try findGoldPath(
                 aa,
                 io,

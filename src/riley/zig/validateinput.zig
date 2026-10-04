@@ -75,6 +75,7 @@ pub const InputValidationError = error{
     InvalidTileSizeRange,
     InvalidTileSizeOverride,
     InvalidDistortEdgeSpacing,
+    InvalidMultiRootSeedBankDepth,
     InvalidGlobalSubpxTileSizeMin,
     InvalidGlobalSubpxTileSizeMax,
     InvalidGlobalSubpxTileSizeRange,
@@ -216,6 +217,10 @@ fn checkTopLevelAndRenderGroups(
 }
 
 fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
+    const depth = config.advanced.solver.multi_root.seed_bank_depth;
+    if (depth == 0 or depth > 17) {
+        return error.InvalidMultiRootSeedBankDepth;
+    }
     if (!std.math.isFinite(config.advanced.distortion.edge_spacing_px) or
         config.advanced.distortion.edge_spacing_px <= 0.0)
     {
@@ -335,8 +340,8 @@ fn checkMeshesMetadata(
                 disp_field.array.dims[2] != 3 or
                 disp_field.array_mem.len !=
                     disp_field.array.dims[0] *
-                    disp_field.array.dims[1] *
-                    disp_field.array.dims[2])
+                        disp_field.array.dims[1] *
+                        disp_field.array.dims[2])
             {
                 return error.InvalidDisplacementDimensions;
             }
@@ -908,4 +913,17 @@ test "raster configuration rejects invalid distortion edge spacing" {
             checkRasterConfig(config),
         );
     }
+}
+
+test "raster configuration rejects invalid multi-root seed bank depth" {
+    var config = rastcfg.RasterConfig{};
+    for ([_]u8{ 0, 18, 255 }) |depth| {
+        config.advanced.solver.multi_root.seed_bank_depth = depth;
+        try std.testing.expectError(
+            error.InvalidMultiRootSeedBankDepth,
+            checkRasterConfig(config),
+        );
+    }
+    config.advanced.solver.multi_root.seed_bank_depth = 17;
+    try checkRasterConfig(config);
 }

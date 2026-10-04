@@ -162,8 +162,9 @@ class RasterConfig:
     save_strategy: int = 1
     image_save_mode: int = 2
     hull_mode: int = 1
-    newton_seed_mode: int = 0
-    newton_seed_reuse: int = 0
+    one_root_seed_mode: int = 0
+    one_root_seed_reuse: int = 0
+    multi_root_seed_bank_depth: int = 3
     validate_input: int = 1
     report: int = 1
     tile_size_min: int = 1
@@ -321,7 +322,6 @@ class NormalType(IntEnum):
 
 
 class HullMode(IntEnum):
-    off = 0
     on_no_fallback = 1
     on_convex_fallback = 2
 
@@ -612,8 +612,9 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
     config_out.save_strategy = int(config.save_strategy)
     config_out.image_save_mode = int(config.image_save_mode)
     config_out.hull_mode = int(config.hull_mode)
-    config_out.newton_seed_mode = int(config.newton_seed_mode)
-    config_out.newton_seed_reuse = int(config.newton_seed_reuse)
+    config_out.one_root_seed_mode = int(config.one_root_seed_mode)
+    config_out.one_root_seed_reuse = int(config.one_root_seed_reuse)
+    config_out.multi_root_seed_bank_depth = config.multi_root_seed_bank_depth
     config_out.validate_input = int(config.validate_input)
     config_out.report = int(config.report)
     config_out.tile_size_min = int(config.tile_size_min)

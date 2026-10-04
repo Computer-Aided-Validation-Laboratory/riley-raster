@@ -82,6 +82,11 @@ pub fn build(b: *std.Build) void {
             .source_path = "src/test_full.zig",
         },
         .{
+            .step_name = "test-full-badjac",
+            .description = "Save warning-only invalid-Jacobian render diagnostics",
+            .source_path = "src/test_full_badjac.zig",
+        },
+        .{
             .step_name = "test-verif",
             .description = "Run the focused analytic verification suite",
             .source_path = "src/test_verif.zig",

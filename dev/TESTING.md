@@ -28,6 +28,12 @@ test run. Rendering, setup, or artifact-write errors still abort the current
 sub-suite, but the next sub-suite runs.
 The focused verification suite likewise continues through its remaining
 verification cases and reports failure at the end.
+The generated one-element bulge/tangent fixtures include deformation frames
+whose in-plane Jacobian becomes zero or changes sign. Normal basic and full
+comparisons cover only valid frames. Run `zig build test-full-badjac` to render
+the excluded frames as warning-only diagnostics. It writes actual, reference,
+and difference BMP/CSV files under `fails/*_full_badjac/`; changes in these
+out-of-domain renders do not fail the test command.
 After reviewing and approving distortion failures, run
 `zig build gen-gold-failed-distortion -Doptimize=ReleaseSafe` to regenerate
 only the distinct distortion/PSF and SSAA/pixel-map gold cases represented
@@ -47,6 +53,7 @@ Riley provides three core repository-packaged test suites intended for routine d
 | :--- | :--- | :--- | :--- | :--- |
 | **Verification Suite** | `zig build test-verif` | [`src/test_verif.zig`](file:///home/lloydf/riley-raster/src/test_verif.zig) | Mathematical validation against analytical Python oracles | `gold/verif/` |
 | **Basic Test Suite** | `zig build test-basic` | [`src/test_basic.zig`](file:///home/lloydf/riley-raster/src/test_basic.zig) | Fast, comprehensive coverage of core rasteriser features | `gold/basic/` |
+| **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | [`src/test_full_badjac.zig`](file:///home/lloydf/riley-raster/src/test_full_badjac.zig) | Warning-only renders and diffs for invalid one-element frames | Existing basic and full-hull gold |
 | **Python Pytest Suite** | `.venv/bin/pytest src/riley/pytests/` | [`src/riley/pytests/`](file:///home/lloydf/riley-raster/src/riley/pytests) | Python/Cython API, mesh pipeline, Exodus conversion, demo parity | Integrated / `gold/` |
 
 ### Regenerating Reference Gold for Core Suites

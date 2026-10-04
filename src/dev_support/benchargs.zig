@@ -324,7 +324,7 @@ test "parse bench args named options" {
         "--max-raster-workers-per-job",
         "7",
         "--hull-mode",
-        "off",
+        "on_no_fallback",
         "--subpixel-center-map",
         "per_tile",
         "--save-strategy",
@@ -379,7 +379,10 @@ test "parse bench args named options" {
         @as(u16, 7),
         bench_args.max_raster_workers_per_job,
     );
-    try std.testing.expectEqual(rastcfg.HullMode.off, bench_args.hull_mode);
+    try std.testing.expectEqual(
+        rastcfg.HullMode.on_no_fallback,
+        bench_args.hull_mode,
+    );
     try std.testing.expectEqual(
         cam.SubPixelCenterMap.per_tile,
         bench_args.subpixel_center_map,

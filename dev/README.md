@@ -47,7 +47,10 @@ zig build test-basic
 zig build gen-gold-full -Doptimize=ReleaseSafe  # Generate Full gold (if needed)
 zig build test-full -Doptimize=ReleaseSafe
 
-# 5. Python Integration Suite
+# 5. Warning-only diagnostics for invalid-Jacobian element frames
+zig build test-full-badjac
+
+# 6. Python Integration Suite
 .venv/bin/pytest src/riley/pytests/
 ```
 
@@ -59,6 +62,7 @@ zig build test-full -Doptimize=ReleaseSafe
 | **Verification Suite** | `zig build test-verif` | Inverse solver recovery, silhouette area/centroid, depth ordering, and camera distortion oracles (Debug) | `gold/verif/` |
 | **Basic Suite** | `zig build test-basic` | Fast coverage across 1-element, 2-shape FE interaction, and feature zoo cases (Debug) | `gold/basic/` |
 | **Full Suite** | `zig build test-full -Doptimize=ReleaseSafe` | Exhaustive sweeps over shaders, textures, PSF/distortion, SSAA, hulls, tiling, scenes, threads, and outputs in ReleaseSafe | `gold/full_*/` |
+| **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | Warning-only renders of intentionally folded one-element frames, with actual/reference/diff artifacts under `fails/*_full_badjac/` | Existing basic and full-hull gold |
 | **Python Pytests** | `.venv/bin/pytest src/riley/pytests/` | Python/Cython API, mesh pipeline, Exodus conversion, and demo parity | Integrated / `gold/` |
 
 > [!NOTE]

@@ -61,7 +61,7 @@ pub const ReportConfig = struct {
 pub const AdvancedConfig = struct {
     raster: RasterTuning = .{},
     distortion: DistortionTuning = .{},
-    solver: SolverTuning = .{},
+    solver: SolverPolicy = .{},
 };
 
 pub const RasterTuning = struct {
@@ -82,10 +82,23 @@ pub const DistortionTuning = struct {
     edge_spacing_px: F = 1.0,
 };
 
-pub const SolverTuning = struct {
+pub const SolverPolicy = struct {
     hull_mode: HullMode = .on_no_fallback,
-    newton_seed_mode: NewtonSeedMode = .centroid,
-    newton_seed_reuse: NewtonSeedReuse = .off,
+    one_root: OneRootSeedPolicy = .{},
+    multi_root: MultiRootSeedPolicy = .{},
+};
+
+pub const OneRootSeedPolicy = struct {
+    mode: NewtonSeedMode = .centroid,
+    reuse: NewtonSeedReuse = .off,
+};
+
+pub const MultiRootSeedPolicy = struct {
+    /// Maximum Newton starts per multi-root element, ordered by camera depth.
+    /// Candidates are nodes, centroid-to-node midpoints, and the centroid.
+    /// Quad9 uses its center node instead of a duplicate virtual centroid.
+    /// Valid range: 1..17; each element uses at most its candidate count.
+    seed_bank_depth: u8 = 3,
 };
 
 pub const ValidateInput = enum(u32) {
@@ -130,10 +143,9 @@ pub const ReportMode = enum {
     full_stats,
 };
 
-pub const HullMode = enum {
-    off,
-    on_no_fallback,
-    on_convex_fallback,
+pub const HullMode = enum(u32) {
+    on_no_fallback = 1,
+    on_convex_fallback = 2,
 };
 
 pub const NewtonSeedMode = enum {

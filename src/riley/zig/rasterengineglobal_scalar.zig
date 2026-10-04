@@ -100,12 +100,14 @@ pub const GlobalBackend = struct {
         comptime Geom: type,
         comptime ShaderKern: type,
         comptime ShaderData: type,
+        comptime root_class: rops.RootClass,
     ) type {
         return backend.RasterEngineFor(
             GlobalSubpxScratchBuffs,
             Geom,
             ShaderKern,
             ShaderData,
+            root_class,
         );
     }
 };

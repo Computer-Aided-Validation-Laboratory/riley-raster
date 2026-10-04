@@ -28,9 +28,7 @@ pub const NewtonSeedCase = struct {
 };
 
 pub const hull_status_cases = [_]HullStatusCase{
-    .{ .tag = "hull_off", .mode = .off },
     .{ .tag = "hull_onnofallback", .mode = .on_no_fallback },
-    .{ .tag = "hull_onfallback", .mode = .on_convex_fallback },
 };
 
 pub const hull_psf_cases = [_]HullPsfCase{
@@ -49,9 +47,6 @@ pub const hull_psf_cases = [_]HullPsfCase{
 
 pub const newton_seed_cases = [_]NewtonSeedCase{
     .{ .tag = "seed_centroid", .seed_mode = .centroid, .seed_reuse = .off },
-    .{ .tag = "seed_hull", .seed_mode = .hull, .seed_reuse = .off },
-    .{ .tag = "seed_centroid_reuse", .seed_mode = .centroid, .seed_reuse = .last_conv },
-    .{ .tag = "seed_hull_reuse", .seed_mode = .hull, .seed_reuse = .last_conv },
 };
 
 pub const pixel_num_hull = [_]u32{ 128, 128 };

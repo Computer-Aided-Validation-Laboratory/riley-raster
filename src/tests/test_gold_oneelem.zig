@@ -26,6 +26,8 @@ const Timestamp = std.Io.Clock.Timestamp;
 
 const pixel_num_oneelem = [_]u32{ 128, 128 };
 
+pub const FrameMode = enum { valid, bad_jac };
+
 pub fn runOneElemCaseTest(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -34,6 +36,7 @@ pub fn runOneElemCaseTest(
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
     config: rastcfg.RasterConfig,
+    frame_mode: FrameMode,
 ) !void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -124,7 +127,10 @@ pub fn runOneElemCaseTest(
         render_result.dims[0];
 
     for (0..frames_num) |ff| {
-        const gold_path = try common.findGoldPath(
+        const valid = common.isValidOneElemFrame(case_name, mesh_type, ff);
+        if (valid != (frame_mode == .valid)) continue;
+
+        const gold_path = common.findGoldPath(
             aa,
             io,
             gold_dir,
@@ -132,7 +138,51 @@ pub fn runOneElemCaseTest(
             ff,
             0,
             false,
-        );
+        ) catch |err| {
+            if (frame_mode == .valid) return err;
+            std.debug.print(
+                "WARNING: invalid Jacobian case {s}, frame {d}: " ++
+                    "cannot find reference ({s})\n",
+                .{ case_dir_name, ff, @errorName(err) },
+            );
+            continue;
+        };
+
+        if (frame_mode == .bad_jac) {
+            const fail_dir = try std.fmt.allocPrint(
+                aa,
+                "full_badjac/{s}",
+                .{case_dir_name},
+            );
+            var artifact_saved = true;
+            common.saveComparisonArtifactsFromResult(
+                aa,
+                io,
+                common.default_fails_root,
+                fail_dir,
+                &render_result,
+                0,
+                ff,
+                0,
+                gold_path,
+                1,
+            ) catch |err| {
+                artifact_saved = false;
+                std.debug.print(
+                    "WARNING: invalid Jacobian case {s}, frame {d}: " ++
+                        "cannot save artifacts ({s})\n",
+                    .{ case_dir_name, ff, @errorName(err) },
+                );
+            };
+            if (artifact_saved) {
+                std.debug.print(
+                    "WARNING: invalid Jacobian case {s}, frame {d}: " ++
+                        "diagnostic render saved\n",
+                    .{ case_dir_name, ff },
+                );
+            }
+            continue;
+        }
 
         common.compareNDArrayToGold(
             aa,
@@ -173,7 +223,7 @@ pub fn runOneElemCaseTest(
         };
     }
 
-    if (tcfg.TEST_CASE_VERBOSE) {
+    if (frame_mode == .valid and tcfg.TEST_CASE_VERBOSE) {
         std.debug.print(
             "PASS {s} ({d:.2} ms, {d} frames)\n",
             .{ case_dir_name, duration_ms, frames_num },
@@ -219,7 +269,38 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
                 gold_dir_root,
                 data_dir_root,
                 config,
+                .valid,
             );
+        }
+    }
+}
+
+/// Diagnostic renders for intentionally invalid, folded FE fixtures.
+/// These always write actual/reference/diff artifacts and do not require a
+/// pixel match, because such geometry is outside Riley's supported domain.
+pub fn runBadJac(outer_alloc: std.mem.Allocator, io: std.Io) void {
+    const config = tcfg.getRasterConfig(.testing);
+    const gold_dir_root = policy.goldRoot(.basic);
+    const data_dir_root = "data/edge";
+
+    for ([_]gk.MeshType{ .tri6, .quad8, .quad9 }) |mesh_type| {
+        for ([_][]const u8{ "distort_bulge", "distort_tan" }) |case_name| {
+            runOneElemCaseTest(
+                outer_alloc,
+                io,
+                case_name,
+                mesh_type,
+                gold_dir_root,
+                data_dir_root,
+                config,
+                .bad_jac,
+            ) catch |err| {
+                std.debug.print(
+                    "WARNING: invalid Jacobian case {s}_{s}: " ++
+                        "render or setup failed ({s})\n",
+                    .{ case_name, @tagName(mesh_type), @errorName(err) },
+                );
+            };
         }
     }
 }

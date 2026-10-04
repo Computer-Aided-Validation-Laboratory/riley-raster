@@ -385,7 +385,6 @@ fn rasterReportIntoValidated(
     valid_summary: valinp.ValidSummary,
     time_start_render: Timestamp,
 ) !void {
-
     const summary_io = render_groups[0].io;
 
     var out_dir: ?std.Io.Dir = null;
@@ -1191,9 +1190,12 @@ fn runGeometryStage(
     for (job.ctx.frame_meshes, 0..) |*fm, ii| {
         job.ctx.prep_meshes[ii] = fm.mesh;
         job.ctx.elem_bboxes_by_mesh[ii] = fm.elem_bboxes;
+        job.ctx.root_classes_by_mesh[ii] = fm.root_classes;
+        job.ctx.mesh_types[ii] = fm.mesh.mesh_type;
         job.ctx.elem_float_bboxes_by_mesh[ii] = fm.elem_float_bboxes;
         job.ctx.elems_in_image_by_mesh[ii] = fm.elems_in_image;
         job.ctx.raster_hulls[ii] = fm.raster_hull;
+        job.ctx.multi_root_by_mesh[ii] = fm.multi_root;
     }
     job.ctx.total_elems_num = geo_res.total_elems_num;
     job.ctx.total_elems_in_image = geo_res.total_elems_in_image;
@@ -1249,6 +1251,8 @@ fn sceneTileOverlapBinning(
             ctx.elems_in_image_by_mesh,
             ctx.elem_bboxes_by_mesh,
             ctx.elem_float_bboxes_by_mesh,
+            ctx.mesh_types,
+            ctx.root_classes_by_mesh,
         )
     else
         try sceneGlobalTileElemOverlap(
@@ -1263,6 +1267,8 @@ fn sceneTileOverlapBinning(
             ctx.elems_in_image_by_mesh,
             ctx.elem_bboxes_by_mesh,
             ctx.elem_float_bboxes_by_mesh,
+            ctx.mesh_types,
+            ctx.root_classes_by_mesh,
         );
 
     const time_end_overlap = Timestamp.now(io, .awake);
@@ -1284,8 +1290,9 @@ fn sceneGlobalTileElemOverlap(
     elems_in_image_by_mesh: []const usize,
     elem_bboxes_by_mesh: []const []rops.ElemBBox,
     elem_float_bboxes_by_mesh: []const ?[]db.DistortBounds,
+    mesh_types: []const geomkerns.MeshType,
+    root_classes_by_mesh: []const []rops.RootClass,
 ) !rops.TilingOverlaps {
-
     const tiles_x = try std.math.divCeil(usize, screen_px_x, tile_size);
     std.debug.assert(core_y_px_min < core_y_px_max);
     std.debug.assert(core_y_px_max <= screen_px_y);
@@ -1320,35 +1327,49 @@ fn sceneGlobalTileElemOverlap(
             const scratch_y_max: i32 = @as(i32, y_max) +
                 if (ty + 1 == tiles_y) halo_px else 0;
             const overlap_start = overlaps.items.len;
+            var ranges = [_]rops.BucketRange{.{}} ** rops.bucket_count;
 
-            for (elem_bboxes_by_mesh, 0..) |elem_bboxes, mesh_idx| {
-                const maybe_float_bboxes = elem_float_bboxes_by_mesh[mesh_idx];
-                for (elem_bboxes[0..elems_in_image_by_mesh[mesh_idx]], 0..) |elem_bbox, ee| {
-                    const floating: ?db.DistortBounds = if (maybe_float_bboxes) |fb|
-                        fb[ee]
-                    else
-                        null;
-                    const overlap = rops.clipElemBBoxToTile(
-                        elem_bbox,
-                        floating,
-                        mesh_idx,
-                        scratch_x_min,
-                        scratch_x_max,
-                        scratch_y_min,
-                        scratch_y_max,
-                    );
-                    if (overlap.x_min >= overlap.x_max or
-                        overlap.y_min >= overlap.y_max)
-                    {
-                        continue;
+            for (0..rops.bucket_count) |bb| {
+                const bucket_start = overlaps.items.len;
+                for (elem_bboxes_by_mesh, 0..) |elem_bboxes, mesh_idx| {
+                    const maybe_float_bboxes = elem_float_bboxes_by_mesh[mesh_idx];
+                    for (elem_bboxes[0..elems_in_image_by_mesh[mesh_idx]], 0..) |elem_bbox, ee| {
+                        if (@intFromEnum(rops.bucketForElem(
+                            mesh_types[mesh_idx],
+                            root_classes_by_mesh[mesh_idx],
+                            elem_bbox.elem_idx,
+                        )) != bb) continue;
+                        const floating: ?db.DistortBounds = if (maybe_float_bboxes) |fb|
+                            fb[ee]
+                        else
+                            null;
+                        const overlap = rops.clipElemBBoxToTile(
+                            elem_bbox,
+                            floating,
+                            mesh_idx,
+                            scratch_x_min,
+                            scratch_x_max,
+                            scratch_y_min,
+                            scratch_y_max,
+                        );
+                        if (overlap.x_min >= overlap.x_max or
+                            overlap.y_min >= overlap.y_max)
+                        {
+                            continue;
+                        }
+                        try overlaps.append(outer_alloc, overlap);
                     }
-                    try overlaps.append(outer_alloc, overlap);
                 }
+                ranges[bb] = .{
+                    .start = bucket_start,
+                    .count = overlaps.items.len - bucket_start,
+                };
             }
             if (overlaps.items.len == overlap_start) continue;
             try tiles.append(outer_alloc, .{
                 .overlap_start = overlap_start,
                 .overlap_count = overlaps.items.len - overlap_start,
+                .buckets = ranges,
                 .x_px_min = x_min,
                 .y_px_min = y_min,
                 .x_px_max = x_max,
@@ -1631,8 +1652,11 @@ const FrameContext = struct {
     prep_meshes: []mo.MeshPrepared = &.{},
     elem_bboxes_by_mesh: [][]rops.ElemBBox = &.{},
     elem_float_bboxes_by_mesh: []?[]db.DistortBounds = &.{},
+    root_classes_by_mesh: [][]rops.RootClass = &.{},
+    mesh_types: []geomkerns.MeshType = &.{},
     elems_in_image_by_mesh: []usize = &.{},
     raster_hulls: []?ndarray.NDArray(F) = &.{},
+    multi_root_by_mesh: []?rops.MultiRootPrepared = &.{},
     tiling: ?rops.TilingOverlaps = null,
     total_nodes_num: usize = 0,
     total_elems_num: usize = 0,
@@ -1695,8 +1719,11 @@ fn prepareFrameContext(
     ctx.prep_meshes = try outer_alloc.alloc(mo.MeshPrepared, mesh_n);
     ctx.elem_bboxes_by_mesh = try outer_alloc.alloc([]rops.ElemBBox, mesh_n);
     ctx.elem_float_bboxes_by_mesh = try outer_alloc.alloc(?[]db.DistortBounds, mesh_n);
+    ctx.root_classes_by_mesh = try outer_alloc.alloc([]rops.RootClass, mesh_n);
+    ctx.mesh_types = try outer_alloc.alloc(geomkerns.MeshType, mesh_n);
     ctx.elems_in_image_by_mesh = try outer_alloc.alloc(usize, mesh_n);
     ctx.raster_hulls = try outer_alloc.alloc(?ndarray.NDArray(F), mesh_n);
+    ctx.multi_root_by_mesh = try outer_alloc.alloc(?rops.MultiRootPrepared, mesh_n);
 }
 
 fn prepareFrameBuff(
@@ -1806,6 +1833,7 @@ fn rasterFrame(
         .config = frame_job.config,
         .frame_idx = frame_job.frame_idx,
         .tile_size = ctx.actual_tile_size,
+        .multi_root_by_mesh = ctx.multi_root_by_mesh,
     };
     var global_resolve_time_ns: F = 0.0;
     if (frame_job.config.advanced.raster.buffer_mode != .tile_local) {
@@ -1817,9 +1845,7 @@ fn rasterFrame(
             .output_h_subpx = @as(usize, frame_job.camera.pixels_num[1]) * sub_samp,
             .outer_halo_subpx = @as(usize, halo_px) * sub_samp,
             .tile_core_subpx = @as(usize, ctx.actual_tile_size) * sub_samp,
-            .tile_scratch_subpx = (
-                @as(usize, ctx.actual_tile_size) + 2 * @as(usize, halo_px)
-            ) * sub_samp,
+            .tile_scratch_subpx = (@as(usize, ctx.actual_tile_size) + 2 * @as(usize, halo_px)) * sub_samp,
         };
     }
 
@@ -1963,6 +1989,8 @@ fn rasterFrame(
                         ctx.elems_in_image_by_mesh,
                         ctx.elem_bboxes_by_mesh,
                         ctx.elem_float_bboxes_by_mesh,
+                        ctx.mesh_types,
+                        ctx.root_classes_by_mesh,
                     );
                     stripe_tiling_owned = true;
                 }
@@ -2166,6 +2194,8 @@ test "global sub-pixel tiles own disjoint cores and retain halo only at frame ed
     const elems_in_image = [_]usize{1};
     const elem_bboxes_by_mesh = [_][]rops.ElemBBox{elem_bboxes[0..]};
     const elem_float_bboxes_by_mesh = [_]?[]db.DistortBounds{null};
+    const mesh_types = [_]geomkerns.MeshType{.tri3};
+    const root_classes_by_mesh = [_][]rops.RootClass{&.{}};
     const sub_sample: u32 = 2;
     const halo_px: u16 = 2;
     const screen_w_px: u16 = 10;
@@ -2186,6 +2216,8 @@ test "global sub-pixel tiles own disjoint cores and retain halo only at frame ed
         elems_in_image[0..],
         elem_bboxes_by_mesh[0..],
         elem_float_bboxes_by_mesh[0..],
+        mesh_types[0..],
+        root_classes_by_mesh[0..],
     );
     defer std.testing.allocator.free(tiling.active_tiles);
     defer std.testing.allocator.free(tiling.overlaps);
