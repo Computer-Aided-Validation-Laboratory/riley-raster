@@ -61,7 +61,7 @@ pub fn main(init: std.process.Init) !void {
     const io = threaded_io.io();
 
     std.debug.print("Procedural speckle prototype\n", .{});
-    pdemo.printProceduralConfig(args.params, args.pixels_num, demo_spec);
+    try pdemo.printProceduralConfig(args.params, args.pixels_num, demo_spec);
     std.debug.print("Loading UV-mapped sphere and preparing three deformation frames...\n", .{});
 
     const sim_data = try meshio.loadSimData(
@@ -74,6 +74,7 @@ pub fn main(init: std.process.Init) !void {
     );
     const uvs = try uvio.loadUVMap(allocator, io, data_dir ++ "uvs.csv");
     const disp = try makeDemoDisp(allocator, &sim_data.coords);
+    // One immutable pattern is attached to this mesh for all three deformation frames.
     const mesh_input = meshpipeline.MeshInput{
         .mesh_type = .tri6,
         .coords = sim_data.coords,

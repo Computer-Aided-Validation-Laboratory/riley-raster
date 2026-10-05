@@ -19,35 +19,25 @@ const TestEntry = struct {
     source_path: []const u8,
 };
 
-const SpeckleConfig = struct {
-    neighbor_count: u8 = speckleconfig.default_neighbor_count,
-    evaluator: []const u8,
-    shape: []const u8,
-};
-
 const BuildOptions = struct {
     precision: []const u8,
     simd: []const u8,
     newton_solver: []const u8,
     simd_vector_width: u32,
-    speckle_neighbor_count: u8,
-    speckle_evaluator: []const u8,
-    speckle_shape: []const u8,
+    enable_all_evaluators: bool,
     speckle_mask_samples_per_cell: u8,
-
-    fn withSpeckleConfig(self: BuildOptions, config: SpeckleConfig) BuildOptions {
-        var result = self;
-        result.speckle_neighbor_count = config.neighbor_count;
-        result.speckle_evaluator = config.evaluator;
-        result.speckle_shape = config.shape;
-        return result;
-    }
+    strip: bool,
 };
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     var options: BuildOptions = undefined;
+    options.strip = b.option(
+        bool,
+        "strip",
+        "Omit debug information to reduce compile memory and binary size",
+    ) orelse false;
     options.precision = b.option(
         []const u8,
         "precision",
@@ -64,37 +54,29 @@ pub fn build(b: *std.Build) void {
         "simd-vector-width",
         "SIMD vector width (0 to use default for precision)",
     ) orelse 0;
-    options.speckle_neighbor_count = b.option(
-        u8,
-        "speckle-neighbor-count",
-        "Procedural speckle candidate cell count: 9, 4, or 1",
-    ) orelse speckleconfig.default_neighbor_count;
-    options.speckle_evaluator = b.option(
-        []const u8,
-        "speckle-evaluator",
-        "Procedural speckle evaluator: cell-hash, list-naive, list-indexed, classified-indexed, direct-fixed, mask-1bit, or mask-u8",
-    ) orelse speckleconfig.default_evaluator;
-    options.speckle_shape = b.option(
-        []const u8,
-        "speckle-shape",
-        "Procedural speckle shape: disk, gaussian, or perlin",
-    ) orelse speckleconfig.default_shape;
+    options.enable_all_evaluators = b.option(
+        bool,
+        "enable-all-evaluators",
+        "Enable experimental runtime evaluator and neighbor overrides (native Zig only)",
+    ) orelse false;
     options.speckle_mask_samples_per_cell = b.option(
         u8,
         "speckle-mask-samples-per-cell",
         "Speckle mask/classification resolution per cell: 8, 12, or 16",
     ) orelse speckleconfig.default_mask_samples_per_cell;
+    if (!speckleconfig.isValidMaskSamplesPerCell(options.speckle_mask_samples_per_cell)) {
+        @panic("Supported -Dspeckle-mask-samples-per-cell values are 8, 12, and 16.");
+    }
     validatePrecision(options.precision);
     validateSimd(options.simd);
     validateNewtonSolver(options.newton_solver);
-    // Each compiled artifact checks compatibility after applying its configuration overrides.
-    validateSpeckleOptions(options);
 
     const build_options_module = createBuildOptionsModule(b, options);
     const shared_lib = addRileySharedLibrary(
         b,
         target,
         optimize,
+        options.strip,
         build_options_module,
     );
     shared_lib.installHeader(
@@ -126,8 +108,13 @@ pub fn build(b: *std.Build) void {
         },
         .{
             .step_name = "test-procedural-speckles",
-            .description = "Run the procedural speckle behavior tests",
+            .description = "Run runtime procedural speckle resource tests",
             .source_path = "src/testproceduralspeckles.zig",
+        },
+        .{
+            .step_name = "test-speckle-mask",
+            .description = "Run runtime speckle generation, sampling, and demo argument tests",
+            .source_path = "src/testproceduralmasks.zig",
         },
     };
 
@@ -137,79 +124,34 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&test_run.step);
     }
 
-    const speckle_configs = [_]SpeckleConfig{
-        .{ .evaluator = "cell-hash", .shape = "gaussian" },
-        .{ .evaluator = "list-naive", .shape = "gaussian" },
-        .{ .evaluator = "list-indexed", .shape = "gaussian" },
-        .{ .evaluator = "classified-indexed", .shape = "disk" },
-        .{ .evaluator = "direct-fixed", .shape = "disk", .neighbor_count = 1 },
-        .{ .evaluator = "mask-1bit", .shape = "disk" },
-        .{ .evaluator = "mask-u8", .shape = "disk" },
-        .{ .evaluator = "mask-u8", .shape = "gaussian" },
-        .{ .evaluator = "mask-u8", .shape = "perlin" },
+    const speckle_suites = [_]TestEntry{
+        .{
+            .step_name = "mask",
+            .description = "Run runtime speckle generation and sampling tests",
+            .source_path = "src/testproceduralmasks.zig",
+        },
+        .{
+            .step_name = "resources",
+            .description = "Run runtime speckle production resource tests",
+            .source_path = "src/testproceduralspeckles.zig",
+        },
     };
     const speckle_configs_step = b.step(
         "test-speckle-configs",
-        "Run procedural speckle production resource tests across retained configurations",
+        "Run runtime speckle tests with default and experimental evaluator availability",
     );
-    for (speckle_configs) |config| {
-        const entry = TestEntry{
-            .step_name = b.fmt(
-                "test-speckle-config-{s}-{s}",
-                .{ config.evaluator, config.shape },
-            ),
-            .description = "Run one procedural speckle configuration test",
-            .source_path = "src/testproceduralspeckles.zig",
-        };
-        const test_run = addTestRunStep(
-            b,
-            .ReleaseSafe,
-            entry,
-            options.withSpeckleConfig(config),
-        );
-        speckle_configs_step.dependOn(&test_run.step);
-    }
-
-    const mask_test_entry = TestEntry{
-        .step_name = "test-speckle-mask-root",
-        .description = "Run direct speckle mask tests",
-        .source_path = "src/testproceduralmasks.zig",
-    };
-    const mask_tests = [_]struct {
-        step_name: []const u8,
-        description: []const u8,
-        config: SpeckleConfig,
-    }{
-        .{
-            .step_name = "test-speckle-mask",
-            .description = "Run focused 1-bit speckle mask tests",
-            .config = .{ .evaluator = "mask-1bit", .shape = "disk" },
-        },
-        .{
-            .step_name = "test-speckle-mask-u8",
-            .description = "Run focused Gaussian u8 speckle mask tests",
-            .config = .{ .evaluator = "mask-u8", .shape = "gaussian" },
-        },
-        .{
-            .step_name = "test-speckle-mask-disk",
-            .description = "Run focused soft-disk u8 speckle mask tests",
-            .config = .{ .evaluator = "mask-u8", .shape = "disk" },
-        },
-        .{
-            .step_name = "test-speckle-mask-perlin",
-            .description = "Run focused Perlin u8 speckle mask tests",
-            .config = .{ .evaluator = "mask-u8", .shape = "perlin" },
-        },
-    };
-    for (mask_tests) |mask_test| {
-        const test_step = b.step(mask_test.step_name, mask_test.description);
-        const test_run = addTestRunStep(
-            b,
-            .ReleaseSafe,
-            mask_test_entry,
-            options.withSpeckleConfig(mask_test.config),
-        );
-        test_step.dependOn(&test_run.step);
+    for ([_]bool{ false, true }) |experimental| {
+        const step_name = if (experimental) "test-speckle-experimental" else "test-speckle-default";
+        const test_step = b.step(step_name, "Run one runtime speckle evaluator availability mode");
+        var test_options = options;
+        test_options.enable_all_evaluators = experimental;
+        for (speckle_suites) |suite| {
+            var entry = suite;
+            entry.step_name = b.fmt("{s}-{s}", .{ step_name, suite.step_name });
+            const test_run = addTestRunStep(b, .ReleaseSafe, entry, test_options);
+            test_step.dependOn(&test_run.step);
+        }
+        speckle_configs_step.dependOn(test_step);
     }
 
     const demos = [_]RunEntry{
@@ -282,6 +224,7 @@ pub fn build(b: *std.Build) void {
             b,
             target,
             optimize,
+            options.strip,
             build_options_module,
             entry,
         );
@@ -314,6 +257,7 @@ pub fn build(b: *std.Build) void {
             b,
             target,
             optimize,
+            options.strip,
             build_options_module,
             entry,
         );
@@ -331,6 +275,7 @@ pub fn build(b: *std.Build) void {
         b,
         target,
         optimize,
+        options.strip,
         build_options_module,
         .{
             .step_name = "gen-gold-verif-zig-internal",
@@ -394,6 +339,7 @@ pub fn build(b: *std.Build) void {
             b,
             target,
             optimize,
+            options.strip,
             build_options_module,
             entry,
         );
@@ -427,6 +373,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/riley/zig/riley.zig"),
             .target = target,
             .optimize = optimize,
+            .strip = options.strip,
             .link_libc = true,
         }),
     });
@@ -445,6 +392,7 @@ fn addRileySharedLibrary(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    strip: bool,
     build_options_module: *std.Build.Module,
 ) *std.Build.Step.Compile {
     const shared_lib = b.addLibrary(.{
@@ -454,6 +402,7 @@ fn addRileySharedLibrary(
             b,
             target,
             optimize,
+            strip,
             build_options_module,
             "src/riley/zig/c-riley.zig",
             true,
@@ -480,12 +429,11 @@ fn addTestRunStep(
         \\simd="$4"
         \\newton_solver="$5"
         \\simd_vector_width="$6"
-        \\speckle_neighbor_count="$7"
-        \\speckle_evaluator="$8"
-        \\speckle_shape="$9"
-        \\speckle_mask_samples_per_cell="${10}"
-        \\zigexe="${11}"
-        \\opt="${12}"
+        \\enable_all_evaluators="$7"
+        \\speckle_mask_samples_per_cell="$8"
+        \\zigexe="$9"
+        \\opt="${10}"
+        \\strip_arg="${11}"
         \\cache_root=".zig-cache/riley-test"
         \\mkdir -p "$cache_root"
         \\src_hash="$(
@@ -496,9 +444,8 @@ fn addTestRunStep(
         \\    cut -d' ' -f1
         \\)"
         \\tree_dir="${cache_root}/${step_name}_${precision}_${simd}_${newton_solver}"
-        \\tree_dir="${tree_dir}_${simd_vector_width}_${speckle_neighbor_count}"
-        \\tree_dir="${tree_dir}_${speckle_evaluator}_${speckle_shape}"
-        \\tree_dir="${tree_dir}_${speckle_mask_samples_per_cell}_${opt}_${src_hash}"
+        \\tree_dir="${tree_dir}_${simd_vector_width}_${enable_all_evaluators}"
+        \\tree_dir="${tree_dir}_${speckle_mask_samples_per_cell}_${opt}_${strip_arg}_${src_hash}"
         \\if [ ! -d "$tree_dir" ]; then
         \\    lock_dir="${tree_dir}.lock"
         \\    while ! mkdir "$lock_dir" 2>/dev/null; do
@@ -518,19 +465,19 @@ fn addTestRunStep(
         \\            printf 'pub const simd = "%s";\n' "$simd"
         \\            printf 'pub const newton_solver = "%s";\n' "$newton_solver"
         \\            printf 'pub const simd_vector_width: comptime_int = %s;\n' "$simd_vector_width"
-        \\            printf 'pub const speckle_neighbor_count: comptime_int = %s;\n' "$speckle_neighbor_count"
-        \\            printf 'pub const speckle_evaluator = "%s";\n' "$speckle_evaluator"
-        \\            printf 'pub const speckle_shape = "%s";\n' "$speckle_shape"
-        \\            printf 'pub const speckle_mask_samples_per_cell: comptime_int = %s;\n' "$speckle_mask_samples_per_cell"
+        \\            printf 'pub const enable_all_evaluators = %s;\n' "$enable_all_evaluators"
+        \\            printf 'pub const speckle_mask_samples_per_cell: comptime_int = %s;\n' \
+        \\                "$speckle_mask_samples_per_cell"
         \\        } > "$override_file"
         \\        expected_config_file="$tree_dir/src/tests/expected_speckle_config.zig"
         \\        {
-        \\            printf 'pub const evaluator = "%s";\n' "$speckle_evaluator"
-        \\            printf 'pub const shape = "%s";\n' "$speckle_shape"
+        \\            printf 'pub const enable_all_evaluators = %s;\n' "$enable_all_evaluators"
+        \\            printf 'pub const speckle_mask_samples_per_cell: comptime_int = %s;\n' \
+        \\                "$speckle_mask_samples_per_cell"
         \\        } > "$expected_config_file"
         \\    fi
         \\fi
-        \\"$zigexe" test -lc -O "$opt" "$tree_dir/$src"
+        \\"$zigexe" test -lc -O "$opt" "$strip_arg" "$tree_dir/$src"
         ,
         "--",
         entry.step_name,
@@ -539,12 +486,11 @@ fn addTestRunStep(
         options.simd,
         options.newton_solver,
         b.fmt("{d}", .{options.simd_vector_width}),
-        b.fmt("{d}", .{options.speckle_neighbor_count}),
-        options.speckle_evaluator,
-        options.speckle_shape,
+        if (options.enable_all_evaluators) "true" else "false",
         b.fmt("{d}", .{options.speckle_mask_samples_per_cell}),
         b.graph.zig_exe,
         @tagName(optimize),
+        if (options.strip) "-fstrip" else "-fno-strip",
     });
     return run_step;
 }
@@ -553,6 +499,7 @@ fn addRunStep(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    strip: bool,
     build_options_module: *std.Build.Module,
     entry: RunEntry,
 ) *std.Build.Step.Run {
@@ -562,6 +509,7 @@ fn addRunStep(
             b,
             target,
             optimize,
+            strip,
             build_options_module,
             entry.source_path,
             false,
@@ -593,6 +541,7 @@ fn addBenchInstallStep(
             b,
             target,
             optimize,
+            options.strip,
             build_options_module,
             entry.source_path,
             false,
@@ -610,14 +559,8 @@ fn createBuildOptionsModule(b: *std.Build, build_options: BuildOptions) *std.Bui
     options.addOption([]const u8, "simd", build_options.simd);
     options.addOption([]const u8, "newton_solver", build_options.newton_solver);
     options.addOption(u32, "simd_vector_width", build_options.simd_vector_width);
-    options.addOption(u8, "speckle_neighbor_count", build_options.speckle_neighbor_count);
-    options.addOption([]const u8, "speckle_evaluator", build_options.speckle_evaluator);
-    options.addOption([]const u8, "speckle_shape", build_options.speckle_shape);
-    options.addOption(
-        u8,
-        "speckle_mask_samples_per_cell",
-        build_options.speckle_mask_samples_per_cell,
-    );
+    options.addOption(bool, "enable_all_evaluators", build_options.enable_all_evaluators);
+    options.addOption(u8, "speckle_mask_samples_per_cell", build_options.speckle_mask_samples_per_cell);
     return options.createModule();
 }
 
@@ -625,6 +568,7 @@ fn createRootModule(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    strip: bool,
     build_options_module: *std.Build.Module,
     source_path: []const u8,
     link_libc: bool,
@@ -648,6 +592,7 @@ fn createRootModule(
         .root_source_file = wrapper_source,
         .target = target,
         .optimize = optimize,
+        .strip = strip,
         .link_libc = link_libc,
         .imports = imports,
     });
@@ -705,19 +650,6 @@ fn buildWrapperImports(
         }),
     }) catch @panic("OOM building entry source import.");
     return imports.items;
-}
-
-fn validateSpeckleOptions(options: BuildOptions) void {
-    if (!speckleconfig.isValidNeighborCount(options.speckle_neighbor_count)) {
-        @panic("Supported -Dspeckle-neighbor-count values are 9, 4, and 1.");
-    }
-    _ = speckleconfig.parseEvaluator(options.speckle_evaluator) orelse
-        @panic("Supported -Dspeckle-evaluator values are cell-hash, list-naive, list-indexed, classified-indexed, direct-fixed, mask-1bit, and mask-u8.");
-    _ = speckleconfig.parseShape(options.speckle_shape) orelse
-        @panic("Supported -Dspeckle-shape values are disk, gaussian, and perlin.");
-    if (!speckleconfig.isValidMaskSamplesPerCell(options.speckle_mask_samples_per_cell)) {
-        @panic("Supported -Dspeckle-mask-samples-per-cell values are 8, 12, and 16.");
-    }
 }
 
 fn validatePrecision(precision: []const u8) void {

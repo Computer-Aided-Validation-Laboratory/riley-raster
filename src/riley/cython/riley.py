@@ -64,6 +64,14 @@ class Camera:
 CameraInput = Camera
 
 
+class SpecklePattern(IntEnum):
+    """Select one procedural pattern for a mesh throughout a render."""
+
+    disk = 0
+    gaussian = 1
+    perlin = 2
+
+
 @dataclass(slots=True)
 class Speckle2DParams:
     """Configure the built-in two-dimensional procedural speckle shader.
@@ -89,15 +97,13 @@ class Speckle2DParams:
         for Perlin. Defaults to ``0.45``. See Notes for joint support limits.
     radius_jitter : float, optional
         Uniform radius variation half-range in cell units, finite and in
-        ``[0, radius_mean]`` for disks and Gaussian blobs. Must be zero for
-        ``direct-fixed``; ignored for Perlin. Defaults to ``0.0``.
+        ``[0, radius_mean]`` for disks and Gaussian blobs. Ignored for Perlin.
+        Defaults to ``0.0``.
     edge_softness : float, optional
         Disk boundary transition half-width in cell units, finite and
-        nonnegative for every shape. Zero gives hard disk edges. Positive
-        values are allowed only for disks with ``cell-hash``, ``list-naive``,
-        ``list-indexed``, or ``mask-u8`` evaluators. Gaussian and Perlin shapes
-        require zero, as do ``classified-indexed``, ``direct-fixed``, and
-        ``mask-1bit`` evaluators. Defaults to ``0.0``.
+        nonnegative for every pattern. Zero gives hard disk edges; positive
+        values give smooth disk edges. Gaussian and Perlin require zero.
+        Defaults to ``0.0``.
     perlin_coverage_threshold : float, optional
         Finite noise threshold for Perlin coverage. Ignored for disks and
         Gaussian blobs. Defaults to ``0.0``.
@@ -111,26 +117,24 @@ class Speckle2DParams:
     background : float, optional
         Uncovered intensity, finite and in ``[0, 1]`` for every shape, before
         function-shader output scaling. Defaults to ``1.0``.
+    pattern : SpecklePattern, optional
+        Runtime choice of ``disk``, ``gaussian``, or ``perlin``. Defaults to
+        ``SpecklePattern.disk``. Each mesh keeps its selected pattern across
+        all frames of a render; different meshes may use different patterns.
 
     Notes
     -----
     Procedural coordinates are computed componentwise as
     ``clip(uv, 0, 1) * cells_per_uv + uv_offset``.
 
-    For disks and Gaussian blobs, all evaluators require
-    ``radius_mean + radius_jitter + edge_softness <= 0.5`` with one neighbor
-    or ``<= 1.0`` with four or nine neighbors. Hard disks cover only points
-    where ``distance**2 < radius**2``; zero-radius draws are empty.
-    Perlin ignores the neighbor count.
+    Disks and Gaussian blobs require
+    ``radius_mean + radius_jitter + edge_softness <= 1.0``. Hard disks cover
+    only points where ``distance**2 < radius**2``; zero-radius draws are empty.
 
-    Shape, evaluator, neighbor count, and mask/classification resolution are
-    compile-time choices, not constructor parameters. The default compiled
-    configuration is ``classified-indexed`` / ``disk`` / nine neighbors,
-    with 12 samples per cell, so it rejects positive ``edge_softness``.
-    Supported neighbor counts are 1, 4, and 9; resolutions are 8, 12, and 16
-    samples per cell. ``classified-indexed`` requires disks and nine
-    neighbors; ``direct-fixed`` requires disks and one neighbor;
-    ``mask-1bit`` requires disks; Perlin requires ``mask-u8``.
+    The Python/C binding uses the native defaults-only build. Hard disks use
+    ``classified-indexed``; soft disks and Gaussian blobs use ``list-indexed``;
+    Perlin uses ``mask-u8``. Evaluator and neighbor overrides are not exposed.
+    Resources are prepared once per mesh and reused for every frame.
 
     The Python binding uses f64. On each axis, the padded procedural interval
     ``[uv_offset - 1, uv_offset + cells_per_uv + 1]`` must remain within
@@ -138,9 +142,10 @@ class Speckle2DParams:
     also rejects patterns exceeding the selected evaluator's size limits.
 
     Construction and ``to_func_shader_params`` do not validate these values.
-    Validation occurs in the native rendering/resource-generation path.
-    With default fast input validation, native parameter-validation failures
-    raise ``RuntimeError`` containing ``InvalidFuncShaderParams``.
+    Invalid pattern identifiers raise ``ValueError`` during binding conversion.
+    Numerical validation occurs in the native rendering/resource-generation
+    path. With default fast input validation, native parameter-validation
+    failures raise ``RuntimeError`` containing ``InvalidFuncShaderParams``.
     """
 
     seed: int = 0xA511E9B3
@@ -154,6 +159,7 @@ class Speckle2DParams:
     perlin_coverage_transition_width: float = 0.12
     foreground: float = 0.0
     background: float = 1.0
+    pattern: SpecklePattern = SpecklePattern.disk
 
     def to_func_shader_params(self) -> "FuncShaderParams":
         """Wrap these settings without copying or validating them.
@@ -750,6 +756,7 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
 @cython.cfunc
 def _make_speckle_params(params_in: Any) -> cr.CSpeckle2DParams:
     params_out: cr.CSpeckle2DParams
+    params_out.pattern = int(SpecklePattern(params_in.pattern))
     params_out.seed = int(params_in.seed)
     params_out.cells_per_uv_0 = float(params_in.cells_per_uv[0])
     params_out.cells_per_uv_1 = float(params_in.cells_per_uv[1])
@@ -1776,6 +1783,7 @@ __all__ = [
     "FuncCoordMode",
     "FuncShaderParams",
     "Speckle2DParams",
+    "SpecklePattern",
     "TextureSample",
     "TextureSampleMode",
     "PsfType",

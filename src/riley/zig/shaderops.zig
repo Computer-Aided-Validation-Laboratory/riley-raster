@@ -29,14 +29,7 @@ pub const ClassifiedIndexedSpeckle2D = speckle.ClassifiedIndexedSpeckle2D;
 pub const DirectFixedSpeckleCell2D = speckle.DirectFixedSpeckleCell2D;
 pub const DirectFixedSpeckle2D = speckle.DirectFixedSpeckle2D;
 pub const SpeckleMask2D = speckle.SpeckleMask2D;
-pub const generateSpeckleList2D = speckle.generateSpeckleList2D;
-pub const generateClassifiedIndexedSpeckle2D = speckle.generateClassifiedIndexedSpeckle2D;
-pub const generateDirectFixedSpeckle2D = speckle.generateDirectFixedSpeckle2D;
-pub const generateSpeckleMask2D = speckle.generateSpeckleMask2D;
-pub const evalSpeckleList2D = speckle.evalSpeckleList2D;
-pub const evalClassifiedIndexedSpeckle2D = speckle.evalClassifiedIndexedSpeckle2D;
-pub const evalDirectFixedSpeckle2D = speckle.evalDirectFixedSpeckle2D;
-pub const evalSpeckleMask2D = speckle.evalSpeckleMask2D;
+
 pub const LocalShaderBuff = comm.LocalShaderBuff;
 pub const NodalInput = comm.NodalInput;
 pub const NodalPrepared = comm.NodalPrepared;

@@ -84,7 +84,11 @@ pub fn TexKernel(
 pub fn FuncKernel(
     comptime N: usize,
     comptime C: usize,
+    comptime speckle_kernel: ?usize,
 ) type {
+    if (C != 1 and speckle_kernel != null) {
+        @compileError("Speckle kernels require one output channel.");
+    }
     return struct {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
@@ -99,6 +103,7 @@ pub fn FuncKernel(
                 N,
                 C,
                 coord_space,
+                speckle_kernel,
                 ctx_shade,
                 interp,
                 shader_buf,

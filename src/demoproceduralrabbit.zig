@@ -16,7 +16,7 @@ const demo_spec = pdemo.DemoSpec{
     .command_name = "demo-procedural-rabbit",
     .output_default = "out/demo-procedural-rabbit",
     .pixels_num_default = .{ 800, 500 },
-    .mask_report_label = "mask storage (compile-time)",
+    .mask_report_label = "mask storage",
 };
 
 // --------------------------------------------------------------------------------------

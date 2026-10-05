@@ -18,6 +18,7 @@ const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const riley = @import("../riley/zig/riley.zig");
 const rotation = @import("../riley/zig/rotation.zig");
 const sceneops = @import("../riley/zig/sceneops.zig");
+const speckleconfig = @import("../riley/zig/speckleconfig.zig");
 const speckleops = @import("../riley/zig/speckleops.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 
@@ -84,7 +85,7 @@ pub fn runStaticTri6Demo(
     const io = threaded_io.io();
 
     std.debug.print("{s}\n", .{scene.title});
-    printProceduralConfig(args.params, args.pixels_num, spec);
+    try printProceduralConfig(args.params, args.pixels_num, spec);
 
     const sim_data = try meshio.loadSimData(
         local_alloc,
@@ -169,7 +170,15 @@ pub fn parseDemoArgs(raw_args: anytype, comptime spec: DemoSpec) !?DemoArgs {
         }
 
         const value = std.mem.span(raw_args[arg_idx + 1]);
-        if (std.mem.eql(u8, arg, "--size")) {
+        if (std.mem.eql(u8, arg, "--pattern")) {
+            args.params.pattern = speckleconfig.parsePattern(value) orelse
+                return error.InvalidSpecklePattern;
+        } else if (std.mem.eql(u8, arg, "--evaluator")) {
+            args.params.evaluator = speckleconfig.parseEvaluator(value) orelse
+                return error.InvalidSpeckleEvaluator;
+        } else if (std.mem.eql(u8, arg, "--neighbors")) {
+            args.params.neighbor_count = try std.fmt.parseInt(u8, value, 10);
+        } else if (std.mem.eql(u8, arg, "--size")) {
             args.params.radius_mean = try std.fmt.parseFloat(F, value);
         } else if (std.mem.eql(u8, arg, "--occupancy")) {
             args.params.occupancy = try std.fmt.parseFloat(F, value);
@@ -208,7 +217,8 @@ pub fn printProceduralConfig(
     params: speckleops.Speckle2DParams,
     pixels_num: [2]u32,
     comptime spec: DemoSpec,
-) void {
+) !void {
+    const resolved = try params.resolve();
     if (spec.comparison) |comparison| {
         std.debug.print(
             "  texture baseline: zig build {s} -Dsimd=off\n",
@@ -222,19 +232,19 @@ pub fn printProceduralConfig(
         );
     }
 
-    const perlin_note = if (buildconfig.speckle_shape == .perlin)
+    const perlin_note = if (resolved.pattern == .perlin)
         " (not used by Perlin)"
     else
         "";
 
     std.debug.print(
-        "  evaluator (compile-time): {s}\n",
-        .{buildconfig.speckle_evaluator_name},
+        "  evaluator (resolved): {s}\n",
+        .{speckleconfig.evaluatorName(resolved.evaluator)},
     );
-    std.debug.print("  shape (compile-time): {s}\n", .{@tagName(buildconfig.speckle_shape)});
+    std.debug.print("  pattern (runtime): {s}\n", .{@tagName(resolved.pattern)});
     std.debug.print(
-        "  neighbor count (compile-time): {d}{s}\n",
-        .{ buildconfig.speckle_neighbor_count, perlin_note },
+        "  neighbor count (resolved): {d}{s}\n",
+        .{ resolved.neighbor_count, perlin_note },
     );
     std.debug.print(
         "  boundary half-width: {d} cell units\n",
@@ -246,7 +256,7 @@ pub fn printProceduralConfig(
         .{ params.cells_per_uv[0], params.cells_per_uv[1] },
     );
 
-    switch (comptime buildconfig.speckle_shape) {
+    switch (resolved.pattern) {
         .perlin => {
             std.debug.print(
                 "  coverage threshold: {d}\n",
@@ -258,7 +268,7 @@ pub fn printProceduralConfig(
             );
         },
         .disk, .gaussian => {
-            if (comptime buildconfig.speckle_evaluator == .direct_fixed) {
+            if (resolved.evaluator == .direct_fixed) {
                 std.debug.print("  fixed radius: {d} cell units\n", .{params.radius_mean});
                 std.debug.print("  radius jitter: zero (required by direct-fixed)\n", .{});
             } else {
@@ -269,7 +279,7 @@ pub fn printProceduralConfig(
         },
     }
 
-    if (comptime buildconfig.speckle_evaluator == .classified_indexed) {
+    if (resolved.evaluator == .classified_indexed) {
         const samples: F = @floatFromInt(buildconfig.speckle_mask_samples_per_cell);
         const classification_dims = [2]F{
             @ceil(params.cells_per_uv[0] * samples),
@@ -286,15 +296,13 @@ pub fn printProceduralConfig(
         );
     }
 
-    if (comptime buildconfig.speckle_evaluator == .mask_1bit or
-        buildconfig.speckle_evaluator == .mask_u8)
-    {
+    if (resolved.evaluator == .mask_1bit or resolved.evaluator == .mask_u8) {
         const samples: F = @floatFromInt(buildconfig.speckle_mask_samples_per_cell);
         const mask_dims = [2]F{
             @ceil(params.cells_per_uv[0] * samples) + 1.0,
             @ceil(params.cells_per_uv[1] * samples) + 1.0,
         };
-        const storage = if (comptime buildconfig.speckle_evaluator == .mask_1bit)
+        const storage = if (resolved.evaluator == .mask_1bit)
             "packed 1-bit coverage"
         else
             "8-bit coverage";
@@ -325,6 +333,7 @@ fn printUsage(comptime spec: DemoSpec) void {
     }
     std.debug.print(
         \\Options:
+        \\  --pattern <name>      disk, gaussian, or perlin (default: disk)
         \\  --size <value>        Mean radius in cell units (Gaussian: 3-sigma support)
         \\  --occupancy <value>   Active-cell probability (disk/Gaussian)
         \\  --cells-u <value>     Procedural cell count across U
@@ -347,44 +356,88 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\  --output <path>       Output directory
         \\  --help                Show this help
         \\
+        \\Experimental native overrides (require -Denable-all-evaluators=true):
+        \\  --evaluator <name>    cell-hash, list-naive, list-indexed, classified-indexed,
+        \\                        direct-fixed, mask-1bit, or mask-u8
+        \\  --neighbors <count>   1, 4, or 9 (not allowed for Perlin)
+        \\  Omit both overrides for automatic selection; default builds reject either.
+        \\  An omitted neighbor count is 9, or 1 for an explicit direct-fixed evaluator.
+        \\
         \\Value constraints:
         \\  Cell counts must be positive and finite; seed is an unsigned 32-bit integer.
+        \\  Disk/Gaussian: size > 0, 0 <= jitter <= size, 0 <= occupancy <= 1 (all finite).
+        \\  Size + jitter + softness <= 0.5 for one neighbor, or <= 1 otherwise.
+        \\  Hard disks exclude their circumference; zero-radius draws are empty.
+        \\  Softness must be finite and nonnegative; positive values enable soft disks.
+        \\  Gaussian/Perlin and classified-indexed/direct-fixed/mask-1bit require softness 0.
+        \\  classified-indexed requires disk/9 neighbors; direct-fixed requires disk/1,
+        \\  zero jitter and hard edges; mask-1bit requires hard disks.
+        \\  Perlin requires mask-u8; threshold is finite and transition is finite and >= 0.
+        \\  Transition 0 selects a hard threshold. Perlin ignores size, jitter and occupancy.
         \\
     , .{});
-    if (buildconfig.speckle_shape == .perlin) {
-        std.debug.print(
-            \\  Threshold must be finite; transition must be finite and nonnegative.
-            \\  Transition 0 selects a hard threshold. Size, jitter and occupancy are ignored.
-            \\
-        , .{});
-    } else {
-        std.debug.print(
-            \\  Size must be positive; 0 <= jitter <= size; 0 <= occupancy <= 1 (all finite).
-            \\  Size + jitter + softness <= {d} cell units for this neighborhood.
-            \\  Hard disks exclude their circumference; zero-radius draws are empty.
-            \\
-        , .{speckleops.support_radius_limit});
-        if (buildconfig.speckle_evaluator == .direct_fixed) {
-            std.debug.print("  direct-fixed requires jitter == 0.\n", .{});
-        }
-    }
-    std.debug.print(if (speckleops.supports_soft_edges)
-        "  Softness must be finite and nonnegative; 0 selects hard disk boundaries.\n\n"
-    else
-        "  Softness must be 0 for this shape/evaluator.\n\n", .{});
 }
 
-test "demo arguments validate runtime speckle settings" {
-    const spec: DemoSpec = .{
-        .command_name = "demo-procedural-speckles",
-        .output_default = "out",
-        .pixels_num_default = .{ 32, 32 },
-        .mask_report_label = "mask",
-    };
-    const valid = [_][*:0]const u8{ "demo", "--cells-u", "3.25" };
-    const parsed = (try parseDemoArgs(&valid, spec)).?;
-    try std.testing.expectEqual(@as(F, 3.25), parsed.params.cells_per_uv[0]);
+const test_spec: DemoSpec = .{
+    .command_name = "demo-procedural-speckles",
+    .output_default = "out",
+    .pixels_num_default = .{ 32, 32 },
+    .mask_report_label = "mask",
+};
 
-    const invalid = [_][*:0]const u8{ "demo", "--cells-v", "nan" };
-    try std.testing.expectError(error.InvalidSpeckleCellsPerUV, parseDemoArgs(&invalid, spec));
+test "demo arguments select runtime patterns without experimental overrides" {
+    const names = [_][*:0]const u8{ "disk", "gaussian", "perlin" };
+    for (names) |name| {
+        const raw = [_][*:0]const u8{ "demo", "--pattern", name, "--cells-u", "3.25" };
+        const parsed = (try parseDemoArgs(&raw, test_spec)).?;
+        try std.testing.expectEqual(
+            speckleconfig.parsePattern(std.mem.span(name)).?,
+            parsed.params.pattern,
+        );
+        try std.testing.expectEqual(@as(F, 3.25), parsed.params.cells_per_uv[0]);
+        try std.testing.expect(parsed.params.evaluator == null);
+        try std.testing.expect(parsed.params.neighbor_count == null);
+    }
+}
+
+test "demo arguments reject malformed and invalid runtime settings" {
+    const cases = [_]struct { args: []const [*:0]const u8, err: anyerror }{
+        .{ .args = &.{ "demo", "--pattern", "unknown" }, .err = error.InvalidSpecklePattern },
+        .{ .args = &.{ "demo", "--evaluator", "unknown" }, .err = error.InvalidSpeckleEvaluator },
+        .{ .args = &.{ "demo", "--cells-v", "nan" }, .err = error.InvalidSpeckleCellsPerUV },
+        .{ .args = &.{ "demo", "--width", "0" }, .err = error.InvalidPixelDimension },
+        .{ .args = &.{ "demo", "--unknown", "value" }, .err = error.UnknownArgument },
+        .{ .args = &.{ "demo", "--pattern" }, .err = error.MissingArgumentValue },
+    };
+    for (cases) |case| {
+        try std.testing.expectError(case.err, parseDemoArgs(case.args, test_spec));
+    }
+}
+
+test "demo experimental overrides preserve explicit values and enforce availability" {
+    const evaluator = [_][*:0]const u8{ "demo", "--evaluator", "classified-indexed" };
+    const neighbors = [_][*:0]const u8{ "demo", "--neighbors", "9" };
+    if (comptime buildconfig.enable_all_evaluators) {
+        const selected = (try parseDemoArgs(&evaluator, test_spec)).?;
+        try std.testing.expectEqual(
+            speckleconfig.Evaluator.classified_indexed,
+            selected.params.evaluator.?,
+        );
+        const counted = (try parseDemoArgs(&neighbors, test_spec)).?;
+        try std.testing.expectEqual(@as(u8, 9), counted.params.neighbor_count.?);
+        const perlin = [_][*:0]const u8{ "demo", "--pattern", "perlin", "--neighbors", "9" };
+        try std.testing.expectError(
+            error.SpecklePerlinDoesNotUseNeighbors,
+            parseDemoArgs(&perlin, test_spec),
+        );
+    } else {
+        try std.testing.expectError(
+            error.SpeckleOverridesDisabled,
+            parseDemoArgs(&evaluator, test_spec),
+        );
+        try std.testing.expectError(
+            error.SpeckleOverridesDisabled,
+            parseDemoArgs(&neighbors, test_spec),
+        );
+    }
 }

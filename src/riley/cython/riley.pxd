@@ -105,6 +105,7 @@ cdef extern from "riley.h":
 
     ctypedef struct CSpeckle2DParams:
         uint32_t seed
+        uint32_t pattern
         double cells_per_uv_0
         double cells_per_uv_1
         double uv_offset_0

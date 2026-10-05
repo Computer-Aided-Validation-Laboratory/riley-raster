@@ -12,84 +12,118 @@ const buildconfig = @import("../riley/zig/buildconfig.zig");
 const expected_config = @import("expected_speckle_config.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const meshpipeline = @import("../riley/zig/meshpipeline.zig");
+const speckleconfig = @import("../riley/zig/speckleconfig.zig");
 const speckleops = @import("../riley/zig/speckleops.zig");
-const uvio = @import("../riley/zig/uvio.zig");
+const ndarray = @import("../riley/zig/ndarray.zig");
 
-test "selected speckle evaluator prepares its production resources" {
-    try std.testing.expectEqualStrings(
-        expected_config.evaluator,
-        buildconfig.speckle_evaluator_name,
-    );
-    try std.testing.expectEqualStrings(
-        expected_config.shape,
-        @tagName(buildconfig.speckle_shape),
-    );
+const F = buildconfig.F;
+const Params = speckleops.Speckle2DParams;
+const Pattern = speckleconfig.Pattern;
+const Evaluator = speckleconfig.Evaluator;
+const fixture_params: Params = .{
+    .seed = 12345,
+    .cells_per_uv = .{ 4.0, 3.0 },
+    .occupancy = 0.8,
+    .radius_mean = 0.3,
+};
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-    const io = std.testing.io;
-
-    const data_dir = "data/min/tri3_sphere200/";
-    const sim_data = try meshio.loadSimData(
-        allocator,
-        io,
-        data_dir ++ "coords.csv",
-        data_dir ++ "connect.csv",
-        null,
-        null,
+test "runtime speckle patterns prepare their production resources" {
+    try std.testing.expectEqual(
+        expected_config.enable_all_evaluators,
+        buildconfig.enable_all_evaluators,
     );
-    const uvs = try uvio.loadUVMap(allocator, io, data_dir ++ "uvs.csv");
-    const evaluator = buildconfig.speckle_evaluator;
-    const params = speckleops.Speckle2DParams{
-        .seed = 12345,
-        .cells_per_uv = .{ 24.0, 20.0 },
-        .occupancy = 0.8,
-        .radius_mean = 0.42,
-        .radius_jitter = switch (comptime evaluator) {
-            .classified_indexed, .direct_fixed => 0.0,
-            else => 0.06,
-        },
-        .edge_softness = if (buildconfig.speckle_shape == .disk) switch (evaluator) {
-            .cell_hash, .list_naive, .list_indexed, .mask_u8 => 0.03,
-            else => 0.0,
-        } else 0.0,
-    };
+    try std.testing.expectEqual(
+        expected_config.speckle_mask_samples_per_cell,
+        buildconfig.speckle_mask_samples_per_cell,
+    );
+    var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+    var connect = [_]usize{ 0, 1, 2 };
+    var uv_values = [_]F{ 0, 0, 1, 0, 0, 1 };
+    const uvs = try ndarray.NDArray(F).init(std.testing.allocator, &uv_values, &.{ 3, 2 });
+    defer uvs.deinit(std.testing.allocator);
     const mesh_input = meshpipeline.MeshInput{
         .mesh_type = .tri3,
-        .coords = sim_data.coords,
-        .connect = sim_data.connect,
+        .coords = meshio.Coords.init(&coords, 3),
+        .connect = meshio.Connect.init(&connect, 1, 3),
         .disp = null,
         .shader = .{ .func = .{
-            .uvs = uvs.array,
+            .uvs = uvs,
             .coord_mode = .uv,
             .builtin = .speckle,
-            .params = .{ .settings = .{ .speckle = params } },
-            .bits = 8,
-            .scaling = .auto,
-            .normal_type = .none,
         } },
     };
-    const mesh_static = try meshpipeline.initMeshStatic(allocator, &mesh_input);
-    const func_static = switch (mesh_static.shader) {
-        .func => |func| func,
+    const automatic = [_]struct {
+        pattern: Pattern,
+        softness: F = 0.0,
+        evaluator: Evaluator,
+    }{
+        .{ .pattern = .disk, .evaluator = .classified_indexed },
+        .{ .pattern = .disk, .softness = 0.03, .evaluator = .list_indexed },
+        .{ .pattern = .gaussian, .evaluator = .list_indexed },
+        .{ .pattern = .perlin, .evaluator = .mask_u8 },
+    };
+    for (automatic) |case| {
+        var params = fixture_params;
+        params.pattern = case.pattern;
+        params.edge_softness = case.softness;
+        try expectPreparedResources(std.testing.allocator, &mesh_input, params, case.evaluator, 9);
+    }
+
+    if (comptime !buildconfig.enable_all_evaluators) return;
+    for (speckleconfig.generationConfigs(true)) |config| {
+        var params = fixture_params;
+        params.pattern = config.pattern;
+        params.edge_softness = if (config.soft_edges) 0.03 else 0.0;
+        params.evaluator = config.evaluator;
+        params.neighbor_count = if (config.pattern == .perlin) null else config.neighbor_count;
+        try expectPreparedResources(
+            std.testing.allocator,
+            &mesh_input,
+            params,
+            config.evaluator,
+            config.neighbor_count,
+        );
+    }
+    var direct = fixture_params;
+    direct.evaluator = .direct_fixed;
+    try expectPreparedResources(std.testing.allocator, &mesh_input, direct, .direct_fixed, 1);
+}
+
+fn expectPreparedResources(
+    outer_alloc: std.mem.Allocator,
+    base_input: *const meshpipeline.MeshInput,
+    params: Params,
+    evaluator: Evaluator,
+    neighbors: u8,
+) !void {
+    const expected: speckleconfig.Config = .{
+        .pattern = params.pattern,
+        .evaluator = evaluator,
+        .neighbor_count = neighbors,
+        .soft_edges = params.edge_softness > 0.0,
+    };
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer arena.deinit();
+    var mesh_input = base_input.*;
+    mesh_input.shader.func.params = .{ .settings = .{ .speckle = params } };
+    const mesh_static = try meshpipeline.initMeshStatic(arena.allocator(), &mesh_input);
+    const resources = switch (mesh_static.shader) {
+        .func => |func| func.speckle_resources,
         else => return error.UnexpectedShaderVariant,
     };
-
+    try std.testing.expect(resources.kernel_index != null);
+    try std.testing.expectEqualDeep(
+        speckleconfig.canonicalizeSampleConfig(expected),
+        speckleops.kernel_configs[resources.kernel_index.?],
+    );
     try std.testing.expectEqual(
         evaluator == .list_naive or evaluator == .list_indexed,
-        func_static.speckle_resources.list != null,
+        resources.list != null,
     );
-    try std.testing.expectEqual(
-        evaluator == .classified_indexed,
-        func_static.speckle_resources.classified != null,
-    );
-    try std.testing.expectEqual(
-        evaluator == .direct_fixed,
-        func_static.speckle_resources.direct_fixed != null,
-    );
+    try std.testing.expectEqual(evaluator == .classified_indexed, resources.classified != null);
+    try std.testing.expectEqual(evaluator == .direct_fixed, resources.direct_fixed != null);
     try std.testing.expectEqual(
         evaluator == .mask_1bit or evaluator == .mask_u8,
-        func_static.speckle_resources.mask != null,
+        resources.mask != null,
     );
 }

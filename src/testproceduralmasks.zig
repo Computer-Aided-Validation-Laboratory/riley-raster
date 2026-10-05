@@ -6,6 +6,20 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const std = @import("std");
+const buildconfig = @import("riley/zig/buildconfig.zig");
+const expected_config = @import("tests/expected_speckle_config.zig");
+
+test "speckle build options reach the mask test root" {
+    try std.testing.expectEqual(
+        expected_config.enable_all_evaluators,
+        buildconfig.enable_all_evaluators,
+    );
+    try std.testing.expectEqual(
+        expected_config.speckle_mask_samples_per_cell,
+        buildconfig.speckle_mask_samples_per_cell,
+    );
+}
 
 test {
     _ = @import("dev_support/proceduraldemo.zig");
