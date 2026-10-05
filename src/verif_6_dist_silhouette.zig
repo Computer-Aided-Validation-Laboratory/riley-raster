@@ -157,104 +157,104 @@ fn calcCentroidStats(
     };
 }
 
-fn writeDistortionRows(
+fn writeDistortRows(
     writer: *std.Io.Writer,
-    distortion_case: vconst.CameraDistortionCase,
+    distort_case: vconst.CameraDistortCase,
     camera_prepared: *const cam.CameraPrepared,
 ) !void {
     const focal_px = camera_prepared.calcFocalPx();
     const offsets = camera_prepared.calcRasterOffsets();
 
-    try writer.print("distortion_case,name,{s}\n", .{
-        distortion_case.case_name,
+    try writer.print("distort_case,name,{s}\n", .{
+        distort_case.case_name,
     });
     try writer.print("focal_px_x,px,{d:.17}\n", .{focal_px.fx});
     try writer.print("focal_px_y,px,{d:.17}\n", .{focal_px.fy});
     try writer.print("offset_x,px,{d:.17}\n", .{offsets.x_off});
     try writer.print("offset_y,px,{d:.17}\n", .{offsets.y_off});
 
-    switch (camera_prepared.distortion) {
+    switch (camera_prepared.distort) {
         .none => {
-            try writer.writeAll("distortion_model,name,none\n");
+            try writer.writeAll("distort_model,name,none\n");
             try writer.writeAll("distortion_k1,unitless,0.0\n");
             try writer.writeAll("distortion_k2,unitless,0.0\n");
             try writer.writeAll("distortion_k3,unitless,0.0\n");
             try writer.writeAll("distortion_p1,unitless,0.0\n");
             try writer.writeAll("distortion_p2,unitless,0.0\n");
         },
-        .brown_conrady => |distortion| {
-            try writer.writeAll("distortion_model,name,brown_conrady\n");
+        .brown_con => |distort| {
+            try writer.writeAll("distort_model,name,brown_con\n");
             try writer.print("distortion_k1,unitless,{d:.17}\n", .{
-                distortion.k1,
+                distort.k1,
             });
             try writer.print("distortion_k2,unitless,{d:.17}\n", .{
-                distortion.k2,
+                distort.k2,
             });
             try writer.print("distortion_k3,unitless,{d:.17}\n", .{
-                distortion.k3,
+                distort.k3,
             });
             try writer.print("distortion_p1,unitless,{d:.17}\n", .{
-                distortion.p1,
+                distort.p1,
             });
             try writer.print("distortion_p2,unitless,{d:.17}\n", .{
-                distortion.p2,
+                distort.p2,
             });
         },
-        .brown_conrady_ext => |distortion| {
-            try writer.writeAll("distortion_model,name,brown_conrady_ext\n");
+        .brown_con_ext => |distort| {
+            try writer.writeAll("distort_model,name,brown_con_ext\n");
             try writer.print("distortion_k1,unitless,{d:.17}\n", .{
-                distortion.k1,
+                distort.k1,
             });
             try writer.print("distortion_k2,unitless,{d:.17}\n", .{
-                distortion.k2,
+                distort.k2,
             });
             try writer.print("distortion_k3,unitless,{d:.17}\n", .{
-                distortion.k3,
+                distort.k3,
             });
             try writer.print("distortion_p1,unitless,{d:.17}\n", .{
-                distortion.p1,
+                distort.p1,
             });
             try writer.print("distortion_p2,unitless,{d:.17}\n", .{
-                distortion.p2,
+                distort.p2,
             });
         },
-        .polynomial => {
-            try writer.writeAll("distortion_model,name,polynomial\n");
+        .poly => {
+            try writer.writeAll("distort_model,name,poly\n");
         },
-        .brown_conrady_polynomial => |chain| {
-            try writer.writeAll("distortion_model,name,brown_conrady_polynomial\n");
+        .brown_con_poly => |chain| {
+            try writer.writeAll("distort_model,name,brown_con_poly\n");
             try writer.print("distortion_k1,unitless,{d:.17}\n", .{
-                chain.brown_conrady.k1,
+                chain.brown_con.k1,
             });
             try writer.print("distortion_k2,unitless,{d:.17}\n", .{
-                chain.brown_conrady.k2,
+                chain.brown_con.k2,
             });
             try writer.print("distortion_k3,unitless,{d:.17}\n", .{
-                chain.brown_conrady.k3,
+                chain.brown_con.k3,
             });
             try writer.print("distortion_p1,unitless,{d:.17}\n", .{
-                chain.brown_conrady.p1,
+                chain.brown_con.p1,
             });
             try writer.print("distortion_p2,unitless,{d:.17}\n", .{
-                chain.brown_conrady.p2,
+                chain.brown_con.p2,
             });
         },
-        .brown_conrady_ext_polynomial => |chain| {
-            try writer.writeAll("distortion_model,name,brown_conrady_ext_polynomial\n");
+        .brown_con_ext_poly => |chain| {
+            try writer.writeAll("distort_model,name,brown_con_ext_poly\n");
             try writer.print("distortion_k1,unitless,{d:.17}\n", .{
-                chain.brown_conrady_ext.k1,
+                chain.brown_con_ext.k1,
             });
             try writer.print("distortion_k2,unitless,{d:.17}\n", .{
-                chain.brown_conrady_ext.k2,
+                chain.brown_con_ext.k2,
             });
             try writer.print("distortion_k3,unitless,{d:.17}\n", .{
-                chain.brown_conrady_ext.k3,
+                chain.brown_con_ext.k3,
             });
             try writer.print("distortion_p1,unitless,{d:.17}\n", .{
-                chain.brown_conrady_ext.p1,
+                chain.brown_con_ext.p1,
             });
             try writer.print("distortion_p2,unitless,{d:.17}\n", .{
-                chain.brown_conrady_ext.p2,
+                chain.brown_con_ext.p2,
             });
         },
     }
@@ -264,7 +264,7 @@ fn writeStatsCsv(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
-    distortion_case: vconst.CameraDistortionCase,
+    distort_case: vconst.CameraDistortCase,
     stats: CentroidStats,
     centroid_world: vector.Vec3f,
     scaling: cam.FOVScaling,
@@ -315,7 +315,7 @@ fn writeStatsCsv(
     try writer.print("pixel_per_leng_y,px/length,{d:.17}\n", .{
         scaling.pixel_per_leng[1],
     });
-    try writeDistortionRows(writer, distortion_case, distorted_camera);
+    try writeDistortRows(writer, distort_case, distorted_camera);
 
     for (0..frame_coords.mat.rows_num) |nn| {
         const coord_raster = projectWorldNodeToRaster(
@@ -339,21 +339,21 @@ fn projectWorldNodeToRaster(
         coord_world,
     );
 
-    coord_raster.slice[0] = camera_prepared.image_dist * coord_raster.slice[0] /
-        (-coord_raster.slice[2]);
-    coord_raster.slice[1] = camera_prepared.image_dist * coord_raster.slice[1] /
-        (-coord_raster.slice[2]);
+    coord_raster.vec[0] = camera_prepared.image_dist * coord_raster.vec[0] /
+        (-coord_raster.vec[2]);
+    coord_raster.vec[1] = camera_prepared.image_dist * coord_raster.vec[1] /
+        (-coord_raster.vec[2]);
 
-    coord_raster.slice[0] = 2.0 * coord_raster.slice[0] /
+    coord_raster.vec[0] = 2.0 * coord_raster.vec[0] /
         camera_prepared.image_dims[0];
-    coord_raster.slice[1] = 2.0 * coord_raster.slice[1] /
+    coord_raster.vec[1] = 2.0 * coord_raster.vec[1] /
         camera_prepared.image_dims[1];
 
-    coord_raster.slice[0] = (coord_raster.slice[0] + 1.0) * 0.5 *
+    coord_raster.vec[0] = (coord_raster.vec[0] + 1.0) * 0.5 *
         @as(F, @floatFromInt(camera_prepared.pixels_num[0]));
-    coord_raster.slice[1] = (1.0 - coord_raster.slice[1]) * 0.5 *
+    coord_raster.vec[1] = (1.0 - coord_raster.vec[1]) * 0.5 *
         @as(F, @floatFromInt(camera_prepared.pixels_num[1]));
-    coord_raster.slice[2] = -coord_raster.slice[2];
+    coord_raster.vec[2] = -coord_raster.vec[2];
     return coord_raster;
 }
 
@@ -419,7 +419,7 @@ fn buildCentroidCameraInput(ref_coords: *const meshio.Coords) cam.CameraInput {
         .roi_cent_world = roi_cent_world,
         .focal_length = orch.default_focal_length,
         .sub_sample = 1,
-        .distortion = .none,
+        .distort = .none,
     };
 }
 
@@ -473,7 +473,7 @@ fn buildCentroidCameraInputOverFrames(
         .roi_cent_world = roi_cent_world,
         .focal_length = orch.default_focal_length,
         .sub_sample = 1,
-        .distortion = .none,
+        .distort = .none,
     };
 }
 
@@ -481,7 +481,7 @@ fn runDistortCase(
     allocator: std.mem.Allocator,
     io: std.Io,
     case_spec: vconst.DistortCase,
-    distortion_case: vconst.CameraDistortionCase,
+    distort_case: vconst.CameraDistortCase,
 ) !void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -499,9 +499,9 @@ fn runDistortCase(
     else
         buildCentroidCameraInput(&ref_coords);
     const pinhole_camera = try cam.CameraPrepared.init(aa, base_camera_input);
-    const distorted_camera_input = vconst.cameraInputWithDistortion(
+    const distorted_camera_input = vconst.cameraInputWithDistort(
         base_camera_input,
-        distortion_case,
+        distort_case,
     );
     const distorted_camera = try cam.CameraPrepared.init(
         aa,
@@ -516,7 +516,7 @@ fn runDistortCase(
             verif_subdir_name,
             orch.meshDataName(case_spec.mesh_type),
             case_spec.case_name,
-            distortion_case.case_name,
+            distort_case.case_name,
         },
     );
     var out_dir = try orch.openDirEnsured(io, out_dir_path);
@@ -607,7 +607,7 @@ fn runDistortCase(
             io,
             out_dir,
             stats_name,
-            distortion_case,
+            distort_case,
             stats,
             frame_cent_world,
             fov_scaling,
@@ -621,7 +621,7 @@ fn runDistortCase(
             .{
                 orch.meshDataName(case_spec.mesh_type),
                 case_spec.case_name,
-                distortion_case.case_name,
+                distort_case.case_name,
                 frame_idx,
                 stats.dist,
             },
@@ -642,12 +642,12 @@ pub fn main(init: std.process.Init) !void {
     defer root_dir.close(io);
 
     for (vconst.distort_cases) |case_spec| {
-        for (vconst.camera_distortion_cases) |distortion_case| {
+        for (vconst.camera_distort_cases) |distort_case| {
             try runDistortCase(
                 allocator,
                 io,
                 case_spec,
-                distortion_case,
+                distort_case,
             );
         }
     }

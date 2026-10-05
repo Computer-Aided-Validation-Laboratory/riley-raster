@@ -105,7 +105,7 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = camera_prep.roi_cent_world,
         .focal_length = camera_prep.focal_length,
         .sub_sample = 2,
-        .distortion = camera_prep.distortion,
+        .distort = camera_prep.distort.paramsFromModel(),
     };
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = config.total_threads },

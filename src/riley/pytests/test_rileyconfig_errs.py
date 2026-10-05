@@ -33,3 +33,14 @@ def test_create_raster_config_rejects_invalid_validate_input_type() -> None:
     with pytest.raises(TypeError, match="ValidateInput"):
         riley.create_raster_config(1, validate_input="fast")
 
+
+@pytest.mark.parametrize("cameras", (0, -1))
+def test_create_raster_config_rejects_non_positive_camera_count(cameras: int) -> None:
+    with pytest.raises(ValueError, match="num_cameras"):
+        riley.create_raster_config(1, num_cameras=cameras)
+
+
+@pytest.mark.parametrize("cameras", (True, 1.5, "2"))
+def test_create_raster_config_rejects_non_integer_camera_count(cameras: object) -> None:
+    with pytest.raises(TypeError, match="num_cameras"):
+        riley.create_raster_config(1, num_cameras=cameras)

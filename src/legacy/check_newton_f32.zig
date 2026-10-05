@@ -272,7 +272,7 @@ pub fn main(init: std.process.Init) !void {
             .roi_cent_world = roi_pos,
             .focal_length = render_defaults.focal_leng,
             .sub_sample = render_defaults.sub_sample,
-            .distortion = render_defaults.distortion,
+            .distort = render_defaults.distort,
         },
     );
     defer camera.deinit(aa);
@@ -285,7 +285,7 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .distortion = camera.distortion,
+        .distort = camera.distort,
     };
 
     var config = tcfg.getRasterConfig(.testing);

@@ -33,6 +33,8 @@ def create_raster_config(
     output_name_format: str = (
         "cam{camera}_frame{frame}_field{field}"
     ),
+    *,
+    num_cameras: int = 1,
 ) -> RasterConfig:
     """Create an offline RasterConfig balanced across frames and workers.
 
@@ -41,7 +43,11 @@ def create_raster_config(
     num_frames : int
         Number of frames to render. Must be a positive integer.
     total_threads : int, default=1
-        Total number of worker threads available. Must be positive.
+        Render-thread budget, including group callers. Must be positive.
+        Disk-save overlap threads are separate from this budget.
+    num_cameras : int, default=1
+        Number of cameras per frame. Used with num_frames to estimate available
+        offline jobs and set the per-job worker cap.
     save_strategy : SaveStrategy, default=SaveStrategy.both
         Strategy for retaining and writing rendered frame buffers.
     output_name_format : str, optional
@@ -57,10 +63,10 @@ def create_raster_config(
     Raises
     ------
     TypeError
-        If `num_frames` or `total_threads` is not an integer, or
+        If `num_frames`, `num_cameras`, or `total_threads` is not an integer, or
         `save_strategy` is not a `SaveStrategy` member.
     ValueError
-        If `num_frames` or `total_threads` is not positive.
+        If `num_frames`, `num_cameras`, or `total_threads` is not positive.
     """
 
     if not isinstance(num_frames, Integral) or isinstance(num_frames, bool):
@@ -75,6 +81,11 @@ def create_raster_config(
     if not isinstance(save_strategy, SaveStrategy):
         raise TypeError("save_strategy must be a SaveStrategy member.")
 
+    if not isinstance(num_cameras, Integral) or isinstance(num_cameras, bool):
+        raise TypeError("num_cameras must be an integer.")
+    if num_cameras <= 0:
+        raise ValueError("num_cameras must be positive.")
+
     if not isinstance(validate_input, ValidateInput):
         raise TypeError("validate_input must be a ValidateInput member.")
 
@@ -83,28 +94,21 @@ def create_raster_config(
 
     if not output_name_format:
         raise ValueError("output_name_format must not be empty.")
-
     if num_frames <= 0:
         raise ValueError("num_frames must be positive.")
 
     if total_threads <= 0:
         raise ValueError("total_threads must be positive.")
 
-
-    # We get best parallelisation from Riley when 1 thread works on 1 frame
-    # so parallelisation over camera and frames is best. If we have only 1
-    # frame we put all workers into the raster loop.
-    frames_available = int(num_frames)
+    # Match ManagedRenderGroups: prefer independent camera/frame jobs, then
+    # distribute any remaining workers evenly. The largest group determines
+    # the per-job cap; the C runtime applies each group's actual worker budget.
+    jobs_available = int(num_frames) * int(num_cameras)
     threads_available = int(total_threads)
-    if threads_available < frames_available:
-        render_group_count = threads_available
-    else:
-        render_group_count = 1
-        for group_count in range(1, frames_available + 1):
-            if threads_available % group_count == 0:
-                render_group_count = group_count
-
-    workers_per_group = threads_available // render_group_count
+    render_group_count = min(threads_available, jobs_available)
+    workers_per_group = (
+        threads_available + render_group_count - 1
+    ) // render_group_count
 
     return RasterConfig(
         render_mode=RenderMode.offline,

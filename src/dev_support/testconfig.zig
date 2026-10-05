@@ -41,7 +41,7 @@ pub const TEST_CASE_VERBOSE: bool = false;
 pub const VerifTol = struct {
     para_abs: F,
     reproj_abs_px: F,
-    distortion_abs_px: F,
+    distort_abs_px: F,
     silhouette_area_abs_px2: F,
     silhouette_cent_abs_px: F,
     silhouette_mask_diff_pct: F,
@@ -52,7 +52,7 @@ pub const VerifTol = struct {
 pub const VERIF_TOL = VerifTol{
     .para_abs = 1.0e-7,
     .reproj_abs_px = 1.0e-6,
-    .distortion_abs_px = 1.0e-6,
+    .distort_abs_px = 1.0e-6,
     .silhouette_area_abs_px2 = 16.0,
     .silhouette_cent_abs_px = 5.0e-2,
     .silhouette_mask_diff_pct = 1.0e-3,
@@ -60,6 +60,25 @@ pub const VERIF_TOL = VerifTol{
     .depth_gap_rel = 1.0e-5,
 };
 
+pub const DistortOracleTol = struct {
+    ford_abs_norm: F,
+    inv_abs_norm: F,
+    jac_abs: F,
+    jac_rel: F,
+    backend_abs_norm: F,
+    compatibility_abs_norm: F,
+};
+
+pub const DISTORT_ORACLE_TOL = DistortOracleTol{
+    .ford_abs_norm = 5.0e-12,
+    .inv_abs_norm = 2.0e-5,
+    .jac_abs = 2.0e-8,
+    .jac_rel = 2.0e-8,
+    .backend_abs_norm = 2.0e-5,
+    .compatibility_abs_norm = 1.0e-14,
+};
+
+pub const DISTORT_ROUNDTRIP_ABS_PX: F = 1.0e-6;
 pub const RasterConfigMode = enum {
     gold_gen,
     preview,

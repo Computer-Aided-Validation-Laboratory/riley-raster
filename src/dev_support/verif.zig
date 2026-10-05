@@ -90,7 +90,7 @@ pub fn ElementNodes(comptime N: usize) type {
     };
 }
 
-pub fn forwardMapWorld(
+pub fn fordMapWorld(
     comptime N: usize,
     xi: F,
     eta: F,
@@ -128,7 +128,7 @@ pub fn forwardMapWorld(
     };
 }
 
-pub fn forwardMapWorldForMeshType(
+pub fn fordMapWorldForMeshType(
     comptime mesh_type: gk.MeshType,
     xi: F,
     eta: F,
@@ -140,7 +140,7 @@ pub fn forwardMapWorldForMeshType(
     var node_values: [N]F = undefined;
     var deriv_xi: [N]F = undefined;
     var deriv_eta: [N]F = undefined;
-    return forwardMapWorld(
+    return fordMapWorld(
         N,
         xi,
         eta,
@@ -160,7 +160,7 @@ fn worldToCamera(
     return matrix.Mat44Ops.mulVec3(
         F,
         camera.world_to_cam_mat,
-        .{ .slice = .{ world_point.x, world_point.y, world_point.z } },
+        .{ .vec = .{ world_point.x, world_point.y, world_point.z } },
     );
 }
 
@@ -171,11 +171,11 @@ pub fn worldToIdealRaster(
     const coord_cam = worldToCamera(camera, world_point);
     const focal_px = camera.calcFocalPx();
     const offsets = camera.calcRasterOffsets();
-    const inv_neg_z = 1.0 / (-coord_cam.slice[2]);
+    const inv_neg_z = 1.0 / (-coord_cam.vec[2]);
 
     return .{
-        offsets.x_off + coord_cam.slice[0] * inv_neg_z * focal_px.fx,
-        offsets.y_off - coord_cam.slice[1] * inv_neg_z * focal_px.fy,
+        offsets.x_off + coord_cam.vec[0] * inv_neg_z * focal_px.fx,
+        offsets.y_off - coord_cam.vec[1] * inv_neg_z * focal_px.fy,
     };
 }
 
@@ -188,14 +188,14 @@ pub fn idealToObservedRaster(
     const x_norm = (ideal_xy[0] - offsets.x_off) / focal_px.fx;
     const y_norm = (ideal_xy[1] - offsets.y_off) / focal_px.fy;
 
-    const distorted = cam.forwardDistortionModelScal(
-        camera.distortion,
+    const distorted = cam.fordDistortModelScal(
+        camera.distort,
         x_norm,
         y_norm,
     );
     return .{
-        distorted[0] * focal_px.fx + offsets.x_off,
-        distorted[1] * focal_px.fy + offsets.y_off,
+        distorted.x * focal_px.fx + offsets.x_off,
+        distorted.y * focal_px.fy + offsets.y_off,
     };
 }
 
@@ -208,8 +208,8 @@ pub fn observedToIdealRaster(
     const x_dist = (observed_xy[0] - offsets.x_off) / focal_px.fx;
     const y_dist = (observed_xy[1] - offsets.y_off) / focal_px.fy;
 
-    const solved = try cam.invDistortionModelScal(
-        camera.distortion,
+    const solved = try cam.invDistortModelScal(
+        camera.distort,
         x_dist,
         y_dist,
     );
@@ -238,18 +238,18 @@ pub fn worldNodesToSolverCoords(
             .z = node_z[nn],
         };
         const coord_cam = worldToCamera(camera, world_point);
-        const inv_neg_z = 1.0 / (-coord_cam.slice[2]);
+        const inv_neg_z = 1.0 / (-coord_cam.vec[2]);
 
         if (mesh_type == .tri3 or mesh_type == .tri3opt) {
             solver_nodes.x[nn] = offsets.x_off +
-                coord_cam.slice[0] * inv_neg_z * focal_px.fx;
+                coord_cam.vec[0] * inv_neg_z * focal_px.fx;
             solver_nodes.y[nn] = offsets.y_off -
-                coord_cam.slice[1] * inv_neg_z * focal_px.fy;
-            solver_nodes.z[nn] = -coord_cam.slice[2];
+                coord_cam.vec[1] * inv_neg_z * focal_px.fy;
+            solver_nodes.z[nn] = -coord_cam.vec[2];
         } else {
-            solver_nodes.x[nn] = coord_cam.slice[0] * focal_px.fx;
-            solver_nodes.y[nn] = -coord_cam.slice[1] * focal_px.fy;
-            solver_nodes.z[nn] = -coord_cam.slice[2];
+            solver_nodes.x[nn] = coord_cam.vec[0] * focal_px.fx;
+            solver_nodes.y[nn] = -coord_cam.vec[1] * focal_px.fy;
+            solver_nodes.z[nn] = -coord_cam.vec[2];
         }
     }
 

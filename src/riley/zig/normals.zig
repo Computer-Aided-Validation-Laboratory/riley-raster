@@ -87,11 +87,11 @@ fn writePrepNormal(
 //------------------------------------------------------------------------------------------
 
 pub fn calcVisExactNormals(
+    comptime N: usize,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     vis_orig_elem_inds: []const usize,
     prep_normals: *ndarray.NDArray(F),
-    comptime N: usize,
 ) void {
     const nodal_derivs = comptime shapefun.getNodalDerivs(N);
 
@@ -113,12 +113,12 @@ pub fn calcVisExactNormals(
 }
 
 pub fn calcVisAvgNormals(
+    comptime N: usize,
     allocator: std.mem.Allocator,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     vis_orig_elem_inds: []const usize,
     prep_normals: *ndarray.NDArray(F),
-    comptime N: usize,
 ) !void {
     const nodal_derivs = comptime shapefun.getNodalDerivs(N);
     var max_node_idx: usize = 0;
@@ -183,19 +183,19 @@ pub fn prepVisNormals(
     switch (normal_type) {
         .none => unreachable,
         .exact => calcVisExactNormals(
+            N,
             coords_nodes,
             connect,
             vis_orig_elem_inds,
             &prep_normals.array,
-            N,
         ),
         .avg => try calcVisAvgNormals(
+            N,
             allocator,
             coords_nodes,
             connect,
             vis_orig_elem_inds,
             &prep_normals.array,
-            N,
         ),
     }
     return prep_normals;

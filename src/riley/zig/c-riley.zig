@@ -129,23 +129,26 @@ pub const CImageBuffF64 = extern struct {
     dims: CDims5Usize,
 };
 
-pub const CDistortion = extern struct {
-    distortion_model: u32,
-    distortion_k1: F,
-    distortion_k2: F,
-    distortion_k3: F,
-    distortion_k4: F,
-    distortion_k5: F,
-    distortion_k6: F,
-    distortion_p1: F,
-    distortion_p2: F,
-    distortion_poly_order: u32,
-    distortion_poly_has_forward: u8,
-    distortion_poly_has_inv: u8,
-    distortion_poly_forward_u: [10]F,
-    distortion_poly_forward_v: [10]F,
-    distortion_poly_inv_u: [10]F,
-    distortion_poly_inv_v: [10]F,
+pub const CDistort = extern struct {
+    distort_model: u32,
+    distort_k1: F,
+    distort_k2: F,
+    distort_k3: F,
+    distort_k4: F,
+    distort_k5: F,
+    distort_k6: F,
+    distort_p1: F,
+    distort_p2: F,
+    distort_s1: F,
+    distort_s2: F,
+    distort_s3: F,
+    distort_s4: F,
+    distort_tau_x: F,
+    distort_tau_y: F,
+    distort_poly_degree: u32,
+    distort_poly_mode: u32,
+    distort_poly_coeffs: [*c]const F,
+    distort_poly_coeffs_len: usize,
 };
 
 pub const CPSF = extern struct {
@@ -165,7 +168,7 @@ pub const CCameraInput = extern struct {
     roi_cent_world: CVec3F64,
     focal_length: F,
     sub_sample: u32,
-    distortion: CDistortion,
+    distort: CDistort,
     psf: CPSF,
     coord_sys: u32,
     subpixel_center_map: u32,
@@ -349,6 +352,7 @@ pub const CRasterConfig = extern struct {
     full_stats_save_normals_map: u8,
     buffer_mode: u32,
     output_name_format: ?[*:0]const u8,
+    edge_spacing_px: F,
 };
 
 const MeshInputBuilt = struct {
@@ -560,7 +564,6 @@ fn subpxCenterMapFromC(subpx_map: u32) !cam.SubPixelCenterMap {
     return switch (subpx_map) {
         @intFromEnum(cam.SubPixelCenterMap.full_in_mem) => .full_in_mem,
         @intFromEnum(cam.SubPixelCenterMap.per_tile) => .per_tile,
-        @intFromEnum(cam.SubPixelCenterMap.affine_jac) => .affine_jac,
         else => error.InvalidSubPixelCenterMap,
     };
 }
@@ -651,79 +654,83 @@ fn psfFromC(in_camera: *const CPSF) !cam.PointSpreadFunc {
     };
 }
 
-fn distortionFromC(in_camera: *const CDistortion) !cam.DistortionModel {
-    const poly_order: cam.PolynomialOrder = switch (in_camera.distortion_poly_order) {
-        0, 2 => .quadratic,
-        1 => .linear,
-        3 => .cubic,
-        else => return error.InvalidPolynomialOrder,
-    };
-    const poly_has_forward = in_camera.distortion_poly_has_forward != 0;
-    const poly_has_inv = in_camera.distortion_poly_has_inv != 0;
-    var polynomial: ?cam.BidirectionalPolynomial = null;
-    if (poly_has_forward or poly_has_inv) {
-        var poly: cam.BidirectionalPolynomial = .{};
-        if (poly_has_forward) {
-            poly.forward_map = .{
-                .order = poly_order,
-                .coeffs_u = in_camera.distortion_poly_forward_u,
-                .coeffs_v = in_camera.distortion_poly_forward_v,
-            };
-        }
-        if (poly_has_inv) {
-            poly.inv_map = .{
-                .order = poly_order,
-                .coeffs_u = in_camera.distortion_poly_inv_u,
-                .coeffs_v = in_camera.distortion_poly_inv_v,
-            };
-        }
-        polynomial = poly;
+fn distortFromC(in_camera: *const CDistort) !cam.DistortParams {
+    var poly = cam.PolyMap{};
+    if (in_camera.distort_model >= 3 and in_camera.distort_model <= 5) {
+        const degree = std.math.cast(u8, in_camera.distort_poly_degree) orelse
+            return error.InvalidPolyDegree;
+        const mode: cam.PolyMode = switch (in_camera.distort_poly_mode) {
+            0 => .coordinate,
+            1 => .displacement,
+            else => return error.InvalidPolyMode,
+        };
+        if (degree < 1 or degree > cam.POLY_MAX_DEGREE) return error.InvalidPolyDegree;
+        if (in_camera.distort_poly_coeffs_len != 2 * cam.polyTermCount(degree))
+            return error.InvalidPolyCoeffCount;
+        if (in_camera.distort_poly_coeffs == null) return error.NullPointer;
+        poly = try cam.PolyMap.init(
+            degree,
+            mode,
+            in_camera.distort_poly_coeffs[0..in_camera.distort_poly_coeffs_len],
+        );
     }
 
-    return switch (in_camera.distortion_model) {
+    return switch (in_camera.distort_model) {
         0 => .none,
-        1 => .{ .brown_conrady = .{
-            .k1 = in_camera.distortion_k1,
-            .k2 = in_camera.distortion_k2,
-            .k3 = in_camera.distortion_k3,
-            .p1 = in_camera.distortion_p1,
-            .p2 = in_camera.distortion_p2,
+        1 => .{ .brown_con = .{
+            .k1 = in_camera.distort_k1,
+            .k2 = in_camera.distort_k2,
+            .k3 = in_camera.distort_k3,
+            .p1 = in_camera.distort_p1,
+            .p2 = in_camera.distort_p2,
         } },
-        2 => .{ .brown_conrady_ext = .{
-            .k1 = in_camera.distortion_k1,
-            .k2 = in_camera.distortion_k2,
-            .k3 = in_camera.distortion_k3,
-            .k4 = in_camera.distortion_k4,
-            .k5 = in_camera.distortion_k5,
-            .k6 = in_camera.distortion_k6,
-            .p1 = in_camera.distortion_p1,
-            .p2 = in_camera.distortion_p2,
+        2 => .{ .brown_con_ext = .{
+            .k1 = in_camera.distort_k1,
+            .k2 = in_camera.distort_k2,
+            .k3 = in_camera.distort_k3,
+            .k4 = in_camera.distort_k4,
+            .k5 = in_camera.distort_k5,
+            .k6 = in_camera.distort_k6,
+            .p1 = in_camera.distort_p1,
+            .p2 = in_camera.distort_p2,
+            .s1 = in_camera.distort_s1,
+            .s2 = in_camera.distort_s2,
+            .s3 = in_camera.distort_s3,
+            .s4 = in_camera.distort_s4,
+            .tau_x = in_camera.distort_tau_x,
+            .tau_y = in_camera.distort_tau_y,
         } },
-        3 => .{ .polynomial = polynomial orelse return error.MissingPolynomialMap },
-        4 => .{ .brown_conrady_polynomial = .{
-            .brown_conrady = .{
-                .k1 = in_camera.distortion_k1,
-                .k2 = in_camera.distortion_k2,
-                .k3 = in_camera.distortion_k3,
-                .p1 = in_camera.distortion_p1,
-                .p2 = in_camera.distortion_p2,
+        3 => .{ .poly = poly },
+        4 => .{ .brown_con_poly = .{
+            .brown_con = .{
+                .k1 = in_camera.distort_k1,
+                .k2 = in_camera.distort_k2,
+                .k3 = in_camera.distort_k3,
+                .p1 = in_camera.distort_p1,
+                .p2 = in_camera.distort_p2,
             },
-            .polynomial = polynomial orelse return error.MissingPolynomialMap,
+            .poly = poly,
         } },
-        5 => .{ .brown_conrady_ext_polynomial = .{
-            .brown_conrady_ext = .{
-                .k1 = in_camera.distortion_k1,
-                .k2 = in_camera.distortion_k2,
-                .k3 = in_camera.distortion_k3,
-                .k4 = in_camera.distortion_k4,
-                .k5 = in_camera.distortion_k5,
-                .k6 = in_camera.distortion_k6,
-                .p1 = in_camera.distortion_p1,
-                .p2 = in_camera.distortion_p2,
+        5 => .{ .brown_con_ext_poly = .{
+            .brown_con_ext = .{
+                .k1 = in_camera.distort_k1,
+                .k2 = in_camera.distort_k2,
+                .k3 = in_camera.distort_k3,
+                .k4 = in_camera.distort_k4,
+                .k5 = in_camera.distort_k5,
+                .k6 = in_camera.distort_k6,
+                .p1 = in_camera.distort_p1,
+                .p2 = in_camera.distort_p2,
+                .s1 = in_camera.distort_s1,
+                .s2 = in_camera.distort_s2,
+                .s3 = in_camera.distort_s3,
+                .s4 = in_camera.distort_s4,
+                .tau_x = in_camera.distort_tau_x,
+                .tau_y = in_camera.distort_tau_y,
             },
-            .polynomial = polynomial orelse return error.MissingPolynomialMap,
+            .poly = poly,
         } },
-        else => error.InvalidDistortionModel,
+        else => error.InvalidDistortModel,
     };
 }
 
@@ -1193,7 +1200,7 @@ fn buildCameraInput(
         .roi_cent_world = cVec3ToVec3(in_camera.roi_cent_world),
         .focal_length = in_camera.focal_length,
         .sub_sample = in_camera.sub_sample,
-        .distortion = try distortionFromC(&in_camera.distortion),
+        .distort = try distortFromC(&in_camera.distort),
         .psf = try psfFromC(&in_camera.psf),
         .coord_sys = try coordSysFromC(in_camera.coord_sys),
         .subpixel_center_map = try subpxCenterMapFromC(
@@ -1293,7 +1300,11 @@ fn buildMeshInput(
                 errdefer tex_array.deinit(allocator);
                 built.mesh_input.shader = .{ .tex_f = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(F, 1){ .array = tex_array, .rows_num = in_shader.tex.dim1, .cols_num = in_shader.tex.dim2 },
+                    .tex = texops.Tex(F, 1){
+                        .array = tex_array,
+                        .rows_num = in_shader.tex.dim1,
+                        .cols_num = in_shader.tex.dim2,
+                    },
                     .samp_cfg = samp_cfg,
                     .bits = bits,
                     .scaling = scaling,
@@ -1369,7 +1380,11 @@ fn buildMeshInput(
                 errdefer tex_array.deinit(allocator);
                 built.mesh_input.shader = .{ .tex_rgb_f = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(F, 3){ .array = tex_array, .rows_num = in_shader.tex.dim1, .cols_num = in_shader.tex.dim2 },
+                    .tex = texops.Tex(F, 3){
+                        .array = tex_array,
+                        .rows_num = in_shader.tex.dim1,
+                        .cols_num = in_shader.tex.dim2,
+                    },
                     .samp_cfg = samp_cfg,
                     .bits = bits,
                     .scaling = scaling,
@@ -1592,6 +1607,7 @@ fn buildRasterConfig(
     );
     config.report = try reportModeFromC(in_config.report);
     config.buffer_mode = try bufferModeFromC(in_config.buffer_mode);
+    config.edge_spacing_px = in_config.edge_spacing_px;
     config.tile_size_min = if (in_config.tile_size_min == 0)
         config.tile_size_min
     else
@@ -1672,66 +1688,6 @@ fn buildRasterConfig(
     return config;
 }
 
-const RenderGroupRuntime = struct {
-    managed_ios: []std.Io.Threaded,
-    render_groups: []riley.RenderGroupSpec,
-
-    fn deinit(
-        self: *RenderGroupRuntime,
-        allocator: std.mem.Allocator,
-    ) void {
-        for (self.managed_ios) |*managed_io| {
-            managed_io.deinit();
-        }
-        allocator.free(self.managed_ios);
-        allocator.free(self.render_groups);
-    }
-};
-
-fn initRenderGroups(
-    allocator: std.mem.Allocator,
-    total_threads_in: u16,
-    num_frames: usize,
-) !RenderGroupRuntime {
-    const total_threads = @max(@as(u16, 1), total_threads_in);
-    const frames_available = @max(@as(usize, 1), num_frames);
-    var render_group_count: u16 = 1;
-    if (total_threads < frames_available) {
-        render_group_count = total_threads;
-    } else {
-        for (1..frames_available + 1) |group_count| {
-            if (@as(usize, total_threads) % group_count == 0) {
-                render_group_count = @intCast(group_count);
-            }
-        }
-    }
-    const workers_per_group = total_threads / render_group_count;
-
-    const managed_ios = try allocator.alloc(std.Io.Threaded, render_group_count);
-    errdefer allocator.free(managed_ios);
-    const render_groups = try allocator.alloc(
-        riley.RenderGroupSpec,
-        render_group_count,
-    );
-    errdefer allocator.free(render_groups);
-
-    for (0..render_group_count) |gg| {
-        managed_ios[gg] = initThreadedIo(
-            allocator,
-            workers_per_group,
-        );
-        render_groups[gg] = .{
-            .io = managed_ios[gg].io(),
-            .workers = workers_per_group,
-        };
-    }
-
-    return .{
-        .managed_ios = managed_ios,
-        .render_groups = render_groups,
-    };
-}
-
 fn buildImageBuff(
     allocator: std.mem.Allocator,
     in_buff: *const CImageBuffF64,
@@ -1790,23 +1746,26 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
         .roi_cent_world = vec3ToCVec3(in_camera.roi_cent_world),
         .focal_length = in_camera.focal_length,
         .sub_sample = in_camera.sub_sample,
-        .distortion = .{
-            .distortion_model = 0,
-            .distortion_k1 = 0.0,
-            .distortion_k2 = 0.0,
-            .distortion_k3 = 0.0,
-            .distortion_k4 = 0.0,
-            .distortion_k5 = 0.0,
-            .distortion_k6 = 0.0,
-            .distortion_p1 = 0.0,
-            .distortion_p2 = 0.0,
-            .distortion_poly_order = @intFromEnum(cam.PolynomialOrder.quadratic),
-            .distortion_poly_has_forward = 0,
-            .distortion_poly_has_inv = 0,
-            .distortion_poly_forward_u = [_]F{0.0} ** 10,
-            .distortion_poly_forward_v = [_]F{0.0} ** 10,
-            .distortion_poly_inv_u = [_]F{0.0} ** 10,
-            .distortion_poly_inv_v = [_]F{0.0} ** 10,
+        .distort = .{
+            .distort_model = 0,
+            .distort_k1 = 0.0,
+            .distort_k2 = 0.0,
+            .distort_k3 = 0.0,
+            .distort_k4 = 0.0,
+            .distort_k5 = 0.0,
+            .distort_k6 = 0.0,
+            .distort_p1 = 0.0,
+            .distort_p2 = 0.0,
+            .distort_s1 = 0.0,
+            .distort_s2 = 0.0,
+            .distort_s3 = 0.0,
+            .distort_s4 = 0.0,
+            .distort_tau_x = 0.0,
+            .distort_tau_y = 0.0,
+            .distort_poly_degree = 0,
+            .distort_poly_mode = 1,
+            .distort_poly_coeffs = null,
+            .distort_poly_coeffs_len = 0,
         },
         .psf = .{
             .psf_type = 0,
@@ -1820,84 +1779,72 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
         .subpixel_center_map = @intFromEnum(in_camera.subpixel_center_map),
     };
 
-    switch (in_camera.distortion) {
+    switch (in_camera.distort) {
         .none => {},
-        .brown_conrady => |model| {
-            out_camera.distortion.distortion_model = 1;
-            out_camera.distortion.distortion_k1 = model.k1;
-            out_camera.distortion.distortion_k2 = model.k2;
-            out_camera.distortion.distortion_k3 = model.k3;
-            out_camera.distortion.distortion_p1 = model.p1;
-            out_camera.distortion.distortion_p2 = model.p2;
+        .brown_con => |model| {
+            out_camera.distort.distort_model = 1;
+            out_camera.distort.distort_k1 = model.k1;
+            out_camera.distort.distort_k2 = model.k2;
+            out_camera.distort.distort_k3 = model.k3;
+            out_camera.distort.distort_p1 = model.p1;
+            out_camera.distort.distort_p2 = model.p2;
         },
-        .brown_conrady_ext => |model| {
-            out_camera.distortion.distortion_model = 2;
-            out_camera.distortion.distortion_k1 = model.k1;
-            out_camera.distortion.distortion_k2 = model.k2;
-            out_camera.distortion.distortion_k3 = model.k3;
-            out_camera.distortion.distortion_k4 = model.k4;
-            out_camera.distortion.distortion_k5 = model.k5;
-            out_camera.distortion.distortion_k6 = model.k6;
-            out_camera.distortion.distortion_p1 = model.p1;
-            out_camera.distortion.distortion_p2 = model.p2;
+        .brown_con_ext => |model| {
+            out_camera.distort.distort_model = 2;
+            out_camera.distort.distort_k1 = model.k1;
+            out_camera.distort.distort_k2 = model.k2;
+            out_camera.distort.distort_k3 = model.k3;
+            out_camera.distort.distort_k4 = model.k4;
+            out_camera.distort.distort_k5 = model.k5;
+            out_camera.distort.distort_k6 = model.k6;
+            out_camera.distort.distort_p1 = model.p1;
+            out_camera.distort.distort_p2 = model.p2;
+            out_camera.distort.distort_s1 = model.s1;
+            out_camera.distort.distort_s2 = model.s2;
+            out_camera.distort.distort_s3 = model.s3;
+            out_camera.distort.distort_s4 = model.s4;
+            out_camera.distort.distort_tau_x = model.tau_x;
+            out_camera.distort.distort_tau_y = model.tau_y;
         },
-        .polynomial => |poly| {
-            out_camera.distortion.distortion_model = 3;
-            if (poly.forward_map) |forward_map| {
-                out_camera.distortion.distortion_poly_order = @intFromEnum(forward_map.order);
-                out_camera.distortion.distortion_poly_has_forward = 1;
-                out_camera.distortion.distortion_poly_forward_u = forward_map.coeffs_u;
-                out_camera.distortion.distortion_poly_forward_v = forward_map.coeffs_v;
-            }
-            if (poly.inv_map) |inv_map| {
-                out_camera.distortion.distortion_poly_order = @intFromEnum(inv_map.order);
-                out_camera.distortion.distortion_poly_has_inv = 1;
-                out_camera.distortion.distortion_poly_inv_u = inv_map.coeffs_u;
-                out_camera.distortion.distortion_poly_inv_v = inv_map.coeffs_v;
-            }
+        .poly => |poly| {
+            out_camera.distort.distort_model = 3;
+            out_camera.distort.distort_poly_degree = poly.degree;
+            out_camera.distort.distort_poly_mode = @intFromEnum(poly.mode);
+            out_camera.distort.distort_poly_coeffs = poly.coeffs.ptr;
+            out_camera.distort.distort_poly_coeffs_len = poly.coeffs.len;
         },
-        .brown_conrady_polynomial => |chain| {
-            out_camera.distortion.distortion_model = 4;
-            out_camera.distortion.distortion_k1 = chain.brown_conrady.k1;
-            out_camera.distortion.distortion_k2 = chain.brown_conrady.k2;
-            out_camera.distortion.distortion_k3 = chain.brown_conrady.k3;
-            out_camera.distortion.distortion_p1 = chain.brown_conrady.p1;
-            out_camera.distortion.distortion_p2 = chain.brown_conrady.p2;
-            if (chain.polynomial.forward_map) |forward_map| {
-                out_camera.distortion.distortion_poly_order = @intFromEnum(forward_map.order);
-                out_camera.distortion.distortion_poly_has_forward = 1;
-                out_camera.distortion.distortion_poly_forward_u = forward_map.coeffs_u;
-                out_camera.distortion.distortion_poly_forward_v = forward_map.coeffs_v;
-            }
-            if (chain.polynomial.inv_map) |inv_map| {
-                out_camera.distortion.distortion_poly_order = @intFromEnum(inv_map.order);
-                out_camera.distortion.distortion_poly_has_inv = 1;
-                out_camera.distortion.distortion_poly_inv_u = inv_map.coeffs_u;
-                out_camera.distortion.distortion_poly_inv_v = inv_map.coeffs_v;
-            }
+        .brown_con_poly => |chain| {
+            out_camera.distort.distort_model = 4;
+            out_camera.distort.distort_k1 = chain.brown_con.k1;
+            out_camera.distort.distort_k2 = chain.brown_con.k2;
+            out_camera.distort.distort_k3 = chain.brown_con.k3;
+            out_camera.distort.distort_p1 = chain.brown_con.p1;
+            out_camera.distort.distort_p2 = chain.brown_con.p2;
+            out_camera.distort.distort_poly_degree = chain.poly.degree;
+            out_camera.distort.distort_poly_mode = @intFromEnum(chain.poly.mode);
+            out_camera.distort.distort_poly_coeffs = chain.poly.coeffs.ptr;
+            out_camera.distort.distort_poly_coeffs_len = chain.poly.coeffs.len;
         },
-        .brown_conrady_ext_polynomial => |chain| {
-            out_camera.distortion.distortion_model = 5;
-            out_camera.distortion.distortion_k1 = chain.brown_conrady_ext.k1;
-            out_camera.distortion.distortion_k2 = chain.brown_conrady_ext.k2;
-            out_camera.distortion.distortion_k3 = chain.brown_conrady_ext.k3;
-            out_camera.distortion.distortion_k4 = chain.brown_conrady_ext.k4;
-            out_camera.distortion.distortion_k5 = chain.brown_conrady_ext.k5;
-            out_camera.distortion.distortion_k6 = chain.brown_conrady_ext.k6;
-            out_camera.distortion.distortion_p1 = chain.brown_conrady_ext.p1;
-            out_camera.distortion.distortion_p2 = chain.brown_conrady_ext.p2;
-            if (chain.polynomial.forward_map) |forward_map| {
-                out_camera.distortion.distortion_poly_order = @intFromEnum(forward_map.order);
-                out_camera.distortion.distortion_poly_has_forward = 1;
-                out_camera.distortion.distortion_poly_forward_u = forward_map.coeffs_u;
-                out_camera.distortion.distortion_poly_forward_v = forward_map.coeffs_v;
-            }
-            if (chain.polynomial.inv_map) |inv_map| {
-                out_camera.distortion.distortion_poly_order = @intFromEnum(inv_map.order);
-                out_camera.distortion.distortion_poly_has_inv = 1;
-                out_camera.distortion.distortion_poly_inv_u = inv_map.coeffs_u;
-                out_camera.distortion.distortion_poly_inv_v = inv_map.coeffs_v;
-            }
+        .brown_con_ext_poly => |chain| {
+            out_camera.distort.distort_model = 5;
+            out_camera.distort.distort_k1 = chain.brown_con_ext.k1;
+            out_camera.distort.distort_k2 = chain.brown_con_ext.k2;
+            out_camera.distort.distort_k3 = chain.brown_con_ext.k3;
+            out_camera.distort.distort_k4 = chain.brown_con_ext.k4;
+            out_camera.distort.distort_k5 = chain.brown_con_ext.k5;
+            out_camera.distort.distort_k6 = chain.brown_con_ext.k6;
+            out_camera.distort.distort_p1 = chain.brown_con_ext.p1;
+            out_camera.distort.distort_p2 = chain.brown_con_ext.p2;
+            out_camera.distort.distort_s1 = chain.brown_con_ext.s1;
+            out_camera.distort.distort_s2 = chain.brown_con_ext.s2;
+            out_camera.distort.distort_s3 = chain.brown_con_ext.s3;
+            out_camera.distort.distort_s4 = chain.brown_con_ext.s4;
+            out_camera.distort.distort_tau_x = chain.brown_con_ext.tau_x;
+            out_camera.distort.distort_tau_y = chain.brown_con_ext.tau_y;
+            out_camera.distort.distort_poly_degree = chain.poly.degree;
+            out_camera.distort.distort_poly_mode = @intFromEnum(chain.poly.mode);
+            out_camera.distort.distort_poly_coeffs = chain.poly.coeffs.ptr;
+            out_camera.distort.distort_poly_coeffs_len = chain.poly.coeffs.len;
         },
     }
 
@@ -1967,12 +1914,23 @@ fn rasterSceneInternal(
         image_arr.deinit(allocator);
     };
 
-    var render_group_runtime = try initRenderGroups(
-        std.heap.smp_allocator,
-        raster_config.total_threads,
-        cameras_len,
+    // Offline work spans camera/frame jobs; in-order work spans cameras only.
+    const jobs_available = cameras_len *| (if (raster_config.render_mode == .offline)
+        mo.countFrames(mesh_inputs)
+    else
+        1);
+    const jobs_limit = @max(@as(usize, 1), jobs_available);
+    const groups_limit = @min(@as(usize, raster_config.total_threads), jobs_limit);
+    const outer_alloc = std.heap.smp_allocator;
+    var render_group_runtime = try riley.ManagedRenderGroups.init(
+        outer_alloc,
+        null,
+        .{
+            .thread_budget = raster_config.total_threads,
+            .max_groups = @intCast(groups_limit),
+        },
     );
-    defer render_group_runtime.deinit(std.heap.smp_allocator);
+    defer render_group_runtime.deinit(outer_alloc);
 
     const out_dir_path_slice = if (out_dir_path) |path|
         std.mem.span(path)
@@ -1980,8 +1938,8 @@ fn rasterSceneInternal(
         null;
 
     try riley.rasterInto(
-        std.heap.smp_allocator,
-        render_group_runtime.render_groups,
+        outer_alloc,
+        render_group_runtime.specs,
         camera_inputs,
         mesh_inputs,
         raster_config,
@@ -2476,9 +2434,34 @@ pub export fn rileySaveCamera(
     return 0;
 }
 
+/// Null buffer with zero capacity queries metadata/count without returning a borrowed pointer.
+fn copyLoadedCamera(
+    camera_input: cam.CameraInput,
+    coeffs: [*c]F,
+    capacity: usize,
+    out: *CCameraInput,
+) !void {
+    var result = cameraInputToC(camera_input);
+    const count = result.distort.distort_poly_coeffs_len;
+    if (coeffs == null and capacity == 0) {
+        result.distort.distort_poly_coeffs = null;
+        out.* = result;
+        return;
+    }
+    if (capacity < count) return error.InsufficientPolyCapacity;
+    if (count > 0) {
+        if (coeffs == null) return error.NullPointer;
+        @memcpy(coeffs[0..count], result.distort.distort_poly_coeffs[0..count]);
+    }
+    result.distort.distort_poly_coeffs = if (count == 0) null else coeffs;
+    out.* = result;
+}
+
 pub export fn rileyLoadCamera(
     dir_path: [*:0]const u8,
     file_name: [*:0]const u8,
+    coeffs: [*c]F,
+    coeffs_capacity: usize,
     camera_out: *CCameraInput,
 ) c_int {
     clearLastError();
@@ -2501,7 +2484,7 @@ pub export fn rileyLoadCamera(
     };
     defer dir.close(io);
 
-    const camera = cameraio.loadCamera(
+    const loaded = cameraio.LoadedCamera.init(
         arena.allocator(),
         io,
         dir,
@@ -2510,7 +2493,11 @@ pub export fn rileyLoadCamera(
         setLastError(err);
         return 1;
     };
-    camera_out.* = cameraInputToC(camera);
+    defer loaded.deinit(arena.allocator());
+    copyLoadedCamera(loaded.camera_input, coeffs, coeffs_capacity, camera_out) catch |err| {
+        setLastError(err);
+        return 1;
+    };
     return 0;
 }
 
@@ -2572,6 +2559,10 @@ pub export fn rileySaveStereoPair(
 pub export fn rileyLoadStereoPair(
     dir_path: [*:0]const u8,
     stereo_file_name: [*:0]const u8,
+    cam0_coeffs: [*c]F,
+    cam0_capacity: usize,
+    cam1_coeffs: [*c]F,
+    cam1_capacity: usize,
     cam0_out: *CCameraInput,
     cam1_out: *CCameraInput,
 ) c_int {
@@ -2596,7 +2587,7 @@ pub export fn rileyLoadStereoPair(
     };
     defer dir.close(io);
 
-    const stereo_pair = cameraio.loadStereoPair(
+    const loaded = cameraio.LoadedStereoPair.init(
         aa,
         io,
         dir,
@@ -2605,8 +2596,25 @@ pub export fn rileyLoadStereoPair(
         setLastError(err);
         return 1;
     };
-    cam0_out.* = cameraInputToC(stereo_pair.cameras[0]);
-    cam1_out.* = cameraInputToC(stereo_pair.cameras[1]);
+    defer loaded.deinit(aa);
+    copyLoadedCamera(
+        loaded.stereo_pair.cameras[0],
+        cam0_coeffs,
+        cam0_capacity,
+        cam0_out,
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    copyLoadedCamera(
+        loaded.stereo_pair.cameras[1],
+        cam1_coeffs,
+        cam1_capacity,
+        cam1_out,
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
     return 0;
 }
 

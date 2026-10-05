@@ -76,16 +76,17 @@ typedef struct c_image_buff_f64 {
     CDims5Usize dims;
 } CImageBuffF64;
 
-typedef struct c_distortion {
-    uint32_t distortion_model;
-    double distortion_k1, distortion_k2, distortion_k3;
-    double distortion_k4, distortion_k5, distortion_k6;
-    double distortion_p1, distortion_p2;
-    uint32_t distortion_poly_order;
-    uint8_t distortion_poly_has_forward, distortion_poly_has_inv;
-    double distortion_poly_forward_u[10], distortion_poly_forward_v[10];
-    double distortion_poly_inv_u[10], distortion_poly_inv_v[10];
-} CDistortion;
+typedef struct c_distort {
+    uint32_t distort_model;
+    double distort_k1, distort_k2, distort_k3;
+    double distort_k4, distort_k5, distort_k6;
+    double distort_p1, distort_p2;
+    double distort_s1, distort_s2, distort_s3, distort_s4;
+    double distort_tau_x, distort_tau_y;
+    uint32_t distort_poly_degree, distort_poly_mode;
+    const double* distort_poly_coeffs;
+    size_t distort_poly_coeffs_len;
+} CDistort;
 
 typedef struct c_psf {
     uint32_t psf_type;
@@ -101,7 +102,7 @@ typedef struct c_camera_input {
     CVec3F64 roi_cent_world;
     double focal_length;
     uint32_t sub_sample;
-    CDistortion distortion;
+    CDistort distort;
     CPSF psf;
     uint32_t coord_sys;
     uint32_t subpixel_center_map;
@@ -292,6 +293,7 @@ typedef struct c_raster_config {
     uint8_t full_stats_save_normals_map;
     uint32_t buffer_mode;
     const char* output_name_format;
+    double edge_spacing_px;
 } CRasterConfig;
 
 size_t rileyGetLastError(uint8_t* out_buf, size_t out_buf_len);
@@ -421,9 +423,16 @@ int rileySaveCamera(
     const CCameraInput* camera_in
 );
 
+/* Loading borrows caller-owned output storage, never a temporary arena.
+ * NULL/zero queries metadata/count and returns a NULL coefficient pointer.
+ * A final load validates capacity again; keep the buffer alive through use.
+ * Polynomial mode: 0 coordinate, 1 displacement. Length counts doubles.
+ */
 int rileyLoadCamera(
     const char* dir_path,
     const char* file_name,
+    double* coeffs,
+    size_t coeffs_capacity,
     CCameraInput* camera_out
 );
 
@@ -437,6 +446,10 @@ int rileySaveStereoPair(
 int rileyLoadStereoPair(
     const char* dir_path,
     const char* stereo_file_name,
+    double* cam0_coeffs,
+    size_t cam0_capacity,
+    double* cam1_coeffs,
+    size_t cam1_capacity,
     CCameraInput* cam0_out,
     CCameraInput* cam1_out
 );

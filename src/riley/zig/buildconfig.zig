@@ -8,15 +8,18 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const root = @import("root");
-const buildconfig_override = @import("buildconfig_override.zig");
 const speckleconfig = @import("speckleconfig.zig");
 
-const build_options = if (buildconfig_override.enabled)
-    buildconfig_override
-else if (@hasDecl(root, "build_options"))
+const build_options = if (@hasDecl(root, "build_options"))
     root.build_options
 else
-    buildconfig_override;
+    struct {
+        pub const precision = "f64";
+        pub const simd = "on";
+        pub const newton_solver = "fast";
+        pub const simd_vec_width: comptime_int = 0;
+        pub const simd_vector_width: comptime_int = 0;
+    };
 
 pub const comptime_eval_branch_quota: comptime_int = 50000;
 
@@ -31,7 +34,7 @@ pub const Config = struct {
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,
     raster_newton_iter_max: comptime_int = 10,
-    distortion_newton_iter_max: comptime_int = 15,
+    distort_newton_iter_max: comptime_int = 15,
     interp_lut_size: comptime_int = 1024,
     save_frame_buff_count: comptime_int = 3,
     precision: type = F,
@@ -223,10 +226,11 @@ pub const NewtonTol = struct {
     max_para_step: Scal = 0.5,
 };
 
-pub const DistortionTol = struct {
+pub const DistortTol = struct {
     resid: Scal = 1e-10,
     delta: Scal = 1e-10,
     det: Scal = 1e-12,
+    tilt_identity: Scal = 1e-12,
 };
 
 pub const NewtonSeedTol = struct {
@@ -264,7 +268,7 @@ pub const Tol = struct {
     culling: CullingTol = .{},
     normals: NormalTol = .{},
     newton: NewtonTol = .{},
-    distortion: DistortionTol = .{},
+    distort: DistortTol = .{},
     newton_seed: NewtonSeedTol = .{},
     geometry: GeometryTol = .{},
     tex: TexTol = .{},
@@ -305,10 +309,11 @@ pub const tol_f32 = Tol{
         .para_step_rel = 2e-6,
         .max_para_step = 0.5,
     },
-    .distortion = .{
+    .distort = .{
         .resid = 1e-5,
         .delta = 1e-5,
         .det = 1e-7,
+        .tilt_identity = 1e-12,
     },
     .newton_seed = .{
         .det = 1e-7,

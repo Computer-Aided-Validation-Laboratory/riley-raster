@@ -79,7 +79,7 @@ fn runOneElemHullCase(
         .roi_cent_world = prepared.camera.roi_cent_world,
         .focal_length = prepared.camera.focal_length,
         .sub_sample = 2,
-        .distortion = .none,
+        .distort = .none,
         .psf = psf_case.psf,
     };
 

@@ -298,7 +298,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
                     gold_path,
                     1,
                 );
-                return err;
+                try common.recordGoldFailure(err);
             };
         }
     }

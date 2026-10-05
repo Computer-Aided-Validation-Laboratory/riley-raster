@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
+const gen_dist_frontend = @import("gengold/gen_gold_full_dist_frontend.zig");
 const gen_dist_psf = @import("gengold/gen_gold_full_dist_psf.zig");
 const gen_hull = @import("gengold/gen_gold_full_hull.zig");
 const gen_image_output = @import("gengold/gen_gold_full_image_output.zig");
@@ -37,6 +38,7 @@ pub fn main(init: std.process.Init) !void {
     const shader_gold_dir = policy.goldRoot(.full_shader);
     const texture_gold_dir = policy.goldRoot(.full_texture);
     const dist_psf_gold_dir = policy.goldRoot(.full_dist_psf);
+    const dist_frontend_gold_dir = policy.goldRoot(.full_dist_frontend);
     const ssaa_pxmap_gold_dir = policy.goldRoot(.full_ssaa_pxmap);
     const hull_gold_dir = policy.goldRoot(.full_hull);
     const tiling_gold_dir = policy.goldRoot(.full_tiling);
@@ -46,7 +48,7 @@ pub fn main(init: std.process.Init) !void {
 
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
-    std.debug.print("--- 1/6: Full Shader Cases ({s}) ---\n", .{shader_gold_dir});
+    std.debug.print("--- 1/9: Full Shader Cases ({s}) ---\n", .{shader_gold_dir});
     const start_shader = std.Io.Clock.Timestamp.now(io, .awake);
     try gen_shader.generateAllFullShaderCases(
         aa,
@@ -65,7 +67,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     std.debug.print(
-        "--- 2/6: Full Texture Cases ({s}) ---\n",
+        "--- 2/9: Full Texture Cases ({s}) ---\n",
         .{texture_gold_dir},
     );
     const start_texture = std.Io.Clock.Timestamp.now(io, .awake);
@@ -86,7 +88,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     std.debug.print(
-        "--- 3/6: Full Distortion + PSF Cases ({s}) ---\n",
+        "--- 3/9: Full Distortion + PSF Cases ({s}) ---\n",
         .{dist_psf_gold_dir},
     );
     const start_dist_psf = std.Io.Clock.Timestamp.now(io, .awake);
@@ -107,7 +109,28 @@ pub fn main(init: std.process.Init) !void {
     );
 
     std.debug.print(
-        "--- 4/6: Full SSAA + Pixel Map Cases ({s}) ---\n",
+        "--- 4/9: Full Distortion Frontend Cases ({s}) ---\n",
+        .{dist_frontend_gold_dir},
+    );
+    const start_dist_frontend = std.Io.Clock.Timestamp.now(io, .awake);
+    try gen_dist_frontend.generateAllFullDistFrontendCases(
+        aa,
+        io,
+        dist_frontend_gold_dir,
+        config,
+    );
+    const end_dist_frontend = std.Io.Clock.Timestamp.now(io, .awake);
+    const dist_frontend_elapsed = @as(
+        f64,
+        @floatFromInt(start_dist_frontend.durationTo(end_dist_frontend).raw.nanoseconds),
+    ) / 1.0e9;
+    std.debug.print(
+        "Distortion Frontend gold generation took {d:.3} seconds.\n\n",
+        .{dist_frontend_elapsed},
+    );
+
+    std.debug.print(
+        "--- 5/9: Full SSAA + Pixel Map Cases ({s}) ---\n",
         .{ssaa_pxmap_gold_dir},
     );
     const start_ssaa_pxmap = std.Io.Clock.Timestamp.now(io, .awake);
@@ -128,7 +151,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     std.debug.print(
-        "--- 5/6: Full Hull Cases ({s}) ---\n",
+        "--- 6/9: Full Hull Cases ({s}) ---\n",
         .{hull_gold_dir},
     );
     const start_hull = std.Io.Clock.Timestamp.now(io, .awake);
@@ -144,7 +167,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     std.debug.print(
-        "--- 6/7: Full Tiling Cases ({s}) ---\n",
+        "--- 7/9: Full Tiling Cases ({s}) ---\n",
         .{tiling_gold_dir},
     );
     const start_tiling = std.Io.Clock.Timestamp.now(io, .awake);
@@ -160,7 +183,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     std.debug.print(
-        "--- 7/8: Full Scene Camera Threads Cases ({s}) ---\n",
+        "--- 8/9: Full Scene Camera Threads Cases ({s}) ---\n",
         .{sct_gold_dir},
     );
     const start_sct = std.Io.Clock.Timestamp.now(io, .awake);
@@ -177,7 +200,7 @@ pub fn main(init: std.process.Init) !void {
 
     const io_gold_dir = policy.goldRoot(.full_image_output);
     std.debug.print(
-        "--- 8/8: Full Image Output Cases ({s}) ---\n",
+        "--- 9/9: Full Image Output Cases ({s}) ---\n",
         .{io_gold_dir},
     );
     const start_io = std.Io.Clock.Timestamp.now(io, .awake);

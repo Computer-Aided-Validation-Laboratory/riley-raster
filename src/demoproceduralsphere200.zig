@@ -17,7 +17,7 @@ const demo_spec = pdemo.DemoSpec{
     .output_default = "./out/demo-procedural-sphere200",
     .pixels_num_default = .{ 800, 500 },
     .comparison = .{
-        .texture_command = "demo1-sphere200",
+        .texture_command = "demo1-sphere",
         .procedural_command = "demo-procedural-sphere200",
     },
     .mask_report_label = "generated mask allocation",

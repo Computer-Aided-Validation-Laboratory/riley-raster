@@ -19,6 +19,21 @@ zig build gen-gold-full -Doptimize=ReleaseSafe
 zig build test-full -Doptimize=ReleaseSafe
 ```
 
+The basic and full gold suites continue after image-comparison failures:
+each failed camera/frame/field writes actual, reference, and (when dimensions
+match) difference images under `fails/`. All remaining cases and sub-suites
+still run. The command exits unsuccessfully only after printing the total
+comparison and other suite-failure counts. Gold files are never updated by a
+test run. Rendering, setup, or artifact-write errors still abort the current
+sub-suite, but the next sub-suite runs.
+The focused verification suite likewise continues through its remaining
+verification cases and reports failure at the end.
+After reviewing and approving distortion failures, run
+`zig build gen-gold-failed-distortion -Doptimize=ReleaseSafe` to regenerate
+only the distinct distortion/PSF and SSAA/pixel-map gold cases represented
+in `fails/`. The generator writes both `.fimg` and `.bmp` references; it does
+not select or modify unrelated full-suite cases.
+
 > [!NOTE]
 > Running `gen-gold-full` and `test-full` with `-Doptimize=ReleaseSafe` is strongly recommended for high throughput, generating and verifying thousands of cases in seconds while maintaining safety checks.
 
@@ -173,6 +188,13 @@ zig build test-full -Doptimize=ReleaseSafe
 - **Coverage** (240 test cases):
   - **SSAA Levels**: $1$ (direct pixel centers) and $4$ ($16$ subpixel samples/pixel).
   - **Distortion Models (10)**: Baseline `none`, light barrel/pincushion ($k_1 = \pm 1000.0$), extreme barrel/pincushion ($k_1 = \pm 2500.0, k_2 = 1.0\times 10^7$) with Brown-Conrady and Brown-Conrady-Ext, and quadratic polynomial distortion combinations.
+
+The focused verification suite keeps two distortion checks separate:
+`distortion_roundtrip` checks Riley's internal forward/inverse consistency,
+while `distortion_oracle` compares scalar and SIMD evaluation, inversion, and
+analytic Jacobians with compact OpenCV/NumPy gold data in `gold/verif/`. Oracle
+tolerances are centralized in `src/dev_support/testconfig.zig`; they do not
+change the production Newton solver tolerances.
   - **Point Spread Functions (4)**: Baseline pixel box (`off`), separable Gaussian ($\sigma = 1.5\text{ px}$), non-separable Gaussian ($\sigma = 1.5\text{ px}$), and anisotropic Gaussian ($\sigma_x = 1.5\text{ px}, \sigma_y = 0.1\text{ px}$).
   - **Buffer Architectures (3)**: Verified for identical bit-accurate output across `tile_local`, `global_subpx_full`, and `global_subpx_stripe`.
 
@@ -181,7 +203,7 @@ zig build test-full -Doptimize=ReleaseSafe
 - **Scene**: Scene 1 (Cube `tri3`)
 - **Coverage** (72 cases):
   - **SSAA Levels**: $1, 2, 3, 4$ ($1, 4, 9, 16$ subpixels per pixel).
-  - **Subpixel Center Mapping Engines**: `full_in_mem` (precomputed global grid), `per_tile` (on-the-fly tile evaluation), and `affine_jac` (first-order Jacobian local approximation).
+  - **Subpixel Center Mapping Engines**: `full_in_mem` (precomputed global grid) and `per_tile` (on-the-fly tile evaluation).
   - **Distortion Models**: Brown-Conrady, Brown-Conrady-Ext, and Brown-Conrady-Polynomial.
   - **PSFs & Halos**: Pixel box and Gaussian halo filtering ($\sigma = 1.5\text{ px}$, $5\text{ px}$ halo margin).
 
@@ -251,3 +273,41 @@ The **Python Test Suite** provides 520+ automated test cases covering:
 2. **File I/O & Exodus Pipeline**: Multi-block Exodus II `.e` and CSV file reading/writing.
 3. **Texture & UV Tools**: Image loading/saving (BMP, TIFF) and centered planar UV projection.
 4. **End-to-End Demo Parity**: Verification that Python demos produce identical pixel output to the corresponding Zig demo binaries.
+
+## Polynomial verification
+
+`zig build test-poly` runs camera/model/loader unit tests without rendering
+the full regression scenes and accepts the normal precision/SIMD build options.
+Use it for f32/f64 and scalar/SIMD development checks. `test-verif` remains
+the production f64/SIMD analytic suite.
+
+The committed distortion oracle covers degrees 1–7, coordinate/displacement
+modes, each isolated monomial, dense asymmetric maps and BC/BCExt composition.
+Expected polynomial values/Jacobians come from NumPy `polyval2d`/`polyder`,
+not Riley. Inverse expected values are known preimages of independently
+generated forward outputs on well-conditioned cases. Cases equivalent to BC
+use OpenCV forward outputs and independent numerical Jacobians, covering
+tangential terms, radial k1/k2/k3 and the polynomial BCExt thin-prism subset.
+General rational/tilted BCExt is checked as composition, not polynomial equivalence.
+
+Oracle case CSV rows have 90 columns: ID, model, degree, mode, 14 Brown
+coefficients, and 36 interleaved coefficient pairs. Padding is fixture transport
+only; evaluated maps borrow exactly their validated active coefficient prefix.
+Fixtures remain alive for all model evaluations. Generation is explicit via
+`zig build gen-gold-verif`; ordinary tests never regenerate expected results.
+
+Python polynomial tests cover all 42 degree/mode/model combinations, invalid
+input, tiny-coefficient serialization precision, caller-buffer C loading,
+loaded storage lifetime, stereo ownership, and BC-equivalent flat-plate renders
+through both subpixel-map modes and one/four workers. The distortion-frontend
+regressions render the analytic Brown-Conrady k1 triangle whose observed
+interior extends beyond the distorted vertex bounds, across scalar/SIMD,
+subpixel-map, buffer and SSAA choices. Direct tests compare scalar/SIMD fixed
+edge sampling, including a smooth between-sample radial extremum. These
+checks are integration regressions, not a proof for arbitrary sharply varying
+distortion or an ideal hull that fails to enclose its element. Distortion-enabled
+full-suite gold images may change; inspect `fails/` before regenerating gold.
+
+`zig build bench-poly -Doptimize=ReleaseFast` measures runtime-selected
+degree-1/3/5/7 scalar/SIMD forward, Jacobian and inverse kernels in both modes.
+It reports warm-start repeated timings, checksums and descriptor sizes.
