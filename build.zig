@@ -17,6 +17,7 @@ const TestEntry = struct {
     step_name: []const u8,
     description: []const u8,
     source_path: []const u8,
+    filters: []const []const u8 = &.{},
 };
 
 const BuildOptions = struct {
@@ -86,6 +87,12 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(shared_lib);
 
     const tests = [_]TestEntry{
+        .{
+            .step_name = "test-speckle-benchmark",
+            .description = "Run focused native material benchmark tests",
+            .source_path = "src/bench_speckle_evaluators.zig",
+            .filters = &.{"speckle benchmark"},
+        },
         .{
             .step_name = "test-poly",
             .description = "Run camera-model unit tests across supported build configurations",
@@ -317,6 +324,11 @@ pub fn build(b: *std.Build) void {
 
     const benches = [_]RunEntry{
         .{
+            .step_name = "bench-speckle-evaluators",
+            .description = "Benchmark catalog evaluators or textures with evaluation-only or production full-render workloads",
+            .source_path = "src/bench_speckle_evaluators.zig",
+        },
+        .{
             .step_name = "bench-poly",
             .description = "Benchmark polynomial forward, Jacobian and inverse kernels",
             .source_path = "src/benchpoly.zig",
@@ -481,6 +493,7 @@ fn addTestRunStep(
     const tests = b.addTest(.{
         .name = entry.step_name,
         .root_module = test_module,
+        .filters = entry.filters,
         .test_runner = .{
             .path = b.path("src/dev_support/testrunner.zig"),
             .mode = .simple,

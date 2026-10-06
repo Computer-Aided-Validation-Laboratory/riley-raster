@@ -305,11 +305,13 @@ pub fn initMeshStatic(
             } };
         },
         .tex_u8 => |tex_in| {
+            const resource_start = @import("benchtiming.zig").start();
             const elem_uvs = try prepUVs(
                 allocator,
                 &tex_in.uvs,
                 &mesh_input.connect,
             );
+            @import("benchtiming.zig").resourceEnd(resource_start);
             shader_static = .{ .tex_u8 = .{
                 .elem_uvs = elem_uvs,
                 .tex = tex_in.tex,
@@ -407,12 +409,15 @@ pub fn initMeshStatic(
                 func_input.builtin,
                 func_input.params,
             );
+            const resource_start = @import("benchtiming.zig").start();
+            const resources: speckleops.Resources = if (func_input.builtin == .speckle)
+                try speckleops.generateResources(allocator, params.settings.speckle)
+            else
+                .{};
+            if (func_input.builtin == .speckle) @import("benchtiming.zig").resourceEnd(resource_start);
             const func_static: shaderops.FuncStatic = .{
                 .elem_uvs = elem_uvs,
-                .speckle_resources = if (func_input.builtin == .speckle)
-                    try speckleops.generateResources(allocator, params.settings.speckle)
-                else
-                    .{},
+                .speckle_resources = resources,
                 .coord_mode = func_input.coord_mode,
                 .builtin = func_input.builtin,
                 .params = params,
@@ -540,7 +545,7 @@ pub const FrameGeomResult = struct {
 
 // Outside of pipeline because these are static - we gather these into an NDarray once
 // for all frames and cameras
-fn prepUVs(
+pub fn prepUVs(
     outer_alloc: std.mem.Allocator,
     uvs: *const ndarray.NDArray(F),
     connect: *const meshio.Connect,

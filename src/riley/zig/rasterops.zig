@@ -1022,7 +1022,8 @@ fn isTri3BackfaceRaster(coords_raster: RasterCoords2D(3)) bool {
     return signed_area <= tol.culling.tri3_signed_area;
 }
 
-fn isHighOrdBackface(
+/// Shared nodal-normal culling rule for prepared and traversal-time geometry.
+pub fn isHighOrdBackface(
     comptime N: usize,
     coords_raster: RasterCoords2D(N),
 ) bool {
