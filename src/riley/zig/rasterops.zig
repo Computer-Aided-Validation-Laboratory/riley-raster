@@ -123,7 +123,6 @@ pub fn calcVisibleDistortBBox(
         if (isTri3BackfaceRaster(nodes)) return null;
 
         ideal_bounds = db.DistortBounds.fromCoords2D(N, nodes);
-
     } else {
         const nodes = projectClipToIdealRaster(N, camera, coords);
 

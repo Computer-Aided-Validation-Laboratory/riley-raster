@@ -488,7 +488,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 ),
                 .list_indexed_2 => evalSpeckleSIMDImpl(
                     soft_edges,
-                    evalDenseSpeckleList2DImpl,
+                    evalSpeckleList2DIndexedImpl,
                     u,
                     v,
                     resources.dense_list.?,
@@ -745,15 +745,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             return .{ .params = params, .disks = disks, .cell_origin = bounds.min, .cell_dims = bounds.dims };
         }
 
-        fn evalDenseSpeckleList2DImpl(
-            comptime soft_edges: bool,
-            u: F,
-            v: F,
-            speckles: DenseSpeckleList2D,
-        ) F {
-            return evalSpeckleList2DIndexedImpl(soft_edges, u, v, speckles);
-        }
-
         const strip_length: usize = switch (speckle_neighbor_count) {
             9 => 3,
             4 => 2,
@@ -791,7 +782,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             v: F,
             speckles: StripSpeckleList2D,
         ) F {
-            if (comptime speckle_neighbor_count == 1) return evalDenseSpeckleList2DImpl(soft_edges, u, v, speckles);
+            if (comptime speckle_neighbor_count == 1) return evalSpeckleList2DIndexedImpl(soft_edges, u, v, speckles);
             const uv = [2]F{ u, v };
             const params = speckles.params;
             if (speckles.disks.len == 0 or params.foreground == params.background) {
@@ -3581,7 +3572,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 else switch (comptime config.evaluator) {
                     .cell_hash => evalSpeckle2D(uv, params),
                     .list_naive, .list_indexed => evalSpeckleList2D(uv, resources.list.?),
-                    .list_indexed_2 => evalDenseSpeckleList2DImpl(config.soft_edges, uv[0], uv[1], resources.dense_list.?),
+                    .list_indexed_2 => evalSpeckleList2DIndexedImpl(config.soft_edges, uv[0], uv[1], resources.dense_list.?),
                     .list_indexed_3 => evalStripSpeckleList2DImpl(config.soft_edges, uv[0], uv[1], resources.strip_list.?),
                     .classified_indexed => evalClassifiedIndexedSpeckle2D(
                         uv,
@@ -3891,7 +3882,7 @@ test "strip indexed records and samples match dense bitwise across occupancy and
                     if (disk.radius < 0.0) continue;
                     const u = (disk.center[0] - table.params.uv_offset[0]) / table.params.cells_per_uv[0];
                     const v = (disk.center[1] - table.params.uv_offset[1]) / table.params.cells_per_uv[1];
-                    const before: [S]F = Impl.evalSpeckleSIMDImpl(config.soft_edges, Impl.evalDenseSpeckleList2DImpl, @splat(u), @splat(v), table, table.params.background);
+                    const before: [S]F = Impl.evalSpeckleSIMDImpl(config.soft_edges, Impl.evalSpeckleList2DIndexedImpl, @splat(u), @splat(v), table, table.params.background);
                     const after: [S]F = sampleSIMD(@splat(u), @splat(v), @splat(false), params, &indexed);
                     for (before, after) |reference, actual| try std.testing.expectEqual(@as(Bits, @bitCast(reference)), @as(Bits, @bitCast(actual)));
                 }
@@ -3903,7 +3894,7 @@ test "strip indexed records and samples match dense bitwise across occupancy and
                         us[lane] = @as(F, @floatFromInt(batch % 8)) / 8.0 + shift;
                         vs[lane] = @as(F, @floatFromInt(batch / 8)) / 8.0 - shift;
                     }
-                    const before: [S]F = Impl.evalSpeckleSIMDImpl(config.soft_edges, Impl.evalDenseSpeckleList2DImpl, us, vs, table, table.params.background);
+                    const before: [S]F = Impl.evalSpeckleSIMDImpl(config.soft_edges, Impl.evalSpeckleList2DIndexedImpl, us, vs, table, table.params.background);
                     const after: [S]F = sampleSIMD(us, vs, @splat(false), params, &indexed);
                     for (before, after) |reference, actual| try std.testing.expectEqual(@as(Bits, @bitCast(reference)), @as(Bits, @bitCast(actual)));
                 }
@@ -3937,7 +3928,7 @@ test "strip indexed records and samples match dense bitwise across occupancy and
                             };
                         }
                     }
-                    const expected: [S]F = Impl.evalSpeckleSIMDImpl(config.soft_edges, Impl.evalDenseSpeckleList2DImpl, us, vs, table, table.params.background);
+                    const expected: [S]F = Impl.evalSpeckleSIMDImpl(config.soft_edges, Impl.evalSpeckleList2DIndexedImpl, us, vs, table, table.params.background);
                     const actual: [S]F = sampleSIMD(us, vs, active, params, &indexed);
                     for (us, vs) |u, v| {
                         if (!std.math.isFinite(u) or !std.math.isFinite(v)) continue;
