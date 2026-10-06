@@ -62,22 +62,55 @@ pub const CaseStats = struct {
         min_robust_hits: usize,
     ) !void {
         std.debug.print(
-            "\n[{s}] oracle_rays={d} fast_hits={d} fast_nearest={d} " ++
-                "robust_hits={d} robust_nearest={d}\n",
+            "[{s}] oracle_rays={d}\n" ++
+                "  fast:   hits={d} (expected>={d}) nearest={d}\n" ++
+                "  robust: hits={d} (expected>={d}) nearest={d}\n",
             .{
                 label,
                 self.oracle_rays,
                 self.fast_hits,
+                min_fast_hits,
                 self.fast_nearest,
                 self.robust_hits,
+                min_robust_hits,
                 self.robust_nearest,
             },
         );
-        try std.testing.expect(self.oracle_rays > 0);
-        try std.testing.expect(self.robust_hits >= self.fast_hits);
-        try std.testing.expect(self.robust_nearest >= self.fast_nearest);
-        try std.testing.expect(self.fast_hits >= min_fast_hits);
-        try std.testing.expect(self.robust_hits >= min_robust_hits);
+        if (self.oracle_rays == 0) {
+            std.debug.print(
+                "ERROR: [{s}] no oracle rays found\n",
+                .{label},
+            );
+            return error.NoOracleRays;
+        }
+        if (self.fast_hits < min_fast_hits) {
+            std.debug.print(
+                "ERROR: [{s}] fast solver hit regression: got {d}, expected >= {d}\n",
+                .{ label, self.fast_hits, min_fast_hits },
+            );
+            return error.FastSolverHitRegression;
+        }
+        if (self.robust_hits < min_robust_hits) {
+            std.debug.print(
+                "ERROR: [{s}] robust solver hit regression: got {d}, expected >= {d}\n",
+                .{ label, self.robust_hits, min_robust_hits },
+            );
+            return error.RobustSolverHitRegression;
+        }
+        if (self.robust_hits < self.fast_hits) {
+            std.debug.print(
+                "ERROR: [{s}] robust hits ({d}) < fast hits ({d})\n",
+                .{ label, self.robust_hits, self.fast_hits },
+            );
+            return error.RobustHitsLessThanFast;
+        }
+        if (self.robust_nearest < self.fast_nearest) {
+            std.debug.print(
+                "ERROR: [{s}] robust nearest ({d}) < fast nearest ({d})\n",
+                .{ label, self.robust_nearest, self.fast_nearest },
+            );
+            return error.RobustNearestLessThanFast;
+        }
     }
 };
 
