@@ -33,10 +33,6 @@ const GlobalSubpxScratchBuffs = struct {
     touched_min_x: []usize,
     touched_max_x: []usize,
     ideal_pix_cent: []align(64) F,
-    coherent_caches: []@import("coherentseed.zig").Cache,
-    coherent_local_success: []bool,
-    coherent_first_reused: []bool,
-    coherent_prebank_depth: []F,
     target_stride_subpx: usize = 0,
     target_subx_min: i32 = 0,
     target_suby_min: i32 = 0,
@@ -85,10 +81,6 @@ const GlobalBackend = struct {
             .touched_min_x = local.touched_min_x,
             .touched_max_x = local.touched_max_x,
             .ideal_pix_cent = local.ideal_pix_cent,
-            .coherent_caches = local.coherent_caches,
-            .coherent_local_success = local.coherent_local_success,
-            .coherent_first_reused = local.coherent_first_reused,
-            .coherent_prebank_depth = local.coherent_prebank_depth,
         };
     }
 

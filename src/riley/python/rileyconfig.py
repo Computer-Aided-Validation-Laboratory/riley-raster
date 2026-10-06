@@ -14,6 +14,7 @@ from riley.cython.riley import (
     HullMode,
     ImageFormat,
     ImageSaveMode,
+    MultirootSolverMode,
     NewtonSeedMode,
     NewtonSeedReuse,
     RasterConfig,
@@ -63,8 +64,8 @@ def create_raster_config(
     Raises
     ------
     TypeError
-        If `num_frames`, `num_cameras`, or `total_threads` is not an integer, or
-        `save_strategy` is not a `SaveStrategy` member.
+        If `num_frames`, `num_cameras`, or `total_threads` is not an
+        integer, or `save_strategy` is not a `SaveStrategy` member.
     ValueError
         If `num_frames`, `num_cameras`, or `total_threads` is not positive.
     """
@@ -117,10 +118,10 @@ def create_raster_config(
         max_raster_workers_per_job=workers_per_group,
         save_strategy=save_strategy,
         image_save_mode=ImageSaveMode.grey,
-        hull_mode=HullMode.on_no_fallback,
-        one_root_seed_mode=NewtonSeedMode.centroid,
-        one_root_seed_reuse=NewtonSeedReuse.off,
-        multi_root_seed_bank_depth=3,
+        oneroot_hull_mode=HullMode.on_no_fallback,
+        oneroot_newton_seed_mode=NewtonSeedMode.centroid,
+        oneroot_newton_seed_reuse=NewtonSeedReuse.off,
+        multiroot_mode=MultirootSolverMode.fast,
         validate_input=validate_input,
         report=ReportMode.bench,
         save_format=ImageFormat.bmp,

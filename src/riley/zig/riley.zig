@@ -48,6 +48,9 @@ pub const AdvancedConfig = rastcfg.AdvancedConfig;
 pub const RasterTuning = rastcfg.RasterTuning;
 pub const DistortionTuning = rastcfg.DistortionTuning;
 pub const SolverTuning = rastcfg.SolverTuning;
+pub const SolverTuningOneRoot = rastcfg.SolverTuningOneRoot;
+pub const SolverTuningMultiroot = rastcfg.SolverTuningMultiroot;
+pub const MultirootSolverMode = rastcfg.MultirootSolverMode;
 pub const BufferMode = rastcfg.BufferMode;
 pub const ImageSaveMode = rastcfg.ImageSaveMode;
 pub const SaveStrategy = rastcfg.SaveStrategy;
@@ -1333,7 +1336,8 @@ fn sceneGlobalTileElemOverlap(
                 const bucket_start = overlaps.items.len;
                 for (elem_bboxes_by_mesh, 0..) |elem_bboxes, mesh_idx| {
                     const maybe_float_bboxes = elem_float_bboxes_by_mesh[mesh_idx];
-                    for (elem_bboxes[0..elems_in_image_by_mesh[mesh_idx]], 0..) |elem_bbox, ee| {
+                    const count = elems_in_image_by_mesh[mesh_idx];
+                    for (elem_bboxes[0..count], 0..) |elem_bbox, ee| {
                         if (@intFromEnum(rops.bucketForElem(
                             mesh_types[mesh_idx],
                             root_classes_by_mesh[mesh_idx],
@@ -1845,7 +1849,8 @@ fn rasterFrame(
             .output_h_subpx = @as(usize, frame_job.camera.pixels_num[1]) * sub_samp,
             .outer_halo_subpx = @as(usize, halo_px) * sub_samp,
             .tile_core_subpx = @as(usize, ctx.actual_tile_size) * sub_samp,
-            .tile_scratch_subpx = (@as(usize, ctx.actual_tile_size) + 2 * @as(usize, halo_px)) * sub_samp,
+            .tile_scratch_subpx = (@as(usize, ctx.actual_tile_size) +
+                2 * @as(usize, halo_px)) * sub_samp,
         };
     }
 

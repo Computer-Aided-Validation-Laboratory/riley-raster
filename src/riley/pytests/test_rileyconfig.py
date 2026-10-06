@@ -12,13 +12,13 @@ def test_create_raster_config_uses_enum_default() -> None:
     assert config.save_strategy is riley.SaveStrategy.both
     assert config.max_raster_workers_per_job == 2
     assert config.validate_input is riley.ValidateInput.fast
-    assert config.multi_root_seed_bank_depth == 3
+    assert config.multiroot_mode == riley.MultirootSolverMode.fast
 
 
-def test_multi_root_seed_bank_depth_can_be_configured() -> None:
+def test_multiroot_solver_mode_can_be_configured() -> None:
     config = riley.create_raster_config(1, 1)
-    config.multi_root_seed_bank_depth = 7
-    assert config.multi_root_seed_bank_depth == 7
+    config.multiroot_mode = int(riley.MultirootSolverMode.robust)
+    assert config.multiroot_mode == riley.MultirootSolverMode.robust
 
 
 def test_create_raster_config_accepts_validate_input_modes() -> None:

@@ -75,10 +75,6 @@ pub const InputValidationError = error{
     InvalidTileSizeRange,
     InvalidTileSizeOverride,
     InvalidDistortEdgeSpacing,
-    InvalidMultiRootSeedBankDepth,
-    InvalidMultiRootReuseRadius,
-    InvalidMultiRootAdaptiveDepth,
-    InvalidMultiRootAdaptiveStop,
     InvalidGlobalSubpxTileSizeMin,
     InvalidGlobalSubpxTileSizeMax,
     InvalidGlobalSubpxTileSizeRange,
@@ -220,22 +216,6 @@ fn checkTopLevelAndRenderGroups(
 }
 
 fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
-    const depth = config.advanced.solver.multi_root.seed_bank_depth;
-    if (depth == 0 or depth > 17) {
-        return error.InvalidMultiRootSeedBankDepth;
-    }
-    const multi = config.advanced.solver.multi_root;
-    if (multi.reuse_radius_rows == 0 or multi.reuse_radius_rows > 4) {
-        return error.InvalidMultiRootReuseRadius;
-    }
-    if (multi.adaptive_max_depth == 0 or multi.adaptive_max_depth > 3) {
-        return error.InvalidMultiRootAdaptiveDepth;
-    }
-    if (!std.math.isFinite(multi.adaptive_stop_px) or
-        multi.adaptive_stop_px <= 0)
-    {
-        return error.InvalidMultiRootAdaptiveStop;
-    }
     if (!std.math.isFinite(config.advanced.distortion.edge_spacing_px) or
         config.advanced.distortion.edge_spacing_px <= 0.0)
     {
@@ -930,49 +910,3 @@ test "raster configuration rejects invalid distortion edge spacing" {
     }
 }
 
-test "raster configuration rejects invalid multi-root seed bank depth" {
-    var config = rastcfg.RasterConfig{};
-    for ([_]u8{ 0, 18, 255 }) |depth| {
-        config.advanced.solver.multi_root.seed_bank_depth = depth;
-        try std.testing.expectError(
-            error.InvalidMultiRootSeedBankDepth,
-            checkRasterConfig(config),
-        );
-    }
-    config.advanced.solver.multi_root.seed_bank_depth = 17;
-    try checkRasterConfig(config);
-}
-
-test "raster configuration bounds multi-root coherent reuse radius" {
-    var config = rastcfg.RasterConfig{};
-    for ([_]u8{ 0, 5, 255 }) |radius| {
-        config.advanced.solver.multi_root.reuse_radius_rows = radius;
-        try std.testing.expectError(
-            error.InvalidMultiRootReuseRadius,
-            checkRasterConfig(config),
-        );
-    }
-    for ([_]u8{ 1, 4 }) |radius| {
-        config.advanced.solver.multi_root.reuse_radius_rows = radius;
-        try checkRasterConfig(config);
-    }
-}
-
-test "raster configuration rejects invalid multi-root hierarchy tuning" {
-    var config = rastcfg.RasterConfig{};
-    for ([_]u8{ 0, 4, 255 }) |depth| {
-        config.advanced.solver.multi_root.adaptive_max_depth = depth;
-        try std.testing.expectError(
-            error.InvalidMultiRootAdaptiveDepth,
-            checkRasterConfig(config),
-        );
-    }
-    config.advanced.solver.multi_root.adaptive_max_depth = 3;
-    for ([_]F{ 0, -1, std.math.nan(F), std.math.inf(F) }) |stop_px| {
-        config.advanced.solver.multi_root.adaptive_stop_px = stop_px;
-        try std.testing.expectError(
-            error.InvalidMultiRootAdaptiveStop,
-            checkRasterConfig(config),
-        );
-    }
-}

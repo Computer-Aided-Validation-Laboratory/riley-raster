@@ -85,11 +85,8 @@ pub fn getRasterConfig(mode: RasterConfigMode) rastcfg.RasterConfig {
     var config = rastcfg.RasterConfig{
         .advanced = .{
             .solver = .{
-                .hull_mode = HULL_MODE,
-                // Existing gold was generated with camera-depth seed order.
-                // The public default is front-facing order; retain this
-                // explicit policy for historical render regression coverage.
-                .multi_root = .{ .method = .legacy_depth },
+                .oneroot = .{ .hull_mode = HULL_MODE },
+                .multiroot = .{ .mode = .fast },
             },
         },
     };

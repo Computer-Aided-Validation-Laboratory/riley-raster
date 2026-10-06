@@ -292,10 +292,10 @@ pub const CRasterConfig = extern struct {
     max_raster_workers_per_job: u16,
     save_strategy: u32,
     image_save_mode: u32,
-    hull_mode: u32,
-    one_root_seed_mode: u32,
-    one_root_seed_reuse: u32,
-    multi_root_seed_bank_depth: u8,
+    oneroot_hull_mode: u32,
+    oneroot_newton_seed_mode: u32,
+    oneroot_newton_seed_reuse: u32,
+    multiroot_mode: u32,
     validate_input: u32,
     report: u32,
     tile_size_min: u16,
@@ -571,6 +571,16 @@ fn newtonSeedReuseFromC(
         @intFromEnum(rastcfg.NewtonSeedReuse.off) => .off,
         @intFromEnum(rastcfg.NewtonSeedReuse.last_conv) => .last_conv,
         else => error.InvalidNewtonSeedReuse,
+    };
+}
+
+fn multirootModeFromC(
+    mode: u32,
+) !rastcfg.MultirootSolverMode {
+    return switch (mode) {
+        @intFromEnum(rastcfg.MultirootSolverMode.fast) => .fast,
+        @intFromEnum(rastcfg.MultirootSolverMode.robust) => .robust,
+        else => error.InvalidMultirootSolverMode,
     };
 }
 
@@ -1541,15 +1551,18 @@ fn buildRasterConfig(
         .auto;
     config.save_strategy = try saveStrategyFromC(in_config.save_strategy);
     config.output.image_save_mode = try imageSaveModeFromC(in_config.image_save_mode);
-    config.advanced.solver.hull_mode = try hullModeFromC(in_config.hull_mode);
-    config.advanced.solver.one_root.mode = try newtonSeedModeFromC(
-        in_config.one_root_seed_mode,
+    config.advanced.solver.oneroot.hull_mode = try hullModeFromC(
+        in_config.oneroot_hull_mode,
     );
-    config.advanced.solver.one_root.reuse = try newtonSeedReuseFromC(
-        in_config.one_root_seed_reuse,
+    config.advanced.solver.oneroot.newton_seed_mode = try newtonSeedModeFromC(
+        in_config.oneroot_newton_seed_mode,
     );
-    config.advanced.solver.multi_root.seed_bank_depth =
-        in_config.multi_root_seed_bank_depth;
+    config.advanced.solver.oneroot.newton_seed_reuse = try newtonSeedReuseFromC(
+        in_config.oneroot_newton_seed_reuse,
+    );
+    config.advanced.solver.multiroot.mode = try multirootModeFromC(
+        in_config.multiroot_mode,
+    );
     config.validation = try validateInputFromC(
         in_config.validate_input,
     );

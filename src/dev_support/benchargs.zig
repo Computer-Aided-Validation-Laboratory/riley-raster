@@ -79,7 +79,7 @@ pub fn defaultBenchArgs(
         .max_geom_workers_per_job = 1,
         .geom_scheduling_mode = .auto,
         .max_raster_workers_per_job = 1,
-        .hull_mode = raster_config.advanced.solver.hull_mode,
+        .hull_mode = raster_config.advanced.solver.oneroot.hull_mode,
         .subpixel_center_map = .per_tile,
         .save_strategy = .memory,
         .disk_save_overlap = raster_config.output.disk_save_overlap,
@@ -244,7 +244,7 @@ pub fn applyRasterConfig(
     var raster_config = base_config;
     raster_config.render_mode = bench_args.render_mode;
     raster_config.parallel = .{ .threads = bench_args.total_threads };
-    raster_config.advanced.solver.hull_mode = bench_args.hull_mode;
+    raster_config.advanced.solver.oneroot.hull_mode = bench_args.hull_mode;
     raster_config.save_strategy = bench_args.save_strategy;
     raster_config.output.disk_save_overlap = bench_args.disk_save_overlap;
     return raster_config;
@@ -291,7 +291,7 @@ test "parse bench args defaults" {
         .render_mode = .offline,
         .parallel = .{ .threads = 3 },
     };
-    raster_config.advanced.solver.hull_mode = .on_convex_fallback;
+    raster_config.advanced.solver.oneroot.hull_mode = .on_convex_fallback;
     const bench_args = try parseArgs(
         args[0..],
         "out/geom",

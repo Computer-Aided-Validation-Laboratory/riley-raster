@@ -127,9 +127,9 @@ fn runOneElemHullCaseTest(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.advanced.solver.hull_mode = hull_case.mode;
-    run_config.advanced.solver.one_root.mode = seed_case.seed_mode;
-    run_config.advanced.solver.one_root.reuse = seed_case.seed_reuse;
+    run_config.advanced.solver.oneroot.hull_mode = hull_case.mode;
+    run_config.advanced.solver.oneroot.newton_seed_mode = seed_case.seed_mode;
+    run_config.advanced.solver.oneroot.newton_seed_reuse = seed_case.seed_reuse;
 
     const start_time = Timestamp.now(io, .awake);
     const result = try riley.raster(
@@ -278,9 +278,9 @@ fn runScene2HullCaseTest(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.advanced.solver.hull_mode = hull_case.mode;
-    run_config.advanced.solver.one_root.mode = seed_case.seed_mode;
-    run_config.advanced.solver.one_root.reuse = seed_case.seed_reuse;
+    run_config.advanced.solver.oneroot.hull_mode = hull_case.mode;
+    run_config.advanced.solver.oneroot.newton_seed_mode = seed_case.seed_mode;
+    run_config.advanced.solver.oneroot.newton_seed_reuse = seed_case.seed_reuse;
 
     const start_time = Timestamp.now(io, .awake);
     const result = try riley.raster(

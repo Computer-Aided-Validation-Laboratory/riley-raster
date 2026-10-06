@@ -1758,7 +1758,7 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
 
     var run_config = config;
     if (hull_mode) |hm| {
-        run_config.advanced.solver.hull_mode = hm;
+        run_config.advanced.solver.oneroot.hull_mode = hm;
     }
     if (mode == .test_gold) {
         run_config.save_strategy = .memory;

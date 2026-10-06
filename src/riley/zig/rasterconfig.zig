@@ -62,7 +62,7 @@ pub const ReportConfig = struct {
 pub const AdvancedConfig = struct {
     raster: RasterTuning = .{},
     distortion: DistortionTuning = .{},
-    solver: SolverPolicy = .{},
+    solver: SolverTuning = .{},
 };
 
 pub const RasterTuning = struct {
@@ -83,59 +83,57 @@ pub const DistortionTuning = struct {
     edge_spacing_px: F = 1.0,
 };
 
-pub const SolverPolicy = struct {
+pub const SolverTuning = struct {
+    oneroot: SolverTuningOneRoot = .{},
+    multiroot: SolverTuningMultiroot = .{},
+};
+
+pub const SolverTuningOneRoot = struct {
     hull_mode: HullMode = .on_no_fallback,
-    one_root: OneRootSeedPolicy = .{},
-    multi_root: MultiRootSeedPolicy = .{},
+    newton_seed_mode: NewtonSeedMode = .centroid,
+    newton_seed_reuse: NewtonSeedReuse = .off,
 };
 
-pub const OneRootSeedPolicy = struct {
-    mode: NewtonSeedMode = .centroid,
-    reuse: NewtonSeedReuse = .off,
+pub const SolverTuningMultiroot = struct {
+    mode: MultirootSolverMode = .fast,
 };
 
-pub const MultiRootSeedPolicy = struct {
-    /// The default tries three front-facing seeds in near/middle/far order.
-    method: MultiRootMethod = .legacy_front,
-    /// Maximum legacy Newton starts per multi-root element.
-    /// Candidates are nodes, centroid-to-node midpoints, and the centroid.
-    /// Quad9 uses its center node instead of a duplicate virtual centroid.
-    /// Valid range: 1..17; each element uses at most its candidate count.
-    seed_bank_depth: u8 = 3,
-    /// Maximum gap, in raster subpixel rows, for same-column child-root reuse.
-    reuse_radius_rows: u8 = 1,
-    /// Local predictor used by the fixed4 reuse experiment methods.
-    reuse_method: @import("coherentseed.zig").ReuseMethod = .column,
-    /// Diagnostic: retry the legacy bank when all child-centre solves fail.
-    legacy_fallback: bool = false,
-    /// Diagnostic single-step frozen-Jacobian seed refinement.
-    single_frozen_jac: bool = false,
-    child_seed: MultiRootChildSeed = .center,
-    /// Adaptive preprocessing only; the raster loop visits flat leaves.
-    adaptive_max_depth: u8 = 3,
-    adaptive_stop_px: F = 8,
-};
-
-pub const MultiRootMethod = enum {
-    legacy_depth,
-    legacy_front,
-    fixed4,
-    fixed4_reuse,
-    fixed4_centre_reuse,
-    fixed16,
-    adaptive,
-    patch_center,
-    patch_reuse,
-    patch_reuse_seedbank,
-    patch_extrapolate,
-    patch_extrapolate_seedbank,
-    all_seeds,
-};
-
-pub const MultiRootChildSeed = enum {
-    center,
-    front_near,
-    front_strong,
+/// Controls the solver used for elements classified as potentially multi-root
+/// under camera projection.
+///
+/// Both modes use the same fixed four-child Bézier patch hierarchy:
+///
+/// 1. test the whole-element conservative projected hull;
+/// 2. test the four conservative projected child-patch hulls;
+/// 3. for each candidate child, start Newton from that child's parent-space
+///    centre;
+/// 4. retain the nearest accepted front-facing root.
+///
+/// `.fast`
+///     Uses only the fixed4 child-centre solves.
+///
+///     This is the default and preferred engineering mode. It provides the
+///     best measured throughput/accuracy tradeoff for Riley's supported
+///     geometry while keeping work bounded and simple. Some difficult
+///     saddle/multi-root rays may be missed when the child-centre seed lies
+///     outside the desired Newton basin.
+///
+/// `.robust`
+///     Runs the same fixed4 child-centre path first. If no candidate child
+///     yields an accepted front-facing root, Riley performs one additional
+///     bounded fallback using the front-facing, camera-depth-ordered seed bank
+///     with depth 3.
+///
+///     This improves recovery on difficult multi-root/saddle cases at higher
+///     computational cost. The fallback is sample-wide and runs only after
+///     all fixed4 child-centre attempts fail.
+///
+/// Neither mode attempts exhaustive global root finding. Riley intentionally
+/// uses bounded engineering strategies rather than unbounded or full-bank
+/// searches.
+pub const MultirootSolverMode = enum {
+    fast,
+    robust,
 };
 
 pub const ValidateInput = enum(u32) {
@@ -215,8 +213,10 @@ pub const FullStatsOpts = struct {
     save_normals_map: bool = false,
 };
 
-test "multi-root default remains the three-seed front-facing policy" {
-    const policy = MultiRootSeedPolicy{};
-    try std.testing.expectEqual(MultiRootMethod.legacy_front, policy.method);
-    try std.testing.expectEqual(@as(u8, 3), policy.seed_bank_depth);
+test "multiroot default solver mode is fast" {
+    const config = RasterConfig{};
+    try std.testing.expectEqual(
+        MultirootSolverMode.fast,
+        config.advanced.solver.multiroot.mode,
+    );
 }

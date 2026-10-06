@@ -33,15 +33,7 @@ const BenchArgs = struct {
     sub_sample: u32 = 1,
     scene: SceneKind = .multi_root,
     flat_scale: F = 1,
-    method: rastcfg.MultiRootMethod = .legacy_front,
-    child_seed: rastcfg.MultiRootChildSeed = .center,
-    seed_bank_depth: u8 = 3,
-    reuse_radius_rows: u8 = 1,
-    reuse_method: @import("riley/zig/coherentseed.zig").ReuseMethod = .column,
-    legacy_fallback: bool = false,
-    single_frozen_jac: bool = false,
-    adaptive_max_depth: u8 = 3,
-    adaptive_stop_px: F = 8,
+    mode: rastcfg.MultirootSolverMode = .fast,
 };
 
 fn argSlice(arg: anytype) []const u8 {
@@ -83,33 +75,11 @@ fn parseArgs(args: anytype) !BenchArgs {
                 return error.InvalidScene;
         } else if (std.mem.eql(u8, key, "--flat-scale")) {
             result.flat_scale = try std.fmt.parseFloat(F, value);
-        } else if (std.mem.eql(u8, key, "--method")) {
-            result.method = std.meta.stringToEnum(
-                rastcfg.MultiRootMethod,
+        } else if (std.mem.eql(u8, key, "--mode")) {
+            result.mode = std.meta.stringToEnum(
+                rastcfg.MultirootSolverMode,
                 value,
-            ) orelse return error.InvalidMethod;
-        } else if (std.mem.eql(u8, key, "--child-seed")) {
-            result.child_seed = std.meta.stringToEnum(
-                rastcfg.MultiRootChildSeed,
-                value,
-            ) orelse return error.InvalidChildSeed;
-        } else if (std.mem.eql(u8, key, "--seed-bank-depth")) {
-            result.seed_bank_depth = try std.fmt.parseInt(u8, value, 10);
-        } else if (std.mem.eql(u8, key, "--reuse-radius-rows")) {
-            result.reuse_radius_rows = try std.fmt.parseInt(u8, value, 10);
-        } else if (std.mem.eql(u8, key, "--reuse-method")) {
-            result.reuse_method = std.meta.stringToEnum(
-                @TypeOf(result.reuse_method),
-                value,
-            ) orelse return error.InvalidReuseMethod;
-        } else if (std.mem.eql(u8, key, "--legacy-fallback")) {
-            result.legacy_fallback = try parseBool(value);
-        } else if (std.mem.eql(u8, key, "--single-frozen-jac")) {
-            result.single_frozen_jac = try parseBool(value);
-        } else if (std.mem.eql(u8, key, "--adaptive-max-depth")) {
-            result.adaptive_max_depth = try std.fmt.parseInt(u8, value, 10);
-        } else if (std.mem.eql(u8, key, "--adaptive-stop-px")) {
-            result.adaptive_stop_px = try std.fmt.parseFloat(F, value);
+            ) orelse return error.InvalidMode;
         } else {
             return error.UnknownArgument;
         }
@@ -347,16 +317,8 @@ pub fn main(init: std.process.Init) !void {
         .report = .{ .mode = .bench },
         .advanced = .{
             .solver = .{
-                .multi_root = .{
-                    .method = args.method,
-                    .seed_bank_depth = args.seed_bank_depth,
-                    .reuse_radius_rows = args.reuse_radius_rows,
-                    .reuse_method = args.reuse_method,
-                    .legacy_fallback = args.legacy_fallback,
-                    .single_frozen_jac = args.single_frozen_jac,
-                    .child_seed = args.child_seed,
-                    .adaptive_max_depth = args.adaptive_max_depth,
-                    .adaptive_stop_px = args.adaptive_stop_px,
+                .multiroot = .{
+                    .mode = args.mode,
                 },
             },
         },
@@ -369,17 +331,10 @@ pub fn main(init: std.process.Init) !void {
     var buffered = file.writer(io, &write_buf);
     const writer = &buffered.interface;
     try writer.writeAll(
-        "scene,flat_scale,method,child_seed,legacy_fallback," ++
-            "single_frozen_jac,adaptive_max_depth,adaptive_stop_px," ++
-            "reuse_radius_rows,reuse_method,run,elements,width,height,sub_sample," ++
+        "scene,flat_scale,mode,run,elements,width,height,sub_sample," ++
             "visible,shaded,solver_calls,solver_iters,solver_diverged," ++
             "geometry_ms,prepare_ms,raster_ms,active_ms,e2e_ms," ++
-            "melems_s,mpx_s,candidate_children,cache_eligible," ++
-            "cache_attempts,cache_successes,cache_failures," ++
-            "extrap_attempts,extrap_successes,center_attempts," ++
-            "center_successes,bank_fallbacks,bank_fallback_successes," ++
-            "bank_improved,bank_recovered,bank_numerical_ties," ++
-            "cross_child,center_failures,reuse_recoveries\n",
+            "melems_s,mpx_s\n",
     );
     for (0..args.warmup + args.runs) |rr| {
         var capture: [1]report.FrameBenchCapture = undefined;
@@ -407,21 +362,13 @@ pub fn main(init: std.process.Init) !void {
             @as(F, @floatFromInt(args.height)) / 1e6;
         const seconds = e2e_ms / 1e3;
         try writer.print(
-            "{s},{d:.6},{s},{s},{},{},{d},{d:.3},{d}," ++
-                "{s},{d},{d},{d},{d},{d}," ++
+            "{s},{d:.6},{s},{d},{d},{d},{d},{d}," ++
                 "{d},{d},{d},{d},{d},{d:.6},{d:.6},{d:.6}," ++
-                "{d:.6},{d:.6},{d:.6},{d:.6}",
+                "{d:.6},{d:.6},{d:.6},{d:.6}\n",
             .{
                 @tagName(args.scene),
                 args.flat_scale,
-                @tagName(args.method),
-                @tagName(args.child_seed),
-                args.legacy_fallback,
-                args.single_frozen_jac,
-                args.adaptive_max_depth,
-                args.adaptive_stop_px,
-                args.reuse_radius_rows,
-                @tagName(args.reuse_method),
+                @tagName(args.mode),
                 rr - args.warmup,
                 meshes.len * args.elements_per_type,
                 args.width,
@@ -441,37 +388,12 @@ pub fn main(init: std.process.Init) !void {
                 mpixels / seconds,
             },
         );
-        const cs = log.coherent;
-        try writer.print(
-            ",{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d}," ++
-                "{d},{d},{d},{d},{d},{d}\n",
-            .{
-                cs.candidate_children,
-                cs.cache_eligible,
-                cs.cache_attempts,
-                cs.cache_successes,
-                cs.cache_failures,
-                cs.extrap_attempts,
-                cs.extrap_successes,
-                cs.center_attempts,
-                cs.center_successes,
-                cs.bank_fallbacks,
-                cs.bank_fallback_successes,
-                cs.bank_improved,
-                cs.bank_recovered,
-                cs.bank_numerical_ties,
-                cs.cross_child,
-                cs.center_failures,
-                cs.reuse_recoveries,
-            },
-        );
         std.debug.print(
-            "{s} bench {s}/{s} run {d}: e2e={d:.3} ms " ++
+            "{s} bench {s} run {d}: e2e={d:.3} ms " ++
                 "raster={d:.3} ms Newton={d}\n",
             .{
                 @tagName(args.scene),
-                @tagName(args.method),
-                @tagName(args.child_seed),
+                @tagName(args.mode),
                 rr - args.warmup,
                 e2e_ms,
                 raster_ms,

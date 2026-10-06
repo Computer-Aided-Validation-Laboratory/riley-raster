@@ -27,7 +27,6 @@ const GlobalSubpxScratchBuffs = struct {
     touched_min_x: []usize,
     touched_max_x: []usize,
     ideal_pix_cent: []F,
-    coherent_caches: []@import("coherentseed.zig").Cache,
     target_stride_subpx: usize = 0,
     target_subx_min: i32 = 0,
     target_suby_min: i32 = 0,
@@ -71,10 +70,6 @@ pub const GlobalBackend = struct {
             .touched_min_x = try arena_alloc.alloc(usize, subpx_tile_size),
             .touched_max_x = try arena_alloc.alloc(usize, subpx_tile_size),
             .ideal_pix_cent = try arena_alloc.alloc(F, total * 2),
-            .coherent_caches = try arena_alloc.alloc(
-                @import("coherentseed.zig").Cache,
-                4 * subpx_tile_size,
-            ),
         };
     }
 

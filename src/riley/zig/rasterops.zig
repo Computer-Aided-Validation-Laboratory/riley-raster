@@ -276,8 +276,6 @@ pub const MultiRootPrepared = struct {
     valid_depth: vecslice.VecSlice(u8),
     slot_by_visible_elem: vecslice.VecSlice(u32),
     leaves: []@import("multiroothierarchy.zig").Leaf = &.{},
-    leaf_start: []const u32 = &.{},
-    leaf_count: []const u8 = &.{},
 };
 
 //------------------------------------------------------------------------------------------
@@ -831,8 +829,20 @@ pub fn sceneTileElemOverlap(
                 .y_px_max = @min(screen_px_y, @as(u16, @intCast((ty + 1) * tile_size))),
                 .scratch_x_px_min = @as(i32, @intCast(tx * tile_size)) - halo_px,
                 .scratch_y_px_min = @as(i32, @intCast(ty * tile_size)) - halo_px,
-                .scratch_x_px_max = @as(i32, @intCast(@min(screen_px_x, @as(u16, @intCast((tx + 1) * tile_size))))) + halo_px,
-                .scratch_y_px_max = @as(i32, @intCast(@min(screen_px_y, @as(u16, @intCast((ty + 1) * tile_size))))) + halo_px,
+                .scratch_x_px_max = @as(
+                    i32,
+                    @intCast(@min(
+                        screen_px_x,
+                        @as(u16, @intCast((tx + 1) * tile_size)),
+                    )),
+                ) + halo_px,
+                .scratch_y_px_max = @as(
+                    i32,
+                    @intCast(@min(
+                        screen_px_y,
+                        @as(u16, @intCast((ty + 1) * tile_size)),
+                    )),
+                ) + halo_px,
             };
 
             active_idx += 1;
@@ -907,7 +917,13 @@ fn runTilingCount(
             tiling.root_classes,
             elem_bbox.elem_idx,
         ));
-        const tile_range = calcElemTileRange(elem_bbox, tiling.tile_size, tiling.halo_px, tiling.tiles_num_x, tiling.tiles_num_y);
+        const tile_range = calcElemTileRange(
+            elem_bbox,
+            tiling.tile_size,
+            tiling.halo_px,
+            tiling.tiles_num_x,
+            tiling.tiles_num_y,
+        );
         const tx_start = tile_range.tx_start;
         const tx_end = tile_range.tx_end;
         const ty_start = tile_range.ty_start;
@@ -960,7 +976,13 @@ fn runTilingFill(
             float_bboxes[ee]
         else
             null;
-        const tile_range = calcElemTileRange(elem_bbox, tiling.tile_size, tiling.halo_px, tiling.tiles_num_x, tiling.tiles_num_y);
+        const tile_range = calcElemTileRange(
+            elem_bbox,
+            tiling.tile_size,
+            tiling.halo_px,
+            tiling.tiles_num_x,
+            tiling.tiles_num_y,
+        );
         const tx_start = tile_range.tx_start;
         const tx_end = tile_range.tx_end;
         const ty_start = tile_range.ty_start;
@@ -1014,8 +1036,14 @@ fn calcElemTileRange(
     const halo_i: i32 = halo_px;
     const x_min = @max(@as(i32, 0), @divFloor(elem_bbox.x_min - halo_i, tile_i));
     const y_min = @max(@as(i32, 0), @divFloor(elem_bbox.y_min - halo_i, tile_i));
-    const x_max = @min(@as(i32, @intCast(tiles_num_x)), @divFloor(elem_bbox.x_max + halo_i + tile_i - 1, tile_i));
-    const y_max = @min(@as(i32, @intCast(tiles_num_y)), @divFloor(elem_bbox.y_max + halo_i + tile_i - 1, tile_i));
+    const x_max = @min(
+        @as(i32, @intCast(tiles_num_x)),
+        @divFloor(elem_bbox.x_max + halo_i + tile_i - 1, tile_i),
+    );
+    const y_max = @min(
+        @as(i32, @intCast(tiles_num_y)),
+        @divFloor(elem_bbox.y_max + halo_i + tile_i - 1, tile_i),
+    );
     return .{
         .tx_start = @intCast(x_min),
         .tx_end = @intCast(x_max),
