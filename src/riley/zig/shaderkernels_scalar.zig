@@ -2,9 +2,10 @@
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2026 James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;

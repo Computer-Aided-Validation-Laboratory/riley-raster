@@ -1,3 +1,11 @@
+// --------------------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2026 James Panayis
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: James Panayis
+// --------------------------------------------------------------------------------------
 const root = @import("root");
 
 // Check requested options independently of buildconfig; plain zig test uses defaults.

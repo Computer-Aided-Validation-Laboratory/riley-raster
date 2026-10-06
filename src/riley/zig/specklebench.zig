@@ -1,3 +1,11 @@
+// --------------------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2026 James Panayis
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: James Panayis
+// --------------------------------------------------------------------------------------
 //! Isolated native catalog-evaluator workload. No production render defaults change.
 //! Geometry, nodal UVs, hulls, tile overlaps and worker storage are prepared once.
 //! Timed evaluation retains traversal, backface/coverage tests, Newton solves,
