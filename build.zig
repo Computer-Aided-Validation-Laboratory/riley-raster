@@ -274,6 +274,11 @@ pub fn build(b: *std.Build) void {
             .description = "Run the distortion and PSF benchmark",
             .source_path = "src/bench_dist_psf.zig",
         },
+        .{
+            .step_name = "bench-multiroot",
+            .description = "Benchmark multi-root hierarchy policies",
+            .source_path = "src/bench_multiroot.zig",
+        },
     };
 
     const bench_runs_step = b.step("benches", "Run all benchmark entrypoints");

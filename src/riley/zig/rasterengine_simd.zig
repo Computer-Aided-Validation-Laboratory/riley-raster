@@ -47,6 +47,7 @@ const NodalPrepared = shaderops.NodalPrepared;
 const TexPrepared = shaderops.TexPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const newton = @import("newton.zig");
+const coherent = @import("coherentseed.zig");
 const shadekerns = @import("shaderkernels.zig");
 
 // --------------------------------------------------------------------------------------
@@ -61,12 +62,17 @@ pub const SubpxScratchBuffs = struct {
     filter_tmp: MatSlice(F),
     simd_chunks: []SubpxSimdChunk,
     multi_root_candidate_indices: []u32,
+    multi_root_child_masks: []u64,
     mask: []align(64) bool,
     xi: []align(64) F,
     eta: []align(64) F,
     touched_min_x: []usize,
     touched_max_x: []usize,
     ideal_pix_cent: []align(64) F,
+    coherent_caches: []coherent.Cache,
+    coherent_local_success: []bool,
+    coherent_first_reused: []bool,
+    coherent_prebank_depth: []F,
 
     pub inline fn imageIndex(
         _: *const SubpxScratchBuffs,
@@ -83,7 +89,14 @@ pub const SubpxSimdChunk = struct {
     py_f: [S]F,
     seed_xi: [S]F,
     seed_eta: [S]F,
+    seed_kind: [S]coherent.SeedKind = @splat(.center),
     count: usize,
+};
+
+const CoherentFlush = struct {
+    leaf: *const @import("multiroothierarchy.zig").Leaf,
+    leaf_idx: usize,
+    stats: *report.CoherentStats,
 };
 
 // --------------------------------------------------------------------------------------
@@ -167,12 +180,32 @@ pub fn initSubpxScratch(
             u32,
             subpx_tile_total_padded,
         ),
+        .multi_root_child_masks = try arena_alloc.alloc(
+            u64,
+            subpx_tile_total_padded,
+        ),
         .mask = subpx_mask_scratch,
         .xi = subpx_xi_scratch,
         .eta = subpx_eta_scratch,
         .touched_min_x = try arena_alloc.alloc(usize, subpx_tile_size),
         .touched_max_x = try arena_alloc.alloc(usize, subpx_tile_size),
         .ideal_pix_cent = ideal_pix_cent,
+        .coherent_caches = try arena_alloc.alloc(
+            coherent.Cache,
+            4 * subpx_tile_size,
+        ),
+        .coherent_local_success = try arena_alloc.alloc(
+            bool,
+            subpx_tile_total_padded,
+        ),
+        .coherent_first_reused = try arena_alloc.alloc(
+            bool,
+            subpx_tile_total_padded,
+        ),
+        .coherent_prebank_depth = try arena_alloc.alloc(
+            F,
+            subpx_tile_total_padded,
+        ),
     };
 }
 
@@ -633,9 +666,57 @@ fn flushMultiRootChunk(
     nodes_coords: Vec3Slices(F),
     chunk: *SubpxSimdChunk,
     subpx_scratch: *ScratchBuffs,
+    frozen: bool,
+) void {
+    flushMultiRootChunkWithCache(
+        ScratchBuffs,
+        Geom,
+        report_mode,
+        ctx_report,
+        subpx_dom,
+        nodes_coords,
+        chunk,
+        subpx_scratch,
+        frozen,
+        null,
+    );
+}
+
+fn flushMultiRootChunkWithCache(
+    comptime ScratchBuffs: type,
+    comptime Geom: type,
+    comptime report_mode: ReportMode,
+    ctx_report: report.ReportContext(report_mode),
+    subpx_dom: SubpxDom,
+    nodes_coords: Vec3Slices(F),
+    chunk: *SubpxSimdChunk,
+    subpx_scratch: *ScratchBuffs,
+    frozen: bool,
+    cache_ctx: ?*const CoherentFlush,
 ) void {
     if (chunk.count == 0) return;
     const N = Geom.nodes_num;
+    const original = chunk.*;
+    var accepted: [S]bool = @splat(false);
+    var refined: [S]bool = @splat(false);
+    if (frozen) {
+        for (0..chunk.count) |ll| {
+            const seed = newton.refineSeedFrozenScal(
+                N,
+                chunk.px_f[ll] - subpx_dom.x_off,
+                chunk.py_f[ll] - subpx_dom.y_off,
+                nodes_coords.x,
+                nodes_coords.y,
+                nodes_coords.z,
+                .{ .xi = chunk.seed_xi[ll], .eta = chunk.seed_eta[ll] },
+                .{ .max_iters = 1, .handoff_tol_mult = 0 },
+            ).seed;
+            refined[ll] = seed.xi != chunk.seed_xi[ll] or
+                seed.eta != chunk.seed_eta[ll];
+            chunk.seed_xi[ll] = seed.xi;
+            chunk.seed_eta[ll] = seed.eta;
+        }
+    }
     const v_px: VecSF = chunk.px_f;
     const v_py: VecSF = chunk.py_f;
     const v_seed_xi: VecSF = chunk.seed_xi;
@@ -685,8 +766,32 @@ fn flushMultiRootChunk(
         shapefun.shapeFunc(N, xi, eta, &weights, &d_xi, &d_eta);
         const inv_z = Geom.calcInvZ(nodes_coords, weights);
         if (!std.math.isFinite(inv_z) or inv_z <= 0) continue;
+        accepted[ll] = true;
         const scratch_idx = chunk.scratch_y_u[ll] * subpx_dom.tile_size +
             chunk.scratch_x_u[ll];
+        if (cache_ctx) |context| {
+            if (chunk.seed_kind[ll] == .center) {
+                context.stats.center_successes += 1;
+            }
+            if (context.leaf.containsParent(Geom.nodes_num, xi, eta)) {
+                if (chunk.seed_kind[ll] != .center) {
+                    context.stats.cache_successes += 1;
+                    if (chunk.seed_kind[ll] == .extrapolate) {
+                        context.stats.extrap_successes += 1;
+                    }
+                }
+                const cache_idx = context.leaf_idx * subpx_dom.tile_size +
+                    chunk.scratch_x_u[ll];
+                subpx_scratch.coherent_caches[cache_idx].update(
+                    chunk.scratch_y_u[ll],
+                    .{ xi, eta },
+                    inv_z,
+                );
+                subpx_scratch.coherent_local_success[scratch_idx] = true;
+            } else {
+                context.stats.cross_child += 1;
+            }
+        }
         if (subpx_scratch.mask[scratch_idx]) {
             var old_weights: [N]F = undefined;
             shapefun.shapeFunc(
@@ -704,6 +809,30 @@ fn flushMultiRootChunk(
         subpx_scratch.eta[scratch_idx] = eta;
     }
     chunk.count = 0;
+    if (frozen) {
+        for (0..original.count) |ll| {
+            if (accepted[ll] or !refined[ll]) continue;
+            const out = chunk.count;
+            chunk.scratch_x_u[out] = original.scratch_x_u[ll];
+            chunk.scratch_y_u[out] = original.scratch_y_u[ll];
+            chunk.px_f[out] = original.px_f[ll];
+            chunk.py_f[out] = original.py_f[ll];
+            chunk.seed_xi[out] = original.seed_xi[ll];
+            chunk.seed_eta[out] = original.seed_eta[ll];
+            chunk.count += 1;
+        }
+        flushMultiRootChunk(
+            ScratchBuffs,
+            Geom,
+            report_mode,
+            ctx_report,
+            subpx_dom,
+            nodes_coords,
+            chunk,
+            subpx_scratch,
+            false,
+        );
+    }
 }
 
 fn rasterNewtonMultiSIMDImpl(
@@ -723,7 +852,98 @@ fn rasterNewtonMultiSIMDImpl(
     shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
+    const method = ctx_rast.config.advanced.solver.multi_root.method;
+    return switch (method) {
+        .legacy_depth, .legacy_front => rasterNewtonMultiSIMDMode(
+            false,
+            ScratchBuffs,
+            Geom,
+            ShaderKern,
+            report_mode,
+            ctx_rast,
+            ctx_report,
+            tile,
+            overlap,
+            raster_hull,
+            subpx_dom,
+            rast_bounds,
+            nodes_coords,
+            shader,
+            shader_buf,
+            subpx_scratch,
+        ),
+        .fixed4,
+        .fixed4_reuse,
+        .fixed4_centre_reuse,
+        .fixed16,
+        .adaptive,
+        .patch_center,
+        .patch_reuse,
+        .patch_reuse_seedbank,
+        .patch_extrapolate,
+        .patch_extrapolate_seedbank,
+        .all_seeds,
+        => rasterNewtonMultiSIMDMode(
+            true,
+            ScratchBuffs,
+            Geom,
+            ShaderKern,
+            report_mode,
+            ctx_rast,
+            ctx_report,
+            tile,
+            overlap,
+            raster_hull,
+            subpx_dom,
+            rast_bounds,
+            nodes_coords,
+            shader,
+            shader_buf,
+            subpx_scratch,
+        ),
+    };
+}
+
+fn rasterNewtonMultiSIMDMode(
+    comptime use_hierarchy: bool,
+    comptime ScratchBuffs: type,
+    comptime Geom: type,
+    comptime ShaderKern: type,
+    comptime report_mode: ReportMode,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+    tile: rops.ActiveTile,
+    overlap: rops.OverlapBBox,
+    raster_hull: ?*const NDArray(F),
+    subpx_dom: SubpxDom,
+    rast_bounds: RasterBounds,
+    nodes_coords: Vec3Slices(F),
+    shader: anytype,
+    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
+    subpx_scratch: *ScratchBuffs,
+) !u64 {
     const N = Geom.nodes_num;
+    const method = ctx_rast.config.advanced.solver.multi_root.method;
+    const use_coherent = switch (method) {
+        .fixed4_reuse,
+        .fixed4_centre_reuse,
+        .patch_center,
+        .patch_reuse,
+        .patch_reuse_seedbank,
+        .patch_extrapolate,
+        .patch_extrapolate_seedbank,
+        .all_seeds,
+        => true,
+        else => false,
+    };
+    const extrapolate = method == .patch_extrapolate or
+        method == .patch_extrapolate_seedbank;
+    const all_seeds = method == .all_seeds;
+    const use_bank = method == .patch_reuse_seedbank or
+        method == .patch_extrapolate_seedbank or all_seeds or
+        ctx_rast.config.advanced.solver.multi_root.legacy_fallback;
+    var coherent_stats = report.CoherentStats{};
+    if (use_coherent) @memset(subpx_scratch.coherent_caches, .{});
     _ = raster_hull;
     if (ctx_rast.multi_root_by_mesh.len <= overlap.mesh_idx) {
         return error.MissingMultiRootData;
@@ -739,6 +959,11 @@ fn rasterNewtonMultiSIMDImpl(
     hull.prepareMultiRootEdgeSlack(hx, hy, edge_slack[0..hull_count]);
     const seed_count = prepared.valid_depth.get(slot);
     const seeds = prepared.indices.getSlice(slot)[0..seed_count];
+    const leaves = if (comptime use_hierarchy) blk: {
+        const start: usize = prepared.leaf_start[slot];
+        const count: usize = prepared.leaf_count[slot];
+        break :blk prepared.leaves[start .. start + count];
+    } else &.{};
     if (seeds.len == 0) return 0;
     const first_seed = geomkerns.multiRootSeedCoords(N, seeds[0]);
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -749,7 +974,10 @@ fn rasterNewtonMultiSIMDImpl(
     inline for (0..N) |nn| nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
         const row = scratch_y * subpx_dom.tile_size;
-        @memset(subpx_scratch.mask[row + rast_bounds.start_x_u .. row + rast_bounds.end_x_u], false);
+        @memset(
+            subpx_scratch.mask[row + rast_bounds.start_x_u .. row + rast_bounds.end_x_u],
+            false,
+        );
     }
     var chunk = SubpxSimdChunk{
         .scratch_x_u = [_]usize{0} ** S,
@@ -775,16 +1003,278 @@ fn rasterNewtonMultiSIMDImpl(
                 py,
             );
             if (has_hit) {
-                subpx_scratch.multi_root_candidate_indices[candidates_count] =
-                    @intCast(idx);
-                candidates_count += 1;
+                if (comptime use_hierarchy) {
+                    var mask: u64 = 0;
+                    for (leaves, 0..) |*leaf, leaf_idx| {
+                        if (!leaf.contains(px, py)) continue;
+                        mask |= @as(u64, 1) << @as(u6, @intCast(leaf_idx));
+                    }
+                    if (mask != 0) {
+                        subpx_scratch.multi_root_child_masks[idx] = mask;
+                        subpx_scratch.multi_root_candidate_indices[candidates_count] =
+                            @intCast(idx);
+                        candidates_count += 1;
+                    }
+                } else {
+                    subpx_scratch.multi_root_candidate_indices[candidates_count] =
+                        @intCast(idx);
+                    candidates_count += 1;
+                    const ll = chunk.count;
+                    chunk.scratch_x_u[ll] = scratch_x;
+                    chunk.scratch_y_u[ll] = scratch_y;
+                    chunk.px_f[ll] = px;
+                    chunk.py_f[ll] = py;
+                    chunk.seed_xi[ll] = first_seed[0];
+                    chunk.seed_eta[ll] = first_seed[1];
+                    chunk.count += 1;
+                    if (chunk.count == S) flushMultiRootChunk(
+                        ScratchBuffs,
+                        Geom,
+                        report_mode,
+                        ctx_report,
+                        subpx_dom,
+                        nodes_coords,
+                        &chunk,
+                        subpx_scratch,
+                        false,
+                    );
+                }
+            }
+            ctx_report.recordTessChecks(1);
+            if (has_hit) ctx_report.recordTessPasses(1);
+        }
+    }
+    if (comptime use_hierarchy) {
+        if (use_coherent) {
+            var next_candidate: usize = 0;
+            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
+                const row_start = next_candidate;
+                while (next_candidate < candidates_count and
+                    @as(usize, subpx_scratch.multi_root_candidate_indices[
+                        next_candidate
+                    ]) / subpx_dom.tile_size == scratch_y)
+                {
+                    next_candidate += 1;
+                }
+                if (row_start == next_candidate) continue;
+                const row_candidates = subpx_scratch.multi_root_candidate_indices[row_start..next_candidate];
+                for (leaves, 0..) |*leaf, leaf_idx| {
+                    const context = CoherentFlush{
+                        .leaf = leaf,
+                        .leaf_idx = leaf_idx,
+                        .stats = &coherent_stats,
+                    };
+                    const child_caches = subpx_scratch.coherent_caches[leaf_idx * subpx_dom.tile_size .. (leaf_idx + 1) * subpx_dom.tile_size];
+                    const bit = @as(u64, 1) << @as(u6, @intCast(leaf_idx));
+                    for (row_candidates) |idx_u32| {
+                        const idx: usize = idx_u32;
+                        if ((subpx_scratch.multi_root_child_masks[idx] & bit) == 0) {
+                            continue;
+                        }
+                        coherent_stats.candidate_children += 1;
+                        const scratch_x = idx % subpx_dom.tile_size;
+                        const cache_idx = leaf_idx * subpx_dom.tile_size + scratch_x;
+                        const cache = &subpx_scratch.coherent_caches[cache_idx];
+                        var choice = if (method == .patch_center or
+                            method == .fixed4_centre_reuse)
+                            coherent.Choice{ .uv = leaf.seed, .kind = .center }
+                        else if (method == .fixed4_reuse)
+                            coherent.chooseLocal(
+                                child_caches,
+                                scratch_x,
+                                scratch_y,
+                                ctx_rast.config.advanced.solver.multi_root.reuse_radius_rows,
+                                ctx_rast.config.advanced.solver.multi_root.reuse_method,
+                                leaf.seed,
+                            )
+                        else
+                            cache.choose(
+                                scratch_y,
+                                ctx_rast.config.advanced.solver.multi_root.reuse_radius_rows,
+                                extrapolate,
+                                leaf.seed,
+                            );
+                        if (choice.kind == .extrapolate and
+                            !leaf.containsParent(N, choice.uv[0], choice.uv[1]))
+                        {
+                            choice = .{ .uv = cache.last_uv, .kind = .reuse };
+                        }
+                        if (method == .fixed4_reuse and
+                            choice.kind != .center and
+                            !leaf.containsParent(N, choice.uv[0], choice.uv[1]))
+                        {
+                            choice = .{ .uv = leaf.seed, .kind = .center };
+                        }
+                        const reused = choice.kind != .center;
+                        subpx_scratch.coherent_first_reused[idx] = reused;
+                        subpx_scratch.coherent_local_success[idx] = false;
+                        if (reused) {
+                            coherent_stats.cache_eligible += 1;
+                            coherent_stats.cache_attempts += 1;
+                            if (choice.kind == .extrapolate) {
+                                coherent_stats.extrap_attempts += 1;
+                            }
+                        } else {
+                            coherent_stats.center_attempts += 1;
+                        }
+                        const ll = chunk.count;
+                        chunk.scratch_x_u[ll] = scratch_x;
+                        chunk.scratch_y_u[ll] = scratch_y;
+                        chunk.px_f[ll] = ideal_x_plane[idx];
+                        chunk.py_f[ll] = ideal_y_plane[idx];
+                        chunk.seed_xi[ll] = choice.uv[0];
+                        chunk.seed_eta[ll] = choice.uv[1];
+                        chunk.seed_kind[ll] = choice.kind;
+                        chunk.count += 1;
+                        if (chunk.count == S) flushMultiRootChunkWithCache(
+                            ScratchBuffs,
+                            Geom,
+                            report_mode,
+                            ctx_report,
+                            subpx_dom,
+                            nodes_coords,
+                            &chunk,
+                            subpx_scratch,
+                            false,
+                            &context,
+                        );
+                    }
+                    flushMultiRootChunkWithCache(
+                        ScratchBuffs,
+                        Geom,
+                        report_mode,
+                        ctx_report,
+                        subpx_dom,
+                        nodes_coords,
+                        &chunk,
+                        subpx_scratch,
+                        false,
+                        &context,
+                    );
+                    for (row_candidates) |idx_u32| {
+                        const idx: usize = idx_u32;
+                        if ((subpx_scratch.multi_root_child_masks[idx] & bit) == 0) {
+                            continue;
+                        }
+                        if (method == .fixed4_reuse) {
+                            if (subpx_scratch.coherent_first_reused[idx] and
+                                !subpx_scratch.coherent_local_success[idx])
+                            {
+                                coherent_stats.cache_failures += 1;
+                            }
+                            continue;
+                        }
+                        if (method == .fixed4_centre_reuse) {
+                            if (subpx_scratch.coherent_local_success[idx]) continue;
+                            coherent_stats.center_failures += 1;
+                            const scratch_x = idx % subpx_dom.tile_size;
+                            const choice = coherent.chooseLocal(
+                                child_caches,
+                                scratch_x,
+                                scratch_y,
+                                ctx_rast.config.advanced.solver.multi_root.reuse_radius_rows,
+                                ctx_rast.config.advanced.solver.multi_root.reuse_method,
+                                leaf.seed,
+                            );
+                            if (choice.kind == .center or
+                                !leaf.containsParent(N, choice.uv[0], choice.uv[1]))
+                            {
+                                continue;
+                            }
+                            coherent_stats.cache_eligible += 1;
+                            coherent_stats.cache_attempts += 1;
+                            subpx_scratch.coherent_first_reused[idx] = true;
+                            const ll = chunk.count;
+                            chunk.scratch_x_u[ll] = scratch_x;
+                            chunk.scratch_y_u[ll] = scratch_y;
+                            chunk.px_f[ll] = ideal_x_plane[idx];
+                            chunk.py_f[ll] = ideal_y_plane[idx];
+                            chunk.seed_xi[ll] = choice.uv[0];
+                            chunk.seed_eta[ll] = choice.uv[1];
+                            chunk.seed_kind[ll] = .reuse;
+                            chunk.count += 1;
+                            if (chunk.count == S) flushMultiRootChunkWithCache(
+                                ScratchBuffs,
+                                Geom,
+                                report_mode,
+                                ctx_report,
+                                subpx_dom,
+                                nodes_coords,
+                                &chunk,
+                                subpx_scratch,
+                                false,
+                                &context,
+                            );
+                            continue;
+                        }
+                        if (!subpx_scratch.coherent_first_reused[idx]) continue;
+                        if (!all_seeds and subpx_scratch.coherent_local_success[idx]) {
+                            continue;
+                        }
+                        if (!subpx_scratch.coherent_local_success[idx]) {
+                            coherent_stats.cache_failures += 1;
+                        }
+                        coherent_stats.center_attempts += 1;
+                        const ll = chunk.count;
+                        chunk.scratch_x_u[ll] = idx % subpx_dom.tile_size;
+                        chunk.scratch_y_u[ll] = scratch_y;
+                        chunk.px_f[ll] = ideal_x_plane[idx];
+                        chunk.py_f[ll] = ideal_y_plane[idx];
+                        chunk.seed_xi[ll] = leaf.seed[0];
+                        chunk.seed_eta[ll] = leaf.seed[1];
+                        chunk.seed_kind[ll] = .center;
+                        chunk.count += 1;
+                        if (chunk.count == S) flushMultiRootChunkWithCache(
+                            ScratchBuffs,
+                            Geom,
+                            report_mode,
+                            ctx_report,
+                            subpx_dom,
+                            nodes_coords,
+                            &chunk,
+                            subpx_scratch,
+                            false,
+                            &context,
+                        );
+                    }
+                    flushMultiRootChunkWithCache(
+                        ScratchBuffs,
+                        Geom,
+                        report_mode,
+                        ctx_report,
+                        subpx_dom,
+                        nodes_coords,
+                        &chunk,
+                        subpx_scratch,
+                        false,
+                        &context,
+                    );
+                    if (method == .fixed4_centre_reuse) {
+                        for (row_candidates) |idx_u32| {
+                            const idx: usize = idx_u32;
+                            if ((subpx_scratch.multi_root_child_masks[idx] & bit) == 0 or
+                                !subpx_scratch.coherent_first_reused[idx]) continue;
+                            if (subpx_scratch.coherent_local_success[idx]) {
+                                coherent_stats.reuse_recoveries += 1;
+                            } else {
+                                coherent_stats.cache_failures += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        } else for (leaves, 0..) |leaf, leaf_idx| {
+            const bit = @as(u64, 1) << @as(u6, @intCast(leaf_idx));
+            for (subpx_scratch.multi_root_candidate_indices[0..candidates_count]) |idx_u32| {
+                const idx: usize = idx_u32;
+                if ((subpx_scratch.multi_root_child_masks[idx] & bit) == 0) continue;
                 const ll = chunk.count;
-                chunk.scratch_x_u[ll] = scratch_x;
-                chunk.scratch_y_u[ll] = scratch_y;
-                chunk.px_f[ll] = px;
-                chunk.py_f[ll] = py;
-                chunk.seed_xi[ll] = first_seed[0];
-                chunk.seed_eta[ll] = first_seed[1];
+                chunk.scratch_x_u[ll] = idx % subpx_dom.tile_size;
+                chunk.scratch_y_u[ll] = idx / subpx_dom.tile_size;
+                chunk.px_f[ll] = ideal_x_plane[idx];
+                chunk.py_f[ll] = ideal_y_plane[idx];
+                chunk.seed_xi[ll] = leaf.seed[0];
+                chunk.seed_eta[ll] = leaf.seed[1];
                 chunk.count += 1;
                 if (chunk.count == S) flushMultiRootChunk(
                     ScratchBuffs,
@@ -795,31 +1285,65 @@ fn rasterNewtonMultiSIMDImpl(
                     nodes_coords,
                     &chunk,
                     subpx_scratch,
+                    ctx_rast.config.advanced.solver.multi_root.single_frozen_jac,
                 );
             }
-            ctx_report.recordTessChecks(1);
-            if (has_hit) ctx_report.recordTessPasses(1);
+            flushMultiRootChunk(
+                ScratchBuffs,
+                Geom,
+                report_mode,
+                ctx_report,
+                subpx_dom,
+                nodes_coords,
+                &chunk,
+                subpx_scratch,
+                ctx_rast.config.advanced.solver.multi_root.single_frozen_jac,
+            );
         }
+    } else {
+        flushMultiRootChunk(
+            ScratchBuffs,
+            Geom,
+            report_mode,
+            ctx_report,
+            subpx_dom,
+            nodes_coords,
+            &chunk,
+            subpx_scratch,
+            false,
+        );
     }
-    flushMultiRootChunk(
-        ScratchBuffs,
-        Geom,
-        report_mode,
-        ctx_report,
-        subpx_dom,
-        nodes_coords,
-        &chunk,
-        subpx_scratch,
-    );
 
     var unresolved_count: usize = 0;
-    for (subpx_scratch.multi_root_candidate_indices[0..candidates_count]) |idx_u32| {
-        const idx: usize = idx_u32;
-        if (subpx_scratch.mask[idx]) continue;
-        subpx_scratch.multi_root_candidate_indices[unresolved_count] = idx_u32;
-        unresolved_count += 1;
+    if (!use_hierarchy or use_bank) {
+        for (subpx_scratch.multi_root_candidate_indices[0..candidates_count]) |idx_u32| {
+            const idx: usize = idx_u32;
+            if (!all_seeds and subpx_scratch.mask[idx]) continue;
+            if (use_coherent) {
+                coherent_stats.bank_fallbacks += 1;
+                var depth: F = -std.math.inf(F);
+                if (subpx_scratch.mask[idx]) {
+                    var weights: [N]F = undefined;
+                    var d_xi: [N]F = undefined;
+                    var d_eta: [N]F = undefined;
+                    shapefun.shapeFunc(
+                        N,
+                        subpx_scratch.xi[idx],
+                        subpx_scratch.eta[idx],
+                        &weights,
+                        &d_xi,
+                        &d_eta,
+                    );
+                    depth = Geom.calcInvZ(nodes_coords, weights);
+                }
+                subpx_scratch.coherent_prebank_depth[idx] = depth;
+            }
+            subpx_scratch.multi_root_candidate_indices[unresolved_count] = idx_u32;
+            unresolved_count += 1;
+        }
     }
-    for (seeds[1..]) |seed_idx| {
+    const fallback_seeds = if (comptime use_hierarchy) seeds else seeds[1..];
+    for (fallback_seeds) |seed_idx| {
         if (unresolved_count == 0) break;
         const seed = geomkerns.multiRootSeedCoords(N, seed_idx);
         for (subpx_scratch.multi_root_candidate_indices[0..unresolved_count]) |idx_u32| {
@@ -843,6 +1367,7 @@ fn rasterNewtonMultiSIMDImpl(
                 nodes_coords,
                 &chunk,
                 subpx_scratch,
+                false,
             );
         }
         flushMultiRootChunk(
@@ -854,7 +1379,39 @@ fn rasterNewtonMultiSIMDImpl(
             nodes_coords,
             &chunk,
             subpx_scratch,
+            false,
         );
+    }
+
+    if (use_coherent and use_bank) {
+        for (subpx_scratch.multi_root_candidate_indices[0..unresolved_count]) |idx_u32| {
+            const idx: usize = idx_u32;
+            if (!subpx_scratch.mask[idx]) continue;
+            const before = subpx_scratch.coherent_prebank_depth[idx];
+            var weights: [N]F = undefined;
+            var d_xi: [N]F = undefined;
+            var d_eta: [N]F = undefined;
+            shapefun.shapeFunc(
+                N,
+                subpx_scratch.xi[idx],
+                subpx_scratch.eta[idx],
+                &weights,
+                &d_xi,
+                &d_eta,
+            );
+            const after = Geom.calcInvZ(nodes_coords, weights);
+            if (after > before) {
+                if (before == -std.math.inf(F)) {
+                    coherent_stats.bank_fallback_successes += 1;
+                    coherent_stats.bank_recovered += 1;
+                } else if (coherent.distinctDepthGain(before, after)) {
+                    coherent_stats.bank_fallback_successes += 1;
+                    coherent_stats.bank_improved += 1;
+                } else {
+                    coherent_stats.bank_numerical_ties += 1;
+                }
+            }
+        }
     }
 
     var shaded_px: u64 = 0;
@@ -913,6 +1470,7 @@ fn rasterNewtonMultiSIMDImpl(
             );
         }
     }
+    if (use_coherent) ctx_report.recordCoherentStats(coherent_stats);
     return shaded_px;
 }
 

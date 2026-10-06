@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const std = @import("std");
 const iio = @import("imageio.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -94,11 +95,47 @@ pub const OneRootSeedPolicy = struct {
 };
 
 pub const MultiRootSeedPolicy = struct {
-    /// Maximum Newton starts per multi-root element, ordered by camera depth.
+    /// The default tries three front-facing seeds in near/middle/far order.
+    method: MultiRootMethod = .legacy_front,
+    /// Maximum legacy Newton starts per multi-root element.
     /// Candidates are nodes, centroid-to-node midpoints, and the centroid.
     /// Quad9 uses its center node instead of a duplicate virtual centroid.
     /// Valid range: 1..17; each element uses at most its candidate count.
     seed_bank_depth: u8 = 3,
+    /// Maximum gap, in raster subpixel rows, for same-column child-root reuse.
+    reuse_radius_rows: u8 = 1,
+    /// Local predictor used by the fixed4 reuse experiment methods.
+    reuse_method: @import("coherentseed.zig").ReuseMethod = .column,
+    /// Diagnostic: retry the legacy bank when all child-centre solves fail.
+    legacy_fallback: bool = false,
+    /// Diagnostic single-step frozen-Jacobian seed refinement.
+    single_frozen_jac: bool = false,
+    child_seed: MultiRootChildSeed = .center,
+    /// Adaptive preprocessing only; the raster loop visits flat leaves.
+    adaptive_max_depth: u8 = 3,
+    adaptive_stop_px: F = 8,
+};
+
+pub const MultiRootMethod = enum {
+    legacy_depth,
+    legacy_front,
+    fixed4,
+    fixed4_reuse,
+    fixed4_centre_reuse,
+    fixed16,
+    adaptive,
+    patch_center,
+    patch_reuse,
+    patch_reuse_seedbank,
+    patch_extrapolate,
+    patch_extrapolate_seedbank,
+    all_seeds,
+};
+
+pub const MultiRootChildSeed = enum {
+    center,
+    front_near,
+    front_strong,
 };
 
 pub const ValidateInput = enum(u32) {
@@ -177,3 +214,9 @@ pub const FullStatsOpts = struct {
     save_pixel_occupancy_map: bool = true,
     save_normals_map: bool = false,
 };
+
+test "multi-root default remains the three-seed front-facing policy" {
+    const policy = MultiRootSeedPolicy{};
+    try std.testing.expectEqual(MultiRootMethod.legacy_front, policy.method);
+    try std.testing.expectEqual(@as(u8, 3), policy.seed_bank_depth);
+}

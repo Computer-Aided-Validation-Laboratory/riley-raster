@@ -275,6 +275,9 @@ pub const MultiRootPrepared = struct {
     indices: matslice.MatSlice(u8),
     valid_depth: vecslice.VecSlice(u8),
     slot_by_visible_elem: vecslice.VecSlice(u32),
+    leaves: []@import("multiroothierarchy.zig").Leaf = &.{},
+    leaf_start: []const u32 = &.{},
+    leaf_count: []const u8 = &.{},
 };
 
 //------------------------------------------------------------------------------------------

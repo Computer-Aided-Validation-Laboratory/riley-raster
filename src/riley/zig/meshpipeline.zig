@@ -36,6 +36,7 @@ const shaderops = @import("shaderops.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
 const hull = @import("hull.zig");
+const multiroot = @import("multiroothierarchy.zig");
 const db = @import("distortbounds.zig");
 
 // --------------------------------------------------------------------------------------
@@ -534,7 +535,7 @@ pub fn prepMeshFrame(
                 mesh_static,
                 frame_idx,
                 config.advanced.solver.hull_mode,
-                config.advanced.solver.multi_root.seed_bank_depth,
+                config.advanced.solver.multi_root,
                 config.advanced.distortion.edge_spacing_px,
                 scaling_params,
                 chunk_exec,
@@ -643,7 +644,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         mesh_static: *const MeshStatic,
         frame_idx: usize,
         hull_mode: rastcfg.HullMode,
-        seed_bank_depth: u8,
+        multi_policy: rastcfg.MultiRootSeedPolicy,
         edge_spacing_px: F,
         scaling_params: ?imageops.ScalingParams,
         chunk_exec: *pce.ParaChunkExecutor,
@@ -662,7 +663,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             mesh_static: *const MeshStatic,
             frame_idx: usize,
             hull_mode: rastcfg.HullMode,
-            seed_bank_depth: u8,
+            multi_policy: rastcfg.MultiRootSeedPolicy,
             edge_spacing_px: F,
             scaling_params: ?imageops.ScalingParams,
             chunk_exec: *pce.ParaChunkExecutor,
@@ -684,7 +685,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .mesh_static = mesh_static,
                 .frame_idx = frame_idx,
                 .hull_mode = hull_mode,
-                .seed_bank_depth = seed_bank_depth,
+                .multi_policy = multi_policy,
                 .edge_spacing_px = edge_spacing_px,
                 .scaling_params = scaling_params,
                 .chunk_exec = chunk_exec,
@@ -1239,7 +1240,60 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             camera: *const cam.CameraPrepared,
             elem_coords: *const ndarray.NDArray(F),
             prepared: *rops.MultiRootPrepared,
+            policy: rastcfg.MultiRootSeedPolicy,
         };
+
+        fn hierarchyMode(method: rastcfg.MultiRootMethod) ?multiroot.Mode {
+            return switch (method) {
+                .legacy_depth, .legacy_front => null,
+                .fixed4, .fixed4_reuse, .fixed4_centre_reuse, .patch_center, .patch_reuse, .patch_reuse_seedbank, .patch_extrapolate, .patch_extrapolate_seedbank, .all_seeds => .fixed4,
+                .fixed16 => .fixed16,
+                .adaptive => .adaptive,
+            };
+        }
+
+        const CountMultiRootLeavesStage = struct {
+            camera: *const cam.CameraPrepared,
+            elem_coords: *const ndarray.NDArray(F),
+            slot_by_visible_elem: vecslice.VecSlice(u32),
+            leaf_count: []u8,
+            policy: rastcfg.MultiRootSeedPolicy,
+        };
+
+        fn runCountMultiRootLeaves(
+            ctx_ptr: *anyopaque,
+            chunk_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) void {
+            _ = chunk_idx;
+            const stage: *CountMultiRootLeavesStage = @ptrCast(@alignCast(ctx_ptr));
+            const N = comptime MT.getNodesNum();
+            const mode = hierarchyMode(stage.policy.method).?;
+            for (range_start..range_end) |pp| {
+                const slot = stage.slot_by_visible_elem.get(pp);
+                if (slot == std.math.maxInt(u32)) continue;
+                var coords: rops.GatheredElemCoords(N) = undefined;
+                const xs = stage.elem_coords.getSlice(&.{ pp, 0, 0 }, 1);
+                const ys = stage.elem_coords.getSlice(&.{ pp, 1, 0 }, 1);
+                const zs = stage.elem_coords.getSlice(&.{ pp, 2, 0 }, 1);
+                for (0..N) |nn| {
+                    coords.x[nn] = xs[nn];
+                    coords.y[nn] = ys[nn];
+                    coords.z[nn] = zs[nn];
+                }
+                var leaves: [multiroot.max_leaves]multiroot.Leaf = undefined;
+                stage.leaf_count[slot] = @intCast(multiroot.prepare(
+                    N,
+                    stage.camera,
+                    coords,
+                    mode,
+                    stage.policy.adaptive_max_depth,
+                    stage.policy.adaptive_stop_px,
+                    &leaves,
+                ));
+            }
+        }
 
         fn runPrepareMultiRootData(
             ctx_ptr: *anyopaque,
@@ -1285,6 +1339,27 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 }
                 stage.prepared.hull_count.set(slot, projected_hull.count);
 
+                if (hierarchyMode(stage.policy.method)) |mode| {
+                    const start: usize = stage.prepared.leaf_start[slot];
+                    const count: usize = stage.prepared.leaf_count[slot];
+                    const writable = stage.prepared.leaves[start .. start + count];
+                    const written = multiroot.prepareWithSeedMethod(
+                        N,
+                        stage.camera,
+                        coords,
+                        mode,
+                        stage.policy.adaptive_max_depth,
+                        stage.policy.adaptive_stop_px,
+                        switch (stage.policy.child_seed) {
+                            .center => .center,
+                            .front_near => .front_near,
+                            .front_strong => .front_strong,
+                        },
+                        writable,
+                    );
+                    std.debug.assert(written == count);
+                }
+
                 for (N..geomkerns.multiRootSeedCount(N)) |seed_idx| {
                     const seed_uv = geomkerns.multiRootSeedCoords(
                         N,
@@ -1323,6 +1398,58 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     }
                     seeds[jj] = seed;
                 }
+                if (stage.policy.method != .legacy_depth) {
+                    var ordered: [geomkerns.multiRootSeedCount(N)]Seed = undefined;
+                    var length: usize = 0;
+                    const nodes = rops.Vec3Slices(F){
+                        .x = &coords.x,
+                        .y = &coords.y,
+                        .z = &coords.z,
+                    };
+                    for (0..2) |tier_idx| {
+                        var tier: [geomkerns.multiRootSeedCount(N)]Seed = undefined;
+                        var tier_len: usize = 0;
+                        for (seeds[0..available]) |seed| {
+                            const uv = geomkerns.multiRootSeedCoords(
+                                N,
+                                seed.index,
+                            );
+                            const facing = rops.projectedJacDetPhysical(
+                                N,
+                                nodes,
+                                uv[0],
+                                uv[1],
+                            );
+                            const front = std.math.isFinite(facing) and
+                                facing < -buildconfig.config.tol.culling.projected_jacobian_abs;
+                            if (front != (tier_idx == 0)) continue;
+                            tier[tier_len] = seed;
+                            tier_len += 1;
+                        }
+                        var used = [_]bool{false} ** geomkerns.multiRootSeedCount(N);
+                        for (0..tier_len) |ii| {
+                            const remaining = tier_len - ii;
+                            const rank = switch (ii % 3) {
+                                0 => @as(usize, 0),
+                                1 => remaining / 2,
+                                else => remaining - 1,
+                            };
+                            var seen: usize = 0;
+                            for (0..tier_len) |jj| {
+                                if (used[jj]) continue;
+                                if (seen == rank) {
+                                    ordered[length] = tier[jj];
+                                    length += 1;
+                                    used[jj] = true;
+                                    break;
+                                }
+                                seen += 1;
+                            }
+                        }
+                    }
+                    std.debug.assert(length == available);
+                    @memcpy(seeds[0..available], ordered[0..available]);
+                }
                 const count = @min(available, stage.prepared.indices.cols_num);
                 const row = stage.prepared.indices.getSlice(slot);
                 for (0..count) |ii| row[ii] = seeds[ii].index;
@@ -1355,7 +1482,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             const N = comptime MT.getNodesNum();
             const available = geomkerns.multiRootSeedCount(N);
-            const depth = @min(@as(usize, self.seed_bank_depth), available);
+            const depth = if (self.multi_policy.method == .all_seeds)
+                available
+            else
+                @min(@as(usize, self.multi_policy.seed_bank_depth), available);
             const slot_mem = try outer_alloc.alloc(u32, visible_count);
             @memset(slot_mem, std.math.maxInt(u32));
             var next_slot: u32 = 0;
@@ -1381,10 +1511,44 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 ),
                 .slot_by_visible_elem = vecslice.VecSlice(u32).init(slot_mem),
             };
+            if (hierarchyMode(self.multi_policy.method)) |mode| {
+                const leaf_counts = try outer_alloc.alloc(u8, multi_count);
+                if (mode == .adaptive) {
+                    var count_stage = CountMultiRootLeavesStage{
+                        .camera = self.camera,
+                        .elem_coords = elem_coords,
+                        .slot_by_visible_elem = self.mesh_workspace.multi_root.?.slot_by_visible_elem,
+                        .leaf_count = leaf_counts,
+                        .policy = self.multi_policy,
+                    };
+                    pce.runStaticRange(
+                        self.chunk_exec,
+                        &count_stage,
+                        runCountMultiRootLeaves,
+                        visible_count,
+                        self.vis_chunk_size,
+                    );
+                } else {
+                    @memset(leaf_counts, if (mode == .fixed4) 4 else 16);
+                }
+                const leaf_starts = try outer_alloc.alloc(u32, multi_count);
+                var total_leaves: usize = 0;
+                for (leaf_counts, 0..) |count, ii| {
+                    leaf_starts[ii] = @intCast(total_leaves);
+                    total_leaves += count;
+                }
+                self.mesh_workspace.multi_root.?.leaves = try outer_alloc.alloc(
+                    multiroot.Leaf,
+                    total_leaves,
+                );
+                self.mesh_workspace.multi_root.?.leaf_start = leaf_starts;
+                self.mesh_workspace.multi_root.?.leaf_count = leaf_counts;
+            }
             var stage = PrepareMultiRootStage{
                 .camera = self.camera,
                 .elem_coords = elem_coords,
                 .prepared = &self.mesh_workspace.multi_root.?,
+                .policy = self.multi_policy,
             };
             pce.runStaticRange(
                 self.chunk_exec,

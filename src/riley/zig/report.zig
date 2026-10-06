@@ -100,6 +100,7 @@ pub const BenchLog = struct {
     solver_calls: u64 = 0,
     total_solver_iters: u64 = 0,
     solver_diverged: u64 = 0,
+    coherent: CoherentStats = .{},
     tess_checks: u64 = 0,
     tess_passes: u64 = 0,
     total_shaded_px: u64 = 0,
@@ -109,6 +110,26 @@ pub const BenchLog = struct {
     cam_time_ns: F = 0,
     elem_time_ns: F = 0,
     resolve_time_ns: F = 0,
+};
+
+pub const CoherentStats = struct {
+    candidate_children: u64 = 0,
+    cache_eligible: u64 = 0,
+    cache_attempts: u64 = 0,
+    cache_successes: u64 = 0,
+    cache_failures: u64 = 0,
+    extrap_attempts: u64 = 0,
+    extrap_successes: u64 = 0,
+    center_attempts: u64 = 0,
+    center_successes: u64 = 0,
+    center_failures: u64 = 0,
+    reuse_recoveries: u64 = 0,
+    bank_fallbacks: u64 = 0,
+    bank_fallback_successes: u64 = 0,
+    bank_improved: u64 = 0,
+    bank_recovered: u64 = 0,
+    bank_numerical_ties: u64 = 0,
+    cross_child: u64 = 0,
 };
 
 pub const FrameBenchCapture = struct {
@@ -303,6 +324,9 @@ pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
     dst.solver_calls += src.solver_calls;
     dst.total_solver_iters += src.total_solver_iters;
     dst.solver_diverged += src.solver_diverged;
+    inline for (std.meta.fields(CoherentStats)) |field| {
+        @field(dst.coherent, field.name) += @field(src.coherent, field.name);
+    }
     dst.tess_checks += src.tess_checks;
     dst.tess_passes += src.tess_passes;
     dst.total_shaded_px += src.total_shaded_px;
@@ -1386,6 +1410,18 @@ pub fn ReportContext(comptime mode: ReportMode) type {
         pub inline fn recordSolverCalls(self: @This(), solver_calls: u64) void {
             if (self.bench()) |bench_log| {
                 bench_log.solver_calls += solver_calls;
+            }
+        }
+
+        pub inline fn recordCoherentStats(
+            self: @This(),
+            counts: CoherentStats,
+        ) void {
+            if (self.bench()) |bench_log| {
+                inline for (std.meta.fields(CoherentStats)) |field| {
+                    @field(bench_log.coherent, field.name) +=
+                        @field(counts, field.name);
+                }
             }
         }
 
