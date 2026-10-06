@@ -44,7 +44,7 @@ const BaselineFixture = struct {
 
         var config = tcfg.getRasterConfig(.testing);
         config.save_strategy = .memory;
-        config.image_save_mode = .grey;
+        config.output.image_save_mode = .grey;
         config.background_value = 0.5;
 
         return .{
@@ -66,7 +66,7 @@ fn runRender(
     mesh_inps: []const MeshInput,
     config: RasterConfig,
 ) !?NDArray {
-    return riley.rasterReport(
+    return riley.rasterReportWithRenderGroups(
         std.testing.allocator,
         render_groups,
         cam_inps,
@@ -135,13 +135,13 @@ fn testValidateInputModes(
     const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
     const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
 
-    // Default configuration has validate_input = .fast
+    // Default configuration has validation = .fast
     const default_config = fixture.config;
-    try std.testing.expectEqual(rastcfg.ValidateInput.fast, default_config.validate_input);
+    try std.testing.expectEqual(rastcfg.ValidateInput.fast, default_config.validation);
 
     // .off mode succeeds on valid input
     var off_config = fixture.config;
-    off_config.validate_input = .off;
+    off_config.validation = .off;
     const off_result = try runRender(&render_groups, &cam_inps, &mesh_inps, off_config);
     if (off_result) |*arr| {
         allocator.free(arr.slice);
@@ -150,7 +150,7 @@ fn testValidateInputModes(
 
     // .fast mode succeeds on valid input
     var fast_config = fixture.config;
-    fast_config.validate_input = .fast;
+    fast_config.validation = .fast;
     const fast_result = try runRender(&render_groups, &cam_inps, &mesh_inps, fast_config);
     if (fast_result) |*arr| {
         allocator.free(arr.slice);
@@ -159,7 +159,7 @@ fn testValidateInputModes(
 
     // .full mode succeeds on valid input
     var full_config = fixture.config;
-    full_config.validate_input = .full;
+    full_config.validation = .full;
     const full_result = try runRender(&render_groups, &cam_inps, &mesh_inps, full_config);
     if (full_result) |*arr| {
         allocator.free(arr.slice);
@@ -281,8 +281,7 @@ fn testFullStatsRequiresSingleRasterWorker(
     const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 2 }};
 
     var config = fixture.config;
-    config.report = .full_stats;
-    config.max_raster_workers_per_job = 2;
+    config.report = .{ .mode = .full_stats };
 
     try std.testing.expectError(
         error.FullStatsRequiresSingleRasterWorker,
@@ -297,52 +296,19 @@ fn testInvalidTotalThreads(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.total_threads = 0;
+    config.parallel = .{ .threads = 0 };
     try expectConfigError(io, fixture, config, error.InvalidTotalThreads);
 }
 
-fn testInvalidFrameBatchSize(
+fn testInvalidEdgeSpacing(
     allocator: std.mem.Allocator,
     io: std.Io,
     fixture: *const BaselineFixture,
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.frame_batch_size_per_group = 0;
-    try expectConfigError(io, fixture, config, error.InvalidFrameBatchSize);
-}
-
-fn testInvalidGeomJobsInFlight(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    fixture: *const BaselineFixture,
-) !void {
-    _ = allocator;
-    var config = fixture.config;
-    config.max_geom_jobs_in_flight_per_group = 0;
-    try expectConfigError(io, fixture, config, error.InvalidGeomJobsInFlight);
-}
-
-fn testInvalidGeomWorkersPerJob(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    fixture: *const BaselineFixture,
-) !void {
-    _ = allocator;
-    var config = fixture.config;
-    config.max_geom_workers_per_job = 0;
-    try expectConfigError(io, fixture, config, error.InvalidGeomWorkersPerJob);
-}
-
-fn testInvalidRasterWorkersPerJob(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    fixture: *const BaselineFixture,
-) !void {
-    _ = allocator;
-    var config = fixture.config;
-    config.max_raster_workers_per_job = 0;
-    try expectConfigError(io, fixture, config, error.InvalidRasterWorkersPerJob);
+    config.advanced.distortion.edge_spacing_px = 0.0;
+    try expectConfigError(io, fixture, config, error.InvalidDistortEdgeSpacing);
 }
 
 // --------------------------------------------------------------------------
@@ -356,7 +322,7 @@ fn testInvalidTileSizeMin(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.tile_size_min = 0;
+    config.advanced.raster.tile_size_min = 0;
     try expectConfigError(io, fixture, config, error.InvalidTileSizeMin);
 }
 
@@ -367,7 +333,7 @@ fn testInvalidTileSizeMax(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.tile_size_max = 0;
+    config.advanced.raster.tile_size_max = 0;
     try expectConfigError(io, fixture, config, error.InvalidTileSizeMax);
 }
 
@@ -378,8 +344,8 @@ fn testInvalidTileSizeRange(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.tile_size_min = 64;
-    config.tile_size_max = 32;
+    config.advanced.raster.tile_size_min = 64;
+    config.advanced.raster.tile_size_max = 32;
     try expectConfigError(io, fixture, config, error.InvalidTileSizeRange);
 }
 
@@ -390,9 +356,9 @@ fn testInvalidTileSizeOverride(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.tile_size_min = 16;
-    config.tile_size_max = 64;
-    config.tile_size_override = 128;
+    config.advanced.raster.tile_size_min = 16;
+    config.advanced.raster.tile_size_max = 64;
+    config.advanced.raster.tile_size_override = 128;
     try expectConfigError(io, fixture, config, error.InvalidTileSizeOverride);
 }
 
@@ -403,7 +369,7 @@ fn testInvalidGlobalSubpxTileSizeMin(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.global_subpx_tile_size_min = 0;
+    config.advanced.raster.global_subpx_tile_size_min = 0;
     try expectConfigError(io, fixture, config, error.InvalidGlobalSubpxTileSizeMin);
 }
 
@@ -414,7 +380,7 @@ fn testInvalidGlobalSubpxTileSizeMax(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.global_subpx_tile_size_max = 0;
+    config.advanced.raster.global_subpx_tile_size_max = 0;
     try expectConfigError(io, fixture, config, error.InvalidGlobalSubpxTileSizeMax);
 }
 
@@ -425,8 +391,8 @@ fn testInvalidGlobalSubpxTileSizeRange(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.global_subpx_tile_size_min = 128;
-    config.global_subpx_tile_size_max = 64;
+    config.advanced.raster.global_subpx_tile_size_min = 128;
+    config.advanced.raster.global_subpx_tile_size_max = 64;
     try expectConfigError(io, fixture, config, error.InvalidGlobalSubpxTileSizeRange);
 }
 
@@ -437,9 +403,9 @@ fn testInvalidGlobalSubpxTileSizeOverride(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.global_subpx_tile_size_min = 16;
-    config.global_subpx_tile_size_max = 64;
-    config.global_subpx_tile_size_override = 128;
+    config.advanced.raster.global_subpx_tile_size_min = 16;
+    config.advanced.raster.global_subpx_tile_size_max = 64;
+    config.advanced.raster.global_subpx_tile_size_override = 128;
     try expectConfigError(io, fixture, config, error.InvalidGlobalSubpxTileSizeOverride);
 }
 
@@ -450,7 +416,7 @@ fn testInvalidGlobalSubpxStripeSizeMin(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.global_subpx_stripe_size_min = 0;
+    config.advanced.raster.global_subpx_stripe_size_min = 0;
     try expectConfigError(io, fixture, config, error.InvalidGlobalSubpxStripeSizeMin);
 }
 
@@ -461,7 +427,7 @@ fn testInvalidGlobalSubpxStripeSizeMax(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.global_subpx_stripe_size_max = 0;
+    config.advanced.raster.global_subpx_stripe_size_max = 0;
     try expectConfigError(io, fixture, config, error.InvalidGlobalSubpxStripeSizeMax);
 }
 
@@ -472,8 +438,8 @@ fn testInvalidGlobalSubpxStripeSizeRange(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.global_subpx_stripe_size_min = 128;
-    config.global_subpx_stripe_size_max = 64;
+    config.advanced.raster.global_subpx_stripe_size_min = 128;
+    config.advanced.raster.global_subpx_stripe_size_max = 64;
     try expectConfigError(io, fixture, config, error.InvalidGlobalSubpxStripeSizeRange);
 }
 
@@ -484,9 +450,9 @@ fn testInvalidGlobalSubpxStripeSizeOverride(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.global_subpx_stripe_size_min = 16;
-    config.global_subpx_stripe_size_max = 64;
-    config.global_subpx_stripe_size_override = 128;
+    config.advanced.raster.global_subpx_stripe_size_min = 16;
+    config.advanced.raster.global_subpx_stripe_size_max = 64;
+    config.advanced.raster.global_subpx_stripe_size_override = 128;
     try expectConfigError(io, fixture, config, error.InvalidGlobalSubpxStripeSizeOverride);
 }
 
@@ -512,7 +478,7 @@ fn testInvalidSaveFrameBuffCount(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.save_frame_buff_count = 0;
+    config.output.save_frame_buff_count = 0;
     try expectConfigError(io, fixture, config, error.InvalidSaveFrameBuffCount);
 }
 
@@ -524,7 +490,7 @@ fn testInvalidImageSaveOpts(
     _ = allocator;
     var config = fixture.config;
     config.save_strategy = .disk;
-    config.image_save_opts = &[_]iio.ImageSaveOpts{};
+    config.output.image_save_opts = &[_]iio.ImageSaveOpts{};
     try expectConfigError(io, fixture, config, error.InvalidImageSaveOpts);
 }
 
@@ -535,9 +501,10 @@ fn testInvalidFullStatsFormats(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.report = .full_stats;
-    config.max_raster_workers_per_job = 1;
-    config.full_stats_opts.formats = &[_]iio.ImageSaveOpts{};
+    config.report = .{
+        .mode = .full_stats,
+        .full_stats_opts = .{ .formats = &[_]iio.ImageSaveOpts{} },
+    };
     try expectConfigError(io, fixture, config, error.InvalidFullStatsFormats);
 }
 
@@ -860,10 +827,10 @@ fn testGlobalSubpxTileSizeNotAligned(
     const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
 
     var config = fixture.config;
-    config.buffer_mode = .global_subpx_full;
-    config.global_subpx_tile_size_min = 16;
-    config.global_subpx_tile_size_max = 64;
-    config.global_subpx_tile_size_override = 25;
+    config.advanced.raster.buffer_mode = .global_subpx_full;
+    config.advanced.raster.global_subpx_tile_size_min = 16;
+    config.advanced.raster.global_subpx_tile_size_max = 64;
+    config.advanced.raster.global_subpx_tile_size_override = 25;
 
     try std.testing.expectError(
         error.GlobalSubpxTileSizeNotAligned,
@@ -883,10 +850,10 @@ fn testGlobalSubpxStripeSizeNotAligned(
     const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
 
     var config = fixture.config;
-    config.buffer_mode = .global_subpx_stripe;
-    config.global_subpx_stripe_size_min = 16;
-    config.global_subpx_stripe_size_max = 64;
-    config.global_subpx_stripe_size_override = 25;
+    config.advanced.raster.buffer_mode = .global_subpx_stripe;
+    config.advanced.raster.global_subpx_stripe_size_min = 16;
+    config.advanced.raster.global_subpx_stripe_size_max = 64;
+    config.advanced.raster.global_subpx_stripe_size_override = 25;
 
     try std.testing.expectError(
         error.GlobalSubpxStripeSizeNotAligned,
@@ -912,7 +879,7 @@ fn testInvalidBenchCaptureBuff(
 
     try std.testing.expectError(
         error.InvalidBenchCaptureBuff,
-        riley.rasterReport(
+        riley.rasterReportWithRenderGroups(
             std.testing.allocator,
             &render_groups,
             &cam_inps,
@@ -959,7 +926,7 @@ fn testInvalidOutputBuff(
     // Case A: save_strategy == .memory but output buffer is null when required
     try std.testing.expectError(
         error.InvalidOutputBuff,
-        riley.rasterReportInto(
+        riley.rasterReportIntoWithRenderGroups(
             allocator,
             &render_groups,
             &cam_inps,
@@ -982,7 +949,7 @@ fn testInvalidOutputBuff(
     var disk_config = fixture.config;
     disk_config.save_strategy = .disk;
     const disk_opts = [_]iio.ImageSaveOpts{.{ .format = .bmp }};
-    disk_config.image_save_opts = &disk_opts;
+    disk_config.output.image_save_opts = &disk_opts;
 
     try std.testing.expectError(
         error.InvalidOutputBuff,
@@ -1007,7 +974,7 @@ fn testInvalidOutputBuff(
 
     try std.testing.expectError(
         error.InvalidOutputBuff,
-        riley.rasterReportInto(
+        riley.rasterReportIntoWithRenderGroups(
             allocator,
             &render_groups,
             &cam_inps,
@@ -1033,7 +1000,7 @@ fn testInvalidConnectivityIndex(
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
 
     var full_config = fixture.config;
-    full_config.validate_input = .full;
+    full_config.validation = .full;
 
     const orig_idx = mesh_inps[0].connect.table_mem[0];
     mesh_inps[0].connect.table_mem[0] = mesh_inps[0].coords.mat.rows_num + 100;
@@ -1057,7 +1024,7 @@ fn testDegenerateElementIndices(
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
 
     var full_config = fixture.config;
-    full_config.validate_input = .full;
+    full_config.validation = .full;
 
     const orig_idx1 = mesh_inps[0].connect.table_mem[1];
     mesh_inps[0].connect.table_mem[1] = mesh_inps[0].connect.table_mem[0];
@@ -1081,7 +1048,7 @@ fn testNonFiniteCoordinates(
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
 
     var full_config = fixture.config;
-    full_config.validate_input = .full;
+    full_config.validation = .full;
 
     const orig_coord = mesh_inps[0].coords.mem[0];
     mesh_inps[0].coords.mem[0] = std.math.nan(F);
@@ -1105,7 +1072,7 @@ fn testNonFiniteDisplacements(
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
 
     var full_config = fixture.config;
-    full_config.validate_input = .full;
+    full_config.validation = .full;
 
     if (mesh_inps[0].disp) |*disp_field| {
         const orig_disp = disp_field.array_mem[0];
@@ -1131,7 +1098,7 @@ fn testNonFiniteNodalFields(
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
 
     var full_config = fixture.config;
-    full_config.validate_input = .full;
+    full_config.validation = .full;
 
     switch (mesh_inps[0].shader) {
         .nodal => |*nodal_shader| {
@@ -1160,7 +1127,7 @@ fn testNonFiniteUvs(
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
 
     var full_config = fixture.config;
-    full_config.validate_input = .full;
+    full_config.validation = .full;
 
     switch (mesh_inps[1].shader) {
         .func => |*func_shader| {
@@ -1190,7 +1157,7 @@ fn testNonFiniteTexels(
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
 
     var full_config = fixture.config;
-    full_config.validate_input = .full;
+    full_config.validation = .full;
 
     var float_tex_data = [_]F{ 0.1, 0.2, 0.3, 0.4 };
     const float_tex_dims = [_]usize{ 1, 2, 2 };
@@ -1249,7 +1216,7 @@ fn testCrossModeValidation(
     defer mesh_inps[0].connect.table_mem[0] = orig_idx;
 
     var fast_config = fixture.config;
-    fast_config.validate_input = .fast;
+    fast_config.validation = .fast;
     _ = try valinp.checkRenderInps(
         &render_groups,
         &cam_inps,
@@ -1261,7 +1228,7 @@ fn testCrossModeValidation(
     );
 
     var full_config = fixture.config;
-    full_config.validate_input = .full;
+    full_config.validation = .full;
     try std.testing.expectError(
         error.InvalidConnectivityIndex,
         valarr.checkRenderArrs(&mesh_inps),
@@ -1279,8 +1246,8 @@ fn testMixedCaseMultipleConfigErrors(
 ) !void {
     _ = allocator;
     var config = fixture.config;
-    config.total_threads = 0;
-    config.tile_size_min = 0;
+    config.parallel = .{ .threads = 0 };
+    config.advanced.raster.tile_size_min = 0;
     config.background_value = std.math.nan(F);
 
     // Should return the first validation error encountered
@@ -1299,8 +1266,8 @@ fn testMixedCaseCameraAndConfigErrors(
     const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
 
     var config = fixture.config;
-    config.tile_size_min = 64;
-    config.tile_size_max = 32;
+    config.advanced.raster.tile_size_min = 64;
+    config.advanced.raster.tile_size_max = 32;
 
     // Config validation precedes camera validation
     try std.testing.expectError(
@@ -1350,10 +1317,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     try testInvalidRenderGroupWorkers(allocator, io, &fixture);
     try testFullStatsRequiresSingleRasterWorker(allocator, io, &fixture);
     try testInvalidTotalThreads(allocator, io, &fixture);
-    try testInvalidFrameBatchSize(allocator, io, &fixture);
-    try testInvalidGeomJobsInFlight(allocator, io, &fixture);
-    try testInvalidGeomWorkersPerJob(allocator, io, &fixture);
-    try testInvalidRasterWorkersPerJob(allocator, io, &fixture);
+    try testInvalidEdgeSpacing(allocator, io, &fixture);
 
     // Tile Size & Subpixel Tiling
     try testInvalidTileSizeMin(allocator, io, &fixture);

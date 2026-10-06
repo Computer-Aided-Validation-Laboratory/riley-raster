@@ -74,7 +74,7 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .disk;
-    config.image_save_opts = &[_]iio.ImageSaveOpts{
+    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .fimg, .bits = null, .scaling = .none },
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
@@ -91,7 +91,9 @@ pub fn main(init: std.process.Init) !void {
 
                 const is_rgb = (st == .tex8_rgb or st == .nodal_rgb);
                 const is_allowed_rgb = (st == .nodal_rgb) or
-                    (st == .tex8_rgb and sc.sample == .cubic_catmull_rom and sc.mode == .lut_lerp);
+                    (st == .tex8_rgb and
+                    sc.sample == .cubic_catmull_rom and
+                    sc.mode == .lut_lerp);
 
                 if (is_rgb and !is_allowed_rgb) continue;
 
@@ -152,7 +154,9 @@ pub fn main(init: std.process.Init) !void {
 
                 const is_rgb = (st == .tex8_rgb or st == .nodal_rgb);
                 const is_allowed_rgb = (st == .nodal_rgb) or
-                    (st == .tex8_rgb and sc.sample == .cubic_catmull_rom and sc.mode == .lut_lerp);
+                    (st == .tex8_rgb and
+                    sc.sample == .cubic_catmull_rom and
+                    sc.mode == .lut_lerp);
 
                 if (is_rgb and !is_allowed_rgb) continue;
 

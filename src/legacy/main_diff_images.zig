@@ -223,21 +223,20 @@ pub fn main(init: std.process.Init) !void {
     defer camera.deinit(aa);
 
     const config_rgb = riley.RasterConfig{
-        .save_opt = .memory,
-        .save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
-            .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 3 },
+        .save_strategy = .memory,
+        .output = .{
+            .image_save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
+                .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 3 },
+            },
         },
     };
 
     std.debug.print("Rendering Mixed RGB Data for Difference analysis...\n", .{});
     const camera_input = camera.toInput();
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config_rgb.total_threads) },
-    };
     const result = (try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]@TypeOf(camera_input){camera_input},
         mesh_inputs,
         config_rgb,

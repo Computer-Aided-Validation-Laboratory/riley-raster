@@ -36,20 +36,16 @@ pub fn main(init: std.process.Init) !void {
 
     const config_base = riley.RasterConfig{
         .save_strategy = .disk,
-        .total_threads = raster_threads,
-        .max_raster_workers_per_job = raster_threads,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
+        .parallel = .{ .threads = raster_threads },
+        .output = .{
+            .image_save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            },
         },
-        .report = .bench,
+        .report = .{ .mode = .bench },
     };
 
-    var groups = try riley.ManagedRenderGroups.init(outer_alloc, init.minimal, .{
-        .thread_budget = raster_threads,
-        .max_groups = 1,
-    });
-    defer groups.deinit(outer_alloc);
-    const io = groups.specs[0].io;
+    const io = init.io;
 
     const data_dir = "data/min/tri6_sphere200/";
     const out_dir_root = "./out/demo5_cameramodels";
@@ -220,7 +216,7 @@ pub fn main(init: std.process.Init) !void {
         for (psfs, psf_names) |psf, psf_name| {
             for (modes) |mode| {
                 var config = config_base;
-                config.buffer_mode = mode;
+                config.advanced.raster.buffer_mode = mode;
                 var cam = camera_input;
                 cam.distort = distort;
                 cam.psf = psf;
@@ -235,7 +231,7 @@ pub fn main(init: std.process.Init) !void {
 
                 if (try riley.raster(
                     outer_alloc,
-                    groups.specs,
+                    io,
                     &.{cam},
                     &.{mesh},
                     config,

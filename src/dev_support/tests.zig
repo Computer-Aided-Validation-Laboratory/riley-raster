@@ -136,18 +136,12 @@ pub fn renderMemoryCase(
     var mem_config = config;
     mem_config.save_strategy = .memory;
 
-    const render_groups = [_]riley.RenderGroupSpec{.{
-        .io = io,
-        .workers = mem_config.total_threads,
-    }};
-
-    const result = try riley.rasterReport(
+    const result = try riley.raster(
         allocator,
-        &render_groups,
+        io,
         cam_inps,
         mesh_inps,
         mem_config,
-        null,
         null,
     );
 
@@ -831,10 +825,10 @@ pub fn runSingleMeshSuiteDriver(
             var run_config = config;
             if (mode == .test_gold) {
                 run_config.save_strategy = .memory;
-                run_config.image_save_opts = &[_]iio.ImageSaveOpts{
+                run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
                     .{ .format = .csv, .bits = null, .scaling = .none },
                 };
-                run_config.report = if (report_perf) .full_stats else .off;
+                run_config.report = .{ .mode = if (report_perf) .full_stats else .off };
             } else {
                 var out_dir = try orch.openDirEnsured(io, nodal_dir);
                 out_dir.close(io);
@@ -855,12 +849,9 @@ pub fn runSingleMeshSuiteDriver(
                 std.debug.print("Testing {s} ... ", .{case_dir_name});
             }
             const time_start = Timestamp.now(io, .awake);
-            const render_groups = [_]riley.RenderGroupSpec{
-                .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-            };
             const result = try riley.raster(
                 aa,
-                &render_groups,
+                io,
                 &[_]CameraInput{camera_input},
                 &[_]MeshInput{mesh_input},
                 run_config,
@@ -983,10 +974,10 @@ pub fn runSingleMeshSuiteDriver(
                 var run_config = config;
                 if (mode == .test_gold) {
                     run_config.save_strategy = .memory;
-                    run_config.image_save_opts = &[_]iio.ImageSaveOpts{
+                    run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
                         .{ .format = .csv, .bits = null, .scaling = .none },
                     };
-                    run_config.report = if (report_perf) .full_stats else .off;
+                    run_config.report = .{ .mode = if (report_perf) .full_stats else .off };
                 } else {
                     var out_dir = try orch.openDirEnsured(io, tex_dir);
                     out_dir.close(io);
@@ -1007,12 +998,9 @@ pub fn runSingleMeshSuiteDriver(
                     std.debug.print("Testing {s} ... ", .{case_dir_name});
                 }
                 const time_start = Timestamp.now(io, .awake);
-                const render_groups = [_]riley.RenderGroupSpec{
-                    .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-                };
                 const result = try riley.raster(
                     aa,
-                    &render_groups,
+                    io,
                     &[_]CameraInput{camera_input},
                     &[_]MeshInput{mesh_input},
                     run_config,
@@ -1228,9 +1216,9 @@ pub fn runMultimeshTestExt(
         defer camera.deinit(aa);
 
         var config = tcfg.getRasterConfig(.testing);
-        config.buffer_mode = buffer_mode;
+        config.advanced.raster.buffer_mode = buffer_mode;
         config.save_strategy = .memory;
-        config.image_save_opts = &[_]iio.ImageSaveOpts{
+        config.output.image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         };
 
@@ -1253,12 +1241,9 @@ pub fn runMultimeshTestExt(
         }
 
         const time_start = Timestamp.now(io, .awake);
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-        };
         const result = (try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{camera_input},
             mesh_inputs,
             config,
@@ -1388,9 +1373,9 @@ pub fn runMultimeshMixedTestExt(
     defer camera.deinit(aa);
 
     var config = tcfg.getRasterConfig(.testing);
-    config.buffer_mode = buffer_mode;
+    config.advanced.raster.buffer_mode = buffer_mode;
     config.save_strategy = .memory;
-    config.image_save_opts = &[_]iio.ImageSaveOpts{
+    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
     const camera_input = CameraInput{
@@ -1405,12 +1390,9 @@ pub fn runMultimeshMixedTestExt(
     };
 
     const time_start = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-    };
     const result = (try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         mesh_inputs,
         config,
@@ -1526,9 +1508,9 @@ pub fn runMultimeshMixedRGBTestExt(
     defer camera.deinit(aa);
 
     var config_rgb = tcfg.getRasterConfig(.testing);
-    config_rgb.buffer_mode = buffer_mode;
+    config_rgb.advanced.raster.buffer_mode = buffer_mode;
     config_rgb.save_strategy = .memory;
-    config_rgb.image_save_opts = &[_]iio.ImageSaveOpts{
+    config_rgb.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
     };
 
@@ -1544,12 +1526,9 @@ pub fn runMultimeshMixedRGBTestExt(
     };
 
     const time_start = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config_rgb.total_threads) },
-    };
     const result = (try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         mesh_inputs,
         config_rgb,
@@ -1683,11 +1662,11 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
 
     var run_config = config;
     if (hull_mode) |hm| {
-        run_config.hull_mode = hm;
+        run_config.advanced.solver.hull_mode = hm;
     }
     if (mode == .test_gold) {
         run_config.save_strategy = .memory;
-        run_config.image_save_opts = &[_]iio.ImageSaveOpts{
+        run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         };
     } else {
@@ -1710,12 +1689,9 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
         std.debug.print("Testing {s} ... ", .{case_dir_name});
     }
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         &[_]MeshInput{mesh_input},
         run_config,

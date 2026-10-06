@@ -152,6 +152,14 @@ pub fn countStaticMeshElems(mesh_static: []const MeshStatic) usize {
     return total;
 }
 
+pub fn countMeshInputElems(meshes: []const MeshInput) usize {
+    var total: usize = 0;
+    for (meshes) |mesh| {
+        total += mesh.connect.table.rows_num;
+    }
+    return total;
+}
+
 pub fn countStaticMeshNodes(mesh_static: []const MeshStatic) usize {
     var total: usize = 0;
     for (mesh_static) |mesh| {
@@ -518,8 +526,8 @@ pub fn prepMeshFrame(
                 camera,
                 mesh_static,
                 frame_idx,
-                config.hull_mode,
-                config.edge_spacing_px,
+                config.advanced.solver.hull_mode,
+                config.advanced.distortion.edge_spacing_px,
                 scaling_params,
                 chunk_exec,
                 workers_num,

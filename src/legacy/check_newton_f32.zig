@@ -290,49 +290,43 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.testing);
     if (F == f32 or F == f64) {
-        config.newton_seed_mode = .centroid;
+        config.advanced.solver.newton_seed_mode = .centroid;
     }
-    config.total_threads = 1;
-    config.max_geom_workers_per_job = 1;
-    config.max_raster_workers_per_job = 1;
-    config.max_geom_jobs_in_flight_per_group = 1;
-    config.frame_batch_size_per_group = 1;
+    config.parallel = .{ .threads = 1 };
     config.save_strategy = .disk;
-    config.report = .full_stats;
-    config.image_save_opts = &[_]iio.ImageSaveOpts{
+    config.report = .{
+        .mode = .full_stats,
+        .full_stats_opts = .{
+            .formats = &[_]iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .auto },
+                .{ .format = .csv, .bits = null, .scaling = .none },
+            },
+            .save_solver_csv = true,
+            .save_iter_map = true,
+            .save_xi_map = true,
+            .save_eta_map = true,
+            .save_conv_map = true,
+            .save_jac_det_map = true,
+            .save_tile_timing_map = true,
+            .save_tile_density_map = true,
+            .save_tile_occupancy_map = true,
+            .save_depth_map = true,
+            .save_earlyout_map = true,
+            .save_pixel_occupancy_map = true,
+            .save_normals_map = false,
+        },
+    };
+    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .fimg, .bits = null, .scaling = .none, .channels = 3 },
         .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 3 },
-    };
-    config.full_stats_opts = .{
-        .formats = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
-            .{ .format = .csv, .bits = null, .scaling = .none },
-        },
-        .save_solver_csv = true,
-        .save_iter_map = true,
-        .save_xi_map = true,
-        .save_eta_map = true,
-        .save_conv_map = true,
-        .save_jac_det_map = true,
-        .save_tile_timing_map = true,
-        .save_tile_density_map = true,
-        .save_tile_occupancy_map = true,
-        .save_depth_map = true,
-        .save_earlyout_map = true,
-        .save_pixel_occupancy_map = true,
-        .save_normals_map = false,
     };
 
     var out_dir_handle = try orch.openDirEnsured(io, out_dir);
     out_dir_handle.close(io);
 
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-    };
-
     const images = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         &[_]mo.MeshInput{mesh_input},
         config,

@@ -84,23 +84,20 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const config = riley.RasterConfig{
         .save_strategy = .disk,
-        .image_save_mode = .grey,
-        .image_save_opts = &.{
-            .{ .format = iio.ImageFormat.bmp, .bits = 8, .scaling = .none },
+        .output = .{
+            .image_save_mode = .grey,
+            .image_save_opts = &.{
+                .{ .format = iio.ImageFormat.bmp, .bits = 8, .scaling = .none },
+            },
         },
     };
-
-    var groups = try riley.ManagedRenderGroups.init(init.gpa, init.minimal, .{
-        .thread_budget = 1,
-    });
-    defer groups.deinit(init.gpa);
 
     // -------------------------------------------------------------------------
     // 4. Render the scene
     // -------------------------------------------------------------------------
     const images = try riley.raster(
         init.gpa,
-        groups.specs,
+        init.io,
         &.{camera_input},
         &.{mesh_input},
         config,
