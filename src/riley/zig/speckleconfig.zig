@@ -19,6 +19,7 @@ pub const Evaluator = enum(u8) {
     mask_1bit,
     mask_u8,
     list_indexed_2,
+    list_indexed_3,
 };
 
 pub const Config = struct {
@@ -65,6 +66,7 @@ pub fn evaluatorName(evaluator: Evaluator) []const u8 {
         .list_naive => "list-naive",
         .list_indexed => "list-indexed",
         .list_indexed_2 => "list-indexed-2",
+        .list_indexed_3 => "list-indexed-3",
         .classified_indexed => "classified-indexed",
         .direct_fixed => "direct-fixed",
         .mask_1bit => "mask-1bit",
@@ -82,7 +84,7 @@ pub fn isValidMaskSamplesPerCell(samples: anytype) bool {
 
 pub fn supportsSoftEdges(config: Config) bool {
     return config.pattern == .disk and switch (config.evaluator) {
-        .cell_hash, .list_naive, .list_indexed, .list_indexed_2, .mask_u8 => true,
+        .cell_hash, .list_naive, .list_indexed, .list_indexed_2, .list_indexed_3, .mask_u8 => true,
         .classified_indexed, .direct_fixed, .mask_1bit => false,
     };
 }
@@ -99,7 +101,7 @@ pub fn validateCompatibility(config: Config) CompatibilityError!void {
             return error.ClassifiedIndexedRequiresDiskAndNineNeighbors,
         .direct_fixed => if (config.pattern != .disk or config.neighbor_count != 1)
             return error.DirectFixedRequiresDiskAndOneNeighbor,
-        .cell_hash, .list_naive, .list_indexed, .list_indexed_2, .mask_u8 => {},
+        .cell_hash, .list_naive, .list_indexed, .list_indexed_2, .list_indexed_3, .mask_u8 => {},
     }
     if (config.soft_edges) {
         if (config.pattern != .disk) return error.SpeckleEdgeSoftnessRequiresDisk;
