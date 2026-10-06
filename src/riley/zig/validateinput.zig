@@ -335,8 +335,8 @@ fn checkMeshesMetadata(
                 disp_field.array.dims[2] != 3 or
                 disp_field.array_mem.len !=
                     disp_field.array.dims[0] *
-                    disp_field.array.dims[1] *
-                    disp_field.array.dims[2])
+                        disp_field.array.dims[1] *
+                        disp_field.array.dims[2])
             {
                 return error.InvalidDisplacementDimensions;
             }
@@ -909,3 +909,4 @@ test "raster configuration rejects invalid distortion edge spacing" {
         );
     }
 }
+

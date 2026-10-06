@@ -25,3 +25,12 @@ pub const getTessellation = impl.getTessellation;
 pub const AdaptiveHullPoints = @import("hull_common.zig").AdaptiveHullPoints;
 pub const buildAdaptiveHullPointsFromClip =
     @import("hull_common.zig").buildAdaptiveHullPointsFromClip;
+pub const MultiRootHull = @import("hull_common.zig").MultiRootHull;
+pub const buildMultiRootHullFromClip =
+    @import("hull_common.zig").buildMultiRootHullFromClip;
+pub const containsMultiRootHull =
+    @import("hull_common.zig").containsMultiRootHull;
+pub const prepareMultiRootEdgeSlack =
+    @import("hull_common.zig").prepareMultiRootEdgeSlack;
+pub const containsMultiRootHullPrepared =
+    @import("hull_common.zig").containsMultiRootHullPrepared;

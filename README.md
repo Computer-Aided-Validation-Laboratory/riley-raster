@@ -42,6 +42,7 @@ The Zig test suites are intentionally separated by purpose. The focused verifica
 | `zig build test-verif -Doptimize=ReleaseSafe` | Analytic verification of the solver, silhouettes, depth buffer, and camera distortion. |
 | `zig build test-basic -Doptimize=ReleaseSafe` | Basic regression suite. |
 | `zig build test-full -Doptimize=ReleaseSafe` | Full regression suite. |
+| `zig build test-full-badjac` | Warning-only renders of intentionally invalid-Jacobian element frames, with diffs under `fails/`. |
 
 Run the packaged Python test suite with:
 

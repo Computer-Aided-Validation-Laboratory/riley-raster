@@ -16,6 +16,168 @@ const common = @import("newton_common.zig");
 const iter_max = cfg.raster_newton_iter_max;
 const tol = cfg.tol;
 
+pub const FrozenJacConfig = struct {
+    max_iters: u8,
+    handoff_tol_mult: F,
+};
+
+pub const FrozenJacResult = struct {
+    seed: common.NewtonSeed,
+    frozen_iters: u8 = 0,
+    residual_evals: u16 = 0,
+    jacobian_evals: u16 = 0,
+    fell_back: bool = false,
+};
+
+/// Experimental warm-start. It never rejects a seed: unsafe or unproductive
+/// frozen steps hand the best known state to the unchanged Newton solver.
+pub fn refineSeedFrozenScal(
+    comptime N: usize,
+    targ_x: F,
+    targ_y: F,
+    elem_node_x: []const F,
+    elem_node_y: []const F,
+    elem_node_w: []const F,
+    seed: common.NewtonSeed,
+    config: FrozenJacConfig,
+) FrozenJacResult {
+    var result = FrozenJacResult{ .seed = seed };
+    if (config.max_iters == 0 or !common.isSeedFinite(seed)) return result;
+
+    var term_x: [N]F = undefined;
+    var term_y: [N]F = undefined;
+    for (0..N) |nn| {
+        term_x[nn] = @mulAdd(F, targ_x, elem_node_w[nn], -elem_node_x[nn]);
+        term_y[nn] = @mulAdd(F, targ_y, elem_node_w[nn], -elem_node_y[nn]);
+    }
+    var values: [N]F = undefined;
+    var du: [N]F = undefined;
+    var dv: [N]F = undefined;
+    shapefun.shapeFunc(N, seed.xi, seed.eta, &values, &du, &dv);
+    var resid_x: F = 0;
+    var resid_y: F = 0;
+    var interp_w: F = 0;
+    var jac_11: F = 0;
+    var jac_12: F = 0;
+    var jac_21: F = 0;
+    var jac_22: F = 0;
+    for (0..N) |nn| {
+        resid_x = @mulAdd(F, values[nn], term_x[nn], resid_x);
+        resid_y = @mulAdd(F, values[nn], term_y[nn], resid_y);
+        interp_w = @mulAdd(F, values[nn], elem_node_w[nn], interp_w);
+        jac_11 = @mulAdd(F, du[nn], term_x[nn], jac_11);
+        jac_12 = @mulAdd(F, dv[nn], term_x[nn], jac_12);
+        jac_21 = @mulAdd(F, du[nn], term_y[nn], jac_21);
+        jac_22 = @mulAdd(F, dv[nn], term_y[nn], jac_22);
+    }
+    result.residual_evals = 1;
+    result.jacobian_evals = 1;
+    const det = @mulAdd(F, jac_11, jac_22, -(jac_12 * jac_21));
+    const col_xi_sq = @mulAdd(F, jac_11, jac_11, jac_21 * jac_21);
+    const col_eta_sq = @mulAdd(F, jac_12, jac_12, jac_22 * jac_22);
+    const near_singular = det * det <=
+        tol.newton.rel_det * tol.newton.rel_det * col_xi_sq * col_eta_sq;
+    const initial_norm = @sqrt(resid_x * resid_x + resid_y * resid_y) /
+        @abs(interp_w);
+    if (!std.math.isFinite(det) or near_singular or
+        !std.math.isFinite(initial_norm))
+    {
+        result.fell_back = true;
+        return result;
+    }
+    const inv_det = 1 / det;
+    const handoff_tol = tol.newton.norm_resid * config.handoff_tol_mult;
+    if (initial_norm <= handoff_tol) return result;
+
+    var current = seed;
+    var best_norm = initial_norm;
+    for (0..config.max_iters) |_| {
+        var step_xi = inv_det *
+            @mulAdd(F, jac_22, resid_x, -(jac_12 * resid_y));
+        var step_eta = inv_det *
+            @mulAdd(F, jac_11, resid_y, -(jac_21 * resid_x));
+        const max_step = @max(@abs(step_xi), @abs(step_eta));
+        if (!std.math.isFinite(max_step)) {
+            result.fell_back = true;
+            break;
+        }
+        if (max_step > tol.newton.max_para_step) {
+            const step_scale = tol.newton.max_para_step / max_step;
+            step_xi *= step_scale;
+            step_eta *= step_scale;
+        }
+        const next = common.NewtonSeed{
+            .xi = current.xi - step_xi,
+            .eta = current.eta - step_eta,
+        };
+        if (!common.isSeedFinite(next)) {
+            result.fell_back = true;
+            break;
+        }
+        shapefun.shapeFunc(N, next.xi, next.eta, &values, &du, &dv);
+        resid_x = 0;
+        resid_y = 0;
+        interp_w = 0;
+        for (0..N) |nn| {
+            resid_x = @mulAdd(F, values[nn], term_x[nn], resid_x);
+            resid_y = @mulAdd(F, values[nn], term_y[nn], resid_y);
+            interp_w = @mulAdd(F, values[nn], elem_node_w[nn], interp_w);
+        }
+        result.residual_evals += 1;
+        const norm = @sqrt(resid_x * resid_x + resid_y * resid_y) /
+            @abs(interp_w);
+        if (!std.math.isFinite(norm) or norm >= best_norm) {
+            result.fell_back = true;
+            break;
+        }
+        current = next;
+        result.seed = next;
+        result.frozen_iters += 1;
+        best_norm = norm;
+        if (norm <= handoff_tol) break;
+    }
+    return result;
+}
+
+test "frozen Jacobian refinement solves an affine quad4 in one step" {
+    const node_x = [4]F{ -1, 1, 1, -1 };
+    const node_y = [4]F{ -1, -1, 1, 1 };
+    const node_w = [4]F{ 1, 1, 1, 1 };
+    const result = refineSeedFrozenScal(
+        4,
+        0.2,
+        -0.3,
+        &node_x,
+        &node_y,
+        &node_w,
+        .{ .xi = 0, .eta = 0 },
+        .{ .max_iters = 1, .handoff_tol_mult = 10 },
+    );
+    try std.testing.expectEqual(@as(u8, 1), result.frozen_iters);
+    try std.testing.expectApproxEqAbs(@as(F, 0.2), result.seed.xi, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(F, -0.3), result.seed.eta, 1e-6);
+    try std.testing.expect(!result.fell_back);
+}
+
+test "frozen Jacobian refinement keeps the original seed for singular maps" {
+    const node_x = [_]F{0} ** 4;
+    const node_y = [_]F{0} ** 4;
+    const node_w = [_]F{1} ** 4;
+    const seed = common.NewtonSeed{ .xi = 0.1, .eta = -0.2 };
+    const result = refineSeedFrozenScal(
+        4,
+        0.2,
+        -0.3,
+        &node_x,
+        &node_y,
+        &node_w,
+        seed,
+        .{ .max_iters = 4, .handoff_tol_mult = 10 },
+    );
+    try std.testing.expectEqual(seed, result.seed);
+    try std.testing.expect(result.fell_back);
+}
+
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------

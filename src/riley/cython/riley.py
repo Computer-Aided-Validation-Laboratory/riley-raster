@@ -35,7 +35,8 @@ class PolyMap:
         Coordinate output or identity-plus-displacement interpretation.
     coeffs
         Shape (term_count, 2), ordered by total degree, descending x exponent.
-        Bindings take an owned contiguous float64 snapshot for each native call.
+        Bindings take an owned contiguous float64 snapshot for each native
+        call.
     """
 
     degree: int
@@ -161,9 +162,10 @@ class RasterConfig:
     max_raster_workers_per_job: int = 1
     save_strategy: int = 1
     image_save_mode: int = 2
-    hull_mode: int = 1
-    newton_seed_mode: int = 0
-    newton_seed_reuse: int = 0
+    oneroot_hull_mode: int = 1
+    oneroot_newton_seed_mode: int = 0
+    oneroot_newton_seed_reuse: int = 0
+    multiroot_mode: int = 0
     validate_input: int = 1
     report: int = 1
     tile_size_min: int = 1
@@ -321,7 +323,6 @@ class NormalType(IntEnum):
 
 
 class HullMode(IntEnum):
-    off = 0
     on_no_fallback = 1
     on_convex_fallback = 2
 
@@ -334,6 +335,11 @@ class NewtonSeedMode(IntEnum):
 class NewtonSeedReuse(IntEnum):
     off = 0
     last_converged = 1
+
+
+class MultirootSolverMode(IntEnum):
+    fast = 0
+    robust = 1
 
 
 class ValidateInput(IntEnum):
@@ -488,10 +494,14 @@ def _make_camera_input(camera: Any, keepalive: list[Any]) -> cr.CCameraInput:
         count = (poly.degree + 1) * (poly.degree + 2) // 2
         values = np.asarray(poly.coeffs)
         if values.shape != (count, 2):
-            raise ValueError("polynomial coefficients require shape (term_count, 2)")
+            raise ValueError(
+                "polynomial coefficients require shape (term_count, 2)"
+            )
         if np.iscomplexobj(values):
             raise ValueError("polynomial coefficients must be real")
-        snapshot = np.array(values, dtype=np.float64, order="C", copy=True).reshape(-1)
+        snapshot = np.array(
+            values, dtype=np.float64, order="C", copy=True
+        ).reshape(-1)
         if not np.isfinite(snapshot).all():
             raise ValueError("polynomial coefficients must be finite")
         keepalive.append(snapshot)
@@ -611,9 +621,12 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
     )
     config_out.save_strategy = int(config.save_strategy)
     config_out.image_save_mode = int(config.image_save_mode)
-    config_out.hull_mode = int(config.hull_mode)
-    config_out.newton_seed_mode = int(config.newton_seed_mode)
-    config_out.newton_seed_reuse = int(config.newton_seed_reuse)
+    config_out.oneroot_hull_mode = int(config.oneroot_hull_mode)
+    config_out.oneroot_newton_seed_mode = int(config.oneroot_newton_seed_mode)
+    config_out.oneroot_newton_seed_reuse = int(
+        config.oneroot_newton_seed_reuse,
+    )
+    config_out.multiroot_mode = int(config.multiroot_mode)
     config_out.validate_input = int(config.validate_input)
     config_out.report = int(config.report)
     config_out.tile_size_min = int(config.tile_size_min)
@@ -621,8 +634,12 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
     config_out.background_value = float(config.background_value)
     config_out.disk_save_overlap = 1 if config.disk_save_overlap else 0
     config_out.tile_size_override = int(config.tile_size_override)
-    config_out.global_subpx_tile_size_min = int(config.global_subpx_tile_size_min)
-    config_out.global_subpx_tile_size_max = int(config.global_subpx_tile_size_max)
+    config_out.global_subpx_tile_size_min = int(
+        config.global_subpx_tile_size_min
+    )
+    config_out.global_subpx_tile_size_max = int(
+        config.global_subpx_tile_size_max
+    )
     config_out.global_subpx_tile_size_override = int(
         config.global_subpx_tile_size_override,
     )
@@ -1209,13 +1226,15 @@ def _fill_mesh_array(
                 texture_storage = int(TextureStorage.floating)
         elif isinstance(shader, NodalShader):
             field_channels = int(shader.field.shape[2])
+            is_rgb = (field_channels == 3)
             shader_tag = int(
-                ShaderType.nodal_rgb if field_channels == 3 else ShaderType.nodal
+                ShaderType.nodal_rgb if is_rgb else ShaderType.nodal
             )
             texture_storage = int(TextureStorage.u8)
         elif isinstance(shader, FunctionShader):
+            is_rgb = (shader.channels == 3)
             shader_tag = int(
-                ShaderType.func_rgb if shader.channels == 3 else ShaderType.func
+                ShaderType.func_rgb if is_rgb else ShaderType.func
             )
             texture_storage = int(TextureStorage.u8)
         else:
@@ -1224,7 +1243,9 @@ def _fill_mesh_array(
         mesh_array[nn].shader.shader_tag = shader_tag
         mesh_array[nn].shader.texture_storage = texture_storage
         mesh_array[nn].shader.sample = int(getattr(shader, "sample", 0))
-        mesh_array[nn].shader.sample_mode = int(getattr(shader, "sample_mode", 0))
+        mesh_array[nn].shader.sample_mode = int(
+            getattr(shader, "sample_mode", 0)
+        )
         mesh_array[nn].shader.bits = int(getattr(shader, "bits", 8))
         mesh_array[nn].shader.scaling_tag = int(shader.scaling_type)
         mesh_array[nn].shader.scaling_min = float(shader.scaling_min)
@@ -1567,7 +1588,8 @@ def save_camera(
 
 
 def load_camera(dir_path: str, file_name: str) -> Camera:
-    """Load a camera into Python-owned storage through the caller-buffer C API."""
+    """Load a camera into Python-owned storage through the caller-buffer
+    C API."""
     dir_bytes = dir_path.encode("utf-8")
     file_bytes = file_name.encode("utf-8")
     camera_c: cr.CCameraInput
@@ -1582,7 +1604,8 @@ def load_camera(dir_path: str, file_name: str) -> Camera:
         != 0
     ):
         _raise_last_error()
-    # Maximum supported capacity also handles file changes between query and load.
+    # Maximum supported capacity also handles file changes between query
+    # and load.
     storage = np.empty(72, dtype=np.float64)
     coeffs: cython.double[::1] = storage
     if (
@@ -1739,6 +1762,7 @@ __all__ = [
     "HullMode",
     "Mesh",
     "MeshType",
+    "MultirootSolverMode",
     "NewtonSeedMode",
     "NewtonSeedReuse",
     "NormalType",

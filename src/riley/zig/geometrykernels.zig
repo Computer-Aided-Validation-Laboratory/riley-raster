@@ -34,6 +34,48 @@ pub const TRI_CENTROID_ETA: F = 1.0 / 3.0;
 pub const QUAD_CENTROID_XI: F = 0.0;
 pub const QUAD_CENTROID_ETA: F = 0.0;
 
+pub fn parentNodeCoords(comptime N: usize) [N][2]F {
+    return switch (N) {
+        4 => .{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+        },
+        6 => .{
+            .{ 0, 0 },   .{ 1, 0 },     .{ 0, 1 },
+            .{ 0.5, 0 }, .{ 0.5, 0.5 }, .{ 0, 0.5 },
+        },
+        8 => .{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+            .{ 0, -1 },  .{ 1, 0 },  .{ 0, 1 }, .{ -1, 0 },
+        },
+        9 => .{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+            .{ 0, -1 },  .{ 1, 0 },  .{ 0, 1 }, .{ -1, 0 },
+            .{ 0, 0 },
+        },
+        else => @compileError("parentNodeCoords requires a Newton element"),
+    };
+}
+
+pub fn multiRootSeedCount(comptime N: usize) usize {
+    _ = parentNodeCoords(N);
+    return if (N == 9) 2 * N - 1 else 2 * N + 1;
+}
+
+/// Node IDs precede centroid-to-node midpoint IDs; the virtual centroid is
+/// last. Quad9 already has a center node, so it omits that midpoint and the
+/// virtual centroid.
+pub fn multiRootSeedCoords(comptime N: usize, index: u8) [2]F {
+    const parents = comptime parentNodeCoords(N);
+    const center: F = if (N == 6) 1.0 / 3.0 else 0;
+    std.debug.assert(index < multiRootSeedCount(N));
+    if (index < N) return parents[index];
+    if (index < 2 * N - @as(usize, if (N == 9) 1 else 0)) {
+        const node = parents[index - N];
+        return .{ 0.5 * (center + node[0]), 0.5 * (center + node[1]) };
+    }
+    return .{ center, center };
+}
+
 pub const MeshType = enum(u8) {
     tri3 = 0,
     tri3opt = 1,

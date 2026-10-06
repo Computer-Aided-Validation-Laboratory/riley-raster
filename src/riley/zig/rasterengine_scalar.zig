@@ -152,8 +152,15 @@ pub fn RasterEngine(
     comptime Geom: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
+    comptime root_class: rops.RootClass,
 ) type {
-    return RasterEngineFor(SubpxScratchBuffs, Geom, ShaderKern, ShaderData);
+    return RasterEngineFor(
+        SubpxScratchBuffs,
+        Geom,
+        ShaderKern,
+        ShaderData,
+        root_class,
+    );
 }
 
 pub fn RasterEngineFor(
@@ -161,6 +168,7 @@ pub fn RasterEngineFor(
     comptime Geom: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
+    comptime root_class: rops.RootClass,
 ) type {
     return struct {
         pub fn render(
@@ -284,7 +292,10 @@ pub fn RasterEngineFor(
                 );
             }
 
-            return rasterNewtonImpl(
+            return (if (comptime root_class == .multi_root)
+                rasterNewtonMultiImpl
+            else
+                rasterNewtonImpl)(
                 ScratchBuffs,
                 Geom,
                 ShaderKern,
@@ -497,7 +508,7 @@ fn rasterNewtonImpl(
 
             ctx_report.recordSolverCalls(1);
             const result = blk: {
-                if (ctx_rast.config.advanced.solver.newton_seed_mode == .hull) {
+                if (ctx_rast.config.advanced.solver.oneroot.newton_seed_mode == .hull) {
                     if (hull_seed) |seed| {
                         const seed_quality = newton.evaluateSeedQuality(
                             Geom.nodes_num,
@@ -515,11 +526,11 @@ fn rasterNewtonImpl(
                     }
                 }
                 const base_seed = Geom.initSeed(
-                    ctx_rast.config.advanced.solver.newton_seed_mode,
+                    ctx_rast.config.advanced.solver.oneroot.newton_seed_mode,
                     hull_seed,
                 );
                 const selected_seed = newton.selectSeed(
-                    ctx_rast.config.advanced.solver.newton_seed_reuse,
+                    ctx_rast.config.advanced.solver.oneroot.newton_seed_reuse,
                     base_seed,
                     seed_state,
                 );
@@ -615,7 +626,7 @@ fn rasterNewtonImpl(
                 );
             }
 
-            if (ctx_rast.config.advanced.solver.newton_seed_reuse == .last_conv) {
+            if (ctx_rast.config.advanced.solver.oneroot.newton_seed_reuse == .last_conv) {
                 newton.updateSeedState(
                     &seed_state,
                     result.xi_out,
@@ -672,6 +683,266 @@ fn rasterNewtonImpl(
                 .eta = result.eta_out,
             };
 
+            ShaderKern.shade(
+                Geom.coord_space,
+                ctx_shade,
+                interp_data,
+                shader_buf,
+                shader,
+                ctx_report,
+                &subpx_scratch.image,
+            );
+        }
+    }
+    return shaded_px;
+}
+
+fn solveMultiRootSeedScal(
+    comptime Geom: type,
+    comptime report_mode: ReportMode,
+    ctx_report: report.ReportContext(report_mode),
+    nodes_coords: Vec3Slices(F),
+    ideal_x: F,
+    ideal_y: F,
+    x_off: F,
+    y_off: F,
+    seed: [2]F,
+) ?struct {
+    weights: [Geom.nodes_num]F,
+    xi: F,
+    eta: F,
+    inv_z: F,
+} {
+    ctx_report.recordSolverCalls(1);
+    const result = Geom.solveWeightsNewton(
+        nodes_coords,
+        ideal_x,
+        ideal_y,
+        x_off,
+        y_off,
+        seed[0],
+        seed[1],
+    );
+    ctx_report.recordSolverIters(result.iters);
+    const weights = result.weights orelse {
+        if (result.iters > 0) ctx_report.recordSolverDiverged();
+        return null;
+    };
+    if (!std.math.isFinite(result.xi_out) or
+        !std.math.isFinite(result.eta_out) or
+        Geom.domViolation(result.xi_out, result.eta_out) > 0)
+    {
+        return null;
+    }
+    const state = newton.evaluateSolveState(
+        Geom.nodes_num,
+        ideal_x - x_off,
+        ideal_y - y_off,
+        nodes_coords.x,
+        nodes_coords.y,
+        nodes_coords.z,
+        result.xi_out,
+        result.eta_out,
+    );
+    if (!std.math.isFinite(state.norm_resid_mag) or
+        state.norm_resid_mag > tol.newton.norm_resid)
+    {
+        return null;
+    }
+    const facing = rops.projectedJacDetPhysical(
+        Geom.nodes_num,
+        nodes_coords,
+        result.xi_out,
+        result.eta_out,
+    );
+    if (!std.math.isFinite(facing) or
+        facing >= -tol.culling.projected_jacobian_abs)
+    {
+        return null;
+    }
+    const inv_z = Geom.calcInvZ(nodes_coords, weights);
+    if (!std.math.isFinite(inv_z) or inv_z <= 0) return null;
+    return .{
+        .weights = weights,
+        .xi = result.xi_out,
+        .eta = result.eta_out,
+        .inv_z = inv_z,
+    };
+}
+
+fn rasterNewtonMultiImpl(
+    comptime ScratchBuffs: type,
+    comptime Geom: type,
+    comptime ShaderKern: type,
+    comptime ShaderData: type,
+    comptime report_mode: ReportMode,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+    tile: rops.ActiveTile,
+    overlap: rops.OverlapBBox,
+    raster_hull: ?*const NDArray(F),
+    subpx_dom: SubpxDom,
+    rast_bounds: RasterBounds,
+    nodes_coords: Vec3Slices(F),
+    shader: *const ShaderData,
+    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
+    subpx_scratch: *ScratchBuffs,
+) !u64 {
+    const N = Geom.nodes_num;
+    _ = raster_hull;
+    if (ctx_rast.multi_root_by_mesh.len <= overlap.mesh_idx) {
+        return error.MissingMultiRootData;
+    }
+    const prepared = ctx_rast.multi_root_by_mesh[overlap.mesh_idx] orelse
+        return error.MissingMultiRootData;
+    const slot = prepared.slot_by_visible_elem.get(overlap.elem_idx);
+    if (slot == std.math.maxInt(u32)) return error.MissingMultiRootData;
+    const hull_count = prepared.hull_count.get(slot);
+    const hx = prepared.hull_x.getSlice(slot)[0..hull_count];
+    const hy = prepared.hull_y.getSlice(slot)[0..hull_count];
+    var edge_slack: [9]F = undefined;
+    hull.prepareMultiRootEdgeSlack(hx, hy, edge_slack[0..hull_count]);
+    const leaf_offset = @as(usize, slot) * 4;
+    const leaves = prepared.leaves[leaf_offset .. leaf_offset + 4];
+    const fallback_seed_count = prepared.valid_depth.get(slot);
+    const fallback_seeds = prepared.indices.getSlice(slot)[0..fallback_seed_count];
+    var fallback_seed_uvs: [3][2]F = undefined;
+    for (fallback_seeds, 0..) |seed_idx, ii| {
+        fallback_seed_uvs[ii] = geomkerns.multiRootSeedCoords(N, seed_idx);
+    }
+
+    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
+    const ideal_x_plane = cam.getIdealXPlaneScratch(subpx_scratch.ideal_pix_cent);
+    const ideal_y_plane = cam.getIdealYPlaneScratch(subpx_scratch.ideal_pix_cent);
+    var nodes_inv_z: [N]F = undefined;
+    inline for (0..N) |nn| nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
+    var shaded_px: u64 = 0;
+    const is_robust = ctx_rast.config.advanced.solver.multiroot.mode == .robust;
+
+    for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
+        const row_offset = scratch_y * subpx_dom.tile_size;
+        for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x| {
+            const scratch_idx = row_offset + scratch_x;
+            const ideal_x = ideal_x_plane[scratch_idx];
+            const ideal_y = ideal_y_plane[scratch_idx];
+            const global_subx = comm.globalSubpxForReport(
+                tile.scratch_x_px_min,
+                sub_samp,
+                scratch_x,
+            );
+            const global_suby = comm.globalSubpxForReport(
+                tile.scratch_y_px_min,
+                sub_samp,
+                scratch_y,
+            );
+            const has_hit = hull.containsMultiRootHullPrepared(
+                hx,
+                hy,
+                edge_slack[0..hull_count],
+                ideal_x,
+                ideal_y,
+            );
+            if (!has_hit) {
+                if (comptime report_mode == .full_stats) {
+                    rasterreport.recordEarlyOut(
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        false,
+                    );
+                }
+                continue;
+            }
+
+            var best_inv_z: F = -std.math.inf(F);
+            var best_weights: ?[N]F = null;
+            var best_xi: F = 0;
+            var best_eta: F = 0;
+            var had_candidate_child = false;
+
+            for (leaves) |*leaf| {
+                if (!leaf.contains(ideal_x, ideal_y)) continue;
+                had_candidate_child = true;
+                if (solveMultiRootSeedScal(
+                    Geom,
+                    report_mode,
+                    ctx_report,
+                    nodes_coords,
+                    ideal_x,
+                    ideal_y,
+                    subpx_dom.x_off,
+                    subpx_dom.y_off,
+                    leaf.seed,
+                )) |hit| {
+                    if (hit.inv_z > best_inv_z) {
+                        best_inv_z = hit.inv_z;
+                        best_weights = hit.weights;
+                        best_xi = hit.xi;
+                        best_eta = hit.eta;
+                    }
+                }
+            }
+
+            if (best_weights == null and had_candidate_child and is_robust) {
+                for (fallback_seed_uvs[0..fallback_seed_count]) |seed_uv| {
+                    if (solveMultiRootSeedScal(
+                        Geom,
+                        report_mode,
+                        ctx_report,
+                        nodes_coords,
+                        ideal_x,
+                        ideal_y,
+                        subpx_dom.x_off,
+                        subpx_dom.y_off,
+                        seed_uv,
+                    )) |hit| {
+                        if (hit.inv_z > best_inv_z) {
+                            best_inv_z = hit.inv_z;
+                            best_weights = hit.weights;
+                            best_xi = hit.xi;
+                            best_eta = hit.eta;
+                        }
+                    }
+                }
+            }
+
+            ctx_report.recordTessChecks(1);
+            if (has_hit) ctx_report.recordTessPasses(1);
+            if (comptime report_mode == .full_stats) {
+                rasterreport.recordEarlyOut(
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    has_hit,
+                );
+            }
+
+            const weights = best_weights orelse continue;
+            if (best_inv_z + tol.geometry.depth_buff_inv_z_cmp <
+                subpx_scratch.inv_z[scratch_idx]) continue;
+            subpx_scratch.inv_z[scratch_idx] = best_inv_z;
+            subpx_scratch.touched_min_x[scratch_y] =
+                @min(subpx_scratch.touched_min_x[scratch_y], scratch_x);
+            subpx_scratch.touched_max_x[scratch_y] =
+                @max(subpx_scratch.touched_max_x[scratch_y], scratch_x);
+            shaded_px += 1;
+            const ctx_shade = shaderops.ShadeContext{
+                .frame_idx = ctx_rast.frame_idx,
+                .elem_idx = overlap.elem_idx,
+                .fields_num = fields_num,
+                .actual_fields = fields_num,
+                .scratch_idx = subpx_scratch.imageIndex(scratch_idx),
+                .global_subx = global_subx,
+                .global_suby = global_suby,
+            };
+            const interp_data = shaderops.InterpData(N){
+                .weights = weights,
+                .nodes_inv_z = nodes_inv_z,
+                .sub_pixel_z = 1.0 / best_inv_z,
+                .xi = best_xi,
+                .eta = best_eta,
+            };
             ShaderKern.shade(
                 Geom.coord_space,
                 ctx_shade,

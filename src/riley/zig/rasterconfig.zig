@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const std = @import("std");
 const iio = @import("imageio.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -83,9 +84,56 @@ pub const DistortionTuning = struct {
 };
 
 pub const SolverTuning = struct {
+    oneroot: SolverTuningOneRoot = .{},
+    multiroot: SolverTuningMultiroot = .{},
+};
+
+pub const SolverTuningOneRoot = struct {
     hull_mode: HullMode = .on_no_fallback,
     newton_seed_mode: NewtonSeedMode = .centroid,
     newton_seed_reuse: NewtonSeedReuse = .off,
+};
+
+pub const SolverTuningMultiroot = struct {
+    mode: MultirootSolverMode = .fast,
+};
+
+/// Controls the solver used for elements classified as potentially multi-root
+/// under camera projection.
+///
+/// Both modes use the same fixed four-child Bézier patch hierarchy:
+///
+/// 1. test the whole-element conservative projected hull;
+/// 2. test the four conservative projected child-patch hulls;
+/// 3. for each candidate child, start Newton from that child's parent-space
+///    centre;
+/// 4. retain the nearest accepted front-facing root.
+///
+/// `.fast`
+///     Uses only the fixed4 child-centre solves.
+///
+///     This is the default and preferred engineering mode. It provides the
+///     best measured throughput/accuracy tradeoff for Riley's supported
+///     geometry while keeping work bounded and simple. Some difficult
+///     saddle/multi-root rays may be missed when the child-centre seed lies
+///     outside the desired Newton basin.
+///
+/// `.robust`
+///     Runs the same fixed4 child-centre path first. If no candidate child
+///     yields an accepted front-facing root, Riley performs one additional
+///     bounded fallback using the front-facing, camera-depth-ordered seed bank
+///     with depth 3.
+///
+///     This improves recovery on difficult multi-root/saddle cases at higher
+///     computational cost. The fallback is sample-wide and runs only after
+///     all fixed4 child-centre attempts fail.
+///
+/// Neither mode attempts exhaustive global root finding. Riley intentionally
+/// uses bounded engineering strategies rather than unbounded or full-bank
+/// searches.
+pub const MultirootSolverMode = enum {
+    fast,
+    robust,
 };
 
 pub const ValidateInput = enum(u32) {
@@ -130,10 +178,9 @@ pub const ReportMode = enum {
     full_stats,
 };
 
-pub const HullMode = enum {
-    off,
-    on_no_fallback,
-    on_convex_fallback,
+pub const HullMode = enum(u32) {
+    on_no_fallback = 1,
+    on_convex_fallback = 2,
 };
 
 pub const NewtonSeedMode = enum {
@@ -165,3 +212,11 @@ pub const FullStatsOpts = struct {
     save_pixel_occupancy_map: bool = true,
     save_normals_map: bool = false,
 };
+
+test "multiroot default solver mode is fast" {
+    const config = RasterConfig{};
+    try std.testing.expectEqual(
+        MultirootSolverMode.fast,
+        config.advanced.solver.multiroot.mode,
+    );
+}

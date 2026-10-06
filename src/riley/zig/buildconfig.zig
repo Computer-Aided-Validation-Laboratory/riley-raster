@@ -26,7 +26,7 @@ pub const comptime_eval_branch_quota: comptime_int = 50000;
 // Main Config
 // --------------------------------------------------------------------------------------
 
-pub const Config = struct {
+pub const BuildConfig = struct {
     simd: SimdMode = default_simd,
     newton_solver_mode: NewtonSolverMode = default_newton_solver_mode,
     simd_vec_width: comptime_int = defaultSimdVecWidthForPrecision(F),
@@ -117,7 +117,7 @@ pub fn defaultTolForPrecision(comptime precision: type) Tol {
     };
 }
 
-pub fn configForPrecision(comptime precision: type) Config {
+pub fn configForPrecision(comptime precision: type) BuildConfig {
     _ = defaultSimdVecWidthForPrecision(precision);
     return .{
         .precision = precision,
@@ -183,15 +183,12 @@ pub const HullTol = struct {
     simd_inclusion: Scal = 1.0e-6,
     corner_midside_ang_lower_deg: Scal = 20.0,
     corner_midside_ang_upper_deg: Scal = 180.0,
-    // Node-only front-end AABB pad used when RasterConfig.hull_mode == .off.
-    // Set from a hull-suite ablation study against the 0.3 baseline:
-    // 0.25/0.20/0.15/0.10 passed and 0.05 failed, so we keep 0.15 as a
-    // conservative def with margin.
-    no_hull_bbox_rel_pad: Scal = 0.15,
 };
 
 pub const CullingTol = struct {
-    higher_order_backface_nz: Scal = 1e-3,
+    behind_camera_z: Scal = 1e-3,
+    projected_jacobian_abs: Scal = 1e-3,
+    projected_jacobian_rel: Scal = 1e-6,
     tri3_signed_area: Scal = 1e-6,
     projective_z_min: Scal = 1e-12,
 };
@@ -274,10 +271,11 @@ pub const tol_f32 = Tol{
         .simd_inclusion = 1.0e-5,
         .corner_midside_ang_lower_deg = 20.0,
         .corner_midside_ang_upper_deg = 180.0,
-        .no_hull_bbox_rel_pad = 0.15,
     },
     .culling = .{
-        .higher_order_backface_nz = 1e-3,
+        .behind_camera_z = 1e-3,
+        .projected_jacobian_abs = 1e-3,
+        .projected_jacobian_rel = 1e-4,
         .tri3_signed_area = 1e-5,
         .projective_z_min = 1e-9,
     },

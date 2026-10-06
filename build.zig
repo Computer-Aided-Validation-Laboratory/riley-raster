@@ -82,6 +82,11 @@ pub fn build(b: *std.Build) void {
             .source_path = "src/test_full.zig",
         },
         .{
+            .step_name = "test-full-badjac",
+            .description = "Save warning-only invalid-Jacobian render diagnostics",
+            .source_path = "src/test_full_badjac.zig",
+        },
+        .{
             .step_name = "test-verif",
             .description = "Run the focused analytic verification suite",
             .source_path = "src/test_verif.zig",
@@ -268,6 +273,11 @@ pub fn build(b: *std.Build) void {
             .step_name = "bench-dist-psf",
             .description = "Run the distortion and PSF benchmark",
             .source_path = "src/bench_dist_psf.zig",
+        },
+        .{
+            .step_name = "bench-multiroot",
+            .description = "Benchmark multi-root hierarchy policies",
+            .source_path = "src/bench_multiroot.zig",
         },
     };
 

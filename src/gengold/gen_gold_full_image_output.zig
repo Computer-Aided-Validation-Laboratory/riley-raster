@@ -41,7 +41,7 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
     config.save_strategy = .disk;
     config.background_value = 127.5;
     config.render_mode = .in_order;
-    config.total_threads = 1;
+    config.parallel = .{ .threads = 1 };
 
     const gold_dir_root = policy.goldRoot(.full_image_output);
 

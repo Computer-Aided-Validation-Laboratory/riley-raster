@@ -46,8 +46,10 @@ fn checkCase(
 
     const camera = try cam.CameraPrepared.init(local_alloc, case_spec.camera_input);
     const sim_data = try orch.loadData(local_alloc, io, case_spec.data_dir);
+    // The middle deformation step is regular for the generated bulge fixtures;
+    // early quad8/quad9 steps can have a singular in-plane mapping.
     const frame_idx = if (sim_data.field) |field|
-        @min(@as(usize, 1), field.getTimeN() - 1)
+        @min(@as(usize, 6), field.getTimeN() - 1)
     else
         0;
     const nodes = solver_verif.frameNodes(mesh_type, &sim_data, frame_idx);

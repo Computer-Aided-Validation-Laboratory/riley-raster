@@ -134,9 +134,9 @@ fn runOneElemHullCase(
 
     var run_config = config;
     run_config.save_strategy = .disk;
-    run_config.advanced.solver.hull_mode = hull_case.mode;
-    run_config.advanced.solver.newton_seed_mode = seed_case.seed_mode;
-    run_config.advanced.solver.newton_seed_reuse = seed_case.seed_reuse;
+    run_config.advanced.solver.oneroot.hull_mode = hull_case.mode;
+    run_config.advanced.solver.oneroot.newton_seed_mode = seed_case.seed_mode;
+    run_config.advanced.solver.oneroot.newton_seed_reuse = seed_case.seed_reuse;
 
     _ = try riley.raster(
         aa,
@@ -188,9 +188,9 @@ fn runScene2HullCase(
 
     var run_config = config;
     run_config.save_strategy = .disk;
-    run_config.advanced.solver.hull_mode = hull_case.mode;
-    run_config.advanced.solver.newton_seed_mode = seed_case.seed_mode;
-    run_config.advanced.solver.newton_seed_reuse = seed_case.seed_reuse;
+    run_config.advanced.solver.oneroot.hull_mode = hull_case.mode;
+    run_config.advanced.solver.oneroot.newton_seed_mode = seed_case.seed_mode;
+    run_config.advanced.solver.oneroot.newton_seed_reuse = seed_case.seed_reuse;
 
     _ = try riley.raster(
         aa,

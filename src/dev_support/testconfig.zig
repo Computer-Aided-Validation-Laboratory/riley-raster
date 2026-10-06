@@ -85,7 +85,8 @@ pub fn getRasterConfig(mode: RasterConfigMode) rastcfg.RasterConfig {
     var config = rastcfg.RasterConfig{
         .advanced = .{
             .solver = .{
-                .hull_mode = HULL_MODE,
+                .oneroot = .{ .hull_mode = HULL_MODE },
+                .multiroot = .{ .mode = .fast },
             },
         },
     };
@@ -107,4 +108,3 @@ pub fn getRasterConfig(mode: RasterConfigMode) rastcfg.RasterConfig {
 
     return config;
 }
-

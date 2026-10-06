@@ -9,6 +9,7 @@
 const std = @import("std");
 const rops = @import("rasterops.zig");
 const cam = @import("camera.zig");
+const db = @import("distortbounds.zig");
 const rastcfg = @import("rasterconfig.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -37,6 +38,281 @@ pub fn AdaptiveHullPoints(comptime N: usize) type {
         x: [NH]F,
         y: [NH]F,
     };
+}
+
+pub const MultiRootHull = struct {
+    x: [9]F = undefined,
+    y: [9]F = undefined,
+    count: u8 = 0,
+
+    pub fn contains(self: *const @This(), px: F, py: F) bool {
+        return containsMultiRootHull(
+            self.x[0..self.count],
+            self.y[0..self.count],
+            px,
+            py,
+        );
+    }
+};
+
+pub fn containsMultiRootHull(x: []const F, y: []const F, px: F, py: F) bool {
+    if (x.len < 3) return false;
+    var edge_slack: [9]F = undefined;
+    prepareMultiRootEdgeSlack(x, y, edge_slack[0..x.len]);
+    return containsMultiRootHullPrepared(x, y, edge_slack[0..x.len], px, py);
+}
+
+pub fn prepareMultiRootEdgeSlack(x: []const F, y: []const F, slack: []F) void {
+    for (0..x.len) |ii| {
+        const jj = (ii + 1) % x.len;
+        const dx = x[jj] - x[ii];
+        const dy = y[jj] - y[ii];
+        slack[ii] = tol.hull.scal_inclusion * @sqrt(dx * dx + dy * dy);
+    }
+}
+
+pub fn containsMultiRootHullPrepared(
+    x: []const F,
+    y: []const F,
+    slack: []const F,
+    px: F,
+    py: F,
+) bool {
+    if (x.len < 3) return false;
+    for (0..x.len) |ii| {
+        const jj = (ii + 1) % x.len;
+        const edge = rops.edgeFun3(
+            x[ii],
+            y[ii],
+            x[jj],
+            y[jj],
+            px,
+            py,
+        );
+        if (edge < -slack[ii]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+const HullPoint = struct {
+    x: F,
+    y: F,
+};
+
+fn cross2(a: HullPoint, b: HullPoint, c: HullPoint) F {
+    return (b.x - a.x) * (c.y - a.y) -
+        (b.y - a.y) * (c.x - a.x);
+}
+
+fn sortPoints(points: []HullPoint) void {
+    for (1..points.len) |ii| {
+        const value = points[ii];
+        var jj = ii;
+        while (jj > 0 and (points[jj - 1].x > value.x or
+            (points[jj - 1].x == value.x and points[jj - 1].y > value.y)))
+        {
+            points[jj] = points[jj - 1];
+            jj -= 1;
+        }
+        points[jj] = value;
+    }
+}
+
+fn hullFromPoints(points_in: []const HullPoint) MultiRootHull {
+    var points: [9]HullPoint = undefined;
+    @memcpy(points[0..points_in.len], points_in);
+    sortPoints(points[0..points_in.len]);
+
+    var chain: [18]HullPoint = undefined;
+    var count: usize = 0;
+    for (points[0..points_in.len]) |point| {
+        while (count >= 2 and cross2(chain[count - 2], chain[count - 1], point) <= 0) {
+            count -= 1;
+        }
+        chain[count] = point;
+        count += 1;
+    }
+    const lower_count = count;
+    var ii = points_in.len;
+    while (ii > 0) {
+        ii -= 1;
+        const point = points[ii];
+        while (count > lower_count and
+            cross2(chain[count - 2], chain[count - 1], point) <= 0)
+        {
+            count -= 1;
+        }
+        chain[count] = point;
+        count += 1;
+    }
+    if (count > 1) count -= 1;
+
+    var result = MultiRootHull{};
+    if (count < 3) {
+        const pad: F = 0.5;
+        const min_x = points[0].x - pad;
+        const max_x = points[points_in.len - 1].x + pad;
+        var min_y = points[0].y;
+        var max_y = min_y;
+        for (points_in) |point| {
+            min_y = @min(min_y, point.y);
+            max_y = @max(max_y, point.y);
+        }
+        result.x[0..4].* = .{ min_x, min_x, max_x, max_x };
+        result.y[0..4].* = .{ min_y - pad, max_y + pad, max_y + pad, min_y - pad };
+        result.count = 4;
+        return result;
+    }
+    // edgeFun3 has the opposite sign to the standard cross product.
+    for (0..count) |nn| {
+        const point = chain[count - 1 - nn];
+        result.x[nn] = point.x;
+        result.y[nn] = point.y;
+    }
+    result.count = @intCast(count);
+    return result;
+}
+
+fn rectHull(bounds: db.DistortBounds) MultiRootHull {
+    return .{
+        .x = [_]F{ bounds.x_min, bounds.x_min, bounds.x_max, bounds.x_max } ++
+            [_]F{0} ** 5,
+        .y = [_]F{ bounds.y_min, bounds.y_max, bounds.y_max, bounds.y_min } ++
+            [_]F{0} ** 5,
+        .count = 4,
+    };
+}
+
+fn controlNet(
+    comptime N: usize,
+    coords: rops.GatheredElemCoords(N),
+) rops.GatheredElemCoords(if (N == 8) 9 else N) {
+    const K = if (N == 8) 9 else N;
+    var controls: rops.GatheredElemCoords(K) = undefined;
+    if (N == 4) {
+        controls = coords;
+        return controls;
+    }
+    if (N == 6) {
+        controls = coords;
+        const edges = [3][3]usize{
+            .{ 0, 1, 3 }, .{ 1, 2, 4 }, .{ 2, 0, 5 },
+        };
+        inline for (edges) |edge| {
+            const a = edge[0];
+            const b = edge[1];
+            const mid = edge[2];
+            controls.x[mid] = 2 * coords.x[mid] - 0.5 * (coords.x[a] + coords.x[b]);
+            controls.y[mid] = 2 * coords.y[mid] - 0.5 * (coords.y[a] + coords.y[b]);
+            controls.z[mid] = 2 * coords.z[mid] - 0.5 * (coords.z[a] + coords.z[b]);
+        }
+        return controls;
+    }
+
+    var nodes: rops.GatheredElemCoords(9) = undefined;
+    for (0..N) |nn| {
+        nodes.x[nn] = coords.x[nn];
+        nodes.y[nn] = coords.y[nn];
+        nodes.z[nn] = coords.z[nn];
+    }
+    if (N == 8) {
+        inline for (.{ "x", "y", "z" }) |field| {
+            const src = &@field(nodes, field);
+            src[8] = 0.5 * (src[4] + src[5] + src[6] + src[7]) -
+                0.25 * (src[0] + src[1] + src[2] + src[3]);
+        }
+    }
+    const grid = [3][3]usize{ .{ 0, 4, 1 }, .{ 7, 8, 5 }, .{ 3, 6, 2 } };
+    const transform = [3][3]F{
+        .{ 1, 0, 0 }, .{ -0.5, 2, -0.5 }, .{ 0, 0, 1 },
+    };
+    for (0..3) |vv| {
+        for (0..3) |uu| {
+            const out_idx = grid[vv][uu];
+            inline for (.{ "x", "y", "z" }) |field| {
+                const src = @field(nodes, field);
+                var value: F = 0;
+                for (0..3) |jj| {
+                    for (0..3) |ii| {
+                        value += transform[vv][jj] * transform[uu][ii] *
+                            src[grid[jj][ii]];
+                    }
+                }
+                @field(controls, field)[out_idx] = value;
+            }
+        }
+    }
+    return controls;
+}
+
+pub fn buildMultiRootHullFromClip(
+    comptime N: usize,
+    camera: *const cam.CameraPrepared,
+    coords: rops.GatheredElemCoords(N),
+) MultiRootHull {
+    const controls = controlNet(N, coords);
+    const K = controls.x.len;
+    const x_off = 0.5 * @as(F, @floatFromInt(camera.pixels_num[0]));
+    const y_off = 0.5 * @as(F, @floatFromInt(camera.pixels_num[1]));
+    var points: [K]HullPoint = undefined;
+    var all_positive = true;
+    for (0..K) |nn| {
+        const z = controls.z[nn];
+        if (!std.math.isFinite(z) or
+            !std.math.isFinite(controls.x[nn]) or
+            !std.math.isFinite(controls.y[nn]))
+        {
+            const bounds: db.DistortBounds = camera.ideal_sensor_bounds orelse .{
+                .x_min = 0,
+                .x_max = @as(F, @floatFromInt(camera.pixels_num[0])),
+                .y_min = 0,
+                .y_max = @as(F, @floatFromInt(camera.pixels_num[1])),
+            };
+            return rectHull(bounds);
+        }
+        if (z <= tol.culling.projective_z_min) {
+            all_positive = false;
+            continue;
+        }
+        points[nn] = .{
+            .x = controls.x[nn] / z + x_off,
+            .y = controls.y[nn] / z + y_off,
+        };
+    }
+    if (all_positive) return hullFromPoints(&points);
+
+    // A projective linear-fractional coordinate reaches its extrema on the
+    // vertices of the positive-depth control polytope clipped at the near
+    // plane. All control pairs include every actual polytope edge.
+    const near_z = tol.culling.projective_z_min;
+    var bounds = db.DistortBounds.initEmpty();
+    var has_point = false;
+    for (0..K) |ii| {
+        if (controls.z[ii] > near_z) {
+            bounds.include(points[ii].x, points[ii].y);
+            has_point = true;
+        }
+        for (ii + 1..K) |jj| {
+            const zi = controls.z[ii];
+            const zj = controls.z[jj];
+            if ((zi > near_z) == (zj > near_z)) continue;
+            const t = (near_z - zi) / (zj - zi);
+            const x = controls.x[ii] + t * (controls.x[jj] - controls.x[ii]);
+            const y = controls.y[ii] + t * (controls.y[jj] - controls.y[ii]);
+            bounds.include(x / near_z + x_off, y / near_z + y_off);
+            has_point = true;
+        }
+    }
+    if (has_point) return rectHull(bounds);
+    const sensor: db.DistortBounds = camera.ideal_sensor_bounds orelse .{
+        .x_min = 0,
+        .x_max = @as(F, @floatFromInt(camera.pixels_num[0])),
+        .y_min = 0,
+        .y_max = @as(F, @floatFromInt(camera.pixels_num[1])),
+    };
+    return rectHull(sensor);
 }
 
 fn calcCornerMidsideCosTheta(

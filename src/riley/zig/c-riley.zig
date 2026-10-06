@@ -292,9 +292,10 @@ pub const CRasterConfig = extern struct {
     max_raster_workers_per_job: u16,
     save_strategy: u32,
     image_save_mode: u32,
-    hull_mode: u32,
-    newton_seed_mode: u32,
-    newton_seed_reuse: u32,
+    oneroot_hull_mode: u32,
+    oneroot_newton_seed_mode: u32,
+    oneroot_newton_seed_reuse: u32,
+    multiroot_mode: u32,
     validate_input: u32,
     report: u32,
     tile_size_min: u16,
@@ -547,7 +548,6 @@ fn subpxCenterMapFromC(subpx_map: u32) !cam.SubPixelCenterMap {
 
 fn hullModeFromC(hull_mode: u32) !rastcfg.HullMode {
     return switch (hull_mode) {
-        @intFromEnum(rastcfg.HullMode.off) => .off,
         @intFromEnum(rastcfg.HullMode.on_no_fallback) => .on_no_fallback,
         @intFromEnum(rastcfg.HullMode.on_convex_fallback) => .on_convex_fallback,
         else => error.InvalidHullMode,
@@ -571,6 +571,16 @@ fn newtonSeedReuseFromC(
         @intFromEnum(rastcfg.NewtonSeedReuse.off) => .off,
         @intFromEnum(rastcfg.NewtonSeedReuse.last_conv) => .last_conv,
         else => error.InvalidNewtonSeedReuse,
+    };
+}
+
+fn multirootModeFromC(
+    mode: u32,
+) !rastcfg.MultirootSolverMode {
+    return switch (mode) {
+        @intFromEnum(rastcfg.MultirootSolverMode.fast) => .fast,
+        @intFromEnum(rastcfg.MultirootSolverMode.robust) => .robust,
+        else => error.InvalidMultirootSolverMode,
     };
 }
 
@@ -1541,12 +1551,17 @@ fn buildRasterConfig(
         .auto;
     config.save_strategy = try saveStrategyFromC(in_config.save_strategy);
     config.output.image_save_mode = try imageSaveModeFromC(in_config.image_save_mode);
-    config.advanced.solver.hull_mode = try hullModeFromC(in_config.hull_mode);
-    config.advanced.solver.newton_seed_mode = try newtonSeedModeFromC(
-        in_config.newton_seed_mode,
+    config.advanced.solver.oneroot.hull_mode = try hullModeFromC(
+        in_config.oneroot_hull_mode,
     );
-    config.advanced.solver.newton_seed_reuse = try newtonSeedReuseFromC(
-        in_config.newton_seed_reuse,
+    config.advanced.solver.oneroot.newton_seed_mode = try newtonSeedModeFromC(
+        in_config.oneroot_newton_seed_mode,
+    );
+    config.advanced.solver.oneroot.newton_seed_reuse = try newtonSeedReuseFromC(
+        in_config.oneroot_newton_seed_reuse,
+    );
+    config.advanced.solver.multiroot.mode = try multirootModeFromC(
+        in_config.multiroot_mode,
     );
     config.validation = try validateInputFromC(
         in_config.validate_input,

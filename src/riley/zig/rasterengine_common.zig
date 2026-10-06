@@ -755,21 +755,24 @@ fn rasterTileComm(
         else
             null;
 
-    const overlap_start = tile.overlap_start;
-    const overlap_end = overlap_start + tile.overlap_count;
-    const overlaps = overlaps_all[overlap_start..overlap_end];
     var camera_fill_ready = false;
     var cam_duration_ns: u64 = 0;
 
-    for (overlaps) |ov| {
-        const mesh_idx: usize = ov.mesh_idx;
-        const mesh_ptr = &meshes[mesh_idx];
-        std.debug.assert(mesh_idx < raster_hulls.len);
-        const coords = &mesh_ptr.coords;
-        const hull = if (raster_hulls[mesh_idx]) |*h| h else null;
+    inline for (@typeInfo(rops.Bucket).@"enum".fields) |bucket_field| {
+        const bucket = @field(rops.Bucket, bucket_field.name);
+        const geom_tag = comptime rops.bucketMeshType(bucket);
+        const root_class = comptime rops.bucketRootClass(bucket);
+        const range = tile.buckets[@intFromEnum(bucket)];
+        const overlaps = overlaps_all[range.start .. range.start + range.count];
+        for (overlaps) |ov| {
+            const mesh_idx: usize = ov.mesh_idx;
+            const mesh_ptr = &meshes[mesh_idx];
+            std.debug.assert(mesh_ptr.mesh_type == geom_tag);
+            std.debug.assert(mesh_idx < raster_hulls.len);
+            const coords = &mesh_ptr.coords;
+            const hull = if (raster_hulls[mesh_idx]) |*h| h else null;
 
-        switch (mesh_ptr.mesh_type) {
-            inline else => |geom_tag| {
+            {
                 if (!camera_fill_ready and comptime geom_tag != .tri3opt) {
                     const time_cam_start: ?Timestamp =
                         if (comptime report_mode != .off)
@@ -844,6 +847,7 @@ fn rasterTileComm(
                             GK,
                             SK,
                             NodalPrepared,
+                            root_class,
                         ).render(
                             report_mode,
                             ctx_rast,
@@ -874,6 +878,7 @@ fn rasterTileComm(
                             GK,
                             SK,
                             TexPrepared(u8, 1),
+                            root_class,
                         ).render(
                             report_mode,
                             ctx_rast,
@@ -904,6 +909,7 @@ fn rasterTileComm(
                             GK,
                             SK,
                             TexPrepared(u16, 1),
+                            root_class,
                         ).render(
                             report_mode,
                             ctx_rast,
@@ -929,6 +935,7 @@ fn rasterTileComm(
                             GK,
                             SK,
                             TexPrepared(F, 1),
+                            root_class,
                         ).render(
                             report_mode,
                             ctx_rast,
@@ -959,6 +966,7 @@ fn rasterTileComm(
                             GK,
                             SK,
                             TexPrepared(u8, 3),
+                            root_class,
                         ).render(
                             report_mode,
                             ctx_rast,
@@ -989,6 +997,7 @@ fn rasterTileComm(
                             GK,
                             SK,
                             TexPrepared(u16, 3),
+                            root_class,
                         ).render(
                             report_mode,
                             ctx_rast,
@@ -1014,6 +1023,7 @@ fn rasterTileComm(
                             GK,
                             SK,
                             TexPrepared(F, 3),
+                            root_class,
                         ).render(
                             report_mode,
                             ctx_rast,
@@ -1063,6 +1073,7 @@ fn rasterTileComm(
                             GK,
                             SK,
                             FuncPrepared,
+                            root_class,
                         ).render(
                             report_mode,
                             ctx_rast,
@@ -1112,6 +1123,7 @@ fn rasterTileComm(
                             GK,
                             SK,
                             FuncPrepared,
+                            root_class,
                         ).render(
                             report_mode,
                             ctx_rast,
@@ -1126,7 +1138,7 @@ fn rasterTileComm(
                         );
                     },
                 }
-            },
+            }
         }
     }
 
@@ -1214,7 +1226,7 @@ fn rasterTileComm(
         tile,
         tile_duration_ns,
         shaded_px,
-        overlaps.len,
+        tile.overlap_count,
         cam_duration_ns,
         elem_duration_ns,
         resolve_duration_ns,

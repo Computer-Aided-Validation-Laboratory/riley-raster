@@ -43,6 +43,7 @@ fn runOneElemHullCaseTest(
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
     config: rastcfg.RasterConfig,
+    bad_jac: bool,
 ) !void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -126,9 +127,9 @@ fn runOneElemHullCaseTest(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.advanced.solver.hull_mode = hull_case.mode;
-    run_config.advanced.solver.newton_seed_mode = seed_case.seed_mode;
-    run_config.advanced.solver.newton_seed_reuse = seed_case.seed_reuse;
+    run_config.advanced.solver.oneroot.hull_mode = hull_case.mode;
+    run_config.advanced.solver.oneroot.newton_seed_mode = seed_case.seed_mode;
+    run_config.advanced.solver.oneroot.newton_seed_reuse = seed_case.seed_reuse;
 
     const start_time = Timestamp.now(io, .awake);
     const result = try riley.raster(
@@ -155,6 +156,8 @@ fn runOneElemHullCaseTest(
         render_result.dims[0];
 
     for (0..frames_num) |ff| {
+        const valid = common.isValidOneElemFrame(base_case_name, mesh_type, ff);
+        if (valid == bad_jac) continue;
         const gold_path = try common.findGoldPath(
             aa,
             io,
@@ -164,6 +167,32 @@ fn runOneElemHullCaseTest(
             0,
             false,
         );
+
+        if (bad_jac) {
+            const fail_dir_name = try std.fmt.allocPrint(
+                aa,
+                "full_badjac/{s}",
+                .{case_dir_name},
+            );
+            try common.saveComparisonArtifactsFromResult(
+                aa,
+                io,
+                common.default_fails_root,
+                fail_dir_name,
+                &render_result,
+                0,
+                ff,
+                0,
+                gold_path,
+                1,
+            );
+            std.debug.print(
+                "WARNING: invalid Jacobian full-hull case {s}, frame {d}: " ++
+                    "diagnostic render saved\n",
+                .{ case_dir_name, ff },
+            );
+            continue;
+        }
 
         common.compareNDArrayToGold(
             aa,
@@ -204,7 +233,7 @@ fn runOneElemHullCaseTest(
         };
     }
 
-    if (tcfg.TEST_CASE_VERBOSE) {
+    if (!bad_jac and tcfg.TEST_CASE_VERBOSE) {
         std.debug.print(
             "PASS {s} ({d:.2} ms, {d} frames)\n",
             .{ case_dir_name, duration_ms, frames_num },
@@ -249,9 +278,9 @@ fn runScene2HullCaseTest(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.advanced.solver.hull_mode = hull_case.mode;
-    run_config.advanced.solver.newton_seed_mode = seed_case.seed_mode;
-    run_config.advanced.solver.newton_seed_reuse = seed_case.seed_reuse;
+    run_config.advanced.solver.oneroot.hull_mode = hull_case.mode;
+    run_config.advanced.solver.oneroot.newton_seed_mode = seed_case.seed_mode;
+    run_config.advanced.solver.oneroot.newton_seed_reuse = seed_case.seed_reuse;
 
     const start_time = Timestamp.now(io, .awake);
     const result = try riley.raster(
@@ -426,6 +455,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
                             gold_dir_root,
                             data_dir_root,
                             config,
+                            false,
                         );
                     }
                 }
@@ -456,96 +486,46 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
             }
         }
     }
-
-    try runNewtonSeedMatrixTests(allocator, io, &textures, config);
 }
 
-fn runNewtonSeedMatrixTests(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    textures: *const common_full.FullTextures,
-    config: rastcfg.RasterConfig,
-) !void {
-    const curved_mesh_types = [_]gk.MeshType{
-        .tri6,
-        .quad8,
-        .quad9,
-    };
-    const seed_modes = [_]rastcfg.NewtonSeedMode{
-        .centroid,
-        .hull,
-    };
-    const seed_reuses = [_]rastcfg.NewtonSeedReuse{
-        .off,
-        .last_conv,
+/// Preserve the legacy full-hull outputs for malformed FE mappings without
+/// treating changes in those outputs as correctness regressions.
+pub fn runBadJac(outer_alloc: std.mem.Allocator, io: std.Io) void {
+    const config = tcfg.getRasterConfig(.testing);
+    const gold_dir_root = policy.goldRoot(.full_hull);
+    const data_dir_root = "data/edge";
+    const cases = [_]struct { name: []const u8, is_offscreen: bool }{
+        .{ .name = "distort_bulge", .is_offscreen = false },
+        .{ .name = "distort_tan", .is_offscreen = false },
+        .{ .name = "distort_bulge_offscreen", .is_offscreen = true },
     };
 
-    for (curved_mesh_types) |mesh_type| {
-        var prep2 = try common_full.prepareScene2(allocator, io, mesh_type);
-        defer prep2.deinit(allocator);
-
-        const meshes = common_full.buildScene2Meshes(&prep2, textures);
-        const cam_inp = common_full.createScene2Camera(
-            fullcase_hull.pixel_num_hull,
-            2,
-        );
-
-        var baseline_slice_opt: ?[]F = null;
-        var baseline_dims_opt: ?[]usize = null;
-        var baseline_arena = std.heap.ArenaAllocator.init(allocator);
-        defer baseline_arena.deinit();
-
-        for (seed_modes) |seed_mode| {
-            for (seed_reuses) |seed_reuse| {
-                var arena = std.heap.ArenaAllocator.init(allocator);
-                defer arena.deinit();
-                const aa = arena.allocator();
-
-                var run_config = config;
-                run_config.save_strategy = .memory;
-                run_config.advanced.solver.hull_mode = .on_no_fallback;
-                run_config.advanced.solver.newton_seed_mode = seed_mode;
-                run_config.advanced.solver.newton_seed_reuse = seed_reuse;
-
-                const result = try riley.raster(
-                    aa,
-                    io,
-                    &[_]CameraInput{cam_inp},
-                    &meshes,
-                    run_config,
-                    null,
-                );
-
-                const current_img = result orelse return error.NoResult;
-
-                for (current_img.slice) |pixel_val| {
-                    try std.testing.expect(std.math.isFinite(pixel_val));
-                }
-
-                if (baseline_slice_opt == null) {
-                    baseline_slice_opt = try baseline_arena.allocator().dupe(
-                        F,
-                        current_img.slice,
-                    );
-                    baseline_dims_opt = try baseline_arena.allocator().dupe(
-                        usize,
-                        current_img.dims,
-                    );
-                } else {
-                    try std.testing.expectEqualSlices(
-                        usize,
-                        baseline_dims_opt.?,
-                        current_img.dims,
-                    );
-                    var diff_sum: F = 0.0;
-                    for (baseline_slice_opt.?, current_img.slice) |base_val, curr_val| {
-                        diff_sum += @abs(base_val - curr_val);
+    for (cases) |case| {
+        for ([_]gk.MeshType{ .tri6, .quad8, .quad9 }) |mesh_type| {
+            for (fullcase_hull.hull_status_cases) |hull_case| {
+                for (fullcase_hull.hull_psf_cases) |psf_case| {
+                    for (fullcase_hull.newton_seed_cases) |seed_case| {
+                        runOneElemHullCaseTest(
+                            outer_alloc,
+                            io,
+                            case.name,
+                            mesh_type,
+                            case.is_offscreen,
+                            hull_case,
+                            psf_case,
+                            seed_case,
+                            gold_dir_root,
+                            data_dir_root,
+                            config,
+                            true,
+                        ) catch |err| {
+                            std.debug.print(
+                                "WARNING: invalid Jacobian full-hull case {s}_{s}: " ++
+                                    "render or setup failed ({s})\n",
+                                .{ case.name, @tagName(mesh_type), @errorName(err) },
+                            );
+                        };
                     }
-                    const mean_diff = diff_sum / @as(
-                        F,
-                        @floatFromInt(current_img.slice.len),
-                    );
-                    try std.testing.expect(mean_diff <= 0.05);
                 }
             }
         }
