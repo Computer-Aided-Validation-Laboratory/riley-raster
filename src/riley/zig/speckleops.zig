@@ -210,12 +210,7 @@ pub const StripSpeckleList2D = struct {
     }
 
     fn record(self: @This(), index: usize) SpeckleDisk2D {
-        if (self.centers.len == 0) return self.disks[index];
-        const center = self.centers[index];
-        return if (std.math.isInf(center[0]))
-            .{ .center = .{ 0, 0 }, .radius = -1 }
-        else
-            .{ .center = center, .radius = self.params.radius_mean };
+        return if (self.centers.len == 0) self.disks[index] else .{ .center = self.centers[index], .radius = self.params.radius_mean };
     }
 };
 
@@ -775,19 +770,11 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         };
 
         fn generateStripSpeckleList2D(allocator: std.mem.Allocator, params: Speckle2DParams) !StripSpeckleList2D {
-            if (params.radius_jitter == 0.0) {
-                if (params.occupancy == 1.0) return generateFixedStripSpeckleList2D(true, allocator, params);
-                return generateFixedStripSpeckleList2D(false, allocator, params);
-            }
+            if (params.radius_jitter == 0.0) return generateFixedStripSpeckleList2D(allocator, params);
             return generateStripSpeckleList2DStorage(allocator, params);
         }
 
         fn generateStripSpeckleList2DStorage(allocator: std.mem.Allocator, params: Speckle2DParams) !StripSpeckleList2D {
-            // Keep the general one-neighbor generation identical to indexed-2.
-            if (comptime speckle_neighbor_count == 1) {
-                const dense = try generateDenseSpeckleList2D(allocator, params);
-                return .{ .params = dense.params, .disks = dense.disks, .cell_origin = dense.cell_origin, .cell_dims = dense.cell_dims };
-            }
             try params.validateResolved(config);
             const bounds = speckleProceduralCellBounds(params, 1) orelse return error.SpeckleListTooLarge;
             if (bounds.count > max_speckle_cells) return error.SpeckleListTooLarge;
@@ -802,14 +789,16 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                             bounds.min[0] + @as(i64, @intCast(xx)),
                             bounds.min[1] + @as(i64, @intCast(yy)) + @as(i64, @intCast(ii)) - (if (speckle_neighbor_count == 9) @as(i64, 1) else 0),
                             params,
-                        ) orelse .{ .center = .{ 0.0, 0.0 }, .radius = -1.0 };
+                        ) orelse .{ .center = .{ std.math.inf(F), 0.0 }, .radius = params.radius_mean };
                     }
                 }
             }
-            return .{ .params = params, .disks = disks, .cell_origin = bounds.min, .cell_dims = bounds.dims };
+            const edge = if (config.soft_edges) params.edge_softness else 0.0;
+            const max_outer = params.radius_mean + params.radius_jitter + edge;
+            return .{ .params = params, .disks = disks, .cell_origin = bounds.min, .cell_dims = bounds.dims, .max_outer_radius2 = max_outer * max_outer };
         }
 
-        fn generateFixedStripSpeckleList2D(comptime full_occupancy: bool, allocator: std.mem.Allocator, params: Speckle2DParams) !StripSpeckleList2D {
+        fn generateFixedStripSpeckleList2D(allocator: std.mem.Allocator, params: Speckle2DParams) !StripSpeckleList2D {
             try params.validateResolved(config);
             const bounds = speckleProceduralCellBounds(params, 1) orelse return error.SpeckleListTooLarge;
             if (bounds.count > max_speckle_cells) return error.SpeckleListTooLarge;
@@ -817,7 +806,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             _ = std.math.mul(usize, count, @sizeOf([2]F)) catch return error.SpeckleListTooLarge;
             const centers = try allocator.alloc([2]F, count);
             const edge = if (config.soft_edges) params.edge_softness else 0.0;
-            const placement = if (full_occupancy) blk: {
+            const placement = blk: {
                 // Positive mean + zero jitter has exactly the mean's bits; keep support/placement operation order.
                 const support = params.radius_mean + edge;
                 const center_min = if (speckle_neighbor_count == 1) support else 0.0;
@@ -828,19 +817,19 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     else => unreachable,
                 };
                 break :blk .{ .min = center_min, .extent = extent, .support2 = support * support };
-            } else {};
+            };
             for (0..bounds.dims[1]) |yy| {
                 for (0..bounds.dims[0]) |xx| {
                     for (0..strip_length) |ii| {
                         const cell_x = bounds.min[0] + @as(i64, @intCast(xx));
                         const cell_y = bounds.min[1] + @as(i64, @intCast(yy)) + @as(i64, @intCast(ii)) - (if (speckle_neighbor_count == 9) @as(i64, 1) else 0);
-                        centers[(yy * bounds.dims[0] + xx) * strip_length + ii] = if (full_occupancy) blk: {
-                            const hash = hashSpeckleCell(cell_x, cell_y, params.seed);
+                        const hash = hashSpeckleCell(cell_x, cell_y, params.seed);
+                        centers[(yy * bounds.dims[0] + xx) * strip_length + ii] = if (randomUnitFromHash(hash, 0) < params.occupancy) blk: {
                             break :blk .{
                                 speckleCenter(cell_x, @truncate(hash >> 16), placement.min, placement.extent, placement.support2).coordinate,
                                 speckleCenter(cell_y, @truncate(hash >> 32), placement.min, placement.extent, placement.support2).coordinate,
                             };
-                        } else if (speckleDiskForCell(config.soft_edges, cell_x, cell_y, params)) |disk| disk.center else .{ std.math.inf(F), std.math.inf(F) };
+                        } else .{ std.math.inf(F), 0.0 };
                     }
                 }
             }
@@ -871,7 +860,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         fn evalStripSpeckleList2DSpecialized(comptime soft_edges: bool, comptime fixed_radius: bool, u: F, v: F, speckles: StripSpeckleList2D) F {
-            if (comptime !fixed_radius and speckle_neighbor_count == 1) return evalSpeckleList2DIndexedImpl(soft_edges, u, v, DenseSpeckleList2D{ .params = speckles.params, .disks = speckles.disks, .cell_origin = speckles.cell_origin, .cell_dims = speckles.cell_dims });
             const uv = [2]F{ u, v };
             const params = speckles.params;
             if ((if (fixed_radius) speckles.centers.len else speckles.disks.len) == 0 or params.foreground == params.background) {
@@ -907,9 +895,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             else
                 [_]F{ frac_y, 0.0, cell_y_f + 1.0 - proc_y };
             const edge_softness = if (soft_edges) params.edge_softness else 0.0;
-            const max_outer_radius = params.radius_mean + params.radius_jitter +
-                edge_softness;
-            const max_outer_radius2 = if (fixed_radius) speckles.max_outer_radius2 else max_outer_radius * max_outer_radius;
+            const max_outer_radius2 = speckles.max_outer_radius2;
 
             var coverage: F = 0.0;
             const row: usize = @intCast(cell_y - speckles.cell_origin[1]);
@@ -922,11 +908,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                         SpeckleDisk2D{ .center = speckles.centers[base + ii], .radius = params.radius_mean }
                     else
                         speckles.disks[base + ii];
-                    // Finite procedural coordinates minus an absent infinity center produce
-                    // infinite distance, rejected by the fixed mask's strict outer bound.
-                    if (comptime !fixed_radius) {
-                        if (disk.radius < 0.0) continue;
-                    }
+                    // Infinity centers reject absent records at the mask bound, before sqrt/exp.
                     const delta_x = proc_x - disk.center[0];
                     const delta_y = proc_y - disk.center[1];
                     const distance2 = delta_x * delta_x + delta_y * delta_y;
@@ -3920,7 +3902,7 @@ test "dense indexed sentinel preserves zero radius soft disk coverage" {
     }
 }
 
-test "strip indexed records and samples match dense bitwise across occupancy and neighborhoods" {
+test "strip indexed active records and samples match dense bitwise across occupancy and neighborhoods" {
     @setEvalBranchQuota(10_000);
     if (comptime !buildconfig.enable_all_evaluators) return;
     inline for (generation_configs) |config| {
@@ -3986,7 +3968,7 @@ test "strip indexed records and samples match dense bitwise across occupancy and
                 if (params.radius_jitter == 0.0) {
                     for (strip.centers) |center| {
                         if (!std.math.isInf(center[0])) continue;
-                        try std.testing.expectEqual(std.math.inf(F), center[1]);
+                        try std.testing.expectEqual(@as(F, 0.0), center[1]);
                         for ([_]F{ -coord_limit, -0.0, 0.0, coord_limit }) |coordinate| {
                             const delta_x = coordinate - center[0];
                             const delta_y = coordinate - center[1];
@@ -4002,8 +3984,19 @@ test "strip indexed records and samples match dense bitwise across occupancy and
                         for (0..length) |ii| {
                             const disk: SpeckleDisk2D = StripImpl.speckleDiskForCell(config.soft_edges, strip.cell_origin[0] + @as(i64, @intCast(xx)), strip.cell_origin[1] + @as(i64, @intCast(yy)) + @as(i64, @intCast(ii)) - (if (config.neighbor_count == 9) @as(i64, 1) else 0), params) orelse .{ .center = .{ 0.0, 0.0 }, .radius = -1.0 };
                             const stored = strip.record((yy * strip.cell_dims[0] + xx) * length + ii);
-                            try std.testing.expectEqualDeep(disk, stored);
-                            try std.testing.expectEqualSlices(u8, std.mem.asBytes(&disk), std.mem.asBytes(&stored));
+                            if (disk.radius < 0.0) {
+                                try std.testing.expectEqual(std.math.inf(F), stored.center[0]);
+                                try std.testing.expectEqual(@as(F, 0.0), stored.center[1]);
+                                try std.testing.expectEqual(params.radius_mean, stored.radius);
+                                const mask = if (params.radius_jitter == 0.0)
+                                    StripImpl.fixedStripDiskMask(config.soft_edges, std.math.inf(F), strip)
+                                else
+                                    StripImpl.speckleDiskMask(config.soft_edges, std.math.inf(F), stored.radius, params.edge_softness);
+                                try std.testing.expectEqual(@as(F, 0.0), mask);
+                            } else {
+                                try std.testing.expectEqualDeep(disk, stored);
+                                try std.testing.expectEqualSlices(u8, std.mem.asBytes(&disk), std.mem.asBytes(&stored));
+                            }
                         }
                     }
                 }

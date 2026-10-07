@@ -96,9 +96,15 @@ class BenchmarkTests(unittest.TestCase):
                 with self.assertRaises(ValueError, msg=key):
                     bench.validate_native({**native, key: value}, config)
 
+    def test_output_check_flag_conflict(self):
+        with self.assertRaises(SystemExit) as error:
+            self.args('--skip-output-checks', '--require-equal-output')
+        self.assertEqual(error.exception.code, 2)
+
     def test_complete_run_and_failure(self):
         for profile, failure in (('tuning', None), ('full', None), ('full-render', None),
-                                 ('tuning', 'repeat'), ('tuning', 'equal'), ('tuning', 'record')):
+                                 ('tuning', 'repeat'), ('tuning', 'equal'), ('tuning', 'record'),
+                                                                  ('full-render', 'skip'), ('full-render', 'vary')):
             with self.subTest(profile=profile, failure=failure), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 binary, other, texture = root / 'native', root / 'other', root / 'asset.bmp'
@@ -122,6 +128,8 @@ class BenchmarkTests(unittest.TestCase):
                     texture.write_bytes(b'changed texture')
                     native = self.native(config)
                     native['checksum'] = 1 if config['evaluator'] == 'texture' else 2
+                    if failure in ('skip', 'vary'):
+                        native['checksum'] = len(calls)
                     if failure == 'repeat' and len(calls) == 4:
                         native['checksum'] = 9
                     text = '' if failure == 'record' and len(calls) == 2 else 'BENCH ' + json.dumps(native)
@@ -133,8 +141,10 @@ class BenchmarkTests(unittest.TestCase):
                            '--width', '32', '--height', '24', '--frames', '2', '--repeats', '2']
                 if failure == 'equal':
                     options.append('--require-equal-output')
+                if failure == 'skip':
+                    options.append('--skip-output-checks')
                 with patch.object(bench.subprocess, 'run', side_effect=run):
-                    if failure:
+                    if failure and failure != 'skip':
                         with self.assertRaises(SystemExit):
                             bench.main(options)
                         self.assertFalse((out / 'comparison.json').exists())
@@ -147,6 +157,12 @@ class BenchmarkTests(unittest.TestCase):
                         self.assertTrue(all(not r['output_equal'] for r in records))
                         metadata = json.loads((out / 'metadata.json').read_text())
                         self.assertEqual(len(metadata['variants']['A']['sha256']), 64)
+                        self.assertEqual(metadata['skip_output_checks'], failure == 'skip')
+                        if failure == 'skip':
+                            samples = [json.loads(line) for line in (out / 'samples.jsonl').read_text().splitlines()]
+                            for variant in 'AB':
+                                self.assertEqual(len({r['native']['checksum'] for r in samples if r['variant'] == variant}), 2)
+                            self.assertIn('no image consistency guarantee', (out / 'comparison.md').read_text())
                 self.assertTrue((out / 'samples.jsonl').read_text())
                 with self.assertRaises(SystemExit):
                     bench.main(options)

@@ -77,7 +77,7 @@ def design(args):
                          for x in dict.fromkeys(args.metrics or (['combined'] if tuning else ['setup', 'render']))],
                 permutations=args.permutations, permutation_seed=20261005,
                 inference='two-sided blocked sum contrast; exact <=200000 subsets/block, otherwise Monte Carlo plus-one; joint Holm',
-                require_equal_output=args.require_equal_output,
+                require_equal_output=args.require_equal_output, skip_output_checks=args.skip_output_checks,
                 config=dict(width=args.width, height=args.height, frames=args.frames, radius=args.radius,
                             seed=args.seed, texture=None, texture_filter=args.texture_filter),
                 cells=dict(plate=args.cells_plate, sphere=args.cells_sphere), variants={})
@@ -176,6 +176,8 @@ def report(out, metadata, groups, outputs):
              f"Output mismatch cases: {sum(outputs[i, 'A'] != outputs[i, 'B'] for i in range(n))}.", '',
              '| Case | Factors (workers, scene, pattern, jitter, occupancy, neighbors, softness) | Metric | A ns | B ns | B/A | p | Holm p | Detected |',
              '|---|---|---|---:|---:|---:|---:|---:|---|']
+    if metadata.get('skip_output_checks', False):
+        lines.insert(2, 'Within-repeat and cross-variant output consistency checks disabled; no image consistency guarantee.')
     for r in records:
         ratio = f"{r['ratio']:.6g}" if r['ratio'] is not None else 'n/a'
         lines.append(f"| {r['case_id']} | {tuple(r['case'][k] for k in FACTORS)} | {r['metric']} | "
@@ -221,7 +223,9 @@ def parser():
     p.add_argument('--repeats', type=int, help='override even TOTAL runs per variant >=2; never capped')
     p.add_argument('--metrics', nargs='+', choices=('setup', 'render', 'combined'), help='override jointly tested metrics')
     p.add_argument('--permutations', type=int, default=100000, help='Monte Carlo draws for large repeat counts')
-    p.add_argument('--require-equal-output', action='store_true', help='also require exact cross-variant fingerprints')
+    output_checks = p.add_mutually_exclusive_group()
+    output_checks.add_argument('--require-equal-output', action='store_true', help='also require exact cross-variant fingerprints')
+    output_checks.add_argument('--skip-output-checks', action='store_true', help='disable within-repeat and cross-variant fingerprint checks; retain native validation')
     p.add_argument('--timeout-seconds', type=float, default=900, help='per-process timeout')
     return p
 
@@ -264,7 +268,8 @@ def main(argv=None):
                         native = json.loads(records[0])
                         validate_native(native, config)
                         key, value = (i, v), fingerprint(native)
-                        require(key not in outputs or outputs[key] == value, 'output differs across within-variant repeats')
+                        if not args.skip_output_checks:
+                            require(key not in outputs or outputs[key] == value, 'output differs across within-variant repeats')
                         other = (i, 'B' if v == 'A' else 'A')
                         if args.require_equal_output and other in outputs:
                             require(outputs[other] == value, 'cross-variant output differs')
