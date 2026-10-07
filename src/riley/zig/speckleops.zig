@@ -775,7 +775,10 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         };
 
         fn generateStripSpeckleList2D(allocator: std.mem.Allocator, params: Speckle2DParams) !StripSpeckleList2D {
-            if (params.radius_jitter == 0.0) return generateFixedStripSpeckleList2D(allocator, params);
+            if (params.radius_jitter == 0.0) {
+                if (params.occupancy == 1.0) return generateFixedStripSpeckleList2D(true, allocator, params);
+                return generateFixedStripSpeckleList2D(false, allocator, params);
+            }
             return generateStripSpeckleList2DStorage(allocator, params);
         }
 
@@ -806,7 +809,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             return .{ .params = params, .disks = disks, .cell_origin = bounds.min, .cell_dims = bounds.dims };
         }
 
-        fn generateFixedStripSpeckleList2D(allocator: std.mem.Allocator, params: Speckle2DParams) !StripSpeckleList2D {
+        fn generateFixedStripSpeckleList2D(comptime full_occupancy: bool, allocator: std.mem.Allocator, params: Speckle2DParams) !StripSpeckleList2D {
             try params.validateResolved(config);
             const bounds = speckleProceduralCellBounds(params, 1) orelse return error.SpeckleListTooLarge;
             if (bounds.count > max_speckle_cells) return error.SpeckleListTooLarge;
@@ -814,12 +817,30 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             _ = std.math.mul(usize, count, @sizeOf([2]F)) catch return error.SpeckleListTooLarge;
             const centers = try allocator.alloc([2]F, count);
             const edge = if (config.soft_edges) params.edge_softness else 0.0;
+            const placement = if (full_occupancy) blk: {
+                // Positive mean + zero jitter has exactly the mean's bits; keep support/placement operation order.
+                const support = params.radius_mean + edge;
+                const center_min = if (speckle_neighbor_count == 1) support else 0.0;
+                const extent = switch (speckle_neighbor_count) {
+                    1 => 1.0 - 2.0 * center_min,
+                    4 => 1.0 - support,
+                    9 => 1.0,
+                    else => unreachable,
+                };
+                break :blk .{ .min = center_min, .extent = extent, .support2 = support * support };
+            } else {};
             for (0..bounds.dims[1]) |yy| {
                 for (0..bounds.dims[0]) |xx| {
                     for (0..strip_length) |ii| {
                         const cell_x = bounds.min[0] + @as(i64, @intCast(xx));
                         const cell_y = bounds.min[1] + @as(i64, @intCast(yy)) + @as(i64, @intCast(ii)) - (if (speckle_neighbor_count == 9) @as(i64, 1) else 0);
-                        centers[(yy * bounds.dims[0] + xx) * strip_length + ii] = if (speckleDiskForCell(config.soft_edges, cell_x, cell_y, params)) |disk| disk.center else .{ std.math.inf(F), std.math.inf(F) };
+                        centers[(yy * bounds.dims[0] + xx) * strip_length + ii] = if (full_occupancy) blk: {
+                            const hash = hashSpeckleCell(cell_x, cell_y, params.seed);
+                            break :blk .{
+                                speckleCenter(cell_x, @truncate(hash >> 16), placement.min, placement.extent, placement.support2).coordinate,
+                                speckleCenter(cell_y, @truncate(hash >> 32), placement.min, placement.extent, placement.support2).coordinate,
+                            };
+                        } else if (speckleDiskForCell(config.soft_edges, cell_x, cell_y, params)) |disk| disk.center else .{ std.math.inf(F), std.math.inf(F) };
                     }
                 }
             }
@@ -3957,6 +3978,9 @@ test "strip indexed records and samples match dense bitwise across occupancy and
                 } else {
                     try std.testing.expectEqual(@as(usize, 0), strip.centers.len);
                     try std.testing.expectEqual(table.disks.len * length, strip.disks.len);
+                }
+                if (params.radius_jitter == 0.0 and occupancy == 1.0) {
+                    for (strip.centers) |center| try std.testing.expect(std.math.isFinite(center[0]) and std.math.isFinite(center[1]));
                 }
                 const StripImpl = Implementation(.{ .pattern = config.pattern, .evaluator = .list_indexed_3, .neighbor_count = config.neighbor_count, .soft_edges = config.soft_edges });
                 if (params.radius_jitter == 0.0) {
