@@ -10,8 +10,22 @@ import riley
 def test_create_raster_config_uses_enum_default() -> None:
     config = riley.create_raster_config(4, 8)
     assert config.save_strategy is riley.SaveStrategy.both
+    assert config.image_save_mode is riley.ImageSaveMode.multifield
     assert config.max_raster_workers_per_job == 2
     assert config.validate_input is riley.ValidateInput.fast
+
+
+def test_create_raster_config_accepts_image_save_modes() -> None:
+    for mode in (
+        riley.ImageSaveMode.grey,
+        riley.ImageSaveMode.rgb,
+        riley.ImageSaveMode.multifield,
+        riley.ImageSaveMode.rgb_to_grey,
+        riley.ImageSaveMode.grey_to_rgb,
+    ):
+        config = riley.create_raster_config(1, 1)
+        config.image_save_mode = mode
+        assert config.image_save_mode is mode
 
 
 def test_create_raster_config_accepts_validate_input_modes() -> None:

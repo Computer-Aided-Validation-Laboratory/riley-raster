@@ -116,7 +116,7 @@ def create_raster_config(
         geom_scheduling_mode=GeometrySchedulingMode.spread,
         max_raster_workers_per_job=workers_per_group,
         save_strategy=save_strategy,
-        image_save_mode=ImageSaveMode.grey,
+        image_save_mode=ImageSaveMode.multifield,
         hull_mode=HullMode.on_no_fallback,
         newton_seed_mode=NewtonSeedMode.centroid,
         newton_seed_reuse=NewtonSeedReuse.off,

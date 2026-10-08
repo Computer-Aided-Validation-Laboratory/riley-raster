@@ -930,12 +930,33 @@ fn testUnsuppedImageModeFieldCount(
     fixture: *const BaselineFixture,
 ) !void {
     _ = allocator;
-    _ = io;
-    _ = fixture;
 
+    // .grey: requires exactly 1 field
+    try std.testing.expectEqual(
+        @as(u8, 1),
+        try valinp.calcOutFieldsForImgSaveMode(.grey, 1),
+    );
     try std.testing.expectError(
         error.UnsuppedImageModeFieldCount,
         valinp.calcOutFieldsForImgSaveMode(.grey, 2),
+    );
+    try std.testing.expectError(
+        error.UnsuppedImageModeFieldCount,
+        valinp.calcOutFieldsForImgSaveMode(.grey, 3),
+    );
+    try std.testing.expectError(
+        error.UnsuppedImageModeFieldCount,
+        valinp.calcOutFieldsForImgSaveMode(.grey, 4),
+    );
+
+    // .rgb: requires exactly 3 fields
+    try std.testing.expectEqual(
+        @as(u8, 3),
+        try valinp.calcOutFieldsForImgSaveMode(.rgb, 3),
+    );
+    try std.testing.expectError(
+        error.UnsuppedImageModeFieldCount,
+        valinp.calcOutFieldsForImgSaveMode(.rgb, 1),
     );
     try std.testing.expectError(
         error.UnsuppedImageModeFieldCount,
@@ -943,7 +964,80 @@ fn testUnsuppedImageModeFieldCount(
     );
     try std.testing.expectError(
         error.UnsuppedImageModeFieldCount,
-        valinp.calcOutFieldsForImgSaveMode(.grey, 4),
+        valinp.calcOutFieldsForImgSaveMode(.rgb, 4),
+    );
+
+    // .rgb_to_grey: requires exactly 3 fields, outputs 1
+    try std.testing.expectEqual(
+        @as(u8, 1),
+        try valinp.calcOutFieldsForImgSaveMode(.rgb_to_grey, 3),
+    );
+    try std.testing.expectError(
+        error.UnsuppedImageModeFieldCount,
+        valinp.calcOutFieldsForImgSaveMode(.rgb_to_grey, 1),
+    );
+    try std.testing.expectError(
+        error.UnsuppedImageModeFieldCount,
+        valinp.calcOutFieldsForImgSaveMode(.rgb_to_grey, 2),
+    );
+    try std.testing.expectError(
+        error.UnsuppedImageModeFieldCount,
+        valinp.calcOutFieldsForImgSaveMode(.rgb_to_grey, 4),
+    );
+
+    // .grey_to_rgb: requires exactly 1 field, outputs 3
+    try std.testing.expectEqual(
+        @as(u8, 3),
+        try valinp.calcOutFieldsForImgSaveMode(.grey_to_rgb, 1),
+    );
+    try std.testing.expectError(
+        error.UnsuppedImageModeFieldCount,
+        valinp.calcOutFieldsForImgSaveMode(.grey_to_rgb, 2),
+    );
+    try std.testing.expectError(
+        error.UnsuppedImageModeFieldCount,
+        valinp.calcOutFieldsForImgSaveMode(.grey_to_rgb, 3),
+    );
+    try std.testing.expectError(
+        error.UnsuppedImageModeFieldCount,
+        valinp.calcOutFieldsForImgSaveMode(.grey_to_rgb, 4),
+    );
+
+    // .multifield: accepts any channel count >= 1
+    try std.testing.expectEqual(
+        @as(u8, 1),
+        try valinp.calcOutFieldsForImgSaveMode(.multifield, 1),
+    );
+    try std.testing.expectEqual(
+        @as(u8, 2),
+        try valinp.calcOutFieldsForImgSaveMode(.multifield, 2),
+    );
+    try std.testing.expectEqual(
+        @as(u8, 3),
+        try valinp.calcOutFieldsForImgSaveMode(.multifield, 3),
+    );
+    try std.testing.expectEqual(
+        @as(u8, 4),
+        try valinp.calcOutFieldsForImgSaveMode(.multifield, 4),
+    );
+
+    // Full pipeline checks on 1-field Scene3 mesh
+    var bad_rgb_config = fixture.config;
+    bad_rgb_config.image_save_mode = .rgb;
+    try expectConfigError(
+        io,
+        fixture,
+        bad_rgb_config,
+        error.UnsuppedImageModeFieldCount,
+    );
+
+    var bad_rgb_to_grey_config = fixture.config;
+    bad_rgb_to_grey_config.image_save_mode = .rgb_to_grey;
+    try expectConfigError(
+        io,
+        fixture,
+        bad_rgb_to_grey_config,
+        error.UnsuppedImageModeFieldCount,
     );
 }
 
