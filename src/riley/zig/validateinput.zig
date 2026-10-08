@@ -730,11 +730,19 @@ pub fn calcOutFieldsForImgSaveMode(
     return switch (img_save_mode) {
         .multifield => raw_num_fields,
         .grey => switch (raw_num_fields) {
-            1, 3 => 1,
+            1 => 1,
             else => error.UnsuppedImageModeFieldCount,
         },
         .rgb => switch (raw_num_fields) {
-            1, 3 => 3,
+            3 => 3,
+            else => error.UnsuppedImageModeFieldCount,
+        },
+        .rgb_to_grey => switch (raw_num_fields) {
+            3 => 1,
+            else => error.UnsuppedImageModeFieldCount,
+        },
+        .grey_to_rgb => switch (raw_num_fields) {
+            1 => 3,
             else => error.UnsuppedImageModeFieldCount,
         },
     };

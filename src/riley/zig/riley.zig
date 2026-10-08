@@ -249,7 +249,6 @@ fn rasterReportIntoValidated(
     valid_summary: valinp.ValidSummary,
     time_start_render: Timestamp,
 ) !void {
-
     const summary_io = render_groups[0].io;
 
     var out_dir: ?std.Io.Dir = null;
@@ -1153,7 +1152,6 @@ fn sceneGlobalTileElemOverlap(
     elem_bboxes_by_mesh: []const []rops.ElemBBox,
     elem_float_bboxes_by_mesh: []const ?[]db.DistortBounds,
 ) !rops.TilingOverlaps {
-
     const tiles_x = try std.math.divCeil(usize, screen_px_x, tile_size);
     std.debug.assert(core_y_px_min < core_y_px_max);
     std.debug.assert(core_y_px_max <= screen_px_y);
@@ -1435,10 +1433,10 @@ fn needsOutputTransform(
     image_save_mode: ImageSaveMode,
     raw_num_fields: u8,
 ) bool {
+    _ = raw_num_fields;
     return switch (image_save_mode) {
-        .multifield => false,
-        .grey => raw_num_fields != 1,
-        .rgb => raw_num_fields != 3,
+        .multifield, .grey, .rgb => false,
+        .rgb_to_grey, .grey_to_rgb => true,
     };
 }
 
@@ -1684,9 +1682,7 @@ fn rasterFrame(
             .output_h_subpx = @as(usize, frame_job.camera.pixels_num[1]) * sub_samp,
             .outer_halo_subpx = @as(usize, halo_px) * sub_samp,
             .tile_core_subpx = @as(usize, ctx.actual_tile_size) * sub_samp,
-            .tile_scratch_subpx = (
-                @as(usize, ctx.actual_tile_size) + 2 * @as(usize, halo_px)
-            ) * sub_samp,
+            .tile_scratch_subpx = (@as(usize, ctx.actual_tile_size) + 2 * @as(usize, halo_px)) * sub_samp,
         };
     }
 

@@ -247,6 +247,8 @@ class ImageSaveMode(IntEnum):
     grey = 0
     rgb = 1
     multifield = 2
+    rgb_to_grey = 3
+    grey_to_rgb = 4
 
 
 class ReportMode(IntEnum):
