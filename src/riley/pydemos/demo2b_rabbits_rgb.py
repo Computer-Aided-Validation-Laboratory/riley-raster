@@ -80,9 +80,8 @@ def main() -> None:
     )
 
     background_value = 127.5
-    config = riley.create_raster_config(
-        num_frames=1,
-        total_threads=4,
+    config = riley.RasterConfig(
+        parallel=4,
         save_strategy=riley.SaveStrategy.disk,
     )
     config.image_save_mode = riley.ImageSaveMode.rgb

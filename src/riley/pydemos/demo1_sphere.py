@@ -85,10 +85,11 @@ def main() -> None:
     # --------------------------------------------------------------------------
     # 4. Configure raster engine
     # --------------------------------------------------------------------------
-    config = riley.create_raster_config(
-        num_frames=1,
-        total_threads=total_threads,
+    config = riley.RasterConfig(
+        parallel=total_threads,
         save_strategy=riley.SaveStrategy.disk,
+        image_save_mode=riley.ImageSaveMode.grey,
+        save_scaling=riley.ScaleStrategy.auto,
     )
 
     # --------------------------------------------------------------------------

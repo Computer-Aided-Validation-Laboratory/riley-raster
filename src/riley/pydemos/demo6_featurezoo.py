@@ -252,10 +252,8 @@ def render_case(channels: int, bits: int, options: DemoOptions) -> None:
     out_dir = options.out_dir / case_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    config = riley.create_raster_config(
-        num_frames=len(options.frame_indices),
-        num_cameras=len(cameras),
-        total_threads=4,
+    config = riley.RasterConfig(
+        parallel=4,
         save_strategy=riley.SaveStrategy.disk,
     )
     config.image_save_mode = (

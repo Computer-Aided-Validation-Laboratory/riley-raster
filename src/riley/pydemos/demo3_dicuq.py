@@ -119,18 +119,14 @@ def main() -> None:
     # --------------------------------------------------------------------------
     # 4. Configure raster engine and render
     # --------------------------------------------------------------------------
-    config = riley.create_raster_config(
-        num_frames=mesh.disp.shape[0],
-        num_cameras=2,
-        total_threads=total_threads,
+    config = riley.RasterConfig(
+        parallel=total_threads,
         save_strategy=riley.SaveStrategy.disk,
     )
     config.background_value = 128.0
     config.tile_size_min = 8
     config.tile_size_max = 128
     config.save_scaling = riley.ScaleStrategy.none
-    config.max_geom_workers_per_job = 1
-    config.max_raster_workers_per_job = 1
 
     start_time = perf_counter()
     riley.raster([mesh], [camera_0, camera_1], config, out_dir=str(out_dir))

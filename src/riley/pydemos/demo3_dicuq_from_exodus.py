@@ -126,10 +126,8 @@ def main() -> None:
     # --------------------------------------------------------------------------
     # 4. Configure raster engine and render
     # --------------------------------------------------------------------------
-    config = riley.create_raster_config(
-        num_frames=mesh.disp.shape[0],
-        num_cameras=2,
-        total_threads=total_threads,
+    config = riley.RasterConfig(
+        parallel=total_threads,
         save_strategy=riley.SaveStrategy.disk,
     )
     config.background_value = 128.0

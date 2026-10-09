@@ -122,10 +122,8 @@ pub fn resolveParallelConfig(
         @as(u16, 1),
         @min(thread_budget, jobs_cap),
     );
-    const workers_per_group = @max(
-        @as(u16, 1),
-        thread_budget / render_group_count,
-    );
+    const workers_per_group = thread_budget / render_group_count +
+        @as(u16, @intFromBool(thread_budget % render_group_count != 0));
 
     const max_geom_workers_per_job = if (workload.element_count >=
         GEOM_THREADING_ELEMENT_THRESHOLD and workers_per_group > 1)
@@ -358,6 +356,18 @@ test "resolveParallelConfig 8 jobs 16 threads offline" {
     try std.testing.expectEqual(@as(u16, 8), resolved.render_group_count);
     try std.testing.expectEqual(@as(u16, 1), resolved.max_geom_workers_per_job);
     try std.testing.expectEqual(@as(u16, 2), resolved.max_raster_workers_per_job);
+}
+
+test "resolveParallelConfig reports largest remainder group" {
+    const workload = ParallelWorkload{
+        .camera_count = 1,
+        .frame_count = 3,
+        .element_count = 100,
+        .render_mode = .offline,
+    };
+    const resolved = resolveParallelConfig(workload, .{ .threads = 7 }, .off);
+    try std.testing.expectEqual(@as(u16, 3), resolved.render_group_count);
+    try std.testing.expectEqual(@as(u16, 3), resolved.max_raster_workers_per_job);
 }
 
 test "resolveParallelConfig 20 jobs 16 threads offline" {

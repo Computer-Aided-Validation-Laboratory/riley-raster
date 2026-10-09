@@ -289,11 +289,20 @@ def test_create_mesh_builds_and_renders_for_all_supported_surface_types(
         focal_length=focal_length,
         sub_sample=2,
     )
-    config = riley.create_raster_config(
-        1,
+    config = riley.RasterConfig(
+        parallel=1,
         save_strategy=riley.SaveStrategy.memory,
     )
-    riley.raster(mesh, camera, config)
+    serial_image = riley.raster(mesh, camera, config)
+    assert serial_image is not None
+    for parallel in (None, 4):
+        config.parallel = parallel
+        image = riley.raster(mesh, camera, config)
+        np.testing.assert_array_equal(image, serial_image)
+
+    config.parallel = 0
+    with pytest.raises(ValueError, match="parallel"):
+        riley.raster(mesh, camera, config)
 
 
 def test_create_mesh_converts_volume_hex8_to_quad4() -> None:

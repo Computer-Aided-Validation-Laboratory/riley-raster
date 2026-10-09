@@ -42,9 +42,8 @@ def test_distorted_triangle_interior_survives_tile_culling(
         distort_model=1,
         distort_k1=1.0,
     )
-    config = riley.create_raster_config(
-        num_frames=1,
-        total_threads=1,
+    config = riley.RasterConfig(
+        parallel=1,
         save_strategy=riley.SaveStrategy.memory,
     )
     config.report = riley.ReportMode.off

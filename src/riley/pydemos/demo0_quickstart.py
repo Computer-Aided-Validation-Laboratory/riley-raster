@@ -79,12 +79,11 @@ def main() -> None:
     # --------------------------------------------------------------------------
     # 3. Configure the raster engine and output path
     # --------------------------------------------------------------------------
-    config = riley.create_raster_config(
-        num_frames=1,
-        total_threads=1,
+    config = riley.RasterConfig(
+        parallel=1,
         save_strategy=riley.SaveStrategy.disk,
+        image_save_mode=riley.ImageSaveMode.grey,
     )
-    config.image_save_mode = riley.ImageSaveMode.grey
     config.save_scaling = riley.ScaleStrategy.none
 
     out_dir = Path.cwd() / "out_riley_py" / "demo0_quickstart"

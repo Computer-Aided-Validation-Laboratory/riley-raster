@@ -131,19 +131,14 @@ def main() -> None:
         shader=riley.TextureShader(uvs=uvs, texture=texture),
     )
 
-    config = riley.create_raster_config(
-        num_frames=mesh.disp.shape[0],
-        num_cameras=2,
-        total_threads=total_threads,
+    config = riley.RasterConfig(
+        parallel=total_threads,
         save_strategy=riley.SaveStrategy.disk,
+        save_scaling=riley.ScaleStrategy.auto,
     )
     config.background_value = 128.0
-    config.frame_batch_size_per_group = frames_max
-    config.max_geom_jobs_in_flight_per_group = frames_max
     config.tile_size_min = 8
     config.tile_size_max = 128
-    config.max_geom_workers_per_job = 1
-    config.max_raster_workers_per_job = 1
 
     # --------------------------------------------------------------------------
     # 5. Render stereocal poses

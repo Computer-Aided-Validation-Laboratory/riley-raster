@@ -39,7 +39,6 @@ from riley.cython.riley import (
     FuncShaderBuiltin,
     FuncShaderParams,
     FunctionShader,
-    GeometrySchedulingMode,
     HullMode,
     ImageFormat,
     ImageSaveMode,
@@ -88,7 +87,6 @@ from riley.python import (
     meshconst,
     meshconv,
     meshio,
-    rileyconfig,
     sceneops,
     textureio,
     uvtools,
@@ -139,7 +137,6 @@ from riley.python.meshio import (
     load_csv,
     remap_nodal_data,
 )
-from riley.python.rileyconfig import create_raster_config
 from riley.python.sceneops import (
     ESceneOverlapDirect,
     SceneBounds3D,
@@ -201,7 +198,6 @@ __all__ = [
     "FuncShaderBuiltin",
     "FuncShaderParams",
     "FunctionShader",
-    "GeometrySchedulingMode",
     "HullMode",
     "ImageFormat",
     "ImageSaveMode",
@@ -249,7 +245,6 @@ __all__ = [
     "create_mesh",
     "create_mesh_from_conversion",
     "create_mesh_from_prepared",
-    "create_raster_config",
     "data",
     "exodusio",
     "extract_surface",
@@ -281,7 +276,6 @@ __all__ = [
     "raster",
     "reduce_mesh_order",
     "remap_nodal_data",
-    "rileyconfig",
     "roi_cent_from_coords",
     "roi_cent_over_meshes",
     "save_camera",

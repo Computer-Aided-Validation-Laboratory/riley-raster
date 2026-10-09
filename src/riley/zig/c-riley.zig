@@ -284,12 +284,8 @@ pub const CMeshInput = extern struct {
 
 pub const CRasterConfig = extern struct {
     render_mode: u32,
-    total_threads: u16,
-    frame_batch_size_per_group: u16,
-    max_geom_jobs_in_flight_per_group: u16,
-    max_geom_workers_per_job: u16,
-    geom_scheduling_mode: u32,
-    max_raster_workers_per_job: u16,
+    parallel_mode: u32,
+    thread_count: u16,
     save_strategy: u32,
     image_save_mode: u32,
     hull_mode: u32,
@@ -486,17 +482,6 @@ fn renderModeFromC(render_mode: u32) !riley.RenderMode {
         @intFromEnum(riley.RenderMode.in_order) => .in_order,
         @intFromEnum(riley.RenderMode.offline) => .offline,
         else => error.InvalidRenderMode,
-    };
-}
-
-fn geometrySchedulingModeFromC(
-    geom_scheduling_mode: u32,
-) !rastcfg.GeometrySchedulingMode {
-    return switch (geom_scheduling_mode) {
-        @intFromEnum(rastcfg.GeometrySchedulingMode.spread) => .spread,
-        @intFromEnum(rastcfg.GeometrySchedulingMode.pack) => .pack,
-        @intFromEnum(rastcfg.GeometrySchedulingMode.auto) => .auto,
-        else => error.InvalidGeometrySchedulingMode,
     };
 }
 
@@ -1533,12 +1518,15 @@ fn buildRasterConfig(
 ) !riley.RasterConfig {
     var config = riley.RasterConfig{};
     config.render_mode = try renderModeFromC(in_config.render_mode);
-    config.parallel = if (in_config.total_threads == 1)
-        .serial
-    else if (in_config.total_threads > 1)
-        .{ .threads = in_config.total_threads }
-    else
-        .auto;
+    config.parallel = switch (in_config.parallel_mode) {
+        0 => .auto,
+        1 => .serial,
+        2 => if (in_config.thread_count > 0)
+            .{ .threads = in_config.thread_count }
+        else
+            return error.InvalidThreadCount,
+        else => return error.InvalidParallelMode,
+    };
     config.save_strategy = try saveStrategyFromC(in_config.save_strategy);
     config.output.image_save_mode = try imageSaveModeFromC(in_config.image_save_mode);
     config.advanced.solver.hull_mode = try hullModeFromC(in_config.hull_mode);

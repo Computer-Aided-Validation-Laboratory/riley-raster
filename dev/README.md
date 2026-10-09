@@ -397,36 +397,34 @@ not a formal bound for arbitrary sharp or singular distortion maps, and it
 cannot repair any independent failure of the ideal hull to enclose an element.
 See `plans/riley_adaptive_hull_distortion_summary.md` for that distinction.
 
-### Managed render groups
+### Render thread budgets
 
-Use the public owner to create render groups from a render-thread budget:
+The normal Zig entry point takes `RasterConfig.parallel`: `.auto` uses the
+detected CPU count, `.serial` uses one thread, and `.{ .threads = 4 }` uses a
+four-thread budget. Riley derives available camera/frame jobs from the inputs,
+creates the appropriate render groups, and distributes the budget among them.
+One camera and one frame therefore receive one group with the entire budget
+available for raster work. Offline mode can run camera/frame jobs independently;
+in-order mode limits concurrent groups to the camera count. Full-stats reporting
+uses one thread. The budget includes group callers and excludes disk-save overlap
+threads.
 
-```zig
-var groups = try riley.ManagedRenderGroups.init(init.gpa, init.minimal, .{
-    .thread_budget = 8,
-});
-defer groups.deinit(init.gpa);
-// Pass groups.specs to riley.raster(...).
-```
+Python uses `riley.RasterConfig()` directly. Its `parallel=None` default maps to
+Zig `.auto`; `parallel=1` selects serial execution and `parallel=N` selects an
+explicit N-thread budget. Python does not compute render groups or per-job
+worker caps. The quickstart demo uses one thread; the sphere, rabbit, and
+camera-model demos use four.
 
-By default this creates eight caller-only groups. Set `.max_groups = 1` for a
-single-frame demo with four raster workers (`.thread_budget = 4`), or cap groups
-to limit simultaneous frame memory or match available jobs. Remaining workers
-are distributed evenly: budget 12 capped to five groups gives `3, 3, 2, 2, 2`.
-`RasterConfig.max_raster_workers_per_job` must also allow the desired worker
-count. The helper does not change raster settings.
+For advanced Zig callers that need to supply their own group I/O, use
+`ManagedRenderGroups.init` and pass `groups.specs` to
+`riley.rasterWithRenderGroups` or `riley.rasterIntoWithRenderGroups`. Set
+`.max_groups` to cap group concurrency. The owner requires a thread-safe
+allocator; pass the same allocator to `deinit` after rendering completes.
+Those advanced entry points use the supplied groups rather than automatically
+creating them from `RasterConfig.parallel`.
 
-Budgets include group callers, exclude disk-save overlap threads, and must be
-positive (as must an explicit group cap). Use a thread-safe backing allocator,
-not a shared arena. The owner, allocator and process metadata must outlive all
-uses of `groups.specs`; finish rendering before `deinit`, and do not copy the
-owning value. Pass `null` instead of process metadata when embedding Riley.
-Pass the same allocator to `init` and `deinit`; the owner does not store it.
-
-Python keeps `create_raster_config`, with optional `num_cameras` for camera/frame
-job budgeting. The C runtime uses the same managed-group owner and balanced
-remainder policy, without changing the C ABI. The sphere, rabbit, and camera-model demos use four
-raster workers; quickstart uses one. Multi-frame demos prefer independent jobs.
+The Python/C ABI was changed to carry an explicit parallel mode and thread
+count; rebuild native clients against the matching library and header.
 The shared C library explicitly uses LLVM even in Debug: Zig 0.16's self-hosted
 Debug backend mispasses floating-point struct arguments at the C boundary in
 camera helpers. Native demo/test backend selection is unchanged.

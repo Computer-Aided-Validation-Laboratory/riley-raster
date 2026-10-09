@@ -230,12 +230,8 @@ typedef enum {
 
 typedef struct c_raster_config {
     uint32_t render_mode;
-    uint16_t total_threads;
-    uint16_t frame_batch_size_per_group;
-    uint16_t max_geom_jobs_in_flight_per_group;
-    uint16_t max_geom_workers_per_job;
-    uint32_t geom_scheduling_mode;
-    uint16_t max_raster_workers_per_job;
+    uint32_t parallel_mode; /* 0=auto, 1=serial, 2=thread_count */
+    uint16_t thread_count;
     uint32_t save_strategy;
     uint32_t image_save_mode;
     uint32_t hull_mode;
