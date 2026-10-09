@@ -27,8 +27,9 @@ const max_direct_fixed_speckle_bytes = 256 * 1024 * 1024;
 // --------------------------------------------------------------------------------------
 
 /// Per-mesh runtime settings, immutable for the lifetime of prepared resources.
-/// UVs are clamped to [0, 1], then mapped to cells as uv * cells_per_uv + uv_offset.
-/// For disk/Gaussian shapes, radius_mean + radius_jitter + edge_softness must not
+/// Except for mock, UVs are clamped to [0, 1], then mapped to cells as uv * cells_per_uv + uv_offset.
+/// Mock is an experimental ablation: raw 0.5 * (u + v), without speckle resources or mapping.
+/// For non-mock disk/Gaussian shapes, radius_mean + radius_jitter + edge_softness must not
 /// exceed 0.5 for one neighbor, or 1.0 otherwise.
 /// Hard disks exclude their circumference (distance² < radius²).
 /// Ignored shape-specific fields are not validated; all other floating values must be finite.
@@ -106,7 +107,7 @@ pub const Speckle2DParams = struct {
             }
             if (!speckleconfig.supportsSoftEdges(config)) return error.SpeckleEvaluatorRequiresHardEdges;
         }
-        if (config.pattern == .perlin) {
+        if (config.evaluator != .mock and config.pattern == .perlin) {
             if (!std.math.isFinite(self.perlin_coverage_threshold)) {
                 return error.InvalidSpecklePerlinCoverageThreshold;
             }
@@ -115,7 +116,7 @@ pub const Speckle2DParams = struct {
             {
                 return error.InvalidSpecklePerlinCoverageTransitionWidth;
             }
-        } else {
+        } else if (config.evaluator != .mock) {
             if (!std.math.isFinite(self.occupancy) or
                 self.occupancy < 0.0 or self.occupancy > 1.0)
             {
@@ -365,7 +366,8 @@ pub fn sampleScal(u: F, v: F, params: Speckle2DParams, resources: *const Resourc
 }
 
 /// Classified/direct/mask kernels background inactive lanes. Procedural/list kernels
-/// retain the existing finite-lane behavior; every SIMD kernel backgrounds nonfinite lanes.
+/// retain the existing finite-lane behavior. Except for mock's raw arithmetic,
+/// every SIMD kernel backgrounds nonfinite lanes.
 pub fn sampleSIMD(
     u: VecSF,
     v: VecSF,
@@ -385,6 +387,7 @@ pub fn sampleSIMD(
     inline for (generation_configs) |config| {
         if (std.meta.eql(resolved, config)) {
             const Impl = Implementation(config);
+            if (comptime config.evaluator == .mock) return Impl.samplePreparedSIMD(config.soft_edges, u, v, active, params, resources);
             return Impl.evalSpeckleSIMDImpl(
                 config.soft_edges,
                 Impl.evalSpeckle2DImpl,
@@ -447,7 +450,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             params: Speckle2DParams,
         ) !Resources {
             return switch (comptime config.evaluator) {
-                .cell_hash => blk: {
+                .cell_hash, .mock => blk: {
                     try params.validateResolved(config);
                     break :blk .{};
                 },
@@ -478,6 +481,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             resources: *const Resources,
         ) F {
             return switch (comptime config.evaluator) {
+                .mock => 0.5 * (u + v),
                 .cell_hash => evalSpeckle2DImpl(soft_edges, u, v, params),
                 .list_naive, .list_indexed => evalSpeckleList2DImpl(soft_edges, u, v, resources.list.?),
                 .list_indexed_2 => evalSpeckleList2DIndexedImpl(soft_edges, u, v, resources.dense_list.?),
@@ -497,6 +501,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             resources: *const Resources,
         ) VecSF {
             return switch (comptime config.evaluator) {
+                .mock => @as(VecSF, @splat(0.5)) * (u + v),
                 .cell_hash => evalSpeckleSIMDImpl(soft_edges, evalSpeckle2DImpl, u, v, params, params.background),
                 .list_naive, .list_indexed => evalSpeckleSIMDImpl(
                     soft_edges,
@@ -2032,6 +2037,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 .mask_u8,
                 => evalSpeckleList2DIndexedImpl(soft_edges, u, v, speckles),
                 .cell_hash, .list_naive => evalSpeckleList2DNaiveImpl(soft_edges, u, v, speckles),
+                .mock => unreachable,
             };
         }
 
@@ -2048,6 +2054,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             v: F,
             params: Speckle2DParams,
         ) F {
+            if (comptime config.evaluator == .mock) return 0.5 * (u + v);
             const uv = [2]F{ u, v };
             if (comptime speckle_shape == .perlin) return evalPerlinSpeckle2D(uv, params);
             if (params.occupancy == 0.0 or params.foreground == params.background) {
@@ -2417,7 +2424,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         test "disk and Gaussian speckles validate probability and radius ranges" {
-            if (comptime speckle_shape == .perlin) return;
+            if (comptime config.evaluator == .mock or speckle_shape == .perlin) return;
             const cases = [_]struct { params: Speckle2DParams, err: anyerror }{
                 .{ .params = .{ .occupancy = -0.1 }, .err = error.InvalidSpeckleOccupancy },
                 .{ .params = .{ .occupancy = 1.1 }, .err = error.InvalidSpeckleOccupancy },
@@ -2431,6 +2438,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         test "procedural speckle parameters validate shape-specific settings" {
+            if (comptime config.evaluator == .mock) return;
             var invalid = Speckle2DParams{};
             try testing.expectEqual(@as(F, 0.0), invalid.edge_softness);
             try invalid.validateResolved(config);
@@ -2501,12 +2509,12 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                         params.validateResolved(config),
                     );
                 },
-                .cell_hash, .list_naive, .list_indexed, .list_indexed_2, .list_indexed_3, .mask_u8 => try params.validateResolved(config),
+                .cell_hash, .list_naive, .list_indexed, .list_indexed_2, .list_indexed_3, .mask_u8, .mock => try params.validateResolved(config),
             }
         }
 
         test "procedural speckle softness expands support bounds" {
-            if (comptime !supports_soft_edges) return;
+            if (comptime config.evaluator == .mock or !supports_soft_edges) return;
             const radius_limit: F = if (speckle_neighbor_count == 1) 0.5 else 1.0;
             var params: Speckle2DParams = .{
                 .radius_mean = radius_limit - 0.125,
@@ -2566,6 +2574,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         test "procedural speckle is bounded seed-sensitive and UV clamped" {
+            if (comptime config.evaluator == .mock) return;
             const params: Speckle2DParams = .{ .cells_per_uv = .{ 12.0, 10.0 } };
 
             try testing.expectEqual(
@@ -2594,6 +2603,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         test "procedural speckle SIMD fallback matches scalar evaluation" {
+            if (comptime config.evaluator == .mock) return;
             var speckle_params: Speckle2DParams = .{
                 .cells_per_uv = .{ 11.0, 9.0 },
                 .seed = 42,
@@ -2643,7 +2653,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         test "procedural speckle occupancy endpoints behave exactly" {
-            if (comptime speckle_shape == .perlin) return;
+            if (comptime config.evaluator == .mock or speckle_shape == .perlin) return;
             var params: Speckle2DParams = .{ .cells_per_uv = .{ 8.0, 8.0 }, .occupancy = 0.0 };
             for (0..8) |yy| {
                 for (0..8) |xx| {
@@ -2680,7 +2690,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         test "generated speckle list matches hard and soft cell hash evaluation" {
-            if (comptime speckle_shape == .perlin) return;
+            if (comptime config.evaluator == .mock or speckle_shape == .perlin) return;
             const softnesses: []const F = if (!supports_soft_edges)
                 &.{0.0}
             else if (speckle_neighbor_count == 4)
@@ -2757,7 +2767,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         test "rounded speckle faces preserve naive hash and indexed membership" {
-            if (comptime speckle_shape != .disk or speckle_neighbor_count == 1) return;
+            if (comptime config.evaluator == .mock or speckle_shape != .disk or speckle_neighbor_count == 1) return;
             const cases = [_]Speckle2DParams{
                 .{ .seed = 66434, .radius_mean = 0.3, .cells_per_uv = .{ 2.0, 1.0 }, .uv_offset = .{ 1000.0, 0.0 } },
                 .{ .seed = 283701, .radius_mean = std.math.nextAfter(F, 0.1, std.math.inf(F)), .cells_per_uv = .{ 1.0, 1.0 }, .uv_offset = .{ -0.1, 0.0 } },
@@ -3222,6 +3232,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         test "procedural speckle equal-colour fast path is exact" {
+            if (comptime config.evaluator == .mock) return;
             const params: Speckle2DParams = .{ .foreground = 0.375, .background = 0.375 };
             try testing.expectEqual(params.background, evalSpeckle2D(.{ 0.37, 0.61 }, params));
         }
@@ -3242,7 +3253,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         test "Perlin mask is varied seed-sensitive bounded and balanced" {
-            if (comptime speckle_shape != .perlin) return;
+            if (comptime config.evaluator == .mock or speckle_shape != .perlin) return;
 
             var params = Speckle2DParams{
                 .seed = 0x85ebca6b,
@@ -3626,6 +3637,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         test "speckle resources prepare sample open boundaries and release owned allocations" {
+            if (comptime config.evaluator == .mock) return;
             const single = speckle_neighbor_count == 1;
             const params: Speckle2DParams = .{
                 .seed = 6,
@@ -3657,6 +3669,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 else if (speckle_shape == .disk and speckle_neighbor_count == 4 and index == 3)
                     params.background
                 else switch (comptime config.evaluator) {
+                    .mock => unreachable,
                     .cell_hash => evalSpeckle2D(uv, params),
                     .list_naive, .list_indexed => evalSpeckleList2D(uv, resources.list.?),
                     .list_indexed_2 => evalSpeckleList2DIndexedImpl(config.soft_edges, uv[0], uv[1], resources.dense_list.?),
@@ -3726,11 +3739,12 @@ test "runtime override policy and invalid settings fail before allocation" {
         for (cases) |case| try std.testing.expectError(case.err, generateResources(std.testing.failing_allocator, case.params));
         const direct = try (Speckle2DParams{ .evaluator = .direct_fixed }).resolve();
         try std.testing.expectEqual(@as(u8, 1), direct.neighbor_count);
-        var hash = try generateResources(std.testing.failing_allocator, .{ .evaluator = .cell_hash });
-        defer hash.deinit(std.testing.failing_allocator);
-        try std.testing.expect(hash.kernel_index != null);
-        try std.testing.expect(hash.list == null and hash.classified == null and
-            hash.direct_fixed == null and hash.mask == null);
+        for ([_]speckleconfig.Evaluator{ .cell_hash, .mock }) |evaluator| {
+            var resources = try generateResources(std.testing.failing_allocator, .{ .evaluator = evaluator });
+            defer resources.deinit(std.testing.failing_allocator);
+            try std.testing.expect(resources.kernel_index != null);
+            try std.testing.expectEqualDeep(Resources{ .kernel_index = resources.kernel_index }, resources);
+        }
     }
     // Perlin ignores disk-only fields but never silently repairs its own settings.
     try (Speckle2DParams{ .pattern = .perlin, .occupancy = std.math.nan(F), .radius_mean = -1, .radius_jitter = std.math.inf(F) }).validate();
@@ -3743,15 +3757,16 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
             .pattern = config.pattern,
             .cells_per_uv = .{ 3.25, 2.5 },
             .uv_offset = .{ 0.37, -0.42 },
-            .radius_mean = if (config.neighbor_count == 1) 0.25 else 0.38,
+            .radius_mean = if (config.evaluator == .mock) 100 else if (config.neighbor_count == 1) 0.25 else 0.38,
             .radius_jitter = if (config.evaluator == .direct_fixed) 0.0 else 0.07,
+            .occupancy = if (config.evaluator == .mock) 0 else (Speckle2DParams{}).occupancy,
             .edge_softness = if (config.soft_edges) 0.035 else 0.0,
             .foreground = 0.17,
             .background = 0.83,
         };
         if (comptime buildconfig.enable_all_evaluators) {
             params.evaluator = config.evaluator;
-            params.neighbor_count = if (config.pattern == .perlin) null else config.neighbor_count;
+            params.neighbor_count = if (config.pattern == .perlin and config.evaluator != .mock) null else config.neighbor_count;
         }
         try std.testing.expectEqual(config, try params.resolve());
         const raw = Implementation(config).evalSpeckle2DImpl(config.soft_edges, 0.37, 0.61, params);
@@ -3765,11 +3780,12 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
         const allocated = @as(usize, @intFromBool(resources.list != null)) +
             @intFromBool(resources.classified != null) + @intFromBool(resources.direct_fixed != null) +
             @intFromBool(resources.mask != null) + @intFromBool(resources.dense_list != null) + @intFromBool(resources.strip_list != null);
-        try std.testing.expectEqual(@as(usize, if (config.evaluator == .cell_hash) 0 else 1), allocated);
+        try std.testing.expectEqual(@as(usize, if (config.evaluator == .cell_hash or config.evaluator == .mock) 0 else 1), allocated);
         const points = [_][2]F{ .{ 0, 0 }, .{ 1, 1 }, .{ -2, 0.37 }, .{ 0.35, 0.61 }, .{ 0.67, 0.41 }, .{ 0.37, 2 } };
         for (points) |uv| {
             const Impl = Implementation(config);
             const reference = switch (comptime config.evaluator) {
+                .mock => 0.5 * (uv[0] + uv[1]),
                 .cell_hash, .list_indexed_2, .list_indexed_3 => Impl.evalSpeckle2D(uv, params),
                 // Direct-fixed returns stored endpoints, not the hash reference's arithmetic mapping.
                 .direct_fixed => if (Impl.evalSpeckle2D(uv, params) == params.background)
@@ -3796,13 +3812,17 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
                 &resources,
             );
             const inactive_expected = switch (config.evaluator) {
-                .cell_hash, .list_naive, .list_indexed, .list_indexed_2, .list_indexed_3 => reference,
+                .cell_hash, .list_naive, .list_indexed, .list_indexed_2, .list_indexed_3, .mock => reference,
                 else => params.background,
             };
             for (inactive) |value| try std.testing.expectEqual(inactive_expected, value);
         }
         const nonfinite: [S]F = Kernel(index).sampleSIMD(@splat(std.math.nan(F)), @splat(std.math.inf(F)), @splat(true), params, &resources);
-        for (nonfinite) |value| try std.testing.expectEqual(params.background, value);
+        for (nonfinite) |value| {
+            if (comptime config.evaluator == .mock) {
+                try std.testing.expect(std.math.isNan(value));
+            } else try std.testing.expectEqual(params.background, value);
+        }
         resources.deinit(std.testing.allocator);
         try std.testing.expectEqual(@as(?u8, null), resources.kernel_index);
         try std.testing.expect(resources.list == null and resources.dense_list == null and resources.strip_list == null and resources.classified == null and

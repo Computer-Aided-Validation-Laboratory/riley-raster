@@ -911,7 +911,7 @@ test "ordinary prepared functions retain scalar and SIMD output scaling" {
 }
 
 test "specialized speckle routing scaling and masked stores across patterns" {
-    // Experimental builds inline all 25 kernels and their SIMD lane stores.
+    // Experimental builds inline all available kernels and their SIMD lane stores.
     @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
     const defaults = [_]speckle.Speckle2DParams{
         .{},

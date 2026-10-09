@@ -20,12 +20,13 @@ pub const Evaluator = enum(u8) {
     mask_u8,
     list_indexed_2,
     list_indexed_3,
+    mock,
 };
 
 pub const Config = struct {
     pattern: Pattern,
     evaluator: Evaluator,
-    /// Nine is the internal placeholder for Perlin, which has no neighborhood setting.
+    /// Nine is the internal placeholder for non-mock Perlin, which has no neighborhood setting.
     neighbor_count: u8,
     soft_edges: bool,
 };
@@ -71,6 +72,7 @@ pub fn evaluatorName(evaluator: Evaluator) []const u8 {
         .direct_fixed => "direct-fixed",
         .mask_1bit => "mask-1bit",
         .mask_u8 => "mask-u8",
+        .mock => "mock",
     };
 }
 
@@ -84,7 +86,7 @@ pub fn isValidMaskSamplesPerCell(samples: anytype) bool {
 
 pub fn supportsSoftEdges(config: Config) bool {
     return config.pattern == .disk and switch (config.evaluator) {
-        .cell_hash, .list_naive, .list_indexed, .list_indexed_2, .list_indexed_3, .mask_u8 => true,
+        .cell_hash, .list_naive, .list_indexed, .list_indexed_2, .list_indexed_3, .mask_u8, .mock => true,
         .classified_indexed, .direct_fixed, .mask_1bit => false,
     };
 }
@@ -92,7 +94,7 @@ pub fn supportsSoftEdges(config: Config) bool {
 /// Numerical parameter ranges are checked by Speckle2DParams after policy resolution.
 pub fn validateCompatibility(config: Config) CompatibilityError!void {
     if (!isValidNeighborCount(config.neighbor_count)) return error.InvalidSpeckleNeighborCount;
-    if (config.pattern == .perlin and config.evaluator != .mask_u8) {
+    if (config.pattern == .perlin and config.evaluator != .mask_u8 and config.evaluator != .mock) {
         return error.PerlinRequiresMaskU8;
     }
     switch (config.evaluator) {
@@ -101,7 +103,7 @@ pub fn validateCompatibility(config: Config) CompatibilityError!void {
             return error.ClassifiedIndexedRequiresDiskAndNineNeighbors,
         .direct_fixed => if (config.pattern != .disk or config.neighbor_count != 1)
             return error.DirectFixedRequiresDiskAndOneNeighbor,
-        .cell_hash, .list_naive, .list_indexed, .list_indexed_2, .list_indexed_3, .mask_u8 => {},
+        .cell_hash, .list_naive, .list_indexed, .list_indexed_2, .list_indexed_3, .mask_u8, .mock => {},
     }
     if (config.soft_edges) {
         if (config.pattern != .disk) return error.SpeckleEdgeSoftnessRequiresDisk;
@@ -121,7 +123,7 @@ pub fn resolve(
     if (!enable_all_evaluators and (evaluator != null or neighbor_count != null)) {
         return error.SpeckleOverridesDisabled;
     }
-    if (pattern == .perlin and neighbor_count != null) {
+    if (pattern == .perlin and evaluator != .mock and neighbor_count != null) {
         return error.SpecklePerlinDoesNotUseNeighbors;
     }
     const neighbors = neighbor_count orelse
@@ -144,12 +146,12 @@ pub fn resolve(
     return config;
 }
 
-/// Prepared masks no longer depend on how they were generated. Naive lists retain
-/// the stored centers/radii, so their sampler does not depend on the placement neighborhood.
+/// Mock ignores configuration fields; masks no longer depend on how they were generated.
+/// Naive lists retain centers/radii, so their sampler does not depend on the placement neighborhood.
 pub fn canonicalizeSampleConfig(config: Config) Config {
     var result = config;
     switch (config.evaluator) {
-        .mask_1bit, .mask_u8 => {
+        .mask_1bit, .mask_u8, .mock => {
             result.pattern = .disk;
             result.neighbor_count = 9;
             result.soft_edges = false;
@@ -205,7 +207,7 @@ fn enumerateGenerationConfigs() Catalogue {
     for (std.enums.values(Pattern)) |pattern| {
         for (std.enums.values(Evaluator)) |evaluator| {
             for ([_]u8{ 1, 4, 9 }) |neighbors| {
-                if (pattern == .perlin and neighbors != 9) continue;
+                if (pattern == .perlin and evaluator != .mock and neighbors != 9) continue;
                 for ([_]bool{ false, true }) |soft| {
                     const config: Config = .{
                         .pattern = pattern,
@@ -232,7 +234,7 @@ fn enumerateSampleConfigs(configs: []const Config) Catalogue {
 test "runtime evaluator names round trip and reject invalid spellings" {
     for (std.enums.values(Evaluator)) |evaluator| {
         try std.testing.expectEqual(evaluator, parseEvaluator(evaluatorName(evaluator)).?);
-        try std.testing.expectEqual(null, parseEvaluator(@tagName(evaluator)));
+        if (evaluator != .mock) try std.testing.expectEqual(null, parseEvaluator(@tagName(evaluator)));
     }
     for ([_][]const u8{ "", "Cell-hash", " mask-u8", "mask", "MASK-U8" }) |name| {
         try std.testing.expectEqual(null, parseEvaluator(name));
@@ -240,6 +242,8 @@ test "runtime evaluator names round trip and reject invalid spellings" {
 }
 
 test "experimental resolution selects defaults and rejects incompatible overrides" {
+    try std.testing.expectError(error.SpeckleOverridesDisabled, resolve(false, .disk, .mock, null, false));
+    try std.testing.expectEqual(Evaluator.mock, (try resolve(true, .perlin, .mock, 1, false)).evaluator);
     for ([_]u8{ 1, 4, 9 }) |neighbors| {
         const hard = try resolve(true, .disk, null, neighbors, false);
         try std.testing.expectEqual(if (neighbors == 9) Evaluator.classified_indexed else Evaluator.list_indexed, hard.evaluator);
@@ -275,6 +279,7 @@ test "specialization catalogues are unique and cover every resolved generation c
         for (generators) |config| {
             try validateCompatibility(config);
             const canonical = canonicalizeSampleConfig(config);
+            if (config.evaluator == .mock) try std.testing.expectEqualDeep(Config{ .pattern = .disk, .evaluator = .mock, .neighbor_count = 9, .soft_edges = false }, canonical);
             var matches: usize = 0;
             for (samplers) |sample| matches += @intFromBool(std.meta.eql(sample, canonical));
             try std.testing.expectEqual(@as(usize, 1), matches);

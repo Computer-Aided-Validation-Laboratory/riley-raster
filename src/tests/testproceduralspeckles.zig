@@ -75,7 +75,7 @@ test "runtime speckle patterns prepare their production resources" {
         params.pattern = config.pattern;
         params.edge_softness = if (config.soft_edges) 0.03 else 0.0;
         params.evaluator = config.evaluator;
-        params.neighbor_count = if (config.pattern == .perlin) null else config.neighbor_count;
+        params.neighbor_count = if (config.pattern == .perlin and config.evaluator != .mock) null else config.neighbor_count;
         try expectPreparedResources(
             std.testing.allocator,
             &mesh_input,

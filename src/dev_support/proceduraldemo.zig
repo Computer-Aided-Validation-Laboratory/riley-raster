@@ -358,8 +358,8 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\
         \\Experimental native overrides (require -Denable-all-evaluators=true):
         \\  --evaluator <name>    cell-hash, list-naive, list-indexed, list-indexed-2, list-indexed-3,
-        \\                        classified-indexed, direct-fixed, mask-1bit, or mask-u8
-        \\  --neighbors <count>   1, 4, or 9 (not allowed for Perlin)
+        \\                        classified-indexed, direct-fixed, mask-1bit, mask-u8, or mock
+        \\  --neighbors <count>   1, 4, or 9 (Perlin: mock only)
         \\  Omit both overrides for automatic selection; default builds reject either.
         \\  An omitted neighbor count is 9, or 1 for an explicit direct-fixed evaluator.
         \\
@@ -372,8 +372,9 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\  Gaussian/Perlin and classified-indexed/direct-fixed/mask-1bit require softness 0.
         \\  classified-indexed requires disk/9 neighbors; direct-fixed requires disk/1,
         \\  zero jitter and hard edges; mask-1bit requires hard disks.
-        \\  Perlin requires mask-u8; threshold is finite and transition is finite and >= 0.
+        \\  Perlin requires mask-u8 or mock; threshold is finite and transition is finite and >= 0.
         \\  Transition 0 selects a hard threshold. Perlin ignores size, jitter and occupancy.
+        \\  Mock returns raw 0.5 * (u + v), ignoring shape-specific fields and their constraints.
         \\
     , .{});
 }
