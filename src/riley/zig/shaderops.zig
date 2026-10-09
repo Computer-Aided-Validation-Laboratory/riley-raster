@@ -10,6 +10,7 @@ const cfg = @import("buildconfig.zig").config;
 const comm = @import("shaderops_common.zig");
 const scal = @import("shaderops_scalar.zig");
 const simd_impl = @import("shaderops_simd.zig");
+const speckle = @import("speckleops.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -20,6 +21,15 @@ pub const NormalType = comm.NormalType;
 pub const FuncCoordMode = comm.FuncCoordMode;
 pub const FuncShaderBuiltin = comm.FuncShaderBuiltin;
 pub const FuncShaderParams = comm.FuncShaderParams;
+pub const Speckle2DParams = speckle.Speckle2DParams;
+pub const SpeckleDisk2D = speckle.SpeckleDisk2D;
+pub const SpeckleList2D = speckle.SpeckleList2D;
+pub const SpeckleClassificationState = speckle.SpeckleClassificationState;
+pub const ClassifiedIndexedSpeckle2D = speckle.ClassifiedIndexedSpeckle2D;
+pub const DirectFixedSpeckleCell2D = speckle.DirectFixedSpeckleCell2D;
+pub const DirectFixedSpeckle2D = speckle.DirectFixedSpeckle2D;
+pub const SpeckleMask2D = speckle.SpeckleMask2D;
+
 pub const LocalShaderBuff = comm.LocalShaderBuff;
 pub const NodalInput = comm.NodalInput;
 pub const NodalPrepared = comm.NodalPrepared;
@@ -31,6 +41,7 @@ pub const ShadeContext = comm.ShadeContext;
 pub const InterpData = comm.InterpData;
 pub const ShaderInput = comm.ShaderInput;
 pub const normFuncShaderParams = comm.normFuncShaderParams;
+pub const validateSpeckleInput = comm.validateSpeckleInput;
 pub const NodalStatic = comm.NodalStatic;
 pub const TexStatic = comm.TexStatic;
 pub const FuncStatic = comm.FuncStatic;

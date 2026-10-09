@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const root = @import("root");
+const speckleconfig = @import("speckleconfig.zig");
 
 const build_options = if (@hasDecl(root, "build_options"))
     root.build_options
@@ -48,6 +49,20 @@ pub const Scalar = Scal;
 pub const default_simd = parseSimd(build_options.simd);
 pub const default_newton_solver_mode =
     parseNewtonSolverMode(build_options.newton_solver);
+pub const enable_all_evaluators: bool = if (@hasDecl(build_options, "enable_all_evaluators"))
+    build_options.enable_all_evaluators
+else
+    false;
+pub const speckle_mask_samples_per_cell: comptime_int = blk: {
+    const samples = if (@hasDecl(build_options, "speckle_mask_samples_per_cell"))
+        build_options.speckle_mask_samples_per_cell
+    else
+        speckleconfig.default_mask_samples_per_cell;
+    if (!speckleconfig.isValidMaskSamplesPerCell(samples)) {
+        @compileError("speckle_mask_samples_per_cell must be 8, 12, or 16.");
+    }
+    break :blk samples;
+};
 
 pub const config = configForPrecision(F);
 

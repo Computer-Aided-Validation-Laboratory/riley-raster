@@ -60,6 +60,7 @@ zig build test-full -Doptimize=ReleaseSafe
 | **Basic Suite** | `zig build test-basic` | Fast coverage across 1-element, 2-shape FE interaction, and feature zoo cases (Debug) | `gold/basic/` |
 | **Full Suite** | `zig build test-full -Doptimize=ReleaseSafe` | Exhaustive sweeps over shaders, textures, PSF/distortion, SSAA, hulls, tiling, scenes, threads, and outputs in ReleaseSafe | `gold/full_*/` |
 | **Python Pytests** | `.venv/bin/pytest src/riley/pytests/` | Python/Cython API, mesh pipeline, Exodus conversion, and demo parity | Integrated / `gold/` |
+| **Procedural Speckles** | `zig build test-speckle-configs` | Default/experimental evaluator policy, generation, sampling, and mesh preparation | In-memory references |
 
 > [!NOTE]
 > For complete documentation of all 4 test scenes, 8 sub-suites, gold generation, tolerances, and design contracts, see [**`dev/TESTING.md`**](file:///home/lloydf/riley-raster/dev/TESTING.md).
@@ -74,6 +75,7 @@ zig build <STEP> -Dprecision=f32 -Dsimd=on
 zig build <STEP> -Dprecision=f32 -Dsimd=off
 zig build <STEP> -Dnewton-solver=robust
 zig build <STEP> -Dsimd-vector-width=8
+zig build <STEP> -Dstrip=true  # Omit debug information
 ```
 
 Suggested first-pass development checks on the main production path (Debug for verif/basic, ReleaseSafe for full):
@@ -94,6 +96,18 @@ zig build test-basic -Dprecision=f64 -Dsimd=off
 zig build test-basic -Dprecision=f32 -Dsimd=on
 zig build test-basic -Dprecision=f32 -Dsimd=off
 ```
+
+### Procedural generation options
+
+`-Denable-all-evaluators=true` enables native-Zig `Speckle2DParams.evaluator` and
+`neighbor_count` overrides. Default builds reject every explicit override, even one
+matching a default. Counts are 1/4/9; omitted counts use 9, or 1 for explicit
+`direct-fixed`. Perlin rejects neighborhood overrides. Defaults and compatibility
+rules are defined in [speckleconfig.zig](../src/riley/zig/speckleconfig.zig).
+
+`-Dspeckle-mask-samples-per-cell=8|12|16` selects mask/classification resolution
+(default 12). Precision also affects pattern generation: the same seed does not
+guarantee identical results between f32 and f64.
 
 ## Focused Verification Suite
 

@@ -716,6 +716,9 @@ fn checkFuncParams(
                 return error.InvalidFuncShaderParams;
             }
         },
+        .speckle => |speckle| {
+            speckle.validate() catch return error.InvalidFuncShaderParams;
+        },
     }
 }
 

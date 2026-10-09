@@ -81,6 +81,114 @@ class Camera:
 CameraInput = Camera
 
 
+class SpecklePattern(IntEnum):
+    """Select one procedural pattern for a mesh throughout a render."""
+
+    disk = 0
+    gaussian = 1
+    perlin = 2
+
+
+@dataclass(slots=True)
+class Speckle2DParams:
+    """Configure the built-in two-dimensional procedural speckle shader.
+
+    Parameters
+    ----------
+    seed : int, optional
+        Fixed unsigned 32-bit seed in ``[0, 2**32 - 1]``. Defaults to
+        ``0xA511E9B3``; there is no automatic random seeding.
+    cells_per_uv : tuple[float, float], optional
+        Positive finite scales along u and v, in cells per UV unit.
+        Noninteger values are supported. Defaults to ``(192.0, 160.0)``.
+    uv_offset : tuple[float, float], optional
+        Finite offsets along u and v in procedural cell units, not UV units.
+        Defaults to ``(0.0, 0.0)``. See Notes for the coordinate transform.
+    occupancy : float, optional
+        Probability of placing a disk or Gaussian blob in each cell, finite
+        and in ``[0, 1]``. This is not the image coverage fraction. Ignored
+        for Perlin. Defaults to ``0.9``.
+    radius_mean : float, optional
+        Positive finite disk radius or Gaussian support radius in cell units.
+        Gaussian support is truncated at three standard deviations. Ignored
+        for Perlin. Defaults to ``0.45``. See Notes for joint support limits.
+    radius_jitter : float, optional
+        Uniform radius variation half-range in cell units, finite and in
+        ``[0, radius_mean]`` for disks and Gaussian blobs. Ignored for Perlin.
+        Defaults to ``0.0``.
+    edge_softness : float, optional
+        Disk boundary transition half-width in cell units, finite and
+        nonnegative for every pattern. Zero gives hard disk edges; positive
+        values give smooth disk edges. Gaussian and Perlin require zero.
+        Defaults to ``0.0``.
+    perlin_coverage_threshold : float, optional
+        Finite noise threshold for Perlin coverage. Ignored for disks and
+        Gaussian blobs. Defaults to ``0.0``.
+    perlin_coverage_transition_width : float, optional
+        Finite, nonnegative width of the smooth coverage transition centred
+        on the Perlin threshold. Zero selects a hard threshold. Ignored for
+        disks and Gaussian blobs. Defaults to ``0.12``.
+    foreground : float, optional
+        Speckle intensity, finite and in ``[0, 1]`` for every shape, before
+        function-shader output scaling. Defaults to ``0.0``.
+    background : float, optional
+        Uncovered intensity, finite and in ``[0, 1]`` for every shape, before
+        function-shader output scaling. Defaults to ``1.0``.
+    pattern : SpecklePattern, optional
+        Runtime choice of ``disk``, ``gaussian``, or ``perlin``. Defaults to
+        ``SpecklePattern.disk``. Each mesh keeps its selected pattern across
+        all frames of a render; different meshes may use different patterns.
+
+    Notes
+    -----
+    Procedural coordinates are computed componentwise as
+    ``clip(uv, 0, 1) * cells_per_uv + uv_offset``.
+
+    Disks and Gaussian blobs require
+    ``radius_mean + radius_jitter + edge_softness <= 1.0``. Hard disks cover
+    only points where ``distance**2 < radius**2``; zero-radius draws are empty.
+
+    The Python/C binding uses the native defaults-only build. Hard disks use
+    ``classified-indexed``; soft disks and Gaussian blobs use ``list-indexed``;
+    Perlin uses ``mask-u8``. Evaluator and neighbor overrides are not exposed.
+    Resources are prepared once per mesh and reused for every frame.
+
+    The Python binding uses f64. On each axis, the padded procedural interval
+    ``[uv_offset - 1, uv_offset + cells_per_uv + 1]`` must remain within
+    ``[-2**45, 2**45]`` to retain sub-cell precision. Native resource generation
+    also rejects patterns exceeding the selected evaluator's size limits.
+
+    Construction and ``to_func_shader_params`` do not validate these values.
+    Invalid pattern identifiers raise ``ValueError`` during binding conversion.
+    Numerical validation occurs in the native rendering/resource-generation
+    path. With default fast input validation, native parameter-validation
+    failures raise ``RuntimeError`` containing ``InvalidFuncShaderParams``.
+    """
+
+    seed: int = 0xA511E9B3
+    cells_per_uv: tuple[float, float] = (192.0, 160.0)
+    uv_offset: tuple[float, float] = (0.0, 0.0)
+    occupancy: float = 0.9
+    radius_mean: float = 0.45
+    radius_jitter: float = 0.0
+    edge_softness: float = 0.0
+    perlin_coverage_threshold: float = 0.0
+    perlin_coverage_transition_width: float = 0.12
+    foreground: float = 0.0
+    background: float = 1.0
+    pattern: SpecklePattern = SpecklePattern.disk
+
+    def to_func_shader_params(self) -> "FuncShaderParams":
+        """Wrap these settings without copying or validating them.
+
+        Returns
+        -------
+        FuncShaderParams
+            Function-shader parameters referencing this instance.
+        """
+        return FuncShaderParams(speckle=self)
+
+
 @dataclass(slots=True)
 class FuncShaderParams:
     coord_scale: tuple[float, float] = (1.0, 1.0)
@@ -148,6 +256,7 @@ class FuncShaderParams:
         0.0,
         0.0,
     )
+    speckle: Speckle2DParams = field(default_factory=Speckle2DParams)
 
 
 @dataclass(slots=True)
@@ -307,6 +416,7 @@ class FuncShaderBuiltin(IntEnum):
     checker_smooth = 6
     lambertian_normal_z = 7
     eggbox = 8
+    speckle = 9
 
 
 class FuncCoordMode(IntEnum):
@@ -691,6 +801,30 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
 
 
 @cython.cfunc
+def _make_speckle_params(params_in: Any) -> cr.CSpeckle2DParams:
+    params_out: cr.CSpeckle2DParams
+    params_out.pattern = int(SpecklePattern(params_in.pattern))
+    params_out.seed = int(params_in.seed)
+    params_out.cells_per_uv_0 = float(params_in.cells_per_uv[0])
+    params_out.cells_per_uv_1 = float(params_in.cells_per_uv[1])
+    params_out.uv_offset_0 = float(params_in.uv_offset[0])
+    params_out.uv_offset_1 = float(params_in.uv_offset[1])
+    params_out.occupancy = float(params_in.occupancy)
+    params_out.radius_mean = float(params_in.radius_mean)
+    params_out.radius_jitter = float(params_in.radius_jitter)
+    params_out.edge_softness = float(params_in.edge_softness)
+    params_out.perlin_coverage_threshold = float(
+        params_in.perlin_coverage_threshold,
+    )
+    params_out.perlin_coverage_transition_width = float(
+        params_in.perlin_coverage_transition_width,
+    )
+    params_out.foreground = float(params_in.foreground)
+    params_out.background = float(params_in.background)
+    return params_out
+
+
+@cython.cfunc
 def _make_func_params(params_in: Any) -> cr.CFuncShaderParams:
     params_out: cr.CFuncShaderParams
     params_out.coord_scale_0 = float(params_in.coord_scale[0])
@@ -836,6 +970,9 @@ def _make_func_params(params_in: Any) -> cr.CFuncShaderParams:
     params_out.extra_1 = float(params_in.extra[1])
     params_out.extra_2 = float(params_in.extra[2])
     params_out.extra_3 = float(params_in.extra[3])
+    params_out.speckle = _make_speckle_params(
+        getattr(params_in, "speckle", Speckle2DParams()),
+    )
     return params_out
 
 
@@ -1758,6 +1895,8 @@ __all__ = [
     "FuncShaderBuiltin",
     "FuncCoordMode",
     "FuncShaderParams",
+    "Speckle2DParams",
+    "SpecklePattern",
     "TextureSample",
     "TextureSampleMode",
     "PsfType",

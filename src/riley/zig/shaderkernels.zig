@@ -18,4 +18,6 @@ else
 
 pub const NodalKernel = impl.NodalKernel;
 pub const TexKernel = impl.TexKernel;
+/// FuncKernel(N, C, speckle_kernel): null selects ordinary function shading;
+/// a prepared speckle kernel index specializes sampling before raster loops.
 pub const FuncKernel = impl.FuncKernel;

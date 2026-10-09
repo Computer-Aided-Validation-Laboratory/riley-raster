@@ -30,7 +30,8 @@ const sceneops = @import("sceneops.zig");
 const texops = @import("textureops.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 
-const shaderops = @import("shaderops.zig");
+const shaderops = @import("shaderops_common.zig");
+const speckleops = @import("speckleops.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
 const db = @import("distortbounds.zig");
@@ -273,6 +274,20 @@ pub fn initMeshStatic(
     allocator: std.mem.Allocator,
     mesh_input: *const MeshInput,
 ) !MeshStatic {
+    switch (mesh_input.shader) {
+        .func => |func_input| try shaderops.validateSpeckleInput(
+            func_input,
+            false,
+            &mesh_input.connect,
+        ),
+        .func_rgb => |func_input| try shaderops.validateSpeckleInput(
+            func_input,
+            true,
+            &mesh_input.connect,
+        ),
+        else => {},
+    }
+
     const coords_orig = try sceneops.duplicateCoords(
         allocator,
         mesh_input.coords,
@@ -379,8 +394,8 @@ pub fn initMeshStatic(
                 .normal_type = tex_in.normal_type,
             } };
         },
-        .func => |tex_func_in| {
-            const elem_uvs = if (tex_func_in.uvs) |uvs|
+        .func, .func_rgb => |func_input| {
+            const elem_uvs = if (func_input.uvs) |uvs|
                 try prepUVs(
                     allocator,
                     &uvs,
@@ -388,40 +403,29 @@ pub fn initMeshStatic(
                 )
             else
                 null;
-            shader_static = .{ .func = .{
+            const params = shaderops.normFuncShaderParams(
+                func_input.builtin,
+                func_input.params,
+            );
+            const func_static: shaderops.FuncStatic = .{
                 .elem_uvs = elem_uvs,
-                .coord_mode = tex_func_in.coord_mode,
-                .builtin = tex_func_in.builtin,
-                .params = shaderops.normFuncShaderParams(
-                    tex_func_in.builtin,
-                    tex_func_in.params,
-                ),
-                .bits = tex_func_in.bits,
-                .scaling = tex_func_in.scaling,
-                .normal_type = tex_func_in.normal_type,
-            } };
-        },
-        .func_rgb => |tex_func_in| {
-            const elem_uvs = if (tex_func_in.uvs) |uvs|
-                try prepUVs(
-                    allocator,
-                    &uvs,
-                    &mesh_input.connect,
-                )
-            else
-                null;
-            shader_static = .{ .func_rgb = .{
-                .elem_uvs = elem_uvs,
-                .coord_mode = tex_func_in.coord_mode,
-                .builtin = tex_func_in.builtin,
-                .params = shaderops.normFuncShaderParams(
-                    tex_func_in.builtin,
-                    tex_func_in.params,
-                ),
-                .bits = tex_func_in.bits,
-                .scaling = tex_func_in.scaling,
-                .normal_type = tex_func_in.normal_type,
-            } };
+                .speckle_resources = if (func_input.builtin == .speckle)
+                    try speckleops.generateResources(allocator, params.settings.speckle)
+                else
+                    .{},
+                .coord_mode = func_input.coord_mode,
+                .builtin = func_input.builtin,
+                .params = params,
+                .bits = func_input.bits,
+                .scaling = func_input.scaling,
+                .normal_type = func_input.normal_type,
+            };
+
+            shader_static = switch (mesh_input.shader) {
+                .func => .{ .func = func_static },
+                .func_rgb => .{ .func_rgb = func_static },
+                else => unreachable,
+            };
         },
     }
 
@@ -547,7 +551,6 @@ fn prepUVs(
         outer_alloc,
         &[_]usize{ elems_num, 2, nodes_per_elem },
     );
-    @memset(elem_uv_arr.slice, 0.0);
 
     for (0..elems_num) |ee| {
         const coord_inds = connect.getElem(ee);
@@ -856,47 +859,47 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             for (range_start..range_end) |ee| {
                 const bbox: ?rops.ElemBBox =
                     if (stage.camera.ideal_sensor_bounds) |ideal_sensor| blk: {
-                    const distorted = rops.calcVisibleDistortBBox(
-                        MT,
-                        stage.camera,
-                        stage.coords_nodes,
-                        stage.connect,
-                        ee,
-                        stage.hull_mode,
-                        stage.camera.prep_psf.halo_px,
-                        ideal_sensor,
-                        stage.edge_spacing_px,
-                    );
-                    if (stage.cached_distort_bboxes) |cached| cached[ee] = distorted;
-                    break :blk if (distorted) |value| value.box_ints else null;
-                } else if (MT == .tri3 or MT == .tri3opt)
-                    rops.calcVisibleNodeBBoxTri3WithHalo(
-                        MT,
-                        stage.camera,
-                        stage.coords_nodes,
-                        stage.connect,
-                        ee,
-                        stage.camera.prep_psf.halo_px,
-                    )
-                else if (stage.hull_mode == .off)
-                    rops.calcVisibleNodeBBoxHighOrdNoHullWithHalo(
-                        MT,
-                        stage.camera,
-                        stage.coords_nodes,
-                        stage.connect,
-                        ee,
-                        stage.camera.prep_psf.halo_px,
-                    )
-                else
-                    rops.calcVisibleNodeBBoxHighOrdWithHalo(
-                        MT,
-                        stage.camera,
-                        stage.coords_nodes,
-                        stage.connect,
-                        ee,
-                        stage.hull_mode,
-                        stage.camera.prep_psf.halo_px,
-                    );
+                        const distorted = rops.calcVisibleDistortBBox(
+                            MT,
+                            stage.camera,
+                            stage.coords_nodes,
+                            stage.connect,
+                            ee,
+                            stage.hull_mode,
+                            stage.camera.prep_psf.halo_px,
+                            ideal_sensor,
+                            stage.edge_spacing_px,
+                        );
+                        if (stage.cached_distort_bboxes) |cached| cached[ee] = distorted;
+                        break :blk if (distorted) |value| value.box_ints else null;
+                    } else if (MT == .tri3 or MT == .tri3opt)
+                        rops.calcVisibleNodeBBoxTri3WithHalo(
+                            MT,
+                            stage.camera,
+                            stage.coords_nodes,
+                            stage.connect,
+                            ee,
+                            stage.camera.prep_psf.halo_px,
+                        )
+                    else if (stage.hull_mode == .off)
+                        rops.calcVisibleNodeBBoxHighOrdNoHullWithHalo(
+                            MT,
+                            stage.camera,
+                            stage.coords_nodes,
+                            stage.connect,
+                            ee,
+                            stage.camera.prep_psf.halo_px,
+                        )
+                    else
+                        rops.calcVisibleNodeBBoxHighOrdWithHalo(
+                            MT,
+                            stage.camera,
+                            stage.coords_nodes,
+                            stage.connect,
+                            ee,
+                            stage.hull_mode,
+                            stage.camera.prep_psf.halo_px,
+                        );
 
                 if (bbox != null) {
                     vis_count += 1;
@@ -1577,46 +1580,31 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             else
                 null;
 
-            const elem_normals = try self.prepVisNormals(
-                outer_alloc,
-                func_static.normal_type,
+            const elem_normals = try self.prepVisNormals(outer_alloc, func_static.normal_type);
+            const params = shaderops.normFuncShaderParams(
+                func_static.builtin,
+                func_static.params,
             );
+            const func_prepared: shaderops.FuncPrepared = .{
+                .elem_uvs = elem_uvs,
+                .speckle_resources = func_static.speckle_resources,
+                .elem_world_ref = elem_world_ref,
+                .elem_world_def = elem_world_def,
+                .coord_mode = func_static.coord_mode,
+                .builtin = func_static.builtin,
+                .params = params,
+                .bits = func_static.bits,
+                .scaling = func_static.scaling,
+                .scale_mul = factors.mul,
+                .scale_add = factors.add,
+                .normal_type = func_static.normal_type,
+                .elem_normals = elem_normals,
+            };
+
             if (comptime C == 1) {
-                return .{ .func = .{
-                    .elem_uvs = elem_uvs,
-                    .elem_world_ref = elem_world_ref,
-                    .elem_world_def = elem_world_def,
-                    .coord_mode = func_static.coord_mode,
-                    .builtin = func_static.builtin,
-                    .params = shaderops.normFuncShaderParams(
-                        func_static.builtin,
-                        func_static.params,
-                    ),
-                    .bits = func_static.bits,
-                    .scaling = func_static.scaling,
-                    .scale_mul = factors.mul,
-                    .scale_add = factors.add,
-                    .normal_type = func_static.normal_type,
-                    .elem_normals = elem_normals,
-                } };
+                return .{ .func = func_prepared };
             } else {
-                return .{ .func_rgb = .{
-                    .elem_uvs = elem_uvs,
-                    .elem_world_ref = elem_world_ref,
-                    .elem_world_def = elem_world_def,
-                    .coord_mode = func_static.coord_mode,
-                    .builtin = func_static.builtin,
-                    .params = shaderops.normFuncShaderParams(
-                        func_static.builtin,
-                        func_static.params,
-                    ),
-                    .bits = func_static.bits,
-                    .scaling = func_static.scaling,
-                    .scale_mul = factors.mul,
-                    .scale_add = factors.add,
-                    .normal_type = func_static.normal_type,
-                    .elem_normals = elem_normals,
-                } };
+                return .{ .func_rgb = func_prepared };
             }
         }
 

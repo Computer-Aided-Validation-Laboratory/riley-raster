@@ -34,6 +34,7 @@ const TexPrepared = shaderops.TexPrepared;
 const FuncPrepared = shaderops.FuncPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
+const speckle = @import("speckleops.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 
 // --------------------------------------------------------------------------------------
@@ -1028,42 +1029,10 @@ fn rasterTileComm(
                         );
                     },
                     .func => |*shader| {
-                        const SK = shadekerns.FuncKernel(N, 1);
-                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
-                        switch (shader.coord_mode) {
-                            .uv => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_uvs.?,
-                                    ov.elem_idx * 2 * N,
-                                    2,
-                                );
-                            },
-                            .world_reference => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_world_ref.?,
-                                    ov.elem_idx * 3 * N,
-                                    3,
-                                );
-                            },
-                            .world_deformed => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_world_def.?,
-                                    ov.elem_idx * 3 * N,
-                                    3,
-                                );
-                            },
-                            .para => {},
-                        }
-                        if (shader.elem_normals) |en| {
-                            const prep_idx = en.map[ov.elem_idx];
-                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                        }
-
-                        shaded_px += try RasterBackend.RasterEngine(
+                        shaded_px += try renderFunc(
+                            RasterBackend,
                             GK,
-                            SK,
-                            FuncPrepared,
-                        ).render(
+                            1,
                             report_mode,
                             ctx_rast,
                             ctx_report,
@@ -1072,47 +1041,14 @@ fn rasterTileComm(
                             coords,
                             hull,
                             shader,
-                            &local_shader_buf,
                             subpx_scratch,
                         );
                     },
                     .func_rgb => |*shader| {
-                        const SK = shadekerns.FuncKernel(N, 3);
-                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
-                        switch (shader.coord_mode) {
-                            .uv => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_uvs.?,
-                                    ov.elem_idx * 2 * N,
-                                    2,
-                                );
-                            },
-                            .world_reference => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_world_ref.?,
-                                    ov.elem_idx * 3 * N,
-                                    3,
-                                );
-                            },
-                            .world_deformed => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_world_def.?,
-                                    ov.elem_idx * 3 * N,
-                                    3,
-                                );
-                            },
-                            .para => {},
-                        }
-                        if (shader.elem_normals) |en| {
-                            const prep_idx = en.map[ov.elem_idx];
-                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                        }
-
-                        shaded_px += try RasterBackend.RasterEngine(
+                        shaded_px += try renderFunc(
+                            RasterBackend,
                             GK,
-                            SK,
-                            FuncPrepared,
-                        ).render(
+                            3,
                             report_mode,
                             ctx_rast,
                             ctx_report,
@@ -1121,7 +1057,6 @@ fn rasterTileComm(
                             coords,
                             hull,
                             shader,
-                            &local_shader_buf,
                             subpx_scratch,
                         );
                     },
@@ -1218,6 +1153,84 @@ fn rasterTileComm(
         cam_duration_ns,
         elem_duration_ns,
         resolve_duration_ns,
+    );
+}
+
+// Select the prepared speckle kernel once per overlap, before any raster sample loop.
+fn renderFunc(
+    comptime RasterBackend: type,
+    comptime GK: type,
+    comptime C: usize,
+    comptime report_mode: ReportMode,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+    tile: rops.ActiveTile,
+    overlap: rops.OverlapBBox,
+    coords: *const NDArray(F),
+    hull: ?*const NDArray(F),
+    shader: *const FuncPrepared,
+    subpx_scratch: *RasterBackend.SubpxScratchBuffs,
+) !u64 {
+    const N = GK.nodes_num;
+    var shader_buf: shaderops.LocalShaderBuff(N) = .{};
+    switch (shader.coord_mode) {
+        .uv => shader_buf.loadFuncCoords(shader.elem_uvs.?, overlap.elem_idx * 2 * N, 2),
+        .world_reference => shader_buf.loadFuncCoords(
+            shader.elem_world_ref.?,
+            overlap.elem_idx * 3 * N,
+            3,
+        ),
+        .world_deformed => shader_buf.loadFuncCoords(
+            shader.elem_world_def.?,
+            overlap.elem_idx * 3 * N,
+            3,
+        ),
+        .para => {},
+    }
+    if (shader.elem_normals) |normals| {
+        const prep_idx = normals.map[overlap.elem_idx];
+        shader_buf.loadNormals(normals.array, prep_idx * 3 * N);
+    }
+
+    if (shader.builtin == .speckle) {
+        if (comptime C != 1) {
+            return error.SpeckleRequiresGrayscale;
+        } else {
+            const index = shader.speckle_resources.kernel_index orelse
+                return error.MissingPreparedSpeckleKernel;
+            return switch (index) {
+                inline 0...speckle.kernel_configs.len - 1 => |kernel_index| blk: {
+                    const SK = shadekerns.FuncKernel(N, C, kernel_index);
+                    break :blk RasterBackend.RasterEngine(GK, SK, FuncPrepared).render(
+                        report_mode,
+                        ctx_rast,
+                        ctx_report,
+                        tile,
+                        overlap,
+                        coords,
+                        hull,
+                        shader,
+                        &shader_buf,
+                        subpx_scratch,
+                    );
+                },
+                else => error.InvalidPreparedSpeckleKernel,
+            };
+        }
+    }
+
+    const SK = shadekerns.FuncKernel(N, C, null);
+    return RasterBackend.RasterEngine(GK, SK, FuncPrepared).render(
+        report_mode,
+        ctx_rast,
+        ctx_report,
+        tile,
+        overlap,
+        coords,
+        hull,
+        shader,
+        &shader_buf,
+        subpx_scratch,
     );
 }
 

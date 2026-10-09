@@ -21,14 +21,28 @@ const maths_simd = @import("maths_simd.zig");
 const texops = @import("textureops.zig");
 const TexSampConfig = texops.TexSampConfig;
 const comm = @import("shaderops_common.zig");
-const scal = @import("shaderops_scalar.zig");
+const speckle = @import("speckleops.zig");
 const simdops = @import("simdops.zig");
+const scal = if (@import("builtin").is_test)
+    @import("shaderops_scalar.zig")
+else
+    struct {};
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
+
+pub const FuncCoordSIMD = struct {
+    coord_0: VecSF,
+    coord_1: VecSF,
+    normal_x: VecSF,
+    normal_y: VecSF,
+    normal_z: VecSF,
+};
 
 // --------------------------------------------------------------------------------------
 // Nodal Interp Shader
 // --------------------------------------------------------------------------------------
-pub const fillNodalClipScal = scal.fillNodalClipScal;
-pub const fillNodalPerspScal = scal.fillNodalPerspScal;
 
 inline fn storeShadeSIMD(
     subpx_vals: []F,
@@ -130,9 +144,6 @@ pub inline fn fillNodalPerspSIMD(
 // --------------------------------------------------------------------------------------
 // Texture Shader
 // --------------------------------------------------------------------------------------
-
-pub const fillTexClipScal = scal.fillTexClipScal;
-pub const fillTexPerspScal = scal.fillTexPerspScal;
 
 fn texSimdInterpMode(
     comptime C: comptime_int,
@@ -279,15 +290,31 @@ pub inline fn fillTexPerspSIMD(
 // Function Shader
 // --------------------------------------------------------------------------------------
 
-pub const fillFuncClipScal = scal.fillFuncClipScal;
-pub const fillFuncPerspScal = scal.fillFuncPerspScal;
-
 pub inline fn evalFuncShaderGreyNormSIMD(
     builtin: comm.FuncShaderBuiltin,
-    coord: comm.FuncCoordSIMD,
+    coord: FuncCoordSIMD,
     params: comm.FuncShaderParams,
 ) VecSF {
-    const eval_coord = comm.applyFuncShaderCoordParamsSIMD(coord, params);
+    if (builtin == .speckle) {
+        const value = speckle.sampleSIMD(
+            coord.coord_0,
+            coord.coord_1,
+            @splat(true),
+            params.settings.speckle,
+            &.{},
+        );
+        return applyFuncShaderOutputParamsSIMD(value, params);
+    }
+    return evalNonSpeckleGreyNormSIMD(builtin, coord, params);
+}
+
+// Keep the raw API's runtime speckle fallback out of production shader kernels.
+inline fn evalNonSpeckleGreyNormSIMD(
+    builtin: comm.FuncShaderBuiltin,
+    coord: FuncCoordSIMD,
+    params: comm.FuncShaderParams,
+) VecSF {
+    const eval_coord = applyFuncShaderCoordParamsSIMD(coord, params);
     const v_value = switch (builtin) {
         .constant => blk: {
             const p = params.settings.constant;
@@ -364,7 +391,7 @@ pub inline fn evalFuncShaderGreyNormSIMD(
                 v_half * @sin(v_freq_pi * eval_coord.coord_0);
             const v_phase_y = v_half +
                 v_half * @sin(v_freq_pi * eval_coord.coord_1);
-            break :blk comm.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
+            break :blk cubicSmoothStepSIMD(v_phase_x * v_phase_y);
         },
         .lambertian_normal_z => blk: {
             const p = params.settings.lambertian_normal_z;
@@ -387,16 +414,37 @@ pub inline fn evalFuncShaderGreyNormSIMD(
             break :blk v_mean + v_half_contrast * (v_one + @cos(v_phase_x)) *
                 (v_one + @cos(v_phase_y)) - v_contrast;
         },
+        .speckle => unreachable,
     };
-    return comm.applyFuncShaderOutputParamsSIMD(v_value, params);
+    return applyFuncShaderOutputParamsSIMD(v_value, params);
+}
+
+fn evalFuncShaderGreyPreparedSIMD(
+    comptime speckle_kernel: ?usize,
+    shader: *const comm.FuncPrepared,
+    coord: FuncCoordSIMD,
+    v_mask_active: VecSB,
+) VecSF {
+    if (comptime speckle_kernel != null) {
+        const v_value = speckle.Kernel(speckle_kernel.?).sampleSIMD(
+            coord.coord_0,
+            coord.coord_1,
+            v_mask_active,
+            shader.params.settings.speckle,
+            &shader.speckle_resources,
+        );
+        return applyFuncShaderOutputParamsSIMD(v_value, shader.params);
+    } else {
+        return evalNonSpeckleGreyNormSIMD(shader.builtin, coord, shader.params);
+    }
 }
 
 pub inline fn evalFuncShaderRGBNormSIMD(
     builtin: comm.FuncShaderBuiltin,
-    coord: comm.FuncCoordSIMD,
+    coord: FuncCoordSIMD,
     params: comm.FuncShaderParams,
 ) [3]VecSF {
-    const eval_coord = comm.applyFuncShaderCoordParamsSIMD(coord, params);
+    const eval_coord = applyFuncShaderCoordParamsSIMD(coord, params);
 
     const v_vals = switch (builtin) {
         .constant => blk: {
@@ -526,11 +574,11 @@ pub inline fn evalFuncShaderRGBNormSIMD(
 
             const v_phase_x = v_half + v_half * @sin(v_freq_pi * eval_coord.coord_0);
             const v_phase_y = v_half + v_half * @sin(v_freq_pi * eval_coord.coord_1);
-            const v_base = comm.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
+            const v_base = cubicSmoothStepSIMD(v_phase_x * v_phase_y);
 
             break :blk .{
                 v_base,
-                comm.cubicSmoothStepSIMD(v_one - v_base),
+                cubicSmoothStepSIMD(v_one - v_base),
                 v_half + v_half * @sin(v_two_pi * v_base),
             };
         },
@@ -571,12 +619,41 @@ pub inline fn evalFuncShaderRGBNormSIMD(
 
             break :blk .{ v_value, v_value, v_value };
         },
+        .speckle => unreachable,
     };
     return .{
-        comm.applyFuncShaderOutputParamsSIMD(v_vals[0], params),
-        comm.applyFuncShaderOutputParamsSIMD(v_vals[1], params),
-        comm.applyFuncShaderOutputParamsSIMD(v_vals[2], params),
+        applyFuncShaderOutputParamsSIMD(v_vals[0], params),
+        applyFuncShaderOutputParamsSIMD(v_vals[1], params),
+        applyFuncShaderOutputParamsSIMD(v_vals[2], params),
     };
+}
+
+inline fn applyFuncShaderCoordParamsSIMD(
+    coord: FuncCoordSIMD,
+    params: comm.FuncShaderParams,
+) FuncCoordSIMD {
+    var out = coord;
+    out.coord_0 = @as(VecSF, @splat(params.coord_scale[0])) * coord.coord_0 +
+        @as(VecSF, @splat(params.coord_offset[0]));
+    out.coord_1 = @as(VecSF, @splat(params.coord_scale[1])) * coord.coord_1 +
+        @as(VecSF, @splat(params.coord_offset[1]));
+    return out;
+}
+
+inline fn applyFuncShaderOutputParamsSIMD(
+    v_value: VecSF,
+    params: comm.FuncShaderParams,
+) VecSF {
+    return v_value * @as(VecSF, @splat(params.output_scale)) +
+        @as(VecSF, @splat(params.output_offset));
+}
+
+inline fn cubicSmoothStepSIMD(v_val: VecSF) VecSF {
+    const v_zero: VecSF = @splat(0.0);
+    const v_one: VecSF = @splat(1.0);
+    const clamped = @max(v_zero, @min(v_one, v_val));
+    return clamped * clamped * (@as(VecSF, @splat(3.0)) -
+        @as(VecSF, @splat(2.0)) * clamped);
 }
 
 fn calcNormalLaneVecs(
@@ -608,6 +685,7 @@ fn calcNormalLaneVecs(
 pub inline fn fillFuncClipSIMD(
     comptime N: usize,
     comptime C: usize,
+    comptime speckle_kernel: ?usize,
     ctx_shade: comm.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -635,17 +713,20 @@ pub inline fn fillFuncClipSIMD(
         .para => {},
     }
 
-    const normal_vecs = calcNormalLaneVecs(
-        N,
-        shader.elem_normals != null,
-        shader_buf,
-        v_weights,
-    );
+    const normal_vecs = if (comptime speckle_kernel != null)
+        [3]VecSF{ @splat(0.0), @splat(0.0), @splat(1.0) }
+    else
+        calcNormalLaneVecs(
+            N,
+            shader.elem_normals != null,
+            shader_buf,
+            v_weights,
+        );
 
     const px_stride = spx_image_scratch.cols_num;
     const scratch_idx = ctx_shade.scratch_idx;
 
-    const coord = comm.FuncCoordSIMD{
+    const coord = FuncCoordSIMD{
         .coord_0 = v_coord_0,
         .coord_1 = v_coord_1,
         .normal_x = normal_vecs[0],
@@ -655,7 +736,7 @@ pub inline fn fillFuncClipSIMD(
     const params = shader.params;
 
     if (comptime C == 1) {
-        const v_eval = evalFuncShaderGreyNormSIMD(shader.builtin, coord, params);
+        const v_eval = evalFuncShaderGreyPreparedSIMD(speckle_kernel, shader, coord, v_mask_active);
         const v_mul = @as(VecSF, @splat(shader.scale_mul));
         const v_add = @as(VecSF, @splat(shader.scale_add));
         const v_final = v_eval * v_mul + v_add;
@@ -697,6 +778,7 @@ pub inline fn fillFuncClipSIMD(
 pub inline fn fillFuncPerspSIMD(
     comptime N: usize,
     comptime C: usize,
+    comptime speckle_kernel: ?usize,
     ctx_shade: comm.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -731,16 +813,19 @@ pub inline fn fillFuncPerspSIMD(
         .para => {},
     }
 
-    const normal_vecs = calcNormalLaneVecs(
-        N,
-        shader.elem_normals != null,
-        shader_buf,
-        v_weights,
-    );
+    const normal_vecs = if (comptime speckle_kernel != null)
+        [3]VecSF{ @splat(0.0), @splat(0.0), @splat(1.0) }
+    else
+        calcNormalLaneVecs(
+            N,
+            shader.elem_normals != null,
+            shader_buf,
+            v_weights,
+        );
 
     const px_stride = spx_image_scratch.cols_num;
     const scratch_idx = ctx_shade.scratch_idx;
-    const coord = comm.FuncCoordSIMD{
+    const coord = FuncCoordSIMD{
         .coord_0 = v_coord_0,
         .coord_1 = v_coord_1,
         .normal_x = normal_vecs[0],
@@ -750,7 +835,7 @@ pub inline fn fillFuncPerspSIMD(
     const params = shader.params;
 
     if (comptime C == 1) {
-        const v_eval = evalFuncShaderGreyNormSIMD(shader.builtin, coord, params);
+        const v_eval = evalFuncShaderGreyPreparedSIMD(speckle_kernel, shader, coord, v_mask_active);
         const v_mul = @as(VecSF, @splat(shader.scale_mul));
         const v_add = @as(VecSF, @splat(shader.scale_add));
         const v_final = v_eval * v_mul + v_add;
@@ -783,5 +868,197 @@ pub inline fn fillFuncPerspSIMD(
             v_mask_active,
             v_final,
         );
+    }
+}
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
+test "ordinary prepared functions retain scalar and SIMD output scaling" {
+    const params = comm.normFuncShaderParams(.linear, .{
+        .output_scale = 1.75,
+        .output_offset = -0.125,
+    });
+    const shader: comm.FuncPrepared = .{
+        .elem_uvs = null,
+        .builtin = .linear,
+        .params = params,
+    };
+    const coord: scal.FuncCoord = .{
+        .coord_0 = 0.25,
+        .coord_1 = 0.5,
+        .normal_x = 0.0,
+        .normal_y = 0.0,
+        .normal_z = 1.0,
+    };
+    const expected = scal.evalFuncShaderBuiltinGreyNorm(.linear, coord, params);
+    const tol: F = if (F == f32) 1e-5 else 1e-12;
+    try std.testing.expectApproxEqAbs(
+        expected,
+        scal.evalFuncShaderGreyPreparedScal(null, &shader, coord),
+        tol,
+    );
+    const actual: [S]F = evalFuncShaderGreyPreparedSIMD(null, &shader, .{
+        .coord_0 = @splat(coord.coord_0),
+        .coord_1 = @splat(coord.coord_1),
+        .normal_x = @splat(0.0),
+        .normal_y = @splat(0.0),
+        .normal_z = @splat(1.0),
+    }, @splat(true));
+    for (actual) |value| try std.testing.expectApproxEqAbs(expected, value, tol);
+}
+
+test "specialized speckle routing scaling and masked stores across patterns" {
+    // Experimental builds inline all 25 kernels and their SIMD lane stores.
+    @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
+    const defaults = [_]speckle.Speckle2DParams{
+        .{},
+        .{ .edge_softness = 0.04 },
+        .{ .pattern = .gaussian },
+        .{ .pattern = .perlin },
+    };
+    const experiments = if (buildconfig.enable_all_evaluators)
+        [_]speckle.Speckle2DParams{
+            .{ .evaluator = .cell_hash, .neighbor_count = 4 },
+            .{ .evaluator = .list_naive, .neighbor_count = 1 },
+            .{ .evaluator = .direct_fixed },
+            .{ .evaluator = .mask_1bit },
+            .{ .evaluator = .mask_u8, .edge_softness = 0.04 },
+        }
+    else
+        [_]speckle.Speckle2DParams{};
+    const cases = defaults ++ experiments;
+    const samples = [_]struct { uv: [2]F, active: bool = true }{
+        .{ .uv = .{ -0.5, 0.0 } },
+        .{ .uv = .{ 0.25, 0.625 }, .active = false },
+        .{ .uv = .{ 0.0, 1.0 } },
+        .{ .uv = .{ 1.0, 0.0 } },
+        .{ .uv = .{ 0.25, 0.625 } },
+        .{ .uv = .{ 1.25, -0.5 } },
+    };
+    const tol: F = if (F == f32) 1e-5 else 1e-12;
+    const sentinel: F = -123.0;
+    var shader_buf: comm.LocalShaderBuff(3) = .{};
+    shader_buf.func_coords = .{ 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0 };
+    shader_buf.actual_func_coords = 2;
+    const ctx: comm.ShadeContext = .{
+        .frame_idx = 0,
+        .elem_idx = 0,
+        .fields_num = 1,
+        .actual_fields = 1,
+        .scratch_idx = 1,
+        .global_subx = 0,
+        .global_suby = 0,
+        .exclusive_subpx_target = true,
+    };
+    for (cases) |case| {
+        var p = case;
+        p.cells_per_uv = .{ 3.0, 2.0 };
+        p.radius_mean = 0.25;
+        p.foreground = 0.2;
+        p.background = 0.8;
+        var resources = try speckle.generateResources(std.testing.allocator, p);
+        defer resources.deinit(std.testing.allocator);
+        const params: comm.FuncShaderParams = .{
+            .output_scale = 1.75,
+            .output_offset = -0.125,
+            .settings = .{ .speckle = p },
+        };
+        const shader: comm.FuncPrepared = .{
+            .elem_uvs = null,
+            .coord_mode = .uv,
+            .speckle_resources = resources,
+            .builtin = .speckle,
+            .params = params,
+            .scale_mul = 2.0,
+            .scale_add = 0.375,
+        };
+        switch (resources.kernel_index.?) {
+            inline 0...speckle.kernel_configs.len - 1 => |kernel_index| {
+                for (0..(samples.len + S - 1) / S) |batch| {
+                    var u: [S]F = undefined;
+                    var v: [S]F = undefined;
+                    var active: [S]bool = undefined;
+                    for (0..S) |lane| {
+                        const sample = samples[(batch * S + lane) % samples.len];
+                        u[lane] = sample.uv[0];
+                        v[lane] = sample.uv[1];
+                        active[lane] = sample.active;
+                    }
+
+                    const v_u: VecSF = u;
+                    const v_v: VecSF = v;
+                    const weights = [3]VecSF{ @as(VecSF, @splat(1.0)) - v_u - v_v, v_u, v_v };
+                    var clip_storage = [_]F{sentinel} ** (S + 2);
+                    var persp_storage = clip_storage;
+                    var clip = MatSlice(F).init(&clip_storage, 1, S + 2);
+                    var persp = MatSlice(F).init(&persp_storage, 1, S + 2);
+                    fillFuncClipSIMD(
+                        3,
+                        1,
+                        kernel_index,
+                        ctx,
+                        active,
+                        weights,
+                        @splat(0.0),
+                        @splat(0.0),
+                        &shader_buf,
+                        &shader,
+                        &clip,
+                    );
+                    fillFuncPerspSIMD(
+                        3,
+                        1,
+                        kernel_index,
+                        ctx,
+                        active,
+                        weights,
+                        @splat(0.0),
+                        @splat(0.0),
+                        .{ @splat(2.0), @splat(2.0), @splat(2.0) },
+                        @splat(0.5),
+                        &shader_buf,
+                        &shader,
+                        &persp,
+                    );
+                    for (0..S) |lane| {
+                        const raw = speckle.sampleScal(u[lane], v[lane], p, &resources);
+                        const expected = (raw * params.output_scale + params.output_offset) *
+                            shader.scale_mul + shader.scale_add;
+                        const interp: comm.InterpData(3) = .{
+                            .weights = .{ 1.0 - u[lane] - v[lane], u[lane], v[lane] },
+                            .nodes_inv_z = .{ 2.0, 2.0, 2.0 },
+                            .sub_pixel_z = 0.5,
+                            .xi = 0.0,
+                            .eta = 0.0,
+                        };
+                        inline for (.{ scal.fillFuncClipScal, scal.fillFuncPerspScal }) |fill| {
+                            var scalar_storage = [_]F{sentinel} ** 3;
+                            var scalar = MatSlice(F).init(&scalar_storage, 1, 3);
+                            fill(
+                                3,
+                                1,
+                                kernel_index,
+                                ctx,
+                                interp,
+                                &shader_buf,
+                                &shader,
+                                &scalar,
+                            );
+                            try std.testing.expectApproxEqAbs(expected, scalar_storage[1], tol);
+                        }
+                        const stored = if (active[lane]) expected else sentinel;
+                        try std.testing.expectApproxEqAbs(stored, clip_storage[1 + lane], tol);
+                        try std.testing.expectApproxEqAbs(stored, persp_storage[1 + lane], tol);
+                    }
+                    try std.testing.expectEqual(sentinel, clip_storage[0]);
+                    try std.testing.expectEqual(sentinel, clip_storage[S + 1]);
+                    try std.testing.expectEqual(sentinel, persp_storage[0]);
+                    try std.testing.expectEqual(sentinel, persp_storage[S + 1]);
+                }
+            },
+            else => return error.InvalidPreparedSpeckleKernel,
+        }
     }
 }
