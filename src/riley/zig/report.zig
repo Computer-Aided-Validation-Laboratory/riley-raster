@@ -132,7 +132,7 @@ pub fn deinitFrameReportStorage(
     config: rastcfg.RasterConfig,
     report_storage: *FrameReportStorage,
 ) void {
-    if (config.report == .full_stats) {
+    if (config.report.mode == .full_stats) {
         report_storage.full_stats.deinit(outer_alloc);
     }
     report_storage.* = .{ .off = .{} };
@@ -214,7 +214,7 @@ pub fn publishFrameResultsWithNodesPerElem(
     total_elems_in_image: usize,
     nodes_per_elem: F,
 ) !void {
-    switch (config.report) {
+    switch (config.report.mode) {
         .off => {
             if (bench_capture) |capture| {
                 const capture_idx = calcBenchCaptureIdx(
@@ -291,7 +291,7 @@ pub fn publishFrameResultsWithNodesPerElem(
                 frame_idx,
                 camera,
                 actual_tile_size,
-                config.full_stats_opts,
+                config.report.full_stats_opts,
                 nodes_per_elem,
             );
         },
@@ -487,7 +487,8 @@ pub const FullStatsLog = struct {
                         "unknown";
 
                 try writer.print(
-                    "{d},{d},{d},{d},{s},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d}\n",
+                    "{d},{d},{d},{d},{s},{d},{d},{d},{d}," ++
+                        "{d},{d},{d},{d},{d},{d},{d},{d},{d}\n",
                     .{
                         xx,
                         yy,
@@ -2061,7 +2062,10 @@ fn globalSubpxStandardReport(
         const repeated_storage = stats.stripe_storage_samples_cleared -|
             stats.output_w_subpx * stats.output_h_subpx;
         try writer.print("{s}\nSTRIPE DOMAIN\n", .{section_break});
-        try writer.print("Core Height                  = {d} subpx\n", .{stats.stripe_core_subpx});
+        try writer.print(
+            "Core Height                  = {d} subpx\n",
+            .{stats.stripe_core_subpx},
+        );
         try writer.print("Stripe Count / Final Height  = {d} / {d} subpx\n", .{
             stats.stripe_count,
             stats.final_stripe_core_subpx,
@@ -2084,9 +2088,18 @@ fn globalSubpxStandardReport(
     try writer.print("Global Resolve               = {d:.3} ms\n", .{
         frame_times.global_subpx_times.resolve * conv,
     });
-    try writer.print("Save Frame                   = {d:.3} ms\n", .{frame_times.save_frame * conv});
-    try writer.print("Active Frame                 = {d:.3} ms\n", .{frame_times.active_time * conv});
-    try writer.print("Frame Latency                = {d:.3} ms\n", .{frame_times.latency_time * conv});
+    try writer.print(
+        "Save Frame                   = {d:.3} ms\n",
+        .{frame_times.save_frame * conv},
+    );
+    try writer.print(
+        "Active Frame                 = {d:.3} ms\n",
+        .{frame_times.active_time * conv},
+    );
+    try writer.print(
+        "Frame Latency                = {d:.3} ms\n",
+        .{frame_times.latency_time * conv},
+    );
     try writer.print("{s}\nRATES\n", .{section_break});
     try writer.print("Executed Shade Rate          = {d:.3} Msubpx/s\n", .{shade_rate});
     try writer.print("Output Sample Rate           = {d:.3} Msubpx/s\n", .{sample_rate});
@@ -2121,18 +2134,18 @@ pub fn printRenderSummary(
     }
     total_pixels *= num_time;
 
-    const actual_tile_size = switch (config.buffer_mode) {
+    const actual_tile_size = switch (config.advanced.raster.buffer_mode) {
         .tile_local => scalingpolicy.tileSize(
-            config.tile_size_override,
-            config.tile_size_min,
-            config.tile_size_max,
+            config.advanced.raster.tile_size_override,
+            config.advanced.raster.tile_size_min,
+            config.advanced.raster.tile_size_max,
             cameras[0].pixels_num,
             cameras[0].sub_sample,
             cameras[0].prep_psf.halo_px,
         ),
         .global_subpx_full, .global_subpx_stripe => @divExact(
-            config.global_subpx_tile_size_override orelse
-                config.global_subpx_tile_size_min,
+            config.advanced.raster.global_subpx_tile_size_override orelse
+                config.advanced.raster.global_subpx_tile_size_min,
             @as(u16, @intCast(cameras[0].sub_sample)),
         ),
     };
@@ -2175,15 +2188,16 @@ pub fn printRenderSummary(
         print_break,
     });
     try writer.print("Buffer Mode             = {s}\n", .{
-        @tagName(config.buffer_mode),
+        @tagName(config.advanced.raster.buffer_mode),
     });
-    if (config.buffer_mode != .tile_local) {
+    if (config.advanced.raster.buffer_mode != .tile_local) {
         const global_tile_subpx = @as(usize, actual_tile_size) *
             @as(usize, cameras[0].sub_sample);
         try writer.print("Global Raster Tile      = {d} subpx\n", .{global_tile_subpx});
-        if (config.buffer_mode == .global_subpx_stripe) {
-            const stripe_subpx = config.global_subpx_stripe_size_override orelse
-                config.global_subpx_stripe_size_min;
+        if (config.advanced.raster.buffer_mode == .global_subpx_stripe) {
+            const stripe_subpx =
+                config.advanced.raster.global_subpx_stripe_size_override orelse
+                config.advanced.raster.global_subpx_stripe_size_min;
             try writer.print("Global Stripe Height    = {d} subpx\n", .{stripe_subpx});
         }
     }

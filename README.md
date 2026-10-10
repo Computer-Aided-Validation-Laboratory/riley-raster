@@ -1,4 +1,17 @@
-![Riley Logo](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/riley_logo.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/riley_logo.png" alt="Riley Logo" width="620">
+</p>
+
+<p align="center"><strong>A high performance software rasteriser for digital image correlation uncertainty quantification.</strong></p>
+
+<p align="center">
+  <a href="https://ziglang.org/download/"><img src="https://img.shields.io/badge/Zig-0.16.0-F7A41D?logo=zig&logoColor=white" alt="Zig version"></a>
+  <a href="https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/actions/workflows/zig-tests.yaml"><img src="https://img.shields.io/github/actions/workflow/status/Computer-Aided-Validation-Laboratory/riley-raster/zig-tests.yaml?branch=main&label=zig-tests" alt="Zig Tests"></a>
+  <a href="https://pypi.org/project/riley-raster/"><img src="https://img.shields.io/pypi/v/riley-raster?label=PyPI" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/riley-raster/"><img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Supported Python versions"></a>
+  <a href="https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/actions/workflows/python-package.yaml"><img src="https://img.shields.io/github/actions/workflow/status/Computer-Aided-Validation-Laboratory/riley-raster/python-package.yaml?branch=main&label=python-tests" alt="Python Tests"></a>
+  <a href="https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Computer-Aided-Validation-Laboratory/riley-raster" alt="MIT license"></a>
+</p>
 
 Riley is a high performance Zig software rasteriser for digital image correlation uncertainty quantification (DIC UQ). It synthesises deformed speckle images from finite element simulations, with higher order surface elements (`tri3`, `tri6`, `quad4`, `quad8`, and `quad9`), camera models and distortion, texture/nodal/analytic shaders, and mixed scenes.
 
@@ -12,7 +25,7 @@ Riley uses [Zig 0.16.0](https://ziglang.org/download/). Clone the repository, th
 zig build demo0-quickstart -Doptimize=ReleaseFast
 ```
 
-Renders are written to `out/`. Run the combined smoke suite with:
+Renders are written to `out/`. Run the combined test suite with:
 
 ```shell
 zig build test-verif-basic -Doptimize=ReleaseSafe
@@ -20,7 +33,7 @@ zig build test-verif-basic -Doptimize=ReleaseSafe
 
 ## Quick start: Python
 
-Install the published package, the package builds Riley from Zig source locally, so installation can take a several minutes.:
+Install the published package:
 
 ```shell
 python -m pip install riley-raster
@@ -38,9 +51,9 @@ The Zig test suites are intentionally separated by purpose. The focused verifica
 
 | Command | Purpose |
 | --- | --- |
-| `zig build test-verif-basic -Doptimize=ReleaseSafe` | Fast combination of focused analytic verification and basic regression tests. |
-| `zig build test-verif -Doptimize=ReleaseSafe` | Analytic verification of the solver, silhouettes, depth buffer, and camera distortion. |
-| `zig build test-basic -Doptimize=ReleaseSafe` | Basic regression suite. |
+| `zig build test-verif-basic` | Fast combination of focused analytic verification and basic regression tests. |
+| `zig build test-verif` | Analytic verification of the solver, silhouettes, depth buffer, and camera distortion. |
+| `zig build test-basic` | Basic regression suite. |
 | `zig build test-full -Doptimize=ReleaseSafe` | Full regression suite. |
 
 Run the packaged Python test suite with:
@@ -55,7 +68,7 @@ or:
 python -m riley test
 ```
 
-The repository parity tests compare Python and Zig demo output when the repository assets and Zig compiler are available; they skip when installed from a clean PyPI package.
+The python tests include parity analysis between the Zig demo output when the repository assets and Zig compiler are available; they skip when installed from a clean PyPI package.
 
 ## Examples
 
@@ -101,7 +114,7 @@ The main Zig entry point for the rendering pipeline is the `raster(...)` family 
 Useful top-level locations:
 
 - `src/`: Zig demos, tests, benchmarks and the core Riley source
-- `src/riley/zig/`: core Zig implementation
+- `src/riley/zig/`: core Zig raster pipeling implementation
 - `src/riley/cython/`: Cython->Python bindings for Riley
 - `src/riley/python/`: Python utilities for setup and mesh manipulation
 - `src/riley/pydemos/`: packaged Python demos

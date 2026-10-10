@@ -69,16 +69,20 @@ pub fn defaultBenchArgs(
         .image_out_dir = "",
         .render_mode = raster_config.render_mode,
         .render_group_count = 1,
-        .total_threads = raster_config.total_threads,
-        .frame_batch_size_per_group = raster_config.frame_batch_size_per_group,
-        .max_geom_jobs_in_flight_per_group = raster_config.max_geom_jobs_in_flight_per_group,
-        .max_geom_workers_per_job = raster_config.max_geom_workers_per_job,
-        .geom_scheduling_mode = raster_config.geom_scheduling_mode,
-        .max_raster_workers_per_job = raster_config.max_raster_workers_per_job,
-        .hull_mode = raster_config.hull_mode,
+        .total_threads = switch (raster_config.parallel) {
+            .auto => 1,
+            .serial => 1,
+            .threads => |th| th,
+        },
+        .frame_batch_size_per_group = 1,
+        .max_geom_jobs_in_flight_per_group = 1,
+        .max_geom_workers_per_job = 1,
+        .geom_scheduling_mode = .auto,
+        .max_raster_workers_per_job = 1,
+        .hull_mode = raster_config.advanced.solver.hull_mode,
         .subpixel_center_map = .per_tile,
         .save_strategy = .memory,
-        .disk_save_overlap = raster_config.disk_save_overlap,
+        .disk_save_overlap = raster_config.output.disk_save_overlap,
         .sample = null,
         .sample_mode = null,
         .texture_storage = .u8,
@@ -239,20 +243,10 @@ pub fn applyRasterConfig(
 ) rastcfg.RasterConfig {
     var raster_config = base_config;
     raster_config.render_mode = bench_args.render_mode;
-    raster_config.total_threads = bench_args.total_threads;
-    raster_config.frame_batch_size_per_group =
-        bench_args.frame_batch_size_per_group;
-    raster_config.max_geom_jobs_in_flight_per_group =
-        bench_args.max_geom_jobs_in_flight_per_group;
-    raster_config.max_geom_workers_per_job =
-        bench_args.max_geom_workers_per_job;
-    raster_config.geom_scheduling_mode =
-        bench_args.geom_scheduling_mode;
-    raster_config.max_raster_workers_per_job =
-        bench_args.max_raster_workers_per_job;
-    raster_config.hull_mode = bench_args.hull_mode;
+    raster_config.parallel = .{ .threads = bench_args.total_threads };
+    raster_config.advanced.solver.hull_mode = bench_args.hull_mode;
     raster_config.save_strategy = bench_args.save_strategy;
-    raster_config.disk_save_overlap = bench_args.disk_save_overlap;
+    raster_config.output.disk_save_overlap = bench_args.disk_save_overlap;
     return raster_config;
 }
 
@@ -293,15 +287,11 @@ fn argToSlice(arg: anytype) []const u8 {
 
 test "parse bench args defaults" {
     const args = [_][]const u8{"bench_geom"};
-    const raster_config = rastcfg.RasterConfig{
+    var raster_config = rastcfg.RasterConfig{
         .render_mode = .offline,
-        .total_threads = 3,
-        .frame_batch_size_per_group = 2,
-        .max_geom_jobs_in_flight_per_group = 2,
-        .max_geom_workers_per_job = 2,
-        .max_raster_workers_per_job = 3,
-        .hull_mode = .on_convex_fallback,
+        .parallel = .{ .threads = 3 },
     };
+    raster_config.advanced.solver.hull_mode = .on_convex_fallback;
     const bench_args = try parseArgs(
         args[0..],
         "out/geom",

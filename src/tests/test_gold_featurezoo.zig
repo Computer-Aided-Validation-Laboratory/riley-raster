@@ -167,26 +167,27 @@ pub fn runZooCase(
     run_config.save_strategy = .memory;
     run_config.background_value = 127.5;
     run_config.render_mode = case.render_mode;
-    run_config.buffer_mode = case.buffer_mode;
-    run_config.total_threads = total_workers_count;
-    run_config.max_geom_workers_per_job = case.max_geom_workers_per_job;
-    run_config.max_raster_workers_per_job = case.max_raster_workers_per_job;
-    run_config.frame_batch_size_per_group = case.frame_batch_size_per_group;
+    run_config.advanced.raster.buffer_mode = case.buffer_mode;
+    run_config.parallel = if (total_workers_count > 1)
+        .{ .threads = total_workers_count }
+    else
+        .serial;
 
-    var render_groups_buf: [8]riley.RenderGroupSpec = undefined;
+    var render_groups_buf: [8]riley.RenderGroup = undefined;
     for (case.workers_per_group, 0..) |workers_count, ii| {
         render_groups_buf[ii] = .{ .io = io, .workers = workers_count };
     }
     const render_groups = render_groups_buf[0..case.workers_per_group.len];
 
     const start_time = Timestamp.now(io, .awake);
-    const result = try riley.raster(
+    const result = try riley.rasterAdvanced(
         local_alloc,
-        render_groups,
+        io,
         cameras,
         meshes,
         run_config,
         null,
+        .{ .render_groups = .{ .supplied = render_groups } },
     );
 
     var render_result = result orelse return error.NoResult;

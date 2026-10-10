@@ -189,18 +189,26 @@ fn printUsage() void {
         \\Options:
         \\  --out-dir <dir>                    Output directory for CSV stats
         \\  --image-out-dir <dir>              Output directory for rendered images
-        \\  --mesh-subset <name>               Mesh subset (all, tri3, tri6, quad4, quad8, quad9)
-        \\  --mesh-density <name>              Mesh density (all, fullraster, 1e2, 1e3, 1e4, 1e5)
-        \\  --distort <name>                   Distortion case (all, none, brown_zero, brown_ext_zero,
-        \\                                     brown_pincushion, brown_ext_pincushion, poly_zero,
-        \\                                     poly_deg1_pincushion, poly_deg3_pincushion,
-        \\                                     poly_deg5_pincushion, poly_deg7_pincushion)
-        \\  --psf <name>                       PSF case (all, pixel_box, gaussian_0p5, gaussian_1p5,
-        \\                                     aniso_gaussian_0p5_0p25, aniso_gaussian_1p5_0p5)
-        \\  --runs <N>                         Number of benchmark runs per case (default: 10)
-        \\  --frames <N>                       Number of frames per render run (default: 2)
+        \\  --mesh-subset <name>               Mesh subset (all, tri3, tri6,
+        \\                                     quad4, quad8, quad9)
+        \\  --mesh-density <name>              Mesh density (all, fullraster,
+        \\                                     1e2, 1e3, 1e4, 1e5)
+        \\  --distort <name>                   Distortion case (all, none,
+        \\                                     brown_zero, brown_ext_zero,
+        \\                                     brown_pincushion,
+        \\                                     brown_ext_pincushion, poly_zero,
+        \\                                     poly_deg1_pincushion,
+        \\                                     poly_deg3_pincushion,
+        \\                                     poly_deg5_pincushion,
+        \\                                     poly_deg7_pincushion)
+        \\  --psf <name>                       PSF case (all, pixel_box,
+        \\                                     gaussian_0p5, gaussian_1p5,
+        \\                                     aniso_gaussian_0p5_0p25,
+        \\                                     aniso_gaussian_1p5_0p5)
+        \\  --runs <N>                         Number of benchmark runs (default: 10)
+        \\  --frames <N>                       Number of frames per run (default: 2)
         \\  --total-threads <N>                Total threads (default: 1)
-        \\  --max-raster-workers-per-job <N>   Max raster workers per job (default: 1)
+        \\  --max-raster-workers-per-job <N>   Max raster workers (default: 1)
         \\  --hull-mode <mode>                 Hull mode (default: on_convex_fallback)
         \\  --subpixel-center-map <mode>       Subpixel center map (default: per_tile)
         \\  --save-strategy <mode>             Save strategy (default: memory)
@@ -263,8 +271,10 @@ fn parseDistPsfArgs(args: anytype) !BenchDistPsfArgs {
                 } else if (std.mem.eql(u8, val, "per_tile")) {
                     result.subpixel_center_map = .per_tile;
                 } else {
-                    result.subpixel_center_map = std.meta.stringToEnum(cam.SubPixelCenterMap, val) orelse
-                        return error.InvalidSubpixelCenterMap;
+                    result.subpixel_center_map = std.meta.stringToEnum(
+                        cam.SubPixelCenterMap,
+                        val,
+                    ) orelse return error.InvalidSubpixelCenterMap;
                 }
             } else if (std.mem.eql(u8, arg, "--save-strategy")) {
                 result.save_strategy = std.meta.stringToEnum(rastcfg.SaveStrategy, val) orelse
@@ -391,18 +401,19 @@ pub fn main(init: std.process.Init) !void {
     const io = threaded_io.io();
 
     var base_raster_config = tcfg.getRasterConfig(.bench);
-    base_raster_config.total_threads = bench_args.total_threads;
-    base_raster_config.max_raster_workers_per_job = bench_args.max_raster_workers_per_job;
-    base_raster_config.hull_mode = bench_args.hull_mode;
+    base_raster_config.parallel = .{ .threads = bench_args.total_threads };
+    base_raster_config.advanced.solver.hull_mode = bench_args.hull_mode;
     base_raster_config.save_strategy = bench_args.save_strategy;
-    base_raster_config.image_save_opts = &[_]iio.ImageSaveOpts{
+    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
 
-    var groups = try riley.ManagedRenderGroups.init(outer_alloc, init.minimal, .{
-        .thread_budget = bench_args.total_threads,
-        .max_groups = 1,
-    });
+    var groups = try riley.ManagedRenderGroups.init(
+        outer_alloc,
+        init.minimal,
+        bench_args.total_threads,
+        1,
+    );
     defer groups.deinit(outer_alloc);
 
     const active_mesh_types = switch (bench_args.mesh_subset) {
@@ -494,8 +505,14 @@ pub fn main(init: std.process.Init) !void {
                             .{ @tagName(mt), density_str },
                         );
 
-                    const coords_path = try std.fs.path.join(local_alloc, &.{ data_dir, "coords.csv" });
-                    const connect_path = try std.fs.path.join(local_alloc, &.{ data_dir, "connect.csv" });
+                    const coords_path = try std.fs.path.join(
+                        local_alloc,
+                        &.{ data_dir, "coords.csv" },
+                    );
+                    const connect_path = try std.fs.path.join(
+                        local_alloc,
+                        &.{ data_dir, "connect.csv" },
+                    );
 
                     const sim_data = meshio.loadSimData(
                         local_alloc,
@@ -505,7 +522,10 @@ pub fn main(init: std.process.Init) !void {
                         null,
                         null,
                     ) catch |err| {
-                        std.debug.print("Warning: could not load {s}: {}\n", .{ data_dir, err });
+                        std.debug.print(
+                            "Warning: could not load {s}: {}\n",
+                            .{ data_dir, err },
+                        );
                         continue;
                     };
 
@@ -627,7 +647,10 @@ pub fn main(init: std.process.Init) !void {
                         @memset(bench_capture, std.mem.zeroes(report.FrameBenchCapture));
 
                         const out_img_path = if (bench_args.image_out_dir.len > 0)
-                            try std.fs.path.join(local_alloc, &.{ bench_args.image_out_dir, case_name })
+                            try std.fs.path.join(
+                                local_alloc,
+                                &.{ bench_args.image_out_dir, case_name },
+                            )
                         else
                             null;
 
@@ -637,15 +660,18 @@ pub fn main(init: std.process.Init) !void {
                         }
 
                         const e2e_start = Timestamp.now(io, .awake);
-                        try riley.rasterReportInto(
+                        try riley.rasterAdvancedInto(
                             local_alloc,
-                            groups.specs,
+                            io,
                             &[_]cam.CameraInput{cam_input},
                             &[_]meshpipe.MeshInput{mesh_input},
                             base_raster_config,
                             out_img_path,
                             if (image_arr) |*arr| arr else null,
-                            bench_capture,
+                            .{
+                                .render_groups = .{ .supplied = groups.groups },
+                                .bench_capture = bench_capture,
+                            },
                         );
                         const e2e_end = Timestamp.now(io, .awake);
 
@@ -655,14 +681,19 @@ pub fn main(init: std.process.Init) !void {
 
                         for (bench_capture, 0..) |capture, ff| {
                             const frame_times = capture.bench_log.frame_times;
-                            const geom_ms = (frame_times.geometry_prep + frame_times.tile_overlap) / 1e6;
+                            const geom_ms = (frame_times.geometry_prep +
+                                frame_times.tile_overlap) / 1e6;
                             const raster_ms = report.rasterStageTime(frame_times) / 1e6;
                             const frame_active_ms = frame_times.active_time / 1e6;
-                            const frame_e2e_ms = if (bench_args.frames == 1) e2e_ms else frame_active_ms;
+                            const frame_e2e_ms = if (bench_args.frames == 1)
+                                e2e_ms
+                            else
+                                frame_active_ms;
 
                             const total_elems = sim_data.connect.getElemsNum();
                             const vis_elems = total_elems;
-                            const total_px = @as(u64, DEFAULT_PIXELS_NUM[0]) * @as(u64, DEFAULT_PIXELS_NUM[1]);
+                            const total_px = @as(u64, DEFAULT_PIXELS_NUM[0]) *
+                                @as(u64, DEFAULT_PIXELS_NUM[1]);
                             const shaded_px = total_px;
 
                             const metrics = common.calcMetrics(
@@ -680,7 +711,10 @@ pub fn main(init: std.process.Init) !void {
                                 .raster_ms = raster_ms,
                                 .cam_ms = frame_times.cam_invert / 1e6,
                                 .resolve_ms = frame_times.scratch_resolve / 1e6,
-                                .fps = if (frame_e2e_ms > 0) 1000.0 / frame_e2e_ms else 0,
+                                .fps = if (frame_e2e_ms > 0)
+                                    1000.0 / frame_e2e_ms
+                                else
+                                    0,
                                 .total_elems = total_elems,
                                 .vis_elems = vis_elems,
                                 .total_px = total_px,
@@ -691,10 +725,16 @@ pub fn main(init: std.process.Init) !void {
                             };
 
                             const frame_case_name = if (bench_args.frames > 1)
-                                try std.fmt.allocPrint(local_alloc, "{s}_f{d}", .{ case_name, ff })
+                                try std.fmt.allocPrint(
+                                    local_alloc,
+                                    "{s}_f{d}",
+                                    .{ case_name, ff },
+                                )
                             else
                                 case_name;
-                            defer if (bench_args.frames > 1) local_alloc.free(frame_case_name);
+                            defer if (bench_args.frames > 1) {
+                                local_alloc.free(frame_case_name);
+                            };
 
                             try stats.appendRunResult(
                                 outer_alloc,
@@ -719,10 +759,16 @@ pub fn main(init: std.process.Init) !void {
 
                     for (0..bench_args.frames) |ff| {
                         const frame_case_name = if (bench_args.frames > 1)
-                            try std.fmt.allocPrint(local_alloc, "{s}_f{d}", .{ case_name, ff })
+                            try std.fmt.allocPrint(
+                                local_alloc,
+                                "{s}_f{d}",
+                                .{ case_name, ff },
+                            )
                         else
                             case_name;
-                        defer if (bench_args.frames > 1) local_alloc.free(frame_case_name);
+                        defer if (bench_args.frames > 1) {
+                            local_alloc.free(frame_case_name);
+                        };
 
                         try stats.appendCaseStats(
                             outer_alloc,

@@ -8,8 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const orch = @import("dev_support/orchestration.zig");
-const cammod = @import("riley/zig/camera.zig");
+const cam = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
@@ -20,7 +19,6 @@ const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 
-const CameraInput = cammod.CameraInput;
 const F = buildconfig.F;
 
 const common = @import("demo_rabbits_common.zig");
@@ -30,12 +28,7 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const local_alloc = arena.allocator();
 
-    var groups = try riley.ManagedRenderGroups.init(init.gpa, init.minimal, .{
-        .thread_budget = 4,
-        .max_groups = 1,
-    });
-    defer groups.deinit(init.gpa);
-    const io = groups.specs[0].io;
+    const io = init.io;
 
     // -------------------------------------------------------------------------
     // 1. Setup paths, texture, and meshes
@@ -63,40 +56,47 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 2. Position and configure camera
     // -------------------------------------------------------------------------
+    const default_pixel_size = [2]F{ 5.3e-6, 5.3e-6 };
+    const default_focal_length: F = 50.0e-3;
+
     const pixel_num = [2]u32{ 1600, 800 };
     const fov_scale: F = 1.01;
     const rot = Rotation.init(0.0, 0.0, 0.0);
+
     const roi_pos = sceneops.boundsCenterOverMeshes(mesh_inputs);
     const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
         mesh_inputs,
         pixel_num,
-        orch.default_pixel_size,
-        orch.default_focal_length,
+        default_pixel_size,
+        default_focal_length,
         rot,
         fov_scale,
     );
-    const camera_input = CameraInput{
+
+    const camera_input = cam.CameraInput{
         .pixels_num = pixel_num,
-        .pixels_size = orch.default_pixel_size,
+        .pixels_size = default_pixel_size,
         .pos_world = cam_pos,
         .rot_world = rot,
         .roi_cent_world = roi_pos,
-        .focal_length = orch.default_focal_length,
-        .sub_sample = 2,
+        .focal_length = default_focal_length,
+        .sub_sample = 4,
     };
 
     // -------------------------------------------------------------------------
     // 3. Configure raster engine
     // -------------------------------------------------------------------------
     const background_value: F = 0.5 * @as(F, std.math.maxInt(u8));
+    
     const config = rastcfg.RasterConfig{
-        .total_threads = 4,
-        .max_raster_workers_per_job = 4,
+        .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
-        .image_save_mode = .rgb,
         .background_value = background_value,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .none },
+        .output = .{
+            .image_save_mode = .rgb,
+            .image_save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .none },
+            },
         },
     };
 
@@ -104,14 +104,16 @@ pub fn main(init: std.process.Init) !void {
     // 4. Render rabbit multi-mesh scene
     // -------------------------------------------------------------------------
     const out_dir_root = "./out/demo2b_rabbits_rgb";
+
     const images = try riley.raster(
         init.gpa,
-        groups.specs,
-        &[_]CameraInput{camera_input},
+        io,
+        &.{camera_input},
         mesh_inputs,
         config,
         out_dir_root,
     );
+
     if (images) |img| {
         init.gpa.free(img.slice);
         img.deinit(init.gpa);

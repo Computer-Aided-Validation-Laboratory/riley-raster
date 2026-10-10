@@ -41,7 +41,7 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
     config.save_strategy = .disk;
     config.background_value = 127.5;
     config.render_mode = .in_order;
-    config.total_threads = 1;
+    config.parallel = .{ .threads = 1 };
 
     const gold_dir_root = policy.goldRoot(.full_image_output);
 
@@ -65,8 +65,8 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
         const cam_inp = fullfixtures.createScene2ImageOutputCamera(&meshes);
 
         var run_config = config;
-        run_config.image_save_mode = if (bc.is_rgb) .rgb else .grey;
-        run_config.image_save_opts = &[_]iio.ImageSaveOpts{
+        run_config.output.image_save_mode = if (bc.is_rgb) .rgb else .grey;
+        run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .fimg, .bits = null, .scaling = .none },
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
         };
@@ -80,13 +80,9 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
         var out_dir = try orch.openDirEnsured(io, gold_dir);
         out_dir.close(io);
 
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = 1 },
-        };
-
         _ = try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_inp},
             &meshes,
             run_config,
