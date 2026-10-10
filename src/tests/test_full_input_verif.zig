@@ -26,7 +26,7 @@ const valinp = @import("../riley/zig/validateinput.zig");
 const F = buildconfig.F;
 const CameraInput = camera.CameraInput;
 const MeshInput = mo.MeshInput;
-const RenderGroupSpec = riley.RenderGroupSpec;
+const RenderGroup = riley.RenderGroup;
 const RasterConfig = rastcfg.RasterConfig;
 const NDArray = ndarray.NDArray(F);
 
@@ -61,19 +61,19 @@ const BaselineFixture = struct {
 };
 
 fn runRender(
-    render_groups: []const RenderGroupSpec,
+    render_groups: []const RenderGroup,
     cam_inps: []const CameraInput,
     mesh_inps: []const MeshInput,
     config: RasterConfig,
 ) !?NDArray {
-    return riley.rasterReportWithRenderGroups(
+    return riley.rasterAdvanced(
         std.testing.allocator,
-        render_groups,
+        std.testing.io,
         cam_inps,
         mesh_inps,
         config,
         null,
-        null,
+        .{ .render_groups = .{ .supplied = render_groups } },
     );
 }
 
@@ -85,7 +85,7 @@ fn expectConfigError(
 ) !void {
     const cam_inps = common_full.createScene3Cameras();
     const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 1 }};
     try std.testing.expectError(
         expected_error,
         runRender(&render_groups, &cam_inps, &mesh_inps, config),
@@ -99,7 +99,7 @@ fn expectCameraError(
     expected_error: anyerror,
 ) !void {
     const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 1 }};
     try std.testing.expectError(
         expected_error,
         runRender(&render_groups, cam_inps, &mesh_inps, fixture.config),
@@ -114,7 +114,7 @@ fn expectRenderInputError(
     expected_error: anyerror,
 ) !void {
     const cam_inps = common_full.createScene3Cameras();
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 1 }};
     const active_config = config orelse fixture.config;
     try std.testing.expectError(
         expected_error,
@@ -133,7 +133,7 @@ fn testValidateInputModes(
 ) !void {
     const cam_inps = common_full.createScene3Cameras();
     const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 1 }};
 
     // Default configuration has validation = .fast
     const default_config = fixture.config;
@@ -181,7 +181,7 @@ fn testNoRenderGroups(
     const cam_inps = common_full.createScene3Cameras();
     const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
 
-    const empty_groups = [_]RenderGroupSpec{};
+    const empty_groups = [_]RenderGroup{};
     try std.testing.expectError(
         error.NoRenderGroups,
         runRender(&empty_groups, &cam_inps, &mesh_inps, fixture.config),
@@ -195,7 +195,7 @@ fn testNoCameras(
 ) !void {
     _ = allocator;
     const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 1 }};
 
     const empty_cams = [_]CameraInput{};
     try std.testing.expectError(
@@ -211,7 +211,7 @@ fn testNoMeshes(
 ) !void {
     _ = allocator;
     const cam_inps = common_full.createScene3Cameras();
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 1 }};
 
     const empty_meshes = [_]MeshInput{};
     try std.testing.expectError(
@@ -243,7 +243,7 @@ fn testDistortNotSuppedWithTri3Opt(
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
     mesh_inps[0].mesh_type = .tri3opt;
 
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 1 }};
     try std.testing.expectError(
         error.DistortNotSuppedWithTri3Opt,
         runRender(&render_groups, &cam_inps, &mesh_inps, fixture.config),
@@ -262,7 +262,7 @@ fn testInvalidRenderGroupWorkers(
     _ = allocator;
     const cam_inps = common_full.createScene3Cameras();
     const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 0 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 0 }};
 
     try std.testing.expectError(
         error.InvalidRenderGroupWorkers,
@@ -278,7 +278,7 @@ fn testFullStatsRequiresSingleRasterWorker(
     _ = allocator;
     const cam_inps = common_full.createScene3Cameras();
     const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 2 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 2 }};
 
     var config = fixture.config;
     config.report = .{ .mode = .full_stats };
@@ -824,7 +824,7 @@ fn testGlobalSubpxTileSizeNotAligned(
     var cam_inps = common_full.createScene3Cameras();
     cam_inps[0].sub_sample = 2;
     const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 1 }};
 
     var config = fixture.config;
     config.advanced.raster.buffer_mode = .global_subpx_full;
@@ -847,7 +847,7 @@ fn testGlobalSubpxStripeSizeNotAligned(
     var cam_inps = common_full.createScene3Cameras();
     cam_inps[0].sub_sample = 2;
     const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 1 }};
 
     var config = fixture.config;
     config.advanced.raster.buffer_mode = .global_subpx_stripe;
@@ -873,20 +873,23 @@ fn testInvalidBenchCaptureBuff(
     _ = allocator;
     const cam_inps = common_full.createScene3Cameras();
     const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 1 }};
 
     var invalid_capt = [_]report.FrameBenchCapture{std.mem.zeroes(report.FrameBenchCapture)};
 
     try std.testing.expectError(
         error.InvalidBenchCaptureBuff,
-        riley.rasterReportWithRenderGroups(
+        riley.rasterAdvanced(
             std.testing.allocator,
-            &render_groups,
+            io,
             &cam_inps,
             &mesh_inps,
             fixture.config,
             null,
-            invalid_capt[0..],
+            .{
+                .render_groups = .{ .supplied = &render_groups },
+                .bench_capture = invalid_capt[0..],
+            },
         ),
     );
 }
@@ -945,20 +948,20 @@ fn testInvalidOutputBuff(
 ) !void {
     const cam_inps = common_full.createScene3Cameras();
     const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 1 }};
 
     // Case A: save_strategy == .memory but output buffer is null when required
     try std.testing.expectError(
         error.InvalidOutputBuff,
-        riley.rasterReportIntoWithRenderGroups(
+        riley.rasterAdvancedInto(
             allocator,
-            &render_groups,
+            io,
             &cam_inps,
             &mesh_inps,
             fixture.config,
             null,
             null,
-            null,
+            .{ .render_groups = .{ .supplied = &render_groups } },
         ),
     );
 
@@ -998,15 +1001,15 @@ fn testInvalidOutputBuff(
 
     try std.testing.expectError(
         error.InvalidOutputBuff,
-        riley.rasterReportIntoWithRenderGroups(
+        riley.rasterAdvancedInto(
             allocator,
-            &render_groups,
+            io,
             &cam_inps,
             &mesh_inps,
             fixture.config,
             null,
             &bad_arr,
-            null,
+            .{ .render_groups = .{ .supplied = &render_groups } },
         ),
     );
 }
@@ -1233,7 +1236,7 @@ fn testCrossModeValidation(
     _ = allocator;
     const cam_inps = common_full.createScene3Cameras();
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 1 }};
 
     const orig_idx = mesh_inps[0].connect.table_mem[0];
     mesh_inps[0].connect.table_mem[0] = mesh_inps[0].coords.mat.rows_num + 50;
@@ -1287,7 +1290,7 @@ fn testMixedCaseCameraAndConfigErrors(
     var cam_inps = common_full.createScene3Cameras();
     cam_inps[0].pixels_num = [2]u32{ 0, 0 };
     const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    const render_groups = [_]RenderGroupSpec{.{ .io = io, .workers = 1 }};
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 1 }};
 
     var config = fixture.config;
     config.advanced.raster.tile_size_min = 64;
@@ -1307,7 +1310,7 @@ fn testMixedCaseEmptyInputs(
 ) !void {
     _ = allocator;
     _ = io;
-    const empty_groups = [_]RenderGroupSpec{};
+    const empty_groups = [_]RenderGroup{};
     const empty_cams = [_]CameraInput{};
     const empty_meshes = [_]MeshInput{};
 

@@ -128,7 +128,7 @@ fn runRender(
     run_config.advanced.raster.buffer_mode = buf_case.mode;
     run_config.parallel = .{ .threads = thread_case.total_threads };
 
-    var render_groups: [4]riley.RenderGroupSpec = undefined;
+    var render_groups: [4]riley.RenderGroup = undefined;
     for (0..thread_case.group_count) |gg| {
         render_groups[gg] = .{
             .io = io,
@@ -136,13 +136,14 @@ fn runRender(
         };
     }
 
-    const result = try riley.rasterWithRenderGroups(
+    const result = try riley.rasterAdvanced(
         allocator,
-        render_groups[0..thread_case.group_count],
+        io,
         cameras,
         meshes,
         run_config,
         null,
+        .{ .render_groups = .{ .supplied = render_groups[0..thread_case.group_count] } },
     );
     return result orelse error.MissingRenderOutput;
 }
@@ -461,17 +462,18 @@ fn runAdditionalSceneCameraThreadTests(
             run_config.render_mode = render_mode;
             run_config.parallel = .{ .threads = 2 };
 
-            const render_groups = [_]riley.RenderGroupSpec{
+            const render_groups = [_]riley.RenderGroup{
                 .{ .io = io, .workers = 2 },
             };
 
-            const result = try riley.rasterWithRenderGroups(
+            const result = try riley.rasterAdvanced(
                 aa,
-                &render_groups,
+                io,
                 &[_]CameraInput{cam_inp},
                 &meshes,
                 run_config,
                 null,
+                .{ .render_groups = .{ .supplied = &render_groups } },
             );
             const img = result orelse return error.NoResult;
             try std.testing.expect(img.slice.len > 0);
@@ -498,17 +500,18 @@ fn runAdditionalSceneCameraThreadTests(
             run_config.save_strategy = .memory;
             run_config.parallel = .{ .threads = 2 };
 
-            const render_groups = [_]riley.RenderGroupSpec{
+            const render_groups = [_]riley.RenderGroup{
                 .{ .io = io, .workers = 2 },
             };
 
-            const result = try riley.rasterWithRenderGroups(
+            const result = try riley.rasterAdvanced(
                 aa,
-                &render_groups,
+                io,
                 &[_]CameraInput{cam_inp},
                 &meshes,
                 run_config,
                 null,
+                .{ .render_groups = .{ .supplied = &render_groups } },
             );
             const img = result orelse return error.NoResult;
             try std.testing.expect(img.slice.len > 0);
@@ -530,17 +533,18 @@ fn runAdditionalSceneCameraThreadTests(
         run_config.save_strategy = .memory;
         run_config.parallel = .{ .threads = 2 };
 
-        const render_groups = [_]riley.RenderGroupSpec{
+        const render_groups = [_]riley.RenderGroup{
             .{ .io = io, .workers = 2 },
         };
 
-        const result = try riley.rasterWithRenderGroups(
+        const result = try riley.rasterAdvanced(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{ cam0, cam1 },
             &meshes,
             run_config,
             null,
+            .{ .render_groups = .{ .supplied = &render_groups } },
         );
         const img = result orelse return error.NoResult;
         try std.testing.expect(img.slice.len > 0);

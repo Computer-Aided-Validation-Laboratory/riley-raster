@@ -404,18 +404,18 @@ fn runEntryPointEquivalence(
     );
     const img_raster = result_raster orelse return error.NoResult;
 
-    // 2. rasterReport (allocates output array, captures bench)
+    // 2. rasterAdvanced (allocates output array, captures bench)
     var bench_capt = [_]report.FrameBenchCapture{
         std.mem.zeroes(report.FrameBenchCapture),
     };
-    const result_report = try riley.rasterReport(
+    const result_report = try riley.rasterAdvanced(
         aa,
         io,
         &cam_inps,
         &meshes,
         run_config,
         null,
-        bench_capt[0..],
+        .{ .bench_capture = bench_capt[0..] },
     );
     const img_report = result_report orelse return error.NoResult;
 
@@ -436,12 +436,12 @@ fn runEntryPointEquivalence(
         &img_into,
     );
 
-    // 4. rasterReportInto (renders into pre-allocated array, captures bench)
+    // 4. rasterAdvancedInto (renders into pre-allocated array, captures bench)
     var bench_capt_into = [_]report.FrameBenchCapture{
         std.mem.zeroes(report.FrameBenchCapture),
     };
     var img_report_into = try NDArray.initFlat(aa, dims[0..]);
-    try riley.rasterReportInto(
+    try riley.rasterAdvancedInto(
         aa,
         io,
         &cam_inps,
@@ -449,7 +449,7 @@ fn runEntryPointEquivalence(
         run_config,
         null,
         &img_report_into,
-        bench_capt_into[0..],
+        .{ .bench_capture = bench_capt_into[0..] },
     );
 
     // Assert exact identical outputs across all four entry points
@@ -468,6 +468,37 @@ fn runEntryPointEquivalence(
         img_raster.slice,
         img_report_into.slice,
     );
+
+    // The caller I/O opens the directory, while this supplied threaded group
+    // renders and saves the frame through its own I/O context.
+    var groups = try riley.ManagedRenderGroups.init(allocator, null, 2, 1);
+    defer groups.deinit(allocator);
+
+    var disk_config = run_config;
+    disk_config.save_strategy = .both;
+    const out_dir_path = "temp-tests/image_output_user_io";
+    const result_supplied = try riley.rasterAdvanced(
+        allocator,
+        io,
+        &cam_inps,
+        &meshes,
+        disk_config,
+        out_dir_path,
+        .{ .render_groups = .{ .supplied = groups.specs } },
+    );
+    var img_supplied = result_supplied orelse return error.NoResult;
+    defer {
+        allocator.free(img_supplied.slice);
+        img_supplied.deinit(allocator);
+    }
+    try std.testing.expectEqualSlices(F, img_raster.slice, img_supplied.slice);
+
+    var saved_file = try std.Io.Dir.cwd().openFile(
+        io,
+        "temp-tests/image_output_user_io/cam0_frame0_field0.bmp",
+        .{},
+    );
+    saved_file.close(io);
 }
 
 pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {

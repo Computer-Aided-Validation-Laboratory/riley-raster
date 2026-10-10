@@ -408,10 +408,12 @@ pub fn main(init: std.process.Init) !void {
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
 
-    var groups = try riley.ManagedRenderGroups.init(outer_alloc, init.minimal, .{
-        .thread_budget = bench_args.total_threads,
-        .max_groups = 1,
-    });
+    var groups = try riley.ManagedRenderGroups.init(
+        outer_alloc,
+        init.minimal,
+        bench_args.total_threads,
+        1,
+    );
     defer groups.deinit(outer_alloc);
 
     const active_mesh_types = switch (bench_args.mesh_subset) {
@@ -658,15 +660,18 @@ pub fn main(init: std.process.Init) !void {
                         }
 
                         const e2e_start = Timestamp.now(io, .awake);
-                        try riley.rasterReportIntoWithRenderGroups(
+                        try riley.rasterAdvancedInto(
                             local_alloc,
-                            groups.specs,
+                            io,
                             &[_]cam.CameraInput{cam_input},
                             &[_]meshpipe.MeshInput{mesh_input},
                             base_raster_config,
                             out_img_path,
                             if (image_arr) |*arr| arr else null,
-                            bench_capture,
+                            .{
+                                .render_groups = .{ .supplied = groups.specs },
+                                .bench_capture = bench_capture,
+                            },
                         );
                         const e2e_end = Timestamp.now(io, .awake);
 

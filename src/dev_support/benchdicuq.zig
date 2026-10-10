@@ -333,7 +333,7 @@ pub fn calcCaseName(
 pub fn runBenchmark(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    render_groups: []const riley.RenderGroupSpec,
+    render_groups: []const riley.RenderGroup,
     camera_inputs: []const CameraInput,
     mesh_input: MeshInput,
     config: riley.RasterConfig,
@@ -350,14 +350,17 @@ pub fn runBenchmark(
     defer outer_alloc.free(bench_capture);
 
     const start = std.Io.Clock.Timestamp.now(io, .awake);
-    const image_arr = try riley.rasterReportWithRenderGroups(
+    const image_arr = try riley.rasterAdvanced(
         outer_alloc,
-        render_groups,
+        io,
         camera_inputs,
         &[_]MeshInput{mesh_input},
         config,
         out_dir_path,
-        bench_capture,
+        .{
+            .render_groups = .{ .supplied = render_groups },
+            .bench_capture = bench_capture,
+        },
     );
     const end = std.Io.Clock.Timestamp.now(io, .awake);
 

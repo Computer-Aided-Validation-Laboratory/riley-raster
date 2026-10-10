@@ -416,9 +416,16 @@ worker caps. The quickstart demo uses one thread; the sphere, rabbit, and
 camera-model demos use four.
 
 For advanced Zig callers that need to supply their own group I/O, use
-`ManagedRenderGroups.init` and pass `groups.specs` to
-`riley.rasterWithRenderGroups` or `riley.rasterIntoWithRenderGroups`. Set
-`.max_groups` to cap group concurrency. The owner requires a thread-safe
+`ManagedRenderGroups.init(outer_alloc, minimal, thread_budget, max_groups)`
+and pass `groups.specs` to
+`riley.rasterAdvanced` or `riley.rasterAdvancedInto` with
+`.render_groups = .{ .supplied = groups.specs }`. These functions also accept an
+optional `.bench_capture` buffer. The default `.from_config` derives groups
+from the scene and `RasterConfig.parallel`; `.supplied` ignores that parallel
+setting. The public `user_io` handles top-level directories, timestamps, and
+summary reporting; each render group uses its own I/O for frame work and
+saving. The caller's I/O does not set rendering parallelism. Set
+`max_groups` to cap group concurrency. The owner requires a thread-safe
 allocator; pass the same allocator to `deinit` after rendering completes.
 Those advanced entry points use the supplied groups rather than automatically
 creating them from `RasterConfig.parallel`.
