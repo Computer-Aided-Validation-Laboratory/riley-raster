@@ -112,7 +112,7 @@ Riley operates in finite-resolution digital camera space using standard IEEE 754
 
 - **Finite precision is normal**: Tolerances, margins, and stable formulations are preferred over symbolic exactness or arbitrary-precision arithmetic.
 - **Operational relevance**: A geometric or numerical discrepancy orders of magnitude below pixel/subpixel resolution (or below the requested DIC precision) is not an operational defect.
-- **Discretisation and convergence**: Under refinement (SSAA supersampling, mesh density, quadrature order, PSF support), discretisation bias should converge systematically toward reference solutions.
+- **Discretisation and cyonvergence**: Under refinement (SSAA supersampling, mesh density, quadrature order, PSF support), discretisation bias should converge systematically toward reference solutions.
 
 ---
 
