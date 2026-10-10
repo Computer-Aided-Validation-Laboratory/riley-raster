@@ -8,7 +8,7 @@
   <a href="https://ziglang.org/download/"><img src="https://img.shields.io/badge/Zig-0.16.0-F7A41D?logo=zig&logoColor=white" alt="Zig version"></a>
   <a href="https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/actions/workflows/zig-tests.yaml"><img src="https://img.shields.io/github/actions/workflow/status/Computer-Aided-Validation-Laboratory/riley-raster/zig-tests.yaml?branch=main&label=zig-tests" alt="Zig Tests"></a>
   <a href="https://pypi.org/project/riley-raster/"><img src="https://img.shields.io/pypi/v/riley-raster?label=PyPI" alt="PyPI version"></a>
-  <a href="https://pypi.org/project/riley-raster/"><img src="https://img.shields.io/pypi/pyversions/riley-raster" alt="Supported Python versions"></a>
+  <a href="https://pypi.org/project/riley-raster/"><img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Supported Python versions"></a>
   <a href="https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/actions/workflows/python-package.yaml"><img src="https://img.shields.io/github/actions/workflow/status/Computer-Aided-Validation-Laboratory/riley-raster/python-package.yaml?branch=main&label=python-tests" alt="Python Tests"></a>
   <a href="https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Computer-Aided-Validation-Laboratory/riley-raster" alt="MIT license"></a>
 </p>

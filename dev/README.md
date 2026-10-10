@@ -1,4 +1,4 @@
-# Riley Developer Notes
+# Riley Developer Guide
 This document collects information for developers including style guides, testing architecture, benchmark executables, and performance regression workflows.
 
 ## Style Guide
@@ -7,6 +7,16 @@ This project follows the Computer Aided Validation Laboratory style guides for P
 1. **Make it correct.**
 2. **Make it fast.**
 3. **Make it simple for users.**
+
+## Development Guides
+The `dev/` directory provides comprehensive architectural, mathematical, testing, and conventions documentation for Riley developers:
+
+- [**`dev/TESTING.md`**](file:///home/lloydf/riley-raster/dev/TESTING.md): Complete testing architecture, quickstart commands, descriptions of the 4 test scenes, detailed breakdown of all 8 test suites, gold reference generation, and automated regression diagnostics.
+- [**`dev/THEORY.md`**](file:///home/lloydf/riley-raster/dev/THEORY.md): Mathematical foundations and engine design details, including polynomial camera distortion formulation, distortion-aware rasterisation frontend bounds, render thread budgets, and image save mode mechanics.
+- [**`dev/ASSUMPTIONS.md`**](file:///home/lloydf/riley-raster/dev/ASSUMPTIONS.md): Supported engineering operating envelope, mesh validity contracts, conservative numerical margins, and reasoning guidelines for review.
+- [**`dev/MESHCONVENTION.md`**](file:///home/lloydf/riley-raster/dev/MESHCONVENTION.md): Riley standard mesh representation, surface element definitions (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`), 3D continuum elements, node ordering, and connectivity conventions.
+- [**`dev/FILESTRUCTURE.md`**](file:///home/lloydf/riley-raster/dev/FILESTRUCTURE.md): Repository layout, module naming rules (`io`, `ops`, `kernel`), scalar/SIMD file splitting, and internal code organisation.
+- [**`dev/ABBREVIATIONS.md`**](file:///home/lloydf/riley-raster/dev/ABBREVIATIONS.md): Standardized abbreviations and naming conventions across Zig, C ABI, and Python codebases.
 
 ## Testing Architecture & Core Packaged Suites
 Riley provides a layered testing architecture designed for fast routine verification, rigorous mathematical validation, and exhaustive factorial test coverage:
@@ -20,18 +30,10 @@ much faster. The **full test suite** (`test-full`) tests multi-threaded executio
 and factorial sweeps and should be run in **ReleaseSafe mode** (`-Doptimize=ReleaseSafe`)
 for optimized execution with safety checks.
 
-The suite targets use native Zig test build steps with the original source files.
-Zig tracks imported source dependencies and build options; unrelated demo or Python
-edits do not invalidate their test binaries. Test execution still runs on each
-invocation so changes to gold data and runtime assets are checked.
-`src/dev_support/testrunner.zig` exposes the generated options at the test runner
-root used by `buildconfig.zig` and delegates execution to Zig's standard test runner.
-This keeps precision, SIMD, solver, and vector-width options active without
-modifying or copying suite source files. Suite targets use Zig's standard terminal
-test runner with inherited console streams. Status and suite/case timings are written
-to stdout using a buffered `std.Io` writer flushed after each message; failure
-diagnostics remain on stderr. The test runner reports test counts; use `--summary all`
-for build/run timings. Clearing `.zig-cache` is safe and only forces a rebuild.
+Suite targets use Zig's standard terminal test runner with inherited console streams. Status 
+and suite/case timings are written to stdout using a buffered `std.Io` writer flushed after 
+each message; failure diagnostics remain on stderr. The test runner reports test counts; use 
+`--summary all` for build/run timings. Clearing `.zig-cache` is safe and only forces a rebuild.
 
 ```shell
 # 1. Combined Verification and Basic Suites (preferred routine development in Debug)
@@ -48,7 +50,7 @@ zig build gen-gold-full -Doptimize=ReleaseSafe  # Generate Full gold (if needed)
 zig build test-full -Doptimize=ReleaseSafe
 
 # 5. Python Integration Suite
-.venv/bin/pytest src/riley/pytests/
+pytest --pyargs riley.pytests -vs
 ```
 
 ### Core Suites Summary
@@ -95,46 +97,6 @@ zig build test-basic -Dprecision=f32 -Dsimd=on
 zig build test-basic -Dprecision=f32 -Dsimd=off
 ```
 
-## Focused Verification Suite
-
-The focused verification suite checks independent analytic and numerical contracts rather than broad image-output stability. It currently covers:
-
-- inverse element-solver recovery from known parent coordinates;
-- undistorted silhouette area and centroid against Python-generated analytic references;
-- overlapping-rabbit depth ordering at four rear-surface separations;
-- camera-distortion round trips plus independent OpenCV/NumPy forward, inverse,
-  stacked-model, SIMD, and Jacobian oracles.
-
-The suite is intentionally fixed to the production `f64` configuration with SIMD enabled (run in Debug without optimization flags):
-
-```shell
-zig build test-verif -Dprecision=f64 -Dsimd=on
-```
-
-The ordinary test command is Zig-only. It reads compact comparison data from
-`./gold/verif/`; it does not run Python or regenerate expected results.
-
-The depth cases place the rear rabbit at separations of one largest mesh-coordinate span,
-`1/100` span, `1/1000` span, and twice the active depth-buffer tolerance. The final case is
-constructed in inverse camera-depth space because Riley's depth-buffer comparison tolerance
-has inverse-depth units. Each case renders the individual masks and both mesh submission
-orders, then verifies the analytic front-over-rear composition pixel by pixel.
-
-Regenerate the verification comparison data with the repository virtual environment:
-
-```shell
-zig build gen-gold-verif -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
-```
-
-This first runs the Zig input generator and then
-`./src/gengold/gengold_verif.py`. The Python stage independently integrates the projected
-linear and quadratic element boundaries and writes only the compact analytic results beneath
-`./gold/verif/`. These files remain ignored for now. If they are committed later, only the
-`f64`, SIMD-enabled dataset should be added.
-
-Changes to verification comparison data should be reviewed together with the generator and
-the numerical diff. Do not regenerate comparison data as part of `test-verif`.
-
 ## Benchmark Binaries
 The benchmark entry points exposed through `zig build` are:
 
@@ -145,7 +107,6 @@ The benchmark entry points exposed through `zig build` are:
 - `bench-sphere2000`
 - `bench-sphere2000zoom`
 - `bench-thread-geom`
-- `benches`
 
 To install benchmark binaries into `./bin/`:
 
@@ -240,223 +201,11 @@ The current experiment groups are driven directly by constants in the script:
 
 If you want to change the study matrix, edit those constants first.
 
-## Python Parity Check
-The packaged Python tests live in `src/riley/pytests/`.
+## Additional Notes
 
-Run the full packaged Python test suite with:
-
-```shell
-python -m pytest --pyargs riley.pytests -s
-```
-
-or:
-
-```shell
-python -m riley test
-```
-
-To compare the Python bindings against the Zig demo outputs specifically:
-
-```shell
-python -m pytest --pyargs riley.pytests.test_riley -s
-```
-
-To force a fresh Zig render instead of reusing cached demo BMPs:
-
-```shell
-RILEY_FORCE_ZIG_RENDER=1 python -m pytest --pyargs riley.pytests.test_riley -s
-```
-
-Run a packaged Python demo directly with:
-
-```shell
-python -m riley demo0_quickstart
-python -m riley demo1_sphere
-python -m riley demo2a_rabbits_mono
-python -m riley demo2b_rabbits_rgb
-python -m riley demo2c_rabbits_fields
-python -m riley demo3_dicuq
-python -m riley demo3_dicuq_from_exodus
-python -m riley demo4_stereocal
-python -m riley demo5_cameramodels
-python -m riley demo6_featurezoo
-```
-
-Python demo output is written to `Path.cwd() / "out_riley_py" / "<demo-name>"`.
-
-The Zig demos use the same numbered names and ordering. The three rabbit demos
-share mesh loading, shader setup, and layout in `src/demo_rabbits_common.zig`;
-the Python variants share `demo_rabbits_common.py`. Camera inputs are constructed
-directly; Riley prepares them internally.
-
-Rabbit parity checks also require more than 10% foreground coverage in every
-render, so matching blank images cannot pass verification.
-
-Demos that clear previous output share `src/demo_common.zig`:
-
-```zig
-var out_dir = try demo_common.resetOutputDir(io, out_dir_root);
-defer out_dir.close(io);
-```
-
-This removes the named demo output directory, recreates it (including missing
-parents), and returns an open handle for metadata exports. It does not clear the
-parent output directory. Absolute paths, parent traversal, and empty/current
-directory paths are rejected. Helper regression tests run with `test-basic`.
-
-`demo5_cameramodels` renders all six distortion families with pixel-box,
-separable/non-separable Gaussian, aligned separable anisotropic Gaussian, and
-rotated non-separable anisotropic Gaussian PSFs. Each of the 30 combinations is
-rendered through all three buffer modes, producing 90 comparison images under
-`<distortion>/<psf>/<buffer-mode>/`. Demo parity checks require the full matrix.
-
-## Notes
-
-### Polynomial camera distortion
-
-Polynomial maps support total degrees 1 through 7. Supply one forward map in
-dimensionless normalized camera coordinates, in the same direction as
-Brown–Conrady. Inversion numerically solves that same map; there are no supplied
-inverse coefficients or direction flags.
-
-Coefficients are a row-major paired buffer with logical shape
-`[term_count, 2]`, where `term_count = (degree + 1) * (degree + 2) / 2`.
-Terms are ordered by increasing total degree, then descending x exponent:
-`1, x, y, x², xy, y², ...`. Each term stores its x-output and y-output
-coefficient next to each other. Degrees 1–7 use 3, 6, 10, 15, 21, 28, 36 pairs.
-
-Choose `PolyMode.coordinate` for `(P(x,y), Q(x,y))` or
-`PolyMode.displacement` for `(x + P(x,y), y + Q(x,y))`.
-Coordinate identity needs x/y linear coefficients of one; zero coordinate
-coefficients describe a zero map. Zero displacement coefficients describe identity.
-
-```zig
-const coeffs = [_]F{ 0, 0, 0.01, 0, 0, -0.01 };
-const poly = try cam.PolyMap.init(1, .displacement, &coeffs);
-const distort = try cam.DistortModel.init(.{ .poly = poly });
-```
-
-Native maps borrow `[]const F`: construction validates but does not allocate.
-Keep coefficient storage alive and unchanged until preparation/rendering and
-all workers complete. Struct copies and `paramsFromModel()` do not extend its
-lifetime. Native empty map defaults retain displacement identity semantics.
-
-Evaluation methods are `ford`, `fordWithJac`, and `inv`. Forward-only does
-not compute derivatives. Inversion reports singularity, nonfinite arithmetic,
-or nonconvergence, and only residual convergence is success. Arbitrary maps
-need not be invertible; root uniqueness and convergence are not guaranteed.
-BC/BCExt composition applies Brown–Conrady first, then the polynomial.
-Inversion reverses that order.
-
-CSV loading returns an owner rather than a self-contained camera input:
-
-```zig
-const loaded = try cameraio.LoadedCamera.init(outer_alloc, io, dir, "camera.csv");
-defer loaded.deinit(outer_alloc);
-// Render loaded.camera_input before deinitializing the owner.
-```
-
-Stereo loading uses `LoadedStereoPair.init/deinit` and `.stereo_pair`.
-Neither owner stores an allocator; callers pass the same allocator to deinit.
-CSV metadata is `poly_degree`, `poly_mode`, and
-`poly_coeff_<term>_x` / `poly_coeff_<term>_y`. Coefficients are written with
-roundtrip-safe scientific precision. Conventional model tags are unchanged.
-
-Python cameras use `distort_poly=riley.PolyMap(degree, mode, coeffs)`, with
-`mode=riley.EPolyMode.coordinate` or `.displacement`. Coefficients have
-shape `(term_count, 2)`. The binding takes a contiguous owned f64 snapshot for
-each native call, accepts strided/real numeric arrays, and never silently
-reshapes, truncates or pads wrong-shaped data. Python-loaded maps own their arrays.
-
-The C ABI exposes `distort_poly_degree`, `distort_poly_mode` (0 coordinate,
-1 displacement), `distort_poly_coeffs` and `distort_poly_coeffs_len`.
-Render/save calls borrow the caller's buffers through worker completion.
-`rileyLoadCamera` accepts caller storage/capacity; null storage with zero
-capacity queries metadata and required count, returning a null coefficient
-pointer. Load again with sufficient caller-owned storage. Capacity is checked
-on the final load even if the file changes between calls. Stereo loading
-accepts independent buffers for each camera. No returned pointer references
-the loader's temporary arena.
-
-This is a breaking ABI/API/schema change: rebuild the native library, Cython
-extension and C clients together. To migrate old degree-1–3 displacement data,
-interleave only the active u/v coefficients and explicitly select displacement.
-No automatic padding or compatibility shim is provided.
-
-The distortion-aware raster frontend now builds an ideal-space element box
-from the triangle nodes or adaptive hull, clips it to the inverse-mapped
-sensor envelope, then samples all four box edges through the forward model.
-`RasterConfig.edge_spacing_px` controls the fixed ideal-pixel sample spacing
-(default 1). Scalar and SIMD paths use the same sample locations; integer
-binning bounds are formed first, but tile overlap uses the floating bounds
-before its final outward rounding. The old
-`affine_jac` subpixel-map mode was removed; use `full_in_mem` or `per_tile`.
-This addresses the node-only distorted-bounds bug for elements enclosed by
-their ideal adaptive hull. Fixed edge sampling is an engineering tolerance,
-not a formal bound for arbitrary sharp or singular distortion maps, and it
-cannot repair any independent failure of the ideal hull to enclose an element.
-See `plans/riley_adaptive_hull_distortion_summary.md` for that distinction.
-
-### Render thread budgets
-
-The normal Zig entry point takes `RasterConfig.parallel`: `.auto` uses the
-detected CPU count, `.serial` uses one thread, and `.{ .threads = 4 }` uses a
-four-thread budget. Riley derives available camera/frame jobs from the inputs,
-creates the appropriate render groups, and distributes the budget among them.
-One camera and one frame therefore receive one group with the entire budget
-available for raster work. Offline mode can run camera/frame jobs independently;
-in-order mode limits concurrent groups to the camera count. Full-stats reporting
-uses one thread. The budget includes group callers and excludes disk-save overlap
-threads.
-
-Python uses `riley.RasterConfig()` directly. Its `parallel=None` default maps to
-Zig `.auto`; `parallel=1` selects serial execution and `parallel=N` selects an
-explicit N-thread budget. Python does not compute render groups or per-job
-worker caps. The quickstart demo uses one thread; the sphere, rabbit, and
-camera-model demos use four.
-
-For advanced Zig callers that need to supply their own group I/O, use
-`ManagedRenderGroups.init(outer_alloc, minimal, thread_budget, max_groups)`
-and pass `managed_groups.groups` to
-`riley.rasterAdvanced` or `riley.rasterAdvancedInto` with
-`.render_groups = .{ .supplied = managed_groups.groups }`. These functions also accept an
-optional `.bench_capture` buffer. The default `.from_config` derives groups
-from the scene and `RasterConfig.parallel`; `.supplied` ignores that parallel
-setting. The public `user_io` handles top-level directories, timestamps, and
-summary reporting; each render group uses its own I/O for frame work and
-saving. The caller's I/O does not set rendering parallelism. Set
-`max_groups` to cap group concurrency. The owner requires a thread-safe
-allocator; pass the same allocator to `deinit` after rendering completes.
-Those advanced entry points use the supplied groups rather than automatically
-creating them from `RasterConfig.parallel`.
-
-The Python/C ABI was changed to carry an explicit parallel mode and thread
-count; rebuild native clients against the matching library and header.
-
-### Image save modes
-
-`RasterConfig.output.image_save_mode` selects the output field layout in Zig;
-Python uses `RasterConfig.image_save_mode`. The format, bit depth, and scaling
-remain separate image-save options.
-
-| Mode | Required source fields | Output fields |
-| --- | ---: | ---: |
-| `grey` | 1 | 1, unchanged |
-| `rgb` | 3 | 3, unchanged |
-| `multifield` | Any positive count | Same as source |
-| `rgb_to_grey` | 3 | 1, luminance-weighted |
-| `grey_to_rgb` | 1 | 3, replicated |
-
-The `grey` and `rgb` modes no longer convert mismatched inputs implicitly.
-Select an explicit conversion mode when that is what you intend. Fast and full
-input validation reject incompatible source-field counts; as elsewhere in
-Riley, validation `.off` assumes the caller supplies valid inputs and does
-not guarantee that error.
-
-The shared C library explicitly uses LLVM even in Debug: Zig 0.16's self-hosted
-Debug backend mispasses floating-point struct arguments at the C boundary in
-camera helpers. Native demo/test backend selection is unchanged.
-
-- Plain `zig run` and `zig test` under `./src/` use the default Riley path of `f64` with SIMD enabled. Run the four suite drivers through `zig build` to select precision, SIMD, solver, or vector-width options.
+- Plain `zig run` and `zig test` under `./src/` use the default Riley path of `f64` with SIMD enabled. Run the suite drivers through `zig build` to select precision, SIMD, solver, or vector-width options.
 - The public C ABI is fixed to that same production path.
+- The shared C library explicitly uses LLVM even in Debug: Zig 0.16's self-hosted Debug backend mispasses floating-point struct arguments at the C boundary in camera helpers. Native demo/test backend selection is unchanged.
+- For detailed camera model mathematics, thread budgeting, distortion-aware hulls, and image save mode mechanics, see [**`dev/THEORY.md`**](file:///home/lloydf/riley-raster/dev/THEORY.md).
 - Some older benchmark helper scripts remain in `./scripts/` for historical studies. Prefer the current commands above unless you specifically need an archived workflow.
+

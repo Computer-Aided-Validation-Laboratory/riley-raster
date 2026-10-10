@@ -119,11 +119,40 @@ The test suites leverage standardized benchmark scenes designed to exercise spec
 - **Generators**: [`src/gengold/gengold_verif.py`](file:///home/lloydf/riley-raster/src/gengold/gengold_verif.py) & [`src/gen_gold_verif.zig`](file:///home/lloydf/riley-raster/src/gen_gold_verif.zig)
 - **Data Location**: `gold/verif/`
 
-The **Verification Suite** validates the mathematical foundations of the Riley rasterisation engine against closed-form analytical equations and Python oracle solvers:
+The **Verification Suite** checks independent analytic and numerical contracts rather than broad image-output stability:
 
-1. **Newton-Raphson Shape Function Inversion**: Validates parametric coordinate $(u, v)$ convergence across linear and quadratic elements (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`) and verifies analytical Jacobian derivatives.
-2. **Ray-Intersection & Sub-Pixel Sampling**: Validates ray-plane and ray-quadric intersection precision across arbitrary 3D orientations.
-3. **Geometric & Depth Boundaries**: Validates depth sorting ($Z$-buffering) and multi-mesh tie-breaking under exact floating-point tolerances.
+1. **Newton-Raphson Shape Function Inversion**: Validates inverse element-solver recovery from known parent coordinates across linear and quadratic elements (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`) and verifies analytical Jacobian derivatives.
+2. **Undistorted Silhouette Area and Centroid**: Compares projected silhouette area and centroid against Python-generated analytic references.
+3. **Overlapping-Rabbit Depth Ordering**: Validates depth buffer ordering across four rear-surface separations:
+   - One largest mesh-coordinate span,
+   - $1/100$ span,
+   - $1/1000$ span, and
+   - Twice the active depth-buffer tolerance (constructed in inverse camera-depth space because Riley's depth-buffer comparison tolerance has inverse-depth units).
+   Each case renders individual masks and both mesh submission orders, then verifies analytic front-over-rear composition pixel by pixel.
+4. **Camera Distortion Oracles**: Validates camera-distortion round trips plus independent OpenCV/NumPy forward, inverse, stacked-model, SIMD, and Jacobian oracles.
+
+### Execution and Precision Configuration
+
+The suite is intentionally fixed to the production `f64` configuration with SIMD enabled (run in Debug mode without optimization flags):
+
+```bash
+zig build test-verif -Dprecision=f64 -Dsimd=on
+```
+
+The test command is Zig-only. It reads compact comparison data from `./gold/verif/`; it does not invoke Python or regenerate expected results during test runs.
+
+### Regenerating Verification Comparison Data
+
+Regenerate verification comparison data using the repository virtual environment:
+
+```bash
+zig build gen-gold-verif -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+```
+
+This runs the Zig input generator followed by `./src/gengold/gengold_verif.py`. The Python stage independently integrates the projected linear and quadratic element boundaries and writes compact analytic results beneath `./gold/verif/`.
+
+> [!WARNING]
+> Changes to verification comparison data should be reviewed together with the generator and numerical diff. Do not regenerate comparison data as part of `test-verif`.
 
 ---
 
@@ -268,13 +297,64 @@ When any case in the Full Test Suite encounters a regression or discrepancy exce
 - **Driver**: `.venv/bin/pytest src/riley/pytests/`
 - **Location**: [`src/riley/pytests/`](file:///home/lloydf/riley-raster/src/riley/pytests)
 
-The **Python Test Suite** provides 520+ automated test cases covering:
+The **Python Test Suite** provides 640+ automated test cases covering:
 1. **Mesh Pipeline & Conversions**: Element connectivity verification, quadratic-to-linear order reduction, surface extraction, and polygon triangulation.
 2. **File I/O & Exodus Pipeline**: Multi-block Exodus II `.e` and CSV file reading/writing.
 3. **Texture & UV Tools**: Image loading/saving (BMP, TIFF) and centered planar UV projection.
 4. **End-to-End Demo Parity**: Verification that Python demos produce identical pixel output to the corresponding Zig demo binaries.
 
-## Polynomial verification
+### Running Pytests
+
+Run the full packaged Python test suite with:
+
+```bash
+python -m pytest --pyargs riley.pytests -s
+```
+
+or via the CLI wrapper:
+
+```bash
+python -m riley test
+```
+
+### Python-to-Zig Demo Parity Checks
+
+To compare Python bindings against Zig demo outputs specifically:
+
+```bash
+python -m pytest --pyargs riley.pytests.test_riley -s
+```
+
+To force a fresh Zig render instead of reusing cached demo BMPs:
+
+```bash
+RILEY_FORCE_ZIG_RENDER=1 python -m pytest --pyargs riley.pytests.test_riley -s
+```
+
+Individual packaged Python demos can also be run directly:
+
+```bash
+python -m riley demo0_quickstart
+python -m riley demo1_sphere
+python -m riley demo2a_rabbits_mono
+python -m riley demo2b_rabbits_rgb
+python -m riley demo2c_rabbits_fields
+python -m riley demo3_dicuq
+python -m riley demo3_dicuq_from_exodus
+python -m riley demo4_stereocal
+python -m riley demo5_cameramodels
+python -m riley demo6_featurezoo
+```
+
+Python demo output is written to `Path.cwd() / "out_riley_py" / "<demo-name>"`.
+
+The Zig demos use the same numbered names and ordering:
+- The rabbit demos (`demo2a`, `demo2b`, `demo2c`) share mesh loading, shader setup, and layout in `src/demo_rabbits_common.zig`; the Python variants share `demo_rabbits_common.py`.
+- Rabbit parity checks require greater than 10% foreground coverage in every render, ensuring blank or unrendered frames cannot pass verification.
+- Demos that clear previous output share `src/demo_common.zig` (`demo_common.resetOutputDir`). This removes the named demo output directory and recreates it cleanly.
+- `demo5_cameramodels` renders all 6 distortion families with pixel-box, Gaussian (separable/non-separable), aligned anisotropic Gaussian, and rotated anisotropic Gaussian PSFs across all 3 buffer modes (90 comparison images per run under `<distortion>/<psf>/<buffer-mode>/`). Parity checks require the entire matrix to match.
+
+---
 
 `zig build test-poly` runs camera/model/loader unit tests without rendering
 the full regression scenes and accepts the normal precision/SIMD build options.
