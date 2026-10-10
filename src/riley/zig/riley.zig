@@ -144,7 +144,7 @@ pub fn rasterAdvanced(
                 plan.total_threads,
                 plan.render_group_count,
             );
-            break :blk managed_groups.?.specs;
+            break :blk managed_groups.?.groups;
         },
         .supplied => |groups| groups,
     };
@@ -211,7 +211,7 @@ pub fn rasterAdvancedInto(
                 plan.total_threads,
                 plan.render_group_count,
             );
-            break :blk managed_groups.?.specs;
+            break :blk managed_groups.?.groups;
         },
         .supplied => |groups| groups,
     };
@@ -2051,9 +2051,9 @@ test "render group save I/O prefers the supplied override" {
     try std.testing.expectEqual(group.io.userdata, renderGroupSaveIo(group).userdata);
 
     var overridden = group;
-    overridden.save_frame_io = groups.specs[0].io;
+    overridden.save_frame_io = groups.groups[0].io;
     try std.testing.expectEqual(
-        groups.specs[0].io.userdata,
+        groups.groups[0].io.userdata,
         renderGroupSaveIo(overridden).userdata,
     );
 }

@@ -669,7 +669,7 @@ pub fn main(init: std.process.Init) !void {
                             out_img_path,
                             if (image_arr) |*arr| arr else null,
                             .{
-                                .render_groups = .{ .supplied = groups.specs },
+                                .render_groups = .{ .supplied = groups.groups },
                                 .bench_capture = bench_capture,
                             },
                         );

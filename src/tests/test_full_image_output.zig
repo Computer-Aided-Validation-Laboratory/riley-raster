@@ -484,7 +484,7 @@ fn runEntryPointEquivalence(
         &meshes,
         disk_config,
         out_dir_path,
-        .{ .render_groups = .{ .supplied = groups.specs } },
+        .{ .render_groups = .{ .supplied = groups.groups } },
     );
     var img_supplied = result_supplied orelse return error.NoResult;
     defer {

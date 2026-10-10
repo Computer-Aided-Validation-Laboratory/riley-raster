@@ -417,9 +417,9 @@ camera-model demos use four.
 
 For advanced Zig callers that need to supply their own group I/O, use
 `ManagedRenderGroups.init(outer_alloc, minimal, thread_budget, max_groups)`
-and pass `groups.specs` to
+and pass `managed_groups.groups` to
 `riley.rasterAdvanced` or `riley.rasterAdvancedInto` with
-`.render_groups = .{ .supplied = groups.specs }`. These functions also accept an
+`.render_groups = .{ .supplied = managed_groups.groups }`. These functions also accept an
 optional `.bench_capture` buffer. The default `.from_config` derives groups
 from the scene and `RasterConfig.parallel`; `.supplied` ignores that parallel
 setting. The public `user_io` handles top-level directories, timestamps, and
