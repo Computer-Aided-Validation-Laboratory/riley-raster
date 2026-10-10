@@ -8,44 +8,45 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 
-pub const RenderGroupSpec = struct {
+pub const RenderGroup = struct {
     io: std.Io,
     save_frame_io: ?std.Io = null,
     workers: u16,
 };
 
-pub const RenderGroupOptions = struct {
-    /// Includes each group's caller thread; excludes disk-save overlap threads.
-    thread_budget: u16,
-    /// Limit concurrent groups (for available jobs or memory). Defaults to budget.
-    max_groups: ?u16 = null,
-};
-
-/// Owns render-group specs and their backing I/O instances. Do not copy the
-/// owner or resize its storage. Specs and I/O handles expire on deinit.
+/// Owns render-group groups and their backing I/O instances. Do not copy the
+/// owner or resize its storage. groups and I/O handles expire on deinit.
 /// The allocator must support concurrent allocation when rendering in parallel;
 /// it and the supplied process environment must outlive this owner.
 /// Deinit requires the same allocator passed to init.
 pub const ManagedRenderGroups = struct {
     managed_ios: []std.Io.Threaded,
-    specs: []RenderGroupSpec,
+    groups: []RenderGroup,
 
-    /// Groups-first allocation: cap the group count, then distribute all workers
-    /// evenly, assigning one extra to the first remainder groups. Pass null for
-    /// process metadata when embedding Riley without a Zig process.Init.
+    /// The budget includes callers but excludes disk-save overlap threads.
+    /// Pass null for `max_groups` to allow one group per budgeted thread, or
+    /// null for `minimal` when embedding without a Zig process.Init.
+    /// Workers are distributed evenly, with extras in the first groups.
     pub fn init(
         outer_alloc: std.mem.Allocator,
         minimal: ?std.process.Init.Minimal,
-        options: RenderGroupOptions,
+        thread_budget: u16,
+        max_groups: ?u16,
     ) !ManagedRenderGroups {
-        const layout = try Layout.init(options);
-        const managed_ios = try outer_alloc.alloc(std.Io.Threaded, layout.groups);
-        errdefer outer_alloc.free(managed_ios);
-        const specs = try outer_alloc.alloc(RenderGroupSpec, layout.groups);
-        errdefer outer_alloc.free(specs);
+        if (thread_budget == 0) return error.InvalidThreadBudget;
+        const cap = max_groups orelse thread_budget;
+        if (cap == 0) return error.InvalidMaxGroups;
+        const group_count = @min(thread_budget, cap);
+        const base_workers = thread_budget / group_count;
+        const remainder = thread_budget % group_count;
 
-        for (managed_ios, specs, 0..) |*managed_io, *spec, index| {
-            const workers = layout.getWorkers(index);
+        const managed_ios = try outer_alloc.alloc(std.Io.Threaded, group_count);
+        errdefer outer_alloc.free(managed_ios);
+        const groups = try outer_alloc.alloc(RenderGroup, group_count);
+        errdefer outer_alloc.free(groups);
+
+        for (managed_ios, groups, 0..) |*managed_io, *spec, index| {
+            const workers = base_workers + @as(u16, @intFromBool(index < remainder));
             const limit: std.Io.Limit = if (workers == 1)
                 .nothing
             else
@@ -58,7 +59,7 @@ pub const ManagedRenderGroups = struct {
             });
             spec.* = .{ .io = managed_io.io(), .workers = workers };
         }
-        return .{ .managed_ios = managed_ios, .specs = specs };
+        return .{ .managed_ios = managed_ios, .groups = groups };
     }
 
     /// Finish all rendering before deinit; pass the same allocator used by init.
@@ -66,45 +67,19 @@ pub const ManagedRenderGroups = struct {
         for (self.managed_ios) |*managed_io| {
             managed_io.deinit();
         }
-        outer_alloc.free(self.specs);
+        outer_alloc.free(self.groups);
         outer_alloc.free(self.managed_ios);
         self.* = undefined;
     }
 };
 
-const Layout = struct {
-    groups: u16,
-    base_workers: u16,
-    remainder: u16,
-
-    fn init(options: RenderGroupOptions) !Layout {
-        if (options.thread_budget == 0) return error.InvalidThreadBudget;
-        const cap = options.max_groups orelse options.thread_budget;
-        if (cap == 0) return error.InvalidMaxGroups;
-        const groups = @min(options.thread_budget, cap);
-        return .{
-            .groups = groups,
-            .base_workers = options.thread_budget / groups,
-            .remainder = options.thread_budget % groups,
-        };
-    }
-
-    fn getWorkers(self: Layout, index: usize) u16 {
-        return self.base_workers + @as(u16, @intFromBool(index < self.remainder));
-    }
-};
-
-fn allocationFailureProbe(local_alloc: std.mem.Allocator) !void {
-    var groups = try ManagedRenderGroups.init(local_alloc, null, .{
-        .thread_budget = 7,
-        .max_groups = 3,
-    });
-    defer groups.deinit(local_alloc);
-}
-
 // --------------------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------------------
+fn allocationFailureProbe(local_alloc: std.mem.Allocator) !void {
+    var groups = try ManagedRenderGroups.init(local_alloc, null, 7, 3);
+    defer groups.deinit(local_alloc);
+}
 
 test "render group budgets use all workers and distribute remainders evenly" {
     const cases = [_]struct {
@@ -121,14 +96,16 @@ test "render group budgets use all workers and distribute remainders evenly" {
         .{ .budget = 65535, .cap = 2, .expected = &.{ 32768, 32767 } },
     };
     for (cases) |case| {
-        var groups = try ManagedRenderGroups.init(std.testing.allocator, null, .{
-            .thread_budget = case.budget,
-            .max_groups = case.cap,
-        });
+        var groups = try ManagedRenderGroups.init(
+            std.testing.allocator,
+            null,
+            case.budget,
+            case.cap,
+        );
         defer groups.deinit(std.testing.allocator);
-        try std.testing.expectEqual(case.expected.len, groups.specs.len);
+        try std.testing.expectEqual(case.expected.len, groups.groups.len);
         var total: usize = 0;
-        for (groups.specs, groups.managed_ios, case.expected) |spec, *managed_io, workers| {
+        for (groups.groups, groups.managed_ios, case.expected) |spec, *managed_io, workers| {
             try std.testing.expectEqual(workers, spec.workers);
             try std.testing.expectEqual(managed_io.io().userdata, spec.io.userdata);
             const concurrent_limit = @intFromEnum(managed_io.concurrent_limit);
@@ -143,14 +120,11 @@ test "render group budgets use all workers and distribute remainders evenly" {
 test "render group budgets reject zero budget and zero cap" {
     try std.testing.expectError(
         error.InvalidThreadBudget,
-        ManagedRenderGroups.init(std.testing.allocator, null, .{ .thread_budget = 0 }),
+        ManagedRenderGroups.init(std.testing.allocator, null, 0, null),
     );
     try std.testing.expectError(
         error.InvalidMaxGroups,
-        ManagedRenderGroups.init(std.testing.allocator, null, .{
-            .thread_budget = 1,
-            .max_groups = 0,
-        }),
+        ManagedRenderGroups.init(std.testing.allocator, null, 1, 0),
     );
 }
 

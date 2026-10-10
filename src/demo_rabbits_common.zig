@@ -8,7 +8,6 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const orch = @import("dev_support/orchestration.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
@@ -121,6 +120,16 @@ fn shaderModeForMeshIndex(mesh_idx: usize) ShaderMode {
     };
 }
 
+fn meshDataName(mesh_type: gk.MeshType) []const u8 {
+    return switch (mesh_type) {
+        .tri3, .tri3opt => "tri3",
+        .tri6 => "tri6",
+        .quad4 => "quad4",
+        .quad8 => "quad8",
+        .quad9 => "quad9",
+    };
+}
+
 fn buildRabbitDir(
     outer_alloc: std.mem.Allocator,
     rabbit_name: []const u8,
@@ -129,7 +138,7 @@ fn buildRabbitDir(
     return try std.fmt.allocPrint(
         outer_alloc,
         "data/rabbits/{s}_{s}",
-        .{ rabbit_name, orch.meshDataName(mesh_type) },
+        .{ rabbit_name, meshDataName(mesh_type) },
     );
 }
 
@@ -219,7 +228,7 @@ fn makeMeshInput(
                 .tex = texture,
                 .samp_cfg = .{
                     .sample = .cubic_catmull_rom,
-                    .mode = .lut_lerp,
+                    .mode = .direct,
                 },
                 .bits = 8,
                 .scaling = .none,

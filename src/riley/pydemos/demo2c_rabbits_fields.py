@@ -76,13 +76,12 @@ def main() -> None:
         rot_world=rot_world,
         roi_cent_world=roi_pos,
         focal_length=default_focal_length,
-        sub_sample=2,
+        sub_sample=4,
     )
 
     background_value = 127.5
-    config = riley.create_raster_config(
-        num_frames=1,
-        total_threads=4,
+    config = riley.RasterConfig(
+        parallel=4,
         save_strategy=riley.SaveStrategy.disk,
     )
     config.image_save_mode = riley.ImageSaveMode.multifield

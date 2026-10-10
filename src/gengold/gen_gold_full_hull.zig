@@ -134,17 +134,13 @@ fn runOneElemHullCase(
 
     var run_config = config;
     run_config.save_strategy = .disk;
-    run_config.hull_mode = hull_case.mode;
-    run_config.newton_seed_mode = seed_case.seed_mode;
-    run_config.newton_seed_reuse = seed_case.seed_reuse;
-
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
+    run_config.advanced.solver.hull_mode = hull_case.mode;
+    run_config.advanced.solver.newton_seed_mode = seed_case.seed_mode;
+    run_config.advanced.solver.newton_seed_reuse = seed_case.seed_reuse;
 
     _ = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{cam_inp},
         &[_]MeshInput{mesh_input},
         run_config,
@@ -192,17 +188,13 @@ fn runScene2HullCase(
 
     var run_config = config;
     run_config.save_strategy = .disk;
-    run_config.hull_mode = hull_case.mode;
-    run_config.newton_seed_mode = seed_case.seed_mode;
-    run_config.newton_seed_reuse = seed_case.seed_reuse;
-
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
+    run_config.advanced.solver.hull_mode = hull_case.mode;
+    run_config.advanced.solver.newton_seed_mode = seed_case.seed_mode;
+    run_config.advanced.solver.newton_seed_reuse = seed_case.seed_reuse;
 
     _ = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{cam_inp},
         &meshes,
         run_config,
@@ -213,9 +205,9 @@ fn runScene2HullCase(
 pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.image_save_mode = .grey;
+    config.output.image_save_mode = .grey;
     config.background_value = 127.5;
-    config.image_save_opts = &[_]iio.ImageSaveOpts{
+    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .fimg, .bits = null, .scaling = .none },
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     };
@@ -250,11 +242,31 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
             .mesh_types = &newton_mesh_types,
             .is_offscreen = false,
         },
-        .{ .name = "distort_bulge", .mesh_types = &midside_mesh_types, .is_offscreen = false },
-        .{ .name = "distort_tan", .mesh_types = &midside_mesh_types, .is_offscreen = false },
-        .{ .name = "vertbulge", .mesh_types = &midside_mesh_types, .is_offscreen = false },
-        .{ .name = "bulgein_rot", .mesh_types = &midside_mesh_types, .is_offscreen = false },
-        .{ .name = "bulgeout_rot", .mesh_types = &midside_mesh_types, .is_offscreen = false },
+        .{
+            .name = "distort_bulge",
+            .mesh_types = &midside_mesh_types,
+            .is_offscreen = false,
+        },
+        .{
+            .name = "distort_tan",
+            .mesh_types = &midside_mesh_types,
+            .is_offscreen = false,
+        },
+        .{
+            .name = "vertbulge",
+            .mesh_types = &midside_mesh_types,
+            .is_offscreen = false,
+        },
+        .{
+            .name = "bulgein_rot",
+            .mesh_types = &midside_mesh_types,
+            .is_offscreen = false,
+        },
+        .{
+            .name = "bulgeout_rot",
+            .mesh_types = &midside_mesh_types,
+            .is_offscreen = false,
+        },
         .{
             .name = "vertbulge_offscreen",
             .mesh_types = &midside_mesh_types,

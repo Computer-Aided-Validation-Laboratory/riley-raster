@@ -93,20 +93,16 @@ fn runBaseComparison(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.image_save_mode = if (bc.is_rgb) .rgb else .grey;
-    run_config.image_save_opts = &[_]iio.ImageSaveOpts{
+    run_config.output.image_save_mode = if (bc.is_rgb) .rgb else .grey;
+    run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .fimg, .bits = null, .scaling = .none },
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
 
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = 1 },
-    };
-
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{cam_inp},
         &meshes,
         run_config,
@@ -219,18 +215,14 @@ fn runFactorialSaveStrategy(
 
         var run_config = config;
         run_config.save_strategy = strat;
-        run_config.image_save_mode = .grey;
-        run_config.image_save_opts = &[_]iio.ImageSaveOpts{
+        run_config.output.image_save_mode = .grey;
+        run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .none },
-        };
-
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = 1 },
         };
 
         const result = try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_inp},
             &meshes,
             run_config,
@@ -297,13 +289,13 @@ fn runFactorialFormatsAndModes(
 
             var run_config = config;
             run_config.save_strategy = .both;
-            run_config.image_save_mode = mode;
+            run_config.output.image_save_mode = mode;
             const bits: ?u8 = switch (fmt) {
                 .bmp, .tiff => 8,
                 .fimg, .csv => null,
                 .ppm => 8,
             };
-            run_config.image_save_opts = &[_]iio.ImageSaveOpts{
+            run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
                 .{ .format = fmt, .bits = bits, .scaling = .none },
             };
 
@@ -311,13 +303,10 @@ fn runFactorialFormatsAndModes(
                 &meshes_rgb
             else
                 &meshes_mono;
-            const render_groups = [_]riley.RenderGroupSpec{
-                .{ .io = io, .workers = 1 },
-            };
 
             const result = try riley.raster(
                 aa,
-                &render_groups,
+                io,
                 &[_]CameraInput{cam_inp},
                 meshes,
                 run_config,
@@ -353,25 +342,21 @@ fn runFactorialScalingAndReports(
 
             var run_config = config;
             run_config.save_strategy = .memory;
-            run_config.image_save_mode = .grey;
-            run_config.report = rep_mode;
+            run_config.output.image_save_mode = .grey;
+            run_config.report = .{ .mode = rep_mode };
             const scaling: imageops.ScaleStrategy = switch (scale_strat) {
                 .none => .none,
                 .auto => .auto,
                 .fixed => .{ .fixed = .{ 0.0, 255.0 } },
                 .frac => .{ .frac = .{ 0.05, 0.95 } },
             };
-            run_config.image_save_opts = &[_]iio.ImageSaveOpts{
+            run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
                 .{ .format = .bmp, .bits = 8, .scaling = scaling },
-            };
-
-            const render_groups = [_]riley.RenderGroupSpec{
-                .{ .io = io, .workers = 1 },
             };
 
             const result = try riley.raster(
                 aa,
-                &render_groups,
+                io,
                 &[_]CameraInput{cam_inp},
                 &meshes,
                 run_config,
@@ -406,16 +391,12 @@ fn runEntryPointEquivalence(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.image_save_mode = .grey;
-
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = 1 },
-    };
+    run_config.output.image_save_mode = .grey;
 
     // 1. raster (allocates output array)
     const result_raster = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &cam_inps,
         &meshes,
         run_config,
@@ -423,18 +404,18 @@ fn runEntryPointEquivalence(
     );
     const img_raster = result_raster orelse return error.NoResult;
 
-    // 2. rasterReport (allocates output array, captures bench)
+    // 2. rasterAdvanced (allocates output array, captures bench)
     var bench_capt = [_]report.FrameBenchCapture{
         std.mem.zeroes(report.FrameBenchCapture),
     };
-    const result_report = try riley.rasterReport(
+    const result_report = try riley.rasterAdvanced(
         aa,
-        &render_groups,
+        io,
         &cam_inps,
         &meshes,
         run_config,
         null,
-        bench_capt[0..],
+        .{ .bench_capture = bench_capt[0..] },
     );
     const img_report = result_report orelse return error.NoResult;
 
@@ -447,7 +428,7 @@ fn runEntryPointEquivalence(
     var img_into = try NDArray.initFlat(aa, dims[0..]);
     try riley.rasterInto(
         aa,
-        &render_groups,
+        io,
         &cam_inps,
         &meshes,
         run_config,
@@ -455,20 +436,20 @@ fn runEntryPointEquivalence(
         &img_into,
     );
 
-    // 4. rasterReportInto (renders into pre-allocated array, captures bench)
+    // 4. rasterAdvancedInto (renders into pre-allocated array, captures bench)
     var bench_capt_into = [_]report.FrameBenchCapture{
         std.mem.zeroes(report.FrameBenchCapture),
     };
     var img_report_into = try NDArray.initFlat(aa, dims[0..]);
-    try riley.rasterReportInto(
+    try riley.rasterAdvancedInto(
         aa,
-        &render_groups,
+        io,
         &cam_inps,
         &meshes,
         run_config,
         null,
         &img_report_into,
-        bench_capt_into[0..],
+        .{ .bench_capture = bench_capt_into[0..] },
     );
 
     // Assert exact identical outputs across all four entry points
@@ -487,6 +468,37 @@ fn runEntryPointEquivalence(
         img_raster.slice,
         img_report_into.slice,
     );
+
+    // The caller I/O opens the directory, while this supplied threaded group
+    // renders and saves the frame through its own I/O context.
+    var groups = try riley.ManagedRenderGroups.init(allocator, null, 2, 1);
+    defer groups.deinit(allocator);
+
+    var disk_config = run_config;
+    disk_config.save_strategy = .both;
+    const out_dir_path = "temp-tests/image_output_user_io";
+    const result_supplied = try riley.rasterAdvanced(
+        allocator,
+        io,
+        &cam_inps,
+        &meshes,
+        disk_config,
+        out_dir_path,
+        .{ .render_groups = .{ .supplied = groups.groups } },
+    );
+    var img_supplied = result_supplied orelse return error.NoResult;
+    defer {
+        allocator.free(img_supplied.slice);
+        img_supplied.deinit(allocator);
+    }
+    try std.testing.expectEqualSlices(F, img_raster.slice, img_supplied.slice);
+
+    var saved_file = try std.Io.Dir.cwd().openFile(
+        io,
+        "temp-tests/image_output_user_io/cam0_frame0_field0.bmp",
+        .{},
+    );
+    saved_file.close(io);
 }
 
 pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
@@ -560,18 +572,14 @@ fn runAdditionalImageOutputTests(
 
         var run_config = config;
         run_config.save_strategy = .both;
-        run_config.image_save_mode = .grey;
-        run_config.image_save_opts = &[_]iio.ImageSaveOpts{
+        run_config.output.image_save_mode = .grey;
+        run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .fimg, .bits = null, .scaling = .none },
-        };
-
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = 1 },
         };
 
         const result = try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_inp},
             &meshes_mono,
             run_config,
@@ -610,15 +618,11 @@ fn runAdditionalImageOutputTests(
 
         var run_config = config;
         run_config.save_strategy = .memory;
-        run_config.save_frame_buff_count = bc_val;
-
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = 1 },
-        };
+        run_config.output.save_frame_buff_count = bc_val;
 
         const result = try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_inp},
             &meshes_mono,
             run_config,
@@ -636,16 +640,12 @@ fn runAdditionalImageOutputTests(
 
         var run_config = config;
         run_config.save_strategy = .memory;
-        run_config.image_save_mode = .grey_to_rgb;
-
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = 1 },
-        };
+        run_config.output.image_save_mode = .grey_to_rgb;
 
         // 1-field mono mesh -> rgb output
         const res_expanded = try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_inp},
             &meshes_mono,
             run_config,
@@ -655,10 +655,10 @@ fn runAdditionalImageOutputTests(
         try std.testing.expectEqual(@as(usize, 3), img_expanded.dims[2]);
 
         // 3-field rgb mesh -> grey output
-        run_config.image_save_mode = .rgb_to_grey;
+        run_config.output.image_save_mode = .rgb_to_grey;
         const res_reduced = try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_inp},
             &meshes_rgb,
             run_config,

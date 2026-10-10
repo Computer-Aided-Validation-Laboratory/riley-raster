@@ -10,6 +10,7 @@ import cython
 import warnings
 from dataclasses import dataclass, field
 from enum import IntEnum
+from numbers import Integral
 from pathlib import Path
 from typing import Any
 
@@ -150,15 +151,22 @@ class FuncShaderParams:
     )
 
 
+class RenderMode(IntEnum):
+    in_order = 0
+    offline = 1
+
+
 @dataclass(slots=True)
 class RasterConfig:
-    render_mode: int = 0
-    total_threads: int = 1
-    frame_batch_size_per_group: int = 1
-    max_geom_jobs_in_flight_per_group: int = 1
-    max_geom_workers_per_job: int = 1
-    geom_scheduling_mode: int = 2
-    max_raster_workers_per_job: int = 1
+    """Raster settings; ``parallel=None`` delegates thread planning to Zig.
+
+    Use 1 for serial rendering or a positive integer for an explicit thread
+    budget. The count includes group caller threads, not disk-save workers.
+    """
+
+    render_mode: int = RenderMode.offline
+    # Keep this untyped at the Cython boundary until strict validation runs.
+    parallel: Any = None
     save_strategy: int = 1
     image_save_mode: int = 2
     hull_mode: int = 1
@@ -200,6 +208,18 @@ class RasterConfig:
     output_name_format: str = "cam{camera}_frame{frame}_field{field}"
     edge_spacing_px: float = 1.0
 
+    def __post_init__(self) -> None:
+        _check_parallel(self.parallel)
+
+
+def _check_parallel(parallel: Any) -> None:
+    if parallel is None:
+        return
+    if isinstance(parallel, bool) or not isinstance(parallel, Integral):
+        raise TypeError("parallel must be an integer thread budget or None.")
+    if parallel < 1 or parallel > 65535:
+        raise ValueError("parallel must be between 1 and 65535.")
+
 
 class MeshType(IntEnum):
     tri3 = 0
@@ -223,17 +243,6 @@ class TextureStorage(IntEnum):
     u8 = 0
     u16 = 1
     floating = 2
-
-
-class RenderMode(IntEnum):
-    in_order = 0
-    offline = 1
-
-
-class GeometrySchedulingMode(IntEnum):
-    spread = 0
-    pack = 1
-    auto = 2
 
 
 class SaveStrategy(IntEnum):
@@ -362,7 +371,7 @@ class TextureShader:
     uvs: np.ndarray
     texture: np.ndarray
     sample: TextureSample = TextureSample.cubic_catmull_rom
-    sample_mode: TextureSampleMode = TextureSampleMode.lut_lerp
+    sample_mode: TextureSampleMode = TextureSampleMode.direct
     bits: int = 8
     scaling_type: ScaleStrategy = ScaleStrategy.none
     scaling_min: float = 0.0
@@ -599,18 +608,16 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
 def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
     config_out: cr.CRasterConfig
     config_out.render_mode = int(config.render_mode)
-    config_out.total_threads = int(config.total_threads)
-    config_out.frame_batch_size_per_group = int(
-        config.frame_batch_size_per_group,
-    )
-    config_out.max_geom_jobs_in_flight_per_group = int(
-        config.max_geom_jobs_in_flight_per_group,
-    )
-    config_out.max_geom_workers_per_job = int(config.max_geom_workers_per_job)
-    config_out.geom_scheduling_mode = int(config.geom_scheduling_mode)
-    config_out.max_raster_workers_per_job = int(
-        config.max_raster_workers_per_job,
-    )
+    _check_parallel(config.parallel)
+    if config.parallel is None:
+        config_out.parallel_mode = 0
+        config_out.thread_count = 0
+    elif config.parallel == 1:
+        config_out.parallel_mode = 1
+        config_out.thread_count = 1
+    else:
+        config_out.parallel_mode = 2
+        config_out.thread_count = int(config.parallel)
     config_out.save_strategy = int(config.save_strategy)
     config_out.image_save_mode = int(config.image_save_mode)
     config_out.hull_mode = int(config.hull_mode)
@@ -1744,7 +1751,6 @@ __all__ = [
     "NewtonSeedMode",
     "NewtonSeedReuse",
     "NormalType",
-    "GeometrySchedulingMode",
     "ImageSaveMode",
     "RasterConfig",
     "RenderMode",
