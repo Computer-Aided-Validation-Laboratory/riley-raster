@@ -76,7 +76,7 @@ def main() -> None:
         rot_world=rot_world,
         roi_cent_world=roi_cent_world,
         focal_length=focal_length,
-        sub_sample=2,
+        sub_sample=4,
         coord_sys=riley.CameraCoordSys.opengl,
     )
 

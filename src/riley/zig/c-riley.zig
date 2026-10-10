@@ -500,6 +500,8 @@ fn imageSaveModeFromC(image_save_mode: u32) !riley.ImageSaveMode {
         @intFromEnum(riley.ImageSaveMode.grey) => .grey,
         @intFromEnum(riley.ImageSaveMode.rgb) => .rgb,
         @intFromEnum(riley.ImageSaveMode.multifield) => .multifield,
+        @intFromEnum(riley.ImageSaveMode.rgb_to_grey) => .rgb_to_grey,
+        @intFromEnum(riley.ImageSaveMode.grey_to_rgb) => .grey_to_rgb,
         else => error.InvalidImageMode,
     };
 }

@@ -73,7 +73,7 @@ def main() -> None:
         rot_world=rotation,
         roi_cent_world=target,
         focal_length=focal_length,
-        sub_sample=2,
+        sub_sample=4,
     )
 
     # --------------------------------------------------------------------------

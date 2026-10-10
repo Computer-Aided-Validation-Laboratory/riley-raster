@@ -23,6 +23,7 @@ def main() -> None:
     # --------------------------------------------------------------------------
     data_dir = riley.data.sphere200_case_path()
     texture_path = riley.data.speckle_texture_path()
+
     out_dir = Path.cwd() / "out_riley_py" / "demo1_sphere"
     shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True)
@@ -39,6 +40,7 @@ def main() -> None:
     # --------------------------------------------------------------------------
     coords = riley.load_csv(data_dir / "coords.csv")
     connect = riley.load_csv(data_dir / "connect.csv", dtype=np.int64)
+
     uvs = riley.load_csv(data_dir / "uvs.csv")
     texture = riley.load_texture_mono_u8(texture_path)
 
@@ -48,6 +50,7 @@ def main() -> None:
         0,
         riley.ENodeOrder.RILEY,
     )
+
     shader = riley.TextureShader(uvs=uvs, texture=texture)
 
     mesh = riley.create_mesh(
@@ -78,7 +81,7 @@ def main() -> None:
         rot_world=rot_world,
         roi_cent_world=roi_cent_world,
         focal_length=focal_length,
-        sub_sample=2,
+        sub_sample=4,
         coord_sys=riley.CameraCoordSys.opengl,
     )
 

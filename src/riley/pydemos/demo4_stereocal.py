@@ -28,7 +28,7 @@ def create_stereo_cameras(
     pixels_size = (3.45e-6, 3.45e-6)
     focal_length = 50.0e-3
     stereo_angle_deg = 20.0
-    sub_sample = 2
+    sub_sample = 4
 
     # Brown-Conrady distortion
     distort_model = {
@@ -77,7 +77,7 @@ def main() -> None:
     out_dir = Path.cwd() / "out_riley_py" / "demo4_stereocal"
     shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True)
-    total_threads = 8
+    total_threads = 4
 
     # --------------------------------------------------------------------------
     # 2. Load calibration plate mesh and apply texture
@@ -137,8 +137,6 @@ def main() -> None:
         save_scaling=riley.ScaleStrategy.auto,
     )
     config.background_value = 128.0
-    config.tile_size_min = 8
-    config.tile_size_max = 128
 
     # --------------------------------------------------------------------------
     # 5. Render stereocal poses

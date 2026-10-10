@@ -19,3 +19,13 @@ def test_raster_config_accepts_explicit_thread_budget(budget: int) -> None:
 def test_raster_config_accepts_validation_mode() -> None:
     config = riley.RasterConfig(validate_input=riley.ValidateInput.full)
     assert config.validate_input is riley.ValidateInput.full
+
+
+def test_raster_config_exposes_explicit_image_save_modes() -> None:
+    assert tuple(riley.ImageSaveMode) == (
+        riley.ImageSaveMode.grey,
+        riley.ImageSaveMode.rgb,
+        riley.ImageSaveMode.multifield,
+        riley.ImageSaveMode.rgb_to_grey,
+        riley.ImageSaveMode.grey_to_rgb,
+    )

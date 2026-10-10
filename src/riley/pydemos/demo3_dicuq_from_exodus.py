@@ -33,9 +33,9 @@ def main() -> None:
     pixels_size = (3.45e-6, 3.45e-6)
     focal_length = 50.0e-3
     fov_scale_factor = 0.65
-    sub_sample = 2
+    sub_sample = 4
     stereo_angle_deg = 20.0
-    total_threads = 8
+    total_threads = 4
 
     distort_model = {
         "distort_model": 1,
@@ -131,7 +131,6 @@ def main() -> None:
         save_strategy=riley.SaveStrategy.disk,
     )
     config.background_value = 128.0
-    config.tile_size_max = 128
     config.save_scaling = riley.ScaleStrategy.none
 
     start_time = perf_counter()

@@ -61,6 +61,7 @@ fn buildDistort(distort_case: DistortCase) DistortModel {
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
+    const io = init.io;
 
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -73,24 +74,7 @@ pub fn main(init: std.process.Init) !void {
     const texture_path = "texture/cal_target.tiff";
     const out_dir_root = "./out/demo4_stereocal";
 
-    const total_threads: u16 = 8;
-
-    var coord_sys = camera_mod.CameraCoordSys.opengl;
-    var arg_it = try std.process.Args.Iterator.initAllocator(
-        init.minimal.args,
-        local_alloc,
-    );
-    defer arg_it.deinit();
-    _ = arg_it.next();
-    if (arg_it.next()) |arg| {
-        if (std.mem.eql(u8, arg, "opencv")) {
-            coord_sys = .opencv;
-        }
-    }
-    const stereo_file_name = if (coord_sys == .opencv)
-        "stereo_data_opencv.csv"
-    else
-        "stereo_data_opengl.csv";
+    const total_threads: u16 = 4;
 
     const coord_path = data_dir ++ "coords.csv";
     const conn_path = data_dir ++ "connect.csv";
@@ -100,8 +84,6 @@ pub fn main(init: std.process.Init) !void {
         data_dir ++ "field_disp_y.csv",
         data_dir ++ "field_disp_z.csv",
     };
-
-    const io = init.io;
 
     var out_dir = try demo_common.resetOutputDir(io, out_dir_root);
     defer out_dir.close(io);
@@ -118,13 +100,16 @@ pub fn main(init: std.process.Init) !void {
         disp_paths,
     );
     defer sim_data.deinit(local_alloc);
+
     const disp_source = sim_data.disp orelse return error.MissingDisplacement;
+
     const frames_max: usize = 8;
     const frame_indices = try sceneops.selectEvenlySpacedFrameIndices(
         local_alloc,
         disp_source.getTimeN(),
         frames_max,
     );
+
     var selected_disp = try sceneops.selectFieldFrames(
         local_alloc,
         &disp_source,
@@ -157,11 +142,17 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 3. Create, save, and reload stereo camera pair
     // -------------------------------------------------------------------------
+    const coord_sys = camera_mod.CameraCoordSys.opengl;
+    const stereo_file_name = if (coord_sys == .opencv)
+        "stereo_data_opencv.csv"
+    else
+        "stereo_data_opengl.csv";
+
     const pixels_num = [2]u32{ 2464, 2056 };
     const pixels_size = [2]F{ 3.45e-6, 3.45e-6 };
     const focal_length: F = 50.0e-3;
     const stereo_angle_deg: F = 20.0;
-    const sub_sample: u32 = 2;
+    const sub_sample: u32 = 4;
     const matched_cam0_pos = [3]F{ 0.0125, 0.0175, 0.160864856482 };
     const matched_cam1_pos = [3]F{ 0.067348011198, 0.0175, 0.151193672270 };
 
@@ -170,6 +161,7 @@ pub fn main(init: std.process.Init) !void {
         std.math.degreesToRadians(0.0),
         std.math.degreesToRadians(0.0),
     );
+
     const cam1_rot = Rotation.init(
         std.math.degreesToRadians(0.0),
         std.math.degreesToRadians(stereo_angle_deg),
@@ -188,6 +180,7 @@ pub fn main(init: std.process.Init) !void {
         .focal_length = focal_length,
         .sub_sample = sub_sample,
         .distort = distort,
+        .coord_sys = coord_sys,
     };
     var cam1_in = cam0_in;
     cam1_in.rot_world = cam1_rot;
@@ -223,7 +216,7 @@ pub fn main(init: std.process.Init) !void {
             .tex = texture,
             .samp_cfg = .{
                 .sample = .cubic_catmull_rom,
-                .mode = .lut_lerp,
+                .mode = .direct,
             },
             .bits = 8,
             .scaling = .none,
@@ -241,23 +234,16 @@ pub fn main(init: std.process.Init) !void {
             },
         },
         .report = .{ .mode = .bench },
-        .advanced = .{
-            .raster = .{
-                .tile_size_min = 8,
-                .tile_size_max = 128,
-            },
-        },
     };
 
     // -------------------------------------------------------------------------
     // 5. Render stereocal poses
     // -------------------------------------------------------------------------
-    const meshes = [_]MeshInput{mesh_input};
     const images = try riley.raster(
         outer_alloc,
         io,
         &stereo_pair.cameras,
-        &meshes,
+        &.{mesh_input},
         config,
         out_dir_root,
     );

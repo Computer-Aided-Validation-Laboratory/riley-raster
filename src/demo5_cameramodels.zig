@@ -24,6 +24,7 @@ const F = buildconfig.F;
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
+    const io = init.io;
 
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -32,11 +33,10 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 1. Setup paths and parameters
     // -------------------------------------------------------------------------
-    const raster_threads: u16 = 4;
 
     const config_base = riley.RasterConfig{
         .save_strategy = .disk,
-        .parallel = .{ .threads = raster_threads },
+        .parallel = .{ .threads = 4 },
         .output = .{
             .image_save_opts = &[_]iio.ImageSaveOpts{
                 .{ .format = .bmp, .bits = 8, .scaling = .auto },
@@ -45,13 +45,10 @@ pub fn main(init: std.process.Init) !void {
         .report = .{ .mode = .bench },
     };
 
-    const io = init.io;
-
     const data_dir = "data/min/tri6_sphere200/";
     const out_dir_root = "./out/demo5_cameramodels";
 
-    const pixels_num = [_]u32{ 800, 500 };
-
+    
     // -------------------------------------------------------------------------
     // 2. Load mesh data and texture shader
     // -------------------------------------------------------------------------
@@ -59,6 +56,7 @@ pub fn main(init: std.process.Init) !void {
         "Loading sphere simulation data from {s}...\n",
         .{data_dir},
     );
+    
     const sim_data = try meshio.loadSimData(
         local_alloc,
         io,
@@ -67,7 +65,9 @@ pub fn main(init: std.process.Init) !void {
         null,
         null,
     );
+
     const uvs = try uvio.loadUVMap(local_alloc, io, data_dir ++ "uvs.csv");
+
     const texture = try iio.loadImage(
         u8,
         1,
@@ -86,7 +86,7 @@ pub fn main(init: std.process.Init) !void {
             .tex = texture,
             .samp_cfg = .{
                 .sample = .cubic_catmull_rom,
-                .mode = .lut_lerp,
+                .mode = .direct,
             },
             .bits = 8,
             .scaling = .none,
@@ -96,6 +96,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 3. Position the base camera
     // -------------------------------------------------------------------------
+    const pixels_num = [_]u32{ 800, 500 };
     const pixel_size = [_]F{ 5.3e-6, 5.3e-6 };
     const focal_length: F = 50.0e-3;
     const rotation = Rotation.init(0, 0, 0);
@@ -117,7 +118,7 @@ pub fn main(init: std.process.Init) !void {
         .rot_world = rotation,
         .roi_cent_world = roi_cent_world,
         .focal_length = focal_length,
-        .sub_sample = 2,
+        .sub_sample = 4,
     };
 
     // -------------------------------------------------------------------------
@@ -217,6 +218,7 @@ pub fn main(init: std.process.Init) !void {
             for (modes) |mode| {
                 var config = config_base;
                 config.advanced.raster.buffer_mode = mode;
+
                 var cam = camera_input;
                 cam.distort = distort;
                 cam.psf = psf;
@@ -229,14 +231,16 @@ pub fn main(init: std.process.Init) !void {
                     distort_name, psf_name, @tagName(mode),
                 });
 
-                if (try riley.raster(
+                const images = try riley.raster(
                     outer_alloc,
                     io,
                     &.{cam},
                     &.{mesh},
                     config,
                     out_dir,
-                )) |image| {
+                );
+
+                if (images) |image| {
                     outer_alloc.free(image.slice);
                     var image_mut = image;
                     image_mut.deinit(outer_alloc);

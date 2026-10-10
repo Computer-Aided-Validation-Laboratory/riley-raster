@@ -289,12 +289,10 @@ pub const RenderedFrameMeta = struct {
 
 inline fn needsOutputTransform(
     image_save_mode: ImageSaveMode,
-    raw_num_fields: u8,
 ) bool {
     return switch (image_save_mode) {
-        .multifield => false,
-        .grey => raw_num_fields != 1,
-        .rgb => raw_num_fields != 3,
+        .multifield, .grey, .rgb => false,
+        .rgb_to_grey, .grey_to_rgb => true,
     };
 }
 
@@ -305,11 +303,19 @@ inline fn outputFieldsForImageSaveMode(
     return switch (image_save_mode) {
         .multifield => raw_num_fields,
         .grey => switch (raw_num_fields) {
-            1, 3 => 1,
+            1 => 1,
             else => error.UnsuppedImageModeFieldCount,
         },
         .rgb => switch (raw_num_fields) {
-            1, 3 => 3,
+            3 => 3,
+            else => error.UnsuppedImageModeFieldCount,
+        },
+        .rgb_to_grey => switch (raw_num_fields) {
+            3 => 1,
+            else => error.UnsuppedImageModeFieldCount,
+        },
+        .grey_to_rgb => switch (raw_num_fields) {
+            1 => 3,
             else => error.UnsuppedImageModeFieldCount,
         },
     };
@@ -321,8 +327,8 @@ inline fn outputFieldsForImageSaveMode(
 
 pub fn imageSaveChannelsOverride(image_save_mode: ImageSaveMode) ?usize {
     return switch (image_save_mode) {
-        .grey => 1,
-        .rgb => 3,
+        .grey, .rgb_to_grey => 1,
+        .rgb, .grey_to_rgb => 3,
         .multifield => null,
     };
 }
@@ -342,7 +348,7 @@ pub fn buildOutputFrameView(
 ) !ndarray.NDArray(F) {
     std.debug.assert(raw_frame_arr.dims.len == 3);
     const raw_num_fields: u8 = @intCast(raw_frame_arr.dims[0]);
-    if (!needsOutputTransform(config.output.image_save_mode, raw_num_fields)) {
+    if (!needsOutputTransform(config.output.image_save_mode)) {
         return raw_frame_arr.*;
     }
 
@@ -360,8 +366,8 @@ pub fn buildOutputFrameView(
     );
 
     switch (config.output.image_save_mode) {
-        .multifield => unreachable,
-        .grey => {
+        .multifield, .grey, .rgb => unreachable,
+        .rgb_to_grey => {
             std.debug.assert(raw_num_fields == 3);
             for (0..raw_frame_arr.dims[1]) |rr| {
                 for (0..raw_frame_arr.dims[2]) |cc| {
@@ -374,7 +380,7 @@ pub fn buildOutputFrameView(
                 }
             }
         },
-        .rgb => {
+        .grey_to_rgb => {
             std.debug.assert(raw_num_fields == 1);
             for (0..raw_frame_arr.dims[1]) |rr| {
                 for (0..raw_frame_arr.dims[2]) |cc| {

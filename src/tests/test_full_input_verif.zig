@@ -897,20 +897,44 @@ fn testUnsuppedImageModeFieldCount(
     fixture: *const BaselineFixture,
 ) !void {
     _ = allocator;
-    _ = io;
-    _ = fixture;
+    const cases = [_]struct {
+        mode: rastcfg.ImageSaveMode,
+        expected: [4]?u8,
+    }{
+        .{ .mode = .grey, .expected = .{ 1, null, null, null } },
+        .{ .mode = .rgb, .expected = .{ null, null, 3, null } },
+        .{ .mode = .multifield, .expected = .{ 1, 2, 3, 4 } },
+        .{ .mode = .rgb_to_grey, .expected = .{ null, null, 1, null } },
+        .{ .mode = .grey_to_rgb, .expected = .{ 3, null, null, null } },
+    };
+    for (cases) |case| {
+        for (case.expected, 0..) |expected, field_idx| {
+            const fields: u8 = @intCast(field_idx + 1);
+            if (expected) |count| {
+                try std.testing.expectEqual(
+                    count,
+                    try valinp.calcOutFieldsForImgSaveMode(case.mode, fields),
+                );
+            } else {
+                try std.testing.expectError(
+                    error.UnsuppedImageModeFieldCount,
+                    valinp.calcOutFieldsForImgSaveMode(case.mode, fields),
+                );
+            }
+        }
+    }
 
-    try std.testing.expectError(
+    var invalid_rgb = fixture.config;
+    invalid_rgb.output.image_save_mode = .rgb;
+    try expectConfigError(io, fixture, invalid_rgb, error.UnsuppedImageModeFieldCount);
+
+    var invalid_rgb_to_grey = fixture.config;
+    invalid_rgb_to_grey.output.image_save_mode = .rgb_to_grey;
+    try expectConfigError(
+        io,
+        fixture,
+        invalid_rgb_to_grey,
         error.UnsuppedImageModeFieldCount,
-        valinp.calcOutFieldsForImgSaveMode(.grey, 2),
-    );
-    try std.testing.expectError(
-        error.UnsuppedImageModeFieldCount,
-        valinp.calcOutFieldsForImgSaveMode(.rgb, 2),
-    );
-    try std.testing.expectError(
-        error.UnsuppedImageModeFieldCount,
-        valinp.calcOutFieldsForImgSaveMode(.grey, 4),
     );
 }
 

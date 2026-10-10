@@ -122,6 +122,8 @@ pub const ImageSaveMode = enum {
     grey,
     rgb,
     multifield,
+    rgb_to_grey,
+    grey_to_rgb,
 };
 
 pub const ReportMode = enum {

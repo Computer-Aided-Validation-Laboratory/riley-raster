@@ -540,3 +540,11 @@ def test_create_mesh_from_prepared_creates_mesh() -> None:
     assert mesh.mesh_type == riley.MeshType.tri3
     assert mesh.coords.shape == (3, 3)
     assert mesh.connect.shape == (1, 3)
+
+
+def test_texture_shader_defaults_to_direct_mode() -> None:
+    uvs = np.zeros((3, 2), dtype=np.float64)
+    texture = np.zeros((1, 8, 8), dtype=np.uint8)
+    shader = riley.TextureShader(uvs=uvs, texture=texture)
+    assert shader.sample_mode is riley.TextureSampleMode.direct
+

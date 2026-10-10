@@ -41,6 +41,8 @@ const image_save_modes = [_]rastcfg.ImageSaveMode{
     .grey,
     .rgb,
     .multifield,
+    .rgb_to_grey,
+    .grey_to_rgb,
 };
 
 const test_formats = [_]iio.ImageFormat{
@@ -297,7 +299,10 @@ fn runFactorialFormatsAndModes(
                 .{ .format = fmt, .bits = bits, .scaling = .none },
             };
 
-            const meshes = if (mode == .rgb) &meshes_rgb else &meshes_mono;
+            const meshes = if (mode == .rgb or mode == .rgb_to_grey)
+                &meshes_rgb
+            else
+                &meshes_mono;
 
             const result = try riley.raster(
                 aa,
@@ -604,7 +609,7 @@ fn runAdditionalImageOutputTests(
 
         var run_config = config;
         run_config.save_strategy = .memory;
-        run_config.output.image_save_mode = .rgb;
+        run_config.output.image_save_mode = .grey_to_rgb;
 
         // 1-field mono mesh -> rgb output
         const res_expanded = try riley.raster(
@@ -619,7 +624,7 @@ fn runAdditionalImageOutputTests(
         try std.testing.expectEqual(@as(usize, 3), img_expanded.dims[2]);
 
         // 3-field rgb mesh -> grey output
-        run_config.output.image_save_mode = .grey;
+        run_config.output.image_save_mode = .rgb_to_grey;
         const res_reduced = try riley.raster(
             aa,
             io,

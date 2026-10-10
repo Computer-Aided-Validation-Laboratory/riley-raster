@@ -264,7 +264,7 @@ pub fn meshInputFromSimDataSlice(
             mesh_inputs[ii].shader = .{ .tex_u8 = .{
                 .uvs = uvmap.array,
                 .tex = tex,
-                .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+                .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
                 .normal_type = .none,
             } };
         }

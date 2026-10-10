@@ -82,12 +82,14 @@ pub fn resolveRenderPlan(
 ) ResolvedParallelConfig {
     const num_time = mo.countFrames(meshes);
     const total_elems = mo.countMeshInputElems(meshes);
+
     const workload = ParallelWorkload{
         .camera_count = cam_inps.len,
         .frame_count = num_time,
         .element_count = total_elems,
         .render_mode = config.render_mode,
     };
+
     return scalingpolicy.resolveParallelConfig(
         workload,
         config.parallel,
@@ -241,45 +243,6 @@ pub fn rasterIntoWithRenderGroups(
     );
 }
 
-fn validateAndSummarise(
-    render_groups: []const RenderGroupSpec,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
-    config: RasterConfig,
-    imgs_arr: ?*ndarray.NDArray(F),
-    require_out_buff: bool,
-    bench_capt: ?[]report.FrameBenchCapture,
-) !valinp.ValidSummary {
-    return switch (config.validation) {
-        .off => valinp.summariseRenderInpsAssumeValid(
-            cam_inps,
-            meshes,
-            config,
-        ),
-        .fast => try valinp.checkRenderInps(
-            render_groups,
-            cam_inps,
-            meshes,
-            config,
-            imgs_arr,
-            require_out_buff,
-            bench_capt,
-        ),
-        .full => blk: {
-            const summary = try valinp.checkRenderInps(
-                render_groups,
-                cam_inps,
-                meshes,
-                config,
-                imgs_arr,
-                require_out_buff,
-                bench_capt,
-            );
-            try valarr.checkRenderArrs(meshes);
-            break :blk summary;
-        },
-    };
-}
 
 pub fn rasterReportWithRenderGroups(
     outer_alloc: std.mem.Allocator,
@@ -385,7 +348,6 @@ fn rasterReportIntoValidated(
     valid_summary: valinp.ValidSummary,
     time_start_render: Timestamp,
 ) !void {
-
     const summary_io = render_groups[0].io;
 
     var out_dir: ?std.Io.Dir = null;
@@ -493,6 +455,47 @@ fn rasterReportIntoValidated(
         if (bench_capt) |capt| capt else null,
     );
 }
+
+fn validateAndSummarise(
+    render_groups: []const RenderGroupSpec,
+    cam_inps: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+    imgs_arr: ?*ndarray.NDArray(F),
+    require_out_buff: bool,
+    bench_capt: ?[]report.FrameBenchCapture,
+) !valinp.ValidSummary {
+    return switch (config.validation) {
+        .off => valinp.summariseRenderInpsAssumeValid(
+            cam_inps,
+            meshes,
+            config,
+        ),
+        .fast => try valinp.checkRenderInps(
+            render_groups,
+            cam_inps,
+            meshes,
+            config,
+            imgs_arr,
+            require_out_buff,
+            bench_capt,
+        ),
+        .full => blk: {
+            const summary = try valinp.checkRenderInps(
+                render_groups,
+                cam_inps,
+                meshes,
+                config,
+                imgs_arr,
+                require_out_buff,
+                bench_capt,
+            );
+            try valarr.checkRenderArrs(meshes);
+            break :blk summary;
+        },
+    };
+}
+
 
 pub fn calcAllFramesImageDims(
     cam_inps: []const cam.CameraInput,
@@ -906,7 +909,7 @@ fn prepareJobBatch(
 
     const can_write_result_direct = images_arr != null and
         cam.allCamerasSharePixels(cameras) and
-        !needsOutputTransform(config.output.image_save_mode, num_fields);
+        !needsOutputTransform(config.output.image_save_mode);
 
     for (job_indices, 0..) |job_idx, ii| {
         const frame_idx = @divFloor(job_idx, cameras.len);
@@ -1285,7 +1288,6 @@ fn sceneGlobalTileElemOverlap(
     elem_bboxes_by_mesh: []const []rops.ElemBBox,
     elem_float_bboxes_by_mesh: []const ?[]db.DistortBounds,
 ) !rops.TilingOverlaps {
-
     const tiles_x = try std.math.divCeil(usize, screen_px_x, tile_size);
     std.debug.assert(core_y_px_min < core_y_px_max);
     std.debug.assert(core_y_px_max <= screen_px_y);
@@ -1565,12 +1567,10 @@ fn calcAllFramesDimsFromPixels(
 
 fn needsOutputTransform(
     image_save_mode: ImageSaveMode,
-    raw_num_fields: u8,
 ) bool {
     return switch (image_save_mode) {
-        .multifield => false,
-        .grey => raw_num_fields != 1,
-        .rgb => raw_num_fields != 3,
+        .multifield, .grey, .rgb => false,
+        .rgb_to_grey, .grey_to_rgb => true,
     };
 }
 
@@ -1817,9 +1817,7 @@ fn rasterFrame(
             .output_h_subpx = @as(usize, frame_job.camera.pixels_num[1]) * sub_samp,
             .outer_halo_subpx = @as(usize, halo_px) * sub_samp,
             .tile_core_subpx = @as(usize, ctx.actual_tile_size) * sub_samp,
-            .tile_scratch_subpx = (
-                @as(usize, ctx.actual_tile_size) + 2 * @as(usize, halo_px)
-            ) * sub_samp,
+            .tile_scratch_subpx = (@as(usize, ctx.actual_tile_size) + 2 * @as(usize, halo_px)) * sub_samp,
         };
     }
 

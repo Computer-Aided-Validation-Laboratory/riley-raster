@@ -76,7 +76,7 @@ pub fn main(init: std.process.Init) !void {
         .rot_world = rotation,
         .roi_cent_world = target,
         .focal_length = focal_length,
-        .sub_sample = 2,
+        .sub_sample = 4,
     };
 
     // -------------------------------------------------------------------------

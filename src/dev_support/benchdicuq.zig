@@ -172,7 +172,7 @@ pub fn makeSampleConfig(
 ) !texops.TextureSampleConfig {
     const samp_cfg = texops.TextureSampleConfig{
         .sample = bench_args.sample orelse .cubic_catmull_rom,
-        .mode = bench_args.sample_mode orelse .lut_lerp,
+        .mode = bench_args.sample_mode orelse .direct,
     };
     if (!samp_cfg.isValid()) {
         return error.InvalidTextureSampleConfig;

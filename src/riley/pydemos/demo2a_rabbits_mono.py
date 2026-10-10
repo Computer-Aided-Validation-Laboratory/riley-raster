@@ -76,7 +76,7 @@ def main() -> None:
         rot_world=rot_world,
         roi_cent_world=roi_pos,
         focal_length=default_focal_length,
-        sub_sample=2,
+        sub_sample=4,
     )
 
     background_value = 127.5

@@ -460,7 +460,10 @@ pub const BenchConfig = struct {
     run: RunMode = .all,
     element_type: gk.MeshType = .tri3,
     texture_type: ShaderType = .tex8_grey,
-    samp_cfg: TextureSampleConfig = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+    samp_cfg: TextureSampleConfig = .{
+        .sample = .cubic_catmull_rom,
+        .mode = .direct,
+    },
 };
 
 pub fn shouldRun(

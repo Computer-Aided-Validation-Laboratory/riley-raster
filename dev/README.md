@@ -425,6 +425,27 @@ creating them from `RasterConfig.parallel`.
 
 The Python/C ABI was changed to carry an explicit parallel mode and thread
 count; rebuild native clients against the matching library and header.
+
+### Image save modes
+
+`RasterConfig.output.image_save_mode` selects the output field layout in Zig;
+Python uses `RasterConfig.image_save_mode`. The format, bit depth, and scaling
+remain separate image-save options.
+
+| Mode | Required source fields | Output fields |
+| --- | ---: | ---: |
+| `grey` | 1 | 1, unchanged |
+| `rgb` | 3 | 3, unchanged |
+| `multifield` | Any positive count | Same as source |
+| `rgb_to_grey` | 3 | 1, luminance-weighted |
+| `grey_to_rgb` | 1 | 3, replicated |
+
+The `grey` and `rgb` modes no longer convert mismatched inputs implicitly.
+Select an explicit conversion mode when that is what you intend. Fast and full
+input validation reject incompatible source-field counts; as elsewhere in
+Riley, validation `.off` assumes the caller supplies valid inputs and does
+not guarantee that error.
+
 The shared C library explicitly uses LLVM even in Debug: Zig 0.16's self-hosted
 Debug backend mispasses floating-point struct arguments at the C boundary in
 camera helpers. Native demo/test backend selection is unchanged.
