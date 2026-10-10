@@ -116,10 +116,8 @@ fn expectPreparedResources(
         speckleconfig.canonicalizeSampleConfig(expected),
         speckleops.kernel_configs[resources.kernel_index.?],
     );
-    try std.testing.expectEqual(
-        evaluator == .list_naive or evaluator == .list_indexed,
-        resources.list != null,
-    );
+    try std.testing.expectEqual(evaluator == .list_naive, resources.list != null);
+    try std.testing.expectEqual(evaluator == .list_indexed, resources.strip_list != null);
     try std.testing.expectEqual(evaluator == .classified_indexed, resources.classified != null);
     try std.testing.expectEqual(evaluator == .direct_fixed, resources.direct_fixed != null);
     try std.testing.expectEqual(

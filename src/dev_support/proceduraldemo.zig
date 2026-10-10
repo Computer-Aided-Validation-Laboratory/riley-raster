@@ -357,7 +357,7 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\  --help                Show this help
         \\
         \\Experimental native overrides (require -Denable-all-evaluators=true):
-        \\  --evaluator <name>    cell-hash, list-naive, list-indexed, list-indexed-2, list-indexed-3,
+        \\  --evaluator <name>    cell-hash, list-naive, list-indexed,
         \\                        classified-indexed, direct-fixed, mask-1bit, mask-u8, or mock
         \\  --neighbors <count>   1, 4, or 9 (Perlin: mock only)
         \\  Omit both overrides for automatic selection; default builds reject either.
