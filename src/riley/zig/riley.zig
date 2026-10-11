@@ -29,6 +29,7 @@ const pce = @import("parachunkexec.zig");
 const saveoverlap = @import("saveoverlap.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 const rendergroups = @import("rendergroups.zig");
+const report = @import("report.zig");
 const valarr = @import("validatearrays.zig");
 const valinp = @import("validateinput.zig");
 
@@ -40,6 +41,11 @@ const scratchresolveglobal = @import("scratchresolveglobal.zig");
 const subpxframe = @import("subpxframe.zig");
 
 const rastcfg = @import("rasterconfig.zig");
+const RenderParallelPlan = scalingpolicy.RenderParallelPlan;
+const ParallelWorkload = scalingpolicy.ParallelWorkload;
+const FrameReportStorage = report.FrameReportStorage;
+const F = buildconfig.F;
+
 pub const RasterConfig = rastcfg.RasterConfig;
 pub const ParallelConfig = rastcfg.ParallelConfig;
 pub const OutputConfig = rastcfg.OutputConfig;
@@ -59,30 +65,243 @@ pub const ReportMode = rastcfg.ReportMode;
 pub const ValidateInput = rastcfg.ValidateInput;
 pub const FullStatsOpts = rastcfg.FullStatsOpts;
 pub const GeometrySchedulingMode = rastcfg.GeometrySchedulingMode;
-pub const ResolvedParallelConfig = scalingpolicy.ResolvedParallelConfig;
-pub const ParallelWorkload = scalingpolicy.ParallelWorkload;
-
-const report = @import("report.zig");
-const FrameReportStorage = report.FrameReportStorage;
-const F = buildconfig.F;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const RenderGroupSpec = rendergroups.RenderGroupSpec;
-pub const RenderGroupOptions = rendergroups.RenderGroupOptions;
+pub const RenderGroup = rendergroups.RenderGroup;
 pub const ManagedRenderGroups = rendergroups.ManagedRenderGroups;
+/// Borrowed overrides for the advanced render entry points. Supplied groups
+/// must remain alive through the call and replace `RasterConfig.parallel`.
+pub const RasterAdvancedOptions = struct {
+    render_groups: union(enum) {
+        from_config,
+        supplied: []const RenderGroup,
+    } = .from_config,
+    bench_capture: ?[]report.FrameBenchCapture = null,
+};
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub fn resolveRenderPlan(
+pub fn raster(
+    outer_alloc: std.mem.Allocator,
+    user_io: std.Io,
     cam_inps: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: RasterConfig,
-) ResolvedParallelConfig {
+    out_dir_path: ?[]const u8,
+) !?ndarray.NDArray(F) {
+    return rasterAdvanced(
+        outer_alloc,
+        user_io,
+        cam_inps,
+        meshes,
+        config,
+        out_dir_path,
+        .{},
+    );
+}
+
+pub fn rasterInto(
+    outer_alloc: std.mem.Allocator,
+    user_io: std.Io,
+    cam_inps: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+    out_dir_path: ?[]const u8,
+    images_arr: ?*ndarray.NDArray(F),
+) !void {
+    try rasterAdvancedInto(
+        outer_alloc,
+        user_io,
+        cam_inps,
+        meshes,
+        config,
+        out_dir_path,
+        images_arr,
+        .{},
+    );
+}
+
+pub fn rasterAdvanced(
+    outer_alloc: std.mem.Allocator,
+    user_io: std.Io,
+    cam_inps: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+    out_dir_path: ?[]const u8,
+    options: RasterAdvancedOptions,
+) !?ndarray.NDArray(F) {
+    var managed_groups: ?ManagedRenderGroups = null;
+    defer if (managed_groups) |*groups| groups.deinit(outer_alloc);
+
+    const render_groups: []const RenderGroup = switch (options.render_groups) {
+        .from_config => blk: {
+            const plan = resolveRenderParallelPlan(cam_inps, meshes, config);
+            managed_groups = try ManagedRenderGroups.init(
+                outer_alloc,
+                null,
+                plan.total_threads,
+                plan.render_group_count,
+            );
+            break :blk managed_groups.?.groups;
+        },
+        .supplied => |groups| groups,
+    };
+    if (render_groups.len == 0) return error.NoRenderGroups;
+
+    const time_start_render = Timestamp.now(user_io, .awake);
+    const valid_summary = try validateAndSummarise(
+        render_groups,
+        cam_inps,
+        meshes,
+        config,
+        null,
+        false,
+        options.bench_capture,
+    );
+
+    var images_arr_opt: ?ndarray.NDArray(F) = null;
+    if (config.save_strategy == .memory or config.save_strategy == .both) {
+        images_arr_opt = try ndarray.NDArray(F).initFlat(
+            outer_alloc,
+            valid_summary.img_dims[0..],
+        );
+    }
+    errdefer if (images_arr_opt) |*images_arr| {
+        outer_alloc.free(images_arr.slice);
+        images_arr.deinit(outer_alloc);
+    };
+
+    try rasterIntoValidated(
+        outer_alloc,
+        user_io,
+        render_groups,
+        cam_inps,
+        meshes,
+        config,
+        out_dir_path,
+        if (images_arr_opt) |*images_arr| images_arr else null,
+        options.bench_capture,
+        valid_summary,
+        time_start_render,
+    );
+    return images_arr_opt;
+}
+
+pub fn rasterAdvancedInto(
+    outer_alloc: std.mem.Allocator,
+    user_io: std.Io,
+    cam_inps: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+    out_dir_path: ?[]const u8,
+    images_arr: ?*ndarray.NDArray(F),
+    options: RasterAdvancedOptions,
+) !void {
+    var managed_groups: ?ManagedRenderGroups = null;
+    defer if (managed_groups) |*groups| groups.deinit(outer_alloc);
+
+    const render_groups: []const RenderGroup = switch (options.render_groups) {
+        .from_config => blk: {
+            const plan = resolveRenderParallelPlan(cam_inps, meshes, config);
+            managed_groups = try ManagedRenderGroups.init(
+                outer_alloc,
+                null,
+                plan.total_threads,
+                plan.render_group_count,
+            );
+            break :blk managed_groups.?.groups;
+        },
+        .supplied => |groups| groups,
+    };
+    if (render_groups.len == 0) return error.NoRenderGroups;
+
+    const time_start_render = Timestamp.now(user_io, .awake);
+    const valid_summary = try validateAndSummarise(
+        render_groups,
+        cam_inps,
+        meshes,
+        config,
+        images_arr,
+        true,
+        options.bench_capture,
+    );
+
+    try rasterIntoValidated(
+        outer_alloc,
+        user_io,
+        render_groups,
+        cam_inps,
+        meshes,
+        config,
+        out_dir_path,
+        images_arr,
+        options.bench_capture,
+        valid_summary,
+        time_start_render,
+    );
+}
+
+pub fn getThreadedIo(
+    outer_alloc: std.mem.Allocator,
+    minimal: std.process.Init.Minimal,
+    num_threads: u16,
+) std.Io.Threaded {
+    // User-facing thread counts include the caller; Zig's limits do not.
+    const limit: std.Io.Limit =
+        if (num_threads <= 1) .nothing else .limited(num_threads - 1);
+
+    return std.Io.Threaded.init(outer_alloc, .{
+        .argv0 = .init(minimal.args),
+        .environ = minimal.environ,
+        .async_limit = limit,
+        .concurrent_limit = limit,
+    });
+}
+
+pub fn calcAllFramesImageDims(
+    cam_inps: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+) ![5]usize {
+    std.debug.assert(cam_inps.len > 0);
+    std.debug.assert(meshes.len > 0);
+
+    const num_time = mo.countFrames(meshes);
+    const raw_num_fields = mo.countOutputFields(meshes);
+    const num_fields = try valinp.calcOutFieldsForImgSaveMode(
+        config.output.image_save_mode,
+        raw_num_fields,
+    );
+
+    var max_pix_num = cam_inps[0].pixels_num;
+    for (cam_inps[1..]) |cam_inp| {
+        max_pix_num[0] = @max(max_pix_num[0], cam_inp.pixels_num[0]);
+        max_pix_num[1] = @max(max_pix_num[1], cam_inp.pixels_num[1]);
+    }
+
+    return .{
+        cam_inps.len,
+        num_time,
+        @as(usize, num_fields),
+        max_pix_num[1],
+        max_pix_num[0],
+    };
+}
+
+// --------------------------------------------------------------------------------------
+// Private Implementation Functions
+// --------------------------------------------------------------------------------------
+
+fn resolveRenderParallelPlan(
+    cam_inps: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+) RenderParallelPlan {
     const num_time = mo.countFrames(meshes);
     const total_elems = mo.countMeshInputElems(meshes);
     const workload = ParallelWorkload{
@@ -91,161 +310,134 @@ pub fn resolveRenderPlan(
         .element_count = total_elems,
         .render_mode = config.render_mode,
     };
-    return scalingpolicy.resolveParallelConfig(
+    return scalingpolicy.resolveRenderParallelPlan(
         workload,
         config.parallel,
         config.report.mode,
     );
 }
 
-pub fn raster(
+fn rasterIntoValidated(
     outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
-    config: RasterConfig,
-    out_dir_path: ?[]const u8,
-) !?ndarray.NDArray(F) {
-    return rasterReport(
-        outer_alloc,
-        io,
-        cam_inps,
-        meshes,
-        config,
-        out_dir_path,
-        null,
-    );
-}
-
-pub fn rasterInto(
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
-    config: RasterConfig,
-    out_dir_path: ?[]const u8,
-    images_arr: ?*ndarray.NDArray(F),
-) !void {
-    try rasterReportInto(
-        outer_alloc,
-        io,
-        cam_inps,
-        meshes,
-        config,
-        out_dir_path,
-        images_arr,
-        null,
-    );
-}
-
-pub fn rasterReport(
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
-    config: RasterConfig,
-    out_dir_path: ?[]const u8,
-    bench_capt: ?[]report.FrameBenchCapture,
-) !?ndarray.NDArray(F) {
-    _ = io;
-    const resolved = resolveRenderPlan(cam_inps, meshes, config);
-    var managed_groups = try ManagedRenderGroups.init(
-        outer_alloc,
-        null,
-        .{
-            .thread_budget = resolved.total_threads,
-            .max_groups = resolved.render_group_count,
-        },
-    );
-    defer managed_groups.deinit(outer_alloc);
-
-    return rasterReportWithRenderGroups(
-        outer_alloc,
-        managed_groups.specs,
-        cam_inps,
-        meshes,
-        config,
-        out_dir_path,
-        bench_capt,
-    );
-}
-
-pub fn rasterReportInto(
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
+    user_io: std.Io,
+    render_groups: []const RenderGroup,
     cam_inps: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: RasterConfig,
     out_dir_path: ?[]const u8,
     images_arr: ?*ndarray.NDArray(F),
     bench_capt: ?[]report.FrameBenchCapture,
+    valid_summary: valinp.ValidSummary,
+    time_start_render: Timestamp,
 ) !void {
-    _ = io;
-    const resolved = resolveRenderPlan(cam_inps, meshes, config);
-    var managed_groups = try ManagedRenderGroups.init(
-        outer_alloc,
-        null,
-        .{
-            .thread_budget = resolved.total_threads,
-            .max_groups = resolved.render_group_count,
-        },
-    );
-    defer managed_groups.deinit(outer_alloc);
+    var out_dir: ?std.Io.Dir = null;
+    if (out_dir_path) |path| {
+        const cwd = std.Io.Dir.cwd();
+        cwd.createDirPath(user_io, path) catch |err| {
+            if (err != error.PathAlreadyExists) {
+                return err;
+            }
+        };
+        out_dir = try cwd.openDir(user_io, path, .{});
+    }
+    defer if (out_dir) |*od| od.close(user_io);
 
-    try rasterReportIntoWithRenderGroups(
-        outer_alloc,
-        managed_groups.specs,
-        cam_inps,
-        meshes,
-        config,
-        out_dir_path,
-        images_arr,
-        bench_capt,
-    );
-}
+    var static_arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer static_arena.deinit();
+    const static_alloc = static_arena.allocator();
 
-pub fn rasterWithRenderGroups(
-    outer_alloc: std.mem.Allocator,
-    render_groups: []const RenderGroupSpec,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
-    config: RasterConfig,
-    out_dir_path: ?[]const u8,
-) !?ndarray.NDArray(F) {
-    return rasterReportWithRenderGroups(
+    const cams = try camops.prepareCameraSlice(
         outer_alloc,
-        render_groups,
         cam_inps,
-        meshes,
-        config,
-        out_dir_path,
-        null,
     );
-}
+    defer {
+        for (cams) |cam_prep| cam_prep.deinit(outer_alloc);
+        outer_alloc.free(cams);
+    }
 
-pub fn rasterIntoWithRenderGroups(
-    outer_alloc: std.mem.Allocator,
-    render_groups: []const RenderGroupSpec,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
-    config: RasterConfig,
-    out_dir_path: ?[]const u8,
-    images_arr: ?*ndarray.NDArray(F),
-) !void {
-    try rasterReportIntoWithRenderGroups(
-        outer_alloc,
-        render_groups,
-        cam_inps,
-        meshes,
+    const num_time = valid_summary.num_time;
+    const num_fields = valid_summary.raw_num_fields;
+
+    // Init. static data across all frames - here we reshape uv's once if we have them so
+    // we don't need to do this every frames
+    const mesh_static = try initMeshStaticSlice(static_alloc, meshes);
+    const nodal_glob_scaling = try initNodalGlobalScaling(outer_alloc, meshes);
+    defer outer_alloc.free(nodal_glob_scaling);
+
+    // Timing hooks for frame buffer setup, render time and E2E times
+    const time_start_frame_buff = Timestamp.now(user_io, .awake);
+    const time_end_setup = Timestamp.now(user_io, .awake);
+    var end_to_end_times = report.EndToEndTimes{
+        .setup_time = @floatFromInt(
+            time_start_render.durationTo(time_end_setup).raw.nanoseconds,
+        ),
+        .setup_other_time = @floatFromInt(
+            time_start_render.durationTo(
+                time_start_frame_buff,
+            ).raw.nanoseconds,
+        ),
+        .setup_frame_buff_time = @floatFromInt(
+            time_start_frame_buff.durationTo(
+                time_end_setup,
+            ).raw.nanoseconds,
+        ),
+    };
+    const time_start_dispatch = Timestamp.now(user_io, .awake);
+
+    // Dispatch frame jobs to render groups to run the geomtry then raster pipelines
+    if (config.render_mode == .in_order) {
+        try dispatchFrameJobsInOrder(
+            outer_alloc,
+            render_groups,
+            cams,
+            config,
+            out_dir,
+            out_dir_path,
+            num_time,
+            num_fields,
+            mesh_static,
+            nodal_glob_scaling,
+            images_arr,
+            bench_capt,
+        );
+    } else {
+        try dispatchFrameJobsOffline(
+            outer_alloc,
+            render_groups,
+            cams,
+            config,
+            out_dir,
+            out_dir_path,
+            num_time,
+            num_fields,
+            mesh_static,
+            nodal_glob_scaling,
+            images_arr,
+            bench_capt,
+        );
+    }
+
+    const time_end_render = Timestamp.now(user_io, .awake);
+    end_to_end_times.dispatch_time = @floatFromInt(
+        time_start_dispatch.durationTo(time_end_render).raw.nanoseconds,
+    );
+    end_to_end_times.total_time = @floatFromInt(
+        time_start_render.durationTo(time_end_render).raw.nanoseconds,
+    );
+
+    try report.printRenderSummary(
+        user_io,
+        cams,
         config,
-        out_dir_path,
-        images_arr,
-        null,
+        num_time,
+        config.report.mode,
+        end_to_end_times,
+        if (bench_capt) |capt| capt else null,
     );
 }
 
 fn validateAndSummarise(
-    render_groups: []const RenderGroupSpec,
+    render_groups: []const RenderGroup,
     cam_inps: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: RasterConfig,
@@ -282,269 +474,6 @@ fn validateAndSummarise(
             break :blk summary;
         },
     };
-}
-
-pub fn rasterReportWithRenderGroups(
-    outer_alloc: std.mem.Allocator,
-    render_groups: []const RenderGroupSpec,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
-    config: RasterConfig,
-    out_dir_path: ?[]const u8,
-    bench_capt: ?[]report.FrameBenchCapture,
-) !?ndarray.NDArray(F) {
-    if (render_groups.len == 0) {
-        return error.NoRenderGroups;
-    }
-    const summary_io = render_groups[0].io;
-    const time_start_render = Timestamp.now(summary_io, .awake);
-
-    const valid_summary = try validateAndSummarise(
-        render_groups,
-        cam_inps,
-        meshes,
-        config,
-        null,
-        false,
-        bench_capt,
-    );
-
-    var images_arr_opt: ?ndarray.NDArray(F) = null;
-    if (config.save_strategy == .memory or config.save_strategy == .both) {
-        images_arr_opt = try ndarray.NDArray(F).initFlat(
-            outer_alloc,
-            valid_summary.img_dims[0..],
-        );
-    }
-    errdefer if (images_arr_opt) |*images_arr| {
-        outer_alloc.free(images_arr.slice);
-        images_arr.deinit(outer_alloc);
-    };
-
-    try rasterReportIntoValidated(
-        outer_alloc,
-        render_groups,
-        cam_inps,
-        meshes,
-        config,
-        out_dir_path,
-        if (images_arr_opt) |*images_arr| images_arr else null,
-        bench_capt,
-        valid_summary,
-        time_start_render,
-    );
-    return images_arr_opt;
-}
-
-pub fn rasterReportIntoWithRenderGroups(
-    outer_alloc: std.mem.Allocator,
-    render_groups: []const RenderGroupSpec,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
-    config: RasterConfig,
-    out_dir_path: ?[]const u8,
-    images_arr: ?*ndarray.NDArray(F),
-    bench_capt: ?[]report.FrameBenchCapture,
-) !void {
-    if (render_groups.len == 0) {
-        return error.NoRenderGroups;
-    }
-    const summary_io = render_groups[0].io;
-    const time_start_render = Timestamp.now(summary_io, .awake);
-
-    const valid_summary = try validateAndSummarise(
-        render_groups,
-        cam_inps,
-        meshes,
-        config,
-        images_arr,
-        true,
-        bench_capt,
-    );
-
-    try rasterReportIntoValidated(
-        outer_alloc,
-        render_groups,
-        cam_inps,
-        meshes,
-        config,
-        out_dir_path,
-        images_arr,
-        bench_capt,
-        valid_summary,
-        time_start_render,
-    );
-}
-
-fn rasterReportIntoValidated(
-    outer_alloc: std.mem.Allocator,
-    render_groups: []const RenderGroupSpec,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
-    config: RasterConfig,
-    out_dir_path: ?[]const u8,
-    images_arr: ?*ndarray.NDArray(F),
-    bench_capt: ?[]report.FrameBenchCapture,
-    valid_summary: valinp.ValidSummary,
-    time_start_render: Timestamp,
-) !void {
-    const summary_io = render_groups[0].io;
-
-    var out_dir: ?std.Io.Dir = null;
-    if (out_dir_path) |path| {
-        const cwd = std.Io.Dir.cwd();
-        cwd.createDirPath(summary_io, path) catch |err| {
-            if (err != error.PathAlreadyExists) {
-                return err;
-            }
-        };
-        out_dir = try cwd.openDir(summary_io, path, .{});
-    }
-    defer if (out_dir) |*od| od.close(summary_io);
-
-    var static_arena = std.heap.ArenaAllocator.init(outer_alloc);
-    defer static_arena.deinit();
-    const static_alloc = static_arena.allocator();
-
-    const cams = try camops.prepareCameraSlice(
-        outer_alloc,
-        cam_inps,
-    );
-    defer {
-        for (cams) |cam_prep| cam_prep.deinit(outer_alloc);
-        outer_alloc.free(cams);
-    }
-
-    const num_time = valid_summary.num_time;
-    const num_fields = valid_summary.raw_num_fields;
-
-    // Init. static data across all frames - here we reshape uv's once if we have them so
-    // we don't need to do this every frames
-    const mesh_static = try initMeshStaticSlice(static_alloc, meshes);
-    const nodal_glob_scaling = try initNodalGlobalScaling(outer_alloc, meshes);
-    defer outer_alloc.free(nodal_glob_scaling);
-
-    // Timing hooks for frame buffer setup, render time and E2E times
-    const time_start_frame_buff = Timestamp.now(summary_io, .awake);
-    const time_end_setup = Timestamp.now(summary_io, .awake);
-    var end_to_end_times = report.EndToEndTimes{
-        .setup_time = @floatFromInt(
-            time_start_render.durationTo(time_end_setup).raw.nanoseconds,
-        ),
-        .setup_other_time = @floatFromInt(
-            time_start_render.durationTo(
-                time_start_frame_buff,
-            ).raw.nanoseconds,
-        ),
-        .setup_frame_buff_time = @floatFromInt(
-            time_start_frame_buff.durationTo(
-                time_end_setup,
-            ).raw.nanoseconds,
-        ),
-    };
-    const time_start_dispatch = Timestamp.now(summary_io, .awake);
-
-    // Dispatch frame jobs to render groups to run the geomtry then raster pipelines
-    if (config.render_mode == .in_order) {
-        try dispatchFrameJobsInOrder(
-            outer_alloc,
-            render_groups,
-            cams,
-            config,
-            out_dir,
-            out_dir_path,
-            num_time,
-            num_fields,
-            mesh_static,
-            nodal_glob_scaling,
-            images_arr,
-            bench_capt,
-        );
-    } else {
-        try dispatchFrameJobsOffline(
-            outer_alloc,
-            render_groups,
-            cams,
-            config,
-            out_dir,
-            out_dir_path,
-            num_time,
-            num_fields,
-            mesh_static,
-            nodal_glob_scaling,
-            images_arr,
-            bench_capt,
-        );
-    }
-
-    const time_end_render = Timestamp.now(summary_io, .awake);
-    end_to_end_times.dispatch_time = @floatFromInt(
-        time_start_dispatch.durationTo(time_end_render).raw.nanoseconds,
-    );
-    end_to_end_times.total_time = @floatFromInt(
-        time_start_render.durationTo(time_end_render).raw.nanoseconds,
-    );
-
-    try report.printRenderSummary(
-        summary_io,
-        cams,
-        config,
-        num_time,
-        config.report.mode,
-        end_to_end_times,
-        if (bench_capt) |capt| capt else null,
-    );
-}
-
-pub fn calcAllFramesImageDims(
-    cam_inps: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
-    config: RasterConfig,
-) ![5]usize {
-    std.debug.assert(cam_inps.len > 0);
-    std.debug.assert(meshes.len > 0);
-
-    const num_time = mo.countFrames(meshes);
-    const raw_num_fields = mo.countOutputFields(meshes);
-    const num_fields = try valinp.calcOutFieldsForImgSaveMode(
-        config.output.image_save_mode,
-        raw_num_fields,
-    );
-
-    var max_pix_num = cam_inps[0].pixels_num;
-    for (cam_inps[1..]) |cam_inp| {
-        max_pix_num[0] = @max(max_pix_num[0], cam_inp.pixels_num[0]);
-        max_pix_num[1] = @max(max_pix_num[1], cam_inp.pixels_num[1]);
-    }
-
-    return .{
-        cam_inps.len,
-        num_time,
-        @as(usize, num_fields),
-        max_pix_num[1],
-        max_pix_num[0],
-    };
-}
-
-pub fn getThreadedIo(
-    gpa: std.mem.Allocator,
-    minimal: std.process.Init.Minimal,
-    num_threads: u16,
-) std.Io.Threaded {
-    // User-facing thread counts in riley always include the caller thread.
-    // Zig's std.Io.Threaded limits count only spawned worker threads, excluding
-    // the caller. Translate here so:
-    //   threads=1  -> caller only
-    //   threads=N  -> caller + (N - 1) worker threads
-    const limit: std.Io.Limit =
-        if (num_threads <= 1) .nothing else .limited(num_threads - 1);
-
-    return std.Io.Threaded.init(gpa, .{
-        .argv0 = .init(minimal.args),
-        .environ = minimal.environ,
-        .async_limit = limit,
-        .concurrent_limit = limit,
-    });
 }
 
 // --------------------------------------------------------------------------------------
@@ -589,7 +518,7 @@ const OfflineDispatchShared = struct {
 
 fn dispatchFrameJobsOffline(
     outer_alloc: std.mem.Allocator,
-    render_groups: []const RenderGroupSpec,
+    render_groups: []const RenderGroup,
     cameras: []const cam.CameraPrepared,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
@@ -641,7 +570,7 @@ fn dispatchFrameJobsOffline(
 }
 
 fn processOfflineRenderGroupThread(
-    render_group: RenderGroupSpec,
+    render_group: RenderGroup,
     shared: *OfflineDispatchShared,
 ) void {
     processOfflineRenderGroupLoop(render_group, shared) catch |err| {
@@ -650,7 +579,7 @@ fn processOfflineRenderGroupThread(
 }
 
 fn processOfflineRenderGroupLoop(
-    render_group: RenderGroupSpec,
+    render_group: RenderGroup,
     shared: *OfflineDispatchShared,
 ) !void {
     var group_arena = std.heap.ArenaAllocator.init(shared.outer_alloc);
@@ -745,7 +674,7 @@ const InOrderDispatchShared = struct {
 
 fn dispatchFrameJobsInOrder(
     outer_alloc: std.mem.Allocator,
-    render_groups: []const RenderGroupSpec,
+    render_groups: []const RenderGroup,
     cameras: []const cam.CameraPrepared,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
@@ -805,7 +734,7 @@ fn dispatchFrameJobsInOrder(
 }
 
 fn processInOrderRenderGroupThread(
-    render_group: RenderGroupSpec,
+    render_group: RenderGroup,
     shared: *InOrderDispatchShared,
 ) void {
     processInOrderRenderGroupLoop(render_group, shared) catch |err| {
@@ -814,7 +743,7 @@ fn processInOrderRenderGroupThread(
 }
 
 fn processInOrderRenderGroupLoop(
-    render_group: RenderGroupSpec,
+    render_group: RenderGroup,
     shared: *InOrderDispatchShared,
 ) !void {
     var group_arena = std.heap.ArenaAllocator.init(shared.outer_alloc);
@@ -908,7 +837,7 @@ fn prepareJobBatch(
 
     const can_write_result_direct = images_arr != null and
         cam.allCamerasSharePixels(cameras) and
-        !needsOutputTransform(config.output.image_save_mode, num_fields);
+        !needsOutputTransform(config.output.image_save_mode);
 
     for (job_indices, 0..) |job_idx, ii| {
         const frame_idx = @divFloor(job_idx, cameras.len);
@@ -1590,12 +1519,10 @@ fn calcAllFramesDimsFromPixels(
 
 fn needsOutputTransform(
     image_save_mode: ImageSaveMode,
-    raw_num_fields: u8,
 ) bool {
     return switch (image_save_mode) {
-        .multifield => false,
-        .grey => raw_num_fields != 1,
-        .rgb => raw_num_fields != 3,
+        .multifield, .grey, .rgb => false,
+        .rgb_to_grey, .grey_to_rgb => true,
     };
 }
 
@@ -2145,12 +2072,27 @@ fn saveFrame(
     }
 }
 
-fn renderGroupSaveIo(render_group: RenderGroupSpec) std.Io {
+fn renderGroupSaveIo(render_group: RenderGroup) std.Io {
     return render_group.save_frame_io orelse render_group.io;
 }
 
 fn saveOverlapEnabled(config: RasterConfig) bool {
     return config.save_strategy == .disk and config.output.disk_save_overlap;
+}
+
+test "render group save I/O prefers the supplied override" {
+    var groups = try ManagedRenderGroups.init(std.testing.allocator, null, 1, null);
+    defer groups.deinit(std.testing.allocator);
+
+    const group = RenderGroup{ .io = std.testing.io, .workers = 1 };
+    try std.testing.expectEqual(group.io.userdata, renderGroupSaveIo(group).userdata);
+
+    var overridden = group;
+    overridden.save_frame_io = groups.groups[0].io;
+    try std.testing.expectEqual(
+        groups.groups[0].io.userdata,
+        renderGroupSaveIo(overridden).userdata,
+    );
 }
 
 test "ideal sensor bounds are prepared once per camera with effective halo" {

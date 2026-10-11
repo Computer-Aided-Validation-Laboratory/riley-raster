@@ -236,14 +236,14 @@ fn runAndRecord(
 
     const e2e_start = Timestamp.now(io, .awake);
 
-    var image_arr = try riley.rasterReport(
+    var image_arr = try riley.rasterAdvanced(
         ra,
         io,
         camera_inputs[0..1],
         &[_]mo.MeshInput{duplicated_mesh},
         config,
         out_path,
-        bench_capture,
+        .{ .bench_capture = bench_capture },
     );
 
     if (image_arr) |*arr| {

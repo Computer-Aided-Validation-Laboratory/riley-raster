@@ -112,7 +112,7 @@ pub fn main(init: std.process.Init) !void {
         outer_alloc.free(managed_ios);
     }
     const render_groups = try outer_alloc.alloc(
-        riley.RenderGroupSpec,
+        riley.RenderGroup,
         bench_args.render_group_count,
     );
     defer outer_alloc.free(render_groups);

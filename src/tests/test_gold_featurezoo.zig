@@ -173,20 +173,21 @@ pub fn runZooCase(
     else
         .serial;
 
-    var render_groups_buf: [8]riley.RenderGroupSpec = undefined;
+    var render_groups_buf: [8]riley.RenderGroup = undefined;
     for (case.workers_per_group, 0..) |workers_count, ii| {
         render_groups_buf[ii] = .{ .io = io, .workers = workers_count };
     }
     const render_groups = render_groups_buf[0..case.workers_per_group.len];
 
     const start_time = Timestamp.now(io, .awake);
-    const result = try riley.rasterWithRenderGroups(
+    const result = try riley.rasterAdvanced(
         local_alloc,
-        render_groups,
+        io,
         cameras,
         meshes,
         run_config,
         null,
+        .{ .render_groups = .{ .supplied = render_groups } },
     );
 
     var render_result = result orelse return error.NoResult;

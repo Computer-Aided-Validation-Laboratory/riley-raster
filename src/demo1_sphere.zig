@@ -28,6 +28,7 @@ const F = buildconfig.F;
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
+    const io = init.io;
 
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -40,7 +41,6 @@ pub fn main(init: std.process.Init) !void {
     const out_dir_root = "./out/demo1_sphere";
 
     const total_threads: u16 = 4;
-    const io = init.io;
 
     // -------------------------------------------------------------------------
     // 2. Load mesh data and texture shader
@@ -82,7 +82,7 @@ pub fn main(init: std.process.Init) !void {
             .tex = texture,
             .samp_cfg = .{
                 .sample = .cubic_catmull_rom,
-                .mode = .lut_lerp,
+                .mode = .direct,
             },
             .bits = 8,
             .scaling = .none,
@@ -120,7 +120,7 @@ pub fn main(init: std.process.Init) !void {
         .rot_world = rot,
         .roi_cent_world = roi_pos,
         .focal_length = focal_leng,
-        .sub_sample = 2,
+        .sub_sample = 4,
     };
 
     // -------------------------------------------------------------------------

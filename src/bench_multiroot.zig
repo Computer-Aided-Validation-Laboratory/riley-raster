@@ -339,7 +339,7 @@ pub fn main(init: std.process.Init) !void {
     for (0..args.warmup + args.runs) |rr| {
         var capture: [1]report.FrameBenchCapture = undefined;
         const started = Timestamp.now(io, .awake);
-        try riley.rasterReportInto(
+        try riley.rasterAdvancedInto(
             outer_alloc,
             io,
             &.{camera},
@@ -347,7 +347,7 @@ pub fn main(init: std.process.Init) !void {
             config,
             null,
             null,
-            &capture,
+            .{ .bench_capture = &capture },
         );
         const elapsed_ns = started.durationTo(
             Timestamp.now(io, .awake),

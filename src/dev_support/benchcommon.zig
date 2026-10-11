@@ -460,7 +460,10 @@ pub const BenchConfig = struct {
     run: RunMode = .all,
     element_type: gk.MeshType = .tri3,
     texture_type: ShaderType = .tex8_grey,
-    samp_cfg: TextureSampleConfig = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+    samp_cfg: TextureSampleConfig = .{
+        .sample = .cubic_catmull_rom,
+        .mode = .direct,
+    },
 };
 
 pub fn shouldRun(
@@ -1025,7 +1028,7 @@ fn runBenchmarkInternal(
     }
 
     const e2e_start = Timestamp.now(io, .awake);
-    try riley.rasterReportInto(
+    try riley.rasterAdvancedInto(
         outer_alloc,
         io,
         &[_]CameraInput{camera_input},
@@ -1033,7 +1036,7 @@ fn runBenchmarkInternal(
         config_run,
         out_path,
         if (image_arr) |*arr| arr else null,
-        bench_capture,
+        .{ .bench_capture = bench_capture },
     );
     const e2e_end = Timestamp.now(io, .awake);
 

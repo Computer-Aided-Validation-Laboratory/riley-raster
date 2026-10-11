@@ -382,7 +382,9 @@ fn renderCase(
         );
     };
     defer texture.deinit(local_alloc);
+
     const meshes = try buildScene(T, C, bits, local_alloc, io, texture, options);
+
     const cameras = buildCameras(meshes, options);
 
     // -------------------------------------------------------------------------
@@ -392,6 +394,7 @@ fn renderCase(
         local_alloc,
         &.{ options.out_dir_root, case_name },
     );
+
     const config = riley.RasterConfig{
         .render_mode = .offline,
         .parallel = .{ .threads = 4 },
@@ -412,24 +415,33 @@ fn renderCase(
     // -------------------------------------------------------------------------
     // 3. Render the multi-mesh multi-camera case
     // -------------------------------------------------------------------------
-    if (try riley.raster(
+    const images = try riley.raster(
         outer_alloc,
         io,
         &cameras,
         meshes,
         config,
         out_dir,
-    )) |images| {
-        outer_alloc.free(images.slice);
-        var images_mut = images;
-        images_mut.deinit(outer_alloc);
+    );
+
+    if (images) |img| {
+        outer_alloc.free(img.slice);
+        var img_mut = img;
+        img_mut.deinit(outer_alloc);
     }
 }
 
 pub fn main(init: std.process.Init) !void {
+    var arena = std.heap.ArenaAllocator.init(init.gpa);
+    defer arena.deinit();
+    const local_alloc = arena.allocator();
+    const io = init.io;
+
     const out_dir_root = "./out/demo6_featurezoo";
+
     const pixel_size = [2]F{ 5.3e-6, 5.3e-6 };
     const focal_length: F = 50.0e-3;
+
     const mesh_shapes = [_]MeshShape{
         .{ .shape = "cube_surf", .elem = "quad9", .mesh_type = .quad9 },
         .{ .shape = "cube_surf", .elem = "tri6", .mesh_type = .tri6 },
@@ -447,6 +459,7 @@ pub fn main(init: std.process.Init) !void {
         .{ 0.0, -0.0075, 0.0 },
         .{ 0.015, -0.0075, 0.0 },
     };
+
     const options = DemoOptions{
         .out_dir_root = out_dir_root,
         .pixel_size = pixel_size,
@@ -454,17 +467,13 @@ pub fn main(init: std.process.Init) !void {
         .mesh_shapes = &mesh_shapes,
         .mesh_centers = &mesh_centers,
     };
-
-    var arena = std.heap.ArenaAllocator.init(init.gpa);
-    defer arena.deinit();
-    const local_alloc = arena.allocator();
-    const io = init.io;
-
+    
     // -------------------------------------------------------------------------
     // Clean output root and render all combinations
     // -------------------------------------------------------------------------
     var output_root = try demo_common.resetOutputDir(io, out_dir_root);
     defer output_root.close(io);
+
     try renderCase(
         u8,
         1,
@@ -476,6 +485,7 @@ pub fn main(init: std.process.Init) !void {
         "mono-u8",
         options,
     );
+
     try renderCase(
         u16,
         1,
@@ -487,6 +497,7 @@ pub fn main(init: std.process.Init) !void {
         "mono-u16",
         options,
     );
+
     try renderCase(
         u8,
         3,
@@ -498,6 +509,7 @@ pub fn main(init: std.process.Init) !void {
         "rgb-u8",
         options,
     );
+
     try renderCase(
         u16,
         3,

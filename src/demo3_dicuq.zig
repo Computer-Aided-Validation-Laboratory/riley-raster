@@ -69,6 +69,8 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const local_alloc = arena.allocator();
 
+    const io = init.io;
+
     // -------------------------------------------------------------------------
     // 1. Setup paths, config and parameters
     // -------------------------------------------------------------------------
@@ -76,11 +78,9 @@ pub fn main(init: std.process.Init) !void {
     const texture_path = "texture/speckle_mono.bmp";
     const out_dir_root = "./out/demo3_dicuq";
 
-    const total_threads: u16 = 8;
-
     const config = RasterConfig{
         .render_mode = .offline,
-        .parallel = .{ .threads = total_threads },
+        .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
         .background_value = 128.0,
         .output = .{
@@ -89,15 +89,8 @@ pub fn main(init: std.process.Init) !void {
             },
         },
         .report = .{ .mode = .bench },
-        .advanced = .{
-            .raster = .{
-                .tile_size_min = 8,
-                .tile_size_max = 128,
-            },
-        },
     };
 
-    const io = init.io;
 
     // -------------------------------------------------------------------------
     // 2. Load simulation data, frames, and texture shader
@@ -158,7 +151,7 @@ pub fn main(init: std.process.Init) !void {
             .tex = texture,
             .samp_cfg = .{
                 .sample = .cubic_catmull_rom,
-                .mode = .lut_lerp,
+                .mode = .direct,
             },
             .bits = 8,
             .scaling = .none,
@@ -172,7 +165,7 @@ pub fn main(init: std.process.Init) !void {
     const pixels_size = [2]F{ 3.45e-6, 3.45e-6 };
     const focal_length: F = 50.0e-3;
     const fov_scale_factor: F = 0.65;
-    const sub_sample: u32 = 2;
+    const sub_sample: u32 = 4;
     const stereo_angle_deg: F = 20.0;
 
     std.debug.print("Setting up camera...\n", .{});
@@ -231,8 +224,6 @@ pub fn main(init: std.process.Init) !void {
     // 4. Configure raster engine and render
     // -------------------------------------------------------------------------
     std.debug.print("Rendering simulation to {s}/...\n", .{out_dir_root});
-    const meshes = [_]MeshInput{mesh_input};
-    const cams_in = [_]CameraInput{ cam0_in, cam1_in };
 
     var out_dir = try demo_common.resetOutputDir(io, out_dir_root);
     defer out_dir.close(io);
@@ -240,8 +231,8 @@ pub fn main(init: std.process.Init) !void {
     const images = try riley.raster(
         outer_alloc,
         io,
-        &cams_in,
-        &meshes,
+        &.{cam0_in, cam1_in},
+        &.{mesh_input},
         config,
         out_dir_root,
     );
