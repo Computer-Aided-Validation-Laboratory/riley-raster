@@ -279,7 +279,7 @@ pub fn printProceduralConfig(
         },
     }
 
-    if (resolved.evaluator == .classified_indexed or resolved.evaluator == .classified_indexed_2) {
+    if (resolved.evaluator == .classified_indexed or resolved.evaluator == .classified_indexed_2 or resolved.evaluator == .classified_indexed_3) {
         const samples: F = @floatFromInt(buildconfig.speckle_mask_samples_per_cell);
         const classification_dims = [2]F{
             @ceil(params.cells_per_uv[0] * samples),
@@ -358,8 +358,8 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\
         \\Experimental native overrides (require -Denable-all-evaluators=true):
         \\  --evaluator <name>    cell-hash, list-naive, list-indexed,
-        \\                        classified-indexed, classified-indexed-2, direct-fixed,
-        \\                        mask-1bit, mask-u8, or mock
+        \\                        classified-indexed, classified-indexed-2, classified-indexed-3,
+        \\                        direct-fixed, mask-1bit, mask-u8, or mock
         \\  --neighbors <count>   1, 4, or 9 (Perlin: mock only)
         \\  Omit both overrides for automatic selection; default builds reject either.
         \\  An omitted neighbor count is 9, or 1 for an explicit direct-fixed evaluator.
@@ -370,7 +370,7 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\  Size + jitter + softness <= 0.5 for one neighbor, or <= 1 otherwise.
         \\  Hard disks exclude their circumference; zero-radius draws are empty.
         \\  Softness must be finite and nonnegative; positive values enable soft disks.
-        \\  Gaussian/Perlin, both classified-indexed variants, direct-fixed and mask-1bit
+        \\  Gaussian/Perlin, classified-indexed variants, direct-fixed and mask-1bit
         \\  require softness 0. Classified variants require disk/9 neighbors; direct-fixed
         \\  requires disk/1, zero jitter and hard edges; mask-1bit requires hard disks.
         \\  Perlin requires mask-u8 or mock; threshold is finite and transition is finite and >= 0.
@@ -419,9 +419,13 @@ test "demo arguments reject malformed and invalid runtime settings" {
 test "demo experimental overrides preserve explicit values and enforce availability" {
     const evaluator = [_][*:0]const u8{ "demo", "--evaluator", "classified-indexed" };
     const neighbors = [_][*:0]const u8{ "demo", "--neighbors", "9" };
-    const candidate = [_][*:0]const u8{ "demo", "--evaluator", "classified-indexed-2" };
+    inline for (.{ "classified-indexed-2", "classified-indexed-3" }) |name| {
+        const candidate = [_][*:0]const u8{ "demo", "--evaluator", name };
+        if (comptime buildconfig.enable_all_evaluators) {
+            try std.testing.expectEqual(speckleconfig.parseEvaluator(name).?, (try parseDemoArgs(&candidate, test_spec)).?.params.evaluator.?);
+        } else try std.testing.expectError(error.SpeckleOverridesDisabled, parseDemoArgs(&candidate, test_spec));
+    }
     if (comptime buildconfig.enable_all_evaluators) {
-        try std.testing.expectEqual(speckleconfig.Evaluator.classified_indexed_2, (try parseDemoArgs(&candidate, test_spec)).?.params.evaluator.?);
         const selected = (try parseDemoArgs(&evaluator, test_spec)).?;
         try std.testing.expectEqual(
             speckleconfig.Evaluator.classified_indexed,
@@ -435,7 +439,6 @@ test "demo experimental overrides preserve explicit values and enforce availabil
             parseDemoArgs(&perlin, test_spec),
         );
     } else {
-        try std.testing.expectError(error.SpeckleOverridesDisabled, parseDemoArgs(&candidate, test_spec));
         try std.testing.expectError(
             error.SpeckleOverridesDisabled,
             parseDemoArgs(&evaluator, test_spec),
