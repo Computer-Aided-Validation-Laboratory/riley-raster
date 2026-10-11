@@ -445,7 +445,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 },
                 .list_naive => .{ .list = try generateSpeckleList2D(outer_alloc, params) },
                 .list_indexed => .{ .strip_list = try generateStripSpeckleList2D(outer_alloc, params) },
-                .classified_indexed => .{
+                .classified_indexed, .classified_indexed_2 => .{
                     .classified = try generateClassifiedIndexedSpeckle2D(outer_alloc, params),
                 },
                 .direct_fixed => .{
@@ -471,7 +471,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 .cell_hash => evalSpeckle2DImpl(soft_edges, u, v, params),
                 .list_naive => evalSpeckleList2DNaiveImpl(soft_edges, u, v, resources.list.?),
                 .list_indexed => evalStripSpeckleList2DImpl(soft_edges, u, v, resources.strip_list.?),
-                .classified_indexed => evalClassifiedIndexedSpeckle2D(.{ u, v }, resources.classified.?),
+                .classified_indexed, .classified_indexed_2 => evalClassifiedIndexedSpeckle2D(.{ u, v }, resources.classified.?),
                 .direct_fixed => evalDirectFixedSpeckle2D(.{ u, v }, resources.direct_fixed.?),
                 .mask_1bit, .mask_u8 => evalSpeckleMask2D(.{ u, v }, resources.mask.?),
             };
@@ -501,7 +501,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     if (strip.centers.len != 0) break :blk evalSpeckleSIMDImpl(soft_edges, evalFixedStripSpeckleList2DImpl, u, v, strip, strip.params.background);
                     break :blk evalSpeckleSIMDImpl(soft_edges, evalGeneralStripSpeckleList2DImpl, u, v, strip, strip.params.background);
                 },
-                .classified_indexed => evalClassifiedIndexedSpeckleSIMDImpl(u, v, active, &resources.classified.?),
+                .classified_indexed, .classified_indexed_2 => evalClassifiedIndexedSpeckleSIMDImpl(u, v, active, &resources.classified.?),
                 .direct_fixed => evalDirectFixedSpeckleSIMDImpl(u, v, active, &resources.direct_fixed.?),
                 .mask_1bit, .mask_u8 => evalSpeckleMaskSIMDImpl(u, v, active, &resources.mask.?),
             };
@@ -1179,7 +1179,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             return cell >= min_cell and cell <= max_cell;
         }
 
-        fn stampFixedSpeckleDiskClassification(
+        fn stampSpeckleDiskClassification(
             states: []u8,
             dims: [2]usize,
             proc_axes: [2]SpeckleClassificationAxis,
@@ -1197,7 +1197,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             // microcell whose exhaustive floor(box)-1..+1 search excludes that owner.
             // Specialize once per disk, not inside the microcell loops.
             if (stamp_radius < 1.0) {
-                stampFixedSpeckleDiskClassificationImpl(
+                stampSpeckleDiskClassificationImpl(
                     true,
                     states,
                     dims,
@@ -1207,7 +1207,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     disk,
                 );
             } else {
-                stampFixedSpeckleDiskClassificationImpl(
+                stampSpeckleDiskClassificationImpl(
                     false,
                     states,
                     dims,
@@ -1219,7 +1219,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             }
         }
 
-        fn stampFixedSpeckleDiskClassificationImpl(
+        fn stampSpeckleDiskClassificationImpl(
             comptime owner_search_is_implicit: bool,
             states: []u8,
             dims: [2]usize,
@@ -1289,13 +1289,12 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             }
         }
 
-        fn buildFixedSpeckleClassificationsByStamping(
+        fn buildSpeckleClassificationsByStamping(
             states: []u8,
             dims: [2]usize,
             uv_to_cell: [2]F,
             speckles: SpeckleList2D,
         ) void {
-            std.debug.assert(speckles.params.radius_jitter == 0.0);
             if (speckles.disks.len == 0) return;
 
             // Covers the default 2305 + 1921 boundaries without arena scratch storage.
@@ -1329,7 +1328,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     const encoded = speckles.disk_by_cell[cell_index];
                     if (encoded == SpeckleList2D.no_disk) continue;
                     const disk_cell_x = speckles.cell_origin[0] + @as(i64, @intCast(xx));
-                    stampFixedSpeckleDiskClassification(
+                    stampSpeckleDiskClassification(
                         states,
                         dims,
                         proc_axes,
@@ -1342,6 +1341,14 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         fn generateClassifiedIndexedSpeckle2D(
+            allocator: std.mem.Allocator,
+            params: Speckle2DParams,
+        ) !ClassifiedIndexedSpeckle2D {
+            return generateClassifiedIndexedSpeckle2DImpl(config.evaluator == .classified_indexed_2, allocator, params);
+        }
+
+        fn generateClassifiedIndexedSpeckle2DImpl(
+            comptime generalize_stamp: bool,
             allocator: std.mem.Allocator,
             params: Speckle2DParams,
         ) !ClassifiedIndexedSpeckle2D {
@@ -1366,8 +1373,10 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 @floatFromInt(dims[0]),
                 @floatFromInt(dims[1]),
             };
-            if (params.radius_jitter == 0.0) {
-                buildFixedSpeckleClassificationsByStamping(
+            // The original strategy retains its fixed-radius-only stamping dispatch.
+            if (generalize_stamp or params.radius_jitter == 0.0) {
+                if (!generalize_stamp) std.debug.assert(params.radius_jitter == 0.0);
+                buildSpeckleClassificationsByStamping(
                     states,
                     dims,
                     uv_to_cell,
@@ -2438,7 +2447,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 return;
             }
             switch (comptime config.evaluator) {
-                .classified_indexed, .direct_fixed, .mask_1bit => {
+                .classified_indexed, .classified_indexed_2, .direct_fixed, .mask_1bit => {
                     try testing.expectError(
                         error.SpeckleEvaluatorRequiresHardEdges,
                         params.validateResolved(config),
@@ -2657,8 +2666,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                         };
                         const value = evalSpeckle2D(uv, params);
                         try testing.expectEqual(value, evalSpeckleList2D(uv, speckles));
-                        if (comptime config.evaluator == .cell_hash or config.evaluator == .list_naive)
-                        {
+                        if (comptime config.evaluator == .cell_hash or config.evaluator == .list_naive) {
                             const prepared = if (softness > 0.0)
                                 samplePreparedScal(true, uv[0], uv[1], params, &.{ .list = speckles })
                             else
@@ -2954,6 +2962,143 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 
             // Equal state bytes imply equal evaluator results; the hash remains an independent oracle.
             try expectClassifiedSpeckleSamples(stamped, .{ 5, 5 });
+        }
+
+        fn expectGeneralizedSpeckleStampSample(
+            original: *const Resources,
+            candidate: *const Resources,
+            uv: [2]F,
+        ) !void {
+            const list = original.classified.?.speckles;
+            const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
+            const expected: Bits = @bitCast(evalSpeckle2D(uv, list.params));
+            const K = Kernel(kernelIndex(config));
+            for ([_]F{
+                evalSpeckleList2DNaiveImpl(false, uv[0], uv[1], list),
+                K.sampleScal(uv[0], uv[1], list.params, original),
+                K.sampleScal(uv[0], uv[1], list.params, candidate),
+            }) |actual| try testing.expectEqual(expected, @as(Bits, @bitCast(actual)));
+        }
+
+        fn expectGeneralizedSpeckleStampExact(params: Speckle2DParams) !bool {
+            var original_params = params;
+            original_params.evaluator = .classified_indexed;
+            var original = try generateResources(testing.allocator, original_params);
+            defer original.deinit(testing.allocator);
+            var candidate_params = params;
+            candidate_params.evaluator = .classified_indexed_2;
+            var candidate = try generateResources(testing.allocator, candidate_params);
+            defer candidate.deinit(testing.allocator);
+            try testing.expectEqual(original.kernel_index, candidate.kernel_index);
+            const reference = original.classified.?;
+            const stamped = candidate.classified.?;
+            try testing.expectEqual(reference.dims, stamped.dims);
+            try testing.expectEqual(reference.uv_to_cell, stamped.uv_to_cell);
+            try testing.expectEqual(reference.speckles.cell_origin, stamped.speckles.cell_origin);
+            try testing.expectEqual(reference.speckles.cell_dims, stamped.speckles.cell_dims);
+            try testing.expectEqualSlices(u32, reference.speckles.disk_by_cell, stamped.speckles.disk_by_cell);
+            try testing.expectEqualSlices(u8, std.mem.sliceAsBytes(reference.speckles.disks), std.mem.sliceAsBytes(stamped.speckles.disks));
+            const exhaustive = try testing.allocator.alloc(u8, stamped.states.len);
+            defer testing.allocator.free(exhaustive);
+            @memset(exhaustive, 0);
+            buildSpeckleClassificationsExhaustive(exhaustive, stamped.dims, stamped.uv_to_cell, reference.speckles);
+            try testing.expectEqualSlices(u8, exhaustive, reference.states);
+            try testing.expectEqualSlices(u8, exhaustive, stamped.states);
+
+            for (0..97) |ii| {
+                try expectGeneralizedSpeckleStampSample(&original, &candidate, .{
+                    @as(F, @floatFromInt((ii * 73 + 19) % 257)) / 240.0 - 0.03,
+                    @as(F, @floatFromInt((ii * 151 + 43) % 263)) / 245.0 - 0.03,
+                });
+            }
+            var has_zero_radius = false;
+            for (reference.speckles.disks) |disk| {
+                has_zero_radius = has_zero_radius or disk.radius == 0.0;
+                var uv: [2]F = undefined;
+                for (0..2) |axis| uv[axis] = (disk.center[axis] - params.uv_offset[axis]) / params.cells_per_uv[axis];
+                try expectGeneralizedSpeckleStampSample(&original, &candidate, uv);
+                for (0..2) |axis| {
+                    for ([_]F{ -disk.radius, disk.radius }) |edge| {
+                        const boundary = (disk.center[axis] + edge - params.uv_offset[axis]) / params.cells_per_uv[axis];
+                        for ([_]F{ boundary, std.math.nextAfter(F, boundary, -std.math.inf(F)), std.math.nextAfter(F, boundary, std.math.inf(F)) }) |point| {
+                            var sample = uv;
+                            sample[axis] = point;
+                            try expectGeneralizedSpeckleStampSample(&original, &candidate, sample);
+                        }
+                    }
+                }
+            }
+            const K = Kernel(kernelIndex(config));
+            const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
+            for (0..8) |batch| {
+                var us: [S]F = undefined;
+                var vs: [S]F = undefined;
+                var active: [S]bool = undefined;
+                for (0..S) |lane| {
+                    us[lane] = @as(F, @floatFromInt((batch * S + lane) % 17)) / 16.0;
+                    vs[lane] = if (batch == 0) std.math.nan(F) else if (batch == 1) std.math.inf(F) else 1.0 - us[lane];
+                    active[lane] = (batch + lane) % 3 != 0;
+                }
+                const before: [S]F = K.sampleSIMD(us, vs, active, original_params, &original);
+                const after: [S]F = K.sampleSIMD(us, vs, active, candidate_params, &candidate);
+                for (0..S) |lane| {
+                    const expected = if (active[lane] and std.math.isFinite(vs[lane]))
+                        evalSpeckle2D(.{ us[lane], vs[lane] }, original_params)
+                    else
+                        params.background;
+                    try testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(before[lane])));
+                    try testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(after[lane])));
+                }
+            }
+            return has_zero_radius;
+        }
+
+        test "generalized stamping preserves exhaustive state bytes and bitwise samples" {
+            if (comptime config.evaluator != .classified_indexed or !buildconfig.enable_all_evaluators) return;
+            const coord_limit: F = if (F == f32) 65_536.0 else 35_184_372_088_832.0;
+            const offsets = [_][2]F{
+                .{ -1.375, -0.625 },
+                .{ coord_limit - 5.0, -coord_limit + 1.0 },
+                .{ -coord_limit + 1.0, coord_limit - 5.0 },
+            };
+            var has_zero_radius = false;
+            for ([_]F{ 0.0, 0.7, 1.0 }) |occupancy| {
+                for ([_]F{ 0.0, 0.08, 0.5 }) |jitter| {
+                    for (offsets) |offset| {
+                        has_zero_radius = try expectGeneralizedSpeckleStampExact(.{
+                            .seed = 43498,
+                            .cells_per_uv = .{ 3.25, 2.75 },
+                            .uv_offset = offset,
+                            .occupancy = occupancy,
+                            .radius_mean = 0.5,
+                            .radius_jitter = jitter,
+                            .foreground = 0.17,
+                            .background = 0.83,
+                        }) or has_zero_radius;
+                    }
+                }
+            }
+            try testing.expect(has_zero_radius);
+            for ([_]F{ std.math.floatEps(F), 1.0 - std.math.floatEps(F), 1.0 }) |radius| {
+                _ = try expectGeneralizedSpeckleStampExact(.{
+                    .cells_per_uv = .{ 0.03125, 0.0625 },
+                    .uv_offset = .{ 0.999, -2.001 },
+                    .occupancy = 1.0,
+                    .radius_mean = radius,
+                    .radius_jitter = -0.0,
+                    .foreground = -0.0,
+                    .background = 0.23,
+                });
+            }
+            for ([_]usize{ speckle_classification_boundary_cache_capacity - 8, speckle_classification_boundary_cache_capacity + 1 }) |interval_count| {
+                _ = try expectGeneralizedSpeckleStampExact(.{
+                    .cells_per_uv = .{ @as(F, @floatFromInt(interval_count)) / speckle_mask_samples_per_cell, 0.5 / speckle_mask_samples_per_cell },
+                    .uv_offset = .{ -0.375, 0.25 },
+                    .occupancy = 0.7,
+                    .radius_mean = 0.92,
+                    .radius_jitter = 0.08,
+                });
+            }
         }
 
         test "fixed-radius stamped speckle classification matches exhaustive construction" {
@@ -3607,7 +3752,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     .cell_hash => evalSpeckle2D(uv, params),
                     .list_naive => evalSpeckleList2D(uv, resources.list.?),
                     .list_indexed => evalStripSpeckleList2DImpl(config.soft_edges, uv[0], uv[1], resources.strip_list.?),
-                    .classified_indexed => evalClassifiedIndexedSpeckle2D(
+                    .classified_indexed, .classified_indexed_2 => evalClassifiedIndexedSpeckle2D(
                         uv,
                         resources.classified.?,
                     ),
@@ -3663,6 +3808,10 @@ test "runtime override policy and invalid settings fail before allocation" {
             .{ .params = .{ .pattern = .perlin, .evaluator = .cell_hash }, .err = error.PerlinRequiresMaskU8 },
             .{ .params = .{ .pattern = .gaussian, .evaluator = .mask_1bit }, .err = error.Mask1BitRequiresDisk },
             .{ .params = .{ .evaluator = .classified_indexed, .neighbor_count = 4 }, .err = error.ClassifiedIndexedRequiresDiskAndNineNeighbors },
+            .{ .params = .{ .evaluator = .classified_indexed_2, .neighbor_count = 4 }, .err = error.ClassifiedIndexedRequiresDiskAndNineNeighbors },
+            .{ .params = .{ .evaluator = .classified_indexed_2, .pattern = .gaussian }, .err = error.ClassifiedIndexedRequiresDiskAndNineNeighbors },
+            .{ .params = .{ .evaluator = .classified_indexed_2, .edge_softness = 0.01 }, .err = error.SpeckleEvaluatorRequiresHardEdges },
+            .{ .params = .{ .evaluator = .classified_indexed_2, .radius_mean = 0.95, .radius_jitter = 0.08 }, .err = error.InvalidSpeckleNeighborhoodRadius },
             .{ .params = .{ .evaluator = .direct_fixed, .neighbor_count = 9 }, .err = error.DirectFixedRequiresDiskAndOneNeighbor },
             .{ .params = .{ .evaluator = .classified_indexed, .edge_softness = 0.01 }, .err = error.SpeckleEvaluatorRequiresHardEdges },
             .{ .params = .{ .evaluator = .direct_fixed, .radius_jitter = 0.01 }, .err = error.InvalidDirectFixedSpeckleRadiusJitter },
@@ -3716,6 +3865,7 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
         try std.testing.expectEqual(@as(usize, if (config.evaluator == .cell_hash or config.evaluator == .mock) 0 else 1), allocated);
         try std.testing.expectEqual(config.evaluator == .list_naive, resources.list != null);
         try std.testing.expectEqual(config.evaluator == .list_indexed, resources.strip_list != null);
+        try std.testing.expectEqual(config.evaluator == .classified_indexed or config.evaluator == .classified_indexed_2, resources.classified != null);
         const points = [_][2]F{ .{ 0, 0 }, .{ 1, 1 }, .{ -2, 0.37 }, .{ 0.35, 0.61 }, .{ 0.67, 0.41 }, .{ 0.37, 2 } };
         for (points) |uv| {
             const Impl = Implementation(config);
@@ -3728,7 +3878,7 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
                 else
                     params.foreground,
                 .list_naive => Impl.evalSpeckleList2DNaiveImpl(config.soft_edges, uv[0], uv[1], resources.list.?),
-                .classified_indexed => Impl.evalSpeckleList2DNaiveImpl(false, uv[0], uv[1], resources.classified.?.speckles),
+                .classified_indexed, .classified_indexed_2 => Impl.evalSpeckleList2DNaiveImpl(false, uv[0], uv[1], resources.classified.?.speckles),
                 .mask_1bit, .mask_u8 => Impl.evalSpeckleMask2D(uv, resources.mask.?),
             };
             try std.testing.expectEqual(reference, Kernel(index).sampleScal(uv[0], uv[1], params, &resources));

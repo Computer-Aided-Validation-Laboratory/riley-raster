@@ -236,6 +236,11 @@ test "speckle benchmark named options and default gate" {
         try std.testing.expect(opts.softness > 0);
         try std.testing.expectEqual(policy.Evaluator.cell_hash, opts.evaluator.?);
     } else try std.testing.expectError(error.SpeckleOverridesDisabled, Options.parse(args));
+    const candidate = &.{ "bench", "--evaluator", "classified-indexed-2", "--jitter", "0.08" };
+    if (comptime build.enable_all_evaluators) {
+        try std.testing.expectEqual(policy.Evaluator.classified_indexed_2, (try Options.parse(candidate)).evaluator.?);
+        try std.testing.expectError(error.ClassifiedIndexedRequiresDiskAndNineNeighbors, Options.parse(&.{ "bench", "--evaluator", "classified-indexed-2", "--neighbors", "4" }));
+    } else try std.testing.expectError(error.SpeckleOverridesDisabled, Options.parse(candidate));
 }
 const Scene = struct {
     sim: meshio.SimData,

@@ -19,6 +19,7 @@ pub const Evaluator = enum(u8) {
     mask_1bit,
     mask_u8,
     mock,
+    classified_indexed_2,
 };
 
 pub const Config = struct {
@@ -65,6 +66,7 @@ pub fn evaluatorName(evaluator: Evaluator) []const u8 {
         .list_naive => "list-naive",
         .list_indexed => "list-indexed",
         .classified_indexed => "classified-indexed",
+        .classified_indexed_2 => "classified-indexed-2",
         .direct_fixed => "direct-fixed",
         .mask_1bit => "mask-1bit",
         .mask_u8 => "mask-u8",
@@ -83,7 +85,7 @@ pub fn isValidMaskSamplesPerCell(samples: anytype) bool {
 pub fn supportsSoftEdges(config: Config) bool {
     return config.pattern == .disk and switch (config.evaluator) {
         .cell_hash, .list_naive, .list_indexed, .mask_u8, .mock => true,
-        .classified_indexed, .direct_fixed, .mask_1bit => false,
+        .classified_indexed, .classified_indexed_2, .direct_fixed, .mask_1bit => false,
     };
 }
 
@@ -95,7 +97,7 @@ pub fn validateCompatibility(config: Config) CompatibilityError!void {
     }
     switch (config.evaluator) {
         .mask_1bit => if (config.pattern != .disk) return error.Mask1BitRequiresDisk,
-        .classified_indexed => if (config.pattern != .disk or config.neighbor_count != 9)
+        .classified_indexed, .classified_indexed_2 => if (config.pattern != .disk or config.neighbor_count != 9)
             return error.ClassifiedIndexedRequiresDiskAndNineNeighbors,
         .direct_fixed => if (config.pattern != .disk or config.neighbor_count != 1)
             return error.DirectFixedRequiresDiskAndOneNeighbor,
@@ -153,6 +155,7 @@ pub fn canonicalizeSampleConfig(config: Config) Config {
             result.soft_edges = false;
         },
         .list_naive => result.neighbor_count = 9,
+        .classified_indexed_2 => result.evaluator = .classified_indexed,
         else => {},
     }
     return result;
@@ -268,9 +271,24 @@ test "experimental resolution selects defaults and rejects incompatible override
     for (cases) |case| try std.testing.expectError(case.err, resolve(true, case.pattern, case.evaluator, case.neighbors, case.soft));
 }
 
+test "classified indexed stamping variant is opt-in hard disk nine-neighbor generation only" {
+    const original = try resolve(true, .disk, .classified_indexed, null, false);
+    const candidate = try resolve(true, .disk, .classified_indexed_2, null, false);
+    try std.testing.expectEqualDeep(original, canonicalizeSampleConfig(candidate));
+    try std.testing.expectEqual(Evaluator.classified_indexed, (try resolve(false, .disk, null, null, false)).evaluator);
+    try std.testing.expectError(error.SpeckleOverridesDisabled, resolve(false, .disk, .classified_indexed_2, null, false));
+    for ([_]u8{ 1, 4 }) |neighbors| {
+        try std.testing.expectError(error.ClassifiedIndexedRequiresDiskAndNineNeighbors, resolve(true, .disk, .classified_indexed_2, neighbors, false));
+    }
+    try std.testing.expectError(error.ClassifiedIndexedRequiresDiskAndNineNeighbors, resolve(true, .gaussian, .classified_indexed_2, 9, false));
+    try std.testing.expectError(error.PerlinRequiresMaskU8, resolve(true, .perlin, .classified_indexed_2, null, false));
+    try std.testing.expectError(error.SpeckleEvaluatorRequiresHardEdges, resolve(true, .disk, .classified_indexed_2, 9, true));
+}
+
 test "specialization catalogues are unique and cover every resolved generation config" {
-    try std.testing.expectEqual(@as(usize, 8), std.enums.values(Evaluator).len);
-    try std.testing.expectEqual(@as(usize, 54), generationConfigs(true).len);
+    const generation_only_variants = [_]Evaluator{.classified_indexed_2};
+    try std.testing.expectEqual(8 + generation_only_variants.len, std.enums.values(Evaluator).len);
+    try std.testing.expectEqual(54 + generation_only_variants.len, generationConfigs(true).len);
     try std.testing.expectEqual(@as(usize, 26), sampleConfigs(true).len);
     try std.testing.expectEqual(@as(usize, 4), generationConfigs(false).len);
     try std.testing.expectEqual(@as(usize, 4), sampleConfigs(false).len);
