@@ -19,7 +19,7 @@ const tol = buildconfig.config.tol;
 const vecstack = @import("vecstack.zig");
 const Vec2F = vecstack.Vec2F;
 const Vec2Ops = vecstack.Vec2Ops;
-const HullEdge = @import("hull_common.zig").HullEdge;
+const HullEdge = @import("hulledge.zig").HullEdge;
 
 pub const Points = struct {
     x: [9]F = undefined,
@@ -446,10 +446,21 @@ pub const MultiRootHull = struct {
     ) void {
         for (0..4) |ii| {
             const region = fixedChildRegion(N, ii);
-            output[ii] = prepareBezierLeaf(N, camera, coords, region, edge_fun_mode, prepare_edges);
+            output[ii] = prepareBezierLeaf(
+                N,
+                camera,
+                coords,
+                region,
+                edge_fun_mode,
+                prepare_edges,
+            );
         }
     }
 };
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
 
 test "quad control net matches the tensor transform" {
     const grid = [3][3]usize{ .{ 0, 4, 1 }, .{ 7, 8, 5 }, .{ 3, 6, 2 } };

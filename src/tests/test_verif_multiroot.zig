@@ -11,8 +11,7 @@ const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 const cam = @import("../riley/zig/camera.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
-const hull = @import("../riley/zig/hull.zig");
-const MultiRootHull = hull.MultiRootHull;
+const MultiRootHull = @import("../riley/zig/multiroothull.zig").MultiRootHull;
 const newton = @import("../riley/zig/newton.zig");
 const rasterconfig = @import("../riley/zig/rasterconfig.zig");
 const rops = @import("../riley/zig/rasterops.zig");
@@ -1255,7 +1254,7 @@ fn checkPreparedHullEdges(camera: *const cam.CameraPrepared) !void {
     const x = [_]F{ 4, 4, 80, 80 };
     const y = [_]F{ 4, 80, 80, 4 };
     var slack: [4]F = undefined;
-    var edges: [4]hull.HullEdge = undefined;
+    var edges: [4]MultiRootHull.HullEdge = undefined;
     MultiRootHull.prepareEdgeSlack(&x, &y, &slack);
     MultiRootHull.prepareEdges(&x, &y, &edges);
     for (0..100) |yy| for (0..100) |xx| {
@@ -1278,7 +1277,7 @@ fn checkPreparedHullEdges(camera: *const cam.CameraPrepared) !void {
     const large_x = [_]F{ 1e6, 1e6, 1e6 + 1e-3, 1e6 + 1e-3 };
     const large_y = [_]F{ 1e6, 1e6 + 10, 1e6 + 10, 1e6 };
     var large_slack: [4]F = undefined;
-    var large_edges: [4]hull.HullEdge = undefined;
+    var large_edges: [4]MultiRootHull.HullEdge = undefined;
     MultiRootHull.prepareEdgeSlack(&large_x, &large_y, &large_slack);
     MultiRootHull.prepareEdges(&large_x, &large_y, &large_edges);
     for ([_]F{ 0, 0.25, 0.5, 0.75, 1 }) |fraction| {

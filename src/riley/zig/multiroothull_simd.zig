@@ -12,7 +12,7 @@ const F = buildconfig.F;
 const cfg = buildconfig.config;
 const tol = cfg.tol;
 const rops = @import("rasterops.zig");
-const HullEdge = @import("hull_common.zig").HullEdge;
+const HullEdge = @import("hulledge.zig").HullEdge;
 const EdgeFunMode = @import("rasterconfig.zig").EdgeFunMode;
 const MultiRootHull = @import("multiroothull_common.zig").MultiRootHull;
 const cam = @import("camera.zig");
@@ -22,13 +22,16 @@ const S = cfg.simd_vec_width;
 
 pub fn prepareEdges(x: []const F, y: []const F, edges: []HullEdge) void {
     std.debug.assert(x.len == y.len and x.len == edges.len);
+
     var start: usize = 0;
+
     while (start < x.len) : (start += S) {
         var x0: [S]F = @splat(0);
         var y0: [S]F = @splat(0);
         var x1: [S]F = @splat(0);
         var y1: [S]F = @splat(0);
         const count = @min(S, x.len - start);
+
         for (0..count) |lane| {
             const ii = start + lane;
             const jj = (ii + 1) % x.len;
@@ -37,24 +40,31 @@ pub fn prepareEdges(x: []const F, y: []const F, edges: []HullEdge) void {
             x1[lane] = x[jj];
             y1[lane] = y[jj];
         }
+
         const vx0: VecSF = x0;
         const vy0: VecSF = y0;
         const vx1: VecSF = x1;
         const vy1: VecSF = y1;
         const dx = vx1 - vx0;
         const dy = vy1 - vy0;
+
         const left = vx1 * vy0;
         const right = vx0 * vy1;
         const slack: VecSF = @splat(tol.hull.scal_inclusion);
+
         const round_factor: VecSF = @splat(16 * std.math.floatEps(F));
         const rounding = round_factor *
             (@abs(left) + @abs(right) + @abs(vx0 * dy) + @abs(vy0 * dx));
+
         const va = dy;
         const vb = -dx;
+
         const vc = left - right + slack * @sqrt(dx * dx + dy * dy) + rounding;
+
         const aa: [S]F = va;
         const bb: [S]F = vb;
         const cc: [S]F = vc;
+
         for (0..count) |lane| {
             edges[start + lane] = .{ .a = aa[lane], .b = bb[lane], .c = cc[lane] };
         }
@@ -78,10 +88,12 @@ pub fn containsOuter(
 
 pub fn childMask(leaves: anytype, px: F, py: F, mode: EdgeFunMode) u8 {
     var mask: u8 = 0;
+
     for (leaves, 0..) |*leaf, ii| {
         if (px < leaf.bbox[0] or px > leaf.bbox[1] or
             py < leaf.bbox[2] or py > leaf.bbox[3]) continue;
         const count = leaf.vertex_count;
+
         if (containsOuter(
             leaf.hull_x[0..count],
             leaf.hull_y[0..count],
@@ -268,5 +280,12 @@ pub fn prepareFourBezierLeaves(
     output: *[4]MultiRootHull.BezierLeaf,
     edge_fun_mode: EdgeFunMode,
 ) void {
-    MultiRootHull.prepareFourBezierLeaves(N, camera, coords, output, edge_fun_mode, prepareEdges);
+    MultiRootHull.prepareFourBezierLeaves(
+        N,
+        camera,
+        coords,
+        output,
+        edge_fun_mode,
+        prepareEdges,
+    );
 }

@@ -12,7 +12,7 @@ const F = buildconfig.F;
 const cfg = buildconfig.config;
 const tol = cfg.tol;
 const rops = @import("rasterops.zig");
-const HullEdge = @import("hull_common.zig").HullEdge;
+const HullEdge = @import("hulledge.zig").HullEdge;
 const EdgeFunMode = @import("rasterconfig.zig").EdgeFunMode;
 
 const Triangle = struct {

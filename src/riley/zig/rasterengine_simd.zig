@@ -23,9 +23,8 @@ const ReportMode = rastcfg.ReportMode;
 const tol = cfg.tol;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
-const hull = @import("hull.zig");
-const MultiRootHull = hull.MultiRootHull;
-const AdaptiveHull = hull.AdaptiveHull;
+const MultiRootHull = @import("multiroothull.zig").MultiRootHull;
+const AdaptiveHull = @import("adaptivehull.zig").AdaptiveHull;
 const AdaptiveCandidateSIMD = AdaptiveHull.CandidateSIMD;
 const shapefun = @import("shapefun.zig");
 const rops = @import("rasterops.zig");
@@ -799,7 +798,7 @@ fn rasterNewtonMultiSIMDImpl(
     };
     var candidates_count: usize = 0;
 
-    const outer_edges: []const hull.HullEdge = if (edge_fun_mode == .pre_calc)
+    const outer_edges: []const MultiRootHull.HullEdge = if (edge_fun_mode == .pre_calc)
         prepared.hull_edges[slot][0..hull_count]
     else
         &.{};

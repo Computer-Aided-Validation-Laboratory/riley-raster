@@ -15,6 +15,7 @@ else
 const simd_impl = @import("multiroothull_simd.zig");
 
 pub const MultiRootHull = struct {
+    pub const HullEdge = @import("hulledge.zig").HullEdge;
     pub const Points = common.Points;
     pub const BezierLeaf = common.MultiRootHull.BezierLeaf;
     pub const buildPointsFromClip = common.MultiRootHull.buildPointsFromClip;

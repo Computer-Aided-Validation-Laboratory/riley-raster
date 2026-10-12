@@ -14,9 +14,8 @@ const cam = @import("camera.zig");
 const CameraPrepared = cam.CameraPrepared;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
-const hull = @import("hull.zig");
-const MultiRootHull = hull.MultiRootHull;
-const AdaptiveHull = hull.AdaptiveHull;
+const MultiRootHull = @import("multiroothull.zig").MultiRootHull;
+const AdaptiveHull = @import("adaptivehull.zig").AdaptiveHull;
 const rops = @import("rasterops.zig");
 const ElemBBox = rops.ElemBBox;
 const OverlapBBox = rops.OverlapBBox;
@@ -846,7 +845,7 @@ fn rasterNewtonMultiImpl(
                 sub_samp,
                 scratch_y,
             );
-            const edges: []const hull.HullEdge = if (edge_fun_mode == .pre_calc)
+            const edges: []const MultiRootHull.HullEdge = if (edge_fun_mode == .pre_calc)
                 prepared.hull_edges[slot][0..hull_count]
             else
                 &.{};

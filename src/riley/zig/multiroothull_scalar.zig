@@ -12,7 +12,7 @@ const F = buildconfig.F;
 const cfg = buildconfig.config;
 const tol = cfg.tol;
 const rops = @import("rasterops.zig");
-const HullEdge = @import("hull_common.zig").HullEdge;
+const HullEdge = @import("hulledge.zig").HullEdge;
 const EdgeFunMode = @import("rasterconfig.zig").EdgeFunMode;
 const MultiRootHull = @import("multiroothull_common.zig").MultiRootHull;
 const cam = @import("camera.zig");
@@ -42,6 +42,7 @@ pub fn childMask(leaves: anytype, px: F, py: F, mode: EdgeFunMode) u8 {
         if (px < leaf.bbox[0] or px > leaf.bbox[1] or
             py < leaf.bbox[2] or py > leaf.bbox[3]) continue;
         const count = leaf.vertex_count;
+
         if (containsOuter(
             leaf.hull_x[0..count],
             leaf.hull_y[0..count],
@@ -52,6 +53,7 @@ pub fn childMask(leaves: anytype, px: F, py: F, mode: EdgeFunMode) u8 {
             mode,
         )) mask |= @as(u8, 1) << @as(u3, @intCast(ii));
     }
+
     return mask;
 }
 
@@ -62,5 +64,12 @@ pub fn prepareFourBezierLeaves(
     output: *[4]MultiRootHull.BezierLeaf,
     edge_fun_mode: EdgeFunMode,
 ) void {
-    MultiRootHull.prepareFourBezierLeaves(N, camera, coords, output, edge_fun_mode, prepareEdges);
+    MultiRootHull.prepareFourBezierLeaves(
+        N,
+        camera,
+        coords,
+        output,
+        edge_fun_mode,
+        prepareEdges,
+    );
 }

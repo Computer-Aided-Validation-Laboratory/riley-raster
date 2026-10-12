@@ -35,8 +35,7 @@ const Timestamp = std.Io.Clock.Timestamp;
 const shaderops = @import("shaderops.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
-const hull = @import("hull.zig");
-const MultiRootHull = hull.MultiRootHull;
+const MultiRootHull = @import("multiroothull.zig").MultiRootHull;
 const db = @import("distortbounds.zig");
 
 // --------------------------------------------------------------------------------------
@@ -1450,7 +1449,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .hull_y = try matslice.MatSlice(F).initAlloc(outer_alloc, multi_count, 9),
                 .hull_edges = if (self.multiroot_edge_fun_mode == .pre_calc)
                     try outer_alloc.alloc(
-                        [9]@import("hull_common.zig").HullEdge,
+                        [9]MultiRootHull.HullEdge,
                         multi_count,
                     )
                 else

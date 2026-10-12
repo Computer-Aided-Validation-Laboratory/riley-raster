@@ -223,9 +223,11 @@ solves. The scalar path uses the same hull geometry. Adaptive one-root
 containment skips barycentric seed calculation when the Newton seed mode is
 `centroid`.
 
-Hull code is exposed through `hull.zig` as `AdaptiveHull` and `MultiRootHull`.
-Each path has its own `adaptivehull_*` or `multiroothull_*` common, scalar, and
-SIMD implementation files. The shared `hull_common.zig` contains `HullEdge`.
+Raster code imports `AdaptiveHull` from `adaptivehull.zig` and `MultiRootHull`
+from `multiroothull.zig` directly. Each path has its own `adaptivehull_*` or
+`multiroothull_*` common, scalar, and SIMD implementation files. The shared
+edge-coefficient type lives in `hulledge.zig` and is exposed as
+`MultiRootHull.HullEdge` for prepared multi-root data.
 `MultiRootHull.BezierLeaf` holds a projected hull for one of the four fixed
 Bézier child patches; `AdaptiveHull.Tessellation` belongs only to the adaptive
 one-root path.

@@ -25,9 +25,8 @@ const pce = @import("parachunkexec.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 const geomkerns = @import("geometrykernels.zig");
 const MeshType = geomkerns.MeshType;
-const hull = @import("hull.zig");
-const AdaptiveHull = hull.AdaptiveHull;
-const MultiRootHull = hull.MultiRootHull;
+const AdaptiveHull = @import("adaptivehull.zig").AdaptiveHull;
+const MultiRootHull = @import("multiroothull.zig").MultiRootHull;
 const shaderops = @import("shaderops.zig");
 const db = @import("distortbounds.zig");
 
@@ -274,12 +273,12 @@ pub const RasterContext = struct {
 pub const MultiRootPrepared = struct {
     hull_x: matslice.MatSlice(F),
     hull_y: matslice.MatSlice(F),
-    hull_edges: [][9]@import("hull_common.zig").HullEdge,
+    hull_edges: [][9]MultiRootHull.HullEdge,
     hull_count: vecslice.VecSlice(u8),
     indices: matslice.MatSlice(u8),
     valid_depth: vecslice.VecSlice(u8),
     slot_by_visible_elem: vecslice.VecSlice(u32),
-    leaves: []hull.MultiRootHull.BezierLeaf = &.{},
+    leaves: []MultiRootHull.BezierLeaf = &.{},
 };
 
 //------------------------------------------------------------------------------------------
