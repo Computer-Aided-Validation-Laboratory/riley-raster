@@ -13,7 +13,7 @@ const print = std.debug.print;
 const time = std.time;
 const assert = std.debug.assert;
 
-const Vec3f = @import("vecstack.zig").Vec3f;
+const Vec3F = @import("vecstack.zig").Vec3F;
 const slice = @import("sliceops.zig");
 
 const MatSlice = @import("matslice.zig").MatSlice;
@@ -62,9 +62,9 @@ pub const Coords = struct {
         return self.mat.getSlice(ind);
     }
 
-    pub fn getVec3(self: *const Coords, ind: usize) Vec3f {
+    pub fn getVec3(self: *const Coords, ind: usize) Vec3F {
         const vec_slice = self.mat.getSlice(ind);
-        const vec = Vec3f.initSlice(vec_slice);
+        const vec = Vec3F.initSlice(vec_slice);
         return vec;
     }
 };

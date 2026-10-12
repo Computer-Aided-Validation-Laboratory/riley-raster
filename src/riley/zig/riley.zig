@@ -2100,9 +2100,9 @@ test "ideal sensor bounds are prepared once per camera with effective halo" {
     const base_input = cam.CameraInput{
         .pixels_num = .{ 8, 6 },
         .pixels_size = .{ 0.01, 0.01 },
-        .pos_world = vecstack.Vec3f.initSlice(&.{ 0.0, 0.0, 1.0 }),
+        .pos_world = vecstack.Vec3F.initSlice(&.{ 0.0, 0.0, 1.0 }),
         .rot_world = rotation.Rotation.init(0.0, 0.0, 0.0),
-        .roi_cent_world = vecstack.Vec3f.initZeros(),
+        .roi_cent_world = vecstack.Vec3F.initZeros(),
         .focal_length = 1.0,
         .sub_sample = 2,
     };

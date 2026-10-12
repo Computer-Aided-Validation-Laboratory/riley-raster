@@ -55,10 +55,13 @@ pub fn Tessellation(comptime NT: usize) type {
         ) ?HullResultScalar {
             const tri = self.triangles[tri_idx];
             const eps = tol.hull.scal_inclusion;
+
             const e0 = rops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
             const e1 = rops.edgeFun3(tri.x[1], tri.y[1], tri.x[2], tri.y[2], px, py);
             const e2 = rops.edgeFun3(tri.x[2], tri.y[2], tri.x[0], tri.y[0], px, py);
+
             if (e0 < -eps or e1 < -eps or e2 < -eps) return null;
+
             const area = rops.edgeFun3(
                 tri.x[0],
                 tri.y[0],
@@ -67,11 +70,14 @@ pub fn Tessellation(comptime NT: usize) type {
                 tri.x[2],
                 tri.y[2],
             );
+
             if (!std.math.isFinite(area) or area <= 0.0) return null;
+
             const inv_area = 1.0 / area;
             const w0 = e1 * inv_area;
             const w1 = e2 * inv_area;
             const w2 = e0 * inv_area;
+
             return .{
                 .is_in = true,
                 .seed_xi = w0 * tri.xi[0] + w1 * tri.xi[1] + w2 * tri.xi[2],

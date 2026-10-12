@@ -399,7 +399,7 @@ pub export fn rileyGetLastError(
     return copy_len;
 }
 
-fn cVec3ToVec3(in_vec: CVec3F64) vec.Vec3f {
+fn cVec3ToVec3(in_vec: CVec3F64) vec.Vec3F {
     return vec.initVec3(
         F,
         in_vec.x,
@@ -408,7 +408,7 @@ fn cVec3ToVec3(in_vec: CVec3F64) vec.Vec3f {
     );
 }
 
-fn vec3ToCVec3(in_vec: vec.Vec3f) CVec3F64 {
+fn vec3ToCVec3(in_vec: vec.Vec3F) CVec3F64 {
     return .{
         .x = in_vec.get(0),
         .y = in_vec.get(1),

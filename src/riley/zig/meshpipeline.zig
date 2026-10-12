@@ -36,6 +36,7 @@ const shaderops = @import("shaderops.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
 const hull = @import("hull.zig");
+const MultiRootHull = hull.MultiRootHull;
 const multiroot = @import("multiroothierarchy.zig");
 const db = @import("distortbounds.zig");
 
@@ -1277,7 +1278,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     }
                 }
 
-                const projected_hull = hull.buildMultiRootHullFromClip(
+                const projected_hull = MultiRootHull.buildPointsFromClip(
                     N,
                     stage.camera,
                     coords,

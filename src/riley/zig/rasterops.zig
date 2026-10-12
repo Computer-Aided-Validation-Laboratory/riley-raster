@@ -26,6 +26,8 @@ const scalingpolicy = @import("scalingpolicy.zig");
 const geomkerns = @import("geometrykernels.zig");
 const MeshType = geomkerns.MeshType;
 const hull = @import("hull.zig");
+const AdaptiveHull = hull.AdaptiveHull;
+const MultiRootHull = hull.MultiRootHull;
 const shaderops = @import("shaderops.zig");
 const db = @import("distortbounds.zig");
 
@@ -203,13 +205,13 @@ pub fn calcVisibleDistortBBox(
         const nodes = projectClipToIdealRaster(N, camera, coords);
         const root_class = classifyHighOrdFacing(N, nodes) orelse return null;
         if (root_class == .multi_root) {
-            const points = hull.buildMultiRootHullFromClip(N, camera, coords);
+            const points = MultiRootHull.buildPointsFromClip(N, camera, coords);
             for (0..points.count) |nn| {
                 ideal_bounds.include(points.x[nn], points.y[nn]);
             }
         } else {
             const NH = comptime MT.getNumHullPoints();
-            const points = hull.buildAdaptiveHullPointsFromClip(
+            const points = AdaptiveHull.buildPointsFromClip(
                 N,
                 camera,
                 coords,
@@ -518,7 +520,7 @@ pub fn calcVisibleNodeBBoxHighOrdWithHalo(
         return null;
 
     if (root_class == .multi_root) {
-        const points = hull.buildMultiRootHullFromClip(N, camera, coords_clip);
+        const points = MultiRootHull.buildPointsFromClip(N, camera, coords_clip);
         var bounds = db.DistortBounds.initEmpty();
         for (0..points.count) |nn| {
             bounds.include(points.x[nn], points.y[nn]);
@@ -526,7 +528,7 @@ pub fn calcVisibleNodeBBoxHighOrdWithHalo(
         return calcBBoxFromBounds(camera, elem_idx, bounds, raster_halo_px);
     }
 
-    const hull_points_ideal = hull.buildAdaptiveHullPointsFromClip(
+    const hull_points_ideal = AdaptiveHull.buildPointsFromClip(
         N,
         camera,
         coords_clip,
@@ -633,7 +635,7 @@ pub fn prepareVisibleRasterHullsRange(
             coords_elem.z[nn] = sz[nn];
         }
 
-        const hull_points = hull.buildAdaptiveHullPointsFromClip(
+        const hull_points = AdaptiveHull.buildPointsFromClip(
             N,
             camera,
             coords_elem,
@@ -1419,16 +1421,16 @@ fn initTestCullCameraWithDistort(
     allocator: std.mem.Allocator,
     distort: cam.DistortModel,
 ) !cam.CameraPrepared {
-    const Vec3f = @import("vecstack.zig").Vec3f;
+    const Vec3F = @import("vecstack.zig").Vec3F;
     const Rotation = @import("rotation.zig").Rotation;
     return cam.CameraPrepared.init(
         allocator,
         .{
             .pixels_num = .{ 10, 10 },
             .pixels_size = .{ 0.01, 0.01 },
-            .pos_world = Vec3f.initZeros(),
+            .pos_world = Vec3F.initZeros(),
             .rot_world = Rotation.init(0, 0, 0),
-            .roi_cent_world = Vec3f.initZeros(),
+            .roi_cent_world = Vec3F.initZeros(),
             .focal_length = 1.0,
             .sub_sample = 1,
             .distort = distort.paramsFromModel(),
@@ -1468,23 +1470,23 @@ fn initElemCoords(
 // --------------------------------------------------------------------------------------
 
 fn initTestCullCameraManual(distort: cam.DistortModel) cam.CameraPrepared {
-    const Vec3f = @import("vecstack.zig").Vec3f;
+    const Vec3F = @import("vecstack.zig").Vec3F;
     const Rotation = @import("rotation.zig").Rotation;
-    const Mat44f = @import("matstack.zig").Mat44f;
+    const Mat44F = @import("matstack.zig").Mat44F;
 
     return .{
         .pixels_num = .{ 10, 10 },
         .pixels_size = .{ 0.01, 0.01 },
-        .pos_world = Vec3f.initZeros(),
+        .pos_world = Vec3F.initZeros(),
         .rot_world = Rotation.init(0, 0, 0),
-        .roi_cent_world = Vec3f.initZeros(),
+        .roi_cent_world = Vec3F.initZeros(),
         .focal_length = 1.0,
         .sub_sample = 1,
         .sensor_size = .{ 0.1, 0.1 },
         .image_dims = .{ 0.1, 0.1 },
         .image_dist = 1.0,
-        .cam_to_world_mat = Mat44f.initIdentity(),
-        .world_to_cam_mat = Mat44f.initIdentity(),
+        .cam_to_world_mat = Mat44F.initIdentity(),
+        .world_to_cam_mat = Mat44F.initIdentity(),
         .distort = distort,
         .psf = .{ .pixel_box = .{} },
         .prep_psf = .{},
@@ -2026,7 +2028,7 @@ test "high_order_distorted_hull_shift" {
         .z = .{ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 },
     };
 
-    const hull_points_ideal = hull.buildAdaptiveHullPointsFromClip(
+    const hull_points_ideal = AdaptiveHull.buildPointsFromClip(
         6,
         &camera,
         coords_clip,

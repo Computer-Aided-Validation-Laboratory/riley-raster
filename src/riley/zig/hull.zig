@@ -12,6 +12,7 @@ const impl = if (cfg.simd == .on)
 else
     @import("hull_scalar.zig");
 const simd_impl = @import("hull_simd.zig");
+const hull_common = @import("hull_common.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -22,15 +23,8 @@ pub const HullResultSIMD = simd_impl.HullResultSIMD;
 pub const Tessellation = impl.Tessellation;
 pub const getTessellation = impl.getTessellation;
 
-pub const AdaptiveHullPoints = @import("hull_common.zig").AdaptiveHullPoints;
-pub const buildAdaptiveHullPointsFromClip =
-    @import("hull_common.zig").buildAdaptiveHullPointsFromClip;
-pub const MultiRootHull = @import("hull_common.zig").MultiRootHull;
-pub const buildMultiRootHullFromClip =
-    @import("hull_common.zig").buildMultiRootHullFromClip;
-pub const containsMultiRootHull =
-    @import("hull_common.zig").containsMultiRootHull;
-pub const prepareMultiRootEdgeSlack =
-    @import("hull_common.zig").prepareMultiRootEdgeSlack;
-pub const containsMultiRootHullPrepared =
-    @import("hull_common.zig").containsMultiRootHullPrepared;
+pub const AdaptiveHull = hull_common.AdaptiveHull;
+pub const MultiRootHull = hull_common.MultiRootHull;
+pub const AdaptiveHullPoints = hull_common.AdaptiveHullPoints;
+pub const MultiRootHullPoints = hull_common.MultiRootHullPoints;
+pub const convexifyHullInPlace = hull_common.convexifyHullInPlace;

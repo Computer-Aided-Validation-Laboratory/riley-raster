@@ -12,6 +12,7 @@ const F = buildconfig.F;
 const cam = @import("../riley/zig/camera.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const hull = @import("../riley/zig/hull.zig");
+const MultiRootHull = hull.MultiRootHull;
 const multiroot = @import("../riley/zig/multiroothierarchy.zig");
 const newton = @import("../riley/zig/newton.zig");
 const rasterconfig = @import("../riley/zig/rasterconfig.zig");
@@ -264,7 +265,7 @@ fn solveMultirootPoint(
     px: F,
     py: F,
 ) ?F {
-    const candidate = hull.buildMultiRootHullFromClip(N, camera, coords);
+    const candidate = MultiRootHull.buildPointsFromClip(N, camera, coords);
     if (!candidate.contains(px, py)) return null;
 
     var leaves: [4]multiroot.Leaf = undefined;
@@ -834,7 +835,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     try std.testing.expect(GK.calcInvZ(nodes, near.weights.?) >
         GK.calcInvZ(nodes, far.weights.?));
 
-    const candidate = hull.buildMultiRootHullFromClip(9, &camera, coords);
+    const candidate = MultiRootHull.buildPointsFromClip(9, &camera, coords);
     try std.testing.expect(candidate.contains(50 + 100 * target_x, 50));
 
     try checkControlNearPlane(&camera);
@@ -907,7 +908,7 @@ fn checkFoldedMatrix(
                     rops.RootClass.multi_root,
                     rops.classifyHighOrdFacing(N, projected).?,
                 );
-                const candidate = hull.buildMultiRootHullFromClip(N, camera, coords);
+                const candidate = MultiRootHull.buildPointsFromClip(N, camera, coords);
                 var mutable_coords = coords;
                 const nodes = rops.Vec3Slices(F){
                     .x = &mutable_coords.x,
@@ -973,7 +974,7 @@ fn checkQuadraticSaddle(
                 coords.y[nn] = s * x + c * y;
                 coords.z[nn] = 1 + 0.2 * u;
             }
-            const candidate = hull.buildMultiRootHullFromClip(N, camera, coords);
+            const candidate = MultiRootHull.buildPointsFromClip(N, camera, coords);
             const surface = oracleSurface(N, coords);
             var mutable_coords = coords;
             const nodes = rops.Vec3Slices(F){
@@ -1065,7 +1066,7 @@ fn checkOutwardCurvedMatrix(
                 if (rops.classifyHighOrdFacing(N, projected) != .multi_root) {
                     continue;
                 }
-                const candidate = hull.buildMultiRootHullFromClip(
+                const candidate = MultiRootHull.buildPointsFromClip(
                     N,
                     camera,
                     coords,
@@ -1170,7 +1171,7 @@ fn checkThreeRootMatrix(
                     );
                     const px = 20 * (c - s * polarity) + 50;
                     const py = 20 * (s + c * polarity) + 50;
-                    const candidate = hull.buildMultiRootHullFromClip(
+                    const candidate = MultiRootHull.buildPointsFromClip(
                         8,
                         camera,
                         coords,
@@ -1231,7 +1232,7 @@ fn checkControlNearPlane(camera: *const cam.CameraPrepared) !void {
         coords.y[nn] = -20 * v;
         coords.z[nn] = 0.1 + 0.9 * u * u;
     }
-    const candidate = hull.buildMultiRootHullFromClip(8, camera, coords);
+    const candidate = MultiRootHull.buildPointsFromClip(8, camera, coords);
     for (0..21) |ui| {
         for (0..21) |vi| {
             const u = @as(F, @floatFromInt(ui)) / 10 - 1;
@@ -1255,7 +1256,7 @@ fn checkParentOnlyHierarchyMisses(camera: *const cam.CameraPrepared) !void {
         coords.y[nn] = -100 * v;
         coords.z[nn] = 1 + 0.2 * u;
     }
-    const parent_hull = hull.buildMultiRootHullFromClip(9, camera, coords);
+    const parent_hull = MultiRootHull.buildPointsFromClip(9, camera, coords);
     var leaves: [4]multiroot.Leaf = undefined;
     multiroot.prepareFixed4(9, camera, coords, &leaves);
     var rejected_misses: usize = 0;
@@ -1288,7 +1289,7 @@ fn checkThreeRootQuad8(camera: *const cam.CameraPrepared) !void {
             coords.y[nn] = polarity * -20 * v;
             coords.z[nn] = 1 + 0.2 * u;
         }
-        const candidate = hull.buildMultiRootHullFromClip(8, camera, coords);
+        const candidate = MultiRootHull.buildPointsFromClip(8, camera, coords);
         try std.testing.expect(candidate.contains(50, 50));
     }
 }

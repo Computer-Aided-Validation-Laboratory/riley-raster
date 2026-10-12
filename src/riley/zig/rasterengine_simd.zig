@@ -24,6 +24,7 @@ const tol = cfg.tol;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const hull = @import("hull.zig");
+const MultiRootHull = hull.MultiRootHull;
 const HullResultSIMD = hull.HullResultSIMD;
 const shapefun = @import("shapefun.zig");
 const rops = @import("rasterops.zig");
@@ -761,7 +762,7 @@ fn rasterNewtonMultiSIMDImpl(
     const hx = prepared.hull_x.getSlice(slot)[0..hull_count];
     const hy = prepared.hull_y.getSlice(slot)[0..hull_count];
     var edge_slack: [9]F = undefined;
-    hull.prepareMultiRootEdgeSlack(hx, hy, edge_slack[0..hull_count]);
+    MultiRootHull.prepareEdgeSlack(hx, hy, edge_slack[0..hull_count]);
 
     const leaf_start: usize = slot * 4;
     const leaves = prepared.leaves[leaf_start .. leaf_start + 4];
@@ -804,7 +805,7 @@ fn rasterNewtonMultiSIMDImpl(
             const idx = row + scratch_x;
             const px = ideal_x_plane[idx];
             const py = ideal_y_plane[idx];
-            const has_hit = hull.containsMultiRootHullPrepared(
+            const has_hit = MultiRootHull.containsPrepared(
                 hx,
                 hy,
                 edge_slack[0..hull_count],

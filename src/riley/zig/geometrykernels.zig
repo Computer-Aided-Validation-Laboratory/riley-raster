@@ -34,48 +34,6 @@ pub const TRI_CENTROID_ETA: F = 1.0 / 3.0;
 pub const QUAD_CENTROID_XI: F = 0.0;
 pub const QUAD_CENTROID_ETA: F = 0.0;
 
-pub fn parentNodeCoords(comptime N: usize) [N][2]F {
-    return switch (N) {
-        4 => .{
-            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
-        },
-        6 => .{
-            .{ 0, 0 },   .{ 1, 0 },     .{ 0, 1 },
-            .{ 0.5, 0 }, .{ 0.5, 0.5 }, .{ 0, 0.5 },
-        },
-        8 => .{
-            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
-            .{ 0, -1 },  .{ 1, 0 },  .{ 0, 1 }, .{ -1, 0 },
-        },
-        9 => .{
-            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
-            .{ 0, -1 },  .{ 1, 0 },  .{ 0, 1 }, .{ -1, 0 },
-            .{ 0, 0 },
-        },
-        else => @compileError("parentNodeCoords requires a Newton element"),
-    };
-}
-
-pub fn multiRootSeedCount(comptime N: usize) usize {
-    _ = parentNodeCoords(N);
-    return if (N == 9) 2 * N - 1 else 2 * N + 1;
-}
-
-/// Node IDs precede centroid-to-node midpoint IDs; the virtual centroid is
-/// last. Quad9 already has a center node, so it omits that midpoint and the
-/// virtual centroid.
-pub fn multiRootSeedCoords(comptime N: usize, index: u8) [2]F {
-    const parents = comptime parentNodeCoords(N);
-    const center: F = if (N == 6) 1.0 / 3.0 else 0;
-    std.debug.assert(index < multiRootSeedCount(N));
-    if (index < N) return parents[index];
-    if (index < 2 * N - @as(usize, if (N == 9) 1 else 0)) {
-        const node = parents[index - N];
-        return .{ 0.5 * (center + node[0]), 0.5 * (center + node[1]) };
-    }
-    return .{ center, center };
-}
-
 pub const MeshType = enum(u8) {
     tri3 = 0,
     tri3opt = 1,
@@ -166,6 +124,57 @@ pub const NewtonParams = struct {
     w_v_coeff: F,
     w_const: F,
 };
+
+pub fn parentNodeCoords(comptime N: usize) [N][2]F {
+    return switch (N) {
+        4 => .{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+        },
+        6 => .{
+            .{ 0, 0 },   .{ 1, 0 },     .{ 0, 1 },
+            .{ 0.5, 0 }, .{ 0.5, 0.5 }, .{ 0, 0.5 },
+        },
+        8 => .{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+            .{ 0, -1 },  .{ 1, 0 },  .{ 0, 1 }, .{ -1, 0 },
+        },
+        9 => .{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+            .{ 0, -1 },  .{ 1, 0 },  .{ 0, 1 }, .{ -1, 0 },
+            .{ 0, 0 },
+        },
+        else => @compileError("parentNodeCoords requires a Newton element with 4,6,8,9 nodes"),
+    };
+}
+
+pub fn multiRootSeedCount(comptime N: usize) usize {
+    return switch (N) {
+        4, 6, 8 => 2 * N + 1,
+        9 => 2 * N - 1,
+        else => @compileError("multiRootSeedCount requires 4, 6, 8, or 9 nodes"),
+    };
+}
+
+pub fn multiRootSeedCoords(comptime N: usize, index: u8) [2]F {
+    std.debug.assert(index < multiRootSeedCount(N));
+
+    const parents = comptime parentNodeCoords(N);
+
+    const center: F = if (N == 6) 1.0 / 3.0 else 0;
+
+    if (index < N) return parents[index];
+
+    if (index < 2 * N - @as(usize, if (N == 9) 1 else 0)) {
+        const node = parents[index - N];
+        return .{ 0.5 * (center + node[0]), 0.5 * (center + node[1]) };
+    }
+
+    return .{ center, center };
+}
+
+// --------------------------------------------------------------------------------------
+// Public Geometry Kernels
+// --------------------------------------------------------------------------------------
 
 pub fn Tri3Kernel() type {
     return struct {
@@ -588,7 +597,10 @@ pub fn Quad4Kernel() type {
         pub const coord_space = .clip_px_leng;
         pub const solver_kind = .newton;
 
-        pub inline fn initSeed(seed_mode: rastcfg.NewtonSeedMode, hull_seed: ?NewtonSeed) NewtonSeed {
+        pub inline fn initSeed(
+            seed_mode: rastcfg.NewtonSeedMode,
+            hull_seed: ?NewtonSeed,
+        ) NewtonSeed {
             if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
@@ -640,6 +652,7 @@ pub fn Quad4Kernel() type {
                 eta_seed,
                 &node_vals,
             );
+
             if (comptime cfg.newton_solver_mode == .robust) {
                 if (result.conv) {
                     return .{
@@ -675,6 +688,7 @@ pub fn Quad4Kernel() type {
                     .eta_final = result.eta,
                 };
             }
+
             return .{
                 .weights = null,
                 .iters = result.iters,
@@ -790,7 +804,10 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const coord_space = .clip_px_leng;
         pub const solver_kind = .newton;
 
-        pub inline fn initSeed(seed_mode: rastcfg.NewtonSeedMode, hull_seed: ?NewtonSeed) NewtonSeed {
+        pub inline fn initSeed(
+            seed_mode: rastcfg.NewtonSeedMode,
+            hull_seed: ?NewtonSeed,
+        ) NewtonSeed {
             if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;

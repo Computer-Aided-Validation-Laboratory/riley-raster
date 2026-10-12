@@ -12,6 +12,7 @@ const F = buildconfig.F;
 const cam = @import("camera.zig");
 const gk = @import("geometrykernels.zig");
 const hull = @import("hull.zig");
+const MultiRootHull = hull.MultiRootHull;
 const rops = @import("rasterops.zig");
 const shapefun = @import("shapefun.zig");
 
@@ -26,7 +27,7 @@ pub const Leaf = struct {
     pub fn contains(self: *const @This(), px: F, py: F) bool {
         if (px < self.bbox[0] or px > self.bbox[1] or
             py < self.bbox[2] or py > self.bbox[3]) return false;
-        return hull.containsMultiRootHullPrepared(
+        return MultiRootHull.containsPrepared(
             self.hull_x[0..self.hull_count],
             self.hull_y[0..self.hull_count],
             self.edge_slack[0..self.hull_count],
@@ -112,7 +113,7 @@ fn makeLeaf(
             child.z[ii] += weights[nn] * coords.z[nn];
         }
     }
-    const projected = hull.buildMultiRootHullFromClip(N, camera, child);
+    const projected = MultiRootHull.buildPointsFromClip(N, camera, child);
     var leaf = Leaf{
         .hull_x = projected.x,
         .hull_y = projected.y,
@@ -129,7 +130,7 @@ fn makeLeaf(
         ),
         .hull_count = projected.count,
     };
-    hull.prepareMultiRootEdgeSlack(
+    MultiRootHull.prepareEdgeSlack(
         leaf.hull_x[0..leaf.hull_count],
         leaf.hull_y[0..leaf.hull_count],
         leaf.edge_slack[0..leaf.hull_count],

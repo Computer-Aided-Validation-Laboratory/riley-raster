@@ -156,7 +156,7 @@ pub fn fordMapWorldForMeshType(
 fn worldToCamera(
     camera: *const cam.CameraPrepared,
     world_point: Vec3,
-) vecstack.Vec3f {
+) vecstack.Vec3F {
     return matrix.Mat44Ops.mulVec3(
         F,
         camera.world_to_cam_mat,

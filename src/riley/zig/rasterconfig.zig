@@ -214,11 +214,3 @@ pub const FullStatsOpts = struct {
     save_pixel_occupancy_map: bool = true,
     save_normals_map: bool = false,
 };
-
-test "multiroot default solver mode is fast" {
-    const config = RasterConfig{};
-    try std.testing.expectEqual(
-        MultirootSolverMode.fast,
-        config.advanced.solver.multiroot.mode,
-    );
-}

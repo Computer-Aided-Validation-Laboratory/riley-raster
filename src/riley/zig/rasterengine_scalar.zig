@@ -15,6 +15,7 @@ const CameraPrepared = cam.CameraPrepared;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const hull = @import("hull.zig");
+const MultiRootHull = hull.MultiRootHull;
 const rops = @import("rasterops.zig");
 const ElemBBox = rops.ElemBBox;
 const OverlapBBox = rops.OverlapBBox;
@@ -801,7 +802,7 @@ fn rasterNewtonMultiImpl(
     const hx = prepared.hull_x.getSlice(slot)[0..hull_count];
     const hy = prepared.hull_y.getSlice(slot)[0..hull_count];
     var edge_slack: [9]F = undefined;
-    hull.prepareMultiRootEdgeSlack(hx, hy, edge_slack[0..hull_count]);
+    MultiRootHull.prepareEdgeSlack(hx, hy, edge_slack[0..hull_count]);
     const leaf_offset = @as(usize, slot) * 4;
     const leaves = prepared.leaves[leaf_offset .. leaf_offset + 4];
     const fallback_seed_count = prepared.valid_depth.get(slot);
@@ -836,7 +837,7 @@ fn rasterNewtonMultiImpl(
                 sub_samp,
                 scratch_y,
             );
-            const has_hit = hull.containsMultiRootHullPrepared(
+            const has_hit = MultiRootHull.containsPrepared(
                 hx,
                 hy,
                 edge_slack[0..hull_count],
