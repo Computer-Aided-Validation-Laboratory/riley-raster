@@ -16,7 +16,7 @@ Riley is a high-performance Zig rasteriser for scientific camera simulation and 
 5. **Respect numerical conventions.** Preserve documented coordinates, element ordering, camera/pixel conventions, tolerances, determinism, and supported approximations unless the task explicitly changes them.
 6. **Prefer simple, cohesive code.** Avoid speculative generality, elaborate fallback machinery, and gratuitous single-use helper functions. Keep readable code together when that makes control flow clearer.
 7. **Preserve subsystem boundaries.** Understand existing geometry, distortion, culling/hulls, rasterisation, shading, and render orchestration before changing their interfaces or responsibilities.
-8. **Keep user-facing behaviour stable.** Avoid incidental API changes, dependencies, arbitrary capacity limits, or unrelated refactors.
+8. **API evolution & improvement**: Riley is a young, evolving project. Do not preserve public APIs at the expense of a cleaner, more consistent design. Breaking changes are acceptable and encouraged when justified. Avoid backwards-compatibility shims, deprecated aliases, and legacy code paths. Update all affected call sites, tests, examples, and documentation.
 9. **Verify numerical changes.** Add focused tests and independent references where possible. Exercise relevant element types, camera modes, and edge cases *within supported assumptions*; do not blindly regenerate gold outputs.
 10. **Report evidence.** Run applicable formatting, tests, and benchmarks described in `./dev/`; distinguish measured results from hypotheses and state what was not tested.
 

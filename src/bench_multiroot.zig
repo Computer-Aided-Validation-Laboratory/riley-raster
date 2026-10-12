@@ -34,6 +34,8 @@ const BenchArgs = struct {
     scene: SceneKind = .multi_root,
     flat_scale: F = 1,
     mode: rastcfg.MultirootSolverMode = .fast,
+    one_root_edge_mode: rastcfg.EdgeFunMode = .on_the_fly,
+    multi_root_edge_mode: rastcfg.EdgeFunMode = .on_the_fly,
 };
 
 fn argSlice(arg: anytype) []const u8 {
@@ -78,6 +80,16 @@ fn parseArgs(args: anytype) !BenchArgs {
         } else if (std.mem.eql(u8, key, "--mode")) {
             result.mode = std.meta.stringToEnum(
                 rastcfg.MultirootSolverMode,
+                value,
+            ) orelse return error.InvalidMode;
+        } else if (std.mem.eql(u8, key, "--one-root-edge-mode")) {
+            result.one_root_edge_mode = std.meta.stringToEnum(
+                rastcfg.EdgeFunMode,
+                value,
+            ) orelse return error.InvalidMode;
+        } else if (std.mem.eql(u8, key, "--multi-root-edge-mode")) {
+            result.multi_root_edge_mode = std.meta.stringToEnum(
+                rastcfg.EdgeFunMode,
                 value,
             ) orelse return error.InvalidMode;
         } else {
@@ -317,8 +329,10 @@ pub fn main(init: std.process.Init) !void {
         .report = .{ .mode = .bench },
         .advanced = .{
             .solver = .{
+                .oneroot = .{ .edge_fun_mode = args.one_root_edge_mode },
                 .multiroot = .{
                     .mode = args.mode,
+                    .edge_fun_mode = args.multi_root_edge_mode,
                 },
             },
         },
@@ -331,7 +345,7 @@ pub fn main(init: std.process.Init) !void {
     var buffered = file.writer(io, &write_buf);
     const writer = &buffered.interface;
     try writer.writeAll(
-        "scene,flat_scale,mode,run,elements,width,height,sub_sample," ++
+        "scene,flat_scale,mode,one_root_edge_mode,multi_root_edge_mode,run,elements,width,height,sub_sample," ++
             "visible,shaded,solver_calls,solver_iters,solver_diverged," ++
             "geometry_ms,prepare_ms,raster_ms,active_ms,e2e_ms," ++
             "melems_s,mpx_s\n",
@@ -362,13 +376,15 @@ pub fn main(init: std.process.Init) !void {
             @as(F, @floatFromInt(args.height)) / 1e6;
         const seconds = e2e_ms / 1e3;
         try writer.print(
-            "{s},{d:.6},{s},{d},{d},{d},{d},{d}," ++
+            "{s},{d:.6},{s},{s},{s},{d},{d},{d},{d},{d}," ++
                 "{d},{d},{d},{d},{d},{d:.6},{d:.6},{d:.6}," ++
                 "{d:.6},{d:.6},{d:.6},{d:.6}\n",
             .{
                 @tagName(args.scene),
                 args.flat_scale,
                 @tagName(args.mode),
+                @tagName(args.one_root_edge_mode),
+                @tagName(args.multi_root_edge_mode),
                 rr - args.warmup,
                 meshes.len * args.elements_per_type,
                 args.width,

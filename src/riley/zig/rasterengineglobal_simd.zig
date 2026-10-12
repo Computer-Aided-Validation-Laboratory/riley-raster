@@ -26,7 +26,7 @@ const GlobalSubpxScratchBuffs = struct {
     filter_tmp: @import("matslice.zig").MatSlice(F),
     simd_chunks: []backend.SubpxSimdChunk,
     multi_root_candidate_indices: []u32,
-    multi_root_child_masks: []u64,
+    multi_root_child_masks: []u8,
     mask: []align(64) bool,
     xi: []align(64) F,
     eta: []align(64) F,

@@ -16,6 +16,7 @@ const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const hull = @import("hull.zig");
 const MultiRootHull = hull.MultiRootHull;
+const AdaptiveHull = hull.AdaptiveHull;
 const rops = @import("rasterops.zig");
 const ElemBBox = rops.ElemBBox;
 const OverlapBBox = rops.OverlapBBox;
@@ -428,7 +429,7 @@ fn rasterNewtonImpl(
         nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
     }
 
-    var elem_tess: hull.Tessellation(Geom.tess_triangles_num) = undefined;
+    var elem_tess: AdaptiveHull.Tessellation(Geom.tess_triangles_num) = undefined;
     if (comptime Geom.hull_nodes_num > 0) {
         if (raster_hull) |rh| {
             const hx = rh.getSlice(
@@ -439,13 +440,15 @@ fn rasterNewtonImpl(
                 &[_]usize{ overlap.elem_idx, 1, 0 },
                 1,
             );
-            elem_tess = hull.getTessellation(
+            elem_tess = AdaptiveHull.makeTessellation(
                 N,
                 Geom.hull_nodes_num,
                 Geom.tess_triangles_num,
                 hx,
                 hy,
             );
+            if (ctx_rast.config.advanced.solver.oneroot.edge_fun_mode == .pre_calc)
+                elem_tess.prepareEdges();
         }
     }
 
@@ -479,23 +482,27 @@ fn rasterNewtonImpl(
             var hull_seed: ?newton.NewtonSeed = null;
             if (comptime Geom.hull_nodes_num > 0) {
                 ctx_report.recordTessChecks(1);
-                const tess_res = elem_tess.isInScalar(ideal_x_pix, ideal_y_pix);
-                if (tess_res.is_in) {
+                const seed_mode = ctx_rast.config.advanced.solver.oneroot.newton_seed_mode;
+                const edge_mode = ctx_rast.config.advanced.solver.oneroot.edge_fun_mode;
+                const is_in = if (seed_mode == .hull) blk: {
+                    const tess_res = elem_tess.isInScalar(ideal_x_pix, ideal_y_pix, edge_mode);
+                    if (tess_res.is_in) {
+                        hull_seed = .{ .xi = tess_res.seed_xi, .eta = tess_res.seed_eta };
+                    }
+                    break :blk tess_res.is_in;
+                } else elem_tess.containsScalar(ideal_x_pix, ideal_y_pix, edge_mode);
+                if (is_in) {
                     ctx_report.recordTessPasses(1);
-                    hull_seed = .{
-                        .xi = tess_res.seed_xi,
-                        .eta = tess_res.seed_eta,
-                    };
                 }
                 if (comptime report_mode == .full_stats) {
                     rasterreport.recordEarlyOut(
                         ctx_report,
                         global_subx,
                         global_suby,
-                        tess_res.is_in,
+                        is_in,
                     );
                 }
-                if (!tess_res.is_in) continue;
+                if (!is_in) continue;
             } else {
                 if (comptime report_mode == .full_stats) {
                     rasterreport.recordEarlyOut(
@@ -801,8 +808,10 @@ fn rasterNewtonMultiImpl(
     const hull_count = prepared.hull_count.get(slot);
     const hx = prepared.hull_x.getSlice(slot)[0..hull_count];
     const hy = prepared.hull_y.getSlice(slot)[0..hull_count];
+    const edge_fun_mode = ctx_rast.config.advanced.solver.multiroot.edge_fun_mode;
     var edge_slack: [9]F = undefined;
-    MultiRootHull.prepareEdgeSlack(hx, hy, edge_slack[0..hull_count]);
+    if (edge_fun_mode == .on_the_fly)
+        MultiRootHull.prepareEdgeSlack(hx, hy, edge_slack[0..hull_count]);
     const leaf_offset = @as(usize, slot) * 4;
     const leaves = prepared.leaves[leaf_offset .. leaf_offset + 4];
     const fallback_seed_count = prepared.valid_depth.get(slot);
@@ -837,12 +846,18 @@ fn rasterNewtonMultiImpl(
                 sub_samp,
                 scratch_y,
             );
-            const has_hit = MultiRootHull.containsPrepared(
+            const edges: []const hull.HullEdge = if (edge_fun_mode == .pre_calc)
+                prepared.hull_edges[slot][0..hull_count]
+            else
+                &.{};
+            const has_hit = MultiRootHull.containsOuter(
                 hx,
                 hy,
+                edges,
                 edge_slack[0..hull_count],
                 ideal_x,
                 ideal_y,
+                edge_fun_mode,
             );
             if (!has_hit) {
                 if (comptime report_mode == .full_stats) {
@@ -862,8 +877,9 @@ fn rasterNewtonMultiImpl(
             var best_eta: F = 0;
             var had_candidate_child = false;
 
-            for (leaves) |*leaf| {
-                if (!leaf.contains(ideal_x, ideal_y)) continue;
+            const child_mask = MultiRootHull.childMask(leaves, ideal_x, ideal_y, edge_fun_mode);
+            for (leaves, 0..) |leaf, leaf_idx| {
+                if ((child_mask & (@as(u8, 1) << @as(u3, @intCast(leaf_idx)))) == 0) continue;
                 had_candidate_child = true;
                 if (solveMultiRootSeedScal(
                     Geom,
@@ -874,7 +890,7 @@ fn rasterNewtonMultiImpl(
                     ideal_y,
                     subpx_dom.x_off,
                     subpx_dom.y_off,
-                    leaf.seed,
+                    leaf.parameter_seed,
                 )) |hit| {
                     if (hit.inv_z > best_inv_z) {
                         best_inv_z = hit.inv_z;

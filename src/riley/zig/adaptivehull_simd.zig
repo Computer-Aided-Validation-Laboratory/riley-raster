@@ -10,33 +10,26 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
-const VecSB = buildconfig.VecSB;
-const VecSF = buildconfig.VecSF;
 const tol = cfg.tol;
 const rops = @import("rasterops.zig");
+const HullEdge = @import("hull_common.zig").HullEdge;
+const EdgeFunMode = @import("rasterconfig.zig").EdgeFunMode;
+const VecSB = buildconfig.VecSB;
+const VecSF = buildconfig.VecSF;
 const S = cfg.simd_vec_width;
 
-// --------------------------------------------------------------------------------------
-// Public Constants & Public Types
-// --------------------------------------------------------------------------------------
-
-pub const TessTriangle = struct {
+const Triangle = struct {
     x: [3]F,
     y: [3]F,
     xi: [3]F,
     eta: [3]F,
+    edges: [3]HullEdge = undefined,
 };
 
-pub const HullResultSIMD = struct {
+pub const CandidateSIMD = struct {
     v_is_in: VecSB,
     v_seed_xi: VecSF,
     v_seed_eta: VecSF,
-};
-
-pub const HullResultScalar = struct {
-    is_in: bool,
-    seed_xi: F,
-    seed_eta: F,
 };
 
 // --------------------------------------------------------------------------------------
@@ -45,84 +38,48 @@ pub const HullResultScalar = struct {
 
 pub fn Tessellation(comptime NT: usize) type {
     return struct {
-        triangles: [NT]TessTriangle,
+        triangles: [NT]Triangle,
 
-        pub inline fn hitAt(
-            self: @This(),
-            tri_idx: usize,
-            px: F,
-            py: F,
-        ) ?HullResultScalar {
-            const tri = self.triangles[tri_idx];
-            const eps = tol.hull.scal_inclusion;
-
-            const e0 = rops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
-            const e1 = rops.edgeFun3(tri.x[1], tri.y[1], tri.x[2], tri.y[2], px, py);
-            const e2 = rops.edgeFun3(tri.x[2], tri.y[2], tri.x[0], tri.y[0], px, py);
-
-            if (e0 < -eps or e1 < -eps or e2 < -eps) return null;
-
-            const area = rops.edgeFun3(
-                tri.x[0],
-                tri.y[0],
-                tri.x[1],
-                tri.y[1],
-                tri.x[2],
-                tri.y[2],
-            );
-
-            if (!std.math.isFinite(area) or area <= 0.0) return null;
-
-            const inv_area = 1.0 / area;
-            const w0 = e1 * inv_area;
-            const w1 = e2 * inv_area;
-            const w2 = e0 * inv_area;
-
-            return .{
-                .is_in = true,
-                .seed_xi = w0 * tri.xi[0] + w1 * tri.xi[1] + w2 * tri.xi[2],
-                .seed_eta = w0 * tri.eta[0] + w1 * tri.eta[1] + w2 * tri.eta[2],
-            };
-        }
-
-        pub inline fn isInScalar(self: @This(), px: F, py: F) HullResultScalar {
-            const eps = tol.hull.scal_inclusion;
-            inline for (self.triangles) |tri| {
-                const e0 = rops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
-                const e1 = rops.edgeFun3(tri.x[1], tri.y[1], tri.x[2], tri.y[2], px, py);
-                const e2 = rops.edgeFun3(tri.x[2], tri.y[2], tri.x[0], tri.y[0], px, py);
-                if (e0 >= -eps and e1 >= -eps and e2 >= -eps) {
-                    const area = rops.edgeFun3(
-                        tri.x[0],
-                        tri.y[0],
-                        tri.x[1],
-                        tri.y[1],
-                        tri.x[2],
-                        tri.y[2],
+        pub fn prepareEdges(self: *@This()) void {
+            for (&self.triangles) |*tri| {
+                for (0..3) |ii| {
+                    const jj = (ii + 1) % 3;
+                    tri.edges[ii] = HullEdge.init(
+                        tri.x[ii],
+                        tri.y[ii],
+                        tri.x[jj],
+                        tri.y[jj],
+                        tol.hull.simd_inclusion,
                     );
-                    const inv_area = 1.0 / area;
-                    const w0 = e1 * inv_area;
-                    const w1 = e2 * inv_area;
-                    const w2 = e0 * inv_area;
-                    return .{
-                        .is_in = true,
-                        .seed_xi = w0 * tri.xi[0] + w1 * tri.xi[1] + w2 * tri.xi[2],
-                        .seed_eta = w0 * tri.eta[0] + w1 * tri.eta[1] + w2 * tri.eta[2],
-                    };
                 }
             }
-            return .{
-                .is_in = false,
-                .seed_xi = 0.0,
-                .seed_eta = 0.0,
-            };
         }
 
         pub inline fn isInSIMD(
             self: @This(),
             v_px: VecSF,
             v_py: VecSF,
-        ) HullResultSIMD {
+            mode: EdgeFunMode,
+        ) CandidateSIMD {
+            return self.evaluateSIMD(v_px, v_py, mode, true);
+        }
+
+        pub inline fn containsSIMD(
+            self: @This(),
+            v_px: VecSF,
+            v_py: VecSF,
+            mode: EdgeFunMode,
+        ) VecSB {
+            return self.evaluateSIMD(v_px, v_py, mode, false).v_is_in;
+        }
+
+        inline fn evaluateSIMD(
+            self: @This(),
+            v_px: VecSF,
+            v_py: VecSF,
+            mode: EdgeFunMode,
+            comptime with_seed: bool,
+        ) CandidateSIMD {
             const eps = tol.hull.simd_inclusion;
 
             const v_m_eps: VecSF = @splat(-eps);
@@ -131,36 +88,49 @@ pub fn Tessellation(comptime NT: usize) type {
             var v_seed_eta: VecSF = @splat(0.0);
 
             inline for (self.triangles) |tri| {
-                const v_e0 = rops.edgeFun3SIMD(
-                    tri.x[0],
-                    tri.y[0],
-                    tri.x[1],
-                    tri.y[1],
-                    v_px,
-                    v_py,
-                );
-                const v_e1 = rops.edgeFun3SIMD(
-                    tri.x[1],
-                    tri.y[1],
-                    tri.x[2],
-                    tri.y[2],
-                    v_px,
-                    v_py,
-                );
-                const v_e2 = rops.edgeFun3SIMD(
-                    tri.x[2],
-                    tri.y[2],
-                    tri.x[0],
-                    tri.y[0],
-                    v_px,
-                    v_py,
-                );
+                const v_test0: VecSF = if (mode == .pre_calc) blk: {
+                    const a0: VecSF = @splat(tri.edges[0].a);
+                    const b0: VecSF = @splat(tri.edges[0].b);
+                    const c0: VecSF = @splat(tri.edges[0].c);
+                    break :blk a0 * v_px + b0 * v_py + c0;
+                } else rops.edgeFun3SIMD(tri.x[0], tri.y[0], tri.x[1], tri.y[1], v_px, v_py);
 
-                const v_in_tri = (v_e0 >= v_m_eps) &
-                    (v_e1 >= v_m_eps) &
-                    (v_e2 >= v_m_eps);
+                const v_test1: VecSF = if (mode == .pre_calc) blk: {
+                    const a1: VecSF = @splat(tri.edges[1].a);
+                    const b1: VecSF = @splat(tri.edges[1].b);
+                    const c1: VecSF = @splat(tri.edges[1].c);
+                    break :blk a1 * v_px + b1 * v_py + c1;
+                } else rops.edgeFun3SIMD(tri.x[1], tri.y[1], tri.x[2], tri.y[2], v_px, v_py);
 
-                if (@reduce(.Or, v_in_tri)) {
+                const v_test2: VecSF = if (mode == .pre_calc) blk: {
+                    const a2: VecSF = @splat(tri.edges[2].a);
+                    const b2: VecSF = @splat(tri.edges[2].b);
+                    const c2: VecSF = @splat(tri.edges[2].c);
+                    break :blk a2 * v_px + b2 * v_py + c2;
+                } else rops.edgeFun3SIMD(tri.x[2], tri.y[2], tri.x[0], tri.y[0], v_px, v_py);
+
+                const threshold: VecSF = if (mode == .pre_calc) @splat(0) else v_m_eps;
+
+                const v_in_tri = (v_test0 >= threshold) &
+                    (v_test1 >= threshold) &
+                    (v_test2 >= threshold);
+
+                if (with_seed and @reduce(.Or, v_in_tri)) {
+                    const v_e0 = if (mode == .pre_calc)
+                        rops.edgeFun3SIMD(tri.x[0], tri.y[0], tri.x[1], tri.y[1], v_px, v_py)
+                    else
+                        v_test0;
+
+                    const v_e1 = if (mode == .pre_calc)
+                        rops.edgeFun3SIMD(tri.x[1], tri.y[1], tri.x[2], tri.y[2], v_px, v_py)
+                    else
+                        v_test1;
+
+                    const v_e2 = if (mode == .pre_calc)
+                        rops.edgeFun3SIMD(tri.x[2], tri.y[2], tri.x[0], tri.y[0], v_px, v_py)
+                    else
+                        v_test2;
+
                     const area = rops.edgeFun3(
                         tri.x[0],
                         tri.y[0],
@@ -189,9 +159,8 @@ pub fn Tessellation(comptime NT: usize) type {
 
                     v_seed_xi = @select(F, v_in_tri, v_curr_xi, v_seed_xi);
                     v_seed_eta = @select(F, v_in_tri, v_curr_eta, v_seed_eta);
-
-                    v_is_in = v_is_in | v_in_tri;
                 }
+                v_is_in = v_is_in | v_in_tri;
             }
             return .{
                 .v_is_in = v_is_in,
@@ -202,7 +171,7 @@ pub fn Tessellation(comptime NT: usize) type {
     };
 }
 
-pub fn getTessellation(
+pub fn makeTessellation(
     comptime N: usize,
     comptime NH: usize,
     comptime NT: usize,
@@ -265,4 +234,22 @@ pub fn getTessellation(
     }
 
     return tess;
+}
+
+test "prepared tessellation edges preserve SIMD containment" {
+    const x = [_]F{ 4, 4, 80, 80 };
+    const y = [_]F{ 4, 80, 80, 4 };
+    var tess = makeTessellation(4, 4, 2, &x, &y);
+    tess.prepareEdges();
+    for (0..100) |yy| {
+        const py: VecSF = @splat(@as(F, @floatFromInt(yy)) + 0.5);
+        for (0..100) |xx| {
+            const px: VecSF = @splat(@as(F, @floatFromInt(xx)) + 0.5);
+            const old = tess.isInSIMD(px, py, .on_the_fly);
+            const new = tess.isInSIMD(px, py, .pre_calc);
+            try std.testing.expectEqualDeep(old.v_is_in, new.v_is_in);
+            try std.testing.expectEqualDeep(old.v_is_in, tess.containsSIMD(px, py, .on_the_fly));
+            try std.testing.expectEqualDeep(new.v_is_in, tess.containsSIMD(px, py, .pre_calc));
+        }
+    }
 }

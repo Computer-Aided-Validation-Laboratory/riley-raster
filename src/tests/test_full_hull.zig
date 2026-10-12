@@ -486,6 +486,25 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
             }
         }
     }
+
+    var prepared_config = config;
+    prepared_config.advanced.solver.oneroot.edge_fun_mode = .pre_calc;
+    for (newton_mesh_types) |mesh_type| {
+        try runOneElemHullCaseTest(
+            allocator,
+            io,
+            "distort_rot",
+            mesh_type,
+            false,
+            fullcase_hull.hull_status_cases[0],
+            fullcase_hull.hull_psf_cases[0],
+            fullcase_hull.newton_seed_cases[0],
+            gold_dir_root,
+            data_dir_root,
+            prepared_config,
+            false,
+        );
+    }
 }
 
 /// Preserve the legacy full-hull outputs for malformed FE mappings without

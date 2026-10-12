@@ -25,7 +25,8 @@ const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const hull = @import("hull.zig");
 const MultiRootHull = hull.MultiRootHull;
-const HullResultSIMD = hull.HullResultSIMD;
+const AdaptiveHull = hull.AdaptiveHull;
+const AdaptiveCandidateSIMD = AdaptiveHull.CandidateSIMD;
 const shapefun = @import("shapefun.zig");
 const rops = @import("rasterops.zig");
 const ElemBBox = rops.ElemBBox;
@@ -62,7 +63,7 @@ pub const SubpxScratchBuffs = struct {
     filter_tmp: MatSlice(F),
     simd_chunks: []SubpxSimdChunk,
     multi_root_candidate_indices: []u32,
-    multi_root_child_masks: []u64,
+    multi_root_child_masks: []u8,
     mask: []align(64) bool,
     xi: []align(64) F,
     eta: []align(64) F,
@@ -170,7 +171,7 @@ pub fn initSubpxScratch(
             subpx_tile_total_padded,
         ),
         .multi_root_child_masks = try arena_alloc.alloc(
-            u64,
+            u8,
             subpx_tile_total_padded,
         ),
         .mask = subpx_mask_scratch,
@@ -630,7 +631,6 @@ fn rasterDirectSIMDImpl(
     return shaded_px;
 }
 
-
 fn flushMultiRootChunk(
     comptime ScratchBuffs: type,
     comptime Geom: type,
@@ -761,8 +761,10 @@ fn rasterNewtonMultiSIMDImpl(
     const hull_count = prepared.hull_count.get(slot);
     const hx = prepared.hull_x.getSlice(slot)[0..hull_count];
     const hy = prepared.hull_y.getSlice(slot)[0..hull_count];
+    const edge_fun_mode = ctx_rast.config.advanced.solver.multiroot.edge_fun_mode;
     var edge_slack: [9]F = undefined;
-    MultiRootHull.prepareEdgeSlack(hx, hy, edge_slack[0..hull_count]);
+    if (edge_fun_mode == .on_the_fly)
+        MultiRootHull.prepareEdgeSlack(hx, hy, edge_slack[0..hull_count]);
 
     const leaf_start: usize = slot * 4;
     const leaves = prepared.leaves[leaf_start .. leaf_start + 4];
@@ -781,9 +783,7 @@ fn rasterNewtonMultiSIMDImpl(
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
         const row = scratch_y * subpx_dom.tile_size;
         @memset(
-            subpx_scratch.mask[
-                row + rast_bounds.start_x_u .. row + rast_bounds.end_x_u
-            ],
+            subpx_scratch.mask[row + rast_bounds.start_x_u .. row + rast_bounds.end_x_u],
             false,
         );
     }
@@ -799,44 +799,57 @@ fn rasterNewtonMultiSIMDImpl(
     };
     var candidates_count: usize = 0;
 
+    const outer_edges: []const hull.HullEdge = if (edge_fun_mode == .pre_calc)
+        prepared.hull_edges[slot][0..hull_count]
+    else
+        &.{};
+    const v_lane_idx: VecSU = std.simd.iota(usize, S);
+    const v_end_x: VecSU = @splat(rast_bounds.end_x_u);
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
         const row = scratch_y * subpx_dom.tile_size;
-        for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x| {
+        var scratch_x = rast_bounds.start_x_u;
+        while (scratch_x < rast_bounds.end_x_u) : (scratch_x += S) {
             const idx = row + scratch_x;
-            const px = ideal_x_plane[idx];
-            const py = ideal_y_plane[idx];
-            const has_hit = MultiRootHull.containsPrepared(
+            const valid = @as(VecSU, @splat(scratch_x)) + v_lane_idx < v_end_x;
+            const v_px = simdops.loadVecSF(ideal_x_plane, idx);
+            const v_py = simdops.loadVecSF(ideal_y_plane, idx);
+            const outer_mask = MultiRootHull.containsOuterSIMD(
                 hx,
                 hy,
+                outer_edges,
                 edge_slack[0..hull_count],
-                px,
-                py,
+                v_px,
+                v_py,
+                valid,
+                edge_fun_mode,
             );
-            if (has_hit) {
-                var mask: u64 = 0;
-                for (leaves, 0..) |*leaf, leaf_idx| {
-                    if (leaf.contains(px, py)) {
-                        mask |= @as(u64, 1) << @as(u6, @intCast(leaf_idx));
-                    }
-                }
-                if (mask != 0) {
-                    subpx_scratch.multi_root_child_masks[idx] = mask;
-                    subpx_scratch.multi_root_candidate_indices[
-                        candidates_count
-                    ] = @intCast(idx);
+            const child_masks = MultiRootHull.childMasksSIMD(
+                leaves,
+                v_px,
+                v_py,
+                outer_mask,
+                edge_fun_mode,
+            );
+            const valid_arr: [S]bool = valid;
+            const outer_arr: [S]bool = outer_mask;
+            for (0..S) |lane| {
+                if (!valid_arr[lane]) continue;
+                const sample_idx = idx + lane;
+                if (child_masks[lane] != 0) {
+                    subpx_scratch.multi_root_child_masks[sample_idx] = child_masks[lane];
+                    subpx_scratch.multi_root_candidate_indices[candidates_count] =
+                        @intCast(sample_idx);
                     candidates_count += 1;
                 }
+                ctx_report.recordTessChecks(1);
+                if (outer_arr[lane]) ctx_report.recordTessPasses(1);
             }
-            ctx_report.recordTessChecks(1);
-            if (has_hit) ctx_report.recordTessPasses(1);
         }
     }
 
     for (leaves, 0..) |leaf, leaf_idx| {
-        const bit = @as(u64, 1) << @as(u6, @intCast(leaf_idx));
-        for (
-            subpx_scratch.multi_root_candidate_indices[0..candidates_count]
-        ) |idx_u32| {
+        const bit = @as(u8, 1) << @as(u3, @intCast(leaf_idx));
+        for (subpx_scratch.multi_root_candidate_indices[0..candidates_count]) |idx_u32| {
             const idx: usize = idx_u32;
             if ((subpx_scratch.multi_root_child_masks[idx] & bit) == 0) {
                 continue;
@@ -846,8 +859,8 @@ fn rasterNewtonMultiSIMDImpl(
             chunk.scratch_y_u[ll] = idx / subpx_dom.tile_size;
             chunk.px_f[ll] = ideal_x_plane[idx];
             chunk.py_f[ll] = ideal_y_plane[idx];
-            chunk.seed_xi[ll] = leaf.seed[0];
-            chunk.seed_eta[ll] = leaf.seed[1];
+            chunk.seed_xi[ll] = leaf.parameter_seed[0];
+            chunk.seed_eta[ll] = leaf.parameter_seed[1];
             chunk.count += 1;
             if (chunk.count == S) flushMultiRootChunk(
                 ScratchBuffs,
@@ -874,9 +887,7 @@ fn rasterNewtonMultiSIMDImpl(
 
     if (ctx_rast.config.advanced.solver.multiroot.mode == .robust) {
         var unresolved_count: usize = 0;
-        for (
-            subpx_scratch.multi_root_candidate_indices[0..candidates_count]
-        ) |idx_u32| {
+        for (subpx_scratch.multi_root_candidate_indices[0..candidates_count]) |idx_u32| {
             const idx: usize = idx_u32;
             if (!subpx_scratch.mask[idx]) {
                 subpx_scratch.multi_root_candidate_indices[
@@ -892,11 +903,7 @@ fn rasterNewtonMultiSIMDImpl(
             )[0..seed_count];
             for (fallback_seeds) |seed_idx| {
                 const seed = geomkerns.multiRootSeedCoords(N, seed_idx);
-                for (
-                    subpx_scratch.multi_root_candidate_indices[
-                        0..unresolved_count
-                    ]
-                ) |idx_u32| {
+                for (subpx_scratch.multi_root_candidate_indices[0..unresolved_count]) |idx_u32| {
                     const idx: usize = idx_u32;
                     const scratch_x = idx % subpx_dom.tile_size;
                     const scratch_y = idx / subpx_dom.tile_size;
@@ -1030,6 +1037,20 @@ fn rasterNewtonSIMDImpl(
     }
 
     const maybe_raster_hull = raster_hull;
+    var elem_tess: AdaptiveHull.Tessellation(Geom.tess_triangles_num) = undefined;
+    if (maybe_raster_hull) |rh| {
+        const hx = rh.getSlice(&[_]usize{ overlap.elem_idx, 0, 0 }, 1);
+        const hy = rh.getSlice(&[_]usize{ overlap.elem_idx, 1, 0 }, 1);
+        elem_tess = AdaptiveHull.makeTessellation(
+            N,
+            Geom.hull_nodes_num,
+            Geom.tess_triangles_num,
+            hx,
+            hy,
+        );
+        if (ctx_rast.config.advanced.solver.oneroot.edge_fun_mode == .pre_calc)
+            elem_tess.prepareEdges();
+    }
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
         const row_offset = scratch_y_u * subpx_dom.tile_size;
         const mask_start = row_offset + rast_bounds.start_x_u;
@@ -1067,29 +1088,28 @@ fn rasterNewtonSIMDImpl(
             var xi_arr = [_]F{0.0} ** S;
             var eta_arr = [_]F{0.0} ** S;
 
-            if (maybe_raster_hull) |rh| {
-                const hx = rh.getSlice(&[_]usize{ overlap.elem_idx, 0, 0 }, 1);
-                const hy = rh.getSlice(&[_]usize{ overlap.elem_idx, 1, 0 }, 1);
-                const elem_tess = hull.getTessellation(
-                    N,
-                    Geom.hull_nodes_num,
-                    Geom.tess_triangles_num,
-                    hx,
-                    hy,
-                );
-                const v_hull_res: HullResultSIMD = elem_tess.isInSIMD(
-                    v_ideal_x_pix,
-                    v_ideal_y_pix,
-                );
-                const init_seed = Geom.initSeedSIMD(
-                    ctx_rast.config.advanced.solver.oneroot.newton_seed_mode,
-                    .{
-                        .v_xi = v_hull_res.v_seed_xi,
-                        .v_eta = v_hull_res.v_seed_eta,
-                    },
-                );
-                xi_arr = init_seed.v_xi;
-                eta_arr = init_seed.v_eta;
+            if (maybe_raster_hull != null) {
+                const seed_mode = ctx_rast.config.advanced.solver.oneroot.newton_seed_mode;
+                const edge_mode = ctx_rast.config.advanced.solver.oneroot.edge_fun_mode;
+                const v_hull_in = if (seed_mode == .hull) blk: {
+                    const v_hull_res: AdaptiveCandidateSIMD = elem_tess.isInSIMD(
+                        v_ideal_x_pix,
+                        v_ideal_y_pix,
+                        edge_mode,
+                    );
+                    xi_arr = v_hull_res.v_seed_xi;
+                    eta_arr = v_hull_res.v_seed_eta;
+                    break :blk v_hull_res.v_is_in;
+                } else blk: {
+                    const init_seed = Geom.initSeedSIMD(seed_mode, null);
+                    xi_arr = init_seed.v_xi;
+                    eta_arr = init_seed.v_eta;
+                    break :blk elem_tess.containsSIMD(
+                        v_ideal_x_pix,
+                        v_ideal_y_pix,
+                        edge_mode,
+                    );
+                };
 
                 const v_mask_one_u8: VecSU8 = @splat(1);
                 const v_mask_zero_u8: VecSU8 = @splat(0);
@@ -1101,7 +1121,7 @@ fn rasterNewtonSIMDImpl(
                 );
                 ctx_report.recordTessChecks(@intCast(@reduce(.Add, v_tess_check_u8)));
 
-                v_mask_active = v_x_mask & v_hull_res.v_is_in;
+                v_mask_active = v_x_mask & v_hull_in;
                 const v_tess_pass_u8 = @select(
                     u8,
                     v_mask_active,

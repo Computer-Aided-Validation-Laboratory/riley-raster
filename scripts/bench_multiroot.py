@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Compare multi-root policies (.fast and .robust) with flat baseline.
+"""Compare multi-root policies and prepared edge functions on SIMD.
 
 Defaults: 96 elements, 512x512 pixels, 1x1 subsampling. --typical selects
 1000 elements, 1024x1024 pixels, and 2x2 subsampling. Summary CSV includes
 timings, throughput, solver metrics, and end-to-end ratios to the one-root
-baseline.
+baseline. Experiment3 sweeps both edge modes for both scenes and varies
+subsampling to expose preparation/containment crossover behaviour.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import argparse
 import csv
 import datetime as dt
 import math
+import itertools
 import pathlib
 import shlex
 import statistics
@@ -83,6 +85,9 @@ def run_case(
     flat_scale: float = 1.0,
     runs: int | None = None,
     warmup: int | None = None,
+    one_root_edge_mode: str = "on_the_fly",
+    multi_root_edge_mode: str = "on_the_fly",
+    sub_sample: int | None = None,
 ) -> list[dict[str, str]]:
     exe = ROOT / "zig-out" / "bin" / f"bench_multiroot_f64_{backend}"
     case_dir = args.out_dir / name
@@ -97,7 +102,7 @@ def run_case(
         "--height",
         str(args.height),
         "--sub-sample",
-        str(args.sub_sample),
+        str(args.sub_sample if sub_sample is None else sub_sample),
         "--runs",
         str(args.runs if runs is None else runs),
         "--warmup",
@@ -106,6 +111,10 @@ def run_case(
         str(args.threads),
         "--mode",
         mode,
+        "--one-root-edge-mode",
+        one_root_edge_mode,
+        "--multi-root-edge-mode",
+        multi_root_edge_mode,
         "--scene",
         scene,
         "--flat-scale",
@@ -139,7 +148,7 @@ def match_flat_shading(args: argparse.Namespace, target: int) -> float:
     for attempt in range(10):
         rows = run_case(
             args,
-            "scalar",
+            "simd",
             f"calibrate_flat_{attempt}",
             mode="fast",
             scene="one_root",
@@ -170,7 +179,7 @@ def main() -> None:
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     args.out_dir = args.out_root / timestamp
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    backends = ("scalar", "simd")
+    backends = ("simd",)
     if not args.skip_build:
         for backend in backends:
             subprocess.run(
@@ -196,7 +205,7 @@ def main() -> None:
 
     reference = next(
         row for row in raw_rows
-        if row["backend"] == "scalar" and row["mode"] == "fast"
+        if row["backend"] == "simd" and row["mode"] == "fast"
     )
     target_shaded = int(reference["shaded"])
     if target_shaded == 0:
@@ -221,20 +230,6 @@ def main() -> None:
         writer = csv.DictWriter(file, fieldnames=raw_rows[0].keys())
         writer.writeheader()
         writer.writerows(raw_rows)
-
-    scalar_rows = {}
-    for row in raw_rows:
-        key = (row["scene"], row["mode"], row["run"])
-        if row["backend"] == "scalar":
-            scalar_rows[key] = row
-            continue
-        reference = scalar_rows[key]
-        for field in ("visible", "shaded", "solver_calls"):
-            if row[field] != reference[field]:
-                raise RuntimeError(
-                    f"Scalar/SIMD {field} mismatch for {key}: "
-                    f"{reference[field]} vs {row[field]}"
-                )
 
     summary_rows = []
     for backend in backends:
@@ -296,6 +291,87 @@ def main() -> None:
         writer.writerows(summary_rows)
 
     print(f"Raw and summary CSV: {args.out_dir}")
+
+    experiment3_rows: list[dict[str, str]] = []
+    for scene, mode, one_edge, multi_edge in itertools.product(
+        ("multi_root", "one_root"),
+        ("fast", "robust"),
+        ("on_the_fly", "pre_calc"),
+        ("on_the_fly", "pre_calc"),
+    ):
+        name = f"experiment3_{scene}_{mode}_{one_edge}_{multi_edge}"
+        experiment3_rows.extend(run_case(
+            args, "simd", name, mode, scene,
+            flat_scale=flat_scale if scene == "one_root" else 1.0,
+            one_root_edge_mode=one_edge,
+            multi_root_edge_mode=multi_edge,
+        ))
+
+    with (args.out_dir / "experiment3_raw.csv").open("w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=experiment3_rows[0].keys())
+        writer.writeheader()
+        writer.writerows(experiment3_rows)
+
+    grouped = {}
+    for row in experiment3_rows:
+        key = (row["scene"], row["mode"], row["one_root_edge_mode"],
+               row["multi_root_edge_mode"])
+        grouped.setdefault(key, []).append(row)
+    experiment3_summary = []
+    for key, rows in grouped.items():
+        item = dict(zip(("scene", "mode", "one_root_edge_mode",
+                         "multi_root_edge_mode"), key))
+        item["runs"] = len(rows)
+        for field in FIELDS:
+            values = [float(row[field]) for row in rows]
+            item[f"{field}_median"] = statistics.median(values)
+            item[f"{field}_min"] = min(values)
+            item[f"{field}_max"] = max(values)
+        experiment3_summary.append(item)
+    for item in experiment3_summary:
+        reference = next(row for row in experiment3_summary if
+            row["scene"] == item["scene"] and
+            row["mode"] == item["mode"] and
+            row["one_root_edge_mode"] == (
+                "on_the_fly" if item["scene"] == "one_root"
+                else item["one_root_edge_mode"]
+            ) and
+            row["multi_root_edge_mode"] == (
+                "on_the_fly" if item["scene"] == "multi_root"
+                else item["multi_root_edge_mode"]
+            ))
+        for field in ("prepare_ms", "raster_ms", "e2e_ms"):
+            item[f"{field}_speedup"] = (
+                reference[f"{field}_median"] / item[f"{field}_median"]
+            )
+        item["shaded_delta"] = (
+            item["shaded_median"] - reference["shaded_median"]
+        )
+    with (args.out_dir / "experiment3_summary.csv").open("w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=experiment3_summary[0].keys())
+        writer.writeheader()
+        writer.writerows(experiment3_summary)
+
+    crossover_rows: list[dict[str, str]] = []
+    for scene, edge_mode, sub_sample in itertools.product(
+        ("multi_root", "one_root"),
+        ("on_the_fly", "pre_calc"),
+        (1, 2, 4),
+    ):
+        name = f"experiment3_crossover_{scene}_{edge_mode}_{sub_sample}x"
+        crossover_rows.extend(run_case(
+            args, "simd", name, "fast", scene,
+            flat_scale=flat_scale if scene == "one_root" else 1.0,
+            one_root_edge_mode=edge_mode,
+            multi_root_edge_mode=edge_mode,
+            sub_sample=sub_sample,
+        ))
+    with (args.out_dir / "experiment3_crossover.csv").open(
+        "w", newline=""
+    ) as file:
+        writer = csv.DictWriter(file, fieldnames=crossover_rows[0].keys())
+        writer.writeheader()
+        writer.writerows(crossover_rows)
 
 
 if __name__ == "__main__":

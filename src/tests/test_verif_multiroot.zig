@@ -13,7 +13,6 @@ const cam = @import("../riley/zig/camera.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const hull = @import("../riley/zig/hull.zig");
 const MultiRootHull = hull.MultiRootHull;
-const multiroot = @import("../riley/zig/multiroothierarchy.zig");
 const newton = @import("../riley/zig/newton.zig");
 const rasterconfig = @import("../riley/zig/rasterconfig.zig");
 const rops = @import("../riley/zig/rasterops.zig");
@@ -268,8 +267,8 @@ fn solveMultirootPoint(
     const candidate = MultiRootHull.buildPointsFromClip(N, camera, coords);
     if (!candidate.contains(px, py)) return null;
 
-    var leaves: [4]multiroot.Leaf = undefined;
-    multiroot.prepareFixed4(N, camera, coords, &leaves);
+    var leaves: [4]MultiRootHull.BezierLeaf = undefined;
+    MultiRootHull.prepareFourBezierLeaves(N, camera, coords, &leaves, .on_the_fly);
 
     var mutable_coords = coords;
     const nodes = rops.Vec3Slices(F){
@@ -287,8 +286,9 @@ fn solveMultirootPoint(
     var best_inv_z: F = -std.math.inf(F);
     var had_candidate_child = false;
 
-    for (&leaves) |*leaf| {
-        if (!leaf.contains(px, py)) continue;
+    const child_mask = MultiRootHull.childMask(&leaves, px, py, .on_the_fly);
+    for (&leaves, 0..) |*leaf, leaf_idx| {
+        if ((child_mask & (@as(u8, 1) << @as(u3, @intCast(leaf_idx)))) == 0) continue;
         had_candidate_child = true;
         const result = GK.solveWeightsNewton(
             nodes,
@@ -296,8 +296,8 @@ fn solveMultirootPoint(
             py,
             50,
             50,
-            leaf.seed[0],
-            leaf.seed[1],
+            leaf.parameter_seed[0],
+            leaf.parameter_seed[1],
         );
         if (validateNewtonHit(N, nodes, px, py, result)) |inv_z| {
             best_inv_z = @max(best_inv_z, inv_z);
@@ -839,6 +839,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     try std.testing.expect(candidate.contains(50 + 100 * target_x, 50));
 
     try checkControlNearPlane(&camera);
+    try checkPreparedHullEdges(&camera);
     try checkParentOnlyHierarchyMisses(&camera);
     try checkThreeRootQuad8(&camera);
 
@@ -1233,17 +1234,82 @@ fn checkControlNearPlane(camera: *const cam.CameraPrepared) !void {
         coords.z[nn] = 0.1 + 0.9 * u * u;
     }
     const candidate = MultiRootHull.buildPointsFromClip(8, camera, coords);
+    for (0..candidate.count) |ii| {
+        try std.testing.expect(candidate.x[ii] >= 0 and candidate.x[ii] <= 100);
+        try std.testing.expect(candidate.y[ii] >= 0 and candidate.y[ii] <= 100);
+    }
     for (0..21) |ui| {
         for (0..21) |vi| {
             const u = @as(F, @floatFromInt(ui)) / 10 - 1;
             const v = @as(F, @floatFromInt(vi)) / 10 - 1;
             const z = 0.1 + 0.9 * u * u;
-            try std.testing.expect(candidate.contains(
-                20 * u * u / z + 50,
-                -20 * v / z + 50,
-            ));
+            const px = 20 * u * u / z + 50;
+            const py = -20 * v / z + 50;
+            if (px >= 0 and px <= 100 and py >= 0 and py <= 100)
+                try std.testing.expect(candidate.contains(px, py));
         }
     }
+}
+
+fn checkPreparedHullEdges(camera: *const cam.CameraPrepared) !void {
+    const x = [_]F{ 4, 4, 80, 80 };
+    const y = [_]F{ 4, 80, 80, 4 };
+    var slack: [4]F = undefined;
+    var edges: [4]hull.HullEdge = undefined;
+    MultiRootHull.prepareEdgeSlack(&x, &y, &slack);
+    MultiRootHull.prepareEdges(&x, &y, &edges);
+    for (0..100) |yy| for (0..100) |xx| {
+        const px: F = @as(F, @floatFromInt(xx)) + 0.5;
+        const py: F = @as(F, @floatFromInt(yy)) + 0.5;
+        try std.testing.expectEqual(
+            MultiRootHull.containsPrepared(&x, &y, &slack, px, py),
+            MultiRootHull.containsEdges(&edges, px, py),
+        );
+    };
+    for ([_]F{ -1.0e-7, 0, 1.0e-7, 0.5, 75.999999 }) |offset| {
+        const px = 4 + offset;
+        const py: F = 40;
+        try std.testing.expectEqual(
+            MultiRootHull.containsPrepared(&x, &y, &slack, px, py),
+            MultiRootHull.containsEdges(&edges, px, py),
+        );
+    }
+
+    const large_x = [_]F{ 1e6, 1e6, 1e6 + 1e-3, 1e6 + 1e-3 };
+    const large_y = [_]F{ 1e6, 1e6 + 10, 1e6 + 10, 1e6 };
+    var large_slack: [4]F = undefined;
+    var large_edges: [4]hull.HullEdge = undefined;
+    MultiRootHull.prepareEdgeSlack(&large_x, &large_y, &large_slack);
+    MultiRootHull.prepareEdges(&large_x, &large_y, &large_edges);
+    for ([_]F{ 0, 0.25, 0.5, 0.75, 1 }) |fraction| {
+        const px = 1e6 + fraction * 1e-3;
+        const py: F = 1e6 + 5;
+        const old = MultiRootHull.containsPrepared(
+            &large_x,
+            &large_y,
+            &large_slack,
+            px,
+            py,
+        );
+        if (old) try std.testing.expect(MultiRootHull.containsEdges(
+            &large_edges,
+            px,
+            py,
+        ));
+    }
+
+    var behind: rops.GatheredElemCoords(4) = .{
+        .x = .{ 0, 1, 1, 0 },
+        .y = .{ 0, 0, 1, 1 },
+        .z = .{ 0, 0, 0, 0 },
+    };
+    try std.testing.expectEqual(@as(u8, 0), MultiRootHull.buildPointsFromClip(4, camera, behind).count);
+    behind.z = .{ 1, 1, 1, 1 };
+    behind.x = .{ 0, 0, 0, 0 };
+    behind.y = .{ 0, 0, 0, 0 };
+    const degenerate = MultiRootHull.buildPointsFromClip(4, camera, behind);
+    try std.testing.expectEqual(@as(u8, 4), degenerate.count);
+    try std.testing.expect(degenerate.contains(50, 50));
 }
 
 fn checkParentOnlyHierarchyMisses(camera: *const cam.CameraPrepared) !void {
@@ -1257,22 +1323,16 @@ fn checkParentOnlyHierarchyMisses(camera: *const cam.CameraPrepared) !void {
         coords.z[nn] = 1 + 0.2 * u;
     }
     const parent_hull = MultiRootHull.buildPointsFromClip(9, camera, coords);
-    var leaves: [4]multiroot.Leaf = undefined;
-    multiroot.prepareFixed4(9, camera, coords, &leaves);
+    var leaves: [4]MultiRootHull.BezierLeaf = undefined;
+    MultiRootHull.prepareFourBezierLeaves(9, camera, coords, &leaves, .on_the_fly);
     var rejected_misses: usize = 0;
     for (0..100) |yy| {
         const py: F = @as(F, @floatFromInt(yy)) + 0.5;
         for (0..100) |xx| {
             const px: F = @as(F, @floatFromInt(xx)) + 0.5;
             if (!parent_hull.contains(px, py)) continue;
-            var child_admits = false;
-            for (leaves) |leaf| {
-                if (leaf.contains(px, py)) {
-                    child_admits = true;
-                    break;
-                }
-            }
-            if (!child_admits) rejected_misses += 1;
+            if (MultiRootHull.childMask(&leaves, px, py, .on_the_fly) == 0)
+                rejected_misses += 1;
         }
     }
     try std.testing.expect(rejected_misses > 0);

@@ -90,12 +90,19 @@ pub const SolverTuning = struct {
 
 pub const SolverTuningOneRoot = struct {
     hull_mode: HullMode = .on_no_fallback,
+    edge_fun_mode: EdgeFunMode = .on_the_fly,
     newton_seed_mode: NewtonSeedMode = .centroid,
     newton_seed_reuse: NewtonSeedReuse = .off,
 };
 
 pub const SolverTuningMultiroot = struct {
     mode: MultirootSolverMode = .fast,
+    edge_fun_mode: EdgeFunMode = .pre_calc,
+};
+
+pub const EdgeFunMode = enum {
+    on_the_fly,
+    pre_calc,
 };
 
 /// Controls the solver used for elements classified as potentially multi-root

@@ -37,7 +37,6 @@ const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
 const hull = @import("hull.zig");
 const MultiRootHull = hull.MultiRootHull;
-const multiroot = @import("multiroothierarchy.zig");
 const db = @import("distortbounds.zig");
 
 // --------------------------------------------------------------------------------------
@@ -537,6 +536,7 @@ pub fn prepMeshFrame(
                 frame_idx,
                 config.advanced.solver.oneroot.hull_mode,
                 config.advanced.solver.multiroot.mode,
+                config.advanced.solver.multiroot.edge_fun_mode,
                 config.advanced.distortion.edge_spacing_px,
                 scaling_params,
                 chunk_exec,
@@ -646,6 +646,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         frame_idx: usize,
         hull_mode: rastcfg.HullMode,
         multiroot_mode: rastcfg.MultirootSolverMode,
+        multiroot_edge_fun_mode: rastcfg.EdgeFunMode,
         edge_spacing_px: F,
         scaling_params: ?imageops.ScalingParams,
         chunk_exec: *pce.ParaChunkExecutor,
@@ -665,6 +666,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             frame_idx: usize,
             hull_mode: rastcfg.HullMode,
             multiroot_mode: rastcfg.MultirootSolverMode,
+            multiroot_edge_fun_mode: rastcfg.EdgeFunMode,
             edge_spacing_px: F,
             scaling_params: ?imageops.ScalingParams,
             chunk_exec: *pce.ParaChunkExecutor,
@@ -687,6 +689,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .frame_idx = frame_idx,
                 .hull_mode = hull_mode,
                 .multiroot_mode = multiroot_mode,
+                .multiroot_edge_fun_mode = multiroot_edge_fun_mode,
                 .edge_spacing_px = edge_spacing_px,
                 .scaling_params = scaling_params,
                 .chunk_exec = chunk_exec,
@@ -1242,6 +1245,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             elem_coords: *const ndarray.NDArray(F),
             prepared: *rops.MultiRootPrepared,
             multiroot_mode: rastcfg.MultirootSolverMode,
+            edge_fun_mode: rastcfg.EdgeFunMode,
         };
 
         fn runPrepareMultiRootData(
@@ -1269,7 +1273,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     coords.x[nn] = xs[nn];
                     coords.y[nn] = ys[nn];
                     coords.z[nn] = zs[nn];
-                    if (std.math.isFinite(zs[nn]) and zs[nn] > 0) {
+                    if (zs[nn] > 0) {
                         seeds[available] = .{
                             .z = zs[nn],
                             .index = @intCast(nn),
@@ -1290,14 +1294,22 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     hy[nn] = projected_hull.y[nn];
                 }
                 stage.prepared.hull_count.set(slot, projected_hull.count);
+                if (stage.edge_fun_mode == .pre_calc) {
+                    MultiRootHull.prepareEdges(
+                        hx[0..projected_hull.count],
+                        hy[0..projected_hull.count],
+                        stage.prepared.hull_edges[slot][0..projected_hull.count],
+                    );
+                }
 
                 const leaf_offset = @as(usize, slot) * 4;
                 const leaf_slice = stage.prepared.leaves[leaf_offset .. leaf_offset + 4];
-                multiroot.prepareFixed4(
+                MultiRootHull.prepareFourBezierLeaves(
                     N,
                     stage.camera,
                     coords,
                     leaf_slice[0..4],
+                    stage.edge_fun_mode,
                 );
 
                 for (N..geomkerns.multiRootSeedCount(N)) |seed_idx| {
@@ -1318,7 +1330,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
                     var seed_z: F = 0;
                     for (0..N) |nn| seed_z += weights[nn] * zs[nn];
-                    if (std.math.isFinite(seed_z) and seed_z > 0) {
+                    if (seed_z > 0) {
                         seeds[available] = .{
                             .z = seed_z,
                             .index = @intCast(seed_idx),
@@ -1429,13 +1441,20 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
 
             const leaves = try outer_alloc.alloc(
-                multiroot.Leaf,
+                MultiRootHull.BezierLeaf,
                 multi_count * 4,
             );
 
             self.mesh_workspace.multi_root = .{
                 .hull_x = try matslice.MatSlice(F).initAlloc(outer_alloc, multi_count, 9),
                 .hull_y = try matslice.MatSlice(F).initAlloc(outer_alloc, multi_count, 9),
+                .hull_edges = if (self.multiroot_edge_fun_mode == .pre_calc)
+                    try outer_alloc.alloc(
+                        [9]@import("hull_common.zig").HullEdge,
+                        multi_count,
+                    )
+                else
+                    &.{},
                 .hull_count = vecslice.VecSlice(u8).init(
                     try outer_alloc.alloc(u8, multi_count),
                 ),
@@ -1456,6 +1475,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .elem_coords = elem_coords,
                 .prepared = &self.mesh_workspace.multi_root.?,
                 .multiroot_mode = self.multiroot_mode,
+                .edge_fun_mode = self.multiroot_edge_fun_mode,
             };
             pce.runStaticRange(
                 self.chunk_exec,

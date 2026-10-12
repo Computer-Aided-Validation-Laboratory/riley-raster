@@ -11,12 +11,12 @@ This project follows the Computer Aided Validation Laboratory style guides for P
 ## Development Guides
 The `dev/` directory provides comprehensive architectural, mathematical, testing, and conventions documentation for Riley developers:
 
-- [**`dev/TESTING.md`**](file:///home/lloydf/riley-raster/dev/TESTING.md): Complete testing architecture, quickstart commands, descriptions of the 4 test scenes, detailed breakdown of all 8 test suites, gold reference generation, and automated regression diagnostics.
-- [**`dev/THEORY.md`**](file:///home/lloydf/riley-raster/dev/THEORY.md): Mathematical foundations and engine design details, including polynomial camera distortion formulation, distortion-aware rasterisation frontend bounds, render thread budgets, and image save mode mechanics.
-- [**`dev/ASSUMPTIONS.md`**](file:///home/lloydf/riley-raster/dev/ASSUMPTIONS.md): Supported engineering operating envelope, mesh validity contracts, conservative numerical margins, and reasoning guidelines for review.
-- [**`dev/MESHCONVENTION.md`**](file:///home/lloydf/riley-raster/dev/MESHCONVENTION.md): Riley standard mesh representation, surface element definitions (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`), 3D continuum elements, node ordering, and connectivity conventions.
-- [**`dev/FILESTRUCTURE.md`**](file:///home/lloydf/riley-raster/dev/FILESTRUCTURE.md): Repository layout, module naming rules (`io`, `ops`, `kernel`), scalar/SIMD file splitting, and internal code organisation.
-- [**`dev/ABBREVIATIONS.md`**](file:///home/lloydf/riley-raster/dev/ABBREVIATIONS.md): Standardized abbreviations and naming conventions across Zig, C ABI, and Python codebases.
+- [**`dev/TESTING.md`**](./dev/TESTING.md): Complete testing architecture, quickstart commands, descriptions of the 4 test scenes, detailed breakdown of all 8 test suites, gold reference generation, and automated regression diagnostics.
+- [**`dev/THEORY.md`**](./dev/THEORY.md): Mathematical foundations and engine design details, including polynomial camera distortion formulation, distortion-aware rasterisation frontend bounds, render thread budgets, and image save mode mechanics.
+- [**`dev/ASSUMPTIONS.md`**](./dev/ASSUMPTIONS.md): Supported engineering operating envelope, mesh validity contracts, conservative numerical margins, and reasoning guidelines for review.
+- [**`dev/MESHCONVENTION.md`**](./dev/MESHCONVENTION.md): Riley standard mesh representation, surface element definitions (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`), 3D continuum elements, node ordering, and connectivity conventions.
+- [**`dev/FILESTRUCTURE.md`**](./dev/FILESTRUCTURE.md): Repository layout, module naming rules (`io`, `ops`, `kernel`), scalar/SIMD file splitting, and internal code organisation.
+- [**`dev/ABBREVIATIONS.md`**](./dev/ABBREVIATIONS.md): Standardized abbreviations and naming conventions across Zig, C ABI, and Python codebases.
 
 ## Testing Architecture & Core Packaged Suites
 Riley provides a layered testing architecture designed for fast routine verification, rigorous mathematical validation, and exhaustive factorial test coverage:
@@ -68,7 +68,7 @@ pytest --pyargs riley.pytests -vs
 | **Python Pytests** | `.venv/bin/pytest src/riley/pytests/` | Python/Cython API, mesh pipeline, Exodus conversion, and demo parity | Integrated / `gold/` |
 
 > [!NOTE]
-> For complete documentation of all 4 test scenes, 8 sub-suites, gold generation, tolerances, and design contracts, see [**`dev/TESTING.md`**](file:///home/lloydf/riley-raster/dev/TESTING.md).
+> For complete documentation of all 4 test scenes, 8 sub-suites, gold generation, tolerances, and design contracts, see [**`dev/TESTING.md`**](./dev/TESTING.md).
 
 ## Precision and SIMD Build Matrix
 The `zig build` workflow supports direct control over precision, SIMD mode, Newton solver mode, and SIMD vector width:
@@ -205,11 +205,36 @@ The current experiment groups are driven directly by constants in the script:
 
 If you want to change the study matrix, edit those constants first.
 
+## Multiroot Edge-Function Experiment
+
+`python3 scripts/bench_multiroot.py` builds the f64 SIMD multiroot benchmark in
+ReleaseSafe mode, then runs the existing solver comparison and Experiment3.
+Experiment3 crosses the `fast`/`robust` solver modes with the independent
+`oneroot.edge_fun_mode` and `multiroot.edge_fun_mode` settings, using
+`on_the_fly` and `pre_calc` for each. It covers both multi-root and one-root
+scenes. `experiment3_raw.csv` and `experiment3_summary.csv` report preparation,
+raster, and end-to-end timings; `experiment3_crossover.csv` repeats both edge
+modes at 1x, 2x, and 4x subsampling. Use `--quick` for a smoke run and `--runs`
+for a longer measurement. The default render configuration uses `pre_calc`
+for the multi-root path and `on_the_fly` for the adaptive one-root path.
+The SIMD multi-root raster path tests vectors of sample positions against the
+prepared outer hull and its four prepared child hulls before batching Newton
+solves. The scalar path uses the same hull geometry. Adaptive one-root
+containment skips barycentric seed calculation when the Newton seed mode is
+`centroid`.
+
+Hull code is exposed through `hull.zig` as `AdaptiveHull` and `MultiRootHull`.
+Each path has its own `adaptivehull_*` or `multiroothull_*` common, scalar, and
+SIMD implementation files. The shared `hull_common.zig` contains `HullEdge`.
+`MultiRootHull.BezierLeaf` holds a projected hull for one of the four fixed
+Bézier child patches; `AdaptiveHull.Tessellation` belongs only to the adaptive
+one-root path.
+
 ## Additional Notes
 
 - Plain `zig run` and `zig test` under `./src/` use the default Riley path of `f64` with SIMD enabled. Run the suite drivers through `zig build` to select precision, SIMD, solver, or vector-width options.
 - The public C ABI is fixed to that same production path.
 - The shared C library explicitly uses LLVM even in Debug: Zig 0.16's self-hosted Debug backend mispasses floating-point struct arguments at the C boundary in camera helpers. Native demo/test backend selection is unchanged.
-- For detailed camera model mathematics, thread budgeting, distortion-aware hulls, and image save mode mechanics, see [**`dev/THEORY.md`**](file:///home/lloydf/riley-raster/dev/THEORY.md).
+- For detailed camera model mathematics, thread budgeting, distortion-aware hulls, and image save mode mechanics, see [**`dev/THEORY.md`**](./dev/THEORY.md).
 - Some older benchmark helper scripts remain in `./scripts/` for historical studies. Prefer the current commands above unless you specifically need an archived workflow.
 

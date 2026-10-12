@@ -6,25 +6,6 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
-const cfg = @import("buildconfig.zig").config;
-const impl = if (cfg.simd == .on)
-    @import("hull_simd.zig")
-else
-    @import("hull_scalar.zig");
-const simd_impl = @import("hull_simd.zig");
-const hull_common = @import("hull_common.zig");
-
-// --------------------------------------------------------------------------------------
-// Public Constants & Public Types
-// --------------------------------------------------------------------------------------
-
-pub const TessTriangle = impl.TessTriangle;
-pub const HullResultSIMD = simd_impl.HullResultSIMD;
-pub const Tessellation = impl.Tessellation;
-pub const getTessellation = impl.getTessellation;
-
-pub const AdaptiveHull = hull_common.AdaptiveHull;
-pub const MultiRootHull = hull_common.MultiRootHull;
-pub const AdaptiveHullPoints = hull_common.AdaptiveHullPoints;
-pub const MultiRootHullPoints = hull_common.MultiRootHullPoints;
-pub const convexifyHullInPlace = hull_common.convexifyHullInPlace;
+pub const AdaptiveHull = @import("adaptivehull.zig").AdaptiveHull;
+pub const MultiRootHull = @import("multiroothull.zig").MultiRootHull;
+pub const HullEdge = @import("hull_common.zig").HullEdge;

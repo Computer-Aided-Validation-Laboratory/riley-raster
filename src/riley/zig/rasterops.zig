@@ -206,6 +206,7 @@ pub fn calcVisibleDistortBBox(
         const root_class = classifyHighOrdFacing(N, nodes) orelse return null;
         if (root_class == .multi_root) {
             const points = MultiRootHull.buildPointsFromClip(N, camera, coords);
+            if (points.count < 3) return null;
             for (0..points.count) |nn| {
                 ideal_bounds.include(points.x[nn], points.y[nn]);
             }
@@ -273,11 +274,12 @@ pub const RasterContext = struct {
 pub const MultiRootPrepared = struct {
     hull_x: matslice.MatSlice(F),
     hull_y: matslice.MatSlice(F),
+    hull_edges: [][9]@import("hull_common.zig").HullEdge,
     hull_count: vecslice.VecSlice(u8),
     indices: matslice.MatSlice(u8),
     valid_depth: vecslice.VecSlice(u8),
     slot_by_visible_elem: vecslice.VecSlice(u32),
-    leaves: []@import("multiroothierarchy.zig").Leaf = &.{},
+    leaves: []hull.MultiRootHull.BezierLeaf = &.{},
 };
 
 //------------------------------------------------------------------------------------------
@@ -521,6 +523,7 @@ pub fn calcVisibleNodeBBoxHighOrdWithHalo(
 
     if (root_class == .multi_root) {
         const points = MultiRootHull.buildPointsFromClip(N, camera, coords_clip);
+        if (points.count < 3) return null;
         var bounds = db.DistortBounds.initEmpty();
         for (0..points.count) |nn| {
             bounds.include(points.x[nn], points.y[nn]);
