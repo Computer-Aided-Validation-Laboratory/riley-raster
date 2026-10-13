@@ -47,18 +47,13 @@ pub inline fn finishTile(
     elem_duration_ns: u64,
     resolve_duration_ns: u64,
 ) void {
-    const screen_px_x = @as(
-        u16,
-        @intCast(ctx_rast.camera.pixels_num[0]),
-    );
-
-    const tiles_x =
-        (screen_px_x + ctx_rast.tile_size - 1) /
-        ctx_rast.tile_size;
+    const screen_px_x: usize = ctx_rast.camera.pixels_num[0];
+    const tile_size: usize = ctx_rast.tile_size;
+    const tiles_x = (screen_px_x + tile_size - 1) / tile_size;
 
     const spatial_idx =
-        (tile.y_px_min / ctx_rast.tile_size) * tiles_x +
-        (tile.x_px_min / ctx_rast.tile_size);
+        (@as(usize, tile.y_px_min) / tile_size) * tiles_x +
+        (@as(usize, tile.x_px_min) / tile_size);
 
     ctx_report.recordTile(
         spatial_idx,

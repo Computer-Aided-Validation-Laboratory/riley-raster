@@ -57,7 +57,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--threads", type=int, default=4)
-    parser.add_argument("--optimize", default="ReleaseSafe")
+    parser.add_argument("--optimize", default="ReleaseFast")
     parser.add_argument(
         "--quick",
         action="store_true",
