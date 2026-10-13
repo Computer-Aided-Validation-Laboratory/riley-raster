@@ -279,7 +279,7 @@ pub fn printProceduralConfig(
         },
     }
 
-    if (resolved.evaluator == .classified_indexed or resolved.evaluator == .classified_indexed_2 or resolved.evaluator == .classified_indexed_3 or resolved.evaluator == .classified_indexed_4 or resolved.evaluator == .classified_indexed_5) {
+    if (resolved.evaluator == .classified_indexed or resolved.evaluator == .classified_indexed_2 or resolved.evaluator == .classified_indexed_3 or resolved.evaluator == .classified_indexed_4 or resolved.evaluator == .classified_indexed_5 or resolved.evaluator == .classified_indexed_6) {
         const samples: F = @floatFromInt(buildconfig.speckle_mask_samples_per_cell);
         const classification_dims = [2]F{
             @ceil(params.cells_per_uv[0] * samples),
@@ -359,7 +359,8 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\Experimental native overrides (require -Denable-all-evaluators=true):
         \\  --evaluator <name>    cell-hash, list-naive, list-indexed,
         \\                        classified-indexed, classified-indexed-2, classified-indexed-3,
-        \\                        classified-indexed-4, classified-indexed-5, direct-fixed, mask-1bit, mask-u8, or mock
+        \\                        classified-indexed-4, classified-indexed-5, classified-indexed-6,
+        \\                        direct-fixed, mask-1bit, mask-u8, or mock
         \\  --neighbors <count>   1, 4, or 9 (Perlin: mock only)
         \\  Omit both overrides for automatic selection; default builds reject either.
         \\  An omitted neighbor count is 9, or 1 for an explicit direct-fixed evaluator.
@@ -419,7 +420,7 @@ test "demo arguments reject malformed and invalid runtime settings" {
 test "demo experimental overrides preserve explicit values and enforce availability" {
     const evaluator = [_][*:0]const u8{ "demo", "--evaluator", "classified-indexed" };
     const neighbors = [_][*:0]const u8{ "demo", "--neighbors", "9" };
-    inline for (.{ "classified-indexed-2", "classified-indexed-3", "classified-indexed-4", "classified-indexed-5" }) |name| {
+    inline for (.{ "classified-indexed-2", "classified-indexed-3", "classified-indexed-4", "classified-indexed-5", "classified-indexed-6" }) |name| {
         const candidate = [_][*:0]const u8{ "demo", "--evaluator", name };
         if (comptime buildconfig.enable_all_evaluators) {
             try std.testing.expectEqual(speckleconfig.parseEvaluator(name).?, (try parseDemoArgs(&candidate, test_spec)).?.params.evaluator.?);
