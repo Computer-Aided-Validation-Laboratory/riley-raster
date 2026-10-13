@@ -11,10 +11,11 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
 const tol = cfg.tol;
-const rops = @import("rasterops.zig");
+const rops = @import("rasterfrontend.zig");
+const edgeops = @import("hulledge.zig");
 const HullEdge = @import("hulledge.zig").HullEdge;
 const EdgeFunMode = @import("rasterconfig.zig").EdgeFunMode;
-const MultiRootHull = @import("multiroothull_common.zig").MultiRootHull;
+const hullcommon = @import("hullmultiroot_common.zig");
 const cam = @import("camera.zig");
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
@@ -81,9 +82,9 @@ pub fn containsOuter(
     mode: EdgeFunMode,
 ) bool {
     return if (mode == .pre_calc)
-        MultiRootHull.containsEdges(edges, px, py)
+        hullcommon.containsEdges(edges, px, py)
     else
-        MultiRootHull.containsPrepared(x, y, slack, px, py);
+        hullcommon.containsPrepared(x, y, slack, px, py);
 }
 
 pub fn childMask(leaves: anytype, px: F, py: F, mode: EdgeFunMode) u8 {
@@ -130,7 +131,7 @@ pub fn containsOuterSIMD(
     } else {
         for (0..x.len) |ii| {
             const jj = (ii + 1) % x.len;
-            inside &= rops.edgeFun3SIMD(
+            inside &= edgeops.edgeFun3SIMD(
                 x[ii],
                 y[ii],
                 x[jj],
@@ -191,8 +192,8 @@ test "multi-root SIMD edge preparation and containment match scalar" {
         var scalar_edges: [count]HullEdge = undefined;
         var slack: [count]F = undefined;
         prepareEdges(&x, &y, &vector_edges);
-        MultiRootHull.prepareEdges(&x, &y, &scalar_edges);
-        MultiRootHull.prepareEdgeSlack(&x, &y, &slack);
+        hullcommon.prepareEdges(&x, &y, &scalar_edges);
+        hullcommon.prepareEdgeSlack(&x, &y, &slack);
         for (0..count) |ii| {
             try std.testing.expectApproxEqRel(scalar_edges[ii].a, vector_edges[ii].a, 16 * std.math.floatEps(F));
             try std.testing.expectApproxEqRel(scalar_edges[ii].b, vector_edges[ii].b, 16 * std.math.floatEps(F));
@@ -222,9 +223,9 @@ test "multi-root SIMD edge preparation and containment match scalar" {
             );
             for (0..S) |lane| {
                 const expected = valid[lane] and (if (mode == .pre_calc)
-                    MultiRootHull.containsEdges(&scalar_edges, px[lane], py[lane])
+                    hullcommon.containsEdges(&scalar_edges, px[lane], py[lane])
                 else
-                    MultiRootHull.containsPrepared(&x, &y, &slack, px[lane], py[lane]));
+                    hullcommon.containsPrepared(&x, &y, &slack, px[lane], py[lane]));
                 try std.testing.expectEqual(expected, hits[lane]);
             }
         }
@@ -232,7 +233,7 @@ test "multi-root SIMD edge preparation and containment match scalar" {
 }
 
 test "multi-root SIMD child masks match scalar with inactive lanes" {
-    const BezierLeaf = @import("multiroothull_common.zig").MultiRootHull.BezierLeaf;
+    const BezierLeaf = hullcommon.BezierLeaf;
     const x = [_]F{ 0, 0, 100, 100 };
     const y = [_]F{ 0, 100, 100, 0 };
     var leaves: [4]BezierLeaf = undefined;
@@ -247,7 +248,7 @@ test "multi-root SIMD child masks match scalar with inactive lanes" {
             .parameter_seed = .{ 0, 0 },
             .vertex_count = 4,
         };
-        MultiRootHull.prepareEdgeSlack(&x, &y, leaf.edge_slack[0..4]);
+        hullcommon.prepareEdgeSlack(&x, &y, leaf.edge_slack[0..4]);
         prepareEdges(&x, &y, leaf.prepared_edges[0..4]);
     }
     var px: [S]F = undefined;
@@ -277,10 +278,10 @@ pub fn prepareFourBezierLeaves(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
     coords: rops.GatheredElemCoords(N),
-    output: *[4]MultiRootHull.BezierLeaf,
+    output: *[4]hullcommon.BezierLeaf,
     edge_fun_mode: EdgeFunMode,
 ) void {
-    MultiRootHull.prepareFourBezierLeaves(
+    hullcommon.prepareFourBezierLeaves(
         N,
         camera,
         coords,

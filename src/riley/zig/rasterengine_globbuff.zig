@@ -8,8 +8,8 @@
 // --------------------------------------------------------------------------------------
 const cfg = @import("buildconfig.zig").config;
 const impl = if (cfg.simd == .on)
-    @import("rasterengineglobal_simd.zig")
+    @import("rasterengine_globbuff_simd.zig")
 else
-    @import("rasterengineglobal_scalar.zig");
+    @import("rasterengine_globbuff_scalar.zig");
 
-pub const rasterScene = impl.rasterScene;
+pub const rasterSceneGlobBuff = impl.rasterSceneGlobBuff;

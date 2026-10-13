@@ -16,7 +16,8 @@ const VecSF = buildconfig.VecSF;
 const VecSU8 = buildconfig.VecSU8;
 const tol = cfg.tol;
 
-const rops = @import("rasterops.zig");
+const rops = @import("rasterfrontend.zig");
+const edgeops = @import("hulledge.zig");
 const newton = @import("newton.zig");
 const NewtonSeed = newton.NewtonSeed;
 const NewtonSeedSIMD = newton.NewtonSeedSIMD;
@@ -185,7 +186,7 @@ pub fn Tri3Kernel() type {
         pub const solver_kind = .hyperb;
 
         pub inline fn getInvElemArea(nodes: Vec3Slices(F)) F {
-            return 1.0 / rops.edgeFun3(
+            return 1.0 / edgeops.edgeFun3(
                 nodes.x[0],
                 nodes.y[0],
                 nodes.x[1],
@@ -217,7 +218,7 @@ pub fn Tri3Kernel() type {
             inv_area: F,
         ) [nodes_num]F {
             return [_]F{
-                rops.edgeFun3(
+                edgeops.edgeFun3(
                     nodes.x[1],
                     nodes.y[1],
                     nodes.x[2],
@@ -225,7 +226,7 @@ pub fn Tri3Kernel() type {
                     pixel_x,
                     pixel_y,
                 ) * inv_area,
-                rops.edgeFun3(
+                edgeops.edgeFun3(
                     nodes.x[2],
                     nodes.y[2],
                     nodes.x[0],
@@ -233,7 +234,7 @@ pub fn Tri3Kernel() type {
                     pixel_x,
                     pixel_y,
                 ) * inv_area,
-                rops.edgeFun3(
+                edgeops.edgeFun3(
                     nodes.x[0],
                     nodes.y[0],
                     nodes.x[1],
@@ -306,7 +307,7 @@ pub fn Tri3Kernel() type {
             v_inv_area: VecSF,
         ) [nodes_num]VecSF {
             return [_]VecSF{
-                rops.edgeFun3SIMD(
+                edgeops.edgeFun3SIMD(
                     nodes.x[1],
                     nodes.y[1],
                     nodes.x[2],
@@ -314,7 +315,7 @@ pub fn Tri3Kernel() type {
                     v_pixel_x,
                     v_pixel_y,
                 ) * v_inv_area,
-                rops.edgeFun3SIMD(
+                edgeops.edgeFun3SIMD(
                     nodes.x[2],
                     nodes.y[2],
                     nodes.x[0],
@@ -322,7 +323,7 @@ pub fn Tri3Kernel() type {
                     v_pixel_x,
                     v_pixel_y,
                 ) * v_inv_area,
-                rops.edgeFun3SIMD(
+                edgeops.edgeFun3SIMD(
                     nodes.x[0],
                     nodes.y[0],
                     nodes.x[1],

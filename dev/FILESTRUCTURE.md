@@ -13,6 +13,9 @@
 - Generated artefacts and non-Zig files are out of scope
 - Thin wrapper files should contain no implementation logic and no tests
 - Existing file names should only be changed when the rename improves clarity
+- Global subpixel buffer implementation files use `_globbuff` before any
+  `_common`, `_scalar`, or `_simd` suffix, to distinguish them from tile-local
+  implementations. Function and type names retain Zig casing conventions.
 
 ## Within file code organisation
 1. Module header block / documentation / description

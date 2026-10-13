@@ -14,12 +14,14 @@ const cam = @import("camera.zig");
 const CameraPrepared = cam.CameraPrepared;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
-const MultiRootHull = @import("multiroothull.zig").MultiRootHull;
-const AdaptiveHull = @import("adaptivehull.zig").AdaptiveHull;
-const rops = @import("rasterops.zig");
+const HullMultiRoot = @import("hullmultiroot.zig").HullMultiRoot;
+const HullAdaptive = @import("hulladaptive.zig").HullAdaptive;
+const rops = @import("rasterfrontend.zig");
+const bin = @import("elemtilebinning.zig");
+const edgeops = @import("hulledge.zig");
 const ElemBBox = rops.ElemBBox;
-const OverlapBBox = rops.OverlapBBox;
-const ActiveTile = rops.ActiveTile;
+const OverlapBBox = bin.OverlapBBox;
+const ActiveTile = bin.ActiveTile;
 const Vec3Slices = rops.Vec3Slices;
 const report = @import("report.zig");
 const ReportMode = report.ReportMode;
@@ -123,9 +125,9 @@ pub fn rasterScene(
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
     requested_workers: u16,
-    tiling: rops.TilingOverlaps,
+    tiling: bin.TilingOverlaps,
     meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(F),
+    root_inputs: mo.MeshRootInputs,
     image_out_arr: *NDArray(F),
 ) !void {
     try comm.rasterSceneComm(
@@ -138,7 +140,7 @@ pub fn rasterScene(
         requested_workers,
         tiling,
         meshes,
-        raster_hulls,
+        root_inputs,
         image_out_arr,
     );
 }
@@ -153,7 +155,7 @@ pub fn RasterEngine(
     comptime Geom: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
-    comptime root_class: rops.RootClass,
+    comptime root_class: rops.ElemRootClass,
 ) type {
     return RasterEngineFor(
         SubpxScratchBuffs,
@@ -169,17 +171,17 @@ pub fn RasterEngineFor(
     comptime Geom: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
-    comptime root_class: rops.RootClass,
+    comptime root_class: rops.ElemRootClass,
 ) type {
     return struct {
         pub fn render(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            tile: rops.ActiveTile,
-            overlap: rops.OverlapBBox,
+            tile: bin.ActiveTile,
+            overlap: bin.OverlapBBox,
             coords: *const NDArray(F),
-            raster_hull: ?*const NDArray(F),
+            hull: if (root_class == .multi_root) *const mo.MultiRootPrepared else ?*const NDArray(F),
             shader: *const ShaderData,
             shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
             subpx_scratch: *ScratchBuffs,
@@ -226,7 +228,7 @@ pub fn RasterEngineFor(
                 ctx_report,
                 tile,
                 overlap,
-                raster_hull,
+                hull,
                 subpx_dom,
                 rast_bounds,
                 nodes_coords,
@@ -242,9 +244,9 @@ pub fn RasterEngineFor(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            tile: rops.ActiveTile,
-            overlap: rops.OverlapBBox,
-            raster_hull: ?*const NDArray(F),
+            tile: bin.ActiveTile,
+            overlap: bin.OverlapBBox,
+            hull: if (root_class == .multi_root) *const mo.MultiRootPrepared else ?*const NDArray(F),
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
             nodes_coords: Vec3Slices(F),
@@ -263,7 +265,7 @@ pub fn RasterEngineFor(
                     ctx_report,
                     tile,
                     overlap,
-                    raster_hull,
+                    hull,
                     subpx_dom,
                     rast_bounds,
                     nodes_coords,
@@ -283,7 +285,7 @@ pub fn RasterEngineFor(
                     ctx_report,
                     tile,
                     overlap,
-                    raster_hull,
+                    hull,
                     subpx_dom,
                     rast_bounds,
                     nodes_coords,
@@ -306,7 +308,7 @@ pub fn RasterEngineFor(
                 ctx_report,
                 tile,
                 overlap,
-                raster_hull,
+                hull,
                 subpx_dom,
                 rast_bounds,
                 nodes_coords,
@@ -320,9 +322,9 @@ pub fn RasterEngineFor(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            tile: rops.ActiveTile,
-            overlap: rops.OverlapBBox,
-            raster_hull: ?*const NDArray(F),
+            tile: bin.ActiveTile,
+            overlap: bin.OverlapBBox,
+            hull_adaptive: ?*const NDArray(F),
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
             nodes_coords: Vec3Slices(F),
@@ -340,7 +342,7 @@ pub fn RasterEngineFor(
                 ctx_report,
                 tile,
                 overlap,
-                raster_hull,
+                hull_adaptive,
                 subpx_dom,
                 rast_bounds,
                 nodes_coords,
@@ -360,8 +362,8 @@ fn rasterDirectImpl(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: rops.ActiveTile,
-    overlap: rops.OverlapBBox,
+    tile: bin.ActiveTile,
+    overlap: bin.OverlapBBox,
     _: ?*const NDArray(F),
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
@@ -401,9 +403,9 @@ fn rasterNewtonImpl(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: rops.ActiveTile,
-    overlap: rops.OverlapBBox,
-    raster_hull: ?*const NDArray(F),
+    tile: bin.ActiveTile,
+    overlap: bin.OverlapBBox,
+    hull_adaptive: ?*const NDArray(F),
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
@@ -428,9 +430,9 @@ fn rasterNewtonImpl(
         nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
     }
 
-    var elem_tess: AdaptiveHull.Tessellation(Geom.tess_triangles_num) = undefined;
+    var elem_tess: HullAdaptive.Tessellation(Geom.tess_triangles_num) = undefined;
     if (comptime Geom.hull_nodes_num > 0) {
-        if (raster_hull) |rh| {
+        if (hull_adaptive) |rh| {
             const hx = rh.getSlice(
                 &[_]usize{ overlap.elem_idx, 0, 0 },
                 1,
@@ -439,7 +441,7 @@ fn rasterNewtonImpl(
                 &[_]usize{ overlap.elem_idx, 1, 0 },
                 1,
             );
-            elem_tess = AdaptiveHull.makeTessellation(
+            elem_tess = HullAdaptive.makeTessellation(
                 N,
                 Geom.hull_nodes_num,
                 Geom.tess_triangles_num,
@@ -785,9 +787,9 @@ fn rasterNewtonMultiImpl(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: rops.ActiveTile,
-    overlap: rops.OverlapBBox,
-    raster_hull: ?*const NDArray(F),
+    tile: bin.ActiveTile,
+    overlap: bin.OverlapBBox,
+    hull_multiroot: *const mo.MultiRootPrepared,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
@@ -796,12 +798,7 @@ fn rasterNewtonMultiImpl(
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
     const N = Geom.nodes_num;
-    _ = raster_hull;
-    if (ctx_rast.multi_root_by_mesh.len <= overlap.mesh_idx) {
-        return error.MissingMultiRootData;
-    }
-    const prepared = ctx_rast.multi_root_by_mesh[overlap.mesh_idx] orelse
-        return error.MissingMultiRootData;
+    const prepared = hull_multiroot;
     const slot = prepared.slot_by_visible_elem.get(overlap.elem_idx);
     if (slot == std.math.maxInt(u32)) return error.MissingMultiRootData;
     const hull_count = prepared.hull_count.get(slot);
@@ -810,7 +807,7 @@ fn rasterNewtonMultiImpl(
     const edge_fun_mode = ctx_rast.config.advanced.solver.multiroot.edge_fun_mode;
     var edge_slack: [9]F = undefined;
     if (edge_fun_mode == .on_the_fly)
-        MultiRootHull.prepareEdgeSlack(hx, hy, edge_slack[0..hull_count]);
+        HullMultiRoot.prepareEdgeSlack(hx, hy, edge_slack[0..hull_count]);
     const leaf_offset = @as(usize, slot) * 4;
     const leaves = prepared.leaves[leaf_offset .. leaf_offset + 4];
     const fallback_seed_count = prepared.valid_depth.get(slot);
@@ -845,11 +842,11 @@ fn rasterNewtonMultiImpl(
                 sub_samp,
                 scratch_y,
             );
-            const edges: []const MultiRootHull.HullEdge = if (edge_fun_mode == .pre_calc)
+            const edges: []const HullMultiRoot.HullEdge = if (edge_fun_mode == .pre_calc)
                 prepared.hull_edges[slot][0..hull_count]
             else
                 &.{};
-            const has_hit = MultiRootHull.containsOuter(
+            const has_hit = HullMultiRoot.containsOuter(
                 hx,
                 hy,
                 edges,
@@ -876,7 +873,7 @@ fn rasterNewtonMultiImpl(
             var best_eta: F = 0;
             var had_candidate_child = false;
 
-            const child_mask = MultiRootHull.childMask(leaves, ideal_x, ideal_y, edge_fun_mode);
+            const child_mask = HullMultiRoot.childMask(leaves, ideal_x, ideal_y, edge_fun_mode);
             for (leaves, 0..) |leaf, leaf_idx| {
                 if ((child_mask & (@as(u8, 1) << @as(u3, @intCast(leaf_idx)))) == 0) continue;
                 had_candidate_child = true;
@@ -981,9 +978,9 @@ fn rasterSteppedScal(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: rops.ActiveTile,
-    overlap: rops.OverlapBBox,
-    raster_hull: ?*const NDArray(F),
+    tile: bin.ActiveTile,
+    overlap: bin.OverlapBBox,
+    hull_adaptive: ?*const NDArray(F),
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
@@ -1021,7 +1018,7 @@ fn rasterSteppedScal(
             ctx_report,
             tile,
             overlap,
-            raster_hull,
+            hull_adaptive,
             subpx_dom,
             rast_bounds,
             nodes_coords,
@@ -1042,7 +1039,7 @@ fn rasterSteppedScal(
         ctx_report,
         tile,
         overlap,
-        raster_hull,
+        hull_adaptive,
         subpx_dom,
         rast_bounds,
         nodes_coords,
@@ -1060,8 +1057,8 @@ fn rasterSteppedScalFixP(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: rops.ActiveTile,
-    overlap: rops.OverlapBBox,
+    tile: bin.ActiveTile,
+    overlap: bin.OverlapBBox,
     _: ?*const NDArray(F),
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
@@ -1264,8 +1261,8 @@ fn rasterSteppedScalFloat(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: rops.ActiveTile,
-    overlap: rops.OverlapBBox,
+    tile: bin.ActiveTile,
+    overlap: bin.OverlapBBox,
     _: ?*const NDArray(F),
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,

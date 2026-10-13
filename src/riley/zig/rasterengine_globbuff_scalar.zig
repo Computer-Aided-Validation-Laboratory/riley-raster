@@ -10,12 +10,13 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const ndarray = @import("ndarray.zig");
-const rops = @import("rasterops.zig");
+const rops = @import("rasterfrontend.zig");
+const bin = @import("elemtilebinning.zig");
 const report = @import("report.zig");
 const backend = @import("rasterengine_scalar.zig");
-const common = @import("rasterengineglobal_common.zig");
+const common = @import("rasterengine_globbuff_common.zig");
 const mo = @import("meshpipeline.zig");
-const subpxframe = @import("subpxframe.zig");
+const subpxframe = @import("subpxframe_globbuff.zig");
 
 const GlobalSubpxScratchBuffs = struct {
     pub const exclusive_subpx_target = true;
@@ -86,7 +87,7 @@ pub const GlobalBackend = struct {
     pub fn configureTarget(
         scratch: *GlobalSubpxScratchBuffs,
         target: *subpxframe.SubpxTarget,
-        tile: rops.ActiveTile,
+        tile: bin.ActiveTile,
     ) void {
         scratch.image = target.image;
         scratch.target_stride_subpx = target.domain.storage_w_subpx;
@@ -100,7 +101,7 @@ pub const GlobalBackend = struct {
         comptime Geom: type,
         comptime ShaderKern: type,
         comptime ShaderData: type,
-        comptime root_class: rops.RootClass,
+        comptime root_class: rops.ElemRootClass,
     ) type {
         return backend.RasterEngineFor(
             GlobalSubpxScratchBuffs,
@@ -112,20 +113,20 @@ pub const GlobalBackend = struct {
     }
 };
 
-pub fn rasterScene(
+pub fn rasterSceneGlobBuff(
     comptime report_mode: report.ReportMode,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
     requested_workers: u16,
-    tiling: rops.TilingOverlaps,
+    tiling: bin.TilingOverlaps,
     meshes: []const mo.MeshPrepared,
-    raster_hulls: []const ?ndarray.NDArray(F),
+    root_inputs: mo.MeshRootInputs,
     target: *subpxframe.SubpxTarget,
     image_out_arr: *ndarray.NDArray(F),
 ) !usize {
-    return common.rasterScene(
+    return common.rasterSceneGlobBuff(
         GlobalBackend,
         report_mode,
         outer_alloc,
@@ -135,7 +136,7 @@ pub fn rasterScene(
         requested_workers,
         tiling,
         meshes,
-        raster_hulls,
+        root_inputs,
         target,
         image_out_arr,
     );

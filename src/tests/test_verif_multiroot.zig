@@ -11,10 +11,10 @@ const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 const cam = @import("../riley/zig/camera.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
-const MultiRootHull = @import("../riley/zig/multiroothull.zig").MultiRootHull;
+const HullMultiRoot = @import("../riley/zig/hullmultiroot.zig").HullMultiRoot;
 const newton = @import("../riley/zig/newton.zig");
 const rasterconfig = @import("../riley/zig/rasterconfig.zig");
-const rops = @import("../riley/zig/rasterops.zig");
+const rops = @import("../riley/zig/rasterfrontend.zig");
 const rotation = @import("../riley/zig/rotation.zig");
 const shapefun = @import("../riley/zig/shapefun.zig");
 
@@ -263,11 +263,11 @@ fn solveMultirootPoint(
     px: F,
     py: F,
 ) ?F {
-    const candidate = MultiRootHull.buildPointsFromClip(N, camera, coords);
+    const candidate = HullMultiRoot.buildPointsFromClip(N, camera, coords);
     if (!candidate.contains(px, py)) return null;
 
-    var leaves: [4]MultiRootHull.BezierLeaf = undefined;
-    MultiRootHull.prepareFourBezierLeaves(N, camera, coords, &leaves, .on_the_fly);
+    var leaves: [4]HullMultiRoot.BezierLeaf = undefined;
+    HullMultiRoot.prepareFourBezierLeaves(N, camera, coords, &leaves, .on_the_fly);
 
     var mutable_coords = coords;
     const nodes = rops.Vec3Slices(F){
@@ -285,7 +285,7 @@ fn solveMultirootPoint(
     var best_inv_z: F = -std.math.inf(F);
     var had_candidate_child = false;
 
-    const child_mask = MultiRootHull.childMask(&leaves, px, py, .on_the_fly);
+    const child_mask = HullMultiRoot.childMask(&leaves, px, py, .on_the_fly);
     for (&leaves, 0..) |*leaf, leaf_idx| {
         if ((child_mask & (@as(u8, 1) << @as(u3, @intCast(leaf_idx)))) == 0) continue;
         had_candidate_child = true;
@@ -783,7 +783,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
         projected.y[nn] = coords.y[nn] / coords.z[nn] + 50;
     }
     try std.testing.expectEqual(
-        rops.RootClass.multi_root,
+        rops.ElemRootClass.multi_root,
         rops.classifyHighOrdFacing(9, projected).?,
     );
 
@@ -834,7 +834,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     try std.testing.expect(GK.calcInvZ(nodes, near.weights.?) >
         GK.calcInvZ(nodes, far.weights.?));
 
-    const candidate = MultiRootHull.buildPointsFromClip(9, &camera, coords);
+    const candidate = HullMultiRoot.buildPointsFromClip(9, &camera, coords);
     try std.testing.expect(candidate.contains(50 + 100 * target_x, 50));
 
     try checkControlNearPlane(&camera);
@@ -905,10 +905,10 @@ fn checkFoldedMatrix(
                     projected.y[nn] = coords.y[nn] / coords.z[nn] + 50;
                 }
                 try std.testing.expectEqual(
-                    rops.RootClass.multi_root,
+                    rops.ElemRootClass.multi_root,
                     rops.classifyHighOrdFacing(N, projected).?,
                 );
-                const candidate = MultiRootHull.buildPointsFromClip(N, camera, coords);
+                const candidate = HullMultiRoot.buildPointsFromClip(N, camera, coords);
                 var mutable_coords = coords;
                 const nodes = rops.Vec3Slices(F){
                     .x = &mutable_coords.x,
@@ -974,7 +974,7 @@ fn checkQuadraticSaddle(
                 coords.y[nn] = s * x + c * y;
                 coords.z[nn] = 1 + 0.2 * u;
             }
-            const candidate = MultiRootHull.buildPointsFromClip(N, camera, coords);
+            const candidate = HullMultiRoot.buildPointsFromClip(N, camera, coords);
             const surface = oracleSurface(N, coords);
             var mutable_coords = coords;
             const nodes = rops.Vec3Slices(F){
@@ -1066,7 +1066,7 @@ fn checkOutwardCurvedMatrix(
                 if (rops.classifyHighOrdFacing(N, projected) != .multi_root) {
                     continue;
                 }
-                const candidate = MultiRootHull.buildPointsFromClip(
+                const candidate = HullMultiRoot.buildPointsFromClip(
                     N,
                     camera,
                     coords,
@@ -1166,12 +1166,12 @@ fn checkThreeRootMatrix(
                         projected.y[nn] = coords.y[nn] / coords.z[nn] + 50;
                     }
                     try std.testing.expectEqual(
-                        rops.RootClass.multi_root,
+                        rops.ElemRootClass.multi_root,
                         rops.classifyHighOrdFacing(8, projected).?,
                     );
                     const px = 20 * (c - s * polarity) + 50;
                     const py = 20 * (s + c * polarity) + 50;
-                    const candidate = MultiRootHull.buildPointsFromClip(
+                    const candidate = HullMultiRoot.buildPointsFromClip(
                         8,
                         camera,
                         coords,
@@ -1232,7 +1232,7 @@ fn checkControlNearPlane(camera: *const cam.CameraPrepared) !void {
         coords.y[nn] = -20 * v;
         coords.z[nn] = 0.1 + 0.9 * u * u;
     }
-    const candidate = MultiRootHull.buildPointsFromClip(8, camera, coords);
+    const candidate = HullMultiRoot.buildPointsFromClip(8, camera, coords);
     for (0..candidate.count) |ii| {
         try std.testing.expect(candidate.x[ii] >= 0 and candidate.x[ii] <= 100);
         try std.testing.expect(candidate.y[ii] >= 0 and candidate.y[ii] <= 100);
@@ -1254,43 +1254,43 @@ fn checkPreparedHullEdges(camera: *const cam.CameraPrepared) !void {
     const x = [_]F{ 4, 4, 80, 80 };
     const y = [_]F{ 4, 80, 80, 4 };
     var slack: [4]F = undefined;
-    var edges: [4]MultiRootHull.HullEdge = undefined;
-    MultiRootHull.prepareEdgeSlack(&x, &y, &slack);
-    MultiRootHull.prepareEdges(&x, &y, &edges);
+    var edges: [4]HullMultiRoot.HullEdge = undefined;
+    HullMultiRoot.prepareEdgeSlack(&x, &y, &slack);
+    HullMultiRoot.prepareEdges(&x, &y, &edges);
     for (0..100) |yy| for (0..100) |xx| {
         const px: F = @as(F, @floatFromInt(xx)) + 0.5;
         const py: F = @as(F, @floatFromInt(yy)) + 0.5;
         try std.testing.expectEqual(
-            MultiRootHull.containsPrepared(&x, &y, &slack, px, py),
-            MultiRootHull.containsEdges(&edges, px, py),
+            HullMultiRoot.containsPrepared(&x, &y, &slack, px, py),
+            HullMultiRoot.containsEdges(&edges, px, py),
         );
     };
     for ([_]F{ -1.0e-7, 0, 1.0e-7, 0.5, 75.999999 }) |offset| {
         const px = 4 + offset;
         const py: F = 40;
         try std.testing.expectEqual(
-            MultiRootHull.containsPrepared(&x, &y, &slack, px, py),
-            MultiRootHull.containsEdges(&edges, px, py),
+            HullMultiRoot.containsPrepared(&x, &y, &slack, px, py),
+            HullMultiRoot.containsEdges(&edges, px, py),
         );
     }
 
     const large_x = [_]F{ 1e6, 1e6, 1e6 + 1e-3, 1e6 + 1e-3 };
     const large_y = [_]F{ 1e6, 1e6 + 10, 1e6 + 10, 1e6 };
     var large_slack: [4]F = undefined;
-    var large_edges: [4]MultiRootHull.HullEdge = undefined;
-    MultiRootHull.prepareEdgeSlack(&large_x, &large_y, &large_slack);
-    MultiRootHull.prepareEdges(&large_x, &large_y, &large_edges);
+    var large_edges: [4]HullMultiRoot.HullEdge = undefined;
+    HullMultiRoot.prepareEdgeSlack(&large_x, &large_y, &large_slack);
+    HullMultiRoot.prepareEdges(&large_x, &large_y, &large_edges);
     for ([_]F{ 0, 0.25, 0.5, 0.75, 1 }) |fraction| {
         const px = 1e6 + fraction * 1e-3;
         const py: F = 1e6 + 5;
-        const old = MultiRootHull.containsPrepared(
+        const old = HullMultiRoot.containsPrepared(
             &large_x,
             &large_y,
             &large_slack,
             px,
             py,
         );
-        if (old) try std.testing.expect(MultiRootHull.containsEdges(
+        if (old) try std.testing.expect(HullMultiRoot.containsEdges(
             &large_edges,
             px,
             py,
@@ -1302,11 +1302,11 @@ fn checkPreparedHullEdges(camera: *const cam.CameraPrepared) !void {
         .y = .{ 0, 0, 1, 1 },
         .z = .{ 0, 0, 0, 0 },
     };
-    try std.testing.expectEqual(@as(u8, 0), MultiRootHull.buildPointsFromClip(4, camera, behind).count);
+    try std.testing.expectEqual(@as(u8, 0), HullMultiRoot.buildPointsFromClip(4, camera, behind).count);
     behind.z = .{ 1, 1, 1, 1 };
     behind.x = .{ 0, 0, 0, 0 };
     behind.y = .{ 0, 0, 0, 0 };
-    const degenerate = MultiRootHull.buildPointsFromClip(4, camera, behind);
+    const degenerate = HullMultiRoot.buildPointsFromClip(4, camera, behind);
     try std.testing.expectEqual(@as(u8, 4), degenerate.count);
     try std.testing.expect(degenerate.contains(50, 50));
 }
@@ -1321,16 +1321,16 @@ fn checkParentOnlyHierarchyMisses(camera: *const cam.CameraPrepared) !void {
         coords.y[nn] = -100 * v;
         coords.z[nn] = 1 + 0.2 * u;
     }
-    const parent_hull = MultiRootHull.buildPointsFromClip(9, camera, coords);
-    var leaves: [4]MultiRootHull.BezierLeaf = undefined;
-    MultiRootHull.prepareFourBezierLeaves(9, camera, coords, &leaves, .on_the_fly);
+    const parent_hull = HullMultiRoot.buildPointsFromClip(9, camera, coords);
+    var leaves: [4]HullMultiRoot.BezierLeaf = undefined;
+    HullMultiRoot.prepareFourBezierLeaves(9, camera, coords, &leaves, .on_the_fly);
     var rejected_misses: usize = 0;
     for (0..100) |yy| {
         const py: F = @as(F, @floatFromInt(yy)) + 0.5;
         for (0..100) |xx| {
             const px: F = @as(F, @floatFromInt(xx)) + 0.5;
             if (!parent_hull.contains(px, py)) continue;
-            if (MultiRootHull.childMask(&leaves, px, py, .on_the_fly) == 0)
+            if (HullMultiRoot.childMask(&leaves, px, py, .on_the_fly) == 0)
                 rejected_misses += 1;
         }
     }
@@ -1348,7 +1348,7 @@ fn checkThreeRootQuad8(camera: *const cam.CameraPrepared) !void {
             coords.y[nn] = polarity * -20 * v;
             coords.z[nn] = 1 + 0.2 * u;
         }
-        const candidate = MultiRootHull.buildPointsFromClip(8, camera, coords);
+        const candidate = HullMultiRoot.buildPointsFromClip(8, camera, coords);
         try std.testing.expect(candidate.contains(50, 50));
     }
 }

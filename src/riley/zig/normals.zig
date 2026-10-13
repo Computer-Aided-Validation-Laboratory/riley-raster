@@ -17,7 +17,7 @@ const shaderops = @import("shaderops.zig");
 const pce = @import("parachunkexec.zig");
 const geomkerns = @import("geometrykernels.zig");
 const MeshType = geomkerns.MeshType;
-const rops = @import("rasterops.zig");
+const rops = @import("rasterfrontend.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func

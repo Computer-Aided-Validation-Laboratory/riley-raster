@@ -9,7 +9,8 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const rops = @import("rasterops.zig");
+const rops = @import("rasterfrontend.zig");
+const bin = @import("elemtilebinning.zig");
 const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
 
@@ -27,7 +28,7 @@ pub const ScratchTileGeometry = struct {
     core_start_x_subpx: usize,
     core_start_y_subpx: usize,
 
-    pub fn init(tile: rops.ActiveTile, sub_sample: usize) ScratchTileGeometry {
+    pub fn init(tile: bin.ActiveTile, sub_sample: usize) ScratchTileGeometry {
         const core_w_px = @as(usize, tile.x_px_max - tile.x_px_min);
         const core_h_px = @as(usize, tile.y_px_max - tile.y_px_min);
 
@@ -58,7 +59,7 @@ pub const ScratchTileGeometry = struct {
     }
 
     pub fn initCoreOnly(
-        tile: rops.ActiveTile,
+        tile: bin.ActiveTile,
         sub_sample: usize,
     ) ScratchTileGeometry {
         const core_w_px = @as(usize, tile.x_px_max - tile.x_px_min);
@@ -131,7 +132,7 @@ pub fn resolveTileWithPSF(
     avg_fn: AvgFn,
     filter_separable_fn: FilterSeparableFn,
     filter_nonseparable_fn: FilterNonSeparableFn,
-    tile: rops.ActiveTile,
+    tile: bin.ActiveTile,
     sub_samp: usize,
     spx_stride: usize,
     fields_num: u8,

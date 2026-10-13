@@ -18,7 +18,9 @@ const sliceops = @import("sliceops.zig");
 
 const cam = @import("camera.zig");
 const camops = @import("cameraops.zig");
-const rops = @import("rasterops.zig");
+const rops = @import("rasterfrontend.zig");
+const bin = @import("elemtilebinning.zig");
+const binglobbuff = @import("elemtilebinning_globbuff.zig");
 const mo = @import("meshpipeline.zig");
 const shaderops = @import("shaderops.zig");
 const db = @import("distortbounds.zig");
@@ -36,9 +38,9 @@ const valinp = @import("validateinput.zig");
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
 const rasterengine = @import("rasterengine.zig");
-const rasterengineglobal = @import("rasterengineglobal.zig");
-const scratchresolveglobal = @import("scratchresolveglobal.zig");
-const subpxframe = @import("subpxframe.zig");
+const rasterengineglobbuff = @import("rasterengine_globbuff.zig");
+const scratchresolveglobbuff = @import("scratchresolve_globbuff.zig");
+const subpxframe = @import("subpxframe_globbuff.zig");
 
 const rastcfg = @import("rasterconfig.zig");
 const RenderParallelPlan = scalingpolicy.RenderParallelPlan;
@@ -1126,8 +1128,8 @@ fn runGeometryStage(
         job.ctx.mesh_types[ii] = fm.mesh.mesh_type;
         job.ctx.elem_float_bboxes_by_mesh[ii] = fm.elem_float_bboxes;
         job.ctx.elems_in_image_by_mesh[ii] = fm.elems_in_image;
-        job.ctx.raster_hulls[ii] = fm.raster_hull;
-        job.ctx.multi_root_by_mesh[ii] = fm.multi_root;
+        job.ctx.hull_adaptive_by_mesh[ii] = fm.hull_adaptive;
+        job.ctx.hull_multiroot_by_mesh[ii] = fm.hull_multiroot;
     }
     job.ctx.total_elems_num = geo_res.total_elems_num;
     job.ctx.total_elems_in_image = geo_res.total_elems_in_image;
@@ -1170,7 +1172,7 @@ fn sceneTileOverlapBinning(
     const time_start_overlap = Timestamp.now(io, .awake);
 
     ctx.tiling = if (job.config.advanced.raster.buffer_mode == .tile_local)
-        try rops.sceneTileElemOverlap(
+        try bin.sceneTileElemOverlap(
             outer_alloc,
             chunk_exec,
             scalingpolicy.geometryWorkers(geom_workers),
@@ -1187,7 +1189,7 @@ fn sceneTileOverlapBinning(
             ctx.root_classes_by_mesh,
         )
     else
-        try sceneGlobalTileElemOverlap(
+        try binglobbuff.binSceneGlobBuff(
             outer_alloc,
             ctx.actual_tile_size,
             job.camera.sub_sample,
@@ -1210,127 +1212,9 @@ fn sceneTileOverlapBinning(
     );
 }
 
-fn sceneGlobalTileElemOverlap(
-    outer_alloc: std.mem.Allocator,
-    tile_size: u16,
-    sub_sample: u32,
-    screen_px_x: u16,
-    screen_px_y: u16,
-    core_y_px_min: u16,
-    core_y_px_max: u16,
-    halo_px: u16,
-    elems_in_image_by_mesh: []const usize,
-    elem_bboxes_by_mesh: []const []rops.ElemBBox,
-    elem_float_bboxes_by_mesh: []const ?[]db.DistortBounds,
-    mesh_types: []const geomkerns.MeshType,
-    root_classes_by_mesh: []const []rops.RootClass,
-) !rops.TilingOverlaps {
-    const tiles_x = try std.math.divCeil(usize, screen_px_x, tile_size);
-    std.debug.assert(core_y_px_min < core_y_px_max);
-    std.debug.assert(core_y_px_max <= screen_px_y);
-
-    const tiles_y = try std.math.divCeil(
-        usize,
-        core_y_px_max - core_y_px_min,
-        tile_size,
-    );
-
-    var tiles: std.ArrayList(rops.ActiveTile) = .empty;
-    defer tiles.deinit(outer_alloc);
-
-    var overlaps: std.ArrayList(rops.OverlapBBox) = .empty;
-    defer overlaps.deinit(outer_alloc);
-
-    const sub_samp: i32 = @intCast(sub_sample);
-
-    for (0..tiles_y) |ty| {
-        const y_min: u16 = @intCast(core_y_px_min + ty * tile_size);
-        const y_max = @min(
-            core_y_px_max,
-            @as(u16, @intCast(core_y_px_min + (ty + 1) * tile_size)),
-        );
-        for (0..tiles_x) |tx| {
-            const x_min: u16 = @intCast(tx * tile_size);
-            const x_max = @min(screen_px_x, @as(u16, @intCast((tx + 1) * tile_size)));
-            const scratch_x_min: i32 = @as(i32, x_min) - if (tx == 0) halo_px else 0;
-            const scratch_x_max: i32 = @as(i32, x_max) +
-                if (tx + 1 == tiles_x) halo_px else 0;
-            const scratch_y_min: i32 = @as(i32, y_min) - if (ty == 0) halo_px else 0;
-            const scratch_y_max: i32 = @as(i32, y_max) +
-                if (ty + 1 == tiles_y) halo_px else 0;
-            const overlap_start = overlaps.items.len;
-            var ranges = [_]rops.BucketRange{.{}} ** rops.bucket_count;
-
-            for (0..rops.bucket_count) |bb| {
-                const bucket_start = overlaps.items.len;
-                for (elem_bboxes_by_mesh, 0..) |elem_bboxes, mesh_idx| {
-                    const maybe_float_bboxes = elem_float_bboxes_by_mesh[mesh_idx];
-                    const count = elems_in_image_by_mesh[mesh_idx];
-                    for (elem_bboxes[0..count], 0..) |elem_bbox, ee| {
-                        if (@intFromEnum(rops.bucketForElem(
-                            mesh_types[mesh_idx],
-                            root_classes_by_mesh[mesh_idx],
-                            elem_bbox.elem_idx,
-                        )) != bb) continue;
-                        const floating: ?db.DistortBounds = if (maybe_float_bboxes) |fb|
-                            fb[ee]
-                        else
-                            null;
-                        const overlap = rops.clipElemBBoxToTile(
-                            elem_bbox,
-                            floating,
-                            mesh_idx,
-                            scratch_x_min,
-                            scratch_x_max,
-                            scratch_y_min,
-                            scratch_y_max,
-                        );
-                        if (overlap.x_min >= overlap.x_max or
-                            overlap.y_min >= overlap.y_max)
-                        {
-                            continue;
-                        }
-                        try overlaps.append(outer_alloc, overlap);
-                    }
-                }
-                ranges[bb] = .{
-                    .start = bucket_start,
-                    .count = overlaps.items.len - bucket_start,
-                };
-            }
-            if (overlaps.items.len == overlap_start) continue;
-            try tiles.append(outer_alloc, .{
-                .overlap_start = overlap_start,
-                .overlap_count = overlaps.items.len - overlap_start,
-                .buckets = ranges,
-                .x_px_min = x_min,
-                .y_px_min = y_min,
-                .x_px_max = x_max,
-                .y_px_max = y_max,
-                .scratch_x_px_min = scratch_x_min,
-                .scratch_y_px_min = scratch_y_min,
-                .scratch_x_px_max = scratch_x_max,
-                .scratch_y_px_max = scratch_y_max,
-                .core_subx_min = @as(i32, x_min) * sub_samp,
-                .core_suby_min = @as(i32, y_min) * sub_samp,
-                .core_subx_max = @as(i32, x_max) * sub_samp,
-                .core_suby_max = @as(i32, y_max) * sub_samp,
-                .scratch_subx_min = scratch_x_min * sub_samp,
-                .scratch_suby_min = scratch_y_min * sub_samp,
-                .scratch_subx_max = scratch_x_max * sub_samp,
-                .scratch_suby_max = scratch_y_max * sub_samp,
-            });
-        }
-    }
-    return .{
-        .active_tiles = try tiles.toOwnedSlice(outer_alloc),
-        .overlaps = try overlaps.toOwnedSlice(outer_alloc),
-    };
-}
-
-fn recordGlobalTilingStats(
+fn recordTilingStatsGlobBuff(
     stats: *report.GlobalSubpxStats,
-    tiling: rops.TilingOverlaps,
+    tiling: bin.TilingOverlaps,
     tile_grid_count: usize,
 ) void {
     stats.tile_grid_count += tile_grid_count;
@@ -1583,12 +1467,12 @@ const FrameContext = struct {
     prep_meshes: []mo.MeshPrepared = &.{},
     elem_bboxes_by_mesh: [][]rops.ElemBBox = &.{},
     elem_float_bboxes_by_mesh: []?[]db.DistortBounds = &.{},
-    root_classes_by_mesh: [][]rops.RootClass = &.{},
+    root_classes_by_mesh: [][]rops.ElemRootClass = &.{},
     mesh_types: []geomkerns.MeshType = &.{},
     elems_in_image_by_mesh: []usize = &.{},
-    raster_hulls: []?ndarray.NDArray(F) = &.{},
-    multi_root_by_mesh: []?rops.MultiRootPrepared = &.{},
-    tiling: ?rops.TilingOverlaps = null,
+    hull_adaptive_by_mesh: []?ndarray.NDArray(F) = &.{},
+    hull_multiroot_by_mesh: []?mo.MultiRootPrepared = &.{},
+    tiling: ?bin.TilingOverlaps = null,
     total_nodes_num: usize = 0,
     total_elems_num: usize = 0,
     total_elems_in_image: usize = 0,
@@ -1650,11 +1534,11 @@ fn prepareFrameContext(
     ctx.prep_meshes = try outer_alloc.alloc(mo.MeshPrepared, mesh_n);
     ctx.elem_bboxes_by_mesh = try outer_alloc.alloc([]rops.ElemBBox, mesh_n);
     ctx.elem_float_bboxes_by_mesh = try outer_alloc.alloc(?[]db.DistortBounds, mesh_n);
-    ctx.root_classes_by_mesh = try outer_alloc.alloc([]rops.RootClass, mesh_n);
+    ctx.root_classes_by_mesh = try outer_alloc.alloc([]rops.ElemRootClass, mesh_n);
     ctx.mesh_types = try outer_alloc.alloc(geomkerns.MeshType, mesh_n);
     ctx.elems_in_image_by_mesh = try outer_alloc.alloc(usize, mesh_n);
-    ctx.raster_hulls = try outer_alloc.alloc(?ndarray.NDArray(F), mesh_n);
-    ctx.multi_root_by_mesh = try outer_alloc.alloc(?rops.MultiRootPrepared, mesh_n);
+    ctx.hull_adaptive_by_mesh = try outer_alloc.alloc(?ndarray.NDArray(F), mesh_n);
+    ctx.hull_multiroot_by_mesh = try outer_alloc.alloc(?mo.MultiRootPrepared, mesh_n);
 }
 
 fn prepareFrameBuff(
@@ -1764,7 +1648,6 @@ fn rasterFrame(
         .config = frame_job.config,
         .frame_idx = frame_job.frame_idx,
         .tile_size = ctx.actual_tile_size,
-        .multi_root_by_mesh = ctx.multi_root_by_mesh,
     };
     var global_resolve_time_ns: F = 0.0;
     if (frame_job.config.advanced.raster.buffer_mode != .tile_local) {
@@ -1791,7 +1674,10 @@ fn rasterFrame(
             raster_workers,
             ctx.tiling.?,
             ctx.prep_meshes,
-            ctx.raster_hulls,
+            mo.MeshRootInputs{
+                .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
+                .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
+            },
             &ctx.frame_arr,
         ),
         .global_subpx_full => {
@@ -1827,11 +1713,11 @@ fn rasterFrame(
                     frame_job.camera.pixels_num[1],
                     ctx.actual_tile_size,
                 ) catch unreachable;
-                recordGlobalTilingStats(stats, ctx.tiling.?, tiles_x * tiles_y);
+                recordTilingStatsGlobBuff(stats, ctx.tiling.?, tiles_x * tiles_y);
             }
 
             const time_start_tile_raster = Timestamp.now(io, .awake);
-            const workers_used = try rasterengineglobal.rasterScene(
+            const workers_used = try rasterengineglobbuff.rasterSceneGlobBuff(
                 report_mode,
                 outer_alloc,
                 io,
@@ -1840,7 +1726,10 @@ fn rasterFrame(
                 raster_workers,
                 ctx.tiling.?,
                 ctx.prep_meshes,
-                ctx.raster_hulls,
+                mo.MeshRootInputs{
+                    .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
+                    .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
+                },
                 &target,
                 &ctx.frame_arr,
             );
@@ -1849,7 +1738,7 @@ fn rasterFrame(
                 time_start_tile_raster.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds,
             );
             const time_start_resolve = Timestamp.now(io, .awake);
-            const resolve_workers_used = try scratchresolveglobal.resolve(
+            const resolve_workers_used = try scratchresolveglobbuff.resolveGlobBuff(
                 outer_alloc,
                 io,
                 &target,
@@ -1904,12 +1793,12 @@ fn rasterFrame(
                     halo_subpx,
                     frame_job.config.background_value,
                 );
-                var stripe_tiling: rops.TilingOverlaps = undefined;
+                var stripe_tiling: bin.TilingOverlaps = undefined;
                 var stripe_tiling_owned = false;
                 if (core_suby_min == 0 and core_suby_max == image_h_subpx) {
                     stripe_tiling = ctx.tiling.?;
                 } else {
-                    stripe_tiling = try sceneGlobalTileElemOverlap(
+                    stripe_tiling = try binglobbuff.binSceneGlobBuff(
                         outer_alloc,
                         ctx.actual_tile_size,
                         frame_job.camera.sub_sample,
@@ -1942,7 +1831,7 @@ fn rasterFrame(
                         stripe_h_px,
                         ctx.actual_tile_size,
                     ) catch unreachable;
-                    recordGlobalTilingStats(stats, stripe_tiling, tiles_x * tiles_y);
+                    recordTilingStatsGlobBuff(stats, stripe_tiling, tiles_x * tiles_y);
                     stats.stripe_core_subpx = stripe_subpx;
                     stats.stripe_count += 1;
                     stats.final_stripe_core_subpx = core_suby_max - core_suby_min;
@@ -1961,7 +1850,7 @@ fn rasterFrame(
                 }
 
                 const time_start_tile_raster = Timestamp.now(io, .awake);
-                const workers_used = try rasterengineglobal.rasterScene(
+                const workers_used = try rasterengineglobbuff.rasterSceneGlobBuff(
                     report_mode,
                     outer_alloc,
                     io,
@@ -1970,7 +1859,10 @@ fn rasterFrame(
                     raster_workers,
                     stripe_tiling,
                     ctx.prep_meshes,
-                    ctx.raster_hulls,
+                    mo.MeshRootInputs{
+                        .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
+                        .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
+                    },
                     &stripe.target,
                     &ctx.frame_arr,
                 );
@@ -1983,7 +1875,7 @@ fn rasterFrame(
                     time_start_tile_raster.durationTo(time_end_tile_raster).raw.nanoseconds,
                 );
                 const time_start_resolve = Timestamp.now(io, .awake);
-                const resolve_workers_used = try scratchresolveglobal.resolveRows(
+                const resolve_workers_used = try scratchresolveglobbuff.resolveRowsGlobBuff(
                     outer_alloc,
                     io,
                     &stripe.target,
@@ -2126,82 +2018,6 @@ test "ideal sensor bounds are prepared once per camera with effective halo" {
             const effective_halo = distorted.prep_psf.halo_px;
             const expected = try db.idealSensorBounds(&distorted, effective_halo);
             try std.testing.expectEqualDeep(expected, distorted.ideal_sensor_bounds.?);
-        }
-    }
-}
-
-test "global sub-pixel tiles own disjoint cores and retain halo only at frame edges" {
-    var elem_bboxes = [_]rops.ElemBBox{.{
-        .elem_idx = 0,
-        .x_min = -2,
-        .x_max = 12,
-        .y_min = -2,
-        .y_max = 11,
-    }};
-    const elems_in_image = [_]usize{1};
-    const elem_bboxes_by_mesh = [_][]rops.ElemBBox{elem_bboxes[0..]};
-    const elem_float_bboxes_by_mesh = [_]?[]db.DistortBounds{null};
-    const mesh_types = [_]geomkerns.MeshType{.tri3};
-    const root_classes_by_mesh = [_][]rops.RootClass{&.{}};
-    const sub_sample: u32 = 2;
-    const halo_px: u16 = 2;
-    const screen_w_px: u16 = 10;
-    const screen_h_px: u16 = 9;
-    const screen_w_subpx: i32 = screen_w_px * sub_sample;
-    const screen_h_subpx: i32 = screen_h_px * sub_sample;
-    const halo_subpx: i32 = halo_px * sub_sample;
-
-    const tiling = try sceneGlobalTileElemOverlap(
-        std.testing.allocator,
-        4,
-        sub_sample,
-        screen_w_px,
-        screen_h_px,
-        0,
-        screen_h_px,
-        halo_px,
-        elems_in_image[0..],
-        elem_bboxes_by_mesh[0..],
-        elem_float_bboxes_by_mesh[0..],
-        mesh_types[0..],
-        root_classes_by_mesh[0..],
-    );
-    defer std.testing.allocator.free(tiling.active_tiles);
-    defer std.testing.allocator.free(tiling.overlaps);
-
-    try std.testing.expectEqual(@as(usize, 9), tiling.active_tiles.len);
-    for (tiling.active_tiles) |tile| {
-        try std.testing.expectEqual(
-            if (tile.core_subx_min == 0) -halo_subpx else tile.core_subx_min,
-            tile.scratch_subx_min,
-        );
-        try std.testing.expectEqual(
-            if (tile.core_subx_max == screen_w_subpx)
-                screen_w_subpx + halo_subpx
-            else
-                tile.core_subx_max,
-            tile.scratch_subx_max,
-        );
-        try std.testing.expectEqual(
-            if (tile.core_suby_min == 0) -halo_subpx else tile.core_suby_min,
-            tile.scratch_suby_min,
-        );
-        try std.testing.expectEqual(
-            if (tile.core_suby_max == screen_h_subpx)
-                screen_h_subpx + halo_subpx
-            else
-                tile.core_suby_max,
-            tile.scratch_suby_max,
-        );
-    }
-
-    for (tiling.active_tiles, 0..) |tile_a, aa| {
-        for (tiling.active_tiles[aa + 1 ..]) |tile_b| {
-            const overlaps_x = tile_a.scratch_subx_min < tile_b.scratch_subx_max and
-                tile_b.scratch_subx_min < tile_a.scratch_subx_max;
-            const overlaps_y = tile_a.scratch_suby_min < tile_b.scratch_suby_max and
-                tile_b.scratch_suby_min < tile_a.scratch_suby_max;
-            try std.testing.expect(!(overlaps_x and overlaps_y));
         }
     }
 }

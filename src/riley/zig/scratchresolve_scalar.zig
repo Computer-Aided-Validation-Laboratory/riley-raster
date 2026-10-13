@@ -7,7 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const std = @import("std");
-const rops = @import("rasterops.zig");
+const rops = @import("rasterfrontend.zig");
+const bin = @import("elemtilebinning.zig");
 const cam = @import("camera.zig");
 const common = @import("scratchresolve_common.zig");
 const matslice = @import("matslice.zig");
@@ -31,7 +32,7 @@ pub const sampleScratchOrBackground = common.sampleScratchOrBackground;
 // --------------------------------------------------------------------------------------
 
 pub fn resolveScratchDirectCore(
-    tile: rops.ActiveTile,
+    tile: bin.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     spx_stride: usize,
     fields_num: u8,
@@ -157,7 +158,7 @@ pub fn resolveScratchDirectCore(
 }
 
 pub fn avgScratchCore(
-    tile: rops.ActiveTile,
+    tile: bin.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
     spx_stride: usize,

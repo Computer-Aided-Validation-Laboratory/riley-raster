@@ -11,7 +11,8 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
 const tol = cfg.tol;
-const rops = @import("rasterops.zig");
+const rops = @import("rasterfrontend.zig");
+const edgeops = @import("hulledge.zig");
 const HullEdge = @import("hulledge.zig").HullEdge;
 const EdgeFunMode = @import("rasterconfig.zig").EdgeFunMode;
 
@@ -85,19 +86,19 @@ pub fn Tessellation(comptime NT: usize) type {
                         tri.edges[1].eval(px, py) >= 0 and
                         tri.edges[2].eval(px, py) >= 0
                 else blk: {
-                    const e0 = rops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
-                    const e1 = rops.edgeFun3(tri.x[1], tri.y[1], tri.x[2], tri.y[2], px, py);
-                    const e2 = rops.edgeFun3(tri.x[2], tri.y[2], tri.x[0], tri.y[0], px, py);
+                    const e0 = edgeops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
+                    const e1 = edgeops.edgeFun3(tri.x[1], tri.y[1], tri.x[2], tri.y[2], px, py);
+                    const e2 = edgeops.edgeFun3(tri.x[2], tri.y[2], tri.x[0], tri.y[0], px, py);
                     break :blk e0 >= -eps and e1 >= -eps and e2 >= -eps;
                 };
 
                 if (in_tri) {
                     if (!with_seed) return .{ .is_in = true, .seed_xi = 0, .seed_eta = 0 };
-                    const e0 = rops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
-                    const e1 = rops.edgeFun3(tri.x[1], tri.y[1], tri.x[2], tri.y[2], px, py);
-                    const e2 = rops.edgeFun3(tri.x[2], tri.y[2], tri.x[0], tri.y[0], px, py);
+                    const e0 = edgeops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
+                    const e1 = edgeops.edgeFun3(tri.x[1], tri.y[1], tri.x[2], tri.y[2], px, py);
+                    const e2 = edgeops.edgeFun3(tri.x[2], tri.y[2], tri.x[0], tri.y[0], px, py);
 
-                    const area = rops.edgeFun3(
+                    const area = edgeops.edgeFun3(
                         tri.x[0],
                         tri.y[0],
                         tri.x[1],

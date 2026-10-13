@@ -26,7 +26,7 @@ const imageops = @import("imageops.zig");
 const cam = @import("camera.zig");
 const pce = @import("parachunkexec.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
-const rops = @import("rasterops.zig");
+const rops = @import("rasterfrontend.zig");
 const report = @import("report.zig");
 const sceneops = @import("sceneops.zig");
 const texops = @import("textureops.zig");
@@ -35,7 +35,7 @@ const Timestamp = std.Io.Clock.Timestamp;
 const shaderops = @import("shaderops.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
-const MultiRootHull = @import("multiroothull.zig").MultiRootHull;
+const HullMultiRoot = @import("hullmultiroot.zig").HullMultiRoot;
 const db = @import("distortbounds.zig");
 
 // --------------------------------------------------------------------------------------
@@ -64,6 +64,22 @@ pub const MeshStatic = struct {
     shader: shaderops.ShaderStatic,
 };
 
+pub const MultiRootPrepared = struct {
+    hull_x: matslice.MatSlice(F),
+    hull_y: matslice.MatSlice(F),
+    hull_edges: [][9]HullMultiRoot.HullEdge,
+    hull_count: vecslice.VecSlice(u8),
+    indices: matslice.MatSlice(u8),
+    valid_depth: vecslice.VecSlice(u8),
+    slot_by_visible_elem: vecslice.VecSlice(u32),
+    leaves: []HullMultiRoot.BezierLeaf = &.{},
+};
+
+pub const MeshRootInputs = struct {
+    hull_adaptive_by_mesh: []const ?ndarray.NDArray(F),
+    hull_multiroot_by_mesh: []const ?MultiRootPrepared,
+};
+
 // Workspace: Temporary node-order working area for the geometry pipeline.
 // meshio.Coords: Node-order [total_nodes, 3]. Holds coords for a single frame after
 // displacement.
@@ -72,11 +88,11 @@ pub const MeshFrameWorkspace = struct {
     coords_nodes_def_world: ?meshio.Coords,
     vis_orig_elem_inds: []usize,
     elem_bboxes: []rops.ElemBBox,
-    root_classes: []rops.RootClass,
+    root_classes: []rops.ElemRootClass,
     elem_float_bboxes: ?[]db.DistortBounds = null,
     elems_in_image: usize,
-    raster_hull: ?ndarray.NDArray(F),
-    multi_root: ?rops.MultiRootPrepared,
+    hull_adaptive: ?ndarray.NDArray(F),
+    hull_multiroot: ?MultiRootPrepared,
     vis_counts_by_chunk: []usize,
     vis_offsets_by_chunk: []usize,
 };
@@ -86,12 +102,12 @@ pub const MeshFrameWorkspace = struct {
 pub const MeshFrame = struct {
     mesh: MeshPrepared,
     elem_bboxes: []rops.ElemBBox,
-    root_classes: []rops.RootClass,
+    root_classes: []rops.ElemRootClass,
     elem_float_bboxes: ?[]db.DistortBounds = null,
     elems_in_image: usize,
     total_elems_num: usize,
-    raster_hull: ?ndarray.NDArray(F),
-    multi_root: ?rops.MultiRootPrepared,
+    hull_adaptive: ?ndarray.NDArray(F),
+    hull_multiroot: ?MultiRootPrepared,
     frame_workspace: MeshFrameWorkspace,
 };
 
@@ -476,6 +492,7 @@ pub fn prepMeshFrames(
         .total_elems_num = 0,
         .total_elems_in_image = 0,
     };
+
     for (static_meshes, 0..) |*mesh_static, ii| {
         // Only needed for nodal interpolation shading and only if not .none. If .none we
         // directly render float fields unscaled.
@@ -604,8 +621,8 @@ fn initMeshFrameWorkspace(
         .root_classes = &.{},
         .elem_float_bboxes = null,
         .elems_in_image = 0,
-        .raster_hull = null,
-        .multi_root = null,
+        .hull_adaptive = null,
+        .hull_multiroot = null,
         .vis_counts_by_chunk = &.{},
         .vis_offsets_by_chunk = &.{},
     };
@@ -724,7 +741,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             ).raw.nanoseconds);
 
             const time_start_cull = Timestamp.now(self.chunk_exec.io, .awake);
-            try self.cullVis(outer_alloc);
+            try self.cullAndClassifyVisibleElems(outer_alloc);
             var mesh_prep = try self.gatherVisCoords(outer_alloc);
             const time_end_cull = Timestamp.now(self.chunk_exec.io, .awake);
             timing.cull_ops += @intCast(time_start_cull.durationTo(
@@ -732,8 +749,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             ).raw.nanoseconds);
 
             const time_start_prep = Timestamp.now(self.chunk_exec.io, .awake);
-            try self.prepareRasterHulls(outer_alloc, &mesh_prep.coords);
-            try self.prepareMultiRootData(outer_alloc, &mesh_prep.coords);
+            try self.prepareAdaptiveHulls(outer_alloc, &mesh_prep.coords);
+            try self.prepareMultiRootElems(outer_alloc, &mesh_prep.coords);
             try self.prepareShader(outer_alloc, &mesh_prep);
             const time_end_prep = Timestamp.now(self.chunk_exec.io, .awake);
             timing.prep_hulls_shaders += @intCast(time_start_prep.durationTo(
@@ -754,8 +771,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .elem_float_bboxes = self.mesh_workspace.elem_float_bboxes,
                 .elems_in_image = self.mesh_workspace.elems_in_image,
                 .total_elems_num = self.mesh_static.connect.getElemsNum(),
-                .raster_hull = self.mesh_workspace.raster_hull,
-                .multi_root = self.mesh_workspace.multi_root,
+                .hull_adaptive = self.mesh_workspace.hull_adaptive,
+                .hull_multiroot = self.mesh_workspace.hull_multiroot,
                 .frame_workspace = self.mesh_workspace,
             };
         }
@@ -870,7 +887,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             vis_counts_by_chunk: []usize,
             cached_distort_bboxes: ?[]?rops.DistortElemBBox,
             cached_bboxes: ?[]?rops.ElemBBox,
-            cached_root_classes: []?rops.RootClass,
+            cached_root_classes: []?rops.ElemRootClass,
             hull_mode: rastcfg.HullMode,
         };
 
@@ -937,7 +954,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             stage.vis_counts_by_chunk[chunk_idx] = vis_count;
         }
 
-        fn cullVis(self: *FrameMeshPipelineType, outer_alloc: std.mem.Allocator) !void {
+        fn cullAndClassifyVisibleElems(self: *FrameMeshPipelineType, outer_alloc: std.mem.Allocator) !void {
             const has_distort = self.camera.ideal_sensor_bounds != null;
 
             var cached_distort_bboxes: ?[]?rops.DistortElemBBox = null;
@@ -956,7 +973,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             const cached_root_classes = if (MT == .tri3 or MT == .tri3opt)
                 &.{}
             else
-                try outer_alloc.alloc(?rops.RootClass, self.elems_num);
+                try outer_alloc.alloc(?rops.ElemRootClass, self.elems_num);
             defer if (cached_root_classes.len != 0)
                 outer_alloc.free(cached_root_classes);
 
@@ -1003,7 +1020,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 &.{}
             else
                 try outer_alloc.alloc(
-                    rops.RootClass,
+                    rops.ElemRootClass,
                     self.mesh_workspace.elems_in_image,
                 );
             self.mesh_workspace.elem_float_bboxes = if (has_distort)
@@ -1049,10 +1066,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             hull_mode: rastcfg.HullMode,
             cached_distort_bboxes: ?[]const ?rops.DistortElemBBox,
             cached_bboxes: ?[]const ?rops.ElemBBox,
-            cached_root_classes: []const ?rops.RootClass,
+            cached_root_classes: []const ?rops.ElemRootClass,
             vis_orig_elem_inds: []usize,
             elem_bboxes: []rops.ElemBBox,
-            root_classes: []rops.RootClass,
+            root_classes: []rops.ElemRootClass,
             elem_float_bboxes: ?[]db.DistortBounds,
             vis_offsets_by_chunk: []const usize,
         };
@@ -1179,27 +1196,27 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             };
         }
 
-        const PrepareRasterHullsStage = struct {
+        const PrepareAdaptiveHullsStage = struct {
             camera: *const cam.CameraPrepared,
             elem_coords: *const ndarray.NDArray(F),
-            raster_hull: *ndarray.NDArray(F),
-            root_classes: []const rops.RootClass,
+            hull_adaptive: *ndarray.NDArray(F),
+            root_classes: []const rops.ElemRootClass,
             hull_mode: rastcfg.HullMode,
         };
 
-        fn runPrepareRasterHulls(
+        fn runPrepareAdaptiveHulls(
             ctx_ptr: *anyopaque,
             chunk_idx: usize,
             range_start: usize,
             range_end: usize,
         ) void {
             _ = chunk_idx;
-            const stage: *PrepareRasterHullsStage = @ptrCast(@alignCast(ctx_ptr));
-            rops.prepareVisibleRasterHullsRange(
+            const stage: *PrepareAdaptiveHullsStage = @ptrCast(@alignCast(ctx_ptr));
+            rops.prepareVisibleAdaptiveHullsRange(
                 MT,
                 stage.camera,
                 stage.elem_coords,
-                stage.raster_hull,
+                stage.hull_adaptive,
                 stage.root_classes,
                 stage.hull_mode,
                 range_start,
@@ -1207,54 +1224,54 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
         }
 
-        fn prepareRasterHulls(
+        fn prepareAdaptiveHulls(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
             elem_coords: *const ndarray.NDArray(F),
         ) !void {
             if (MT == .tri3 or MT == .tri3opt) {
-                self.mesh_workspace.raster_hull = null;
+                self.mesh_workspace.hull_adaptive = null;
                 return;
             }
 
             const NH = comptime MT.getNumHullPoints();
-            self.mesh_workspace.raster_hull = try ndarray.NDArray(F).initFlat(
+            self.mesh_workspace.hull_adaptive = try ndarray.NDArray(F).initFlat(
                 outer_alloc,
                 &[_]usize{ self.mesh_workspace.elems_in_image, 2, NH },
             );
 
-            var hulls_stage = PrepareRasterHullsStage{
+            var hulls_stage = PrepareAdaptiveHullsStage{
                 .camera = self.camera,
                 .elem_coords = elem_coords,
-                .raster_hull = &self.mesh_workspace.raster_hull.?,
+                .hull_adaptive = &self.mesh_workspace.hull_adaptive.?,
                 .root_classes = self.mesh_workspace.root_classes,
                 .hull_mode = self.hull_mode,
             };
             pce.runStaticRange(
                 self.chunk_exec,
                 &hulls_stage,
-                runPrepareRasterHulls,
+                runPrepareAdaptiveHulls,
                 self.mesh_workspace.elems_in_image,
                 self.vis_chunk_size,
             );
         }
 
-        const PrepareMultiRootStage = struct {
+        const PrepareMultiRootElemsStage = struct {
             camera: *const cam.CameraPrepared,
             elem_coords: *const ndarray.NDArray(F),
-            prepared: *rops.MultiRootPrepared,
+            prepared: *MultiRootPrepared,
             multiroot_mode: rastcfg.MultirootSolverMode,
             edge_fun_mode: rastcfg.EdgeFunMode,
         };
 
-        fn runPrepareMultiRootData(
+        fn runPrepareMultiRootElems(
             ctx_ptr: *anyopaque,
             chunk_idx: usize,
             range_start: usize,
             range_end: usize,
         ) void {
             _ = chunk_idx;
-            const stage: *PrepareMultiRootStage = @ptrCast(@alignCast(ctx_ptr));
+            const stage: *PrepareMultiRootElemsStage = @ptrCast(@alignCast(ctx_ptr));
             const N = comptime MT.getNodesNum();
             const Seed = struct { z: F, index: u8 };
 
@@ -1281,7 +1298,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     }
                 }
 
-                const projected_hull = MultiRootHull.buildPointsFromClip(
+                const projected_hull = HullMultiRoot.buildPointsFromClip(
                     N,
                     stage.camera,
                     coords,
@@ -1294,7 +1311,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 }
                 stage.prepared.hull_count.set(slot, projected_hull.count);
                 if (stage.edge_fun_mode == .pre_calc) {
-                    MultiRootHull.prepareEdges(
+                    HullMultiRoot.prepareEdges(
                         hx[0..projected_hull.count],
                         hy[0..projected_hull.count],
                         stage.prepared.hull_edges[slot][0..projected_hull.count],
@@ -1303,7 +1320,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
                 const leaf_offset = @as(usize, slot) * 4;
                 const leaf_slice = stage.prepared.leaves[leaf_offset .. leaf_offset + 4];
-                MultiRootHull.prepareFourBezierLeaves(
+                HullMultiRoot.prepareFourBezierLeaves(
                     N,
                     stage.camera,
                     coords,
@@ -1407,13 +1424,13 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
 
-        fn prepareMultiRootData(
+        fn prepareMultiRootElems(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
             elem_coords: *const ndarray.NDArray(F),
         ) !void {
             if (comptime MT == .tri3 or MT == .tri3opt) {
-                self.mesh_workspace.multi_root = null;
+                self.mesh_workspace.hull_multiroot = null;
                 return;
             }
 
@@ -1423,7 +1440,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 if (root_class == .multi_root) multi_count += 1;
             }
             if (multi_count == 0) {
-                self.mesh_workspace.multi_root = null;
+                self.mesh_workspace.hull_multiroot = null;
                 return;
             }
             if (multi_count >= std.math.maxInt(u32)) {
@@ -1440,16 +1457,16 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
 
             const leaves = try outer_alloc.alloc(
-                MultiRootHull.BezierLeaf,
+                HullMultiRoot.BezierLeaf,
                 multi_count * 4,
             );
 
-            self.mesh_workspace.multi_root = .{
+            self.mesh_workspace.hull_multiroot = .{
                 .hull_x = try matslice.MatSlice(F).initAlloc(outer_alloc, multi_count, 9),
                 .hull_y = try matslice.MatSlice(F).initAlloc(outer_alloc, multi_count, 9),
                 .hull_edges = if (self.multiroot_edge_fun_mode == .pre_calc)
                     try outer_alloc.alloc(
-                        [9]MultiRootHull.HullEdge,
+                        [9]HullMultiRoot.HullEdge,
                         multi_count,
                     )
                 else
@@ -1469,17 +1486,17 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .leaves = leaves,
             };
 
-            var stage = PrepareMultiRootStage{
+            var stage = PrepareMultiRootElemsStage{
                 .camera = self.camera,
                 .elem_coords = elem_coords,
-                .prepared = &self.mesh_workspace.multi_root.?,
+                .prepared = &self.mesh_workspace.hull_multiroot.?,
                 .multiroot_mode = self.multiroot_mode,
                 .edge_fun_mode = self.multiroot_edge_fun_mode,
             };
             pce.runStaticRange(
                 self.chunk_exec,
                 &stage,
-                runPrepareMultiRootData,
+                runPrepareMultiRootElems,
                 visible_count,
                 self.vis_chunk_size,
             );

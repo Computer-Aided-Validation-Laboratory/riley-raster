@@ -11,14 +11,15 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
 const tol = cfg.tol;
-const rops = @import("rasterops.zig");
+const rops = @import("rasterfrontend.zig");
+const edgeops = @import("hulledge.zig");
 const HullEdge = @import("hulledge.zig").HullEdge;
 const EdgeFunMode = @import("rasterconfig.zig").EdgeFunMode;
-const MultiRootHull = @import("multiroothull_common.zig").MultiRootHull;
+const hullcommon = @import("hullmultiroot_common.zig");
 const cam = @import("camera.zig");
 
 pub fn prepareEdges(x: []const F, y: []const F, edges: []HullEdge) void {
-    MultiRootHull.prepareEdges(x, y, edges);
+    hullcommon.prepareEdges(x, y, edges);
 }
 
 pub fn containsOuter(
@@ -31,9 +32,9 @@ pub fn containsOuter(
     mode: EdgeFunMode,
 ) bool {
     return if (mode == .pre_calc)
-        MultiRootHull.containsEdges(edges, px, py)
+        hullcommon.containsEdges(edges, px, py)
     else
-        MultiRootHull.containsPrepared(x, y, slack, px, py);
+        hullcommon.containsPrepared(x, y, slack, px, py);
 }
 
 pub fn childMask(leaves: anytype, px: F, py: F, mode: EdgeFunMode) u8 {
@@ -61,10 +62,10 @@ pub fn prepareFourBezierLeaves(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
     coords: rops.GatheredElemCoords(N),
-    output: *[4]MultiRootHull.BezierLeaf,
+    output: *[4]hullcommon.BezierLeaf,
     edge_fun_mode: EdgeFunMode,
 ) void {
-    MultiRootHull.prepareFourBezierLeaves(
+    hullcommon.prepareFourBezierLeaves(
         N,
         camera,
         coords,

@@ -8,7 +8,8 @@
 // --------------------------------------------------------------------------------------
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const rops = @import("rasterops.zig");
+const rops = @import("rasterfrontend.zig");
+const bin = @import("elemtilebinning.zig");
 const cam = @import("camera.zig");
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
@@ -42,7 +43,7 @@ pub const ScratchTileGeometry = common.ScratchTileGeometry;
 // --------------------------------------------------------------------------------------
 
 pub fn resolveScratchDirect(
-    tile: rops.ActiveTile,
+    tile: bin.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     spx_tile_size: usize,
     fields_num: u8,
@@ -66,7 +67,7 @@ pub fn resolveScratchDirect(
 }
 
 pub fn avgScratch(
-    tile: rops.ActiveTile,
+    tile: bin.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
     spx_tile_size: usize,
@@ -92,7 +93,7 @@ pub fn avgScratch(
 }
 
 pub fn resolveTileWithPSF(
-    tile: rops.ActiveTile,
+    tile: bin.ActiveTile,
     sub_samp: usize,
     spx_stride: usize,
     fields_num: u8,

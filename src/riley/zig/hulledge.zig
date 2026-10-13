@@ -7,7 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const std = @import("std");
-const F = @import("buildconfig.zig").F;
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 
 pub const HullEdge = struct {
     a: F,
@@ -34,3 +35,33 @@ pub const HullEdge = struct {
         return self.a * px + self.b * py + self.c;
     }
 };
+
+pub fn edgeFun3Slices(
+    comptime ind0: usize,
+    comptime ind1: usize,
+    comptime ind2: usize,
+    x: []const F,
+    y: []const F,
+) F {
+    return ((x[ind2] - x[ind0]) * (y[ind1] - y[ind0]) -
+        (y[ind2] - y[ind0]) * (x[ind1] - x[ind0]));
+}
+
+pub inline fn edgeFun3(x0: F, y0: F, x1: F, y1: F, px: F, py: F) F {
+    return (px - x0) * (y1 - y0) - (py - y0) * (x1 - x0);
+}
+
+pub inline fn edgeFun3SIMD(
+    x0: F,
+    y0: F,
+    x1: F,
+    y1: F,
+    v_px: buildconfig.VecSF,
+    v_py: buildconfig.VecSF,
+) buildconfig.VecSF {
+    const v_x0: buildconfig.VecSF = @splat(x0);
+    const v_y0: buildconfig.VecSF = @splat(y0);
+    const v_x1: buildconfig.VecSF = @splat(x1);
+    const v_y1: buildconfig.VecSF = @splat(y1);
+    return (v_px - v_x0) * (v_y1 - v_y0) - (v_py - v_y0) * (v_x1 - v_x0);
+}

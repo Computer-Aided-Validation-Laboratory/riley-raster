@@ -11,7 +11,8 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
 const tol = cfg.tol;
-const rops = @import("rasterops.zig");
+const rops = @import("rasterfrontend.zig");
+const edgeops = @import("hulledge.zig");
 const HullEdge = @import("hulledge.zig").HullEdge;
 const EdgeFunMode = @import("rasterconfig.zig").EdgeFunMode;
 const VecSB = buildconfig.VecSB;
@@ -26,7 +27,7 @@ const Triangle = struct {
     edges: [3]HullEdge = undefined,
 };
 
-pub const CandidateSIMD = struct {
+pub const CandidateSeedSIMD = struct {
     v_is_in: VecSB,
     v_seed_xi: VecSF,
     v_seed_eta: VecSF,
@@ -60,7 +61,7 @@ pub fn Tessellation(comptime NT: usize) type {
             v_px: VecSF,
             v_py: VecSF,
             mode: EdgeFunMode,
-        ) CandidateSIMD {
+        ) CandidateSeedSIMD {
             return self.evaluateSIMD(v_px, v_py, mode, true);
         }
 
@@ -79,7 +80,7 @@ pub fn Tessellation(comptime NT: usize) type {
             v_py: VecSF,
             mode: EdgeFunMode,
             comptime with_seed: bool,
-        ) CandidateSIMD {
+        ) CandidateSeedSIMD {
             const eps = tol.hull.simd_inclusion;
 
             const v_m_eps: VecSF = @splat(-eps);
@@ -93,21 +94,21 @@ pub fn Tessellation(comptime NT: usize) type {
                     const b0: VecSF = @splat(tri.edges[0].b);
                     const c0: VecSF = @splat(tri.edges[0].c);
                     break :blk a0 * v_px + b0 * v_py + c0;
-                } else rops.edgeFun3SIMD(tri.x[0], tri.y[0], tri.x[1], tri.y[1], v_px, v_py);
+                } else edgeops.edgeFun3SIMD(tri.x[0], tri.y[0], tri.x[1], tri.y[1], v_px, v_py);
 
                 const v_test1: VecSF = if (mode == .pre_calc) blk: {
                     const a1: VecSF = @splat(tri.edges[1].a);
                     const b1: VecSF = @splat(tri.edges[1].b);
                     const c1: VecSF = @splat(tri.edges[1].c);
                     break :blk a1 * v_px + b1 * v_py + c1;
-                } else rops.edgeFun3SIMD(tri.x[1], tri.y[1], tri.x[2], tri.y[2], v_px, v_py);
+                } else edgeops.edgeFun3SIMD(tri.x[1], tri.y[1], tri.x[2], tri.y[2], v_px, v_py);
 
                 const v_test2: VecSF = if (mode == .pre_calc) blk: {
                     const a2: VecSF = @splat(tri.edges[2].a);
                     const b2: VecSF = @splat(tri.edges[2].b);
                     const c2: VecSF = @splat(tri.edges[2].c);
                     break :blk a2 * v_px + b2 * v_py + c2;
-                } else rops.edgeFun3SIMD(tri.x[2], tri.y[2], tri.x[0], tri.y[0], v_px, v_py);
+                } else edgeops.edgeFun3SIMD(tri.x[2], tri.y[2], tri.x[0], tri.y[0], v_px, v_py);
 
                 const threshold: VecSF = if (mode == .pre_calc) @splat(0) else v_m_eps;
 
@@ -117,21 +118,21 @@ pub fn Tessellation(comptime NT: usize) type {
 
                 if (with_seed and @reduce(.Or, v_in_tri)) {
                     const v_e0 = if (mode == .pre_calc)
-                        rops.edgeFun3SIMD(tri.x[0], tri.y[0], tri.x[1], tri.y[1], v_px, v_py)
+                        edgeops.edgeFun3SIMD(tri.x[0], tri.y[0], tri.x[1], tri.y[1], v_px, v_py)
                     else
                         v_test0;
 
                     const v_e1 = if (mode == .pre_calc)
-                        rops.edgeFun3SIMD(tri.x[1], tri.y[1], tri.x[2], tri.y[2], v_px, v_py)
+                        edgeops.edgeFun3SIMD(tri.x[1], tri.y[1], tri.x[2], tri.y[2], v_px, v_py)
                     else
                         v_test1;
 
                     const v_e2 = if (mode == .pre_calc)
-                        rops.edgeFun3SIMD(tri.x[2], tri.y[2], tri.x[0], tri.y[0], v_px, v_py)
+                        edgeops.edgeFun3SIMD(tri.x[2], tri.y[2], tri.x[0], tri.y[0], v_px, v_py)
                     else
                         v_test2;
 
-                    const area = rops.edgeFun3(
+                    const area = edgeops.edgeFun3(
                         tri.x[0],
                         tri.y[0],
                         tri.x[1],

@@ -7,22 +7,22 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const cfg = @import("buildconfig.zig").config;
-const common = @import("multiroothull_common.zig");
+const common = @import("hullmultiroot_common.zig");
 const impl = if (cfg.simd == .on)
-    @import("multiroothull_simd.zig")
+    @import("hullmultiroot_simd.zig")
 else
-    @import("multiroothull_scalar.zig");
-const simd_impl = @import("multiroothull_simd.zig");
+    @import("hullmultiroot_scalar.zig");
+const simd_impl = @import("hullmultiroot_simd.zig");
 
-pub const MultiRootHull = struct {
+pub const HullMultiRoot = struct {
     pub const HullEdge = @import("hulledge.zig").HullEdge;
     pub const Points = common.Points;
-    pub const BezierLeaf = common.MultiRootHull.BezierLeaf;
-    pub const buildPointsFromClip = common.MultiRootHull.buildPointsFromClip;
-    pub const prepareEdgeSlack = common.MultiRootHull.prepareEdgeSlack;
-    pub const contains = common.MultiRootHull.contains;
-    pub const containsPrepared = common.MultiRootHull.containsPrepared;
-    pub const containsEdges = common.MultiRootHull.containsEdges;
+    pub const BezierLeaf = common.BezierLeaf;
+    pub const buildPointsFromClip = common.buildPointsFromClip;
+    pub const prepareEdgeSlack = common.prepareEdgeSlack;
+    pub const contains = common.containsPolygon;
+    pub const containsPrepared = common.containsPrepared;
+    pub const containsEdges = common.containsEdges;
     pub const prepareEdges = impl.prepareEdges;
     pub const prepareFourBezierLeaves = impl.prepareFourBezierLeaves;
     pub const containsOuter = impl.containsOuter;

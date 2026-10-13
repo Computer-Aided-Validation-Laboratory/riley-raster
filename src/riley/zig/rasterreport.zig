@@ -13,7 +13,8 @@ const S = buildconfig.SimdWidth;
 const newton = @import("newton.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 const rastcfg = @import("rasterconfig.zig");
-const rops = @import("rasterops.zig");
+const rops = @import("rasterfrontend.zig");
+const bin = @import("elemtilebinning.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -38,7 +39,7 @@ pub inline fn beginTile(io: std.Io) TileScope {
 pub inline fn finishTile(
     ctx_report: anytype,
     ctx_rast: rops.RasterContext,
-    tile: rops.ActiveTile,
+    tile: bin.ActiveTile,
     tile_duration_ns: u64,
     shaded_px: u64,
     elem_count: usize,
@@ -97,7 +98,7 @@ pub inline fn recordPixelConvStats(
 
 pub inline fn recordTri3SIMDConvStats(
     ctx_report: anytype,
-    tile: rops.ActiveTile,
+    tile: bin.ActiveTile,
     sub_samp: usize,
     scratch_x_u: usize,
     scratch_y_u: usize,
@@ -171,7 +172,7 @@ pub inline fn recordTri3SIMDConvStats(
 
 pub inline fn recordTri3SteppedSIMDConvStats(
     ctx_report: anytype,
-    tile: rops.ActiveTile,
+    tile: bin.ActiveTile,
     sub_samp: usize,
     scratch_x_u: usize,
     global_suby: usize,
@@ -245,7 +246,7 @@ pub inline fn recordNewtonSIMDChunkStats(
     comptime NodesNum: comptime_int,
     comptime DomViolation: anytype,
     ctx_report: anytype,
-    tile: rops.ActiveTile,
+    tile: bin.ActiveTile,
     sub_samp: usize,
     subpx_simd_chunk: anytype,
     v_chunk_mask: @Vector(S, bool),

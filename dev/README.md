@@ -223,14 +223,31 @@ solves. The scalar path uses the same hull geometry. Adaptive one-root
 containment skips barycentric seed calculation when the Newton seed mode is
 `centroid`.
 
-Raster code imports `AdaptiveHull` from `adaptivehull.zig` and `MultiRootHull`
-from `multiroothull.zig` directly. Each path has its own `adaptivehull_*` or
-`multiroothull_*` common, scalar, and SIMD implementation files. The shared
+Raster code imports `HullAdaptive` from `hulladaptive.zig` and `HullMultiRoot`
+from `hullmultiroot.zig` directly. Each path has its own `hulladaptive_*` or
+`hullmultiroot_*` common, scalar, and SIMD implementation files. The shared
 edge-coefficient type lives in `hulledge.zig` and is exposed as
-`MultiRootHull.HullEdge` for prepared multi-root data.
-`MultiRootHull.BezierLeaf` holds a projected hull for one of the four fixed
-Bézier child patches; `AdaptiveHull.Tessellation` belongs only to the adaptive
+`HullMultiRoot.HullEdge` for prepared multi-root data.
+`HullMultiRoot.BezierLeaf` holds a projected hull for one of the four fixed
+Bézier child patches; `HullAdaptive.Tessellation` belongs only to the adaptive
 one-root path.
+
+Raster work has three stages. `meshpipeline.zig` prepares each mesh using
+coordinate, visibility, and hull helpers in `rasterfrontend.zig`.
+It culls and classifies visible elements, then prepares adaptive hulls or
+multiroot hulls and seed data. `MeshFrame` carries the two prepared paths as
+`hull_adaptive` and `hull_multiroot`. `riley.zig` collects their descriptors in
+two compact per-mesh arrays and passes both through `MeshRootInputs` to the
+raster engines. Each element dispatch receives a pointer to its selected path;
+`RasterContext` contains frame-wide settings only.
+`elemtilebinning.zig` builds tile-local element overlaps, while
+`elemtilebinning_globbuff.zig` builds overlaps for a full global subpixel buffer
+or a stripe of it. `riley.zig` orchestrates preparation, binning, and the raster
+engines. Stripe mode repeats global-buffer binning for each stripe as needed.
+Global-buffer raster and resolve files use the `_globbuff` file suffix; their
+function names use `GlobBuff` in Zig camel case. `subpxframe_globbuff.zig` owns
+the shared full-frame target and reusable stripe buffer used by both global
+rasterisation and resolve.
 
 ## Additional Notes
 

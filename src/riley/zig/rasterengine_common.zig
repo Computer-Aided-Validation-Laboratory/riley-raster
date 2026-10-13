@@ -20,11 +20,13 @@ const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const report = @import("report.zig");
 const rasterreport = @import("rasterreport.zig");
-const rops = @import("rasterops.zig");
+const rops = @import("rasterfrontend.zig");
+const bin = @import("elemtilebinning.zig");
+const edgeops = @import("hulledge.zig");
 const newton = @import("newton.zig");
 const pce = @import("parachunkexec.zig");
 const scratchresolve = @import("scratchresolve.zig");
-const subpxframe = @import("subpxframe.zig");
+const subpxframe = @import("subpxframe_globbuff.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 const mo = @import("meshpipeline.zig");
 const MeshPrepared = mo.MeshPrepared;
@@ -75,8 +77,8 @@ pub fn rasterDirectScalComm(
     comptime ScratchBuffs: type,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: rops.ActiveTile,
-    overlap: rops.OverlapBBox,
+    tile: bin.ActiveTile,
+    overlap: bin.OverlapBBox,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     fields_num: u8,
@@ -176,13 +178,16 @@ pub fn rasterDirectScalComm(
             {
                 continue;
             }
+
             subpx_scratch.inv_z[scratch_idx] = inv_z;
             if (scratch_x_u < subpx_scratch.touched_min_x[scratch_y_u]) {
                 subpx_scratch.touched_min_x[scratch_y_u] = scratch_x_u;
             }
+
             if (scratch_x_u > subpx_scratch.touched_max_x[scratch_y_u]) {
                 subpx_scratch.touched_max_x[scratch_y_u] = scratch_x_u;
             }
+
             if (comptime report_mode == .full_stats) {
                 rasterreport.recordPixelIterAndOccupancy(
                     ctx_report,
@@ -232,6 +237,7 @@ pub fn rasterDirectScalComm(
                 ctx_report,
                 &subpx_scratch.image,
             );
+
             shaded_px += 1;
         }
     }
@@ -247,13 +253,15 @@ pub fn rasterSceneComm(
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
     requested_workers: u16,
-    tiling: rops.TilingOverlaps,
+    tiling: bin.TilingOverlaps,
     meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(F),
+    root_inputs: mo.MeshRootInputs,
     image_out_arr: *NDArray(F),
 ) !void {
     const WorkerState = comptime ThreadState(RasterBackend, report_mode);
+
     const TileRangeCtx = TileRangeContext(RasterBackend, report_mode);
+
     const TileRangeWorkerAdapter = struct {
         fn run(
             ctx_ptr: *anyopaque,
@@ -263,6 +271,7 @@ pub fn rasterSceneComm(
         ) anyerror!void {
             const tile_rng_ctx: *TileRangeCtx = @ptrCast(@alignCast(ctx_ptr));
             const worker_state = &tile_rng_ctx.worker_states[worker_idx];
+
             const ctx_report_task = report.ReportContext(report_mode){
                 .log = if (comptime report_mode == .full_stats)
                     tile_rng_ctx.shared_log
@@ -272,6 +281,7 @@ pub fn rasterSceneComm(
 
             for (range_start..range_end) |tile_idx| {
                 const tile = tile_rng_ctx.tiling.active_tiles[tile_idx];
+
                 try rasterTileComm(
                     RasterBackend,
                     report_mode,
@@ -281,7 +291,7 @@ pub fn rasterSceneComm(
                     tile,
                     tile_rng_ctx.tiling.overlaps,
                     tile_rng_ctx.meshes,
-                    tile_rng_ctx.raster_hulls,
+                    tile_rng_ctx.root_inputs,
                     tile_rng_ctx.image_out_arr,
                     &worker_state.subpx_scratch,
                     tile_rng_ctx.fields_num,
@@ -323,7 +333,7 @@ pub fn rasterSceneComm(
         .ctx_rast = ctx_rast,
         .tiling = tiling,
         .meshes = meshes,
-        .raster_hulls = raster_hulls,
+        .root_inputs = root_inputs,
         .image_out_arr = image_out_arr,
         .worker_states = worker_states,
         .shared_log = ctx_report.log,
@@ -350,7 +360,7 @@ pub fn rasterSceneComm(
     }
 }
 
-pub fn rasterSceneGlobalComm(
+pub fn rasterSceneGlobBuff(
     comptime RasterBackend: type,
     comptime report_mode: ReportMode,
     outer_alloc: std.mem.Allocator,
@@ -358,9 +368,9 @@ pub fn rasterSceneGlobalComm(
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
     requested_workers: u16,
-    tiling: rops.TilingOverlaps,
+    tiling: bin.TilingOverlaps,
     meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(F),
+    root_inputs: mo.MeshRootInputs,
     target: *subpxframe.SubpxTarget,
     image_out_arr: *NDArray(F),
 ) !usize {
@@ -371,9 +381,9 @@ pub fn rasterSceneGlobalComm(
         io: std.Io,
         ctx_rast: rops.RasterContext,
         shared_log: *report.LogType(report_mode),
-        tiling: rops.TilingOverlaps,
+        tiling: bin.TilingOverlaps,
         meshes: []const MeshPrepared,
-        raster_hulls: []const ?NDArray(F),
+        root_inputs: mo.MeshRootInputs,
         target: *subpxframe.SubpxTarget,
         image_out_arr: *NDArray(F),
         worker_states: []WorkerState,
@@ -412,7 +422,7 @@ pub fn rasterSceneGlobalComm(
                     tile,
                     tile_rng_ctx.tiling.overlaps,
                     tile_rng_ctx.meshes,
-                    tile_rng_ctx.raster_hulls,
+                    tile_rng_ctx.root_inputs,
                     tile_rng_ctx.image_out_arr,
                     &worker_state.subpx_scratch,
                     tile_rng_ctx.fields_num,
@@ -454,7 +464,7 @@ pub fn rasterSceneGlobalComm(
         .shared_log = ctx_report.log,
         .tiling = tiling,
         .meshes = meshes,
-        .raster_hulls = raster_hulls,
+        .root_inputs = root_inputs,
         .target = target,
         .image_out_arr = image_out_arr,
         .worker_states = worker_states,
@@ -671,7 +681,7 @@ pub const Tri3FixedEdges = struct {
 
 fn fillTileIdealCentFullInMem(
     ctx_rast: rops.RasterContext,
-    tile: rops.ActiveTile,
+    tile: bin.ActiveTile,
     subpx_scratch: anytype,
     subpx_tile_size: usize,
 ) void {
@@ -687,7 +697,7 @@ fn fillTileIdealCentFullInMem(
 
 fn fillTileIdealCent(
     ctx_rast: rops.RasterContext,
-    tile: rops.ActiveTile,
+    tile: bin.ActiveTile,
     subpx_scratch: anytype,
     subpx_tile_size: usize,
 ) !void {
@@ -719,10 +729,10 @@ fn rasterTileComm(
     io: std.Io,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: rops.ActiveTile,
-    overlaps_all: []const rops.OverlapBBox,
+    tile: bin.ActiveTile,
+    overlaps_all: []const bin.OverlapBBox,
     meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(F),
+    root_inputs: mo.MeshRootInputs,
     image_out_arr: *NDArray(F),
     subpx_scratch: *RasterBackend.SubpxScratchBuffs,
     fields_num: u8,
@@ -758,19 +768,30 @@ fn rasterTileComm(
     var camera_fill_ready = false;
     var cam_duration_ns: u64 = 0;
 
-    inline for (@typeInfo(rops.Bucket).@"enum".fields) |bucket_field| {
-        const bucket = @field(rops.Bucket, bucket_field.name);
-        const geom_tag = comptime rops.bucketMeshType(bucket);
-        const root_class = comptime rops.bucketRootClass(bucket);
+    inline for (@typeInfo(bin.ElemBucket).@"enum".fields) |bucket_field| {
+        const bucket = @field(bin.ElemBucket, bucket_field.name);
+        const geom_tag = comptime bin.bucketMeshType(bucket);
+        const root_class = comptime bin.bucketRootClass(bucket);
         const range = tile.buckets[@intFromEnum(bucket)];
         const overlaps = overlaps_all[range.start .. range.start + range.count];
         for (overlaps) |ov| {
             const mesh_idx: usize = ov.mesh_idx;
             const mesh_ptr = &meshes[mesh_idx];
             std.debug.assert(mesh_ptr.mesh_type == geom_tag);
-            std.debug.assert(mesh_idx < raster_hulls.len);
             const coords = &mesh_ptr.coords;
-            const hull = if (raster_hulls[mesh_idx]) |*h| h else null;
+            const hull = if (comptime root_class == .multi_root) blk: {
+                std.debug.assert(mesh_idx < root_inputs.hull_multiroot_by_mesh.len);
+                if (root_inputs.hull_multiroot_by_mesh[mesh_idx]) |*prepared| {
+                    break :blk prepared;
+                }
+                return error.MissingMultiRootData;
+            } else blk: {
+                std.debug.assert(mesh_idx < root_inputs.hull_adaptive_by_mesh.len);
+                if (root_inputs.hull_adaptive_by_mesh[mesh_idx]) |*prepared| {
+                    break :blk prepared;
+                }
+                break :blk null;
+            };
 
             {
                 if (!camera_fill_ready and comptime geom_tag != .tri3opt) {
@@ -1239,10 +1260,10 @@ pub fn rasterTileRaw(
     io: std.Io,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: rops.ActiveTile,
-    overlaps_all: []const rops.OverlapBBox,
+    tile: bin.ActiveTile,
+    overlaps_all: []const bin.OverlapBBox,
     meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(F),
+    root_inputs: mo.MeshRootInputs,
     image_out_arr: *NDArray(F),
     subpx_scratch: *RasterBackend.SubpxScratchBuffs,
     fields_num: u8,
@@ -1257,7 +1278,7 @@ pub fn rasterTileRaw(
         tile,
         overlaps_all,
         meshes,
-        raster_hulls,
+        root_inputs,
         image_out_arr,
         subpx_scratch,
         fields_num,
@@ -1329,9 +1350,9 @@ fn TileRangeContext(
         io: std.Io,
         ctx_rast: rops.RasterContext,
         shared_log: *report.LogType(report_mode),
-        tiling: rops.TilingOverlaps,
+        tiling: bin.TilingOverlaps,
         meshes: []const MeshPrepared,
-        raster_hulls: []const ?NDArray(F),
+        root_inputs: mo.MeshRootInputs,
         image_out_arr: *NDArray(F),
         worker_states: []WorkerState,
         fields_num: u8,
