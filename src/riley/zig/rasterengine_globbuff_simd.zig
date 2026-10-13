@@ -14,7 +14,6 @@ const rops = @import("rasterfrontend.zig");
 const bin = @import("elemtilebinning.zig");
 const report = @import("report.zig");
 const backend = @import("rasterengine_simd.zig");
-const common = @import("rasterengine_globbuff_common.zig");
 const mo = @import("meshpipeline.zig");
 const subpxframe = @import("subpxframe_globbuff.zig");
 
@@ -55,7 +54,7 @@ const GlobalSubpxScratchBuffs = struct {
     }
 };
 
-const GlobalBackend = struct {
+pub const GlobalBackend = struct {
     pub const SubpxScratchBuffs = GlobalSubpxScratchBuffs;
 
     pub fn initSubpxScratch(
@@ -114,7 +113,7 @@ const GlobalBackend = struct {
         comptime ShaderData: type,
         comptime root_class: rops.ElemRootClass,
     ) type {
-        return backend.RasterEngineFor(
+        return backend.RasterEngine(
             GlobalSubpxScratchBuffs,
             Geom,
             ShaderKern,
@@ -123,32 +122,3 @@ const GlobalBackend = struct {
         );
     }
 };
-
-pub fn rasterSceneGlobBuff(
-    comptime report_mode: report.ReportMode,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    ctx_rast: rops.RasterContext,
-    ctx_report: report.ReportContext(report_mode),
-    requested_workers: u16,
-    tiling: bin.TilingOverlaps,
-    meshes: []const mo.MeshPrepared,
-    root_inputs: mo.MeshRootInputs,
-    target: *subpxframe.SubpxTarget,
-    image_out_arr: *ndarray.NDArray(F),
-) !usize {
-    return common.rasterSceneGlobBuff(
-        GlobalBackend,
-        report_mode,
-        outer_alloc,
-        io,
-        ctx_rast,
-        ctx_report,
-        requested_workers,
-        tiling,
-        meshes,
-        root_inputs,
-        target,
-        image_out_arr,
-    );
-}

@@ -37,7 +37,7 @@ const valinp = @import("validateinput.zig");
 
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
-const rasterengine = @import("rasterengine.zig");
+const rasterenginetileloc = @import("rasterengine_tileloc.zig");
 const rasterengineglobbuff = @import("rasterengine_globbuff.zig");
 const scratchresolveglobbuff = @import("scratchresolve_globbuff.zig");
 const subpxframe = @import("subpxframe_globbuff.zig");
@@ -74,8 +74,7 @@ pub const GeometrySchedulingMode = rastcfg.GeometrySchedulingMode;
 
 pub const RenderGroup = rendergroups.RenderGroup;
 pub const ManagedRenderGroups = rendergroups.ManagedRenderGroups;
-/// Borrowed overrides for the advanced render entry points. Supplied groups
-/// must remain alive through the call and replace `RasterConfig.parallel`.
+
 pub const RasterAdvancedOptions = struct {
     render_groups: union(enum) {
         from_config,
@@ -962,11 +961,13 @@ fn processGeometryBatch(
         .auto,
         total_scene_elems,
     );
+
     const max_geom_workers: u16 = if (total_scene_elems >=
         scalingpolicy.GEOM_THREADING_ELEMENT_THRESHOLD and group_workers > 1)
         group_workers
     else
         1;
+
     var wave_start: usize = 0;
 
     while (wave_start < jobs.len) {
@@ -1024,6 +1025,7 @@ fn processRasterBatch(
         @max(@as(u16, 1), group_workers);
     for (jobs) |*job| {
         defer job.deinit(group_alloc);
+
         if (save_overlap) |so| {
             try so.runRasterStageAndQueue(
                 outer_alloc,
@@ -1034,6 +1036,7 @@ fn processRasterBatch(
             );
             continue;
         }
+
         try runRasterAndSaveFrame(
             outer_alloc,
             group_io,
@@ -1085,15 +1088,19 @@ fn runGeometryStage(
     }
 
     const arena_alloc = job.arena.allocator();
+
     const time_start_geo = Timestamp.now(io, .awake);
     const time_start_pfc = time_start_geo;
+
     try prepareFrameContext(
         arena_alloc,
         group_alloc,
         &job.desc,
         &job.ctx,
     );
+
     const time_end_pfc = Timestamp.now(io, .awake);
+
     job.ctx.frame_times.prepare_frame_context = @floatFromInt(
         time_start_pfc.durationTo(time_end_pfc).raw.nanoseconds,
     );
@@ -1629,6 +1636,303 @@ fn copyFrameToImageBatch(
     }
 }
 
+fn initGlobalSubpxStats(
+    frame_job: *const FrameJobDesc,
+    ctx: *FrameContext,
+) void {
+    const sub_samp: usize = @intCast(frame_job.camera.sub_sample);
+    const halo_px = frame_job.camera.prep_psf.halo_px;
+    ctx.frame_times.global_subpx_stats = .{
+        .mode = frame_job.config.advanced.raster.buffer_mode,
+        .output_w_subpx = @as(usize, frame_job.camera.pixels_num[0]) * sub_samp,
+        .output_h_subpx = @as(usize, frame_job.camera.pixels_num[1]) * sub_samp,
+        .outer_halo_subpx = @as(usize, halo_px) * sub_samp,
+        .tile_core_subpx = @as(usize, ctx.actual_tile_size) * sub_samp,
+        .tile_scratch_subpx = (@as(usize, ctx.actual_tile_size) +
+            2 * @as(usize, halo_px)) * sub_samp,
+    };
+}
+
+fn rasterFrameTileLoc(
+    comptime report_mode: ReportMode,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    raster_workers: u16,
+    ctx: *FrameContext,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+) !F {
+    try rasterenginetileloc.rasterSceneTileLoc(
+        report_mode,
+        outer_alloc,
+        io,
+        ctx_rast,
+        ctx_report,
+        raster_workers,
+        ctx.tiling.?,
+        ctx.prep_meshes,
+        mo.MeshRootInputs{
+            .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
+            .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
+        },
+        &ctx.frame_arr,
+    );
+    if (report.getBenchLog(report_mode, ctx_report.log)) |bench_log| {
+        return bench_log.resolve_time_ns;
+    }
+    return 0;
+}
+
+fn rasterFrameGlobBuffFull(
+    comptime report_mode: ReportMode,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    frame_job: *const FrameJobDesc,
+    raster_workers: u16,
+    ctx: *FrameContext,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+) !F {
+    initGlobalSubpxStats(frame_job, ctx);
+    var global_resolve_time_ns: F = 0.0;
+    const time_start_buffer_setup = Timestamp.now(io, .awake);
+    const sub_samp: usize = @intCast(frame_job.camera.sub_sample);
+    const halo_px = frame_job.camera.prep_psf.halo_px;
+    const halo_subpx = @as(usize, halo_px) * sub_samp;
+    const domain = try subpxframe.SubpxFrameDomain.init(
+        frame_job.num_fields,
+        frame_job.camera.pixels_num,
+        frame_job.camera.sub_sample,
+        halo_subpx,
+    );
+    var target = try subpxframe.SubpxTarget.init(
+        outer_alloc,
+        domain,
+        -@as(i32, @intCast(halo_subpx)),
+        -@as(i32, @intCast(halo_subpx)),
+        frame_job.config.background_value,
+    );
+    defer target.deinit(outer_alloc);
+    ctx.frame_times.global_subpx_times.buffer_setup += @floatFromInt(
+        time_start_buffer_setup.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds,
+    );
+    if (ctx.frame_times.global_subpx_stats) |*stats| {
+        const tiles_x = std.math.divCeil(
+            usize,
+            frame_job.camera.pixels_num[0],
+            ctx.actual_tile_size,
+        ) catch unreachable;
+        const tiles_y = std.math.divCeil(
+            usize,
+            frame_job.camera.pixels_num[1],
+            ctx.actual_tile_size,
+        ) catch unreachable;
+        recordTilingStatsGlobBuff(stats, ctx.tiling.?, tiles_x * tiles_y);
+    }
+
+    const time_start_tile_raster = Timestamp.now(io, .awake);
+    const workers_used = try rasterengineglobbuff.rasterSceneGlobBuff(
+        report_mode,
+        outer_alloc,
+        io,
+        ctx_rast,
+        ctx_report,
+        raster_workers,
+        ctx.tiling.?,
+        ctx.prep_meshes,
+        mo.MeshRootInputs{
+            .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
+            .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
+        },
+        &target,
+        &ctx.frame_arr,
+    );
+    ctx.frame_times.raster_workers_used = @intCast(workers_used);
+    ctx.frame_times.global_subpx_times.tile_raster += @floatFromInt(
+        time_start_tile_raster.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds,
+    );
+    const time_start_resolve = Timestamp.now(io, .awake);
+    const resolve_workers_used = try scratchresolveglobbuff.resolveGlobBuff(
+        outer_alloc,
+        io,
+        &target,
+        frame_job.camera,
+        frame_job.config.background_value,
+        &ctx.frame_arr,
+        raster_workers,
+    );
+    ctx.frame_times.resolve_workers_used = @intCast(resolve_workers_used);
+    global_resolve_time_ns = @floatFromInt(
+        time_start_resolve.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds,
+    );
+    ctx.frame_times.global_subpx_times.resolve += global_resolve_time_ns;
+    return global_resolve_time_ns;
+}
+
+fn rasterFrameGlobBuffStripe(
+    comptime report_mode: ReportMode,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    frame_job: *const FrameJobDesc,
+    raster_workers: u16,
+    ctx: *FrameContext,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+) !F {
+    initGlobalSubpxStats(frame_job, ctx);
+    var global_resolve_time_ns: F = 0.0;
+    const sub_samp: usize = @intCast(frame_job.camera.sub_sample);
+    const halo_px = frame_job.camera.prep_psf.halo_px;
+    const halo_subpx = @as(usize, halo_px) * sub_samp;
+    const image_w_subpx = @as(usize, frame_job.camera.pixels_num[0]) * sub_samp;
+    const image_h_subpx = @as(usize, frame_job.camera.pixels_num[1]) * sub_samp;
+    const requested_stripe_subpx =
+        frame_job.config.advanced.raster.global_subpx_stripe_size_override orelse
+        frame_job.config.advanced.raster.global_subpx_stripe_size_min;
+    const stripe_subpx: usize = requested_stripe_subpx;
+    const first_core_suby_max = @min(image_h_subpx, stripe_subpx);
+    const time_start_buffer_setup = Timestamp.now(io, .awake);
+    var stripe = try subpxframe.SubpxStripe.init(
+        outer_alloc,
+        frame_job.num_fields,
+        image_w_subpx,
+        0,
+        @intCast(first_core_suby_max),
+        halo_subpx,
+        halo_subpx,
+        frame_job.config.background_value,
+    );
+    defer stripe.deinit(outer_alloc);
+    ctx.frame_times.global_subpx_times.buffer_setup += @floatFromInt(
+        time_start_buffer_setup.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds,
+    );
+
+    var core_suby_min: usize = 0;
+    while (core_suby_min < image_h_subpx) {
+        const core_suby_max = @min(
+            image_h_subpx,
+            core_suby_min + stripe_subpx,
+        );
+        const time_start_buffer_plan = Timestamp.now(io, .awake);
+        stripe.reset(
+            @intCast(core_suby_min),
+            @intCast(core_suby_max),
+            halo_subpx,
+            frame_job.config.background_value,
+        );
+        var stripe_tiling: bin.TilingOverlaps = undefined;
+        var stripe_tiling_owned = false;
+        if (core_suby_min == 0 and core_suby_max == image_h_subpx) {
+            stripe_tiling = ctx.tiling.?;
+        } else {
+            stripe_tiling = try binglobbuff.binSceneGlobBuff(
+                outer_alloc,
+                ctx.actual_tile_size,
+                frame_job.camera.sub_sample,
+                @intCast(frame_job.camera.pixels_num[0]),
+                @intCast(frame_job.camera.pixels_num[1]),
+                @intCast(core_suby_min / sub_samp),
+                @intCast(core_suby_max / sub_samp),
+                halo_px,
+                ctx.elems_in_image_by_mesh,
+                ctx.elem_bboxes_by_mesh,
+                ctx.elem_float_bboxes_by_mesh,
+                ctx.mesh_types,
+                ctx.root_classes_by_mesh,
+            );
+            stripe_tiling_owned = true;
+        }
+        const time_end_buffer_plan = Timestamp.now(io, .awake);
+        ctx.frame_times.global_subpx_times.buffer_setup += @floatFromInt(
+            time_start_buffer_plan.durationTo(time_end_buffer_plan).raw.nanoseconds,
+        );
+        if (ctx.frame_times.global_subpx_stats) |*stats| {
+            const tiles_x = std.math.divCeil(
+                usize,
+                frame_job.camera.pixels_num[0],
+                ctx.actual_tile_size,
+            ) catch unreachable;
+            const stripe_h_px = (core_suby_max - core_suby_min) / sub_samp;
+            const tiles_y = std.math.divCeil(
+                usize,
+                stripe_h_px,
+                ctx.actual_tile_size,
+            ) catch unreachable;
+            recordTilingStatsGlobBuff(stats, stripe_tiling, tiles_x * tiles_y);
+            stats.stripe_core_subpx = stripe_subpx;
+            stats.stripe_count += 1;
+            stats.final_stripe_core_subpx = core_suby_max - core_suby_min;
+            stats.stripe_storage_w_subpx = stripe.target.domain.storage_w_subpx;
+            stats.stripe_storage_h_subpx = stripe.target.domain.storage_h_subpx;
+            stats.stripe_storage_samples_cleared += @intCast(
+                stripe.target.domain.storage_w_subpx *
+                    stripe.target.domain.storage_h_subpx,
+            );
+        }
+        errdefer {
+            if (stripe_tiling_owned) {
+                outer_alloc.free(stripe_tiling.active_tiles);
+                outer_alloc.free(stripe_tiling.overlaps);
+            }
+        }
+
+        const time_start_tile_raster = Timestamp.now(io, .awake);
+        const workers_used = try rasterengineglobbuff.rasterSceneGlobBuff(
+            report_mode,
+            outer_alloc,
+            io,
+            ctx_rast,
+            ctx_report,
+            raster_workers,
+            stripe_tiling,
+            ctx.prep_meshes,
+            mo.MeshRootInputs{
+                .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
+                .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
+            },
+            &stripe.target,
+            &ctx.frame_arr,
+        );
+        ctx.frame_times.raster_workers_used = @max(
+            ctx.frame_times.raster_workers_used,
+            @as(u16, @intCast(workers_used)),
+        );
+        const time_end_tile_raster = Timestamp.now(io, .awake);
+        ctx.frame_times.global_subpx_times.tile_raster += @floatFromInt(
+            time_start_tile_raster.durationTo(time_end_tile_raster).raw.nanoseconds,
+        );
+        const time_start_resolve = Timestamp.now(io, .awake);
+        const resolve_workers_used = try scratchresolveglobbuff.resolveRowsGlobBuff(
+            outer_alloc,
+            io,
+            &stripe.target,
+            frame_job.camera,
+            frame_job.config.background_value,
+            &ctx.frame_arr,
+            core_suby_min / sub_samp,
+            core_suby_max / sub_samp,
+            raster_workers,
+        );
+        ctx.frame_times.resolve_workers_used = @max(
+            ctx.frame_times.resolve_workers_used,
+            @as(u16, @intCast(resolve_workers_used)),
+        );
+        const time_end_resolve = Timestamp.now(io, .awake);
+        global_resolve_time_ns += @floatFromInt(
+            time_start_resolve.durationTo(time_end_resolve).raw.nanoseconds,
+        );
+        ctx.frame_times.global_subpx_times.resolve += @floatFromInt(
+            time_start_resolve.durationTo(time_end_resolve).raw.nanoseconds,
+        );
+        if (stripe_tiling_owned) {
+            outer_alloc.free(stripe_tiling.active_tiles);
+            outer_alloc.free(stripe_tiling.overlaps);
+        }
+        core_suby_min = core_suby_max;
+    }
+    return global_resolve_time_ns;
+}
+
 fn rasterFrame(
     comptime report_mode: ReportMode,
     outer_alloc: std.mem.Allocator,
@@ -1649,277 +1953,46 @@ fn rasterFrame(
         .frame_idx = frame_job.frame_idx,
         .tile_size = ctx.actual_tile_size,
     };
-    var global_resolve_time_ns: F = 0.0;
-    if (frame_job.config.advanced.raster.buffer_mode != .tile_local) {
-        const sub_samp: usize = @intCast(frame_job.camera.sub_sample);
-        const halo_px = frame_job.camera.prep_psf.halo_px;
-        ctx.frame_times.global_subpx_stats = .{
-            .mode = frame_job.config.advanced.raster.buffer_mode,
-            .output_w_subpx = @as(usize, frame_job.camera.pixels_num[0]) * sub_samp,
-            .output_h_subpx = @as(usize, frame_job.camera.pixels_num[1]) * sub_samp,
-            .outer_halo_subpx = @as(usize, halo_px) * sub_samp,
-            .tile_core_subpx = @as(usize, ctx.actual_tile_size) * sub_samp,
-            .tile_scratch_subpx = (@as(usize, ctx.actual_tile_size) +
-                2 * @as(usize, halo_px)) * sub_samp,
-        };
-    }
-
-    switch (frame_job.config.advanced.raster.buffer_mode) {
-        .tile_local => try rasterengine.rasterScene(
+    const resolve_time_ns = switch (frame_job.config.advanced.raster.buffer_mode) {
+        .tile_local => try rasterFrameTileLoc(
             report_mode,
             outer_alloc,
             io,
+            raster_workers,
+            ctx,
             ctx_rast,
             ctx_report,
-            raster_workers,
-            ctx.tiling.?,
-            ctx.prep_meshes,
-            mo.MeshRootInputs{
-                .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
-                .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
-            },
-            &ctx.frame_arr,
         ),
-        .global_subpx_full => {
-            const time_start_buffer_setup = Timestamp.now(io, .awake);
-            const sub_samp: usize = @intCast(frame_job.camera.sub_sample);
-            const halo_px = frame_job.camera.prep_psf.halo_px;
-            const halo_subpx = @as(usize, halo_px) * sub_samp;
-            const domain = try subpxframe.SubpxFrameDomain.init(
-                frame_job.num_fields,
-                frame_job.camera.pixels_num,
-                frame_job.camera.sub_sample,
-                halo_subpx,
-            );
-            var target = try subpxframe.SubpxTarget.init(
-                outer_alloc,
-                domain,
-                -@as(i32, @intCast(halo_subpx)),
-                -@as(i32, @intCast(halo_subpx)),
-                frame_job.config.background_value,
-            );
-            defer target.deinit(outer_alloc);
-            ctx.frame_times.global_subpx_times.buffer_setup += @floatFromInt(
-                time_start_buffer_setup.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds,
-            );
-            if (ctx.frame_times.global_subpx_stats) |*stats| {
-                const tiles_x = std.math.divCeil(
-                    usize,
-                    frame_job.camera.pixels_num[0],
-                    ctx.actual_tile_size,
-                ) catch unreachable;
-                const tiles_y = std.math.divCeil(
-                    usize,
-                    frame_job.camera.pixels_num[1],
-                    ctx.actual_tile_size,
-                ) catch unreachable;
-                recordTilingStatsGlobBuff(stats, ctx.tiling.?, tiles_x * tiles_y);
-            }
-
-            const time_start_tile_raster = Timestamp.now(io, .awake);
-            const workers_used = try rasterengineglobbuff.rasterSceneGlobBuff(
-                report_mode,
-                outer_alloc,
-                io,
-                ctx_rast,
-                ctx_report,
-                raster_workers,
-                ctx.tiling.?,
-                ctx.prep_meshes,
-                mo.MeshRootInputs{
-                    .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
-                    .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
-                },
-                &target,
-                &ctx.frame_arr,
-            );
-            ctx.frame_times.raster_workers_used = @intCast(workers_used);
-            ctx.frame_times.global_subpx_times.tile_raster += @floatFromInt(
-                time_start_tile_raster.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds,
-            );
-            const time_start_resolve = Timestamp.now(io, .awake);
-            const resolve_workers_used = try scratchresolveglobbuff.resolveGlobBuff(
-                outer_alloc,
-                io,
-                &target,
-                frame_job.camera,
-                frame_job.config.background_value,
-                &ctx.frame_arr,
-                raster_workers,
-            );
-            ctx.frame_times.resolve_workers_used = @intCast(resolve_workers_used);
-            global_resolve_time_ns = @floatFromInt(
-                time_start_resolve.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds,
-            );
-            ctx.frame_times.global_subpx_times.resolve += global_resolve_time_ns;
-        },
-        .global_subpx_stripe => {
-            const sub_samp: usize = @intCast(frame_job.camera.sub_sample);
-            const halo_px = frame_job.camera.prep_psf.halo_px;
-            const halo_subpx = @as(usize, halo_px) * sub_samp;
-            const image_w_subpx = @as(usize, frame_job.camera.pixels_num[0]) * sub_samp;
-            const image_h_subpx = @as(usize, frame_job.camera.pixels_num[1]) * sub_samp;
-            const requested_stripe_subpx =
-                frame_job.config.advanced.raster.global_subpx_stripe_size_override orelse
-                frame_job.config.advanced.raster.global_subpx_stripe_size_min;
-            const stripe_subpx: usize = requested_stripe_subpx;
-            const first_core_suby_max = @min(image_h_subpx, stripe_subpx);
-            const time_start_buffer_setup = Timestamp.now(io, .awake);
-            var stripe = try subpxframe.SubpxStripe.init(
-                outer_alloc,
-                frame_job.num_fields,
-                image_w_subpx,
-                0,
-                @intCast(first_core_suby_max),
-                halo_subpx,
-                halo_subpx,
-                frame_job.config.background_value,
-            );
-            defer stripe.deinit(outer_alloc);
-            ctx.frame_times.global_subpx_times.buffer_setup += @floatFromInt(
-                time_start_buffer_setup.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds,
-            );
-
-            var core_suby_min: usize = 0;
-            while (core_suby_min < image_h_subpx) {
-                const core_suby_max = @min(
-                    image_h_subpx,
-                    core_suby_min + stripe_subpx,
-                );
-                const time_start_buffer_plan = Timestamp.now(io, .awake);
-                stripe.reset(
-                    @intCast(core_suby_min),
-                    @intCast(core_suby_max),
-                    halo_subpx,
-                    frame_job.config.background_value,
-                );
-                var stripe_tiling: bin.TilingOverlaps = undefined;
-                var stripe_tiling_owned = false;
-                if (core_suby_min == 0 and core_suby_max == image_h_subpx) {
-                    stripe_tiling = ctx.tiling.?;
-                } else {
-                    stripe_tiling = try binglobbuff.binSceneGlobBuff(
-                        outer_alloc,
-                        ctx.actual_tile_size,
-                        frame_job.camera.sub_sample,
-                        @intCast(frame_job.camera.pixels_num[0]),
-                        @intCast(frame_job.camera.pixels_num[1]),
-                        @intCast(core_suby_min / sub_samp),
-                        @intCast(core_suby_max / sub_samp),
-                        halo_px,
-                        ctx.elems_in_image_by_mesh,
-                        ctx.elem_bboxes_by_mesh,
-                        ctx.elem_float_bboxes_by_mesh,
-                        ctx.mesh_types,
-                        ctx.root_classes_by_mesh,
-                    );
-                    stripe_tiling_owned = true;
-                }
-                const time_end_buffer_plan = Timestamp.now(io, .awake);
-                ctx.frame_times.global_subpx_times.buffer_setup += @floatFromInt(
-                    time_start_buffer_plan.durationTo(time_end_buffer_plan).raw.nanoseconds,
-                );
-                if (ctx.frame_times.global_subpx_stats) |*stats| {
-                    const tiles_x = std.math.divCeil(
-                        usize,
-                        frame_job.camera.pixels_num[0],
-                        ctx.actual_tile_size,
-                    ) catch unreachable;
-                    const stripe_h_px = (core_suby_max - core_suby_min) / sub_samp;
-                    const tiles_y = std.math.divCeil(
-                        usize,
-                        stripe_h_px,
-                        ctx.actual_tile_size,
-                    ) catch unreachable;
-                    recordTilingStatsGlobBuff(stats, stripe_tiling, tiles_x * tiles_y);
-                    stats.stripe_core_subpx = stripe_subpx;
-                    stats.stripe_count += 1;
-                    stats.final_stripe_core_subpx = core_suby_max - core_suby_min;
-                    stats.stripe_storage_w_subpx = stripe.target.domain.storage_w_subpx;
-                    stats.stripe_storage_h_subpx = stripe.target.domain.storage_h_subpx;
-                    stats.stripe_storage_samples_cleared += @intCast(
-                        stripe.target.domain.storage_w_subpx *
-                            stripe.target.domain.storage_h_subpx,
-                    );
-                }
-                errdefer {
-                    if (stripe_tiling_owned) {
-                        outer_alloc.free(stripe_tiling.active_tiles);
-                        outer_alloc.free(stripe_tiling.overlaps);
-                    }
-                }
-
-                const time_start_tile_raster = Timestamp.now(io, .awake);
-                const workers_used = try rasterengineglobbuff.rasterSceneGlobBuff(
-                    report_mode,
-                    outer_alloc,
-                    io,
-                    ctx_rast,
-                    ctx_report,
-                    raster_workers,
-                    stripe_tiling,
-                    ctx.prep_meshes,
-                    mo.MeshRootInputs{
-                        .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
-                        .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
-                    },
-                    &stripe.target,
-                    &ctx.frame_arr,
-                );
-                ctx.frame_times.raster_workers_used = @max(
-                    ctx.frame_times.raster_workers_used,
-                    @as(u16, @intCast(workers_used)),
-                );
-                const time_end_tile_raster = Timestamp.now(io, .awake);
-                ctx.frame_times.global_subpx_times.tile_raster += @floatFromInt(
-                    time_start_tile_raster.durationTo(time_end_tile_raster).raw.nanoseconds,
-                );
-                const time_start_resolve = Timestamp.now(io, .awake);
-                const resolve_workers_used = try scratchresolveglobbuff.resolveRowsGlobBuff(
-                    outer_alloc,
-                    io,
-                    &stripe.target,
-                    frame_job.camera,
-                    frame_job.config.background_value,
-                    &ctx.frame_arr,
-                    core_suby_min / sub_samp,
-                    core_suby_max / sub_samp,
-                    raster_workers,
-                );
-                ctx.frame_times.resolve_workers_used = @max(
-                    ctx.frame_times.resolve_workers_used,
-                    @as(u16, @intCast(resolve_workers_used)),
-                );
-                const time_end_resolve = Timestamp.now(io, .awake);
-                global_resolve_time_ns += @floatFromInt(
-                    time_start_resolve.durationTo(time_end_resolve).raw.nanoseconds,
-                );
-                ctx.frame_times.global_subpx_times.resolve += @floatFromInt(
-                    time_start_resolve.durationTo(time_end_resolve).raw.nanoseconds,
-                );
-                if (stripe_tiling_owned) {
-                    outer_alloc.free(stripe_tiling.active_tiles);
-                    outer_alloc.free(stripe_tiling.overlaps);
-                }
-                core_suby_min = core_suby_max;
-            }
-        },
-    }
+        .global_subpx_full => try rasterFrameGlobBuffFull(
+            report_mode,
+            outer_alloc,
+            io,
+            frame_job,
+            raster_workers,
+            ctx,
+            ctx_rast,
+            ctx_report,
+        ),
+        .global_subpx_stripe => try rasterFrameGlobBuffStripe(
+            report_mode,
+            outer_alloc,
+            io,
+            frame_job,
+            raster_workers,
+            ctx,
+            ctx_rast,
+            ctx_report,
+        ),
+    };
 
     const time_end_loop = Timestamp.now(io, .awake);
     ctx.frame_times.raster_loop = @floatFromInt(
         time_start_loop.durationTo(time_end_loop).raw.nanoseconds,
     );
-    if (frame_job.config.advanced.raster.buffer_mode != .tile_local) {
-        ctx.frame_times.scratch_resolve = global_resolve_time_ns;
-        if (report.getBenchLog(report_mode, report_ptr)) |bench_log| {
-            ctx.frame_times.cam_invert = bench_log.cam_time_ns;
-            ctx.frame_times.elem_loop = bench_log.elem_time_ns;
-        }
-    } else if (report.getBenchLog(report_mode, report_ptr)) |bench_log| {
+    ctx.frame_times.scratch_resolve = resolve_time_ns;
+    if (report.getBenchLog(report_mode, report_ptr)) |bench_log| {
         ctx.frame_times.cam_invert = bench_log.cam_time_ns;
         ctx.frame_times.elem_loop = bench_log.elem_time_ns;
-        ctx.frame_times.scratch_resolve = bench_log.resolve_time_ns;
     }
 }
 

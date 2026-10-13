@@ -16,6 +16,10 @@
 - Global subpixel buffer implementation files use `_globbuff` before any
   `_common`, `_scalar`, or `_simd` suffix, to distinguish them from tile-local
   implementations. Function and type names retain Zig casing conventions.
+- Raster execution files may use `_tileloc` for the tile-local buffer strategy.
+  `rasterengine_common.zig` contains the shared subpixel raster core, while
+  `rasterengine_exec_common.zig` contains the worker scratch lifecycle shared
+  by the tile-local and global-buffer executors.
 
 ## Within file code organisation
 1. Module header block / documentation / description

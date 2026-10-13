@@ -248,6 +248,12 @@ Global-buffer raster and resolve files use the `_globbuff` file suffix; their
 function names use `GlobBuff` in Zig camel case. `subpxframe_globbuff.zig` owns
 the shared full-frame target and reusable stripe buffer used by both global
 rasterisation and resolve.
+Stage 3 selects the tile-local or global-buffer raster lifecycle once in
+`riley.zig`. `rasterengine_tileloc.zig` resolves each tile after the shared
+`rasterTileCore` work in `rasterengine_common.zig`; `rasterengine_globbuff.zig`
+rasterises tile batches into a full-frame or stripe target that `riley.zig`
+resolves after the batch. The scalar and SIMD rasterengine files provide
+compile-time `RasterEngine` kernels for the selected scratch type.
 
 ## Additional Notes
 

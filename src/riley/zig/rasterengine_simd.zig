@@ -196,33 +196,6 @@ pub fn resetSubpxScratch(
     @memset(subpx_scratch.touched_max_x, 0);
 }
 
-pub fn rasterScene(
-    comptime report_mode: ReportMode,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    ctx_rast: rops.RasterContext,
-    ctx_report: report.ReportContext(report_mode),
-    requested_workers: u16,
-    tiling: bin.TilingOverlaps,
-    meshes: []const MeshPrepared,
-    root_inputs: mo.MeshRootInputs,
-    image_out_arr: *NDArray(F),
-) !void {
-    try comm.rasterSceneComm(
-        @This(),
-        report_mode,
-        outer_alloc,
-        io,
-        ctx_rast,
-        ctx_report,
-        requested_workers,
-        tiling,
-        meshes,
-        root_inputs,
-        image_out_arr,
-    );
-}
-
 //------------------------------------------------------------------------------------------
 // Raster Engine Builder
 //------------------------------------------------------------------------------------------
@@ -230,21 +203,6 @@ const SubpxDom = comm.SubpxDom;
 const RasterBounds = comm.RasterBounds;
 
 pub fn RasterEngine(
-    comptime Geom: type, // geometrykernels.zig
-    comptime ShaderKern: type, // shaderkernels.zig
-    comptime ShaderData: type, // shaderops_common.zig, ShaderPrepared
-    comptime root_class: rops.ElemRootClass,
-) type {
-    return RasterEngineFor(
-        SubpxScratchBuffs,
-        Geom,
-        ShaderKern,
-        ShaderData,
-        root_class,
-    );
-}
-
-pub fn RasterEngineFor(
     comptime ScratchBuffs: type,
     comptime Geom: type,
     comptime ShaderKern: type,
