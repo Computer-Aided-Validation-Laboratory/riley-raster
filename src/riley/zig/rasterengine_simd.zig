@@ -78,6 +78,17 @@ pub const SubpxScratchBuffs = struct {
     ) usize {
         return local_idx;
     }
+
+    pub inline fn imageIndexCoord(
+        _: *const SubpxScratchBuffs,
+        local_subx: usize,
+        local_suby: usize,
+        local_idx: usize,
+    ) usize {
+        _ = local_subx;
+        _ = local_suby;
+        return local_idx;
+    }
 };
 
 pub const SubpxSimdChunk = struct {
@@ -556,7 +567,11 @@ fn rasterDirectSIMDImpl(
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.imageIndex(scratch_idx),
+                .scratch_idx = subpx_scratch.imageIndexCoord(
+                    scratch_x_u,
+                    scratch_y_u,
+                    scratch_idx,
+                ),
                 .global_subx = comm.globalSubpxForReport(
                     tile.scratch_x_px_min,
                     sub_samp,
@@ -923,7 +938,11 @@ fn rasterNewtonMultiSIMDImpl(
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.imageIndex(idx),
+                .scratch_idx = subpx_scratch.imageIndexCoord(
+                    scratch_x,
+                    scratch_y,
+                    idx,
+                ),
                 .global_subx = comm.globalSubpxForReport(
                     tile.scratch_x_px_min,
                     sub_samp,
@@ -1337,7 +1356,11 @@ fn rasterNewtonSIMDImpl(
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.imageIndex(scratch_idx),
+                .scratch_idx = subpx_scratch.imageIndexCoord(
+                    scratch_x_u,
+                    scratch_y_u,
+                    scratch_idx,
+                ),
                 .global_subx = comm.globalSubpxForReport(
                     tile.scratch_x_px_min,
                     sub_samp,
@@ -1668,7 +1691,11 @@ fn rasterSteppedSIMDFixP(
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.imageIndex(scratch_idx),
+                .scratch_idx = subpx_scratch.imageIndexCoord(
+                    scratch_x_u,
+                    scratch_y_u,
+                    scratch_idx,
+                ),
                 .global_subx = comm.globalSubpxForReport(
                     tile.scratch_x_px_min,
                     sub_samp,
@@ -1939,7 +1966,11 @@ fn rasterSteppedSIMDFloat(
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.imageIndex(scratch_idx),
+                .scratch_idx = subpx_scratch.imageIndexCoord(
+                    scratch_x_u,
+                    scratch_y_u,
+                    scratch_idx,
+                ),
                 .global_subx = comm.globalSubpxForReport(
                     tile.scratch_x_px_min,
                     sub_samp,

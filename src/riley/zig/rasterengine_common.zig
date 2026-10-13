@@ -221,7 +221,11 @@ pub fn rasterDirectScalComm(
                     .elem_idx = overlap.elem_idx,
                     .fields_num = fields_num,
                     .actual_fields = fields_num,
-                    .scratch_idx = subpx_scratch.imageIndex(scratch_idx),
+                    .scratch_idx = subpx_scratch.imageIndexCoord(
+                        scratch_x_u,
+                        scratch_y_u,
+                        scratch_idx,
+                    ),
                     .global_subx = global_subx,
                     .global_suby = global_suby,
                 },

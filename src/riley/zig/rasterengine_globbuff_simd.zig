@@ -38,6 +38,7 @@ const GlobalSubpxScratchBuffs = struct {
     target_suby_min: i32 = 0,
     tile_subx_min: i32 = 0,
     tile_suby_min: i32 = 0,
+    tile_origin_idx: usize = 0,
 
     pub inline fn imageIndex(
         self: *const GlobalSubpxScratchBuffs,
@@ -45,12 +46,17 @@ const GlobalSubpxScratchBuffs = struct {
     ) usize {
         const local_subx = local_idx % self.stride_subpx;
         const local_suby = local_idx / self.stride_subpx;
-        const global_subx = self.tile_subx_min + @as(i32, @intCast(local_subx));
-        const global_suby = self.tile_suby_min + @as(i32, @intCast(local_suby));
-        const target_subx = global_subx - self.target_subx_min;
-        const target_suby = global_suby - self.target_suby_min;
-        return @as(usize, @intCast(target_suby)) * self.target_stride_subpx +
-            @as(usize, @intCast(target_subx));
+        return self.imageIndexCoord(local_subx, local_suby, local_idx);
+    }
+
+    pub inline fn imageIndexCoord(
+        self: *const GlobalSubpxScratchBuffs,
+        local_subx: usize,
+        local_suby: usize,
+        _: usize,
+    ) usize {
+        return self.tile_origin_idx +
+            local_suby * self.target_stride_subpx + local_subx;
     }
 };
 
@@ -105,6 +111,11 @@ pub const GlobalBackend = struct {
         scratch.target_suby_min = target.global_suby_min;
         scratch.tile_subx_min = tile.scratch_subx_min;
         scratch.tile_suby_min = tile.scratch_suby_min;
+
+        const origin_x = tile.scratch_subx_min - target.global_subx_min;
+        const origin_y = tile.scratch_suby_min - target.global_suby_min;
+        scratch.tile_origin_idx = @as(usize, @intCast(origin_y)) *
+            scratch.target_stride_subpx + @as(usize, @intCast(origin_x));
     }
 
     pub fn RasterEngine(

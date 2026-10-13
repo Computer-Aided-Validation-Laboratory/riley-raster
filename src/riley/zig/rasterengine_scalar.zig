@@ -61,6 +61,17 @@ pub const SubpxScratchBuffs = struct {
     ) usize {
         return local_idx;
     }
+
+    pub inline fn imageIndexCoord(
+        _: *const SubpxScratchBuffs,
+        local_subx: usize,
+        local_suby: usize,
+        local_idx: usize,
+    ) usize {
+        _ = local_subx;
+        _ = local_suby;
+        return local_idx;
+    }
 };
 
 // --------------------------------------------------------------------------------------
@@ -638,7 +649,11 @@ fn rasterNewtonImpl(
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.imageIndex(scratch_idx),
+                .scratch_idx = subpx_scratch.imageIndexCoord(
+                    scratch_x,
+                    scratch_y,
+                    scratch_idx,
+                ),
                 .global_subx = global_subx,
                 .global_suby = global_suby,
             };
@@ -903,7 +918,11 @@ fn rasterNewtonMultiImpl(
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.imageIndex(scratch_idx),
+                .scratch_idx = subpx_scratch.imageIndexCoord(
+                    scratch_x,
+                    scratch_y,
+                    scratch_idx,
+                ),
                 .global_subx = global_subx,
                 .global_suby = global_suby,
             };
@@ -1164,7 +1183,11 @@ fn rasterSteppedScalFixP(
                         .elem_idx = overlap.elem_idx,
                         .fields_num = fields_num,
                         .actual_fields = fields_num,
-                        .scratch_idx = subpx_scratch.imageIndex(scratch_idx),
+                        .scratch_idx = subpx_scratch.imageIndexCoord(
+                            scratch_x_u,
+                            scratch_y_u,
+                            scratch_idx,
+                        ),
                         .global_subx = global_subx,
                         .global_suby = global_suby,
                     };
@@ -1410,7 +1433,11 @@ fn rasterSteppedScalFloat(
                         .elem_idx = overlap.elem_idx,
                         .fields_num = fields_num,
                         .actual_fields = fields_num,
-                        .scratch_idx = subpx_scratch.imageIndex(scratch_idx),
+                        .scratch_idx = subpx_scratch.imageIndexCoord(
+                            scratch_x_u,
+                            scratch_y_u,
+                            scratch_idx,
+                        ),
                         .global_subx = global_subx,
                         .global_suby = global_suby,
                     };
