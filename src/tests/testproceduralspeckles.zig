@@ -118,7 +118,7 @@ fn expectPreparedResources(
     );
     try std.testing.expectEqual(evaluator == .list_naive, resources.list != null);
     try std.testing.expectEqual(evaluator == .list_indexed, resources.strip_list != null);
-    try std.testing.expectEqual(evaluator == .classified_indexed or evaluator == .classified_indexed_2 or evaluator == .classified_indexed_3 or evaluator == .classified_indexed_4, resources.classified != null);
+    try std.testing.expectEqual(evaluator == .classified_indexed or evaluator == .classified_indexed_2 or evaluator == .classified_indexed_3 or evaluator == .classified_indexed_4 or evaluator == .classified_indexed_5, resources.classified != null);
     try std.testing.expectEqual(evaluator == .direct_fixed, resources.direct_fixed != null);
     try std.testing.expectEqual(
         evaluator == .mask_1bit or evaluator == .mask_u8,

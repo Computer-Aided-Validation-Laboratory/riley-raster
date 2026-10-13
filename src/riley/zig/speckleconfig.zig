@@ -22,6 +22,7 @@ pub const Evaluator = enum(u8) {
     classified_indexed_2,
     classified_indexed_3,
     classified_indexed_4,
+    classified_indexed_5,
 };
 
 pub const Config = struct {
@@ -71,6 +72,7 @@ pub fn evaluatorName(evaluator: Evaluator) []const u8 {
         .classified_indexed_2 => "classified-indexed-2",
         .classified_indexed_3 => "classified-indexed-3",
         .classified_indexed_4 => "classified-indexed-4",
+        .classified_indexed_5 => "classified-indexed-5",
         .direct_fixed => "direct-fixed",
         .mask_1bit => "mask-1bit",
         .mask_u8 => "mask-u8",
@@ -89,7 +91,7 @@ pub fn isValidMaskSamplesPerCell(samples: anytype) bool {
 pub fn supportsSoftEdges(config: Config) bool {
     return config.pattern == .disk and switch (config.evaluator) {
         .cell_hash, .list_naive, .list_indexed, .mask_u8, .mock => true,
-        .classified_indexed, .classified_indexed_2, .classified_indexed_3, .classified_indexed_4, .direct_fixed, .mask_1bit => false,
+        .classified_indexed, .classified_indexed_2, .classified_indexed_3, .classified_indexed_4, .classified_indexed_5, .direct_fixed, .mask_1bit => false,
     };
 }
 
@@ -101,7 +103,7 @@ pub fn validateCompatibility(config: Config) CompatibilityError!void {
     }
     switch (config.evaluator) {
         .mask_1bit => if (config.pattern != .disk) return error.Mask1BitRequiresDisk,
-        .classified_indexed, .classified_indexed_2, .classified_indexed_3, .classified_indexed_4 => if (config.pattern != .disk or config.neighbor_count != 9)
+        .classified_indexed, .classified_indexed_2, .classified_indexed_3, .classified_indexed_4, .classified_indexed_5 => if (config.pattern != .disk or config.neighbor_count != 9)
             return error.ClassifiedIndexedRequiresDiskAndNineNeighbors,
         .direct_fixed => if (config.pattern != .disk or config.neighbor_count != 1)
             return error.DirectFixedRequiresDiskAndOneNeighbor,
@@ -278,7 +280,7 @@ test "experimental resolution selects defaults and rejects incompatible override
 test "classified indexed variants are opt-in hard disk nine-neighbor configurations" {
     const original = try resolve(true, .disk, .classified_indexed, null, false);
     try std.testing.expectEqual(Evaluator.classified_indexed, (try resolve(false, .disk, null, null, false)).evaluator);
-    for ([_]Evaluator{ .classified_indexed_2, .classified_indexed_3, .classified_indexed_4 }) |evaluator| {
+    for ([_]Evaluator{ .classified_indexed_2, .classified_indexed_3, .classified_indexed_4, .classified_indexed_5 }) |evaluator| {
         const candidate = try resolve(true, .disk, evaluator, null, false);
         try std.testing.expectEqualDeep(if (evaluator == .classified_indexed_2) original else candidate, canonicalizeSampleConfig(candidate));
         try std.testing.expectError(error.SpeckleOverridesDisabled, resolve(false, .disk, evaluator, null, false));
@@ -293,7 +295,7 @@ test "classified indexed variants are opt-in hard disk nine-neighbor configurati
 
 test "specialization catalogues are unique and cover every resolved generation config" {
     const generation_only_variants = [_]Evaluator{.classified_indexed_2};
-    const sampled_variants = [_]Evaluator{ .classified_indexed_3, .classified_indexed_4 };
+    const sampled_variants = [_]Evaluator{ .classified_indexed_3, .classified_indexed_4, .classified_indexed_5 };
     const variant_count = generation_only_variants.len + sampled_variants.len;
     try std.testing.expectEqual(8 + variant_count, std.enums.values(Evaluator).len);
     try std.testing.expectEqual(54 + variant_count, generationConfigs(true).len);

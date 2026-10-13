@@ -236,7 +236,7 @@ test "speckle benchmark named options and default gate" {
         try std.testing.expect(opts.softness > 0);
         try std.testing.expectEqual(policy.Evaluator.cell_hash, opts.evaluator.?);
     } else try std.testing.expectError(error.SpeckleOverridesDisabled, Options.parse(args));
-    inline for (.{ "classified-indexed-2", "classified-indexed-3", "classified-indexed-4" }) |name| {
+    inline for (.{ "classified-indexed-2", "classified-indexed-3", "classified-indexed-4", "classified-indexed-5" }) |name| {
         const candidate = &.{ "bench", "--evaluator", name, "--jitter", "0.08" };
         if (comptime build.enable_all_evaluators) {
             try std.testing.expectEqual(policy.parseEvaluator(name).?, (try Options.parse(candidate)).evaluator.?);
