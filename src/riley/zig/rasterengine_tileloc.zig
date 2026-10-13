@@ -20,7 +20,6 @@ const NDArray = @import("ndarray.zig").NDArray;
 const Timestamp = std.Io.Clock.Timestamp;
 const rasterreport = @import("rasterreport.zig");
 const common = @import("rasterengine_common.zig");
-const exec = @import("rasterengine_exec_common.zig");
 const cfg = @import("buildconfig.zig").config;
 const kernel = if (cfg.simd == .on)
     @import("rasterengine_simd.zig")
@@ -88,7 +87,7 @@ fn rasterSceneTileLocImpl(
     root_inputs: mo.MeshRootInputs,
     image_out_arr: *NDArray(F),
 ) !void {
-    const WorkerState = comptime exec.ThreadState(RasterBackend, report_mode);
+    const WorkerState = comptime ThreadState(RasterBackend, report_mode);
 
     const TileRangeCtx = TileRangeContext(RasterBackend, report_mode);
 
@@ -150,7 +149,7 @@ fn rasterSceneTileLocImpl(
         worker_state.* = try WorkerState.init(
             arena_alloc,
             image_out_arr.dims[0],
-            exec.tileScratchSubpxSize(ctx_rast),
+            common.tileScratchSubpxSize(ctx_rast),
         );
         worker_states_initialized += 1;
     }
@@ -165,7 +164,7 @@ fn rasterSceneTileLocImpl(
         .worker_states = worker_states,
         .shared_log = ctx_report.log,
         .fields_num = @intCast(image_out_arr.dims[0]),
-        .subpx_tile_size = exec.tileScratchSubpxSize(ctx_rast),
+        .subpx_tile_size = common.tileScratchSubpxSize(ctx_rast),
     };
 
     try chunk_exec.runDynRangeWithWorkerErr(
@@ -293,7 +292,7 @@ fn TileRangeContext(
     comptime RasterBackend: type,
     comptime report_mode: ReportMode,
 ) type {
-    const WorkerState = exec.ThreadState(RasterBackend, report_mode);
+    const WorkerState = ThreadState(RasterBackend, report_mode);
 
     return struct {
         io: std.Io,
@@ -306,5 +305,56 @@ fn TileRangeContext(
         worker_states: []WorkerState,
         fields_num: u8,
         subpx_tile_size: usize,
+    };
+}
+
+// --------------------------------------------------------------------------------------
+// Tile-local raster workers
+// --------------------------------------------------------------------------------------
+fn initThreadReportLog(
+    comptime report_mode: ReportMode,
+) report.LogType(report_mode) {
+    return switch (report_mode) {
+        .off => .{},
+        .bench => .{},
+        .full_stats => .{},
+    };
+}
+
+fn ThreadState(
+    comptime RasterBackend: type,
+    comptime report_mode: ReportMode,
+) type {
+    return struct {
+        const Self = @This();
+
+        arena: std.heap.ArenaAllocator,
+        subpx_scratch: RasterBackend.SubpxScratchBuffs,
+        log: report.LogType(report_mode),
+        rasterized_tiles: usize = 0,
+
+        fn init(
+            outer_alloc: std.mem.Allocator,
+            fields_num: usize,
+            subpx_tile_size: usize,
+        ) !Self {
+            var arena = std.heap.ArenaAllocator.init(outer_alloc);
+            errdefer arena.deinit();
+            const arena_alloc = arena.allocator();
+
+            return .{
+                .arena = arena,
+                .subpx_scratch = try RasterBackend.initSubpxScratch(
+                    arena_alloc,
+                    @intCast(fields_num),
+                    subpx_tile_size,
+                ),
+                .log = initThreadReportLog(report_mode),
+            };
+        }
+
+        fn deinit(self: *Self) void {
+            self.arena.deinit();
+        }
     };
 }

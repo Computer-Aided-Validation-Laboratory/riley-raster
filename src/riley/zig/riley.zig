@@ -37,8 +37,7 @@ const valinp = @import("validateinput.zig");
 
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
-const rasterenginetileloc = @import("rasterengine_tileloc.zig");
-const rasterengineglobbuff = @import("rasterengine_globbuff.zig");
+const rasterengine = @import("rasterengine.zig");
 const scratchresolveglobbuff = @import("scratchresolve_globbuff.zig");
 const subpxframe = @import("subpxframe_globbuff.zig");
 
@@ -1662,7 +1661,7 @@ fn rasterFrameTileLoc(
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
 ) !F {
-    try rasterenginetileloc.rasterSceneTileLoc(
+    try rasterengine.rasterSceneTileLoc(
         report_mode,
         outer_alloc,
         io,
@@ -1731,7 +1730,7 @@ fn rasterFrameGlobBuffFull(
     }
 
     const time_start_tile_raster = Timestamp.now(io, .awake);
-    const workers_used = try rasterengineglobbuff.rasterSceneGlobBuff(
+    const workers_used = try rasterengine.rasterSceneGlobBuff(
         report_mode,
         outer_alloc,
         io,
@@ -1877,7 +1876,7 @@ fn rasterFrameGlobBuffStripe(
         }
 
         const time_start_tile_raster = Timestamp.now(io, .awake);
-        const workers_used = try rasterengineglobbuff.rasterSceneGlobBuff(
+        const workers_used = try rasterengine.rasterSceneGlobBuff(
             report_mode,
             outer_alloc,
             io,

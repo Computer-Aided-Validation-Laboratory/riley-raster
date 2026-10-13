@@ -17,9 +17,11 @@
   `_common`, `_scalar`, or `_simd` suffix, to distinguish them from tile-local
   implementations. Function and type names retain Zig casing conventions.
 - Raster execution files may use `_tileloc` for the tile-local buffer strategy.
-  `rasterengine_common.zig` contains the shared subpixel raster core, while
-  `rasterengine_exec_common.zig` contains the worker scratch lifecycle shared
-  by the tile-local and global-buffer executors.
+  `rasterengine.zig` is the thin entry-point facade. `rasterengine_tileloc.zig`
+  and `rasterengine_globbuff.zig` own their worker lifecycles and scratch
+  binding; both call the shared subpixel core in `rasterengine_common.zig`.
+  The scalar and SIMD raster kernels remain in `rasterengine_scalar.zig` and
+  `rasterengine_simd.zig`.
 
 ## Within file code organisation
 1. Module header block / documentation / description

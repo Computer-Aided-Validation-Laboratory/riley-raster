@@ -323,6 +323,186 @@ pub fn RasterEngine(
     };
 }
 
+pub fn rasterDirectScalComm(
+    comptime Geom: type,
+    comptime ShaderKern: type,
+    comptime ShaderData: type,
+    comptime report_mode: ReportMode,
+    comptime ScratchBuffs: type,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+    tile: bin.ActiveTile,
+    overlap: bin.OverlapBBox,
+    subpx_dom: SubpxDom,
+    rast_bounds: RasterBounds,
+    fields_num: u8,
+    nodes_coords: rops.Vec3Slices(F),
+    shader: *const ShaderData,
+    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
+    subpx_scratch: *ScratchBuffs,
+) !u64 {
+    if (comptime Geom.solver_kind == .newton) {
+        @compileError(
+            "rasterDirectScalComm only supps non-Newton paths",
+        );
+    }
+
+    const N = Geom.nodes_num;
+    var shaded_px: u64 = 0;
+    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+
+    var nodes_inv_z: [N]F = undefined;
+    inline for (0..N) |nn| {
+        nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
+    }
+
+    const inv_elem_area = if (comptime Geom.solver_kind == .hyperb)
+        Geom.getInvElemArea(nodes_coords)
+    else {};
+
+    const ideal_x_plane = cam.getIdealXPlaneScratch(
+        subpx_scratch.ideal_pix_cent,
+    );
+    const ideal_y_plane = cam.getIdealYPlaneScratch(
+        subpx_scratch.ideal_pix_cent,
+    );
+
+    for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
+        const row_offset = scratch_y_u * subpx_dom.tile_size;
+
+        for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x_u| {
+            const scratch_idx = row_offset + scratch_x_u;
+            const ideal_x_pix = ideal_x_plane[scratch_idx];
+            const ideal_y_pix = ideal_y_plane[scratch_idx];
+
+            const global_subx = comm.globalSubpxForReport(
+                tile.scratch_x_px_min,
+                sub_samp,
+                scratch_x_u,
+            );
+            const global_suby = comm.globalSubpxForReport(
+                tile.scratch_y_px_min,
+                sub_samp,
+                scratch_y_u,
+            );
+
+            if (comptime report_mode == .full_stats) {
+                rasterreport.recordEarlyOut(
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    true,
+                );
+            }
+
+            ctx_report.recordSolverCalls(1);
+            const geometry_result = switch (comptime Geom.solver_kind) {
+                .hyperb => Geom.solveWeightsHyperb(
+                    nodes_coords,
+                    ideal_x_pix,
+                    ideal_y_pix,
+                    inv_elem_area,
+                ),
+                else => unreachable,
+            };
+            ctx_report.recordSolverIters(geometry_result.iters);
+
+            const weights = geometry_result.weights orelse {
+                if (comptime report_mode == .full_stats) {
+                    const nan = std.math.nan(F);
+                    rasterreport.recordPixelConvStats(
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        false,
+                        nan,
+                        nan,
+                        nan,
+                    );
+                }
+                if (geometry_result.iters > 0) {
+                    ctx_report.recordSolverDiverged();
+                }
+                continue;
+            };
+
+            const inv_z = Geom.calcInvZ(nodes_coords, weights);
+            if (inv_z + tol.geometry.depth_buff_inv_z_cmp <
+                subpx_scratch.inv_z[scratch_idx])
+            {
+                continue;
+            }
+
+            subpx_scratch.inv_z[scratch_idx] = inv_z;
+            if (scratch_x_u < subpx_scratch.touched_min_x[scratch_y_u]) {
+                subpx_scratch.touched_min_x[scratch_y_u] = scratch_x_u;
+            }
+
+            if (scratch_x_u > subpx_scratch.touched_max_x[scratch_y_u]) {
+                subpx_scratch.touched_max_x[scratch_y_u] = scratch_x_u;
+            }
+
+            if (comptime report_mode == .full_stats) {
+                rasterreport.recordPixelIterAndOccupancy(
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    geometry_result.iters,
+                    @intCast(@max(0, tile.scratch_x_px_min + @as(
+                        i32,
+                        @intCast(scratch_x_u / sub_samp),
+                    ))),
+                    @intCast(@max(0, tile.scratch_y_px_min + @as(
+                        i32,
+                        @intCast(scratch_y_u / sub_samp),
+                    ))),
+                );
+            }
+
+            const xi = if (comptime Geom.solver_kind == .hyperb)
+                weights[1] * nodes_inv_z[1] / inv_z
+            else
+                geometry_result.xi_out;
+            const eta = if (comptime Geom.solver_kind == .hyperb)
+                weights[2] * nodes_inv_z[2] / inv_z
+            else
+                geometry_result.eta_out;
+
+            ShaderKern.shade(
+                Geom.coord_space,
+                shaderops.ShadeContext{
+                    .frame_idx = ctx_rast.frame_idx,
+                    .elem_idx = overlap.elem_idx,
+                    .fields_num = fields_num,
+                    .actual_fields = fields_num,
+                    .scratch_idx = subpx_scratch.imageIndexCoord(
+                        scratch_x_u,
+                        scratch_y_u,
+                        scratch_idx,
+                    ),
+                    .global_subx = global_subx,
+                    .global_suby = global_suby,
+                },
+                shaderops.InterpData(Geom.nodes_num){
+                    .weights = weights,
+                    .nodes_inv_z = nodes_inv_z,
+                    .sub_pixel_z = 1.0 / inv_z,
+                    .xi = xi,
+                    .eta = eta,
+                },
+                shader_buf,
+                shader,
+                ctx_report,
+                &subpx_scratch.image,
+            );
+
+            shaded_px += 1;
+        }
+    }
+
+    return shaded_px;
+}
+
 fn rasterDirectImpl(
     comptime ScratchBuffs: type,
     comptime Geom: type,
@@ -344,7 +524,7 @@ fn rasterDirectImpl(
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
 
-    return comm.rasterDirectScalComm(
+    return rasterDirectScalComm(
         Geom,
         ShaderKern,
         ShaderData,

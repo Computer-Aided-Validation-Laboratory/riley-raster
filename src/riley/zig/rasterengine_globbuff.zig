@@ -20,12 +20,13 @@ const NDArray = @import("ndarray.zig").NDArray;
 const Timestamp = std.Io.Clock.Timestamp;
 const rasterreport = @import("rasterreport.zig");
 const common = @import("rasterengine_common.zig");
-const exec = @import("rasterengine_exec_common.zig");
 const cfg = @import("buildconfig.zig").config;
+const scalar_kernel = @import("rasterengine_scalar.zig");
+const simd_kernel = @import("rasterengine_simd.zig");
 const SelectedBackend = if (cfg.simd == .on)
-    @import("rasterengine_globbuff_simd.zig").GlobalBackend
+    SimdGlobalBackend
 else
-    @import("rasterengine_globbuff_scalar.zig").GlobalBackend;
+    ScalarGlobalBackend;
 const subpxframe = @import("subpxframe_globbuff.zig");
 
 pub fn rasterSceneGlobBuff(
@@ -73,7 +74,7 @@ fn rasterSceneGlobBuffImpl(
 ) !usize {
     if (tiling.active_tiles.len == 0) return 0;
 
-    const WorkerState = comptime exec.ThreadState(RasterBackend, report_mode);
+    const WorkerState = comptime ThreadState(RasterBackend, report_mode);
     const GlobalTileRangeCtx = struct {
         io: std.Io,
         ctx_rast: rops.RasterContext,
@@ -171,7 +172,7 @@ fn rasterSceneGlobBuffImpl(
         worker_state.* = try WorkerState.init(
             arena_alloc,
             image_out_arr.dims[0],
-            exec.tileScratchSubpxSize(ctx_rast),
+            common.tileScratchSubpxSize(ctx_rast),
         );
         initialized_num += 1;
     }
@@ -185,7 +186,7 @@ fn rasterSceneGlobBuffImpl(
         .root_inputs = root_inputs,
         .target = target,
         .worker_states = worker_states,
-        .subpx_tile_size = exec.tileScratchSubpxSize(ctx_rast),
+        .subpx_tile_size = common.tileScratchSubpxSize(ctx_rast),
     };
     try chunk_exec.runDynRangeWithWorkerErr(
         &tile_range_ctx,
@@ -206,4 +207,284 @@ fn rasterSceneGlobBuffImpl(
         if (worker_state.rasterized_tiles > 0) workers_used += 1;
     }
     return workers_used;
+}
+
+// --------------------------------------------------------------------------------------
+// Scalar global-buffer scratch and kernel binding
+// --------------------------------------------------------------------------------------
+const ScalarGlobalSubpxScratchBuffs = struct {
+    pub const exclusive_subpx_target = true;
+
+    stride_subpx: usize,
+    inv_z: []F,
+    image: @import("matslice.zig").MatSlice(F),
+    filter_tmp: @import("matslice.zig").MatSlice(F),
+    touched_min_x: []usize,
+    touched_max_x: []usize,
+    ideal_pix_cent: []F,
+    target_stride_subpx: usize = 0,
+    target_subx_min: i32 = 0,
+    target_suby_min: i32 = 0,
+    tile_subx_min: i32 = 0,
+    tile_suby_min: i32 = 0,
+    tile_origin_idx: usize = 0,
+
+    pub inline fn imageIndex(
+        self: *const ScalarGlobalSubpxScratchBuffs,
+        local_idx: usize,
+    ) usize {
+        const local_subx = local_idx % self.stride_subpx;
+        const local_suby = local_idx / self.stride_subpx;
+        return self.imageIndexCoord(local_subx, local_suby, local_idx);
+    }
+
+    pub inline fn imageIndexCoord(
+        self: *const ScalarGlobalSubpxScratchBuffs,
+        local_subx: usize,
+        local_suby: usize,
+        _: usize,
+    ) usize {
+        return self.tile_origin_idx +
+            local_suby * self.target_stride_subpx + local_subx;
+    }
+};
+
+pub const ScalarGlobalBackend = struct {
+    pub const SubpxScratchBuffs = ScalarGlobalSubpxScratchBuffs;
+
+    pub fn initSubpxScratch(
+        arena_alloc: std.mem.Allocator,
+        fields_num: u8,
+        subpx_tile_size: usize,
+    ) !ScalarGlobalSubpxScratchBuffs {
+        const total = subpx_tile_size * subpx_tile_size;
+        const image_mem = try arena_alloc.alloc(F, 0);
+        return .{
+            .stride_subpx = subpx_tile_size,
+            .inv_z = try arena_alloc.alloc(F, total),
+            .image = @import("matslice.zig").MatSlice(F).init(image_mem, fields_num, 0),
+            .filter_tmp = @import("matslice.zig").MatSlice(F).init(
+                image_mem,
+                fields_num,
+                0,
+            ),
+            .touched_min_x = try arena_alloc.alloc(usize, subpx_tile_size),
+            .touched_max_x = try arena_alloc.alloc(usize, subpx_tile_size),
+            .ideal_pix_cent = try arena_alloc.alloc(F, total * 2),
+        };
+    }
+
+    pub fn resetSubpxScratch(
+        scratch: *ScalarGlobalSubpxScratchBuffs,
+        subpx_tile_size: usize,
+        _: F,
+    ) void {
+        @memset(scratch.inv_z, -std.math.inf(F));
+        @memset(scratch.touched_min_x, subpx_tile_size);
+        @memset(scratch.touched_max_x, 0);
+    }
+
+    pub fn configureTarget(
+        scratch: *ScalarGlobalSubpxScratchBuffs,
+        target: *subpxframe.SubpxTarget,
+        tile: bin.ActiveTile,
+    ) void {
+        scratch.image = target.image;
+        scratch.target_stride_subpx = target.domain.storage_w_subpx;
+        scratch.target_subx_min = target.global_subx_min;
+        scratch.target_suby_min = target.global_suby_min;
+        scratch.tile_subx_min = tile.scratch_subx_min;
+        scratch.tile_suby_min = tile.scratch_suby_min;
+
+        const origin_x = tile.scratch_subx_min - target.global_subx_min;
+        const origin_y = tile.scratch_suby_min - target.global_suby_min;
+        scratch.tile_origin_idx = @as(usize, @intCast(origin_y)) *
+            scratch.target_stride_subpx + @as(usize, @intCast(origin_x));
+    }
+
+    pub fn RasterEngine(
+        comptime Geom: type,
+        comptime ShaderKern: type,
+        comptime ShaderData: type,
+        comptime root_class: rops.ElemRootClass,
+    ) type {
+        return scalar_kernel.RasterEngine(
+            ScalarGlobalSubpxScratchBuffs,
+            Geom,
+            ShaderKern,
+            ShaderData,
+            root_class,
+        );
+    }
+};
+
+// --------------------------------------------------------------------------------------
+// Simd global-buffer scratch and kernel binding
+// --------------------------------------------------------------------------------------
+const SimdGlobalSubpxScratchBuffs = struct {
+    pub const exclusive_subpx_target = true;
+
+    stride_subpx: usize,
+    inv_z: []align(64) F,
+    image: @import("matslice.zig").MatSlice(F),
+    filter_tmp: @import("matslice.zig").MatSlice(F),
+    simd_chunks: []simd_kernel.SubpxSimdChunk,
+    multi_root_candidate_indices: []u32,
+    multi_root_child_masks: []u8,
+    mask: []align(64) bool,
+    xi: []align(64) F,
+    eta: []align(64) F,
+    touched_min_x: []usize,
+    touched_max_x: []usize,
+    ideal_pix_cent: []align(64) F,
+    target_stride_subpx: usize = 0,
+    target_subx_min: i32 = 0,
+    target_suby_min: i32 = 0,
+    tile_subx_min: i32 = 0,
+    tile_suby_min: i32 = 0,
+    tile_origin_idx: usize = 0,
+
+    pub inline fn imageIndex(
+        self: *const SimdGlobalSubpxScratchBuffs,
+        local_idx: usize,
+    ) usize {
+        const local_subx = local_idx % self.stride_subpx;
+        const local_suby = local_idx / self.stride_subpx;
+        return self.imageIndexCoord(local_subx, local_suby, local_idx);
+    }
+
+    pub inline fn imageIndexCoord(
+        self: *const SimdGlobalSubpxScratchBuffs,
+        local_subx: usize,
+        local_suby: usize,
+        _: usize,
+    ) usize {
+        return self.tile_origin_idx +
+            local_suby * self.target_stride_subpx + local_subx;
+    }
+};
+
+pub const SimdGlobalBackend = struct {
+    pub const SubpxScratchBuffs = SimdGlobalSubpxScratchBuffs;
+
+    pub fn initSubpxScratch(
+        arena_alloc: std.mem.Allocator,
+        fields_num: u8,
+        subpx_tile_size: usize,
+    ) !SimdGlobalSubpxScratchBuffs {
+        const local = try simd_kernel.initSubpxScratch(
+            arena_alloc,
+            fields_num,
+            subpx_tile_size,
+        );
+        return .{
+            .stride_subpx = local.stride_subpx,
+            .inv_z = local.inv_z,
+            .image = local.image,
+            .filter_tmp = local.filter_tmp,
+            .simd_chunks = local.simd_chunks,
+            .multi_root_candidate_indices = local.multi_root_candidate_indices,
+            .multi_root_child_masks = local.multi_root_child_masks,
+            .mask = local.mask,
+            .xi = local.xi,
+            .eta = local.eta,
+            .touched_min_x = local.touched_min_x,
+            .touched_max_x = local.touched_max_x,
+            .ideal_pix_cent = local.ideal_pix_cent,
+        };
+    }
+
+    pub fn resetSubpxScratch(
+        scratch: *SimdGlobalSubpxScratchBuffs,
+        subpx_tile_size: usize,
+        _: F,
+    ) void {
+        @memset(scratch.inv_z, -std.math.inf(F));
+        @memset(scratch.touched_min_x, subpx_tile_size);
+        @memset(scratch.touched_max_x, 0);
+    }
+
+    pub fn configureTarget(
+        scratch: *SimdGlobalSubpxScratchBuffs,
+        target: *subpxframe.SubpxTarget,
+        tile: bin.ActiveTile,
+    ) void {
+        scratch.image = target.image;
+        scratch.target_stride_subpx = target.domain.storage_w_subpx;
+        scratch.target_subx_min = target.global_subx_min;
+        scratch.target_suby_min = target.global_suby_min;
+        scratch.tile_subx_min = tile.scratch_subx_min;
+        scratch.tile_suby_min = tile.scratch_suby_min;
+
+        const origin_x = tile.scratch_subx_min - target.global_subx_min;
+        const origin_y = tile.scratch_suby_min - target.global_suby_min;
+        scratch.tile_origin_idx = @as(usize, @intCast(origin_y)) *
+            scratch.target_stride_subpx + @as(usize, @intCast(origin_x));
+    }
+
+    pub fn RasterEngine(
+        comptime Geom: type,
+        comptime ShaderKern: type,
+        comptime ShaderData: type,
+        comptime root_class: rops.ElemRootClass,
+    ) type {
+        return simd_kernel.RasterEngine(
+            SimdGlobalSubpxScratchBuffs,
+            Geom,
+            ShaderKern,
+            ShaderData,
+            root_class,
+        );
+    }
+};
+
+// --------------------------------------------------------------------------------------
+// Global raster workers
+// --------------------------------------------------------------------------------------
+fn initThreadReportLog(
+    comptime report_mode: ReportMode,
+) report.LogType(report_mode) {
+    return switch (report_mode) {
+        .off => .{},
+        .bench => .{},
+        .full_stats => .{},
+    };
+}
+
+fn ThreadState(
+    comptime RasterBackend: type,
+    comptime report_mode: ReportMode,
+) type {
+    return struct {
+        const Self = @This();
+
+        arena: std.heap.ArenaAllocator,
+        subpx_scratch: RasterBackend.SubpxScratchBuffs,
+        log: report.LogType(report_mode),
+        rasterized_tiles: usize = 0,
+
+        fn init(
+            outer_alloc: std.mem.Allocator,
+            fields_num: usize,
+            subpx_tile_size: usize,
+        ) !Self {
+            var arena = std.heap.ArenaAllocator.init(outer_alloc);
+            errdefer arena.deinit();
+            const arena_alloc = arena.allocator();
+
+            return .{
+                .arena = arena,
+                .subpx_scratch = try RasterBackend.initSubpxScratch(
+                    arena_alloc,
+                    @intCast(fields_num),
+                    subpx_tile_size,
+                ),
+                .log = initThreadReportLog(report_mode),
+            };
+        }
+
+        fn deinit(self: *Self) void {
+            self.arena.deinit();
+        }
+    };
 }
