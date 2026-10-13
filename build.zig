@@ -279,6 +279,11 @@ pub fn build(b: *std.Build) void {
             .description = "Benchmark multi-root hierarchy policies",
             .source_path = "src/bench_multiroot.zig",
         },
+        .{
+            .step_name = "bench-buffer-psf",
+            .description = "Benchmark buffer modes against PSFs and scene densities",
+            .source_path = "src/bench_buffer_psf.zig",
+        },
     };
 
     const bench_runs_step = b.step("benches", "Run all benchmark entrypoints");
