@@ -87,6 +87,7 @@ def run_case(
     warmup: int | None = None,
     one_root_edge_mode: str = "on_the_fly",
     multi_root_edge_mode: str = "on_the_fly",
+    buffer_mode: str = "tile_local",
     sub_sample: int | None = None,
 ) -> list[dict[str, str]]:
     exe = ROOT / "zig-out" / "bin" / f"bench_multiroot_f64_{backend}"
@@ -115,6 +116,8 @@ def run_case(
         one_root_edge_mode,
         "--multi-root-edge-mode",
         multi_root_edge_mode,
+        "--buffer-mode",
+        buffer_mode,
         "--scene",
         scene,
         "--flat-scale",
@@ -366,12 +369,51 @@ def main() -> None:
             multi_root_edge_mode=edge_mode,
             sub_sample=sub_sample,
         ))
-    with (args.out_dir / "experiment3_crossover.csv").open(
-        "w", newline=""
-    ) as file:
-        writer = csv.DictWriter(file, fieldnames=crossover_rows[0].keys())
+    buffer_mode_rows: list[dict[str, str]] = []
+    for scene, mode, buff_mode in itertools.product(
+        ("multi_root", "one_root"),
+        ("fast", "robust"),
+        ("tile_local", "global_subpx_full", "global_subpx_stripe"),
+    ):
+        name = f"buffer_mode_{scene}_{mode}_{buff_mode}"
+        buffer_mode_rows.extend(run_case(
+            args, "simd", name, mode, scene,
+            flat_scale=flat_scale if scene == "one_root" else 1.0,
+            buffer_mode=buff_mode,
+        ))
+    with (args.out_dir / "buffer_mode_raw.csv").open("w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=buffer_mode_rows[0].keys())
         writer.writeheader()
-        writer.writerows(crossover_rows)
+        writer.writerows(buffer_mode_rows)
+
+    buff_grouped = {}
+    for row in buffer_mode_rows:
+        key = (row["scene"], row["mode"], row["buffer_mode"])
+        buff_grouped.setdefault(key, []).append(row)
+    buff_summary = []
+    for key, rows in buff_grouped.items():
+        item = dict(zip(("scene", "mode", "buffer_mode"), key))
+        item["runs"] = len(rows)
+        for field in FIELDS:
+            values = [float(row[field]) for row in rows]
+            item[f"{field}_median"] = statistics.median(values)
+            item[f"{field}_min"] = min(values)
+            item[f"{field}_max"] = max(values)
+        buff_summary.append(item)
+    for item in buff_summary:
+        reference = next(row for row in buff_summary if
+            row["scene"] == item["scene"] and
+            row["mode"] == item["mode"] and
+            row["buffer_mode"] == "tile_local"
+        )
+        for field in ("geometry_ms", "raster_ms", "e2e_ms"):
+            item[f"{field}_vs_tile_local"] = (
+                item[f"{field}_median"] / reference[f"{field}_median"]
+            )
+    with (args.out_dir / "buffer_mode_summary.csv").open("w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=buff_summary[0].keys())
+        writer.writeheader()
+        writer.writerows(buff_summary)
 
 
 if __name__ == "__main__":

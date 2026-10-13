@@ -36,6 +36,7 @@ const BenchArgs = struct {
     mode: rastcfg.MultirootSolverMode = .fast,
     one_root_edge_mode: rastcfg.EdgeFunMode = .on_the_fly,
     multi_root_edge_mode: rastcfg.EdgeFunMode = .on_the_fly,
+    buffer_mode: rastcfg.BufferMode = .tile_local,
 };
 
 fn argSlice(arg: anytype) []const u8 {
@@ -90,6 +91,11 @@ fn parseArgs(args: anytype) !BenchArgs {
         } else if (std.mem.eql(u8, key, "--multi-root-edge-mode")) {
             result.multi_root_edge_mode = std.meta.stringToEnum(
                 rastcfg.EdgeFunMode,
+                value,
+            ) orelse return error.InvalidMode;
+        } else if (std.mem.eql(u8, key, "--buffer-mode")) {
+            result.buffer_mode = std.meta.stringToEnum(
+                rastcfg.BufferMode,
                 value,
             ) orelse return error.InvalidMode;
         } else {
@@ -328,6 +334,7 @@ pub fn main(init: std.process.Init) !void {
         .save_strategy = .none,
         .report = .{ .mode = .bench },
         .advanced = .{
+            .raster = .{ .buffer_mode = args.buffer_mode },
             .solver = .{
                 .oneroot = .{ .edge_fun_mode = args.one_root_edge_mode },
                 .multiroot = .{
@@ -345,7 +352,8 @@ pub fn main(init: std.process.Init) !void {
     var buffered = file.writer(io, &write_buf);
     const writer = &buffered.interface;
     try writer.writeAll(
-        "scene,flat_scale,mode,one_root_edge_mode,multi_root_edge_mode,run,elements,width,height,sub_sample," ++
+        "scene,flat_scale,mode,buffer_mode,one_root_edge_mode,multi_root_edge_mode," ++
+            "run,elements,width,height,sub_sample," ++
             "visible,shaded,solver_calls,solver_iters,solver_diverged," ++
             "geometry_ms,prepare_ms,raster_ms,active_ms,e2e_ms," ++
             "melems_s,mpx_s\n",
@@ -376,13 +384,14 @@ pub fn main(init: std.process.Init) !void {
             @as(F, @floatFromInt(args.height)) / 1e6;
         const seconds = e2e_ms / 1e3;
         try writer.print(
-            "{s},{d:.6},{s},{s},{s},{d},{d},{d},{d},{d}," ++
+            "{s},{d:.6},{s},{s},{s},{s},{d},{d},{d},{d},{d}," ++
                 "{d},{d},{d},{d},{d},{d:.6},{d:.6},{d:.6}," ++
                 "{d:.6},{d:.6},{d:.6},{d:.6}\n",
             .{
                 @tagName(args.scene),
                 args.flat_scale,
                 @tagName(args.mode),
+                @tagName(args.buffer_mode),
                 @tagName(args.one_root_edge_mode),
                 @tagName(args.multi_root_edge_mode),
                 rr - args.warmup,
