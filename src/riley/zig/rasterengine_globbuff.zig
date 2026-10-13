@@ -21,6 +21,8 @@ const Timestamp = std.Io.Clock.Timestamp;
 const rasterreport = @import("rasterreport.zig");
 const common = @import("rasterengine_common.zig");
 const cfg = @import("buildconfig.zig").config;
+const S = @import("buildconfig.zig").SimdWidth;
+const MatSlice = @import("matslice.zig").MatSlice;
 const scalar_kernel = @import("rasterengine_scalar.zig");
 const simd_kernel = @import("rasterengine_simd.zig");
 const SelectedBackend = if (cfg.simd == .on)
@@ -372,25 +374,75 @@ pub const SimdGlobalBackend = struct {
         fields_num: u8,
         subpx_tile_size: usize,
     ) !SimdGlobalSubpxScratchBuffs {
-        const local = try simd_kernel.initSubpxScratch(
-            arena_alloc,
-            fields_num,
-            subpx_tile_size,
+        const subpx_tile_total = subpx_tile_size * subpx_tile_size;
+        const subpx_tile_total_padded = std.mem.alignForward(
+            usize,
+            subpx_tile_total,
+            S,
         );
+        const mem_align = std.mem.Alignment.@"64";
+
+        const subpx_inv_z_scratch = try arena_alloc.alignedAlloc(
+            F,
+            mem_align,
+            subpx_tile_total_padded + S,
+        );
+        const subpx_mask_scratch = try arena_alloc.alignedAlloc(
+            bool,
+            mem_align,
+            subpx_tile_total_padded + S,
+        );
+        const subpx_xi_scratch = try arena_alloc.alignedAlloc(
+            F,
+            mem_align,
+            subpx_tile_total_padded + S,
+        );
+        const subpx_eta_scratch = try arena_alloc.alignedAlloc(
+            F,
+            mem_align,
+            subpx_tile_total_padded + S,
+        );
+
+        const empty_image_mem = try arena_alloc.alloc(F, 0);
+        const empty_image = MatSlice(F).init(
+            empty_image_mem,
+            @as(usize, fields_num),
+            0,
+        );
+
+        const subpx_simd_chunk_count =
+            @divFloor(subpx_tile_total_padded + (S - 1), S) + 1;
+        const subpx_simd_chunks = try arena_alloc.alloc(
+            simd_kernel.SubpxSimdChunk,
+            subpx_simd_chunk_count,
+        );
+
+        const ideal_pix_cent = try arena_alloc.alignedAlloc(
+            F,
+            mem_align,
+            (subpx_tile_total_padded + S) * 2,
+        );
+
         return .{
-            .stride_subpx = local.stride_subpx,
-            .inv_z = local.inv_z,
-            .image = local.image,
-            .filter_tmp = local.filter_tmp,
-            .simd_chunks = local.simd_chunks,
-            .multi_root_candidate_indices = local.multi_root_candidate_indices,
-            .multi_root_child_masks = local.multi_root_child_masks,
-            .mask = local.mask,
-            .xi = local.xi,
-            .eta = local.eta,
-            .touched_min_x = local.touched_min_x,
-            .touched_max_x = local.touched_max_x,
-            .ideal_pix_cent = local.ideal_pix_cent,
+            .stride_subpx = subpx_tile_size,
+            .inv_z = subpx_inv_z_scratch,
+            .image = empty_image,
+            .filter_tmp = empty_image,
+            .simd_chunks = subpx_simd_chunks,
+            .multi_root_candidate_indices = try arena_alloc.alloc(
+                u32,
+                subpx_tile_total_padded,
+            ),
+            .multi_root_child_masks = try arena_alloc.alloc(
+                u8,
+                subpx_tile_total_padded,
+            ),
+            .mask = subpx_mask_scratch,
+            .xi = subpx_xi_scratch,
+            .eta = subpx_eta_scratch,
+            .touched_min_x = try arena_alloc.alloc(usize, subpx_tile_size),
+            .touched_max_x = try arena_alloc.alloc(usize, subpx_tile_size),
+            .ideal_pix_cent = ideal_pix_cent,
         };
     }
 
