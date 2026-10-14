@@ -236,13 +236,13 @@ test "speckle benchmark named options and default gate" {
         try std.testing.expect(opts.softness > 0);
         try std.testing.expectEqual(policy.Evaluator.cell_hash, opts.evaluator.?);
     } else try std.testing.expectError(error.SpeckleOverridesDisabled, Options.parse(args));
-    inline for (.{ "classified-indexed-2", "classified-indexed-3", "classified-indexed-4", "classified-indexed-5", "classified-indexed-6" }) |name| {
-        const candidate = &.{ "bench", "--evaluator", name, "--jitter", "0.08" };
-        if (comptime build.enable_all_evaluators) {
-            try std.testing.expectEqual(policy.parseEvaluator(name).?, (try Options.parse(candidate)).evaluator.?);
-            try std.testing.expectError(error.ClassifiedIndexedRequiresDiskAndNineNeighbors, Options.parse(&.{ "bench", "--evaluator", name, "--neighbors", "4" }));
-        } else try std.testing.expectError(error.SpeckleOverridesDisabled, Options.parse(candidate));
-    }
+    const candidate = &.{ "bench", "--evaluator", "classified-indexed", "--jitter", "0.08" };
+    if (comptime build.enable_all_evaluators) {
+        const opts = try Options.parse(candidate);
+        try std.testing.expectEqual(policy.Evaluator.classified_indexed, opts.evaluator.?);
+        try std.testing.expectEqual(@as(F, 0.08), opts.jitter);
+        try std.testing.expectError(error.ClassifiedIndexedRequiresDiskAndNineNeighbors, Options.parse(&.{ "bench", "--evaluator", "classified-indexed", "--neighbors", "4" }));
+    } else try std.testing.expectError(error.SpeckleOverridesDisabled, Options.parse(candidate));
 }
 const Scene = struct {
     sim: meshio.SimData,
