@@ -15,6 +15,7 @@ pub const Evaluator = enum(u8) {
     list_naive,
     list_indexed,
     classified_indexed, // Owner-strip stamping with nine-neighbor SIMD hard-disk fallback.
+    classified_indexed_2,
     direct_fixed,
     mask_1bit,
     mask_u8,
@@ -65,6 +66,7 @@ pub fn evaluatorName(evaluator: Evaluator) []const u8 {
         .list_naive => "list-naive",
         .list_indexed => "list-indexed",
         .classified_indexed => "classified-indexed",
+        .classified_indexed_2 => "classified-indexed-2",
         .direct_fixed => "direct-fixed",
         .mask_1bit => "mask-1bit",
         .mask_u8 => "mask-u8",
@@ -83,7 +85,7 @@ pub fn isValidMaskSamplesPerCell(samples: anytype) bool {
 pub fn supportsSoftEdges(config: Config) bool {
     return config.pattern == .disk and switch (config.evaluator) {
         .cell_hash, .list_naive, .list_indexed, .mask_u8, .mock => true,
-        .classified_indexed, .direct_fixed, .mask_1bit => false,
+        .classified_indexed, .classified_indexed_2, .direct_fixed, .mask_1bit => false,
     };
 }
 
@@ -95,7 +97,7 @@ pub fn validateCompatibility(config: Config) CompatibilityError!void {
     }
     switch (config.evaluator) {
         .mask_1bit => if (config.pattern != .disk) return error.Mask1BitRequiresDisk,
-        .classified_indexed => if (config.pattern != .disk or config.neighbor_count != 9)
+        .classified_indexed, .classified_indexed_2 => if (config.pattern != .disk or config.neighbor_count != 9)
             return error.ClassifiedIndexedRequiresDiskAndNineNeighbors,
         .direct_fixed => if (config.pattern != .disk or config.neighbor_count != 1)
             return error.DirectFixedRequiresDiskAndOneNeighbor,
@@ -232,7 +234,7 @@ test "runtime evaluator names round trip and reject invalid spellings" {
         try std.testing.expectEqual(evaluator, parseEvaluator(evaluatorName(evaluator)).?);
         if (evaluator != .mock) try std.testing.expectEqual(null, parseEvaluator(@tagName(evaluator)));
     }
-    for ([_][]const u8{ "", "Cell-hash", " mask-u8", "mask", "MASK-U8", "list-indexed-2", "list-indexed-3", "list_indexed_2", "list_indexed_3", "classified-indexed-2", "classified-indexed-3", "classified-indexed-4", "classified-indexed-5", "classified-indexed-6" }) |name| {
+    for ([_][]const u8{ "", "Cell-hash", " mask-u8", "mask", "MASK-U8", "list-indexed-2", "list-indexed-3", "list_indexed_2", "list_indexed_3", "classified-indexed-3", "classified-indexed-4", "classified-indexed-5", "classified-indexed-6" }) |name| {
         try std.testing.expectEqual(null, parseEvaluator(name));
     }
 }
@@ -269,9 +271,9 @@ test "experimental resolution selects defaults and rejects incompatible override
 }
 
 test "specialization catalogues are unique and cover every resolved generation config" {
-    try std.testing.expectEqual(8, std.enums.values(Evaluator).len);
-    try std.testing.expectEqual(54, generationConfigs(true).len);
-    try std.testing.expectEqual(26, sampleConfigs(true).len);
+    try std.testing.expectEqual(9, std.enums.values(Evaluator).len);
+    try std.testing.expectEqual(55, generationConfigs(true).len);
+    try std.testing.expectEqual(27, sampleConfigs(true).len);
     try std.testing.expectEqual(@as(usize, 4), generationConfigs(false).len);
     try std.testing.expectEqual(@as(usize, 4), sampleConfigs(false).len);
     inline for (.{ false, true }) |enable_all| {
