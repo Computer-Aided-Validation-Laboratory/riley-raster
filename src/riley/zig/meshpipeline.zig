@@ -26,7 +26,7 @@ const imageops = @import("imageops.zig");
 const cam = @import("camera.zig");
 const pce = @import("parachunkexec.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
-const rops = @import("rasterfrontend.zig");
+const frontend = @import("rasterfrontend.zig");
 const report = @import("report.zig");
 const sceneops = @import("sceneops.zig");
 const texops = @import("textureops.zig");
@@ -36,7 +36,7 @@ const shaderops = @import("shaderops.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
 const HullMultiRoot = @import("hullmultiroot.zig").HullMultiRoot;
-const db = @import("distortbounds.zig");
+const distbounds = @import("distortbounds.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -87,9 +87,9 @@ pub const MeshFrameWorkspace = struct {
     coords_nodes: meshio.Coords,
     coords_nodes_def_world: ?meshio.Coords,
     vis_orig_elem_inds: []usize,
-    elem_bboxes: []rops.ElemBBox,
-    root_classes: []rops.ElemRootClass,
-    elem_float_bboxes: ?[]db.DistortBounds = null,
+    elem_bboxes: []frontend.ElemBBox,
+    root_classes: []frontend.ElemRootClass,
+    elem_float_bboxes: ?[]distbounds.DistortBounds = null,
     elems_in_image: usize,
     hull_adaptive: ?ndarray.NDArray(F),
     hull_multiroot: ?MultiRootPrepared,
@@ -101,9 +101,9 @@ pub const MeshFrameWorkspace = struct {
 // Prep means culled elem-order ndarray.NDArray data ready for the raster loop.
 pub const MeshFrame = struct {
     mesh: MeshPrepared,
-    elem_bboxes: []rops.ElemBBox,
-    root_classes: []rops.ElemRootClass,
-    elem_float_bboxes: ?[]db.DistortBounds = null,
+    elem_bboxes: []frontend.ElemBBox,
+    root_classes: []frontend.ElemRootClass,
+    elem_float_bboxes: ?[]distbounds.DistortBounds = null,
     elems_in_image: usize,
     total_elems_num: usize,
     hull_adaptive: ?ndarray.NDArray(F),
@@ -848,14 +848,14 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             const stage: *TransformCoordsStage = @ptrCast(@alignCast(ctx_ptr));
 
             if (MT == .tri3 or MT == .tri3opt) {
-                rops.nodesToRasterRangeInPlace(
+                frontend.nodesToRasterRangeInPlace(
                     stage.camera,
                     &stage.frame_workspace.coords_nodes,
                     range_start,
                     range_end,
                 );
             } else {
-                rops.nodesToClipPxLengRangeInPlace(
+                frontend.nodesToClipPxLengRangeInPlace(
                     stage.camera,
                     &stage.frame_workspace.coords_nodes,
                     range_start,
@@ -885,9 +885,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
             vis_counts_by_chunk: []usize,
-            cached_distort_bboxes: ?[]?rops.DistortElemBBox,
-            cached_bboxes: ?[]?rops.ElemBBox,
-            cached_root_classes: []?rops.ElemRootClass,
+            cached_distort_bboxes: ?[]?frontend.DistortElemBBox,
+            cached_bboxes: ?[]?frontend.ElemBBox,
+            cached_root_classes: []?frontend.ElemRootClass,
             hull_mode: rastcfg.HullMode,
         };
 
@@ -901,9 +901,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             var vis_count: usize = 0;
 
             for (range_start..range_end) |ee| {
-                const bbox: ?rops.ElemBBox =
+                const bbox: ?frontend.ElemBBox =
                     if (stage.camera.ideal_sensor_bounds) |ideal_sensor| blk: {
-                        const distorted = rops.calcVisibleDistortBBox(
+                        const distorted = frontend.calcVisibleDistortBBox(
                             MT,
                             stage.camera,
                             stage.coords_nodes,
@@ -917,7 +917,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         if (stage.cached_distort_bboxes) |cached| cached[ee] = distorted;
                         break :blk if (distorted) |value| value.box_ints else null;
                     } else if (MT == .tri3 or MT == .tri3opt)
-                        rops.calcVisibleNodeBBoxTri3WithHalo(
+                        frontend.calcVisibleNodeBBoxTri3WithHalo(
                             MT,
                             stage.camera,
                             stage.coords_nodes,
@@ -926,7 +926,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                             stage.camera.prep_psf.halo_px,
                         )
                     else
-                        rops.calcVisibleNodeBBoxHighOrdWithHalo(
+                        frontend.calcVisibleNodeBBoxHighOrdWithHalo(
                             MT,
                             stage.camera,
                             stage.coords_nodes,
@@ -938,7 +938,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
                 if (bbox != null) {
                     if (comptime MT != .tri3 and MT != .tri3opt) {
-                        stage.cached_root_classes[ee] = rops.classifyElemFacing(
+                        stage.cached_root_classes[ee] = frontend.classifyElemFacing(
                             MT,
                             stage.camera,
                             stage.coords_nodes,
@@ -957,10 +957,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         fn cullAndClassifyVisibleElems(self: *FrameMeshPipelineType, outer_alloc: std.mem.Allocator) !void {
             const has_distort = self.camera.ideal_sensor_bounds != null;
 
-            var cached_distort_bboxes: ?[]?rops.DistortElemBBox = null;
+            var cached_distort_bboxes: ?[]?frontend.DistortElemBBox = null;
             if (has_distort) {
                 cached_distort_bboxes = try outer_alloc.alloc(
-                    ?rops.DistortElemBBox,
+                    ?frontend.DistortElemBBox,
                     self.elems_num,
                 );
             }
@@ -968,12 +968,12 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             const cached_bboxes = if (has_distort)
                 null
             else
-                try outer_alloc.alloc(?rops.ElemBBox, self.elems_num);
+                try outer_alloc.alloc(?frontend.ElemBBox, self.elems_num);
             defer if (cached_bboxes) |bboxes| outer_alloc.free(bboxes);
             const cached_root_classes = if (MT == .tri3 or MT == .tri3opt)
                 &.{}
             else
-                try outer_alloc.alloc(?rops.ElemRootClass, self.elems_num);
+                try outer_alloc.alloc(?frontend.ElemRootClass, self.elems_num);
             defer if (cached_root_classes.len != 0)
                 outer_alloc.free(cached_root_classes);
 
@@ -1013,19 +1013,19 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             self.mesh_workspace.vis_orig_elem_inds =
                 try outer_alloc.alloc(usize, self.mesh_workspace.elems_in_image);
             self.mesh_workspace.elem_bboxes = try outer_alloc.alloc(
-                rops.ElemBBox,
+                frontend.ElemBBox,
                 self.mesh_workspace.elems_in_image,
             );
             self.mesh_workspace.root_classes = if (MT == .tri3 or MT == .tri3opt)
                 &.{}
             else
                 try outer_alloc.alloc(
-                    rops.ElemRootClass,
+                    frontend.ElemRootClass,
                     self.mesh_workspace.elems_in_image,
                 );
             self.mesh_workspace.elem_float_bboxes = if (has_distort)
                 try outer_alloc.alloc(
-                    db.DistortBounds,
+                    distbounds.DistortBounds,
                     self.mesh_workspace.elems_in_image,
                 )
             else
@@ -1064,13 +1064,13 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
             hull_mode: rastcfg.HullMode,
-            cached_distort_bboxes: ?[]const ?rops.DistortElemBBox,
-            cached_bboxes: ?[]const ?rops.ElemBBox,
-            cached_root_classes: []const ?rops.ElemRootClass,
+            cached_distort_bboxes: ?[]const ?frontend.DistortElemBBox,
+            cached_bboxes: ?[]const ?frontend.ElemBBox,
+            cached_root_classes: []const ?frontend.ElemRootClass,
             vis_orig_elem_inds: []usize,
-            elem_bboxes: []rops.ElemBBox,
-            root_classes: []rops.ElemRootClass,
-            elem_float_bboxes: ?[]db.DistortBounds,
+            elem_bboxes: []frontend.ElemBBox,
+            root_classes: []frontend.ElemRootClass,
+            elem_float_bboxes: ?[]distbounds.DistortBounds,
             vis_offsets_by_chunk: []const usize,
         };
 
@@ -1200,7 +1200,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             camera: *const cam.CameraPrepared,
             elem_coords: *const ndarray.NDArray(F),
             hull_adaptive: *ndarray.NDArray(F),
-            root_classes: []const rops.ElemRootClass,
+            root_classes: []const frontend.ElemRootClass,
             hull_mode: rastcfg.HullMode,
         };
 
@@ -1212,7 +1212,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         ) void {
             _ = chunk_idx;
             const stage: *PrepareAdaptiveHullsStage = @ptrCast(@alignCast(ctx_ptr));
-            rops.prepareVisibleAdaptiveHullsRange(
+            frontend.prepareVisibleAdaptiveHullsRange(
                 MT,
                 stage.camera,
                 stage.elem_coords,
@@ -1279,7 +1279,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 const slot = stage.prepared.slot_by_visible_elem.get(pp);
                 if (slot == std.math.maxInt(u32)) continue;
 
-                var coords: rops.GatheredElemCoords(N) = undefined;
+                var coords: frontend.GatheredElemCoords(N) = undefined;
                 const xs = stage.elem_coords.getSlice(&.{ pp, 0, 0 }, 1);
                 const ys = stage.elem_coords.getSlice(&.{ pp, 1, 0 }, 1);
                 const zs = stage.elem_coords.getSlice(&.{ pp, 2, 0 }, 1);
@@ -1368,7 +1368,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 }
                 var ordered: [geomkerns.multiRootSeedCount(N)]Seed = undefined;
                 var length: usize = 0;
-                const nodes = rops.Vec3Slices(F){
+                const nodes = frontend.Vec3Slices(F){
                     .x = &coords.x,
                     .y = &coords.y,
                     .z = &coords.z,
@@ -1381,7 +1381,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                             N,
                             seed.index,
                         );
-                        const facing = rops.projectedJacDetPhysical(
+                        const facing = frontend.projectedJacDetPhysical(
                             N,
                             nodes,
                             uv[0],

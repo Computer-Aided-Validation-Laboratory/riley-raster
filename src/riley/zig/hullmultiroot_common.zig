@@ -10,10 +10,10 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cam = @import("camera.zig");
-const db = @import("distortbounds.zig");
+const distbounds = @import("distortbounds.zig");
 const geomkerns = @import("geometrykernels.zig");
 const rastcfg = @import("rasterconfig.zig");
-const rops = @import("rasterfrontend.zig");
+const frontend = @import("rasterfrontend.zig");
 const edgeops = @import("hulledge.zig");
 const shapefun = @import("shapefun.zig");
 const tol = buildconfig.config.tol;
@@ -40,7 +40,7 @@ pub const Points = struct {
 pub fn buildPointsFromClip(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
-    coords: rops.GatheredElemCoords(N),
+    coords: frontend.GatheredElemCoords(N),
 ) Points {
     const controls = controlNet(N, coords);
     const K = controls.x.len;
@@ -70,7 +70,7 @@ pub fn buildPointsFromClip(
     // vertices of the positive-depth control polytope clipped at the near
     // plane. All control pairs include every actual polytope edge.
     const near_z = tol.culling.projective_z_min;
-    var bounds = db.DistortBounds.initEmpty();
+    var bounds = distbounds.DistortBounds.initEmpty();
     var has_point = false;
     for (0..K) |ii| {
         if (controls.z[ii] > near_z) {
@@ -90,7 +90,7 @@ pub fn buildPointsFromClip(
     }
 
     const halo: F = @floatFromInt(camera.prep_psf.halo_px);
-    const sensor: db.DistortBounds = camera.ideal_sensor_bounds orelse .{
+    const sensor: distbounds.DistortBounds = camera.ideal_sensor_bounds orelse .{
         .x_min = -halo,
         .x_max = @as(F, @floatFromInt(camera.pixels_num[0])) + halo,
         .y_min = -halo,
@@ -227,7 +227,7 @@ fn fromPoints(points_in: []const Vec2F) Points {
     return result;
 }
 
-fn rectHull(bounds: db.DistortBounds) Points {
+fn rectHull(bounds: distbounds.DistortBounds) Points {
     return .{
         .x = [_]F{ bounds.x_min, bounds.x_min, bounds.x_max, bounds.x_max } ++
             [_]F{0} ** 5,
@@ -239,17 +239,17 @@ fn rectHull(bounds: db.DistortBounds) Points {
 
 fn controlNet(
     comptime N: usize,
-    coords: rops.GatheredElemCoords(N),
-) rops.GatheredElemCoords(if (N == 8) 9 else N) {
+    coords: frontend.GatheredElemCoords(N),
+) frontend.GatheredElemCoords(if (N == 8) 9 else N) {
     const K = if (N == 8) 9 else N;
 
-    var controls: rops.GatheredElemCoords(K) = undefined;
-    if (N == 4) {
+    var controls: frontend.GatheredElemCoords(K) = undefined;
+    if (comptime N == 4) {
         controls = coords;
         return controls;
     }
 
-    if (N == 6) {
+    if (comptime N == 6) {
         controls = coords;
         const edges = [3][3]usize{
             .{ 0, 1, 3 }, .{ 1, 2, 4 }, .{ 2, 0, 5 },
@@ -271,13 +271,14 @@ fn controlNet(
         return controls;
     }
 
-    var nodes: rops.GatheredElemCoords(9) = undefined;
+    var nodes: frontend.GatheredElemCoords(9) = undefined;
     for (0..N) |nn| {
         nodes.x[nn] = coords.x[nn];
         nodes.y[nn] = coords.y[nn];
         nodes.z[nn] = coords.z[nn];
     }
-    if (N == 8) {
+
+    if (comptime N == 8) {
         inline for (.{ "x", "y", "z" }) |field| {
             const src = &@field(nodes, field);
             src[8] = 0.5 * (src[4] + src[5] + src[6] + src[7]) -
@@ -289,9 +290,11 @@ fn controlNet(
     inline for (.{ "x", "y", "z" }) |field| {
         const src = @field(nodes, field);
         const dst = &@field(controls, field);
+
         const row0 = 2 * src[4] - 0.5 * (src[0] + src[1]);
         const row1 = 2 * src[8] - 0.5 * (src[7] + src[5]);
         const row2 = 2 * src[6] - 0.5 * (src[3] + src[2]);
+
         dst[grid[0][0]] = src[0];
         dst[grid[0][1]] = row0;
         dst[grid[0][2]] = src[1];
@@ -302,6 +305,7 @@ fn controlNet(
         dst[grid[2][1]] = row2;
         dst[grid[2][2]] = src[2];
     }
+    
     return controls;
 }
 pub const BezierLeaf = struct {
@@ -370,13 +374,15 @@ fn fixedChildRegion(
 fn prepareBezierLeaf(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
-    coords: rops.GatheredElemCoords(N),
+    coords: frontend.GatheredElemCoords(N),
     region: BezierPatchRegion,
     edge_fun_mode: rastcfg.EdgeFunMode,
     comptime prepare_edges: anytype,
 ) BezierLeaf {
     const parents = comptime geomkerns.parentNodeCoords(N);
-    var child: rops.GatheredElemCoords(N) = undefined;
+
+    var child: frontend.GatheredElemCoords(N) = undefined;
+
     for (parents, 0..) |node_uv, ii| {
         const uv = mapPointToParentRegion(region, node_uv);
         var weights: [N]F = undefined;
@@ -392,7 +398,9 @@ fn prepareBezierLeaf(
             child.z[ii] += weights[nn] * coords.z[nn];
         }
     }
+
     const projected = buildPointsFromClip(N, camera, child);
+
     var leaf = BezierLeaf{
         .hull_x = projected.x,
         .hull_y = projected.y,
@@ -410,11 +418,13 @@ fn prepareBezierLeaf(
         ),
         .vertex_count = projected.count,
     };
+
     prepareEdgeSlack(
         leaf.hull_x[0..leaf.vertex_count],
         leaf.hull_y[0..leaf.vertex_count],
         leaf.edge_slack[0..leaf.vertex_count],
     );
+
     if (edge_fun_mode == .pre_calc) {
         prepare_edges(
             leaf.hull_x[0..leaf.vertex_count],
@@ -422,6 +432,7 @@ fn prepareBezierLeaf(
             leaf.prepared_edges[0..leaf.vertex_count],
         );
     }
+
     var max_slack: F = 0;
     for (0..leaf.vertex_count) |ii| {
         leaf.bbox[0] = @min(leaf.bbox[0], leaf.hull_x[ii]);
@@ -430,22 +441,24 @@ fn prepareBezierLeaf(
         leaf.bbox[3] = @max(leaf.bbox[3], leaf.hull_y[ii]);
         max_slack = @max(max_slack, leaf.edge_slack[ii]);
     }
+
     leaf.bbox[0] -= max_slack;
     leaf.bbox[1] += max_slack;
     leaf.bbox[2] -= max_slack;
     leaf.bbox[3] += max_slack;
+
     return leaf;
 }
 
 pub fn prepareFourBezierLeaves(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
-    coords: rops.GatheredElemCoords(N),
+    coords: frontend.GatheredElemCoords(N),
     output: *[4]BezierLeaf,
     edge_fun_mode: rastcfg.EdgeFunMode,
     comptime prepare_edges: anytype,
 ) void {
-    for (0..4) |ii| {
+    inline for (0..4) |ii| {
         const region = fixedChildRegion(N, ii);
         output[ii] = prepareBezierLeaf(
             N,
@@ -468,7 +481,7 @@ test "quad control net matches the tensor transform" {
         .{ 1, 0, 0 }, .{ -0.5, 2, -0.5 }, .{ 0, 0, 1 },
     };
     inline for (.{ 8, 9 }) |N| {
-        var coords: rops.GatheredElemCoords(N) = undefined;
+        var coords: frontend.GatheredElemCoords(N) = undefined;
         for (0..N) |ii| {
             const v: F = @floatFromInt(ii);
             coords.x[ii] = v * v - 3 * v + 7;
@@ -476,7 +489,7 @@ test "quad control net matches the tensor transform" {
             coords.z[ii] = 1 + 0.125 * v;
         }
         const actual = controlNet(N, coords);
-        var nodes: rops.GatheredElemCoords(9) = undefined;
+        var nodes: frontend.GatheredElemCoords(9) = undefined;
         for (0..N) |ii| {
             nodes.x[ii] = coords.x[ii];
             nodes.y[ii] = coords.y[ii];

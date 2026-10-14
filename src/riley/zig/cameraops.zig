@@ -11,7 +11,7 @@ const buildconfig = @import("buildconfig.zig");
 
 const cam = @import("camera.zig");
 const meshio = @import("meshio.zig");
-const mo = @import("meshpipeline.zig");
+const meshpipe = @import("meshpipeline.zig");
 const sceneops = @import("sceneops.zig");
 const vec = @import("vecstack.zig");
 const matrix = @import("matstack.zig");
@@ -143,7 +143,7 @@ pub fn fovFromCamRot(
 
 pub fn fovFromCamRotOverMeshes(
     cam_rot: rotation.Rotation,
-    meshes: []const mo.MeshInput,
+    meshes: []const meshpipe.MeshInput,
 ) [2]F {
     return sceneops.extentInRotatedFrameOverMeshes(cam_rot, meshes);
 }
@@ -297,7 +297,7 @@ pub fn imageDistFrameCoordsTarg(
 }
 
 pub fn imageDistFrameMeshes(
-    meshes: []const mo.MeshInput,
+    meshes: []const meshpipe.MeshInput,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
@@ -319,7 +319,7 @@ pub fn imageDistFrameMeshes(
 }
 
 pub fn imageDistFrameMeshesTarg(
-    meshes: []const mo.MeshInput,
+    meshes: []const meshpipe.MeshInput,
     targ_world: vec.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,
@@ -411,7 +411,7 @@ pub fn posFrameCoordsTarg(
 }
 
 pub fn posFrameMesh(
-    mesh: mo.MeshInput,
+    mesh: meshpipe.MeshInput,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
@@ -431,7 +431,7 @@ pub fn posFrameMesh(
 }
 
 pub fn posFrameMeshes(
-    meshes: []const mo.MeshInput,
+    meshes: []const meshpipe.MeshInput,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
@@ -456,7 +456,7 @@ pub fn posFrameMeshes(
 }
 
 pub fn posFrameMeshesTarg(
-    meshes: []const mo.MeshInput,
+    meshes: []const meshpipe.MeshInput,
     targ_world: vec.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,
@@ -599,7 +599,7 @@ pub fn posFillFrameFromRotAndTarg(
 }
 
 pub fn posFillFrameFromRotOverMeshes(
-    meshes: []const mo.MeshInput,
+    meshes: []const meshpipe.MeshInput,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
@@ -618,7 +618,7 @@ pub fn posFillFrameFromRotOverMeshes(
 }
 
 pub fn posFillFrameFromRotOverMeshesAndTarg(
-    meshes: []const mo.MeshInput,
+    meshes: []const meshpipe.MeshInput,
     targ_world: vec.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,

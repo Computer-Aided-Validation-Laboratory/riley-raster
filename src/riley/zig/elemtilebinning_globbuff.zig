@@ -7,26 +7,25 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const std = @import("std");
-const db = @import("distortbounds.zig");
+const distbounds = @import("distortbounds.zig");
 const geomkerns = @import("geometrykernels.zig");
-const rops = @import("rasterfrontend.zig");
-const bin = @import("elemtilebinning.zig");
+const frontend = @import("rasterfrontend.zig");
+const elemtilebin = @import("elemtilebinning.zig");
 
-pub fn binSceneGlobBuff(
+pub fn binElemsInSceneGlobBuff(
     outer_alloc: std.mem.Allocator,
     tile_size: u16,
-    sub_sample: u32,
     screen_px_x: u16,
     screen_px_y: u16,
     core_y_px_min: u16,
     core_y_px_max: u16,
     halo_px: u16,
     elems_in_image_by_mesh: []const usize,
-    elem_bboxes_by_mesh: []const []rops.ElemBBox,
-    elem_float_bboxes_by_mesh: []const ?[]db.DistortBounds,
+    elem_bboxes_by_mesh: []const []frontend.ElemBBox,
+    elem_float_bboxes_by_mesh: []const ?[]distbounds.DistortBounds,
     mesh_types: []const geomkerns.MeshType,
-    root_classes_by_mesh: []const []rops.ElemRootClass,
-) !bin.TilingOverlaps {
+    root_classes_by_mesh: []const []frontend.ElemRootClass,
+) !elemtilebin.TileElemOverlaps {
     const tiles_x = try std.math.divCeil(usize, screen_px_x, tile_size);
     std.debug.assert(core_y_px_min < core_y_px_max);
     std.debug.assert(core_y_px_max <= screen_px_y);
@@ -37,17 +36,16 @@ pub fn binSceneGlobBuff(
         tile_size,
     );
 
-    const sub_samp: i32 = @intCast(sub_sample);
     const tiles_num = tiles_x * tiles_y;
     const tile_i: i32 = @intCast(tile_size);
     const halo_i: i32 = @intCast(halo_px);
     const core_y_min_i: i32 = @intCast(core_y_px_min);
     const core_y_max_i: i32 = @intCast(core_y_px_max);
 
-    // Pass 1: Count overlaps per tile and bucket by iterating over elements.
+    // Pass 1: Count overlaps per tile and bin by iterating over elements.
     const tile_elem_counts = try outer_alloc.alloc(
         usize,
-        tiles_num * bin.bucket_count,
+        tiles_num * elemtilebin.bin_count,
     );
     defer outer_alloc.free(tile_elem_counts);
     @memset(tile_elem_counts, 0);
@@ -59,12 +57,12 @@ pub fn binSceneGlobBuff(
         const r_classes = root_classes_by_mesh[mesh_idx];
 
         for (elem_bboxes[0..count], 0..) |elem_bbox, ee| {
-            const bucket_idx = @intFromEnum(bin.bucketForElem(
+            const bin_idx = @intFromEnum(elemtilebin.binForElem(
                 m_type,
                 r_classes,
                 elem_bbox.elem_idx,
             ));
-            const floating: ?db.DistortBounds = if (maybe_float_bboxes) |fb|
+            const floating: ?distbounds.DistortBounds = if (maybe_float_bboxes) |fb|
                 fb[ee]
             else
                 null;
@@ -97,23 +95,23 @@ pub fn binSceneGlobBuff(
 
             if (tx_start >= tx_end or ty_start >= ty_end) continue;
 
-            for (ty_start..ty_end) |ty| {
-                const y_min: u16 = @intCast(core_y_px_min + ty * tile_size);
-                const scratch_y_min: i32 = @as(i32, y_min) - if (ty == 0) halo_px else 0;
-                const scratch_y_max: i32 = if (ty + 1 == tiles_y)
+            for (ty_start..ty_end) |yy| {
+                const y_min: u16 = @intCast(core_y_px_min + yy * tile_size);
+                const scratch_y_min: i32 = @as(i32, y_min) - if (yy == 0) halo_px else 0;
+                const scratch_y_max: i32 = if (yy + 1 == tiles_y)
                     core_y_max_i + halo_i
                 else
-                    @as(i32, @intCast(core_y_px_min + (ty + 1) * tile_size));
+                    @as(i32, @intCast(core_y_px_min + (yy + 1) * tile_size));
 
-                for (tx_start..tx_end) |tx| {
-                    const x_min: u16 = @intCast(tx * tile_size);
-                    const scratch_x_min: i32 = @as(i32, x_min) - if (tx == 0) halo_px else 0;
-                    const scratch_x_max: i32 = if (tx + 1 == tiles_x)
+                for (tx_start..tx_end) |xx| {
+                    const x_min: u16 = @intCast(xx * tile_size);
+                    const scratch_x_min: i32 = @as(i32, x_min) - if (xx == 0) halo_px else 0;
+                    const scratch_x_max: i32 = if (xx + 1 == tiles_x)
                         @as(i32, screen_px_x) + halo_i
                     else
-                        @as(i32, @intCast((tx + 1) * tile_size));
+                        @as(i32, @intCast((xx + 1) * tile_size));
 
-                    const overlap = bin.clipElemBBoxToTile(
+                    const overlap = elemtilebin.clipElemBBoxToTile(
                         elem_bbox,
                         floating,
                         mesh_idx,
@@ -127,8 +125,8 @@ pub fn binSceneGlobBuff(
                     {
                         continue;
                     }
-                    const tile_idx = ty * tiles_x + tx;
-                    tile_elem_counts[tile_idx * bin.bucket_count + bucket_idx] += 1;
+                    const tile_idx = yy * tiles_x + xx;
+                    tile_elem_counts[tile_idx * elemtilebin.bin_count + bin_idx] += 1;
                 }
             }
         }
@@ -139,55 +137,60 @@ pub fn binSceneGlobBuff(
     var num_active_tiles: usize = 0;
     for (0..tiles_num) |tile_idx| {
         var tile_count: usize = 0;
-        for (0..bin.bucket_count) |bb| {
-            tile_count += tile_elem_counts[tile_idx * bin.bucket_count + bb];
+        for (0..elemtilebin.bin_count) |bb| {
+            tile_count += tile_elem_counts[tile_idx * elemtilebin.bin_count + bb];
         }
         overlap_total += tile_count;
         if (tile_count > 0) num_active_tiles += 1;
     }
 
-    const active_tiles = try outer_alloc.alloc(bin.ActiveTile, num_active_tiles);
-    const overlaps = try outer_alloc.alloc(bin.OverlapBBox, overlap_total);
+    const active_tiles = try outer_alloc.alloc(
+        elemtilebin.ActiveTile,
+        num_active_tiles,
+    );
+    const overlaps = try outer_alloc.alloc(elemtilebin.OverlapBBox, overlap_total);
 
     const tile_write_inds = try outer_alloc.alloc(
         usize,
-        tiles_num * bin.bucket_count,
+        tiles_num * elemtilebin.bin_count,
     );
     defer outer_alloc.free(tile_write_inds);
 
     var current_off: usize = 0;
     var active_idx: usize = 0;
-    for (0..tiles_y) |ty| {
-        const y_min: u16 = @intCast(core_y_px_min + ty * tile_size);
+    for (0..tiles_y) |yy| {
+        const y_min: u16 = @intCast(core_y_px_min + yy * tile_size);
         const y_max = @min(
             core_y_px_max,
-            @as(u16, @intCast(core_y_px_min + (ty + 1) * tile_size)),
+            @as(u16, @intCast(core_y_px_min + (yy + 1) * tile_size)),
         );
-        const scratch_y_min: i32 = @as(i32, y_min) - if (ty == 0) halo_px else 0;
-        const scratch_y_max: i32 = if (ty + 1 == tiles_y)
+        const scratch_y_min: i32 = @as(i32, y_min) - if (yy == 0) halo_px else 0;
+        const scratch_y_max: i32 = if (yy + 1 == tiles_y)
             core_y_max_i + halo_i
         else
-            @as(i32, @intCast(core_y_px_min + (ty + 1) * tile_size));
+            @as(i32, @intCast(core_y_px_min + (yy + 1) * tile_size));
 
-        for (0..tiles_x) |tx| {
-            const x_min: u16 = @intCast(tx * tile_size);
-            const x_max = @min(screen_px_x, @as(u16, @intCast((tx + 1) * tile_size)));
-            const scratch_x_min: i32 = @as(i32, x_min) - if (tx == 0) halo_px else 0;
-            const scratch_x_max: i32 = if (tx + 1 == tiles_x)
+        for (0..tiles_x) |xx| {
+            const x_min: u16 = @intCast(xx * tile_size);
+            const x_max = @min(screen_px_x, @as(u16, @intCast((xx + 1) * tile_size)));
+            const scratch_x_min: i32 = @as(i32, x_min) - if (xx == 0) halo_px else 0;
+            const scratch_x_max: i32 = if (xx + 1 == tiles_x)
                 @as(i32, screen_px_x) + halo_i
             else
-                @as(i32, @intCast((tx + 1) * tile_size));
-            const tile_idx = ty * tiles_x + tx;
+                @as(i32, @intCast((xx + 1) * tile_size));
+            const tile_idx = yy * tiles_x + xx;
 
             var tile_count: usize = 0;
-            var ranges = [_]bin.ElemBucketRange{.{}} ** bin.bucket_count;
-            for (0..bin.bucket_count) |bb| {
-                const b_count = tile_elem_counts[tile_idx * bin.bucket_count + bb];
+            var ranges = [_]elemtilebin.ElemBinRange{.{}} ** elemtilebin.bin_count;
+            for (0..elemtilebin.bin_count) |bb| {
+                const b_count = tile_elem_counts[
+                    tile_idx * elemtilebin.bin_count + bb
+                ];
                 ranges[bb] = .{
                     .start = current_off + tile_count,
                     .count = b_count,
                 };
-                tile_write_inds[tile_idx * bin.bucket_count + bb] =
+                tile_write_inds[tile_idx * elemtilebin.bin_count + bb] =
                     current_off + tile_count;
                 tile_count += b_count;
             }
@@ -196,23 +199,19 @@ pub fn binSceneGlobBuff(
                 active_tiles[active_idx] = .{
                     .overlap_start = current_off,
                     .overlap_count = tile_count,
-                    .buckets = ranges,
-                    .x_px_min = x_min,
-                    .y_px_min = y_min,
-                    .x_px_max = x_max,
-                    .y_px_max = y_max,
-                    .scratch_x_px_min = scratch_x_min,
-                    .scratch_y_px_min = scratch_y_min,
-                    .scratch_x_px_max = scratch_x_max,
-                    .scratch_y_px_max = scratch_y_max,
-                    .core_subx_min = @as(i32, x_min) * sub_samp,
-                    .core_suby_min = @as(i32, y_min) * sub_samp,
-                    .core_subx_max = @as(i32, x_max) * sub_samp,
-                    .core_suby_max = @as(i32, y_max) * sub_samp,
-                    .scratch_subx_min = scratch_x_min * sub_samp,
-                    .scratch_suby_min = scratch_y_min * sub_samp,
-                    .scratch_subx_max = scratch_x_max * sub_samp,
-                    .scratch_suby_max = scratch_y_max * sub_samp,
+                    .bins = ranges,
+                    .core_px = .{
+                        .x_min = @intCast(x_min),
+                        .y_min = @intCast(y_min),
+                        .x_max = @intCast(x_max),
+                        .y_max = @intCast(y_max),
+                    },
+                    .scratch_px = .{
+                        .x_min = scratch_x_min,
+                        .y_min = scratch_y_min,
+                        .x_max = scratch_x_max,
+                        .y_max = scratch_y_max,
+                    },
                 };
                 active_idx += 1;
             }
@@ -228,12 +227,12 @@ pub fn binSceneGlobBuff(
         const r_classes = root_classes_by_mesh[mesh_idx];
 
         for (elem_bboxes[0..count], 0..) |elem_bbox, ee| {
-            const bucket_idx = @intFromEnum(bin.bucketForElem(
+            const bin_idx = @intFromEnum(elemtilebin.binForElem(
                 m_type,
                 r_classes,
                 elem_bbox.elem_idx,
             ));
-            const floating: ?db.DistortBounds = if (maybe_float_bboxes) |fb|
+            const floating: ?distbounds.DistortBounds = if (maybe_float_bboxes) |fb|
                 fb[ee]
             else
                 null;
@@ -265,23 +264,23 @@ pub fn binSceneGlobBuff(
 
             if (tx_start >= tx_end or ty_start >= ty_end) continue;
 
-            for (ty_start..ty_end) |ty| {
-                const y_min: u16 = @intCast(core_y_px_min + ty * tile_size);
-                const scratch_y_min: i32 = @as(i32, y_min) - if (ty == 0) halo_px else 0;
-                const scratch_y_max: i32 = if (ty + 1 == tiles_y)
+            for (ty_start..ty_end) |yy| {
+                const y_min: u16 = @intCast(core_y_px_min + yy * tile_size);
+                const scratch_y_min: i32 = @as(i32, y_min) - if (yy == 0) halo_px else 0;
+                const scratch_y_max: i32 = if (yy + 1 == tiles_y)
                     core_y_max_i + halo_i
                 else
-                    @as(i32, @intCast(core_y_px_min + (ty + 1) * tile_size));
+                    @as(i32, @intCast(core_y_px_min + (yy + 1) * tile_size));
 
-                for (tx_start..tx_end) |tx| {
-                    const x_min: u16 = @intCast(tx * tile_size);
-                    const scratch_x_min: i32 = @as(i32, x_min) - if (tx == 0) halo_px else 0;
-                    const scratch_x_max: i32 = if (tx + 1 == tiles_x)
+                for (tx_start..tx_end) |xx| {
+                    const x_min: u16 = @intCast(xx * tile_size);
+                    const scratch_x_min: i32 = @as(i32, x_min) - if (xx == 0) halo_px else 0;
+                    const scratch_x_max: i32 = if (xx + 1 == tiles_x)
                         @as(i32, screen_px_x) + halo_i
                     else
-                        @as(i32, @intCast((tx + 1) * tile_size));
+                        @as(i32, @intCast((xx + 1) * tile_size));
 
-                    const overlap = bin.clipElemBBoxToTile(
+                    const overlap = elemtilebin.clipElemBBoxToTile(
                         elem_bbox,
                         floating,
                         mesh_idx,
@@ -295,13 +294,13 @@ pub fn binSceneGlobBuff(
                     {
                         continue;
                     }
-                    const tile_idx = ty * tiles_x + tx;
+                    const tile_idx = yy * tiles_x + xx;
                     const write_idx = tile_write_inds[
-                        tile_idx * bin.bucket_count + bucket_idx
+                        tile_idx * elemtilebin.bin_count + bin_idx
                     ];
                     overlaps[write_idx] = overlap;
                     tile_write_inds[
-                        tile_idx * bin.bucket_count + bucket_idx
+                        tile_idx * elemtilebin.bin_count + bin_idx
                     ] = write_idx + 1;
                 }
             }
@@ -315,7 +314,7 @@ pub fn binSceneGlobBuff(
 }
 
 test "global sub-pixel tiles own disjoint cores and retain halo only at frame edges" {
-    var elem_bboxes = [_]rops.ElemBBox{.{
+    var elem_bboxes = [_]frontend.ElemBBox{.{
         .elem_idx = 0,
         .x_min = -2,
         .x_max = 12,
@@ -323,22 +322,21 @@ test "global sub-pixel tiles own disjoint cores and retain halo only at frame ed
         .y_max = 11,
     }};
     const elems_in_image = [_]usize{1};
-    const elem_bboxes_by_mesh = [_][]rops.ElemBBox{elem_bboxes[0..]};
-    const elem_float_bboxes_by_mesh = [_]?[]db.DistortBounds{null};
+    const elem_bboxes_by_mesh = [_][]frontend.ElemBBox{elem_bboxes[0..]};
+    const elem_float_bboxes_by_mesh = [_]?[]distbounds.DistortBounds{null};
     const mesh_types = [_]geomkerns.MeshType{.tri3};
-    const root_classes_by_mesh = [_][]rops.ElemRootClass{&.{}};
-    const sub_sample: u32 = 2;
+    const root_classes_by_mesh = [_][]frontend.ElemRootClass{&.{}};
+    const sub_sample: i32 = 2;
     const halo_px: u16 = 2;
     const screen_w_px: u16 = 10;
     const screen_h_px: u16 = 9;
-    const screen_w_subpx: i32 = screen_w_px * sub_sample;
-    const screen_h_subpx: i32 = screen_h_px * sub_sample;
-    const halo_subpx: i32 = halo_px * sub_sample;
+    const screen_w_subpx: i32 = @as(i32, screen_w_px) * sub_sample;
+    const screen_h_subpx: i32 = @as(i32, screen_h_px) * sub_sample;
+    const halo_subpx: i32 = @as(i32, halo_px) * sub_sample;
 
-    const tiling = try binSceneGlobBuff(
+    const tiling = try binElemsInSceneGlobBuff(
         std.testing.allocator,
         4,
-        sub_sample,
         screen_w_px,
         screen_h_px,
         0,
@@ -355,36 +353,39 @@ test "global sub-pixel tiles own disjoint cores and retain halo only at frame ed
 
     try std.testing.expectEqual(@as(usize, 9), tiling.active_tiles.len);
     for (tiling.active_tiles) |tile| {
+        const subpx = tile.calcSubpxBounds(sub_sample);
         try std.testing.expectEqual(
-            if (tile.core_subx_min == 0) -halo_subpx else tile.core_subx_min,
-            tile.scratch_subx_min,
+            if (subpx.core.x_min == 0) -halo_subpx else subpx.core.x_min,
+            subpx.scratch.x_min,
         );
         try std.testing.expectEqual(
-            if (tile.core_subx_max == screen_w_subpx)
+            if (subpx.core.x_max == screen_w_subpx)
                 screen_w_subpx + halo_subpx
             else
-                tile.core_subx_max,
-            tile.scratch_subx_max,
+                subpx.core.x_max,
+            subpx.scratch.x_max,
         );
         try std.testing.expectEqual(
-            if (tile.core_suby_min == 0) -halo_subpx else tile.core_suby_min,
-            tile.scratch_suby_min,
+            if (subpx.core.y_min == 0) -halo_subpx else subpx.core.y_min,
+            subpx.scratch.y_min,
         );
         try std.testing.expectEqual(
-            if (tile.core_suby_max == screen_h_subpx)
+            if (subpx.core.y_max == screen_h_subpx)
                 screen_h_subpx + halo_subpx
             else
-                tile.core_suby_max,
-            tile.scratch_suby_max,
+                subpx.core.y_max,
+            subpx.scratch.y_max,
         );
     }
 
-    for (tiling.active_tiles, 0..) |tile_a, aa| {
-        for (tiling.active_tiles[aa + 1 ..]) |tile_b| {
-            const overlaps_x = tile_a.scratch_subx_min < tile_b.scratch_subx_max and
-                tile_b.scratch_subx_min < tile_a.scratch_subx_max;
-            const overlaps_y = tile_a.scratch_suby_min < tile_b.scratch_suby_max and
-                tile_b.scratch_suby_min < tile_a.scratch_suby_max;
+    for (tiling.active_tiles, 0..) |tile_a, ii| {
+        const subpx_a = tile_a.calcSubpxBounds(sub_sample);
+        for (tiling.active_tiles[ii + 1 ..]) |tile_b| {
+            const subpx_b = tile_b.calcSubpxBounds(sub_sample);
+            const overlaps_x = subpx_a.scratch.x_min < subpx_b.scratch.x_max and
+                subpx_b.scratch.x_min < subpx_a.scratch.x_max;
+            const overlaps_y = subpx_a.scratch.y_min < subpx_b.scratch.y_max and
+                subpx_b.scratch.y_min < subpx_a.scratch.y_max;
             try std.testing.expect(!(overlaps_x and overlaps_y));
         }
     }

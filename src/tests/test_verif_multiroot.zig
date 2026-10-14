@@ -14,7 +14,7 @@ const gk = @import("../riley/zig/geometrykernels.zig");
 const HullMultiRoot = @import("../riley/zig/hullmultiroot.zig").HullMultiRoot;
 const newton = @import("../riley/zig/newton.zig");
 const rasterconfig = @import("../riley/zig/rasterconfig.zig");
-const rops = @import("../riley/zig/rasterfrontend.zig");
+const frontend = @import("../riley/zig/rasterfrontend.zig");
 const rotation = @import("../riley/zig/rotation.zig");
 const shapefun = @import("../riley/zig/shapefun.zig");
 
@@ -123,7 +123,7 @@ fn isInParent(comptime N: usize, u: F, v: F) bool {
 
 fn validateNewtonHit(
     comptime N: usize,
-    nodes: rops.Vec3Slices(F),
+    nodes: frontend.Vec3Slices(F),
     px: F,
     py: F,
     result: gk.GeometryResult(N),
@@ -150,7 +150,7 @@ fn validateNewtonHit(
     {
         return null;
     }
-    const facing = rops.projectedJacDetPhysical(
+    const facing = frontend.projectedJacDetPhysical(
         N,
         nodes,
         result.xi_out,
@@ -179,8 +179,8 @@ const SeedZ = struct {
 
 fn getFallbackSeeds(
     comptime N: usize,
-    nodes: rops.Vec3Slices(F),
-    coords: rops.GatheredElemCoords(N),
+    nodes: frontend.Vec3Slices(F),
+    coords: frontend.GatheredElemCoords(N),
     fallback_uvs: *[3][2]F,
 ) usize {
     const count = gk.multiRootSeedCount(N);
@@ -218,7 +218,7 @@ fn getFallbackSeeds(
     var tier_len: usize = 0;
     for (seeds[0..available]) |seed| {
         const uv = gk.multiRootSeedCoords(N, seed.index);
-        const facing = rops.projectedJacDetPhysical(N, nodes, uv[0], uv[1]);
+        const facing = frontend.projectedJacDetPhysical(N, nodes, uv[0], uv[1]);
         const front = std.math.isFinite(facing) and
             facing < -buildconfig.config.tol.culling.projected_jacobian_abs;
         if (front) {
@@ -259,7 +259,7 @@ fn solveMultirootPoint(
     comptime N: usize,
     mode: rasterconfig.MultirootSolverMode,
     camera: *const cam.CameraPrepared,
-    coords: rops.GatheredElemCoords(N),
+    coords: frontend.GatheredElemCoords(N),
     px: F,
     py: F,
 ) ?F {
@@ -270,7 +270,7 @@ fn solveMultirootPoint(
     HullMultiRoot.prepareFourBezierLeaves(N, camera, coords, &leaves, .on_the_fly);
 
     var mutable_coords = coords;
-    const nodes = rops.Vec3Slices(F){
+    const nodes = frontend.Vec3Slices(F){
         .x = &mutable_coords.x,
         .y = &mutable_coords.y,
         .z = &mutable_coords.z,
@@ -424,7 +424,7 @@ fn analyticUnitRoots(coeffs: [4]F) struct { values: [3]F, len: usize } {
 fn analyticFoldDepth(
     comptime N: usize,
     params: AnalyticFold2D,
-    nodes: rops.Vec3Slices(F),
+    nodes: frontend.Vec3Slices(F),
     px: F,
     py: F,
 ) F {
@@ -453,7 +453,7 @@ fn analyticFoldDepth(
         const z = 1 + z_slope * u;
         const v = w * z;
         if (z <= 0 or !isInParent(N, u, v)) continue;
-        const facing = rops.projectedJacDetPhysical(N, nodes, u, v);
+        const facing = frontend.projectedJacDetPhysical(N, nodes, u, v);
         if (std.math.isFinite(facing) and facing <
             -buildconfig.config.tol.culling.projected_jacobian_abs)
         {
@@ -511,7 +511,7 @@ fn oraclePower(value: F, exponent: u8) F {
 
 fn oracleSurface(
     comptime N: usize,
-    coords: rops.GatheredElemCoords(N),
+    coords: frontend.GatheredElemCoords(N),
 ) OracleSurface {
     const parents = comptime gk.parentNodeCoords(N);
     const terms = comptime oracleTerms(N);
@@ -644,7 +644,7 @@ fn oracleRealRoots(
 fn oracleFeDepth(
     comptime N: usize,
     surface: OracleSurface,
-    nodes: rops.Vec3Slices(F),
+    nodes: frontend.Vec3Slices(F),
     px: F,
     py: F,
 ) F {
@@ -712,7 +712,7 @@ fn oracleFeDepth(
                 z += oraclePolyEval(surface[2][vv], 2, u) * v_power;
             }
             if (z <= 0) continue;
-            const facing = rops.projectedJacDetPhysical(N, nodes, u, v);
+            const facing = frontend.projectedJacDetPhysical(N, nodes, u, v);
             if (std.math.isFinite(facing) and facing <
                 -buildconfig.config.tol.culling.projected_jacobian_abs)
             {
@@ -772,8 +772,8 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
 
     const xi_nodes = [_]F{ -1, 1, 1, -1, 0, 1, 0, -1, 0 };
     const eta_nodes = [_]F{ -1, -1, 1, 1, -1, 0, 1, 0, 0 };
-    var coords: rops.GatheredElemCoords(9) = undefined;
-    var projected: rops.RasterCoords2D(9) = undefined;
+    var coords: frontend.GatheredElemCoords(9) = undefined;
+    var projected: frontend.RasterCoords2D(9) = undefined;
     for (0..9) |nn| {
         const xi = xi_nodes[nn];
         coords.x[nn] = 100 * (xi - 0.8 * xi * xi);
@@ -783,15 +783,15 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
         projected.y[nn] = coords.y[nn] / coords.z[nn] + 50;
     }
     try std.testing.expectEqual(
-        rops.ElemRootClass.multi_root,
-        rops.classifyHighOrdFacing(9, projected).?,
+        frontend.ElemRootClass.multi_root,
+        frontend.classifyHighOrdFacing(9, projected).?,
     );
 
     const target_x: F = 0.2;
     const discriminant = @sqrt(0.96 * 0.96 - 4 * 0.8 * 0.2);
     const near_xi = (0.96 - discriminant) / 1.6;
     const far_xi = (0.96 + discriminant) / 1.6;
-    const nodes = rops.Vec3Slices(F){
+    const nodes = frontend.Vec3Slices(F){
         .x = &coords.x,
         .y = &coords.y,
         .z = &coords.z,
@@ -819,13 +819,13 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     try std.testing.expect(far.weights != null);
     try std.testing.expectApproxEqAbs(near_xi, near.xi_out, 1e-8);
     try std.testing.expectApproxEqAbs(far_xi, far.xi_out, 1e-8);
-    try std.testing.expect(rops.projectedJacDetPhysical(
+    try std.testing.expect(frontend.projectedJacDetPhysical(
         9,
         nodes,
         near.xi_out,
         0,
     ) < 0);
-    try std.testing.expect(rops.projectedJacDetPhysical(
+    try std.testing.expect(frontend.projectedJacDetPhysical(
         9,
         nodes,
         far.xi_out,
@@ -888,8 +888,8 @@ fn checkFoldedMatrix(
             const c = @cos(angle);
             const s = @sin(angle);
             for ([_]F{ -1, 1 }) |polarity| {
-                var coords: rops.GatheredElemCoords(N) = undefined;
-                var projected: rops.RasterCoords2D(N) = undefined;
+                var coords: frontend.GatheredElemCoords(N) = undefined;
+                var projected: frontend.RasterCoords2D(N) = undefined;
                 for (parents, 0..) |parent, nn| {
                     const u = parent[0];
                     const v = parent[1];
@@ -905,12 +905,12 @@ fn checkFoldedMatrix(
                     projected.y[nn] = coords.y[nn] / coords.z[nn] + 50;
                 }
                 try std.testing.expectEqual(
-                    rops.ElemRootClass.multi_root,
-                    rops.classifyHighOrdFacing(N, projected).?,
+                    frontend.ElemRootClass.multi_root,
+                    frontend.classifyHighOrdFacing(N, projected).?,
                 );
                 const candidate = HullMultiRoot.buildPointsFromClip(N, camera, coords);
                 var mutable_coords = coords;
-                const nodes = rops.Vec3Slices(F){
+                const nodes = frontend.Vec3Slices(F){
                     .x = &mutable_coords.x,
                     .y = &mutable_coords.y,
                     .z = &mutable_coords.z,
@@ -964,7 +964,7 @@ fn checkQuadraticSaddle(
         for (rotations) |angle| {
             const c = @cos(angle);
             const s = @sin(angle);
-            var coords: rops.GatheredElemCoords(N) = undefined;
+            var coords: frontend.GatheredElemCoords(N) = undefined;
             for (parents, 0..) |parent, nn| {
                 const u = parent[0];
                 const v = parent[1];
@@ -977,7 +977,7 @@ fn checkQuadraticSaddle(
             const candidate = HullMultiRoot.buildPointsFromClip(N, camera, coords);
             const surface = oracleSurface(N, coords);
             var mutable_coords = coords;
-            const nodes = rops.Vec3Slices(F){
+            const nodes = frontend.Vec3Slices(F){
                 .x = &mutable_coords.x,
                 .y = &mutable_coords.y,
                 .z = &mutable_coords.z,
@@ -1038,8 +1038,8 @@ fn checkOutwardCurvedMatrix(
                 const s = @sin(roll);
                 const ct = @cos(secondary);
                 const st = @sin(secondary);
-                var coords: rops.GatheredElemCoords(N) = undefined;
-                var projected: rops.RasterCoords2D(N) = undefined;
+                var coords: frontend.GatheredElemCoords(N) = undefined;
+                var projected: frontend.RasterCoords2D(N) = undefined;
                 for (parents, 0..) |parent, nn| {
                     const u = if (N == 6) parent[0] - 1.0 / 3.0 else parent[0];
                     const v = if (N == 6) parent[1] - 1.0 / 3.0 else parent[1];
@@ -1063,7 +1063,7 @@ fn checkOutwardCurvedMatrix(
                     projected.x[nn] = coords.x[nn] / coords.z[nn] + 50;
                     projected.y[nn] = coords.y[nn] / coords.z[nn] + 50;
                 }
-                if (rops.classifyHighOrdFacing(N, projected) != .multi_root) {
+                if (frontend.classifyHighOrdFacing(N, projected) != .multi_root) {
                     continue;
                 }
                 const candidate = HullMultiRoot.buildPointsFromClip(
@@ -1073,7 +1073,7 @@ fn checkOutwardCurvedMatrix(
                 );
                 const surface = oracleSurface(N, coords);
                 var mutable_coords = coords;
-                const nodes = rops.Vec3Slices(F){
+                const nodes = frontend.Vec3Slices(F){
                     .x = &mutable_coords.x,
                     .y = &mutable_coords.y,
                     .z = &mutable_coords.z,
@@ -1150,8 +1150,8 @@ fn checkThreeRootMatrix(
                 for (angles) |angle| {
                     const c = @cos(angle);
                     const s = @sin(angle);
-                    var coords: rops.GatheredElemCoords(8) = undefined;
-                    var projected: rops.RasterCoords2D(8) = undefined;
+                    var coords: frontend.GatheredElemCoords(8) = undefined;
+                    var projected: frontend.RasterCoords2D(8) = undefined;
                     for (parents, 0..) |parent, nn| {
                         const u = 1 + 0.2 * parent[0];
                         const v = 1 + 0.2 * parent[1];
@@ -1166,8 +1166,8 @@ fn checkThreeRootMatrix(
                         projected.y[nn] = coords.y[nn] / coords.z[nn] + 50;
                     }
                     try std.testing.expectEqual(
-                        rops.ElemRootClass.multi_root,
-                        rops.classifyHighOrdFacing(8, projected).?,
+                        frontend.ElemRootClass.multi_root,
+                        frontend.classifyHighOrdFacing(8, projected).?,
                     );
                     const px = 20 * (c - s * polarity) + 50;
                     const py = 20 * (s + c * polarity) + 50;
@@ -1178,14 +1178,14 @@ fn checkThreeRootMatrix(
                     );
                     if (!candidate.contains(px, py)) continue;
                     var mutable_coords = coords;
-                    const nodes = rops.Vec3Slices(F){
+                    const nodes = frontend.Vec3Slices(F){
                         .x = &mutable_coords.x,
                         .y = &mutable_coords.y,
                         .z = &mutable_coords.z,
                     };
                     var oracle_best: ?F = null;
                     for ([_]F{ -spread / 0.2, 0, spread / 0.2 }) |root| {
-                        const facing = rops.projectedJacDetPhysical(
+                        const facing = frontend.projectedJacDetPhysical(
                             8,
                             nodes,
                             root,
@@ -1224,7 +1224,7 @@ fn checkThreeRootMatrix(
 
 fn checkControlNearPlane(camera: *const cam.CameraPrepared) !void {
     const parents = comptime gk.parentNodeCoords(8);
-    var coords: rops.GatheredElemCoords(8) = undefined;
+    var coords: frontend.GatheredElemCoords(8) = undefined;
     for (parents, 0..) |parent, nn| {
         const u = parent[0];
         const v = parent[1];
@@ -1297,7 +1297,7 @@ fn checkPreparedHullEdges(camera: *const cam.CameraPrepared) !void {
         ));
     }
 
-    var behind: rops.GatheredElemCoords(4) = .{
+    var behind: frontend.GatheredElemCoords(4) = .{
         .x = .{ 0, 1, 1, 0 },
         .y = .{ 0, 0, 1, 1 },
         .z = .{ 0, 0, 0, 0 },
@@ -1313,7 +1313,7 @@ fn checkPreparedHullEdges(camera: *const cam.CameraPrepared) !void {
 
 fn checkParentOnlyHierarchyMisses(camera: *const cam.CameraPrepared) !void {
     const parents = comptime gk.parentNodeCoords(9);
-    var coords: rops.GatheredElemCoords(9) = undefined;
+    var coords: frontend.GatheredElemCoords(9) = undefined;
     for (parents, 0..) |parent, nn| {
         const u = parent[0];
         const v = parent[1];
@@ -1340,7 +1340,7 @@ fn checkParentOnlyHierarchyMisses(camera: *const cam.CameraPrepared) !void {
 fn checkThreeRootQuad8(camera: *const cam.CameraPrepared) !void {
     const parents = comptime gk.parentNodeCoords(8);
     for ([_]F{ -1, 1 }) |polarity| {
-        var coords: rops.GatheredElemCoords(8) = undefined;
+        var coords: frontend.GatheredElemCoords(8) = undefined;
         for (parents, 0..) |parent, nn| {
             const u = parent[0];
             const v = parent[1];

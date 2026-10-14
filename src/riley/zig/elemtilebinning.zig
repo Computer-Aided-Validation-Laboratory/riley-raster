@@ -11,16 +11,16 @@ const F = @import("buildconfig.zig").F;
 const pce = @import("parachunkexec.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 const MeshType = @import("geometrykernels.zig").MeshType;
-const db = @import("distortbounds.zig");
-const front = @import("rasterfrontend.zig");
-const ElemBBox = front.ElemBBox;
-const ElemRootClass = front.ElemRootClass;
+const distbounds = @import("distortbounds.zig");
+const frontend = @import("rasterfrontend.zig");
+const ElemBBox = frontend.ElemBBox;
+const ElemRootClass = frontend.ElemRootClass;
 
 //------------------------------------------------------------------------------------------
 // Element Type and Root Class Bins
 //------------------------------------------------------------------------------------------
 
-pub const ElemBucket = enum(u8) {
+pub const ElemBin = enum(u8) {
     tri3,
     tri3opt,
     tri6_one_root,
@@ -33,18 +33,18 @@ pub const ElemBucket = enum(u8) {
     quad9_multi_root,
 };
 
-pub const bucket_count = std.meta.fields(ElemBucket).len;
+pub const bin_count = std.meta.fields(ElemBin).len;
 
-pub const ElemBucketRange = struct {
+pub const ElemBinRange = struct {
     start: usize = 0,
     count: usize = 0,
 };
 
-pub fn bucketForElem(
+pub fn binForElem(
     mesh_type: MeshType,
     classes: []const ElemRootClass,
     elem_idx: usize,
-) ElemBucket {
+) ElemBin {
     return switch (mesh_type) {
         .tri3 => .tri3,
         .tri3opt => .tri3opt,
@@ -67,8 +67,8 @@ pub fn bucketForElem(
     };
 }
 
-pub fn bucketMeshType(comptime bucket: ElemBucket) MeshType {
-    return switch (bucket) {
+pub fn binMeshType(comptime elem_bin: ElemBin) MeshType {
+    return switch (elem_bin) {
         .tri3 => .tri3,
         .tri3opt => .tri3opt,
         .tri6_one_root, .tri6_multi_root => .tri6,
@@ -78,8 +78,8 @@ pub fn bucketMeshType(comptime bucket: ElemBucket) MeshType {
     };
 }
 
-pub fn bucketRootClass(comptime bucket: ElemBucket) ElemRootClass {
-    return switch (bucket) {
+pub fn binRootClass(comptime elem_bin: ElemBin) ElemRootClass {
+    return switch (elem_bin) {
         .tri6_multi_root,
         .quad4_multi_root,
         .quad8_multi_root,
@@ -104,7 +104,7 @@ pub const OverlapBBox = struct {
 
 pub fn clipElemBBoxToTile(
     elem_bbox: ElemBBox,
-    floating: ?db.DistortBounds,
+    floating: ?distbounds.DistortBounds,
     mesh_idx: usize,
     scratch_x_min: i32,
     scratch_x_max: i32,
@@ -120,10 +120,10 @@ pub fn clipElemBBoxToTile(
         return .{
             .mesh_idx = mesh_idx,
             .elem_idx = elem_bbox.elem_idx,
-            .x_min = front.boundIndMinSigned(clamp_x_min, scratch_x_min),
-            .x_max = front.boundIndMaxSigned(clamp_x_max, scratch_x_max),
-            .y_min = front.boundIndMinSigned(clamp_y_min, scratch_y_min),
-            .y_max = front.boundIndMaxSigned(clamp_y_max, scratch_y_max),
+            .x_min = frontend.boundIndMinSigned(clamp_x_min, scratch_x_min),
+            .x_max = frontend.boundIndMaxSigned(clamp_x_max, scratch_x_max),
+            .y_min = frontend.boundIndMinSigned(clamp_y_min, scratch_y_min),
+            .y_max = frontend.boundIndMaxSigned(clamp_y_max, scratch_y_max),
         };
     }
     return .{
@@ -136,36 +136,49 @@ pub fn clipElemBBoxToTile(
     };
 }
 
+pub const TileBounds = struct {
+    x_min: i32,
+    y_min: i32,
+    x_max: i32,
+    y_max: i32,
+
+    pub fn scale(self: @This(), factor: i32) @This() {
+        return .{
+            .x_min = self.x_min * factor,
+            .y_min = self.y_min * factor,
+            .x_max = self.x_max * factor,
+            .y_max = self.y_max * factor,
+        };
+    }
+};
+
 pub const ActiveTile = struct {
     overlap_start: usize,
     overlap_count: usize,
-    buckets: [bucket_count]ElemBucketRange = [_]ElemBucketRange{.{}} ** bucket_count,
-    x_px_min: u16,
-    y_px_min: u16,
-    x_px_max: u16,
-    y_px_max: u16,
-    scratch_x_px_min: i32,
-    scratch_y_px_min: i32,
-    scratch_x_px_max: i32,
-    scratch_y_px_max: i32,
-    // Global sub-pixel modes populate these exact target ownership bounds.
-    // Tile-local modes do not use them.
-    core_subx_min: i32 = 0,
-    core_suby_min: i32 = 0,
-    core_subx_max: i32 = 0,
-    core_suby_max: i32 = 0,
-    scratch_subx_min: i32 = 0,
-    scratch_suby_min: i32 = 0,
-    scratch_subx_max: i32 = 0,
-    scratch_suby_max: i32 = 0,
+
+    bins: [bin_count]ElemBinRange =
+        [_]ElemBinRange{.{}} ** bin_count,
+
+    core_px: TileBounds,
+    scratch_px: TileBounds,
+
+    pub fn calcSubpxBounds(
+        self: *const @This(),
+        sub_samp: i32,
+    ) struct { core: TileBounds, scratch: TileBounds } {
+        return .{
+            .core = self.core_px.scale(sub_samp),
+            .scratch = self.scratch_px.scale(sub_samp),
+        };
+    }
 };
 
-pub const TilingOverlaps = struct {
+pub const TileElemOverlaps = struct {
     overlaps: []OverlapBBox,
     active_tiles: []ActiveTile,
 };
 
-pub fn sceneTileElemOverlap(
+pub fn binElemsInSceneTileLoc(
     allocator: std.mem.Allocator,
     chunk_exec: *pce.ParaChunkExecutor,
     workers_num: usize,
@@ -177,17 +190,17 @@ pub fn sceneTileElemOverlap(
     halo_px: u16,
     elems_in_image_by_mesh: []const usize,
     elem_bboxes_by_mesh: []const []ElemBBox,
-    elem_float_bboxes_by_mesh: []const ?[]db.DistortBounds,
+    elem_float_bboxes_by_mesh: []const ?[]distbounds.DistortBounds,
     mesh_types: []const MeshType,
     root_classes_by_mesh: []const []ElemRootClass,
-) !TilingOverlaps {
+) !TileElemOverlaps {
     const tiles_num = tiles_num_x * tiles_num_y;
 
     // Stage 1 - Parallel Counting Pass: Determine the number of elem-tile
     // intersections across all meshes.
     const tile_elem_counts = try allocator.alloc(
         std.atomic.Value(usize),
-        tiles_num * bucket_count,
+        tiles_num * bin_count,
     );
     defer allocator.free(tile_elem_counts);
     for (tile_elem_counts) |*count| count.* = std.atomic.Value(usize).init(0);
@@ -228,8 +241,8 @@ pub fn sceneTileElemOverlap(
     var num_active_tiles: usize = 0;
     for (0..tiles_num) |tile_idx| {
         var count: usize = 0;
-        for (0..bucket_count) |bb| {
-            count += tile_elem_counts[tile_idx * bucket_count + bb].load(.monotonic);
+        for (0..bin_count) |bb| {
+            count += tile_elem_counts[tile_idx * bin_count + bb].load(.monotonic);
         }
         overlap_total += count;
         if (count > 0) num_active_tiles += 1;
@@ -240,7 +253,7 @@ pub fn sceneTileElemOverlap(
 
     const tile_write_inds = try allocator.alloc(
         std.atomic.Value(usize),
-        tiles_num * bucket_count,
+        tiles_num * bin_count,
     );
     defer allocator.free(tile_write_inds);
 
@@ -248,44 +261,47 @@ pub fn sceneTileElemOverlap(
     var active_idx: usize = 0;
     for (0..tiles_num) |ii| {
         var count: usize = 0;
-        var ranges = [_]ElemBucketRange{.{}} ** bucket_count;
-        for (0..bucket_count) |bb| {
-            const bucket_count_here =
-                tile_elem_counts[ii * bucket_count + bb].load(.monotonic);
-            ranges[bb] = .{ .start = current_off + count, .count = bucket_count_here };
-            tile_write_inds[ii * bucket_count + bb] =
+        var ranges = [_]ElemBinRange{.{}} ** bin_count;
+        for (0..bin_count) |bb| {
+            const bin_count_here =
+                tile_elem_counts[ii * bin_count + bb].load(.monotonic);
+            ranges[bb] = .{ .start = current_off + count, .count = bin_count_here };
+            tile_write_inds[ii * bin_count + bb] =
                 std.atomic.Value(usize).init(current_off + count);
-            count += bucket_count_here;
+            count += bin_count_here;
         }
 
         if (count > 0) {
-            const tx = ii % tiles_num_x;
-            const ty = ii / tiles_num_x;
+            const tx: u16 = @intCast(ii % tiles_num_x);
+            const ty: u16 = @intCast(ii / tiles_num_x);
+            const core_x_min: i32 = @as(i32, @intCast(tx * tile_size));
+            const core_y_min: i32 = @as(i32, @intCast(ty * tile_size));
+            const core_x_max: i32 = @intCast(@min(
+                screen_px_x,
+                @as(u16, @intCast((tx + 1) * tile_size)),
+            ));
+            const core_y_max: i32 = @intCast(@min(
+                screen_px_y,
+                @as(u16, @intCast((ty + 1) * tile_size)),
+            ));
+            const halo_signed: i32 = @as(i32, @intCast(halo_px));
 
             active_tiles[active_idx] = .{
                 .overlap_start = current_off,
                 .overlap_count = count,
-                .buckets = ranges,
-                .x_px_min = @intCast(tx * tile_size),
-                .y_px_min = @intCast(ty * tile_size),
-                .x_px_max = @min(screen_px_x, @as(u16, @intCast((tx + 1) * tile_size))),
-                .y_px_max = @min(screen_px_y, @as(u16, @intCast((ty + 1) * tile_size))),
-                .scratch_x_px_min = @as(i32, @intCast(tx * tile_size)) - halo_px,
-                .scratch_y_px_min = @as(i32, @intCast(ty * tile_size)) - halo_px,
-                .scratch_x_px_max = @as(
-                    i32,
-                    @intCast(@min(
-                        screen_px_x,
-                        @as(u16, @intCast((tx + 1) * tile_size)),
-                    )),
-                ) + halo_px,
-                .scratch_y_px_max = @as(
-                    i32,
-                    @intCast(@min(
-                        screen_px_y,
-                        @as(u16, @intCast((ty + 1) * tile_size)),
-                    )),
-                ) + halo_px,
+                .bins = ranges,
+                .core_px = .{
+                    .x_min = core_x_min,
+                    .y_min = core_y_min,
+                    .x_max = core_x_max,
+                    .y_max = core_y_max,
+                },
+                .scratch_px = .{
+                    .x_min = core_x_min - halo_signed,
+                    .y_min = core_y_min - halo_signed,
+                    .x_max = core_x_max + halo_signed,
+                    .y_max = core_y_max + halo_signed,
+                },
             };
 
             active_idx += 1;
@@ -329,7 +345,7 @@ pub fn sceneTileElemOverlap(
         );
     }
 
-    return TilingOverlaps{ .overlaps = overlaps, .active_tiles = active_tiles };
+    return TileElemOverlaps{ .overlaps = overlaps, .active_tiles = active_tiles };
 }
 
 const TilingCountStage = struct {
@@ -355,7 +371,7 @@ fn runTilingCount(
 
     for (range_start..range_end) |ee| {
         const elem_bbox = tiling.elem_bbox_slice[ee];
-        const bucket_idx = @intFromEnum(bucketForElem(
+        const bin_idx = @intFromEnum(binForElem(
             tiling.mesh_type,
             tiling.root_classes,
             elem_bbox.elem_idx,
@@ -372,11 +388,11 @@ fn runTilingCount(
         const ty_start = tile_range.ty_start;
         const ty_end = tile_range.ty_end;
 
-        for (ty_start..ty_end) |ty| {
-            const row_off = ty * tiling.tiles_num_x;
-            for (tx_start..tx_end) |tx| {
+        for (ty_start..ty_end) |yy| {
+            const row_off = yy * tiling.tiles_num_x;
+            for (tx_start..tx_end) |xx| {
                 _ = tiling.tile_elem_counts[
-                    (row_off + tx) * bucket_count + bucket_idx
+                    (row_off + xx) * bin_count + bin_idx
                 ].fetchAdd(1, .monotonic);
             }
         }
@@ -394,7 +410,7 @@ const TilingFillStage = struct {
     halo_px: u16,
     mesh_idx: usize,
     elem_bbox_slice: []const ElemBBox,
-    float_bbox_slice: ?[]const db.DistortBounds,
+    float_bbox_slice: ?[]const distbounds.DistortBounds,
     mesh_type: MeshType,
     root_classes: []const ElemRootClass,
 };
@@ -410,12 +426,12 @@ fn runTilingFill(
 
     for (range_start..range_end) |ee| {
         const elem_bbox = tiling.elem_bbox_slice[ee];
-        const bucket_idx = @intFromEnum(bucketForElem(
+        const bin_idx = @intFromEnum(binForElem(
             tiling.mesh_type,
             tiling.root_classes,
             elem_bbox.elem_idx,
         ));
-        const floating: ?db.DistortBounds = if (tiling.float_bbox_slice) |float_bboxes|
+        const floating: ?distbounds.DistortBounds = if (tiling.float_bbox_slice) |float_bboxes|
             float_bboxes[ee]
         else
             null;
@@ -431,8 +447,8 @@ fn runTilingFill(
         const ty_start = tile_range.ty_start;
         const ty_end = tile_range.ty_end;
 
-        for (ty_start..ty_end) |ty| {
-            const tile_px_min_y = @as(u16, @intCast(ty * tiling.tile_size));
+        for (ty_start..ty_end) |yy| {
+            const tile_px_min_y = @as(u16, @intCast(yy * tiling.tile_size));
             const tile_px_max_y = @as(
                 u16,
                 @min(@as(u32, tile_px_min_y) + tiling.tile_size, tiling.screen_px_y),
@@ -440,8 +456,8 @@ fn runTilingFill(
             const scratch_px_min_y: i32 = @as(i32, tile_px_min_y) - tiling.halo_px;
             const scratch_px_max_y: i32 = @as(i32, tile_px_max_y) + tiling.halo_px;
 
-            for (tx_start..tx_end) |tx| {
-                const tile_px_min_x = @as(u16, @intCast(tx * tiling.tile_size));
+            for (tx_start..tx_end) |xx| {
+                const tile_px_min_x = @as(u16, @intCast(xx * tiling.tile_size));
                 const tile_px_max_x = @as(
                     u16,
                     @min(@as(u32, tile_px_min_x) + tiling.tile_size, tiling.screen_px_x),
@@ -449,9 +465,9 @@ fn runTilingFill(
                 const scratch_px_min_x: i32 = @as(i32, tile_px_min_x) - tiling.halo_px;
                 const scratch_px_max_x: i32 = @as(i32, tile_px_max_x) + tiling.halo_px;
 
-                const tile_idx = ty * tiling.tiles_num_x + tx;
+                const tile_idx = yy * tiling.tiles_num_x + xx;
                 const write_idx = tiling.tile_write_inds[
-                    tile_idx * bucket_count + bucket_idx
+                    tile_idx * bin_count + bin_idx
                 ].fetchAdd(1, .monotonic);
 
                 tiling.overlaps[write_idx] = clipElemBBoxToTile(

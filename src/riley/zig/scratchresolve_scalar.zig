@@ -7,8 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const std = @import("std");
-const rops = @import("rasterfrontend.zig");
-const bin = @import("elemtilebinning.zig");
+const frontend = @import("rasterfrontend.zig");
+const elemtilebin = @import("elemtilebinning.zig");
 const cam = @import("camera.zig");
 const common = @import("scratchresolve_common.zig");
 const matslice = @import("matslice.zig");
@@ -32,7 +32,7 @@ pub const sampleScratchOrBackground = common.sampleScratchOrBackground;
 // --------------------------------------------------------------------------------------
 
 pub fn resolveScratchDirectCore(
-    tile: bin.ActiveTile,
+    tile: elemtilebin.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     spx_stride: usize,
     fields_num: u8,
@@ -43,11 +43,13 @@ pub fn resolveScratchDirectCore(
     radius_y: usize,
     image_out_arr: *ndarray.NDArray(F),
 ) void {
+    const core_x_min: usize = @intCast(tile.core_px.x_min);
+    const core_y_min: usize = @intCast(tile.core_px.y_min);
     // Buff layout is planar/field-major.
     // Source: field ff is at spx_image_scratch.slice[ff * spx_stride].
     // Destination: field ff is at image_out_arr.slice[ff * image_out_arr.strides[0]].
     for (0..scratch_geom.core_h_px) |ii| {
-        const image_px_y = tile.y_px_min + ii;
+        const image_px_y = core_y_min + ii;
         const spx_start_y = scratch_geom.core_start_y_subpx + ii;
 
         var min_x = scratch_geom.scratch_w_subpx;
@@ -105,7 +107,7 @@ pub fn resolveScratchDirectCore(
             const dest_base = image_out_arr.offset3(
                 0,
                 image_px_y,
-                tile.x_px_min + tx_start,
+                core_x_min + tx_start,
             );
 
             if (fields_num == 1) {
@@ -124,7 +126,7 @@ pub fn resolveScratchDirectCore(
                 const dest1 = image_out_arr.offset3(
                     1,
                     image_px_y,
-                    tile.x_px_min + tx_start,
+                    core_x_min + tx_start,
                 );
                 @memcpy(
                     image_out_arr.slice[dest1 .. dest1 + len],
@@ -133,7 +135,7 @@ pub fn resolveScratchDirectCore(
                 const dest2 = image_out_arr.offset3(
                     2,
                     image_px_y,
-                    tile.x_px_min + tx_start,
+                    core_x_min + tx_start,
                 );
                 @memcpy(
                     image_out_arr.slice[dest2 .. dest2 + len],
@@ -145,7 +147,7 @@ pub fn resolveScratchDirectCore(
                     const dest_offset = image_out_arr.offset3(
                         ff,
                         image_px_y,
-                        tile.x_px_min + tx_start,
+                        core_x_min + tx_start,
                     );
                     @memcpy(
                         image_out_arr.slice[dest_offset .. dest_offset + len],
@@ -158,7 +160,7 @@ pub fn resolveScratchDirectCore(
 }
 
 pub fn avgScratchCore(
-    tile: bin.ActiveTile,
+    tile: elemtilebin.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
     spx_stride: usize,
@@ -170,11 +172,13 @@ pub fn avgScratchCore(
     radius_y: usize,
     image_out_arr: *ndarray.NDArray(F),
 ) void {
+    const core_x_min: usize = @intCast(tile.core_px.x_min);
+    const core_y_min: usize = @intCast(tile.core_px.y_min);
     const sub_samp_f = @as(F, @floatFromInt(sub_samp));
     const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
 
     for (0..scratch_geom.core_h_px) |ii| {
-        const image_px_y = tile.y_px_min + ii;
+        const image_px_y = core_y_min + ii;
         const spx_start_y = scratch_geom.core_start_y_subpx + sub_samp * ii;
 
         var min_x = scratch_geom.scratch_w_subpx;
@@ -229,7 +233,7 @@ pub fn avgScratchCore(
         }
 
         for (tx_start..tx_end + 1) |jj| {
-            const image_px_x = tile.x_px_min + jj;
+            const image_px_x = core_x_min + jj;
             const spx_start_x = scratch_geom.core_start_x_subpx + sub_samp * jj;
             const image_base_0 = image_out_arr.offset3(0, image_px_y, image_px_x);
 

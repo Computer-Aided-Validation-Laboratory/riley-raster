@@ -11,7 +11,7 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
 const tol = cfg.tol;
-const rops = @import("rasterfrontend.zig");
+const frontend = @import("rasterfrontend.zig");
 const edgeops = @import("hulledge.zig");
 const HullEdge = @import("hulledge.zig").HullEdge;
 const EdgeFunMode = @import("rasterconfig.zig").EdgeFunMode;
@@ -277,7 +277,7 @@ test "multi-root SIMD child masks match scalar with inactive lanes" {
 pub fn prepareFourBezierLeaves(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
-    coords: rops.GatheredElemCoords(N),
+    coords: frontend.GatheredElemCoords(N),
     output: *[4]hullcommon.BezierLeaf,
     edge_fun_mode: EdgeFunMode,
 ) void {

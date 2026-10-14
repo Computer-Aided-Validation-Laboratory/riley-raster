@@ -13,7 +13,7 @@ const geomkerns = @import("geometrykernels.zig");
 const imageops = @import("imageops.zig");
 const imageio = @import("imageio.zig");
 const matslice = @import("matslice.zig");
-const mo = @import("meshpipeline.zig");
+const meshpipe = @import("meshpipeline.zig");
 const ndarray = @import("ndarray.zig");
 const rastcfg = @import("rasterconfig.zig");
 const report = @import("report.zig");
@@ -117,7 +117,7 @@ pub const RenderSummary = ValidSummary;
 pub fn checkRenderInps(
     render_groups: anytype,
     cam_inps: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
+    meshes: []const meshpipe.MeshInput,
     config: rastcfg.RasterConfig,
     imgs_arr: ?*ndarray.NDArray(F),
     require_out_buff: bool,
@@ -129,12 +129,12 @@ pub fn checkRenderInps(
     try checkMeshesMetadata(meshes, cam_inps);
     try checkCameras(cam_inps, config);
 
-    const num_time = mo.countFrames(meshes);
+    const num_time = meshpipe.countFrames(meshes);
     if (num_time == 0) {
         return error.NoMeshFrames;
     }
 
-    const raw_num_fields = mo.countOutputFields(meshes);
+    const raw_num_fields = meshpipe.countOutputFields(meshes);
     if (raw_num_fields == 0) {
         return error.NoOutputFields;
     }
@@ -172,11 +172,11 @@ pub fn checkRenderInps(
 /// Computes metadata needed for allocations in `.off` mode without executing validation.
 pub fn summariseRenderInpsAssumeValid(
     cam_inps: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
+    meshes: []const meshpipe.MeshInput,
     config: rastcfg.RasterConfig,
 ) ValidSummary {
-    const num_time = if (meshes.len > 0) mo.countFrames(meshes) else 1;
-    const raw_num_fields = if (meshes.len > 0) mo.countOutputFields(meshes) else 1;
+    const num_time = if (meshes.len > 0) meshpipe.countFrames(meshes) else 1;
+    const raw_num_fields = if (meshes.len > 0) meshpipe.countOutputFields(meshes) else 1;
     const out_num_fields = calcOutFieldsForImgSaveMode(
         config.output.image_save_mode,
         raw_num_fields,
@@ -300,7 +300,7 @@ fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
 // --------------------------------------------------------------------------------------
 
 fn checkMeshesMetadata(
-    meshes: []const mo.MeshInput,
+    meshes: []const meshpipe.MeshInput,
     cam_inps: []const cam.CameraInput,
 ) InputValidationError!void {
     if (meshes.len == 0) {

@@ -15,7 +15,7 @@ const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cm = @import("cameramodels.zig");
-const db = @import("distortbounds.zig");
+const distbounds = @import("distortbounds.zig");
 const camera_scalar = @import("camera_scalar.zig");
 const camera_simd = @import("camera_simd.zig");
 
@@ -139,7 +139,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         coord_sys: CameraCoordSys,
         ideal_pixel_centers: ndarray.NDArray(F),
         subpixel_center_map: SubPixelCenterMap,
-        ideal_sensor_bounds: ?db.DistortBounds = null,
+        ideal_sensor_bounds: ?distbounds.DistortBounds = null,
 
         pub fn init(
             allocator: std.mem.Allocator,
@@ -227,7 +227,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             self.ideal_sensor_bounds = if (isNoDistort(self.distort))
                 null
             else
-                try db.idealSensorBounds(&self, self.prep_psf.halo_px);
+                try distbounds.idealSensorBounds(&self, self.prep_psf.halo_px);
 
             return self;
         }

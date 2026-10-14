@@ -13,7 +13,7 @@ const gk = @import("riley/zig/geometrykernels.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
-const rastops = @import("riley/zig/rasterfrontend.zig");
+const frontend = @import("riley/zig/rasterfrontend.zig");
 const report = @import("riley/zig/report.zig");
 const orch = @import("dev_support/orchestration.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
@@ -256,7 +256,7 @@ fn makeMesh(
         var clip: [N][3]F = undefined;
         fillClipCoords(N, ee, group_idx, args, &clip);
         if (args.scene == .one_root) {
-            var raster = rastops.RasterCoords2D(N){
+            var raster = frontend.RasterCoords2D(N){
                 .x = undefined,
                 .y = undefined,
             };
@@ -264,7 +264,7 @@ fn makeMesh(
                 raster.x[nn] = clip[nn][0] / clip[nn][2];
                 raster.y[nn] = clip[nn][1] / clip[nn][2];
             }
-            if (rastops.classifyHighOrdFacing(N, raster) != .one_root) {
+            if (frontend.classifyHighOrdFacing(N, raster) != .one_root) {
                 return error.BaselineNotOneRoot;
             }
         }

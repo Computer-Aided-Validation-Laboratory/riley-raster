@@ -24,7 +24,8 @@ const MeshType = geomkerns.MeshType;
 const HullAdaptive = @import("hulladaptive.zig").HullAdaptive;
 const HullMultiRoot = @import("hullmultiroot.zig").HullMultiRoot;
 const shaderops = @import("shaderops.zig");
-const db = @import("distortbounds.zig");
+const distbounds = @import("distortbounds.zig");
+const elemtilebin = @import("elemtilebinning.zig");
 const edgeops = @import("hulledge.zig");
 
 pub const ElemRootClass = enum(u8) {
@@ -71,7 +72,7 @@ pub const ElemBBox = struct {
 
 pub const DistortElemBBox = struct {
     box_ints: ElemBBox,
-    box_floats: db.DistortBounds,
+    box_floats: distbounds.DistortBounds,
 };
 
 pub fn calcVisibleDistortBBox(
@@ -82,7 +83,7 @@ pub fn calcVisibleDistortBBox(
     elem_idx: usize,
     hull_mode: rastcfg.HullMode,
     raster_halo_px: u16,
-    ideal_sensor: db.DistortBounds,
+    ideal_sensor: distbounds.DistortBounds,
     edge_spacing_px: F,
 ) ?DistortElemBBox {
     const N = comptime MT.getNodesNum();
@@ -92,13 +93,13 @@ pub fn calcVisibleDistortBBox(
         return null;
     }
 
-    var ideal_bounds = db.DistortBounds.initEmpty();
+    var ideal_bounds = distbounds.DistortBounds.initEmpty();
     if (comptime MT == .tri3 or MT == .tri3opt) {
         const nodes = RasterCoords2D(N){ .x = coords.x, .y = coords.y };
 
         if (isTri3BackfaceRaster(nodes)) return null;
 
-        ideal_bounds = db.DistortBounds.fromCoords2D(N, nodes);
+        ideal_bounds = distbounds.DistortBounds.fromCoords2D(N, nodes);
     } else {
         const nodes = projectClipToIdealRaster(N, camera, coords);
         const root_class = classifyHighOrdFacing(N, nodes) orelse return null;
@@ -120,13 +121,13 @@ pub fn calcVisibleDistortBBox(
                 coords,
                 hull_mode,
             );
-            ideal_bounds = db.DistortBounds.fromCoords2D(NH, points);
+            ideal_bounds = distbounds.DistortBounds.fromCoords2D(NH, points);
         }
     }
 
     const walk = ideal_bounds.intersect(ideal_sensor) orelse return null;
 
-    var observed = db.sampleRectEdges(camera, walk, edge_spacing_px);
+    var observed = distbounds.sampleRectEdges(camera, walk, edge_spacing_px);
 
     if (!isOnScreen(
         camera,
@@ -414,7 +415,7 @@ pub fn calcVisibleNodeBBoxHighOrdWithHalo(
     if (root_class == .multi_root) {
         const points = HullMultiRoot.buildPointsFromClip(N, camera, coords_clip);
         if (points.count < 3) return null;
-        var bounds = db.DistortBounds.initEmpty();
+        var bounds = distbounds.DistortBounds.initEmpty();
         for (0..points.count) |nn| {
             bounds.include(points.x[nn], points.y[nn]);
         }
@@ -844,7 +845,7 @@ fn calcBBoxFromRasterCoords(
 fn calcBBoxFromBounds(
     camera: *const cam.CameraPrepared,
     elem_idx: usize,
-    bounds: db.DistortBounds,
+    bounds: distbounds.DistortBounds,
     raster_halo_px: u16,
 ) ?ElemBBox {
     if (!isOnScreen(
@@ -1005,7 +1006,7 @@ test "fixed scalar and SIMD bounds recover the distorted triangle interior" {
     var connect = try initSingleElemConnect(3, outer_alloc);
     defer connect.deinit(outer_alloc);
 
-    const sensor = db.DistortBounds{
+    const sensor = distbounds.DistortBounds{
         .x_min = 0.0,
         .x_max = 200.0,
         .y_min = 0.0,
@@ -1031,7 +1032,7 @@ test "fixed scalar and SIMD bounds recover the distorted triangle interior" {
     ).?;
     try std.testing.expectEqual(@as(i32, 112), old_bbox.x_min);
     try std.testing.expectEqual(@as(i32, 110), bbox.box_ints.x_min);
-    const overlap = @import("elemtilebinning.zig").clipElemBBoxToTile(
+    const overlap = elemtilebin.clipElemBBoxToTile(
         bbox.box_ints,
         bbox.box_floats,
         0,
@@ -1046,14 +1047,14 @@ test "fixed scalar and SIMD bounds recover the distorted triangle interior" {
     try std.testing.expect(ideal[0] > 110.0 and ideal[0] < 120.0);
     try std.testing.expect(ideal[1] > 50.0 and ideal[1] < 150.0);
 
-    const rect = db.DistortBounds{
+    const rect = distbounds.DistortBounds{
         .x_min = 110.0,
         .x_max = 120.0,
         .y_min = 50.0,
         .y_max = 150.0,
     };
-    const scalar = db.sampleRectEdgesScalar(&camera, rect, 1.0);
-    const simd = db.sampleRectEdgesSIMD(&camera, rect, 1.0);
+    const scalar = distbounds.sampleRectEdgesScalar(&camera, rect, 1.0);
+    const simd = distbounds.sampleRectEdgesSIMD(&camera, rect, 1.0);
     const bound_tol: F = if (F == f32) 1e-4 else 1e-10;
     try std.testing.expectApproxEqAbs(scalar.x_min, simd.x_min, bound_tol);
     try std.testing.expectApproxEqAbs(scalar.x_max, simd.x_max, bound_tol);
@@ -1071,14 +1072,14 @@ test "one-pixel fixed spacing resolves a smooth between-sample radial minimum" {
     } });
     camera.pixels_num = .{ 2000, 2000 };
     camera.pixels_size = .{ 0.001, 0.001 };
-    const rect = db.DistortBounds{
+    const rect = distbounds.DistortBounds{
         .x_min = 1600.0,
         .x_max = 1700.0,
         .y_min = 560.3,
         .y_max = 1560.3,
     };
-    const scalar = db.sampleRectEdgesScalar(&camera, rect, 1.0);
-    const simd = db.sampleRectEdgesSIMD(&camera, rect, 1.0);
+    const scalar = distbounds.sampleRectEdgesScalar(&camera, rect, 1.0);
+    const simd = distbounds.sampleRectEdgesSIMD(&camera, rect, 1.0);
     const exact_min: F = 1000.0 + 1000.0 * 0.6 * (1.0 + 0.3 * 0.6 * 0.6);
     const error_limit: F = if (F == f32) 0.002 else 0.0001;
     try std.testing.expect(scalar.x_min >= exact_min - error_limit);

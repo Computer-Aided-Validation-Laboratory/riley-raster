@@ -16,14 +16,14 @@ const VecSF = buildconfig.VecSF;
 const VecSU8 = buildconfig.VecSU8;
 const tol = cfg.tol;
 
-const rops = @import("rasterfrontend.zig");
+const frontend = @import("rasterfrontend.zig");
 const edgeops = @import("hulledge.zig");
 const newton = @import("newton.zig");
 const NewtonSeed = newton.NewtonSeed;
 const NewtonSeedSIMD = newton.NewtonSeedSIMD;
 const shapefun = @import("shapefun.zig");
 const NDArray = @import("ndarray.zig").NDArray;
-const Vec3Slices = rops.Vec3Slices;
+const Vec3Slices = frontend.Vec3Slices;
 const rastcfg = @import("rasterconfig.zig");
 
 // --------------------------------------------------------------------------------------

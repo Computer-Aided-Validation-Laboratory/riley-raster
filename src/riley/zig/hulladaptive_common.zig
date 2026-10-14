@@ -13,7 +13,7 @@ const cam = @import("camera.zig");
 const geomkerns = @import("geometrykernels.zig");
 const MeshType = geomkerns.MeshType;
 const rastcfg = @import("rasterconfig.zig");
-const rops = @import("rasterfrontend.zig");
+const frontend = @import("rasterfrontend.zig");
 const edgeops = @import("hulledge.zig");
 const tol = buildconfig.config.tol;
 
@@ -71,7 +71,7 @@ fn convexifyHullInPlace(
 pub fn buildPointsFromClip(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
-    coords_elem: rops.GatheredElemCoords(N),
+    coords_elem: frontend.GatheredElemCoords(N),
     hull_mode: rastcfg.HullMode,
 ) Points(N) {
     const x_off = 0.5 * @as(F, @floatFromInt(camera.pixels_num[0]));

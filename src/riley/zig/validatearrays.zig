@@ -10,7 +10,7 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const geomkerns = @import("geometrykernels.zig");
 const matslice = @import("matslice.zig");
-const mo = @import("meshpipeline.zig");
+const meshpipe = @import("meshpipeline.zig");
 const ndarray = @import("ndarray.zig");
 const shaderops = @import("shaderops_common.zig");
 const texops = @import("textureops.zig");
@@ -38,7 +38,7 @@ pub const InputArrayError = error{
 /// Scans full mesh array payloads (connectivity bounds and uniqueness, floating coordinates,
 /// displacements, nodal fields, UVs, and floating textures for non-finite values).
 /// Assumes structural and metadata validity checks from `checkRenderInps()` have passed.
-pub fn checkRenderArrs(meshes: []const mo.MeshInput) InputArrayError!void {
+pub fn checkRenderArrs(meshes: []const meshpipe.MeshInput) InputArrayError!void {
     for (meshes) |mesh| {
         try checkMeshConnectivity(mesh);
         try checkMeshCoordinates(mesh);
@@ -51,7 +51,7 @@ pub fn checkRenderArrs(meshes: []const mo.MeshInput) InputArrayError!void {
 // Connectivity Scans
 // --------------------------------------------------------------------------------------
 
-fn checkMeshConnectivity(mesh: mo.MeshInput) InputArrayError!void {
+fn checkMeshConnectivity(mesh: meshpipe.MeshInput) InputArrayError!void {
     const coords_num = mesh.coords.mat.rows_num;
     const elems_num = mesh.connect.table.rows_num;
     const nodes_per_elem = mesh.connect.table.cols_num;
@@ -81,13 +81,13 @@ fn checkMeshConnectivity(mesh: mo.MeshInput) InputArrayError!void {
 // Coordinate and Displacement Scans
 // --------------------------------------------------------------------------------------
 
-fn checkMeshCoordinates(mesh: mo.MeshInput) InputArrayError!void {
+fn checkMeshCoordinates(mesh: meshpipe.MeshInput) InputArrayError!void {
     if (!isFiniteSlice(mesh.coords.mem)) {
         return error.NonFiniteCoordinates;
     }
 }
 
-fn checkMeshDisplacements(mesh: mo.MeshInput) InputArrayError!void {
+fn checkMeshDisplacements(mesh: meshpipe.MeshInput) InputArrayError!void {
     if (mesh.disp) |disp_field| {
         if (!isFiniteSlice(disp_field.array_mem)) {
             return error.NonFiniteDisplacements;
@@ -99,7 +99,7 @@ fn checkMeshDisplacements(mesh: mo.MeshInput) InputArrayError!void {
 // Shader Payload Scans (Nodal Fields, UVs, Floating Textures)
 // --------------------------------------------------------------------------------------
 
-fn checkMeshShaderArrays(mesh: mo.MeshInput) InputArrayError!void {
+fn checkMeshShaderArrays(mesh: meshpipe.MeshInput) InputArrayError!void {
     switch (mesh.shader) {
         .tex_u8 => |tex_shader| {
             if (!isFiniteSlice(tex_shader.uvs.slice)) {

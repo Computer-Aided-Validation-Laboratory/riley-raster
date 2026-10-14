@@ -17,7 +17,7 @@ const gk = @import("geometrykernels.zig");
 const iio = @import("imageio.zig");
 const imageops = @import("imageops.zig");
 const meshio = @import("meshio.zig");
-const mo = @import("meshpipeline.zig");
+const meshpipe = @import("meshpipeline.zig");
 const ndarray = @import("ndarray.zig");
 const riley = @import("riley.zig");
 const rotation = @import("rotation.zig");
@@ -333,7 +333,7 @@ pub const CRasterConfig = extern struct {
 };
 
 const MeshInputBuilt = struct {
-    mesh_input: mo.MeshInput,
+    mesh_input: meshpipe.MeshInput,
     disp_array: ?ndarray.NDArray(F) = null,
     uvs_array: ?ndarray.NDArray(F) = null,
     tex_array_u8: ?ndarray.NDArray(u8) = null,
@@ -1519,8 +1519,8 @@ fn buildMeshInputSlice(
 fn extractMeshInputs(
     allocator: std.mem.Allocator,
     built_meshes: []const MeshInputBuilt,
-) ![]mo.MeshInput {
-    const mesh_inputs = try allocator.alloc(mo.MeshInput, built_meshes.len);
+) ![]meshpipe.MeshInput {
+    const mesh_inputs = try allocator.alloc(meshpipe.MeshInput, built_meshes.len);
     for (built_meshes, 0..) |built_mesh, nn| {
         mesh_inputs[nn] = built_mesh.mesh_input;
     }

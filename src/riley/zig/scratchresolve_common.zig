@@ -9,8 +9,8 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const rops = @import("rasterfrontend.zig");
-const bin = @import("elemtilebinning.zig");
+const frontend = @import("rasterfrontend.zig");
+const elemtilebin = @import("elemtilebinning.zig");
 const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
 
@@ -28,18 +28,21 @@ pub const ScratchTileGeometry = struct {
     core_start_x_subpx: usize,
     core_start_y_subpx: usize,
 
-    pub fn init(tile: bin.ActiveTile, sub_sample: usize) ScratchTileGeometry {
-        const core_w_px = @as(usize, tile.x_px_max - tile.x_px_min);
-        const core_h_px = @as(usize, tile.y_px_max - tile.y_px_min);
+    pub fn init(
+        tile: elemtilebin.ActiveTile,
+        sub_sample: usize,
+    ) ScratchTileGeometry {
+        const core_w_px = @as(usize, @intCast(tile.core_px.x_max - tile.core_px.x_min));
+        const core_h_px = @as(usize, @intCast(tile.core_px.y_max - tile.core_px.y_min));
 
         const scratch_w_px = @as(
             usize,
-            @intCast(tile.scratch_x_px_max - tile.scratch_x_px_min),
+            @intCast(tile.scratch_px.x_max - tile.scratch_px.x_min),
         );
 
         const scratch_h_px = @as(
             usize,
-            @intCast(tile.scratch_y_px_max - tile.scratch_y_px_min),
+            @intCast(tile.scratch_px.y_max - tile.scratch_px.y_min),
         );
 
         return .{
@@ -50,20 +53,20 @@ pub const ScratchTileGeometry = struct {
             .scratch_w_subpx = scratch_w_px * sub_sample,
             .scratch_h_subpx = scratch_h_px * sub_sample,
             .core_start_x_subpx = (@as(usize, @intCast(
-                @as(i32, tile.x_px_min) - tile.scratch_x_px_min,
+                tile.core_px.x_min - tile.scratch_px.x_min,
             ))) * sub_sample,
             .core_start_y_subpx = (@as(usize, @intCast(
-                @as(i32, tile.y_px_min) - tile.scratch_y_px_min,
+                tile.core_px.y_min - tile.scratch_px.y_min,
             ))) * sub_sample,
         };
     }
 
     pub fn initCoreOnly(
-        tile: bin.ActiveTile,
+        tile: elemtilebin.ActiveTile,
         sub_sample: usize,
     ) ScratchTileGeometry {
-        const core_w_px = @as(usize, tile.x_px_max - tile.x_px_min);
-        const core_h_px = @as(usize, tile.y_px_max - tile.y_px_min);
+        const core_w_px = @as(usize, @intCast(tile.core_px.x_max - tile.core_px.x_min));
+        const core_h_px = @as(usize, @intCast(tile.core_px.y_max - tile.core_px.y_min));
 
         return .{
             .core_w_px = core_w_px,
@@ -132,7 +135,7 @@ pub fn resolveTileWithPSF(
     avg_fn: AvgFn,
     filter_separable_fn: FilterSeparableFn,
     filter_nonseparable_fn: FilterNonSeparableFn,
-    tile: bin.ActiveTile,
+    tile: elemtilebin.ActiveTile,
     sub_samp: usize,
     spx_stride: usize,
     fields_num: u8,

@@ -20,16 +20,16 @@ const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const report = @import("report.zig");
 const rasterreport = @import("rasterreport.zig");
-const rops = @import("rasterfrontend.zig");
-const bin = @import("elemtilebinning.zig");
+const frontend = @import("rasterfrontend.zig");
+const elemtilebin = @import("elemtilebinning.zig");
 const edgeops = @import("hulledge.zig");
 const newton = @import("newton.zig");
 const pce = @import("parachunkexec.zig");
 const scratchresolve = @import("scratchresolve.zig");
 const subpxframe = @import("subpxframe_globbuff.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
-const mo = @import("meshpipeline.zig");
-const MeshPrepared = mo.MeshPrepared;
+const meshpipe = @import("meshpipeline.zig");
+const MeshPrepared = meshpipe.MeshPrepared;
 const shaderops = @import("shaderops.zig");
 const NodalPrepared = shaderops.NodalPrepared;
 const TexPrepared = shaderops.TexPrepared;
@@ -60,7 +60,7 @@ pub const RasterBounds = struct {
 };
 
 pub fn tileScratchSubpxSize(
-    ctx_rast: rops.RasterContext,
+    ctx_rast: frontend.RasterContext,
 ) usize {
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const raster_halo_px = ctx_rast.camera.prep_psf.halo_px;
@@ -141,7 +141,7 @@ pub const Tri3FixedEdges = struct {
     }
 
     pub fn init(
-        nodes_coords: rops.Vec3Slices(F),
+        nodes_coords: frontend.Vec3Slices(F),
         sub_samp: usize,
         start_subx_global: isize,
         start_suby_global: isize,
@@ -257,24 +257,24 @@ pub const Tri3FixedEdges = struct {
 };
 
 fn fillTileIdealCentFullInMem(
-    ctx_rast: rops.RasterContext,
-    tile: bin.ActiveTile,
+    ctx_rast: frontend.RasterContext,
+    tile: elemtilebin.ActiveTile,
     subpx_scratch: anytype,
     subpx_tile_size: usize,
 ) void {
     ctx_rast.camera.fillTileIdealCentersPerTile(
-        tile.scratch_x_px_min,
-        tile.scratch_x_px_max,
-        tile.scratch_y_px_min,
-        tile.scratch_y_px_max,
+        tile.scratch_px.x_min,
+        tile.scratch_px.x_max,
+        tile.scratch_px.y_min,
+        tile.scratch_px.y_max,
         subpx_tile_size,
         subpx_scratch.ideal_pix_cent,
     ) catch unreachable;
 }
 
 fn fillTileIdealCent(
-    ctx_rast: rops.RasterContext,
-    tile: bin.ActiveTile,
+    ctx_rast: frontend.RasterContext,
+    tile: elemtilebin.ActiveTile,
     subpx_scratch: anytype,
     subpx_tile_size: usize,
 ) !void {
@@ -286,10 +286,10 @@ fn fillTileIdealCent(
             subpx_tile_size,
         ),
         .per_tile => try ctx_rast.camera.fillTileIdealCentersPerTile(
-            tile.scratch_x_px_min,
-            tile.scratch_x_px_max,
-            tile.scratch_y_px_min,
-            tile.scratch_y_px_max,
+            tile.scratch_px.x_min,
+            tile.scratch_px.x_max,
+            tile.scratch_px.y_min,
+            tile.scratch_px.y_max,
             subpx_tile_size,
             subpx_scratch.ideal_pix_cent,
         ),
@@ -310,12 +310,12 @@ pub fn rasterTileCore(
     comptime RasterBackend: type,
     comptime report_mode: ReportMode,
     io: std.Io,
-    ctx_rast: rops.RasterContext,
+    ctx_rast: frontend.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: bin.ActiveTile,
-    overlaps_all: []const bin.OverlapBBox,
+    tile: elemtilebin.ActiveTile,
+    overlaps_all: []const elemtilebin.OverlapBBox,
     meshes: []const MeshPrepared,
-    root_inputs: mo.MeshRootInputs,
+    root_inputs: meshpipe.MeshRootInputs,
     subpx_scratch: *RasterBackend.SubpxScratchBuffs,
     subpx_tile_size: usize,
 ) !TileCoreResult {
@@ -331,11 +331,11 @@ pub fn rasterTileCore(
     var camera_fill_ready = false;
     var cam_duration_ns: u64 = 0;
 
-    inline for (@typeInfo(bin.ElemBucket).@"enum".fields) |bucket_field| {
-        const bucket = @field(bin.ElemBucket, bucket_field.name);
-        const geom_tag = comptime bin.bucketMeshType(bucket);
-        const root_class = comptime bin.bucketRootClass(bucket);
-        const range = tile.buckets[@intFromEnum(bucket)];
+    inline for (@typeInfo(elemtilebin.ElemBin).@"enum".fields) |bin_field| {
+        const bin_tag = @field(elemtilebin.ElemBin, bin_field.name);
+        const geom_tag = comptime elemtilebin.binMeshType(bin_tag);
+        const root_class = comptime elemtilebin.binRootClass(bin_tag);
+        const range = tile.bins[@intFromEnum(bin_tag)];
         const overlaps = overlaps_all[range.start .. range.start + range.count];
         for (overlaps) |ov| {
             const mesh_idx: usize = ov.mesh_idx;
@@ -751,7 +751,7 @@ test "Tri3FixedEdges preserves edge sum across a row" {
     var x = [_]F{ 1.25, 5.5, 2.0 };
     var y = [_]F{ 1.75, 2.5, 6.25 };
     var z = [_]F{ 1.0, 1.0, 1.0 };
-    const nodes = rops.Vec3Slices(F){
+    const nodes = frontend.Vec3Slices(F){
         .x = x[0..],
         .y = y[0..],
         .z = z[0..],

@@ -8,14 +8,14 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const F = @import("buildconfig.zig").F;
-const rops = @import("rasterfrontend.zig");
-const bin = @import("elemtilebinning.zig");
+const frontend = @import("rasterfrontend.zig");
+const elemtilebin = @import("elemtilebinning.zig");
 const report = @import("report.zig");
 const ReportMode = report.ReportMode;
 const scalingpolicy = @import("scalingpolicy.zig");
 const pce = @import("parachunkexec.zig");
-const mo = @import("meshpipeline.zig");
-const MeshPrepared = mo.MeshPrepared;
+const meshpipe = @import("meshpipeline.zig");
+const MeshPrepared = meshpipe.MeshPrepared;
 const NDArray = @import("ndarray.zig").NDArray;
 const Timestamp = std.Io.Clock.Timestamp;
 const rasterreport = @import("rasterreport.zig");
@@ -34,7 +34,7 @@ const SelectedBackend = struct {
         comptime Geom: type,
         comptime ShaderKern: type,
         comptime ShaderData: type,
-        comptime root_class: rops.ElemRootClass,
+        comptime root_class: frontend.ElemRootClass,
     ) type {
         return kernel.RasterEngine(
             SubpxScratchBuffs,
@@ -51,12 +51,12 @@ pub fn rasterSceneTileLoc(
     comptime report_mode: ReportMode,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    ctx_rast: rops.RasterContext,
+    ctx_rast: frontend.RasterContext,
     ctx_report: report.ReportContext(report_mode),
     requested_workers: u16,
-    tiling: bin.TilingOverlaps,
+    tiling: elemtilebin.TileElemOverlaps,
     meshes: []const MeshPrepared,
-    root_inputs: mo.MeshRootInputs,
+    root_inputs: meshpipe.MeshRootInputs,
     image_out_arr: *NDArray(F),
 ) !void {
     try rasterSceneTileLocImpl(
@@ -79,12 +79,12 @@ fn rasterSceneTileLocImpl(
     comptime report_mode: ReportMode,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    ctx_rast: rops.RasterContext,
+    ctx_rast: frontend.RasterContext,
     ctx_report: report.ReportContext(report_mode),
     requested_workers: u16,
-    tiling: bin.TilingOverlaps,
+    tiling: elemtilebin.TileElemOverlaps,
     meshes: []const MeshPrepared,
-    root_inputs: mo.MeshRootInputs,
+    root_inputs: meshpipe.MeshRootInputs,
     image_out_arr: *NDArray(F),
 ) !void {
     const WorkerState = comptime ThreadState(RasterBackend, report_mode);
@@ -190,12 +190,12 @@ fn rasterTileLoc(
     comptime RasterBackend: type,
     comptime report_mode: ReportMode,
     io: std.Io,
-    ctx_rast: rops.RasterContext,
+    ctx_rast: frontend.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: bin.ActiveTile,
-    overlaps_all: []const bin.OverlapBBox,
+    tile: elemtilebin.ActiveTile,
+    overlaps_all: []const elemtilebin.OverlapBBox,
     meshes: []const MeshPrepared,
-    root_inputs: mo.MeshRootInputs,
+    root_inputs: meshpipe.MeshRootInputs,
     image_out_arr: *NDArray(F),
     subpx_scratch: *RasterBackend.SubpxScratchBuffs,
     fields_num: u8,
@@ -296,11 +296,11 @@ fn TileRangeContext(
 
     return struct {
         io: std.Io,
-        ctx_rast: rops.RasterContext,
+        ctx_rast: frontend.RasterContext,
         shared_log: *report.LogType(report_mode),
-        tiling: bin.TilingOverlaps,
+        tiling: elemtilebin.TileElemOverlaps,
         meshes: []const MeshPrepared,
-        root_inputs: mo.MeshRootInputs,
+        root_inputs: meshpipe.MeshRootInputs,
         image_out_arr: *NDArray(F),
         worker_states: []WorkerState,
         fields_num: u8,

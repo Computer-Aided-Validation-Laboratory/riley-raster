@@ -7,8 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const std = @import("std");
-const rops = @import("rasterfrontend.zig");
-const bin = @import("elemtilebinning.zig");
+const frontend = @import("rasterfrontend.zig");
+const elemtilebin = @import("elemtilebinning.zig");
 const cam = @import("camera.zig");
 const common = @import("scratchresolve_common.zig");
 const matslice = @import("matslice.zig");
@@ -34,7 +34,7 @@ pub const sampleScratchOrBackground = common.sampleScratchOrBackground;
 // --------------------------------------------------------------------------------------
 
 pub fn avgScratchCoreSIMD(
-    tile: bin.ActiveTile,
+    tile: elemtilebin.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
     spx_stride: usize,
@@ -46,12 +46,14 @@ pub fn avgScratchCoreSIMD(
     radius_y: usize,
     image_out_arr: *ndarray.NDArray(F),
 ) void {
+    const core_x_min: usize = @intCast(tile.core_px.x_min);
+    const core_y_min: usize = @intCast(tile.core_px.y_min);
     const cols_num = spx_image_scratch.cols_num;
     const sub_samp_f = @as(F, @floatFromInt(sub_samp));
     const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
 
     for (0..scratch_geom.core_h_px) |ii| {
-        const image_px_y = tile.y_px_min + ii;
+        const image_px_y = core_y_min + ii;
         const spx_start_y = scratch_geom.core_start_y_subpx + sub_samp * ii;
 
         var min_x = scratch_geom.scratch_w_subpx;
@@ -107,7 +109,7 @@ pub fn avgScratchCoreSIMD(
         }
 
         for (tx_start..tx_end + 1) |jj| {
-            const image_px_x = tile.x_px_min + jj;
+            const image_px_x = core_x_min + jj;
             const spx_start_x = scratch_geom.core_start_x_subpx + sub_samp * jj;
 
             // Direct resolve and averaging only visit core pixel subpx blocks, so the
