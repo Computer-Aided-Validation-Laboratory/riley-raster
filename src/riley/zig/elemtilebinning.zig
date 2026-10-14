@@ -29,7 +29,7 @@ pub const ElemBucket = enum(u8) {
     quad9_multi_root,
 };
 
-pub const bucket_count = @typeInfo(ElemBucket).@"enum".fields.len;
+pub const bucket_count = std.meta.fields(ElemBucket).len;
 
 pub const ElemBucketRange = struct {
     start: usize = 0,

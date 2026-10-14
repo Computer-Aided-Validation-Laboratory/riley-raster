@@ -291,7 +291,9 @@ pub const CRasterConfig = extern struct {
     oneroot_hull_mode: u32,
     oneroot_newton_seed_mode: u32,
     oneroot_newton_seed_reuse: u32,
+    oneroot_edge_fun_mode: u32,
     multiroot_mode: u32,
+    multiroot_edge_fun_mode: u32,
     validate_input: u32,
     report: u32,
     tile_size_min: u16,
@@ -305,6 +307,7 @@ pub const CRasterConfig = extern struct {
     global_subpx_stripe_size_min: u16,
     global_subpx_stripe_size_max: u16,
     global_subpx_stripe_size_override: u16,
+    raster_halo_px_override: u16,
     save_frame_buff_count: usize,
     save_format: u32,
     save_bits: u32,
@@ -568,6 +571,16 @@ fn multirootModeFromC(
         @intFromEnum(rastcfg.MultirootSolverMode.fast) => .fast,
         @intFromEnum(rastcfg.MultirootSolverMode.robust) => .robust,
         else => error.InvalidMultirootSolverMode,
+    };
+}
+
+fn edgeFunModeFromC(
+    mode: u32,
+) !rastcfg.EdgeFunMode {
+    return switch (mode) {
+        @intFromEnum(rastcfg.EdgeFunMode.on_the_fly) => .on_the_fly,
+        @intFromEnum(rastcfg.EdgeFunMode.pre_calc) => .pre_calc,
+        else => error.InvalidEdgeFunMode,
     };
 }
 
@@ -1550,8 +1563,14 @@ fn buildRasterConfig(
     config.advanced.solver.oneroot.newton_seed_reuse = try newtonSeedReuseFromC(
         in_config.oneroot_newton_seed_reuse,
     );
+    config.advanced.solver.oneroot.edge_fun_mode = try edgeFunModeFromC(
+        in_config.oneroot_edge_fun_mode,
+    );
     config.advanced.solver.multiroot.mode = try multirootModeFromC(
         in_config.multiroot_mode,
+    );
+    config.advanced.solver.multiroot.edge_fun_mode = try edgeFunModeFromC(
+        in_config.multiroot_edge_fun_mode,
     );
     config.validation = try validateInputFromC(
         in_config.validate_input,
@@ -1603,6 +1622,11 @@ fn buildRasterConfig(
             null
         else
             in_config.global_subpx_stripe_size_override;
+    config.advanced.raster.raster_halo_px_override =
+        if (in_config.raster_halo_px_override == 0)
+            null
+        else
+            in_config.raster_halo_px_override;
     if (in_config.save_frame_buff_count != 0) {
         config.output.save_frame_buff_count = in_config.save_frame_buff_count;
     }

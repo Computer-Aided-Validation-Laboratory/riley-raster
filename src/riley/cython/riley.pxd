@@ -225,7 +225,9 @@ cdef extern from "riley.h":
         uint32_t oneroot_hull_mode
         uint32_t oneroot_newton_seed_mode
         uint32_t oneroot_newton_seed_reuse
+        uint32_t oneroot_edge_fun_mode
         uint32_t multiroot_mode
+        uint32_t multiroot_edge_fun_mode
         uint32_t validate_input
         uint32_t report
         uint16_t tile_size_min
@@ -239,6 +241,7 @@ cdef extern from "riley.h":
         uint16_t global_subpx_stripe_size_min
         uint16_t global_subpx_stripe_size_max
         uint16_t global_subpx_stripe_size_override
+        uint16_t raster_halo_px_override
         size_t save_frame_buff_count
         uint32_t save_format
         uint32_t save_bits

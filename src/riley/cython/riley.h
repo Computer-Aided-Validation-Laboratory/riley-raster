@@ -228,6 +228,16 @@ typedef enum {
     RILEY_VALIDATE_INPUT_FULL = 2,
 } RileyValidateInput;
 
+typedef enum {
+    RILEY_MULTIROOT_MODE_FAST = 0,
+    RILEY_MULTIROOT_MODE_ROBUST = 1,
+} RileyMultirootMode;
+
+typedef enum {
+    RILEY_EDGE_FUN_MODE_ON_THE_FLY = 0,
+    RILEY_EDGE_FUN_MODE_PRE_CALC = 1,
+} RileyEdgeFunMode;
+
 typedef struct c_raster_config {
     uint32_t render_mode;
     uint32_t parallel_mode; /* 0=auto, 1=serial, 2=thread_count */
@@ -237,7 +247,9 @@ typedef struct c_raster_config {
     uint32_t oneroot_hull_mode;
     uint32_t oneroot_newton_seed_mode;
     uint32_t oneroot_newton_seed_reuse;
+    uint32_t oneroot_edge_fun_mode;
     uint32_t multiroot_mode;
+    uint32_t multiroot_edge_fun_mode;
     uint32_t validate_input;
     uint32_t report;
     uint16_t tile_size_min;
@@ -251,6 +263,7 @@ typedef struct c_raster_config {
     uint16_t global_subpx_stripe_size_min;
     uint16_t global_subpx_stripe_size_max;
     uint16_t global_subpx_stripe_size_override;
+    uint16_t raster_halo_px_override;
     size_t save_frame_buff_count;
     uint32_t save_format;
     uint32_t save_bits;

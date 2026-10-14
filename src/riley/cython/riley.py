@@ -173,7 +173,9 @@ class RasterConfig:
     oneroot_hull_mode: int = 1
     oneroot_newton_seed_mode: int = 0
     oneroot_newton_seed_reuse: int = 0
+    oneroot_edge_fun_mode: int = 0
     multiroot_mode: int = 0
+    multiroot_edge_fun_mode: int = 1
     validate_input: int = 1
     report: int = 1
     tile_size_min: int = 1
@@ -187,6 +189,7 @@ class RasterConfig:
     global_subpx_stripe_size_min: int = 256
     global_subpx_stripe_size_max: int = 4096
     global_subpx_stripe_size_override: int = 0
+    raster_halo_px_override: int = 0
     save_frame_buffer_count: int = 3
     save_format: int = 3
     save_bits: int = 8
@@ -351,6 +354,11 @@ class NewtonSeedReuse(IntEnum):
 class MultirootSolverMode(IntEnum):
     fast = 0
     robust = 1
+
+
+class EdgeFunMode(IntEnum):
+    on_the_fly = 0
+    pre_calc = 1
 
 
 class ValidateInput(IntEnum):
@@ -635,7 +643,9 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
     config_out.oneroot_newton_seed_reuse = int(
         config.oneroot_newton_seed_reuse,
     )
+    config_out.oneroot_edge_fun_mode = int(config.oneroot_edge_fun_mode)
     config_out.multiroot_mode = int(config.multiroot_mode)
+    config_out.multiroot_edge_fun_mode = int(config.multiroot_edge_fun_mode)
     config_out.validate_input = int(config.validate_input)
     config_out.report = int(config.report)
     config_out.tile_size_min = int(config.tile_size_min)
@@ -661,6 +671,7 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
     config_out.global_subpx_stripe_size_override = int(
         config.global_subpx_stripe_size_override,
     )
+    config_out.raster_halo_px_override = int(config.raster_halo_px_override)
     config_out.save_frame_buff_count = int(config.save_frame_buffer_count)
     config_out.save_format = int(config.save_format)
     config_out.save_bits = int(config.save_bits)
@@ -1772,6 +1783,7 @@ __all__ = [
     "Mesh",
     "MeshType",
     "MultirootSolverMode",
+    "EdgeFunMode",
     "NewtonSeedMode",
     "NewtonSeedReuse",
     "NormalType",
