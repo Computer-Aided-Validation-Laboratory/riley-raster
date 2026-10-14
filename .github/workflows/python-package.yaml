@@ -45,12 +45,19 @@ jobs:
           python -m pip install --upgrade pip build pytest
 
       - name: Python build distribution packages (wheel and sdist)
+        shell: bash
         run: |
+          rm -rf dist
           python -m build
 
       - name: Python install built wheel
+        shell: bash
         run: |
-          python -m pip install --find-links dist riley-raster
+          python -m pip install --force-reinstall dist/*.whl
+
+      - name: Sanity check installed package
+        run: |
+          python -c "import riley; print('Installed riley from:', riley.__file__)"
 
       - name: Python run test suite
         run: |
