@@ -16,6 +16,10 @@ const front = @import("rasterfrontend.zig");
 const ElemBBox = front.ElemBBox;
 const ElemRootClass = front.ElemRootClass;
 
+//------------------------------------------------------------------------------------------
+// Element Type and Root Class Bins
+//------------------------------------------------------------------------------------------
+
 pub const ElemBucket = enum(u8) {
     tri3,
     tri3opt,
@@ -86,7 +90,7 @@ pub fn bucketRootClass(comptime bucket: ElemBucket) ElemRootClass {
 }
 
 //------------------------------------------------------------------------------------------
-// Scene-Tile Binning
+// Scene Element-Tile Binning and Overlap Bounding Boxes
 //------------------------------------------------------------------------------------------
 
 pub const OverlapBBox = struct {
