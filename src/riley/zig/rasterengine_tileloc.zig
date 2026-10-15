@@ -21,11 +21,14 @@ const Timestamp = std.Io.Clock.Timestamp;
 const rasterreport = @import("rasterreport.zig");
 const common = @import("rasterengine_common.zig");
 const cfg = @import("buildconfig.zig").config;
+const scratchresolve = @import("scratchresolve.zig");
+
 const kernel = if (cfg.simd == .on)
     @import("rasterengine_simd.zig")
 else
     @import("rasterengine_scalar.zig");
-const SelectedBackend = struct {
+
+const SelectedRasterBackend = struct {
     pub const SubpxScratchBuffs = kernel.SubpxScratchBuffs;
     pub const initSubpxScratch = kernel.initSubpxScratch;
     pub const resetSubpxScratch = kernel.resetSubpxScratch;
@@ -45,7 +48,6 @@ const SelectedBackend = struct {
         );
     }
 };
-const scratchresolve = @import("scratchresolve.zig");
 
 pub fn rasterSceneTileLoc(
     comptime report_mode: ReportMode,
@@ -56,11 +58,11 @@ pub fn rasterSceneTileLoc(
     requested_workers: u16,
     tiling: elemtilebin.TileElemOverlaps,
     meshes: []const MeshPrepared,
-    root_inputs: meshpipe.MeshRootInputs,
+    mesh_hulls: meshpipe.MeshHulls,
     image_out_arr: *NDArray(F),
 ) !void {
     try rasterSceneTileLocImpl(
-        SelectedBackend,
+        SelectedRasterBackend,
         report_mode,
         outer_alloc,
         io,
@@ -69,7 +71,7 @@ pub fn rasterSceneTileLoc(
         requested_workers,
         tiling,
         meshes,
-        root_inputs,
+        mesh_hulls,
         image_out_arr,
     );
 }
@@ -84,7 +86,7 @@ fn rasterSceneTileLocImpl(
     requested_workers: u16,
     tiling: elemtilebin.TileElemOverlaps,
     meshes: []const MeshPrepared,
-    root_inputs: meshpipe.MeshRootInputs,
+    mesh_hulls: meshpipe.MeshHulls,
     image_out_arr: *NDArray(F),
 ) !void {
     const WorkerState = comptime ThreadState(RasterBackend, report_mode);
@@ -120,7 +122,7 @@ fn rasterSceneTileLocImpl(
                     tile,
                     tile_rng_ctx.tiling.overlaps,
                     tile_rng_ctx.meshes,
-                    tile_rng_ctx.root_inputs,
+                    tile_rng_ctx.mesh_hulls,
                     tile_rng_ctx.image_out_arr,
                     &worker_state.subpx_scratch,
                     tile_rng_ctx.fields_num,
@@ -136,6 +138,7 @@ fn rasterSceneTileLocImpl(
     );
     const workers_num_u16: u16 = @intCast(workers_num);
     var chunk_exec = pce.ParaChunkExecutor.init(io, workers_num_u16);
+
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
@@ -145,6 +148,7 @@ fn rasterSceneTileLocImpl(
     defer for (worker_states[0..worker_states_initialized]) |*worker_state| {
         worker_state.deinit();
     };
+    
     for (worker_states) |*worker_state| {
         worker_state.* = try WorkerState.init(
             arena_alloc,
@@ -159,7 +163,7 @@ fn rasterSceneTileLocImpl(
         .ctx_rast = ctx_rast,
         .tiling = tiling,
         .meshes = meshes,
-        .root_inputs = root_inputs,
+        .mesh_hulls = mesh_hulls,
         .image_out_arr = image_out_arr,
         .worker_states = worker_states,
         .shared_log = ctx_report.log,
@@ -195,7 +199,7 @@ fn rasterTileLoc(
     tile: elemtilebin.ActiveTile,
     overlaps_all: []const elemtilebin.OverlapBBox,
     meshes: []const MeshPrepared,
-    root_inputs: meshpipe.MeshRootInputs,
+    mesh_hulls: meshpipe.MeshHulls,
     image_out_arr: *NDArray(F),
     subpx_scratch: *RasterBackend.SubpxScratchBuffs,
     fields_num: u8,
@@ -206,13 +210,16 @@ fn rasterTileLoc(
             rasterreport.beginTile(io)
         else
             null;
+
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const scratch_geom = scratchresolve.ScratchTileGeometry.init(tile, sub_samp);
+
     RasterBackend.resetSubpxScratch(
         subpx_scratch,
         subpx_tile_size,
         ctx_rast.config.background_value,
     );
+
     const result = try common.rasterTileCore(
         RasterBackend,
         report_mode,
@@ -222,12 +229,14 @@ fn rasterTileLoc(
         tile,
         overlaps_all,
         meshes,
-        root_inputs,
+        mesh_hulls,
         subpx_scratch,
         subpx_tile_size,
     );
+
     const time_resolve_start: ?Timestamp =
         if (comptime report_mode != .off) Timestamp.now(io, .awake) else null;
+
     if (ctx_rast.camera.prep_psf.hasFilter()) {
         scratchresolve.resolveTileWithPSF(
             tile,
@@ -267,14 +276,17 @@ fn rasterTileLoc(
             image_out_arr,
         );
     }
+
     const resolve_duration_ns: u64 = if (comptime report_mode != .off)
         @intCast(time_resolve_start.?.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds)
     else
         0;
+
     const tile_duration_ns: u64 = if (comptime report_mode == .full_stats)
         @intCast(tile_scope.?.start.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds)
     else
         0;
+
     rasterreport.finishTile(
         ctx_report,
         ctx_rast,
@@ -300,7 +312,7 @@ fn TileRangeContext(
         shared_log: *report.LogType(report_mode),
         tiling: elemtilebin.TileElemOverlaps,
         meshes: []const MeshPrepared,
-        root_inputs: meshpipe.MeshRootInputs,
+        mesh_hulls: meshpipe.MeshHulls,
         image_out_arr: *NDArray(F),
         worker_states: []WorkerState,
         fields_num: u8,

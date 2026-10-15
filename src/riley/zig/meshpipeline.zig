@@ -64,11 +64,9 @@ pub const MeshStatic = struct {
     shader: shaderops.ShaderStatic,
 };
 
-pub const MultiRootPrepared = struct {
-    hull_x: matslice.MatSlice(F),
-    hull_y: matslice.MatSlice(F),
-    hull_edges: [][9]HullMultiRoot.HullEdge,
-    hull_count: vecslice.VecSlice(u8),
+pub const MultiRootHulls = struct {
+    outer_hulls_pre_calc: []HullMultiRoot.HullPolyPreCalc = &.{},
+    outer_hulls_on_the_fly: []HullMultiRoot.HullPolyOnTheFly = &.{},
     indices: matslice.MatSlice(u8),
     valid_depth: vecslice.VecSlice(u8),
     slot_by_visible_elem: vecslice.VecSlice(u32),
@@ -76,9 +74,11 @@ pub const MultiRootPrepared = struct {
     leaves_on_the_fly: []HullMultiRoot.BezierLeafOnTheFly = &.{},
 };
 
-pub const MeshRootInputs = struct {
+pub const MeshHulls = struct {
+    // Dims: [mesh_idex][elems_in_image,2(x,y),NH(num_hull_pts)]
     hull_adaptive_by_mesh: []const ?ndarray.NDArray(F),
-    hull_multiroot_by_mesh: []const ?MultiRootPrepared,
+    // Dims: [mesh_idx][slot_by_visible_elem LUT]
+    hull_multiroot_by_mesh: []const ?MultiRootHulls,
 };
 
 // Workspace: Temporary node-order working area for the geometry pipeline.
@@ -93,7 +93,7 @@ pub const MeshFrameWorkspace = struct {
     elem_float_bboxes: ?[]distbounds.DistortBounds = null,
     elems_in_image: usize,
     hull_adaptive: ?ndarray.NDArray(F),
-    hull_multiroot: ?MultiRootPrepared,
+    hull_multiroot: ?MultiRootHulls,
     vis_counts_by_chunk: []usize,
     vis_offsets_by_chunk: []usize,
 };
@@ -108,7 +108,7 @@ pub const MeshFrame = struct {
     elems_in_image: usize,
     total_elems_num: usize,
     hull_adaptive: ?ndarray.NDArray(F),
-    hull_multiroot: ?MultiRootPrepared,
+    hull_multiroot: ?MultiRootHulls,
     frame_workspace: MeshFrameWorkspace,
 };
 
@@ -1260,7 +1260,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         const PrepareMultiRootElemsStage = struct {
             camera: *const cam.CameraPrepared,
             elem_coords: *const ndarray.NDArray(F),
-            prepared: *MultiRootPrepared,
+            hulls: *MultiRootHulls,
             multiroot_mode: rastcfg.MultirootSolverMode,
             edge_fun_mode: rastcfg.EdgeFunMode,
         };
@@ -1277,7 +1277,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             const Seed = struct { z: F, index: u8 };
 
             for (range_start..range_end) |pp| {
-                const slot = stage.prepared.slot_by_visible_elem.get(pp);
+                const slot = stage.hulls.slot_by_visible_elem.get(pp);
                 if (slot == std.math.maxInt(u32)) continue;
 
                 var coords: frontend.ElemCoords(N) = undefined;
@@ -1304,24 +1304,37 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     stage.camera,
                     coords,
                 );
-                const hx = stage.prepared.hull_x.getSlice(slot);
-                const hy = stage.prepared.hull_y.getSlice(slot);
-                for (0..projected_hull.count) |nn| {
-                    hx[nn] = projected_hull.x[nn];
-                    hy[nn] = projected_hull.y[nn];
-                }
-                stage.prepared.hull_count.set(slot, projected_hull.count);
                 if (stage.edge_fun_mode == .pre_calc) {
-                    HullMultiRoot.prepareEdges(
-                        hx[0..projected_hull.count],
-                        hy[0..projected_hull.count],
-                        stage.prepared.hull_edges[slot][0..projected_hull.count],
-                    );
+                    var poly: *HullMultiRoot.HullPolyPreCalc =
+                        &stage.hulls.outer_hulls_pre_calc[slot];
+                    poly.count = projected_hull.count;
+                    if (projected_hull.count >= 3) {
+                        HullMultiRoot.prepareEdges(
+                            projected_hull.x[0..projected_hull.count],
+                            projected_hull.y[0..projected_hull.count],
+                            poly.edges[0..projected_hull.count],
+                        );
+                    }
+                } else {
+                    var poly: *HullMultiRoot.HullPolyOnTheFly =
+                        &stage.hulls.outer_hulls_on_the_fly[slot];
+                    poly.count = projected_hull.count;
+                    for (0..projected_hull.count) |nn| {
+                        poly.x[nn] = projected_hull.x[nn];
+                        poly.y[nn] = projected_hull.y[nn];
+                    }
+                    if (projected_hull.count >= 3) {
+                        HullMultiRoot.calcEdgeTol(
+                            poly.x[0..projected_hull.count],
+                            poly.y[0..projected_hull.count],
+                            poly.tol_edge[0..projected_hull.count],
+                        );
+                    }
                 }
 
                 const leaf_offset = @as(usize, slot) * 4;
                 if (stage.edge_fun_mode == .pre_calc) {
-                    const leaf_slice = stage.prepared.leaves_pre_calc[
+                    const leaf_slice = stage.hulls.leaves_pre_calc[
                         leaf_offset .. leaf_offset + 4
                     ];
                     HullMultiRoot.prepareFourBezierLeavesPreCalc(
@@ -1331,7 +1344,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         leaf_slice[0..4],
                     );
                 } else {
-                    const leaf_slice = stage.prepared.leaves_on_the_fly[
+                    const leaf_slice = stage.hulls.leaves_on_the_fly[
                         leaf_offset .. leaf_offset + 4
                     ];
                     HullMultiRoot.prepareFourBezierLeavesOnTheFly(
@@ -1431,10 +1444,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 std.debug.assert(length == available);
                 @memcpy(seeds[0..available], ordered[0..available]);
 
-                const count = @min(available, stage.prepared.indices.cols_num);
-                const row = stage.prepared.indices.getSlice(slot);
+                const count = @min(available, stage.hulls.indices.cols_num);
+                const row = stage.hulls.indices.getSlice(slot);
                 for (0..count) |ii| row[ii] = seeds[ii].index;
-                stage.prepared.valid_depth.set(slot, @intCast(count));
+                stage.hulls.valid_depth.set(slot, @intCast(count));
             }
         }
 
@@ -1471,18 +1484,20 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
 
             self.mesh_workspace.hull_multiroot = .{
-                .hull_x = try matslice.MatSlice(F).initAlloc(outer_alloc, multi_count, 9),
-                .hull_y = try matslice.MatSlice(F).initAlloc(outer_alloc, multi_count, 9),
-                .hull_edges = if (self.multiroot_edge_fun_mode == .pre_calc)
+                .outer_hulls_pre_calc = if (self.multiroot_edge_fun_mode == .pre_calc)
                     try outer_alloc.alloc(
-                        [9]HullMultiRoot.HullEdge,
+                        HullMultiRoot.HullPolyPreCalc,
                         multi_count,
                     )
                 else
                     &.{},
-                .hull_count = vecslice.VecSlice(u8).init(
-                    try outer_alloc.alloc(u8, multi_count),
-                ),
+                .outer_hulls_on_the_fly = if (self.multiroot_edge_fun_mode == .on_the_fly)
+                    try outer_alloc.alloc(
+                        HullMultiRoot.HullPolyOnTheFly,
+                        multi_count,
+                    )
+                else
+                    &.{},
                 .indices = try matslice.MatSlice(u8).initAlloc(
                     outer_alloc,
                     multi_count,
@@ -1511,7 +1526,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             var stage = PrepareMultiRootElemsStage{
                 .camera = self.camera,
                 .elem_coords = elem_coords,
-                .prepared = &self.mesh_workspace.hull_multiroot.?,
+                .hulls = &self.mesh_workspace.hull_multiroot.?,
                 .multiroot_mode = self.multiroot_mode,
                 .edge_fun_mode = self.multiroot_edge_fun_mode,
             };

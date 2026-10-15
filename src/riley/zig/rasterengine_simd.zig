@@ -72,14 +72,9 @@ pub const SubpxScratchBuffs = struct {
     touched_max_x: []usize,
     ideal_pix_cent: []align(64) F,
 
-    pub inline fn imageIndex(
-        _: *const SubpxScratchBuffs,
-        local_idx: usize,
-    ) usize {
-        return local_idx;
-    }
-
-    pub inline fn imageIndexCoord(
+    // Polymorphic interface matching global-buffer scratch buffers. In tile-local
+    // mode, image storage is tile-local, so local_idx is returned directly.
+    pub inline fn resolveImageIdx(
         _: *const SubpxScratchBuffs,
         local_subx: usize,
         local_suby: usize,
@@ -221,17 +216,19 @@ pub fn RasterEngine(
     comptime root_class: frontend.ElemRootClass,
 ) type {
     return struct {
-        pub fn render(
+        pub const HullType = if (root_class == .multi_root)
+            *const meshpipe.MultiRootHulls
+        else
+            ?*const NDArray(F);
+
+        pub fn rasterElemInTile(
             comptime report_mode: ReportMode,
             ctx_rast: frontend.RasterContext,
             ctx_report: report.ReportContext(report_mode),
             tile: elemtilebin.ActiveTile,
             overlap: elemtilebin.OverlapBBox,
             coords: *const NDArray(F),
-            hull: if (root_class == .multi_root)
-                *const meshpipe.MultiRootPrepared
-            else
-                ?*const NDArray(F),
+            hull: HullType,
             shader: *const ShaderData,
             shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
             subpx_scratch: *ScratchBuffs,
@@ -284,7 +281,6 @@ pub fn RasterEngine(
                     overlap,
                     subpx_dom,
                     rast_bounds,
-                    scratch_start_x_u,
                     nodes_coords,
                     shader,
                     shader_buf,
@@ -299,7 +295,6 @@ pub fn RasterEngine(
                     overlap,
                     subpx_dom,
                     rast_bounds,
-                    scratch_start_x_u,
                     nodes_coords,
                     shader,
                     shader_buf,
@@ -318,7 +313,6 @@ pub fn RasterEngine(
                     hull,
                     subpx_dom,
                     rast_bounds,
-                    scratch_start_x_u,
                     nodes_coords,
                     shader,
                     shader_buf,
@@ -338,7 +332,6 @@ pub fn RasterEngine(
             overlap: elemtilebin.OverlapBBox,
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
-            orig_start_x_u: usize,
             nodes_coords: Vec3Slices(F),
             shader: anytype,
             shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
@@ -355,7 +348,6 @@ pub fn RasterEngine(
                 overlap,
                 subpx_dom,
                 rast_bounds,
-                orig_start_x_u,
                 nodes_coords,
                 shader,
                 shader_buf,
@@ -374,7 +366,6 @@ pub fn RasterEngine(
             hull_adaptive: ?*const NDArray(F),
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
-            orig_start_x_u: usize,
             nodes_coords: Vec3Slices(F),
             shader: anytype,
             shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
@@ -392,7 +383,6 @@ pub fn RasterEngine(
                 hull_adaptive,
                 subpx_dom,
                 rast_bounds,
-                orig_start_x_u,
                 nodes_coords,
                 shader,
                 shader_buf,
@@ -406,16 +396,14 @@ pub fn RasterEngine(
             ctx_report: report.ReportContext(report_mode),
             tile: elemtilebin.ActiveTile,
             overlap: elemtilebin.OverlapBBox,
-            hull_multiroot: *const meshpipe.MultiRootPrepared,
+            hull_multiroot: *const meshpipe.MultiRootHulls,
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
-            orig_start_x_u: usize,
             nodes_coords: Vec3Slices(F),
             shader: anytype,
             shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
             subpx_scratch: *ScratchBuffs,
         ) !u64 {
-            _ = orig_start_x_u;
             return rasterNewtonMultiSIMDImpl(
                 ScratchBuffs,
                 Geom,
@@ -448,7 +436,6 @@ fn rasterDirectSIMDImpl(
     overlap: elemtilebin.OverlapBBox,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
-    orig_start_x_u: usize,
     nodes_coords: Vec3Slices(F),
     shader: anytype,
     shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
@@ -467,7 +454,7 @@ fn rasterDirectSIMDImpl(
     inline for (0..N) |nn| nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
     const v_nodes_inv_z = Geom.getSIMDInvZ(nodes_coords);
 
-    const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
+    const v_start_x_u: VecSU = @splat(rast_bounds.start_x_u);
     const v_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
     const ideal_x_plane = cam.getIdealXPlaneScratch(
         subpx_scratch.ideal_pix_cent,
@@ -484,7 +471,7 @@ fn rasterDirectSIMDImpl(
             const v_lane_idx_u: VecSU = std.simd.iota(usize, S);
             const v_scratch_x_u: VecSU = @splat(scratch_x_u);
             const v_subpx_x_u = v_scratch_x_u + v_lane_idx_u;
-            const v_x_mask = (v_subpx_x_u >= v_orig_start_x_u) &
+            const v_x_mask = (v_subpx_x_u >= v_start_x_u) &
                 (v_subpx_x_u < v_end_x_u);
 
             const scratch_idx = row_offset + scratch_x_u;
@@ -570,7 +557,7 @@ fn rasterDirectSIMDImpl(
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.imageIndexCoord(
+                .scratch_idx = subpx_scratch.resolveImageIdx(
                     scratch_x_u,
                     scratch_y_u,
                     scratch_idx,
@@ -717,7 +704,7 @@ fn rasterNewtonMultiSIMDImpl(
     ctx_report: report.ReportContext(report_mode),
     tile: elemtilebin.ActiveTile,
     overlap: elemtilebin.OverlapBBox,
-    hull_multiroot: *const meshpipe.MultiRootPrepared,
+    hull_multiroot: *const meshpipe.MultiRootHulls,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
@@ -730,29 +717,17 @@ fn rasterNewtonMultiSIMDImpl(
     const slot = prepared.slot_by_visible_elem.get(overlap.elem_idx);
     if (slot == std.math.maxInt(u32)) return error.MissingMultiRootData;
 
-    const hull_count = prepared.hull_count.get(slot);
     const edge_fun_mode = ctx_rast.config.advanced.solver.multiroot.edge_fun_mode;
-
-    var outer_poly_pre: HullMultiRoot.HullPolyPreCalc = undefined;
-    var outer_poly_fly: HullMultiRoot.HullPolyOnTheFly = undefined;
-    if (edge_fun_mode == .pre_calc) {
-        outer_poly_pre.count = @intCast(hull_count);
-        @memcpy(
-            outer_poly_pre.edges[0..hull_count],
-            prepared.hull_edges[slot][0..hull_count],
-        );
-    } else {
-        outer_poly_fly.count = @intCast(hull_count);
-        const hx = prepared.hull_x.getSlice(slot)[0..hull_count];
-        const hy = prepared.hull_y.getSlice(slot)[0..hull_count];
-        @memcpy(outer_poly_fly.x[0..hull_count], hx);
-        @memcpy(outer_poly_fly.y[0..hull_count], hy);
-        HullMultiRoot.calcEdgeTol(
-            hx,
-            hy,
-            outer_poly_fly.tol_edge[0..hull_count],
-        );
-    }
+    const outer_poly_pre: HullMultiRoot.HullPolyPreCalc =
+        if (edge_fun_mode == .pre_calc)
+            prepared.outer_hulls_pre_calc[slot]
+        else
+            undefined;
+    const outer_poly_fly: HullMultiRoot.HullPolyOnTheFly =
+        if (edge_fun_mode == .on_the_fly)
+            prepared.outer_hulls_on_the_fly[slot]
+        else
+            undefined;
 
     const leaf_start: usize = slot * 4;
     const leaves_pre_calc = if (edge_fun_mode == .pre_calc)
@@ -975,7 +950,7 @@ fn rasterNewtonMultiSIMDImpl(
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.imageIndexCoord(
+                .scratch_idx = subpx_scratch.resolveImageIdx(
                     scratch_x,
                     scratch_y,
                     idx,
@@ -1024,7 +999,6 @@ fn rasterNewtonSIMDImpl(
     hull_adaptive: ?*const NDArray(F),
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
-    orig_start_x_u: usize,
     nodes_coords: Vec3Slices(F),
     shader: anytype,
     shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
@@ -1070,7 +1044,7 @@ fn rasterNewtonSIMDImpl(
 
     var subpx_tess_pass_count: usize = 0;
     const v_lane_idx: VecSU = std.simd.iota(usize, S);
-    const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
+    const v_start_x_u: VecSU = @splat(rast_bounds.start_x_u);
     const v_bounds_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
 
     const ideal_x_plane = cam.getIdealXPlaneScratch(
@@ -1087,7 +1061,7 @@ fn rasterNewtonSIMDImpl(
         while (scratch_x_u < rast_bounds.end_x_u) : (scratch_x_u += S) {
             const v_scratch_x_u: VecSU = @splat(scratch_x_u);
             const v_subpx_x_u = v_scratch_x_u + v_lane_idx;
-            const v_x_mask = (v_subpx_x_u >= v_orig_start_x_u) &
+            const v_x_mask = (v_subpx_x_u >= v_start_x_u) &
                 (v_subpx_x_u < v_bounds_end_x_u);
 
             const scratch_idx = row_offset + scratch_x_u;
@@ -1333,7 +1307,7 @@ fn rasterNewtonSIMDImpl(
             const v_mask_full: VecSB = mask_arr;
 
             const v_scratch_x_u: VecSU = @splat(scratch_x_u);
-            const v_x_mask = (v_scratch_x_u + v_lane_idx >= v_orig_start_x_u) &
+            const v_x_mask = (v_scratch_x_u + v_lane_idx >= v_start_x_u) &
                 (v_scratch_x_u + v_lane_idx < v_bounds_end_x_u);
             const v_mask_active = v_mask_full & v_x_mask;
             if (!@reduce(.Or, v_mask_active)) continue;
@@ -1393,7 +1367,7 @@ fn rasterNewtonSIMDImpl(
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.imageIndexCoord(
+                .scratch_idx = subpx_scratch.resolveImageIdx(
                     scratch_x_u,
                     scratch_y_u,
                     scratch_idx,
@@ -1443,7 +1417,6 @@ fn rasterSteppedSIMD(
     overlap: elemtilebin.OverlapBBox,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
-    orig_start_x_u: usize,
     nodes_coords: Vec3Slices(F),
     shader: anytype,
     shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
@@ -1456,7 +1429,7 @@ fn rasterSteppedSIMD(
         @as(isize, @intCast(sub_samp));
     const start_subx_global = tile_subpx_x + @as(isize, @intCast(rast_bounds.start_x_u));
     const start_suby_global = tile_subpx_y + @as(isize, @intCast(rast_bounds.start_y_u));
-    const width = rast_bounds.end_x_u - orig_start_x_u;
+    const width = rast_bounds.end_x_u - rast_bounds.start_x_u;
     const height = rast_bounds.end_y_u - rast_bounds.start_y_u;
     const aligned_width = std.mem.alignForward(usize, width, S);
     const max_x_steps = if (aligned_width > 0) aligned_width - 1 else 0;
@@ -1481,7 +1454,6 @@ fn rasterSteppedSIMD(
             overlap,
             subpx_dom,
             rast_bounds,
-            orig_start_x_u,
             nodes_coords,
             shader,
             shader_buf,
@@ -1501,7 +1473,6 @@ fn rasterSteppedSIMD(
         overlap,
         subpx_dom,
         rast_bounds,
-        orig_start_x_u,
         nodes_coords,
         shader,
         shader_buf,
@@ -1520,7 +1491,6 @@ fn rasterSteppedSIMDFixP(
     overlap: elemtilebin.OverlapBBox,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
-    orig_start_x_u: usize,
     nodes_coords: Vec3Slices(F),
     shader: anytype,
     shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
@@ -1549,7 +1519,7 @@ fn rasterSteppedSIMDFixP(
     const is_const_depth = z[0] == z[1] and z[1] == z[2];
     const v_nodes_inv_z = Geom.getSIMDInvZ(nodes_coords);
 
-    const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
+    const v_start_x_u: VecSU = @splat(rast_bounds.start_x_u);
     const v_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
 
     var v_lane_i: buildconfig.VecSTri3FixedEdge = undefined;
@@ -1598,7 +1568,7 @@ fn rasterSteppedSIMDFixP(
             const v_lane_idx_u: VecSU = std.simd.iota(usize, S);
             const v_scratch_x_u: VecSU = @splat(scratch_x_u);
             const v_subpx_x_u = v_scratch_x_u + v_lane_idx_u;
-            const v_x_mask = (v_subpx_x_u >= v_orig_start_x_u) & (v_subpx_x_u < v_end_x_u);
+            const v_x_mask = (v_subpx_x_u >= v_start_x_u) & (v_subpx_x_u < v_end_x_u);
             const v_in_tri = (v_edge[0] >= v_edge_min) &
                 (v_edge[1] >= v_edge_min) &
                 (v_edge[2] >= v_edge_min);
@@ -1728,7 +1698,7 @@ fn rasterSteppedSIMDFixP(
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.imageIndexCoord(
+                .scratch_idx = subpx_scratch.resolveImageIdx(
                     scratch_x_u,
                     scratch_y_u,
                     scratch_idx,
@@ -1780,7 +1750,6 @@ fn rasterSteppedSIMDFloat(
     overlap: elemtilebin.OverlapBBox,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
-    orig_start_x_u: usize,
     nodes_coords: Vec3Slices(F),
     shader: anytype,
     shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
@@ -1857,7 +1826,7 @@ fn rasterSteppedSIMDFloat(
         w_start[nn] = @mulAdd(F, a[nn], x_start_pix, w_start_y[nn]);
     }
 
-    const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
+    const v_start_x_u: VecSU = @splat(rast_bounds.start_x_u);
     const v_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
 
     var v_lane_f: VecSF = undefined;
@@ -1904,7 +1873,7 @@ fn rasterSteppedSIMDFloat(
             const v_lane_idx_u: VecSU = std.simd.iota(usize, S);
             const v_scratch_x_u: VecSU = @splat(scratch_x_u);
             const v_subpx_x_u = v_scratch_x_u + v_lane_idx_u;
-            const v_x_mask = (v_subpx_x_u >= v_orig_start_x_u) &
+            const v_x_mask = (v_subpx_x_u >= v_start_x_u) &
                 (v_subpx_x_u < v_end_x_u);
 
             const v_edge_tol: VecSF = @splat(-edge_tol);
@@ -2003,7 +1972,7 @@ fn rasterSteppedSIMDFloat(
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.imageIndexCoord(
+                .scratch_idx = subpx_scratch.resolveImageIdx(
                     scratch_x_u,
                     scratch_y_u,
                     scratch_idx,

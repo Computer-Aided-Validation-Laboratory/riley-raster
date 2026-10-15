@@ -1469,7 +1469,7 @@ const FrameContext = struct {
     mesh_types: []geomkerns.MeshType = &.{},
     elems_in_image_by_mesh: []usize = &.{},
     hull_adaptive_by_mesh: []?ndarray.NDArray(F) = &.{},
-    hull_multiroot_by_mesh: []?meshpipe.MultiRootPrepared = &.{},
+    hull_multiroot_by_mesh: []?meshpipe.MultiRootHulls = &.{},
     tiling: ?elemtilebin.TileElemOverlaps = null,
     total_nodes_num: usize = 0,
     total_elems_num: usize = 0,
@@ -1536,7 +1536,7 @@ fn prepareFrameContext(
     ctx.mesh_types = try outer_alloc.alloc(geomkerns.MeshType, mesh_n);
     ctx.elems_in_image_by_mesh = try outer_alloc.alloc(usize, mesh_n);
     ctx.hull_adaptive_by_mesh = try outer_alloc.alloc(?ndarray.NDArray(F), mesh_n);
-    ctx.hull_multiroot_by_mesh = try outer_alloc.alloc(?meshpipe.MultiRootPrepared, mesh_n);
+    ctx.hull_multiroot_by_mesh = try outer_alloc.alloc(?meshpipe.MultiRootHulls, mesh_n);
 }
 
 fn prepareFrameBuff(
@@ -1646,7 +1646,7 @@ fn rasterFrameTileLoc(
         raster_workers,
         ctx.tiling.?,
         ctx.prep_meshes,
-        meshpipe.MeshRootInputs{
+        meshpipe.MeshHulls{
             .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
             .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
         },
@@ -1719,7 +1719,7 @@ fn rasterFrameGlobBuffFull(
         raster_workers,
         ctx.tiling.?,
         ctx.prep_meshes,
-        meshpipe.MeshRootInputs{
+        meshpipe.MeshHulls{
             .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
             .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
         },
@@ -1870,7 +1870,7 @@ fn rasterFrameGlobBuffStripe(
             raster_workers,
             stripe_tiling,
             ctx.prep_meshes,
-            meshpipe.MeshRootInputs{
+            meshpipe.MeshHulls{
                 .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
                 .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
             },

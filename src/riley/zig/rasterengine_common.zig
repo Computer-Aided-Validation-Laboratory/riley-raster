@@ -315,7 +315,7 @@ pub fn rasterTileCore(
     tile: elemtilebin.ActiveTile,
     overlaps_all: []const elemtilebin.OverlapBBox,
     meshes: []const MeshPrepared,
-    root_inputs: meshpipe.MeshRootInputs,
+    mesh_hulls: meshpipe.MeshHulls,
     subpx_scratch: *RasterBackend.SubpxScratchBuffs,
     subpx_tile_size: usize,
 ) !TileCoreResult {
@@ -343,15 +343,15 @@ pub fn rasterTileCore(
             std.debug.assert(mesh_ptr.mesh_type == geom_tag);
             const coords = &mesh_ptr.coords;
             const hull = if (comptime root_class == .multi_root) blk: {
-                std.debug.assert(mesh_idx < root_inputs.hull_multiroot_by_mesh.len);
-                if (root_inputs.hull_multiroot_by_mesh[mesh_idx]) |*prepared| {
-                    break :blk prepared;
+                std.debug.assert(mesh_idx < mesh_hulls.hull_multiroot_by_mesh.len);
+                if (mesh_hulls.hull_multiroot_by_mesh[mesh_idx]) |*hulls| {
+                    break :blk hulls;
                 }
                 return error.MissingMultiRootData;
             } else blk: {
-                std.debug.assert(mesh_idx < root_inputs.hull_adaptive_by_mesh.len);
-                if (root_inputs.hull_adaptive_by_mesh[mesh_idx]) |*prepared| {
-                    break :blk prepared;
+                std.debug.assert(mesh_idx < mesh_hulls.hull_adaptive_by_mesh.len);
+                if (mesh_hulls.hull_adaptive_by_mesh[mesh_idx]) |*hulls| {
+                    break :blk hulls;
                 }
                 break :blk null;
             };
@@ -432,7 +432,7 @@ pub fn rasterTileCore(
                             SK,
                             NodalPrepared,
                             root_class,
-                        ).render(
+                        ).rasterElemInTile(
                             report_mode,
                             ctx_rast,
                             ctx_report,
@@ -463,7 +463,7 @@ pub fn rasterTileCore(
                             SK,
                             TexPrepared(u8, 1),
                             root_class,
-                        ).render(
+                        ).rasterElemInTile(
                             report_mode,
                             ctx_rast,
                             ctx_report,
@@ -494,7 +494,7 @@ pub fn rasterTileCore(
                             SK,
                             TexPrepared(u16, 1),
                             root_class,
-                        ).render(
+                        ).rasterElemInTile(
                             report_mode,
                             ctx_rast,
                             ctx_report,
@@ -520,7 +520,7 @@ pub fn rasterTileCore(
                             SK,
                             TexPrepared(F, 1),
                             root_class,
-                        ).render(
+                        ).rasterElemInTile(
                             report_mode,
                             ctx_rast,
                             ctx_report,
@@ -551,7 +551,7 @@ pub fn rasterTileCore(
                             SK,
                             TexPrepared(u8, 3),
                             root_class,
-                        ).render(
+                        ).rasterElemInTile(
                             report_mode,
                             ctx_rast,
                             ctx_report,
@@ -582,7 +582,7 @@ pub fn rasterTileCore(
                             SK,
                             TexPrepared(u16, 3),
                             root_class,
-                        ).render(
+                        ).rasterElemInTile(
                             report_mode,
                             ctx_rast,
                             ctx_report,
@@ -608,7 +608,7 @@ pub fn rasterTileCore(
                             SK,
                             TexPrepared(F, 3),
                             root_class,
-                        ).render(
+                        ).rasterElemInTile(
                             report_mode,
                             ctx_rast,
                             ctx_report,
@@ -658,7 +658,7 @@ pub fn rasterTileCore(
                             SK,
                             FuncPrepared,
                             root_class,
-                        ).render(
+                        ).rasterElemInTile(
                             report_mode,
                             ctx_rast,
                             ctx_report,
@@ -708,7 +708,7 @@ pub fn rasterTileCore(
                             SK,
                             FuncPrepared,
                             root_class,
-                        ).render(
+                        ).rasterElemInTile(
                             report_mode,
                             ctx_rast,
                             ctx_report,

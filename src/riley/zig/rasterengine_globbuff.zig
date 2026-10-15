@@ -25,7 +25,7 @@ const S = @import("buildconfig.zig").SimdWidth;
 const MatSlice = @import("matslice.zig").MatSlice;
 const scalar_kernel = @import("rasterengine_scalar.zig");
 const simd_kernel = @import("rasterengine_simd.zig");
-const SelectedBackend = if (cfg.simd == .on)
+const SelectedRasterBackend = if (cfg.simd == .on)
     SimdGlobalBackend
 else
     ScalarGlobalBackend;
@@ -40,12 +40,12 @@ pub fn rasterSceneGlobBuff(
     requested_workers: u16,
     tiling: elemtilebin.TileElemOverlaps,
     meshes: []const MeshPrepared,
-    root_inputs: meshpipe.MeshRootInputs,
+    mesh_hulls: meshpipe.MeshHulls,
     target: *subpxframe.SubpxTarget,
     image_out_arr: *NDArray(F),
 ) !usize {
     return rasterSceneGlobBuffImpl(
-        SelectedBackend,
+        SelectedRasterBackend,
         report_mode,
         outer_alloc,
         io,
@@ -54,7 +54,7 @@ pub fn rasterSceneGlobBuff(
         requested_workers,
         tiling,
         meshes,
-        root_inputs,
+        mesh_hulls,
         target,
         image_out_arr,
     );
@@ -70,7 +70,7 @@ fn rasterSceneGlobBuffImpl(
     requested_workers: u16,
     tiling: elemtilebin.TileElemOverlaps,
     meshes: []const MeshPrepared,
-    root_inputs: meshpipe.MeshRootInputs,
+    mesh_hulls: meshpipe.MeshHulls,
     target: *subpxframe.SubpxTarget,
     image_out_arr: *NDArray(F),
 ) !usize {
@@ -83,7 +83,7 @@ fn rasterSceneGlobBuffImpl(
         shared_log: *report.LogType(report_mode),
         tiling: elemtilebin.TileElemOverlaps,
         meshes: []const MeshPrepared,
-        root_inputs: meshpipe.MeshRootInputs,
+        mesh_hulls: meshpipe.MeshHulls,
         target: *subpxframe.SubpxTarget,
         worker_states: []WorkerState,
         subpx_tile_size: usize,
@@ -132,7 +132,7 @@ fn rasterSceneGlobBuffImpl(
                     tile,
                     tile_rng_ctx.tiling.overlaps,
                     tile_rng_ctx.meshes,
-                    tile_rng_ctx.root_inputs,
+                    tile_rng_ctx.mesh_hulls,
                     &worker_state.subpx_scratch,
                     tile_rng_ctx.subpx_tile_size,
                 );
@@ -187,7 +187,7 @@ fn rasterSceneGlobBuffImpl(
         .shared_log = ctx_report.log,
         .tiling = tiling,
         .meshes = meshes,
-        .root_inputs = root_inputs,
+        .mesh_hulls = mesh_hulls,
         .target = target,
         .worker_states = worker_states,
         .subpx_tile_size = common.tileScratchSubpxSize(ctx_rast),
@@ -233,16 +233,7 @@ const ScalarGlobalSubpxScratchBuffs = struct {
     tile_suby_min: i32 = 0,
     tile_origin_idx: usize = 0,
 
-    pub inline fn imageIndex(
-        self: *const ScalarGlobalSubpxScratchBuffs,
-        local_idx: usize,
-    ) usize {
-        const local_subx = local_idx % self.stride_subpx;
-        const local_suby = local_idx / self.stride_subpx;
-        return self.imageIndexCoord(local_subx, local_suby, local_idx);
-    }
-
-    pub inline fn imageIndexCoord(
+    pub inline fn resolveImageIdx(
         self: *const ScalarGlobalSubpxScratchBuffs,
         local_subx: usize,
         local_suby: usize,
@@ -350,16 +341,7 @@ const SimdGlobalSubpxScratchBuffs = struct {
     tile_suby_min: i32 = 0,
     tile_origin_idx: usize = 0,
 
-    pub inline fn imageIndex(
-        self: *const SimdGlobalSubpxScratchBuffs,
-        local_idx: usize,
-    ) usize {
-        const local_subx = local_idx % self.stride_subpx;
-        const local_suby = local_idx / self.stride_subpx;
-        return self.imageIndexCoord(local_subx, local_suby, local_idx);
-    }
-
-    pub inline fn imageIndexCoord(
+    pub inline fn resolveImageIdx(
         self: *const SimdGlobalSubpxScratchBuffs,
         local_subx: usize,
         local_suby: usize,

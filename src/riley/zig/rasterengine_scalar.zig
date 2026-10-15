@@ -55,14 +55,9 @@ pub const SubpxScratchBuffs = struct {
     touched_max_x: []usize,
     ideal_pix_cent: []F,
 
-    pub inline fn imageIndex(
-        _: *const SubpxScratchBuffs,
-        local_idx: usize,
-    ) usize {
-        return local_idx;
-    }
-
-    pub inline fn imageIndexCoord(
+    // Polymorphic interface matching global-buffer scratch buffers. In tile-local
+    // mode, image storage is tile-local, so local_idx is returned directly.
+    pub inline fn resolveImageIdx(
         _: *const SubpxScratchBuffs,
         local_subx: usize,
         local_suby: usize,
@@ -143,17 +138,19 @@ pub fn RasterEngine(
     comptime root_class: frontend.ElemRootClass,
 ) type {
     return struct {
-        pub fn render(
+        pub const HullType = if (root_class == .multi_root)
+            *const meshpipe.MultiRootHulls
+        else
+            ?*const NDArray(F);
+
+        pub fn rasterElemInTile(
             comptime report_mode: ReportMode,
             ctx_rast: frontend.RasterContext,
             ctx_report: report.ReportContext(report_mode),
             tile: elemtilebin.ActiveTile,
             overlap: elemtilebin.OverlapBBox,
             coords: *const NDArray(F),
-            hull: if (root_class == .multi_root)
-                *const meshpipe.MultiRootPrepared
-            else
-                ?*const NDArray(F),
+            hull: HullType,
             shader: *const ShaderData,
             shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
             subpx_scratch: *ScratchBuffs,
@@ -219,7 +216,7 @@ pub fn RasterEngine(
             tile: elemtilebin.ActiveTile,
             overlap: elemtilebin.OverlapBBox,
             hull: if (root_class == .multi_root)
-                *const meshpipe.MultiRootPrepared
+                *const meshpipe.MultiRootHulls
             else
                 ?*const NDArray(F),
             subpx_dom: SubpxDom,
@@ -481,7 +478,7 @@ pub fn rasterDirectScalComm(
                     .elem_idx = overlap.elem_idx,
                     .fields_num = fields_num,
                     .actual_fields = fields_num,
-                    .scratch_idx = subpx_scratch.imageIndexCoord(
+                    .scratch_idx = subpx_scratch.resolveImageIdx(
                         scratch_x_u,
                         scratch_y_u,
                         scratch_idx,
@@ -835,7 +832,7 @@ fn rasterNewtonImpl(
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.imageIndexCoord(
+                .scratch_idx = subpx_scratch.resolveImageIdx(
                     scratch_x,
                     scratch_y,
                     scratch_idx,
@@ -948,7 +945,7 @@ fn rasterNewtonMultiImpl(
     ctx_report: report.ReportContext(report_mode),
     tile: elemtilebin.ActiveTile,
     overlap: elemtilebin.OverlapBBox,
-    hull_multiroot: *const meshpipe.MultiRootPrepared,
+    hull_multiroot: *const meshpipe.MultiRootHulls,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
@@ -960,29 +957,18 @@ fn rasterNewtonMultiImpl(
     const prepared = hull_multiroot;
     const slot = prepared.slot_by_visible_elem.get(overlap.elem_idx);
     if (slot == std.math.maxInt(u32)) return error.MissingMultiRootData;
-    const hull_count = prepared.hull_count.get(slot);
     const edge_fun_mode = ctx_rast.config.advanced.solver.multiroot.edge_fun_mode;
 
-    var outer_poly_pre: HullMultiRoot.HullPolyPreCalc = undefined;
-    var outer_poly_fly: HullMultiRoot.HullPolyOnTheFly = undefined;
-    if (edge_fun_mode == .pre_calc) {
-        outer_poly_pre.count = @intCast(hull_count);
-        @memcpy(
-            outer_poly_pre.edges[0..hull_count],
-            prepared.hull_edges[slot][0..hull_count],
-        );
-    } else {
-        outer_poly_fly.count = @intCast(hull_count);
-        const hx = prepared.hull_x.getSlice(slot)[0..hull_count];
-        const hy = prepared.hull_y.getSlice(slot)[0..hull_count];
-        @memcpy(outer_poly_fly.x[0..hull_count], hx);
-        @memcpy(outer_poly_fly.y[0..hull_count], hy);
-        HullMultiRoot.calcEdgeTol(
-            hx,
-            hy,
-            outer_poly_fly.tol_edge[0..hull_count],
-        );
-    }
+    const outer_poly_pre: HullMultiRoot.HullPolyPreCalc =
+        if (edge_fun_mode == .pre_calc)
+            prepared.outer_hulls_pre_calc[slot]
+        else
+            undefined;
+    const outer_poly_fly: HullMultiRoot.HullPolyOnTheFly =
+        if (edge_fun_mode == .on_the_fly)
+            prepared.outer_hulls_on_the_fly[slot]
+        else
+            undefined;
 
     const leaf_offset = @as(usize, slot) * 4;
     const leaves_pre_calc = if (edge_fun_mode == .pre_calc)
@@ -1126,7 +1112,7 @@ fn rasterNewtonMultiImpl(
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.imageIndexCoord(
+                .scratch_idx = subpx_scratch.resolveImageIdx(
                     scratch_x,
                     scratch_y,
                     scratch_idx,
@@ -1391,7 +1377,7 @@ fn rasterSteppedScalFixP(
                         .elem_idx = overlap.elem_idx,
                         .fields_num = fields_num,
                         .actual_fields = fields_num,
-                        .scratch_idx = subpx_scratch.imageIndexCoord(
+                        .scratch_idx = subpx_scratch.resolveImageIdx(
                             scratch_x_u,
                             scratch_y_u,
                             scratch_idx,
@@ -1641,7 +1627,7 @@ fn rasterSteppedScalFloat(
                         .elem_idx = overlap.elem_idx,
                         .fields_num = fields_num,
                         .actual_fields = fields_num,
-                        .scratch_idx = subpx_scratch.imageIndexCoord(
+                        .scratch_idx = subpx_scratch.resolveImageIdx(
                             scratch_x_u,
                             scratch_y_u,
                             scratch_idx,
