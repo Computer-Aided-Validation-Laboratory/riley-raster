@@ -132,7 +132,7 @@ const RasterBounds = comm.RasterBounds;
 
 pub fn RasterEngine(
     comptime ScratchBuffs: type,
-    comptime Geom: type,
+    comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
     comptime root_class: frontend.ElemRootClass,
@@ -152,7 +152,7 @@ pub fn RasterEngine(
             coords: *const NDArray(F),
             hull: HullType,
             shader: *const ShaderData,
-            shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
             subpx_scratch: *ScratchBuffs,
         ) !u64 {
             const sub_samp_u: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -185,7 +185,7 @@ pub fn RasterEngine(
             };
 
             const nodes_coords = try frontend.loadElemVec3Slices(
-                Geom.nodes_num,
+                GeomKern.nodes_num,
                 F,
                 coords,
                 overlap.elem_idx,
@@ -215,21 +215,18 @@ pub fn RasterEngine(
             ctx_report: report.ReportContext(report_mode),
             tile: elemtilebin.ActiveTile,
             overlap: elemtilebin.OverlapBBox,
-            hull: if (root_class == .multi_root)
-                *const meshpipe.MultiRootHulls
-            else
-                ?*const NDArray(F),
+            hull: HullType,
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
             nodes_coords: Vec3Slices(F),
             shader: *const ShaderData,
-            shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
             subpx_scratch: *ScratchBuffs,
         ) !u64 {
-            if (comptime Geom == geomkerns.Tri3OptKernel()) {
+            if (comptime GeomKern == geomkerns.Tri3OptKernel()) {
                 return rasterSteppedScal(
                     ScratchBuffs,
-                    Geom,
+                    GeomKern,
                     ShaderKern,
                     ShaderData,
                     report_mode,
@@ -246,10 +243,10 @@ pub fn RasterEngine(
                     subpx_scratch,
                 );
             }
-            if (comptime Geom.solver_kind != .newton) {
+            if (comptime GeomKern.solver_kind != .newton) {
                 return rasterDirectImpl(
                     ScratchBuffs,
-                    Geom,
+                    GeomKern,
                     ShaderKern,
                     ShaderData,
                     report_mode,
@@ -272,7 +269,7 @@ pub fn RasterEngine(
             else
                 rasterNewtonImpl)(
                 ScratchBuffs,
-                Geom,
+                GeomKern,
                 ShaderKern,
                 ShaderData,
                 report_mode,
@@ -289,45 +286,11 @@ pub fn RasterEngine(
                 subpx_scratch,
             );
         }
-
-        fn rasterNewton(
-            comptime report_mode: ReportMode,
-            ctx_rast: frontend.RasterContext,
-            ctx_report: report.ReportContext(report_mode),
-            tile: elemtilebin.ActiveTile,
-            overlap: elemtilebin.OverlapBBox,
-            hull_adaptive: ?*const NDArray(F),
-            subpx_dom: SubpxDom,
-            rast_bounds: RasterBounds,
-            nodes_coords: Vec3Slices(F),
-            shader: *const ShaderData,
-            shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
-            subpx_scratch: *ScratchBuffs,
-        ) !u64 {
-            return rasterNewtonImpl(
-                ScratchBuffs,
-                Geom,
-                ShaderKern,
-                ShaderData,
-                report_mode,
-                ctx_rast,
-                ctx_report,
-                tile,
-                overlap,
-                hull_adaptive,
-                subpx_dom,
-                rast_bounds,
-                nodes_coords,
-                shader,
-                shader_buf,
-                subpx_scratch,
-            );
-        }
     };
 }
 
 pub fn rasterDirectScalComm(
-    comptime Geom: type,
+    comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
     comptime report_mode: ReportMode,
@@ -341,16 +304,16 @@ pub fn rasterDirectScalComm(
     fields_num: u8,
     nodes_coords: frontend.Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
+    shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
-    if (comptime Geom.solver_kind == .newton) {
+    if (comptime GeomKern.solver_kind == .newton) {
         @compileError(
             "rasterDirectScalComm only supps non-Newton paths",
         );
     }
 
-    const N = Geom.nodes_num;
+    const N = GeomKern.nodes_num;
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
 
@@ -359,8 +322,8 @@ pub fn rasterDirectScalComm(
         nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
     }
 
-    const inv_elem_area = if (comptime Geom.solver_kind == .hyperb)
-        Geom.getInvElemArea(nodes_coords)
+    const inv_elem_area = if (comptime GeomKern.solver_kind == .hyperb)
+        GeomKern.getInvElemArea(nodes_coords)
     else {};
 
     const ideal_x_plane = cam.getIdealXPlaneScratch(
@@ -399,8 +362,8 @@ pub fn rasterDirectScalComm(
             }
 
             ctx_report.recordSolverCalls(1);
-            const geometry_result = switch (comptime Geom.solver_kind) {
-                .hyperb => Geom.solveWeightsHyperb(
+            const geometry_result = switch (comptime GeomKern.solver_kind) {
+                .hyperb => GeomKern.solveWeightsHyperb(
                     nodes_coords,
                     ideal_x_pix,
                     ideal_y_pix,
@@ -429,7 +392,7 @@ pub fn rasterDirectScalComm(
                 continue;
             };
 
-            const inv_z = Geom.calcInvZ(nodes_coords, weights);
+            const inv_z = GeomKern.calcInvZ(nodes_coords, weights);
             if (inv_z + tol.geometry.depth_buff_inv_z_cmp <
                 subpx_scratch.inv_z[scratch_idx])
             {
@@ -462,17 +425,17 @@ pub fn rasterDirectScalComm(
                 );
             }
 
-            const xi = if (comptime Geom.solver_kind == .hyperb)
+            const xi = if (comptime GeomKern.solver_kind == .hyperb)
                 weights[1] * nodes_inv_z[1] / inv_z
             else
                 geometry_result.xi_out;
-            const eta = if (comptime Geom.solver_kind == .hyperb)
+            const eta = if (comptime GeomKern.solver_kind == .hyperb)
                 weights[2] * nodes_inv_z[2] / inv_z
             else
                 geometry_result.eta_out;
 
             ShaderKern.shade(
-                Geom.coord_space,
+                GeomKern.coord_space,
                 shaderops.ShadeContext{
                     .frame_idx = ctx_rast.frame_idx,
                     .elem_idx = overlap.elem_idx,
@@ -486,7 +449,7 @@ pub fn rasterDirectScalComm(
                     .global_subx = global_subx,
                     .global_suby = global_suby,
                 },
-                shaderops.InterpData(Geom.nodes_num){
+                shaderops.InterpData(GeomKern.nodes_num){
                     .weights = weights,
                     .nodes_inv_z = nodes_inv_z,
                     .sub_pixel_z = 1.0 / inv_z,
@@ -508,7 +471,7 @@ pub fn rasterDirectScalComm(
 
 fn rasterDirectImpl(
     comptime ScratchBuffs: type,
-    comptime Geom: type,
+    comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
     comptime report_mode: ReportMode,
@@ -521,14 +484,14 @@ fn rasterDirectImpl(
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
+    shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
 
     return rasterDirectScalComm(
-        Geom,
+        GeomKern,
         ShaderKern,
         ShaderData,
         report_mode,
@@ -549,7 +512,7 @@ fn rasterDirectImpl(
 
 fn rasterNewtonImpl(
     comptime ScratchBuffs: type,
-    comptime Geom: type,
+    comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
     comptime report_mode: ReportMode,
@@ -562,16 +525,16 @@ fn rasterNewtonImpl(
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
+    shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
     comptime {
-        if (Geom.solver_kind != .newton) {
+        if (GeomKern.solver_kind != .newton) {
             @compileError("rasterNewton only supps Newton geometries");
         }
     }
 
-    const N = Geom.nodes_num;
+    const N = GeomKern.nodes_num;
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
@@ -582,8 +545,8 @@ fn rasterNewtonImpl(
         nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
     }
 
-    var elem_tess: HullAdaptive.Tessellation(Geom.tess_triangles_num) = undefined;
-    if (comptime Geom.hull_nodes_num > 0) {
+    var elem_tess: HullAdaptive.Tessellation(GeomKern.tess_triangles_num) = undefined;
+    if (comptime GeomKern.hull_nodes_num > 0) {
         if (hull_adaptive) |rh| {
             const hx = rh.getSlice(
                 &[_]usize{ overlap.elem_idx, 0, 0 },
@@ -595,8 +558,8 @@ fn rasterNewtonImpl(
             );
             elem_tess = HullAdaptive.makeTessellation(
                 N,
-                Geom.hull_nodes_num,
-                Geom.tess_triangles_num,
+                GeomKern.hull_nodes_num,
+                GeomKern.tess_triangles_num,
                 hx,
                 hy,
             );
@@ -633,7 +596,7 @@ fn rasterNewtonImpl(
             );
 
             var hull_seed: ?newton.NewtonSeed = null;
-            if (comptime Geom.hull_nodes_num > 0) {
+            if (comptime GeomKern.hull_nodes_num > 0) {
                 ctx_report.recordTessChecks(1);
                 const seed_mode = ctx_rast.config.advanced.solver.oneroot.newton_seed_mode;
                 const edge_mode = ctx_rast.config.advanced.solver.oneroot.edge_fun_mode;
@@ -672,8 +635,8 @@ fn rasterNewtonImpl(
                 if (ctx_rast.config.advanced.solver.oneroot.newton_seed_mode == .hull) {
                     if (hull_seed) |seed| {
                         const seed_quality = newton.evaluateSeedQuality(
-                            Geom.nodes_num,
-                            Geom.domViolation,
+                            GeomKern.nodes_num,
+                            GeomKern.domViolation,
                             ideal_x_pix - subpx_dom.x_off,
                             ideal_y_pix - subpx_dom.y_off,
                             nodes_coords.x,
@@ -686,7 +649,7 @@ fn rasterNewtonImpl(
                         }
                     }
                 }
-                const base_seed = Geom.initSeed(
+                const base_seed = GeomKern.initSeed(
                     ctx_rast.config.advanced.solver.oneroot.newton_seed_mode,
                     hull_seed,
                 );
@@ -695,7 +658,7 @@ fn rasterNewtonImpl(
                     base_seed,
                     seed_state,
                 );
-                break :blk Geom.solveWeightsNewton(
+                break :blk GeomKern.solveWeightsNewton(
                     nodes_coords,
                     ideal_x_pix,
                     ideal_y_pix,
@@ -717,7 +680,7 @@ fn rasterNewtonImpl(
                 result.xi_final,
                 result.eta_final,
             );
-            const dom_violation = Geom.domViolation(
+            const dom_violation = GeomKern.domViolation(
                 result.xi_final,
                 result.eta_final,
             );
@@ -796,7 +759,7 @@ fn rasterNewtonImpl(
             }
 
             const weights = result.weights.?;
-            const inv_z = Geom.calcInvZ(nodes_coords, weights);
+            const inv_z = GeomKern.calcInvZ(nodes_coords, weights);
             if (inv_z + tol.geometry.depth_buff_inv_z_cmp <
                 subpx_scratch.inv_z[scratch_idx]) continue;
 
@@ -849,7 +812,7 @@ fn rasterNewtonImpl(
             };
 
             ShaderKern.shade(
-                Geom.coord_space,
+                GeomKern.coord_space,
                 ctx_shade,
                 interp_data,
                 shader_buf,
@@ -863,7 +826,7 @@ fn rasterNewtonImpl(
 }
 
 fn solveMultiRootSeedScal(
-    comptime Geom: type,
+    comptime GeomKern: type,
     comptime report_mode: ReportMode,
     ctx_report: report.ReportContext(report_mode),
     nodes_coords: Vec3Slices(F),
@@ -873,13 +836,14 @@ fn solveMultiRootSeedScal(
     y_off: F,
     seed: [2]F,
 ) ?struct {
-    weights: [Geom.nodes_num]F,
+    weights: [GeomKern.nodes_num]F,
     xi: F,
     eta: F,
     inv_z: F,
 } {
     ctx_report.recordSolverCalls(1);
-    const result = Geom.solveWeightsNewton(
+
+    const result = GeomKern.solveWeightsNewton(
         nodes_coords,
         ideal_x,
         ideal_y,
@@ -888,19 +852,23 @@ fn solveMultiRootSeedScal(
         seed[0],
         seed[1],
     );
+
     ctx_report.recordSolverIters(result.iters);
+
     const weights = result.weights orelse {
         if (result.iters > 0) ctx_report.recordSolverDiverged();
         return null;
     };
+
     if (!std.math.isFinite(result.xi_out) or
         !std.math.isFinite(result.eta_out) or
-        Geom.domViolation(result.xi_out, result.eta_out) > 0)
+        GeomKern.domViolation(result.xi_out, result.eta_out) > 0)
     {
         return null;
     }
+
     const state = newton.evaluateSolveState(
-        Geom.nodes_num,
+        GeomKern.nodes_num,
         ideal_x - x_off,
         ideal_y - y_off,
         nodes_coords.x,
@@ -909,24 +877,30 @@ fn solveMultiRootSeedScal(
         result.xi_out,
         result.eta_out,
     );
+
     if (!std.math.isFinite(state.norm_resid_mag) or
         state.norm_resid_mag > tol.newton.norm_resid)
     {
         return null;
     }
+
     const facing = frontend.projectedJacDetPhysical(
-        Geom.nodes_num,
+        GeomKern.nodes_num,
         nodes_coords,
         result.xi_out,
         result.eta_out,
     );
+
     if (!std.math.isFinite(facing) or
         facing >= -tol.culling.projected_jacobian_abs)
     {
         return null;
     }
-    const inv_z = Geom.calcInvZ(nodes_coords, weights);
+
+    const inv_z = GeomKern.calcInvZ(nodes_coords, weights);
+
     if (!std.math.isFinite(inv_z) or inv_z <= 0) return null;
+
     return .{
         .weights = weights,
         .xi = result.xi_out,
@@ -937,7 +911,7 @@ fn solveMultiRootSeedScal(
 
 fn rasterNewtonMultiImpl(
     comptime ScratchBuffs: type,
-    comptime Geom: type,
+    comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
     comptime report_mode: ReportMode,
@@ -950,26 +924,17 @@ fn rasterNewtonMultiImpl(
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
+    shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
-    const N = Geom.nodes_num;
-    const prepared = hull_multiroot;
-    const slot = prepared.slot_by_visible_elem.get(overlap.elem_idx);
+    const N = GeomKern.nodes_num;
+    const slot = hull_multiroot.slot_by_visible_elem.get(overlap.elem_idx);
     if (slot == std.math.maxInt(u32)) return error.MissingMultiRootData;
     const edge_fun_mode = ctx_rast.config.advanced.solver.multiroot.edge_fun_mode;
 
-    const leaf_offset = @as(usize, slot) * 4;
-    const leaves_pre_calc = if (edge_fun_mode == .pre_calc)
-        prepared.leaves_pre_calc[leaf_offset .. leaf_offset + 4]
-    else
-        &.{};
-    const leaves_on_the_fly = if (edge_fun_mode == .on_the_fly)
-        prepared.leaves_on_the_fly[leaf_offset .. leaf_offset + 4]
-    else
-        &.{};
-    const fallback_seed_count = prepared.valid_depth.get(slot);
-    const fallback_seeds = prepared.indices.getSlice(slot)[0..fallback_seed_count];
+    const fallback_seed_count = hull_multiroot.valid_depth.get(slot);
+    const fallback_seeds =
+        hull_multiroot.indices.getSlice(slot)[0..fallback_seed_count];
     var fallback_seed_uvs: [3][2]F = undefined;
     for (fallback_seeds, 0..) |seed_idx, ii| {
         fallback_seed_uvs[ii] = geomkerns.multiRootSeedCoords(N, seed_idx);
@@ -983,6 +948,23 @@ fn rasterNewtonMultiImpl(
     inline for (0..N) |nn| nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
     var shaded_px: u64 = 0;
     const is_robust = ctx_rast.config.advanced.solver.multiroot.mode == .robust;
+    const leaf_offset = @as(usize, slot) * 4;
+    const leaves_pre_calc = if (edge_fun_mode == .pre_calc)
+        hull_multiroot.leaves_pre_calc[leaf_offset .. leaf_offset + 4]
+    else
+        &.{};
+    const leaves_on_the_fly = if (edge_fun_mode == .on_the_fly)
+        hull_multiroot.leaves_on_the_fly[leaf_offset .. leaf_offset + 4]
+    else
+        &.{};
+
+    var seeds: [4][2]F = undefined;
+    inline for (0..4) |ii| {
+        seeds[ii] = if (edge_fun_mode == .pre_calc)
+            leaves_pre_calc[ii].parameter_seed
+        else
+            leaves_on_the_fly[ii].parameter_seed;
+    }
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
         const row_offset = scratch_y * subpx_dom.tile_size;
@@ -1035,14 +1017,12 @@ fn rasterNewtonMultiImpl(
             var had_candidate_child = false;
 
             inline for (0..4) |leaf_idx| {
-                if ((child_mask & (@as(u8, 1) << @as(u3, @intCast(leaf_idx)))) == 0) continue;
+                const bit = @as(u8, 1) << @as(u3, @intCast(leaf_idx));
+                if ((child_mask & bit) == 0) continue;
                 had_candidate_child = true;
-                const seed = if (edge_fun_mode == .pre_calc)
-                    leaves_pre_calc[leaf_idx].parameter_seed
-                else
-                    leaves_on_the_fly[leaf_idx].parameter_seed;
+                const seed = seeds[leaf_idx];
                 if (solveMultiRootSeedScal(
-                    Geom,
+                    GeomKern,
                     report_mode,
                     ctx_report,
                     nodes_coords,
@@ -1064,7 +1044,7 @@ fn rasterNewtonMultiImpl(
             if (best_weights == null and had_candidate_child and is_robust) {
                 for (fallback_seed_uvs[0..fallback_seed_count]) |seed_uv| {
                     if (solveMultiRootSeedScal(
-                        Geom,
+                        GeomKern,
                         report_mode,
                         ctx_report,
                         nodes_coords,
@@ -1085,14 +1065,17 @@ fn rasterNewtonMultiImpl(
             }
 
             const weights = best_weights orelse continue;
+
             if (best_inv_z + tol.geometry.depth_buff_inv_z_cmp <
                 subpx_scratch.inv_z[scratch_idx]) continue;
+
             subpx_scratch.inv_z[scratch_idx] = best_inv_z;
             subpx_scratch.touched_min_x[scratch_y] =
                 @min(subpx_scratch.touched_min_x[scratch_y], scratch_x);
             subpx_scratch.touched_max_x[scratch_y] =
                 @max(subpx_scratch.touched_max_x[scratch_y], scratch_x);
             shaded_px += 1;
+
             const ctx_shade = shaderops.ShadeContext{
                 .frame_idx = ctx_rast.frame_idx,
                 .elem_idx = overlap.elem_idx,
@@ -1106,6 +1089,7 @@ fn rasterNewtonMultiImpl(
                 .global_subx = global_subx,
                 .global_suby = global_suby,
             };
+
             const interp_data = shaderops.InterpData(N){
                 .weights = weights,
                 .nodes_inv_z = nodes_inv_z,
@@ -1113,8 +1097,9 @@ fn rasterNewtonMultiImpl(
                 .xi = best_xi,
                 .eta = best_eta,
             };
+
             ShaderKern.shade(
-                Geom.coord_space,
+                GeomKern.coord_space,
                 ctx_shade,
                 interp_data,
                 shader_buf,
@@ -1129,7 +1114,7 @@ fn rasterNewtonMultiImpl(
 
 fn rasterSteppedScal(
     comptime ScratchBuffs: type,
-    comptime Geom: type,
+    comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
     comptime report_mode: ReportMode,
@@ -1142,7 +1127,7 @@ fn rasterSteppedScal(
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
+    shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -1167,7 +1152,7 @@ fn rasterSteppedScal(
     )) |fixed| {
         return rasterSteppedScalFixP(
             ScratchBuffs,
-            Geom,
+            GeomKern,
             ShaderKern,
             ShaderData,
             report_mode,
@@ -1188,7 +1173,7 @@ fn rasterSteppedScal(
 
     return rasterSteppedScalFloat(
         ScratchBuffs,
-        Geom,
+        GeomKern,
         ShaderKern,
         ShaderData,
         report_mode,
@@ -1208,7 +1193,7 @@ fn rasterSteppedScal(
 
 fn rasterSteppedScalFixP(
     comptime ScratchBuffs: type,
-    comptime Geom: type,
+    comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
     comptime report_mode: ReportMode,
@@ -1221,11 +1206,11 @@ fn rasterSteppedScalFixP(
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
+    shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
     subpx_scratch: *ScratchBuffs,
     fixed: comm.Tri3FixedEdges,
 ) !u64 {
-    const N = Geom.nodes_num;
+    const N = GeomKern.nodes_num;
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
@@ -1381,7 +1366,7 @@ fn rasterSteppedScalFixP(
                     };
 
                     ShaderKern.shade(
-                        Geom.coord_space,
+                        GeomKern.coord_space,
                         ctx_shade,
                         interp_data,
                         shader_buf,
@@ -1416,7 +1401,7 @@ fn rasterSteppedScalFixP(
 
 fn rasterSteppedScalFloat(
     comptime ScratchBuffs: type,
-    comptime Geom: type,
+    comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
     comptime report_mode: ReportMode,
@@ -1429,10 +1414,10 @@ fn rasterSteppedScalFloat(
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
+    shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
-    const N = Geom.nodes_num;
+    const N = GeomKern.nodes_num;
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
@@ -1630,7 +1615,7 @@ fn rasterSteppedScalFloat(
                     };
 
                     ShaderKern.shade(
-                        Geom.coord_space,
+                        GeomKern.coord_space,
                         ctx_shade,
                         interp_data,
                         shader_buf,

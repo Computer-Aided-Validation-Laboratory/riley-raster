@@ -300,14 +300,14 @@ pub const ScalarGlobalBackend = struct {
     }
 
     pub fn RasterEngine(
-        comptime Geom: type,
+        comptime GeomKern: type,
         comptime ShaderKern: type,
         comptime ShaderData: type,
         comptime root_class: frontend.ElemRootClass,
     ) type {
         return scalar_kernel.RasterEngine(
             ScalarGlobalSubpxScratchBuffs,
-            Geom,
+            GeomKern,
             ShaderKern,
             ShaderData,
             root_class,
@@ -463,14 +463,14 @@ pub const SimdGlobalBackend = struct {
     }
 
     pub fn RasterEngine(
-        comptime Geom: type,
+        comptime GeomKern: type,
         comptime ShaderKern: type,
         comptime ShaderData: type,
         comptime root_class: frontend.ElemRootClass,
     ) type {
         return simd_kernel.RasterEngine(
             SimdGlobalSubpxScratchBuffs,
-            Geom,
+            GeomKern,
             ShaderKern,
             ShaderData,
             root_class,

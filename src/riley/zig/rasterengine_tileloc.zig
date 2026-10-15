@@ -34,14 +34,14 @@ const SelectedRasterBackend = struct {
     pub const resetSubpxScratch = kernel.resetSubpxScratch;
 
     pub fn RasterEngine(
-        comptime Geom: type,
+        comptime GeomKern: type,
         comptime ShaderKern: type,
         comptime ShaderData: type,
         comptime root_class: frontend.ElemRootClass,
     ) type {
         return kernel.RasterEngine(
             SubpxScratchBuffs,
-            Geom,
+            GeomKern,
             ShaderKern,
             ShaderData,
             root_class,
