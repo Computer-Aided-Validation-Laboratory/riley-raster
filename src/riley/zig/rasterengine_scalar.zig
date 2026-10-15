@@ -964,11 +964,22 @@ fn rasterNewtonMultiImpl(
     const hx = prepared.hull_x.getSlice(slot)[0..hull_count];
     const hy = prepared.hull_y.getSlice(slot)[0..hull_count];
     const edge_fun_mode = ctx_rast.config.advanced.solver.multiroot.edge_fun_mode;
-    var edge_slack: [9]F = undefined;
+    var tol_edge: [9]F = undefined;
     if (edge_fun_mode == .on_the_fly)
-        HullMultiRoot.prepareEdgeSlack(hx, hy, edge_slack[0..hull_count]);
+        HullMultiRoot.calcEdgeTol(hx, hy, tol_edge[0..hull_count]);
     const leaf_offset = @as(usize, slot) * 4;
-    const leaves = prepared.leaves[leaf_offset .. leaf_offset + 4];
+    const leaves_pre_calc = if (edge_fun_mode == .pre_calc)
+        prepared.leaves_pre_calc[leaf_offset .. leaf_offset + 4]
+    else
+        &.{};
+    const leaves_on_the_fly = if (edge_fun_mode == .on_the_fly)
+        prepared.leaves_on_the_fly[leaf_offset .. leaf_offset + 4]
+    else
+        &.{};
+    const outer_edges: []const HullMultiRoot.HullEdge = if (edge_fun_mode == .pre_calc)
+        prepared.hull_edges[slot][0..hull_count]
+    else
+        &.{};
     const fallback_seed_count = prepared.valid_depth.get(slot);
     const fallback_seeds = prepared.indices.getSlice(slot)[0..fallback_seed_count];
     var fallback_seed_uvs: [3][2]F = undefined;
@@ -1001,19 +1012,16 @@ fn rasterNewtonMultiImpl(
                 sub_samp,
                 scratch_y,
             );
-            const edges: []const HullMultiRoot.HullEdge = if (edge_fun_mode == .pre_calc)
-                prepared.hull_edges[slot][0..hull_count]
+            const has_hit = if (edge_fun_mode == .pre_calc)
+                HullMultiRoot.containsPreCalcScalar(outer_edges, ideal_x, ideal_y)
             else
-                &.{};
-            const has_hit = HullMultiRoot.containsScalar(
-                hx,
-                hy,
-                edges,
-                edge_slack[0..hull_count],
-                ideal_x,
-                ideal_y,
-                edge_fun_mode,
-            );
+                HullMultiRoot.containsOnTheFlyScalar(
+                    hx,
+                    hy,
+                    tol_edge[0..hull_count],
+                    ideal_x,
+                    ideal_y,
+                );
             if (!has_hit) {
                 if (comptime report_mode == .full_stats) {
                     rasterreport.recordEarlyOut(
@@ -1032,15 +1040,17 @@ fn rasterNewtonMultiImpl(
             var best_eta: F = 0;
             var had_candidate_child = false;
 
-            const child_mask = HullMultiRoot.childMaskScalar(
-                leaves,
-                ideal_x,
-                ideal_y,
-                edge_fun_mode,
-            );
-            for (leaves, 0..) |leaf, leaf_idx| {
+            const child_mask = if (edge_fun_mode == .pre_calc)
+                HullMultiRoot.childMaskPreCalcScalar(leaves_pre_calc, ideal_x, ideal_y)
+            else
+                HullMultiRoot.childMaskOnTheFlyScalar(leaves_on_the_fly, ideal_x, ideal_y);
+            inline for (0..4) |leaf_idx| {
                 if ((child_mask & (@as(u8, 1) << @as(u3, @intCast(leaf_idx)))) == 0) continue;
                 had_candidate_child = true;
+                const seed = if (edge_fun_mode == .pre_calc)
+                    leaves_pre_calc[leaf_idx].parameter_seed
+                else
+                    leaves_on_the_fly[leaf_idx].parameter_seed;
                 if (solveMultiRootSeedScal(
                     Geom,
                     report_mode,
@@ -1050,7 +1060,7 @@ fn rasterNewtonMultiImpl(
                     ideal_y,
                     subpx_dom.x_off,
                     subpx_dom.y_off,
-                    leaf.parameter_seed,
+                    seed,
                 )) |hit| {
                     if (hit.inv_z > best_inv_z) {
                         best_inv_z = hit.inv_z;

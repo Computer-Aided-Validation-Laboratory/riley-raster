@@ -29,16 +29,16 @@ pub const Points = struct {
 
     pub fn contains(self: *const Points, px: F, py: F) bool {
         if (self.count < 3) return false;
-        var edge_slack: [9]F = undefined;
-        prepareEdgeSlack(
+        var tol_edge: [9]F = undefined;
+        calcEdgeTol(
             self.x[0..self.count],
             self.y[0..self.count],
-            edge_slack[0..self.count],
+            tol_edge[0..self.count],
         );
-        return containsOnTheFly(
+        return containsOnTheFlyScalar(
             self.x[0..self.count],
             self.y[0..self.count],
-            edge_slack[0..self.count],
+            tol_edge[0..self.count],
             px,
             py,
         );
@@ -48,7 +48,7 @@ pub const Points = struct {
 pub fn buildPointsFromClip(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
-    coords: frontend.GatheredElemCoords(N),
+    coords: frontend.ElemCoords(N),
 ) Points {
     const controls = controlNet(N, coords);
     const K = controls.x.len;
@@ -110,12 +110,12 @@ pub fn buildPointsFromClip(
     return if (bounds.intersect(sensor)) |clipped| rectHull(clipped) else .{};
 }
 
-pub fn prepareEdgeSlack(x: []const F, y: []const F, slack: []F) void {
+pub fn calcEdgeTol(x: []const F, y: []const F, tol_edge: []F) void {
     for (0..x.len) |ii| {
         const jj = (ii + 1) % x.len;
         const dx = x[jj] - x[ii];
         const dy = y[jj] - y[ii];
-        slack[ii] = tol.hull.scal_inclusion * @sqrt(dx * dx + dy * dy);
+        tol_edge[ii] = tol.hull.scal_inclusion * @sqrt(dx * dx + dy * dy);
     }
 }
 
@@ -141,7 +141,7 @@ pub fn prepareEdgesScalar(x: []const F, y: []const F, edges: []HullEdge) void {
     }
 }
 
-pub fn containsPreCalc(edges: []const HullEdge, px: F, py: F) bool {
+pub fn containsPreCalcScalar(edges: []const HullEdge, px: F, py: F) bool {
     if (edges.len < 3) return false;
     for (edges) |edge| {
         if (edge.eval(px, py) < 0) return false;
@@ -149,10 +149,10 @@ pub fn containsPreCalc(edges: []const HullEdge, px: F, py: F) bool {
     return true;
 }
 
-pub fn containsOnTheFly(
+pub fn containsOnTheFlyScalar(
     x: []const F,
     y: []const F,
-    slack: []const F,
+    tol_edge: []const F,
     px: F,
     py: F,
 ) bool {
@@ -167,49 +167,61 @@ pub fn containsOnTheFly(
             px,
             py,
         );
-        if (edge < -slack[ii]) {
+        if (edge < -tol_edge[ii]) {
             return false;
         }
     }
     return true;
 }
 
-pub fn containsScalar(
-    x: []const F,
-    y: []const F,
-    edges: []const HullEdge,
-    slack: []const F,
-    px: F,
-    py: F,
-    mode: rastcfg.EdgeFunMode,
-) bool {
-    return if (mode == .pre_calc)
-        containsPreCalc(edges, px, py)
-    else
-        containsOnTheFly(x, y, slack, px, py);
-}
+pub const HullPolyPreCalc = struct {
+    edges: [9]HullEdge = undefined,
+    count: u8 = 0,
+};
 
-pub fn childMaskScalar(
-    leaves: []const BezierLeaf,
+pub const HullPolyOnTheFly = struct {
+    x: [9]F = undefined,
+    y: [9]F = undefined,
+    tol_edge: [9]F = undefined,
+    count: u8 = 0,
+};
+
+pub fn childMaskPreCalcScalar(
+    leaves: []const BezierLeafPreCalc,
     px: F,
     py: F,
-    mode: rastcfg.EdgeFunMode,
 ) u8 {
     var mask: u8 = 0;
     for (leaves, 0..) |*leaf, ii| {
         if (px < leaf.bbox[0] or px > leaf.bbox[1] or
             py < leaf.bbox[2] or py > leaf.bbox[3]) continue;
-        const count = leaf.vertex_count;
 
-        if (containsScalar(
-            leaf.hull_x[0..count],
-            leaf.hull_y[0..count],
-            leaf.prepared_edges[0..count],
-            leaf.edge_slack[0..count],
+        if (containsPreCalcScalar(leaf.poly.edges[0..leaf.poly.count], px, py)) {
+            mask |= @as(u8, 1) << @as(u3, @intCast(ii));
+        }
+    }
+    return mask;
+}
+
+pub fn childMaskOnTheFlyScalar(
+    leaves: []const BezierLeafOnTheFly,
+    px: F,
+    py: F,
+) u8 {
+    var mask: u8 = 0;
+    for (leaves, 0..) |*leaf, ii| {
+        if (px < leaf.bbox[0] or px > leaf.bbox[1] or
+            py < leaf.bbox[2] or py > leaf.bbox[3]) continue;
+
+        if (containsOnTheFlyScalar(
+            leaf.poly.x[0..leaf.poly.count],
+            leaf.poly.y[0..leaf.poly.count],
+            leaf.poly.tol_edge[0..leaf.poly.count],
             px,
             py,
-            mode,
-        )) mask |= @as(u8, 1) << @as(u3, @intCast(ii));
+        )) {
+            mask |= @as(u8, 1) << @as(u3, @intCast(ii));
+        }
     }
     return mask;
 }
@@ -287,11 +299,11 @@ fn rectHull(bounds: distbounds.DistortBounds) Points {
 
 fn controlNet(
     comptime N: usize,
-    coords: frontend.GatheredElemCoords(N),
-) frontend.GatheredElemCoords(if (N == 8) 9 else N) {
+    coords: frontend.ElemCoords(N),
+) frontend.ElemCoords(if (N == 8) 9 else N) {
     const K = if (N == 8) 9 else N;
 
-    var controls: frontend.GatheredElemCoords(K) = undefined;
+    var controls: frontend.ElemCoords(K) = undefined;
     if (comptime N == 4) {
         controls = coords;
         return controls;
@@ -319,7 +331,7 @@ fn controlNet(
         return controls;
     }
 
-    var nodes: frontend.GatheredElemCoords(9) = undefined;
+    var nodes: frontend.ElemCoords(9) = undefined;
     for (0..N) |nn| {
         nodes.x[nn] = coords.x[nn];
         nodes.y[nn] = coords.y[nn];
@@ -356,14 +368,16 @@ fn controlNet(
     
     return controls;
 }
-pub const BezierLeaf = struct {
-    hull_x: [9]F,
-    hull_y: [9]F,
-    edge_slack: [9]F,
-    prepared_edges: [9]HullEdge,
-    bbox: [4]F,
-    parameter_seed: [2]F,
-    vertex_count: u8,
+pub const BezierLeafPreCalc = struct {
+    poly: HullPolyPreCalc = .{},
+    bbox: [4]F = undefined,
+    parameter_seed: [2]F = undefined,
+};
+
+pub const BezierLeafOnTheFly = struct {
+    poly: HullPolyOnTheFly = .{},
+    bbox: [4]F = undefined,
+    parameter_seed: [2]F = undefined,
 };
 
 const BezierPatchRegion = struct {
@@ -421,17 +435,15 @@ fn fixedChildRegion(
     };
 }
 
-fn prepareBezierLeaf(
+fn projectChildPoints(
     comptime N: usize,
-    comptime prepare_edges: PrepareEdgesFn,
     camera: *const cam.CameraPrepared,
-    coords: frontend.GatheredElemCoords(N),
+    coords: frontend.ElemCoords(N),
     region: BezierPatchRegion,
-    edge_fun_mode: rastcfg.EdgeFunMode,
-) BezierLeaf {
+) Points {
     const parents = comptime geomkerns.parentNodeCoords(N);
 
-    var child: frontend.GatheredElemCoords(N) = undefined;
+    var child: frontend.ElemCoords(N) = undefined;
 
     for (parents, 0..) |node_uv, ii| {
         const uv = mapPointToParentRegion(region, node_uv);
@@ -451,92 +463,156 @@ fn prepareBezierLeaf(
         }
     }
 
-    const projected = buildPointsFromClip(N, camera, child);
+    return buildPointsFromClip(N, camera, child);
+}
 
-    var leaf = BezierLeaf{
-        .hull_x = projected.x,
-        .hull_y = projected.y,
-        .edge_slack = undefined,
-        .prepared_edges = undefined,
-        .bbox = .{
-            std.math.inf(F),
-            -std.math.inf(F),
-            std.math.inf(F),
-            -std.math.inf(F),
-        },
+fn calcChildBBox(
+    points: *const Points,
+    tol_edge: []const F,
+) [4]F {
+    var bbox: [4]F = .{
+        std.math.inf(F),
+        -std.math.inf(F),
+        std.math.inf(F),
+        -std.math.inf(F),
+    };
+    var max_tol_edge: F = 0;
+    for (0..points.count) |ii| {
+        bbox[0] = @min(bbox[0], points.x[ii]);
+        bbox[1] = @max(bbox[1], points.x[ii]);
+        bbox[2] = @min(bbox[2], points.y[ii]);
+        bbox[3] = @max(bbox[3], points.y[ii]);
+        max_tol_edge = @max(max_tol_edge, tol_edge[ii]);
+    }
+    bbox[0] -= max_tol_edge;
+    bbox[1] += max_tol_edge;
+    bbox[2] -= max_tol_edge;
+    bbox[3] += max_tol_edge;
+    return bbox;
+}
+
+fn prepareBezierLeafPreCalc(
+    comptime N: usize,
+    comptime prepare_edges: PrepareEdgesFn,
+    camera: *const cam.CameraPrepared,
+    coords: frontend.ElemCoords(N),
+    region: BezierPatchRegion,
+) BezierLeafPreCalc {
+    const projected = projectChildPoints(N, camera, coords, region);
+    var tol_edge: [9]F = undefined;
+    calcEdgeTol(
+        projected.x[0..projected.count],
+        projected.y[0..projected.count],
+        tol_edge[0..projected.count],
+    );
+
+    var leaf = BezierLeafPreCalc{
+        .poly = .{ .count = projected.count },
+        .bbox = calcChildBBox(&projected, tol_edge[0..projected.count]),
         .parameter_seed = mapPointToParentRegion(
             region,
             if (N == 6) .{ 1.0 / 3.0, 1.0 / 3.0 } else .{ 0, 0 },
         ),
-        .vertex_count = projected.count,
     };
 
-    prepareEdgeSlack(
-        leaf.hull_x[0..leaf.vertex_count],
-        leaf.hull_y[0..leaf.vertex_count],
-        leaf.edge_slack[0..leaf.vertex_count],
+    prepare_edges(
+        projected.x[0..projected.count],
+        projected.y[0..projected.count],
+        leaf.poly.edges[0..projected.count],
     );
-
-    if (edge_fun_mode == .pre_calc) {
-        prepare_edges(
-            leaf.hull_x[0..leaf.vertex_count],
-            leaf.hull_y[0..leaf.vertex_count],
-            leaf.prepared_edges[0..leaf.vertex_count],
-        );
-    }
-
-    var max_slack: F = 0;
-    for (0..leaf.vertex_count) |ii| {
-        leaf.bbox[0] = @min(leaf.bbox[0], leaf.hull_x[ii]);
-        leaf.bbox[1] = @max(leaf.bbox[1], leaf.hull_x[ii]);
-        leaf.bbox[2] = @min(leaf.bbox[2], leaf.hull_y[ii]);
-        leaf.bbox[3] = @max(leaf.bbox[3], leaf.hull_y[ii]);
-        max_slack = @max(max_slack, leaf.edge_slack[ii]);
-    }
-
-    leaf.bbox[0] -= max_slack;
-    leaf.bbox[1] += max_slack;
-    leaf.bbox[2] -= max_slack;
-    leaf.bbox[3] += max_slack;
 
     return leaf;
 }
 
-pub fn prepareFourBezierLeaves(
+fn prepareBezierLeafOnTheFly(
+    comptime N: usize,
+    camera: *const cam.CameraPrepared,
+    coords: frontend.ElemCoords(N),
+    region: BezierPatchRegion,
+) BezierLeafOnTheFly {
+    const projected = projectChildPoints(N, camera, coords, region);
+    var leaf = BezierLeafOnTheFly{
+        .poly = .{ .count = projected.count },
+        .parameter_seed = mapPointToParentRegion(
+            region,
+            if (N == 6) .{ 1.0 / 3.0, 1.0 / 3.0 } else .{ 0, 0 },
+        ),
+    };
+
+    @memcpy(leaf.poly.x[0..projected.count], projected.x[0..projected.count]);
+    @memcpy(leaf.poly.y[0..projected.count], projected.y[0..projected.count]);
+    calcEdgeTol(
+        projected.x[0..projected.count],
+        projected.y[0..projected.count],
+        leaf.poly.tol_edge[0..projected.count],
+    );
+    leaf.bbox = calcChildBBox(&projected, leaf.poly.tol_edge[0..projected.count]);
+
+    return leaf;
+}
+
+pub fn prepareFourBezierLeavesPreCalc(
     comptime N: usize,
     comptime prepare_edges: PrepareEdgesFn,
     camera: *const cam.CameraPrepared,
-    coords: frontend.GatheredElemCoords(N),
-    output: *[4]BezierLeaf,
-    edge_fun_mode: rastcfg.EdgeFunMode,
+    coords: frontend.ElemCoords(N),
+    output: *[4]BezierLeafPreCalc,
 ) void {
     inline for (0..4) |ii| {
         const region = fixedChildRegion(N, ii);
-        output[ii] = prepareBezierLeaf(
+        output[ii] = prepareBezierLeafPreCalc(
             N,
             prepare_edges,
             camera,
             coords,
             region,
-            edge_fun_mode,
         );
     }
 }
 
-pub fn prepareFourBezierLeavesScalar(
+pub fn prepareFourBezierLeavesOnTheFly(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
-    coords: frontend.GatheredElemCoords(N),
-    output: *[4]BezierLeaf,
-    edge_fun_mode: rastcfg.EdgeFunMode,
+    coords: frontend.ElemCoords(N),
+    output: *[4]BezierLeafOnTheFly,
 ) void {
-    prepareFourBezierLeaves(
+    inline for (0..4) |ii| {
+        const region = fixedChildRegion(N, ii);
+        output[ii] = prepareBezierLeafOnTheFly(
+            N,
+            camera,
+            coords,
+            region,
+        );
+    }
+}
+
+pub fn prepareFourBezierLeavesPreCalcScalar(
+    comptime N: usize,
+    camera: *const cam.CameraPrepared,
+    coords: frontend.ElemCoords(N),
+    output: *[4]BezierLeafPreCalc,
+) void {
+    prepareFourBezierLeavesPreCalc(
         N,
         prepareEdgesScalar,
         camera,
         coords,
         output,
-        edge_fun_mode,
+    );
+}
+
+pub fn prepareFourBezierLeavesOnTheFlyScalar(
+    comptime N: usize,
+    camera: *const cam.CameraPrepared,
+    coords: frontend.ElemCoords(N),
+    output: *[4]BezierLeafOnTheFly,
+) void {
+    prepareFourBezierLeavesOnTheFly(
+        N,
+        camera,
+        coords,
+        output,
     );
 }
 
@@ -550,7 +626,7 @@ test "quad control net matches the tensor transform" {
         .{ 1, 0, 0 }, .{ -0.5, 2, -0.5 }, .{ 0, 0, 1 },
     };
     inline for (.{ 8, 9 }) |N| {
-        var coords: frontend.GatheredElemCoords(N) = undefined;
+        var coords: frontend.ElemCoords(N) = undefined;
         for (0..N) |ii| {
             const v: F = @floatFromInt(ii);
             coords.x[ii] = v * v - 3 * v + 7;
@@ -558,7 +634,7 @@ test "quad control net matches the tensor transform" {
             coords.z[ii] = 1 + 0.125 * v;
         }
         const actual = controlNet(N, coords);
-        var nodes: frontend.GatheredElemCoords(9) = undefined;
+        var nodes: frontend.ElemCoords(9) = undefined;
         for (0..N) |ii| {
             nodes.x[ii] = coords.x[ii];
             nodes.y[ii] = coords.y[ii];

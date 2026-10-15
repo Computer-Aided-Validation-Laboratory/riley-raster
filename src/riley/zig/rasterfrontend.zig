@@ -447,7 +447,7 @@ pub fn calcVisibleNodeBBoxHighOrdWithHalo(
 //------------------------------------------------------------------------------------------
 // Elem Data Gathering
 //------------------------------------------------------------------------------------------
-pub fn GatheredElemCoords(comptime N: usize) type {
+pub fn ElemCoords(comptime N: usize) type {
     return struct {
         x: [N]F,
         y: [N]F,
@@ -460,8 +460,8 @@ pub fn gatherElemNodeCoords(
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     elem_idx: usize,
-) GatheredElemCoords(N) {
-    var coords_elem: GatheredElemCoords(N) = undefined;
+) ElemCoords(N) {
+    var coords_elem: ElemCoords(N) = undefined;
     const coord_inds = connect.getElem(elem_idx);
 
     for (0..N) |nn| {
@@ -519,7 +519,7 @@ pub fn prepareVisibleAdaptiveHullsRange(
 
     for (visible_start..visible_end) |pp| {
         if (root_classes[pp] == .multi_root) continue;
-        var coords_elem: GatheredElemCoords(N) = undefined;
+        var coords_elem: ElemCoords(N) = undefined;
         const sx = elem_coords.getSlice(&[_]usize{ pp, 0, 0 }, 1);
         const sy = elem_coords.getSlice(&[_]usize{ pp, 1, 0 }, 1);
         const sz = elem_coords.getSlice(&[_]usize{ pp, 2, 0 }, 1);
@@ -583,7 +583,7 @@ fn transformWorldNodeToClipPx(
 
 fn isElemBehindCamera(
     comptime N: usize,
-    coords_elem: GatheredElemCoords(N),
+    coords_elem: ElemCoords(N),
 ) bool {
     var behind_camera = true;
     for (0..N) |nn| {
@@ -597,7 +597,7 @@ fn isElemBehindCamera(
 
 fn isNodeZInvertible(
     comptime N: usize,
-    coords_elem: GatheredElemCoords(N),
+    coords_elem: ElemCoords(N),
 ) bool {
     for (0..N) |nn| {
         if (coords_elem.z[nn] <= tol.culling.projective_z_min) {
@@ -607,7 +607,7 @@ fn isNodeZInvertible(
     return true;
 }
 
-fn isTri3Backface(coords_elem: GatheredElemCoords(3)) bool {
+fn isTri3Backface(coords_elem: ElemCoords(3)) bool {
     const signed_area = edgeops.edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
     return signed_area <= tol.culling.tri3_signed_area;
 }
@@ -771,7 +771,7 @@ fn isOnScreen(
 fn projectClipToIdealRaster(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
-    coords_clip: GatheredElemCoords(N),
+    coords_clip: ElemCoords(N),
 ) RasterCoords2D(N) {
     const offsets = camera.calcRasterOffsets();
     var coords_ideal: RasterCoords2D(N) = undefined;
@@ -1510,7 +1510,7 @@ test "high_order_distorted_hull_shift" {
     var camera = initTestCullCameraManual(.{
         .brown_con = .{},
     });
-    const coords_clip = GatheredElemCoords(6){
+    const coords_clip = ElemCoords(6){
         .x = .{ 5.5, 6.5, 7.0, 6.0, 6.8, 6.2 },
         .y = .{ 4.0, 5.0, 4.0, 4.6, 4.6, 4.0 },
         .z = .{ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 },

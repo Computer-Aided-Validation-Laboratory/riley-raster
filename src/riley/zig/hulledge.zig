@@ -15,7 +15,7 @@ pub const HullEdge = struct {
     b: F,
     c: F,
 
-    pub fn init(x0: F, y0: F, x1: F, y1: F, slack: F) @This() {
+    pub fn init(x0: F, y0: F, x1: F, y1: F, tol_edge: F) @This() {
         const dx = x1 - x0;
         const dy = y1 - y0;
         const left = x1 * y0;
@@ -27,7 +27,7 @@ pub const HullEdge = struct {
         return .{
             .a = dy,
             .b = -dx,
-            .c = left - right + slack + rounding,
+            .c = left - right + tol_edge + rounding,
         };
     }
 

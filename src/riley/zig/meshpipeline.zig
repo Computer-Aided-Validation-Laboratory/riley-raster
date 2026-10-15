@@ -72,7 +72,8 @@ pub const MultiRootPrepared = struct {
     indices: matslice.MatSlice(u8),
     valid_depth: vecslice.VecSlice(u8),
     slot_by_visible_elem: vecslice.VecSlice(u32),
-    leaves: []HullMultiRoot.BezierLeaf = &.{},
+    leaves_pre_calc: []HullMultiRoot.BezierLeafPreCalc = &.{},
+    leaves_on_the_fly: []HullMultiRoot.BezierLeafOnTheFly = &.{},
 };
 
 pub const MeshRootInputs = struct {
@@ -1279,7 +1280,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 const slot = stage.prepared.slot_by_visible_elem.get(pp);
                 if (slot == std.math.maxInt(u32)) continue;
 
-                var coords: frontend.GatheredElemCoords(N) = undefined;
+                var coords: frontend.ElemCoords(N) = undefined;
                 const xs = stage.elem_coords.getSlice(&.{ pp, 0, 0 }, 1);
                 const ys = stage.elem_coords.getSlice(&.{ pp, 1, 0 }, 1);
                 const zs = stage.elem_coords.getSlice(&.{ pp, 2, 0 }, 1);
@@ -1319,14 +1320,27 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 }
 
                 const leaf_offset = @as(usize, slot) * 4;
-                const leaf_slice = stage.prepared.leaves[leaf_offset .. leaf_offset + 4];
-                HullMultiRoot.prepareFourBezierLeaves(
-                    N,
-                    stage.camera,
-                    coords,
-                    leaf_slice[0..4],
-                    stage.edge_fun_mode,
-                );
+                if (stage.edge_fun_mode == .pre_calc) {
+                    const leaf_slice = stage.prepared.leaves_pre_calc[
+                        leaf_offset .. leaf_offset + 4
+                    ];
+                    HullMultiRoot.prepareFourBezierLeavesPreCalc(
+                        N,
+                        stage.camera,
+                        coords,
+                        leaf_slice[0..4],
+                    );
+                } else {
+                    const leaf_slice = stage.prepared.leaves_on_the_fly[
+                        leaf_offset .. leaf_offset + 4
+                    ];
+                    HullMultiRoot.prepareFourBezierLeavesOnTheFly(
+                        N,
+                        stage.camera,
+                        coords,
+                        leaf_slice[0..4],
+                    );
+                }
 
                 for (N..geomkerns.multiRootSeedCount(N)) |seed_idx| {
                     const seed_uv = geomkerns.multiRootSeedCoords(
@@ -1456,11 +1470,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 next_slot += 1;
             }
 
-            const leaves = try outer_alloc.alloc(
-                HullMultiRoot.BezierLeaf,
-                multi_count * 4,
-            );
-
             self.mesh_workspace.hull_multiroot = .{
                 .hull_x = try matslice.MatSlice(F).initAlloc(outer_alloc, multi_count, 9),
                 .hull_y = try matslice.MatSlice(F).initAlloc(outer_alloc, multi_count, 9),
@@ -1483,7 +1492,20 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     try outer_alloc.alloc(u8, multi_count),
                 ),
                 .slot_by_visible_elem = vecslice.VecSlice(u32).init(slot_mem),
-                .leaves = leaves,
+                .leaves_pre_calc = if (self.multiroot_edge_fun_mode == .pre_calc)
+                    try outer_alloc.alloc(
+                        HullMultiRoot.BezierLeafPreCalc,
+                        multi_count * 4,
+                    )
+                else
+                    &.{},
+                .leaves_on_the_fly = if (self.multiroot_edge_fun_mode == .on_the_fly)
+                    try outer_alloc.alloc(
+                        HullMultiRoot.BezierLeafOnTheFly,
+                        multi_count * 4,
+                    )
+                else
+                    &.{},
             };
 
             var stage = PrepareMultiRootElemsStage{

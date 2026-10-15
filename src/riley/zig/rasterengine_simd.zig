@@ -734,12 +734,19 @@ fn rasterNewtonMultiSIMDImpl(
     const hx = prepared.hull_x.getSlice(slot)[0..hull_count];
     const hy = prepared.hull_y.getSlice(slot)[0..hull_count];
     const edge_fun_mode = ctx_rast.config.advanced.solver.multiroot.edge_fun_mode;
-    var edge_slack: [9]F = undefined;
+    var tol_edge: [9]F = undefined;
     if (edge_fun_mode == .on_the_fly)
-        HullMultiRoot.prepareEdgeSlack(hx, hy, edge_slack[0..hull_count]);
+        HullMultiRoot.calcEdgeTol(hx, hy, tol_edge[0..hull_count]);
 
     const leaf_start: usize = slot * 4;
-    const leaves = prepared.leaves[leaf_start .. leaf_start + 4];
+    const leaves_pre_calc = if (edge_fun_mode == .pre_calc)
+        prepared.leaves_pre_calc[leaf_start .. leaf_start + 4]
+    else
+        &.{};
+    const leaves_on_the_fly = if (edge_fun_mode == .on_the_fly)
+        prepared.leaves_on_the_fly[leaf_start .. leaf_start + 4]
+    else
+        &.{};
 
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
@@ -785,23 +792,36 @@ fn rasterNewtonMultiSIMDImpl(
             const valid = @as(VecSU, @splat(scratch_x)) + v_lane_idx < v_end_x;
             const v_px = simdops.loadVecSF(ideal_x_plane, idx);
             const v_py = simdops.loadVecSF(ideal_y_plane, idx);
-            const outer_mask = HullMultiRoot.containsSIMD(
-                hx,
-                hy,
-                outer_edges,
-                edge_slack[0..hull_count],
-                v_px,
-                v_py,
-                valid,
-                edge_fun_mode,
-            );
-            const child_masks = HullMultiRoot.childMaskSIMD(
-                leaves,
-                v_px,
-                v_py,
-                outer_mask,
-                edge_fun_mode,
-            );
+            const outer_mask = if (edge_fun_mode == .pre_calc)
+                HullMultiRoot.containsPreCalcSIMD(
+                    outer_edges,
+                    v_px,
+                    v_py,
+                    valid,
+                )
+            else
+                HullMultiRoot.containsOnTheFlySIMD(
+                    hx,
+                    hy,
+                    tol_edge[0..hull_count],
+                    v_px,
+                    v_py,
+                    valid,
+                );
+            const child_masks = if (edge_fun_mode == .pre_calc)
+                HullMultiRoot.childMaskPreCalcSIMD(
+                    leaves_pre_calc,
+                    v_px,
+                    v_py,
+                    outer_mask,
+                )
+            else
+                HullMultiRoot.childMaskOnTheFlySIMD(
+                    leaves_on_the_fly,
+                    v_px,
+                    v_py,
+                    outer_mask,
+                );
             const valid_arr: [S]bool = valid;
             const outer_arr: [S]bool = outer_mask;
             for (0..S) |lane| {
@@ -819,8 +839,12 @@ fn rasterNewtonMultiSIMDImpl(
         }
     }
 
-    for (leaves, 0..) |leaf, leaf_idx| {
+    for (0..4) |leaf_idx| {
         const bit = @as(u8, 1) << @as(u3, @intCast(leaf_idx));
+        const seed = if (edge_fun_mode == .pre_calc)
+            leaves_pre_calc[leaf_idx].parameter_seed
+        else
+            leaves_on_the_fly[leaf_idx].parameter_seed;
         for (subpx_scratch.multi_root_candidate_indices[0..candidates_count]) |idx_u32| {
             const idx: usize = idx_u32;
             if ((subpx_scratch.multi_root_child_masks[idx] & bit) == 0) {
@@ -831,8 +855,8 @@ fn rasterNewtonMultiSIMDImpl(
             chunk.scratch_y_u[ll] = idx / subpx_dom.tile_size;
             chunk.px_f[ll] = ideal_x_plane[idx];
             chunk.py_f[ll] = ideal_y_plane[idx];
-            chunk.seed_xi[ll] = leaf.parameter_seed[0];
-            chunk.seed_eta[ll] = leaf.parameter_seed[1];
+            chunk.seed_xi[ll] = seed[0];
+            chunk.seed_eta[ll] = seed[1];
             chunk.count += 1;
             if (chunk.count == S) flushMultiRootChunk(
                 ScratchBuffs,
