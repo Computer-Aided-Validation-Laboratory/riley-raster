@@ -285,7 +285,12 @@ fn solveMultirootPoint(
     var best_inv_z: F = -std.math.inf(F);
     var had_candidate_child = false;
 
-    const child_mask = HullMultiRoot.childMask(&leaves, px, py, .on_the_fly);
+    const child_mask = HullMultiRoot.childMaskScalar(
+        &leaves,
+        px,
+        py,
+        .on_the_fly,
+    );
     for (&leaves, 0..) |*leaf, leaf_idx| {
         if ((child_mask & (@as(u8, 1) << @as(u3, @intCast(leaf_idx)))) == 0) continue;
         had_candidate_child = true;
@@ -1257,20 +1262,22 @@ fn checkPreparedHullEdges(camera: *const cam.CameraPrepared) !void {
     var edges: [4]HullMultiRoot.HullEdge = undefined;
     HullMultiRoot.prepareEdgeSlack(&x, &y, &slack);
     HullMultiRoot.prepareEdges(&x, &y, &edges);
-    for (0..100) |yy| for (0..100) |xx| {
-        const px: F = @as(F, @floatFromInt(xx)) + 0.5;
-        const py: F = @as(F, @floatFromInt(yy)) + 0.5;
-        try std.testing.expectEqual(
-            HullMultiRoot.containsPrepared(&x, &y, &slack, px, py),
-            HullMultiRoot.containsEdges(&edges, px, py),
-        );
-    };
+    for (0..100) |yy| {
+        for (0..100) |xx| {
+            const px: F = @as(F, @floatFromInt(xx)) + 0.5;
+            const py: F = @as(F, @floatFromInt(yy)) + 0.5;
+            try std.testing.expectEqual(
+                HullMultiRoot.containsOnTheFly(&x, &y, &slack, px, py),
+                HullMultiRoot.containsPreCalc(&edges, px, py),
+            );
+        }
+    }
     for ([_]F{ -1.0e-7, 0, 1.0e-7, 0.5, 75.999999 }) |offset| {
         const px = 4 + offset;
         const py: F = 40;
         try std.testing.expectEqual(
-            HullMultiRoot.containsPrepared(&x, &y, &slack, px, py),
-            HullMultiRoot.containsEdges(&edges, px, py),
+            HullMultiRoot.containsOnTheFly(&x, &y, &slack, px, py),
+            HullMultiRoot.containsPreCalc(&edges, px, py),
         );
     }
 
@@ -1283,14 +1290,14 @@ fn checkPreparedHullEdges(camera: *const cam.CameraPrepared) !void {
     for ([_]F{ 0, 0.25, 0.5, 0.75, 1 }) |fraction| {
         const px = 1e6 + fraction * 1e-3;
         const py: F = 1e6 + 5;
-        const old = HullMultiRoot.containsPrepared(
+        const old = HullMultiRoot.containsOnTheFly(
             &large_x,
             &large_y,
             &large_slack,
             px,
             py,
         );
-        if (old) try std.testing.expect(HullMultiRoot.containsEdges(
+        if (old) try std.testing.expect(HullMultiRoot.containsPreCalc(
             &large_edges,
             px,
             py,
@@ -1330,7 +1337,7 @@ fn checkParentOnlyHierarchyMisses(camera: *const cam.CameraPrepared) !void {
         for (0..100) |xx| {
             const px: F = @as(F, @floatFromInt(xx)) + 0.5;
             if (!parent_hull.contains(px, py)) continue;
-            if (HullMultiRoot.childMask(&leaves, px, py, .on_the_fly) == 0)
+            if (HullMultiRoot.childMaskScalar(&leaves, px, py, .on_the_fly) == 0)
                 rejected_misses += 1;
         }
     }

@@ -1005,7 +1005,7 @@ fn rasterNewtonMultiImpl(
                 prepared.hull_edges[slot][0..hull_count]
             else
                 &.{};
-            const has_hit = HullMultiRoot.containsOuter(
+            const has_hit = HullMultiRoot.containsScalar(
                 hx,
                 hy,
                 edges,
@@ -1032,7 +1032,12 @@ fn rasterNewtonMultiImpl(
             var best_eta: F = 0;
             var had_candidate_child = false;
 
-            const child_mask = HullMultiRoot.childMask(leaves, ideal_x, ideal_y, edge_fun_mode);
+            const child_mask = HullMultiRoot.childMaskScalar(
+                leaves,
+                ideal_x,
+                ideal_y,
+                edge_fun_mode,
+            );
             for (leaves, 0..) |leaf, leaf_idx| {
                 if ((child_mask & (@as(u8, 1) << @as(u3, @intCast(leaf_idx)))) == 0) continue;
                 had_candidate_child = true;

@@ -785,7 +785,7 @@ fn rasterNewtonMultiSIMDImpl(
             const valid = @as(VecSU, @splat(scratch_x)) + v_lane_idx < v_end_x;
             const v_px = simdops.loadVecSF(ideal_x_plane, idx);
             const v_py = simdops.loadVecSF(ideal_y_plane, idx);
-            const outer_mask = HullMultiRoot.containsOuterSIMD(
+            const outer_mask = HullMultiRoot.containsSIMD(
                 hx,
                 hy,
                 outer_edges,
@@ -795,7 +795,7 @@ fn rasterNewtonMultiSIMDImpl(
                 valid,
                 edge_fun_mode,
             );
-            const child_masks = HullMultiRoot.childMasksSIMD(
+            const child_masks = HullMultiRoot.childMaskSIMD(
                 leaves,
                 v_px,
                 v_py,

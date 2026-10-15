@@ -21,7 +21,7 @@ const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const S = cfg.simd_vec_width;
 
-pub fn prepareEdges(x: []const F, y: []const F, edges: []HullEdge) void {
+pub fn prepareEdgesSIMD(x: []const F, y: []const F, edges: []HullEdge) void {
     std.debug.assert(x.len == y.len and x.len == edges.len);
 
     var start: usize = 0;
@@ -72,43 +72,7 @@ pub fn prepareEdges(x: []const F, y: []const F, edges: []HullEdge) void {
     }
 }
 
-pub fn containsOuter(
-    x: []const F,
-    y: []const F,
-    edges: []const HullEdge,
-    slack: []const F,
-    px: F,
-    py: F,
-    mode: EdgeFunMode,
-) bool {
-    return if (mode == .pre_calc)
-        hullcommon.containsEdges(edges, px, py)
-    else
-        hullcommon.containsPrepared(x, y, slack, px, py);
-}
-
-pub fn childMask(leaves: anytype, px: F, py: F, mode: EdgeFunMode) u8 {
-    var mask: u8 = 0;
-
-    for (leaves, 0..) |*leaf, ii| {
-        if (px < leaf.bbox[0] or px > leaf.bbox[1] or
-            py < leaf.bbox[2] or py > leaf.bbox[3]) continue;
-        const count = leaf.vertex_count;
-
-        if (containsOuter(
-            leaf.hull_x[0..count],
-            leaf.hull_y[0..count],
-            leaf.prepared_edges[0..count],
-            leaf.edge_slack[0..count],
-            px,
-            py,
-            mode,
-        )) mask |= @as(u8, 1) << @as(u3, @intCast(ii));
-    }
-    return mask;
-}
-
-pub fn containsOuterSIMD(
+pub fn containsSIMD(
     x: []const F,
     y: []const F,
     edges: []const HullEdge,
@@ -145,8 +109,8 @@ pub fn containsOuterSIMD(
     return inside;
 }
 
-pub fn childMasksSIMD(
-    leaves: anytype,
+pub fn childMaskSIMD(
+    leaves: []const hullcommon.BezierLeaf,
     v_px: VecSF,
     v_py: VecSF,
     outer_mask: VecSB,
@@ -158,11 +122,13 @@ pub fn childMasksSIMD(
         const max_x: VecSF = @splat(leaf.bbox[1]);
         const min_y: VecSF = @splat(leaf.bbox[2]);
         const max_y: VecSF = @splat(leaf.bbox[3]);
+
         const bbox_mask = outer_mask & (v_px >= min_x) & (v_px <= max_x) &
             (v_py >= min_y) & (v_py <= max_y);
         if (!@reduce(.Or, bbox_mask)) continue;
+
         const count = leaf.vertex_count;
-        const hit = containsOuterSIMD(
+        const hit = containsSIMD(
             leaf.hull_x[0..count],
             leaf.hull_y[0..count],
             leaf.prepared_edges[0..count],
@@ -172,11 +138,31 @@ pub fn childMasksSIMD(
             bbox_mask,
             mode,
         );
+
         const bit: @Vector(S, u8) = @splat(@as(u8, 1) << @as(u3, @intCast(ii)));
         masks |= @select(u8, hit, bit, @as(@Vector(S, u8), @splat(0)));
     }
     return masks;
 }
+
+
+pub fn prepareFourBezierLeavesSIMD(
+    comptime N: usize,
+    camera: *const cam.CameraPrepared,
+    coords: frontend.GatheredElemCoords(N),
+    output: *[4]hullcommon.BezierLeaf,
+    edge_fun_mode: EdgeFunMode,
+) void {
+    hullcommon.prepareFourBezierLeaves(
+        N,
+        prepareEdgesSIMD,
+        camera,
+        coords,
+        output,
+        edge_fun_mode,
+    );
+}
+
 
 test "multi-root SIMD edge preparation and containment match scalar" {
     inline for (.{ 4, 6, 9 }) |count| {
@@ -191,13 +177,25 @@ test "multi-root SIMD edge preparation and containment match scalar" {
         var vector_edges: [count]HullEdge = undefined;
         var scalar_edges: [count]HullEdge = undefined;
         var slack: [count]F = undefined;
-        prepareEdges(&x, &y, &vector_edges);
-        hullcommon.prepareEdges(&x, &y, &scalar_edges);
+        prepareEdgesSIMD(&x, &y, &vector_edges);
+        hullcommon.prepareEdgesScalar(&x, &y, &scalar_edges);
         hullcommon.prepareEdgeSlack(&x, &y, &slack);
         for (0..count) |ii| {
-            try std.testing.expectApproxEqRel(scalar_edges[ii].a, vector_edges[ii].a, 16 * std.math.floatEps(F));
-            try std.testing.expectApproxEqRel(scalar_edges[ii].b, vector_edges[ii].b, 16 * std.math.floatEps(F));
-            try std.testing.expectApproxEqAbs(scalar_edges[ii].c, vector_edges[ii].c, 128 * std.math.floatEps(F));
+            try std.testing.expectApproxEqRel(
+                scalar_edges[ii].a,
+                vector_edges[ii].a,
+                16 * std.math.floatEps(F),
+            );
+            try std.testing.expectApproxEqRel(
+                scalar_edges[ii].b,
+                vector_edges[ii].b,
+                16 * std.math.floatEps(F),
+            );
+            try std.testing.expectApproxEqAbs(
+                scalar_edges[ii].c,
+                vector_edges[ii].c,
+                128 * std.math.floatEps(F),
+            );
         }
         var px: [S]F = undefined;
         var py: [S]F = undefined;
@@ -211,7 +209,7 @@ test "multi-root SIMD edge preparation and containment match scalar" {
         const v_py: VecSF = py;
         const v_valid: VecSB = valid;
         inline for (.{ .on_the_fly, .pre_calc }) |mode| {
-            const hits: [S]bool = containsOuterSIMD(
+            const hits: [S]bool = containsSIMD(
                 &x,
                 &y,
                 &vector_edges,
@@ -223,9 +221,9 @@ test "multi-root SIMD edge preparation and containment match scalar" {
             );
             for (0..S) |lane| {
                 const expected = valid[lane] and (if (mode == .pre_calc)
-                    hullcommon.containsEdges(&scalar_edges, px[lane], py[lane])
+                    hullcommon.containsPreCalc(&scalar_edges, px[lane], py[lane])
                 else
-                    hullcommon.containsPrepared(&x, &y, &slack, px[lane], py[lane]));
+                    hullcommon.containsOnTheFly(&x, &y, &slack, px[lane], py[lane]));
                 try std.testing.expectEqual(expected, hits[lane]);
             }
         }
@@ -249,7 +247,7 @@ test "multi-root SIMD child masks match scalar with inactive lanes" {
             .vertex_count = 4,
         };
         hullcommon.prepareEdgeSlack(&x, &y, leaf.edge_slack[0..4]);
-        prepareEdges(&x, &y, leaf.prepared_edges[0..4]);
+        prepareEdgesSIMD(&x, &y, leaf.prepared_edges[0..4]);
     }
     var px: [S]F = undefined;
     var py: [S]F = undefined;
@@ -263,10 +261,10 @@ test "multi-root SIMD child masks match scalar with inactive lanes" {
     const v_py: VecSF = py;
     const v_valid: VecSB = valid;
     inline for (.{ .on_the_fly, .pre_calc }) |mode| {
-        const masks = childMasksSIMD(&leaves, v_px, v_py, v_valid, mode);
+        const masks = childMaskSIMD(&leaves, v_px, v_py, v_valid, mode);
         for (0..S) |lane| {
             const expected: u8 = if (valid[lane])
-                childMask(&leaves, px[lane], py[lane], mode)
+                hullcommon.childMaskScalar(&leaves, px[lane], py[lane], mode)
             else
                 0;
             try std.testing.expectEqual(expected, masks[lane]);
@@ -274,19 +272,3 @@ test "multi-root SIMD child masks match scalar with inactive lanes" {
     }
 }
 
-pub fn prepareFourBezierLeaves(
-    comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    coords: frontend.GatheredElemCoords(N),
-    output: *[4]hullcommon.BezierLeaf,
-    edge_fun_mode: EdgeFunMode,
-) void {
-    hullcommon.prepareFourBezierLeaves(
-        N,
-        camera,
-        coords,
-        output,
-        edge_fun_mode,
-        prepareEdges,
-    );
-}

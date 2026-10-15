@@ -27,10 +27,18 @@ pub const Points = struct {
     y: [9]F = undefined,
     count: u8 = 0,
 
-    pub fn contains(self: *const @This(), px: F, py: F) bool {
-        return containsPolygon(
+    pub fn contains(self: *const Points, px: F, py: F) bool {
+        if (self.count < 3) return false;
+        var edge_slack: [9]F = undefined;
+        prepareEdgeSlack(
             self.x[0..self.count],
             self.y[0..self.count],
+            edge_slack[0..self.count],
+        );
+        return containsOnTheFly(
+            self.x[0..self.count],
+            self.y[0..self.count],
+            edge_slack[0..self.count],
             px,
             py,
         );
@@ -102,13 +110,6 @@ pub fn buildPointsFromClip(
     return if (bounds.intersect(sensor)) |clipped| rectHull(clipped) else .{};
 }
 
-pub fn containsPolygon(x: []const F, y: []const F, px: F, py: F) bool {
-    if (x.len < 3) return false;
-    var edge_slack: [9]F = undefined;
-    prepareEdgeSlack(x, y, edge_slack[0..x.len]);
-    return containsPrepared(x, y, edge_slack[0..x.len], px, py);
-}
-
 pub fn prepareEdgeSlack(x: []const F, y: []const F, slack: []F) void {
     for (0..x.len) |ii| {
         const jj = (ii + 1) % x.len;
@@ -118,7 +119,13 @@ pub fn prepareEdgeSlack(x: []const F, y: []const F, slack: []F) void {
     }
 }
 
-pub fn prepareEdges(x: []const F, y: []const F, edges: []HullEdge) void {
+pub const PrepareEdgesFn = *const fn (
+    x: []const F,
+    y: []const F,
+    edges: []HullEdge,
+) void;
+
+pub fn prepareEdgesScalar(x: []const F, y: []const F, edges: []HullEdge) void {
     std.debug.assert(x.len == y.len and x.len == edges.len);
     for (0..x.len) |ii| {
         const jj = (ii + 1) % x.len;
@@ -134,7 +141,7 @@ pub fn prepareEdges(x: []const F, y: []const F, edges: []HullEdge) void {
     }
 }
 
-pub fn containsEdges(edges: []const HullEdge, px: F, py: F) bool {
+pub fn containsPreCalc(edges: []const HullEdge, px: F, py: F) bool {
     if (edges.len < 3) return false;
     for (edges) |edge| {
         if (edge.eval(px, py) < 0) return false;
@@ -142,7 +149,7 @@ pub fn containsEdges(edges: []const HullEdge, px: F, py: F) bool {
     return true;
 }
 
-pub fn containsPrepared(
+pub fn containsOnTheFly(
     x: []const F,
     y: []const F,
     slack: []const F,
@@ -167,6 +174,46 @@ pub fn containsPrepared(
     return true;
 }
 
+pub fn containsScalar(
+    x: []const F,
+    y: []const F,
+    edges: []const HullEdge,
+    slack: []const F,
+    px: F,
+    py: F,
+    mode: rastcfg.EdgeFunMode,
+) bool {
+    return if (mode == .pre_calc)
+        containsPreCalc(edges, px, py)
+    else
+        containsOnTheFly(x, y, slack, px, py);
+}
+
+pub fn childMaskScalar(
+    leaves: []const BezierLeaf,
+    px: F,
+    py: F,
+    mode: rastcfg.EdgeFunMode,
+) u8 {
+    var mask: u8 = 0;
+    for (leaves, 0..) |*leaf, ii| {
+        if (px < leaf.bbox[0] or px > leaf.bbox[1] or
+            py < leaf.bbox[2] or py > leaf.bbox[3]) continue;
+        const count = leaf.vertex_count;
+
+        if (containsScalar(
+            leaf.hull_x[0..count],
+            leaf.hull_y[0..count],
+            leaf.prepared_edges[0..count],
+            leaf.edge_slack[0..count],
+            px,
+            py,
+            mode,
+        )) mask |= @as(u8, 1) << @as(u3, @intCast(ii));
+    }
+    return mask;
+}
+
 fn fromPoints(points_in: []const Vec2F) Points {
     var points: [9]Vec2F = undefined;
     @memcpy(points[0..points_in.len], points_in);
@@ -184,6 +231,7 @@ fn fromPoints(points_in: []const Vec2F) Points {
         count += 1;
     }
     const lower_count = count;
+
     var ii = points_in.len;
     while (ii > 0) {
         ii -= 1;
@@ -362,8 +410,10 @@ fn fixedChildRegion(
         };
         return local[child_idx];
     }
+
     const u: F = if (child_idx % 2 == 0) -0.5 else 0.5;
     const v: F = if (child_idx < 2) -0.5 else 0.5;
+
     return .{
         .origin = .{ u, v },
         .axis_u = .{ 0.5, 0 },
@@ -373,11 +423,11 @@ fn fixedChildRegion(
 
 fn prepareBezierLeaf(
     comptime N: usize,
+    comptime prepare_edges: PrepareEdgesFn,
     camera: *const cam.CameraPrepared,
     coords: frontend.GatheredElemCoords(N),
     region: BezierPatchRegion,
     edge_fun_mode: rastcfg.EdgeFunMode,
-    comptime prepare_edges: anytype,
 ) BezierLeaf {
     const parents = comptime geomkerns.parentNodeCoords(N);
 
@@ -388,10 +438,12 @@ fn prepareBezierLeaf(
         var weights: [N]F = undefined;
         var du: [N]F = undefined;
         var dv: [N]F = undefined;
+
         shapefun.shapeFunc(N, uv[0], uv[1], &weights, &du, &dv);
         child.x[ii] = 0;
         child.y[ii] = 0;
         child.z[ii] = 0;
+
         for (0..N) |nn| {
             child.x[ii] += weights[nn] * coords.x[nn];
             child.y[ii] += weights[nn] * coords.y[nn];
@@ -452,23 +504,40 @@ fn prepareBezierLeaf(
 
 pub fn prepareFourBezierLeaves(
     comptime N: usize,
+    comptime prepare_edges: PrepareEdgesFn,
     camera: *const cam.CameraPrepared,
     coords: frontend.GatheredElemCoords(N),
     output: *[4]BezierLeaf,
     edge_fun_mode: rastcfg.EdgeFunMode,
-    comptime prepare_edges: anytype,
 ) void {
     inline for (0..4) |ii| {
         const region = fixedChildRegion(N, ii);
         output[ii] = prepareBezierLeaf(
             N,
+            prepare_edges,
             camera,
             coords,
             region,
             edge_fun_mode,
-            prepare_edges,
         );
     }
+}
+
+pub fn prepareFourBezierLeavesScalar(
+    comptime N: usize,
+    camera: *const cam.CameraPrepared,
+    coords: frontend.GatheredElemCoords(N),
+    output: *[4]BezierLeaf,
+    edge_fun_mode: rastcfg.EdgeFunMode,
+) void {
+    prepareFourBezierLeaves(
+        N,
+        prepareEdgesScalar,
+        camera,
+        coords,
+        output,
+        edge_fun_mode,
+    );
 }
 
 // --------------------------------------------------------------------------------------
