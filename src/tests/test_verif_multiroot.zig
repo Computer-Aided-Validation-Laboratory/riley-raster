@@ -180,7 +180,7 @@ const SeedZ = struct {
 fn getFallbackSeeds(
     comptime N: usize,
     nodes: frontend.Vec3Slices(F),
-    coords: frontend.GatheredElemCoords(N),
+    coords: frontend.ElemCoords(N),
     fallback_uvs: *[3][2]F,
 ) usize {
     const count = gk.multiRootSeedCount(N);
@@ -259,15 +259,15 @@ fn solveMultirootPoint(
     comptime N: usize,
     mode: rasterconfig.MultirootSolverMode,
     camera: *const cam.CameraPrepared,
-    coords: frontend.GatheredElemCoords(N),
+    coords: frontend.ElemCoords(N),
     px: F,
     py: F,
 ) ?F {
     const candidate = HullMultiRoot.buildPointsFromClip(N, camera, coords);
     if (!candidate.contains(px, py)) return null;
 
-    var leaves: [4]HullMultiRoot.BezierLeaf = undefined;
-    HullMultiRoot.prepareFourBezierLeaves(N, camera, coords, &leaves, .on_the_fly);
+    var leaves: [4]HullMultiRoot.BezierLeafOnTheFly = undefined;
+    HullMultiRoot.prepareFourBezierLeavesOnTheFly(N, camera, coords, &leaves);
 
     var mutable_coords = coords;
     const nodes = frontend.Vec3Slices(F){
@@ -285,11 +285,10 @@ fn solveMultirootPoint(
     var best_inv_z: F = -std.math.inf(F);
     var had_candidate_child = false;
 
-    const child_mask = HullMultiRoot.childMaskScalar(
+    const child_mask = HullMultiRoot.childMaskOnTheFlyScalar(
         &leaves,
         px,
         py,
-        .on_the_fly,
     );
     for (&leaves, 0..) |*leaf, leaf_idx| {
         if ((child_mask & (@as(u8, 1) << @as(u3, @intCast(leaf_idx)))) == 0) continue;
@@ -516,7 +515,7 @@ fn oraclePower(value: F, exponent: u8) F {
 
 fn oracleSurface(
     comptime N: usize,
-    coords: frontend.GatheredElemCoords(N),
+    coords: frontend.ElemCoords(N),
 ) OracleSurface {
     const parents = comptime gk.parentNodeCoords(N);
     const terms = comptime oracleTerms(N);
@@ -777,7 +776,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
 
     const xi_nodes = [_]F{ -1, 1, 1, -1, 0, 1, 0, -1, 0 };
     const eta_nodes = [_]F{ -1, -1, 1, 1, -1, 0, 1, 0, 0 };
-    var coords: frontend.GatheredElemCoords(9) = undefined;
+    var coords: frontend.ElemCoords(9) = undefined;
     var projected: frontend.RasterCoords2D(9) = undefined;
     for (0..9) |nn| {
         const xi = xi_nodes[nn];
@@ -893,7 +892,7 @@ fn checkFoldedMatrix(
             const c = @cos(angle);
             const s = @sin(angle);
             for ([_]F{ -1, 1 }) |polarity| {
-                var coords: frontend.GatheredElemCoords(N) = undefined;
+                var coords: frontend.ElemCoords(N) = undefined;
                 var projected: frontend.RasterCoords2D(N) = undefined;
                 for (parents, 0..) |parent, nn| {
                     const u = parent[0];
@@ -969,7 +968,7 @@ fn checkQuadraticSaddle(
         for (rotations) |angle| {
             const c = @cos(angle);
             const s = @sin(angle);
-            var coords: frontend.GatheredElemCoords(N) = undefined;
+            var coords: frontend.ElemCoords(N) = undefined;
             for (parents, 0..) |parent, nn| {
                 const u = parent[0];
                 const v = parent[1];
@@ -1043,7 +1042,7 @@ fn checkOutwardCurvedMatrix(
                 const s = @sin(roll);
                 const ct = @cos(secondary);
                 const st = @sin(secondary);
-                var coords: frontend.GatheredElemCoords(N) = undefined;
+                var coords: frontend.ElemCoords(N) = undefined;
                 var projected: frontend.RasterCoords2D(N) = undefined;
                 for (parents, 0..) |parent, nn| {
                     const u = if (N == 6) parent[0] - 1.0 / 3.0 else parent[0];
@@ -1155,7 +1154,7 @@ fn checkThreeRootMatrix(
                 for (angles) |angle| {
                     const c = @cos(angle);
                     const s = @sin(angle);
-                    var coords: frontend.GatheredElemCoords(8) = undefined;
+                    var coords: frontend.ElemCoords(8) = undefined;
                     var projected: frontend.RasterCoords2D(8) = undefined;
                     for (parents, 0..) |parent, nn| {
                         const u = 1 + 0.2 * parent[0];
@@ -1229,7 +1228,7 @@ fn checkThreeRootMatrix(
 
 fn checkControlNearPlane(camera: *const cam.CameraPrepared) !void {
     const parents = comptime gk.parentNodeCoords(8);
-    var coords: frontend.GatheredElemCoords(8) = undefined;
+    var coords: frontend.ElemCoords(8) = undefined;
     for (parents, 0..) |parent, nn| {
         const u = parent[0];
         const v = parent[1];
@@ -1258,17 +1257,20 @@ fn checkControlNearPlane(camera: *const cam.CameraPrepared) !void {
 fn checkPreparedHullEdges(camera: *const cam.CameraPrepared) !void {
     const x = [_]F{ 4, 4, 80, 80 };
     const y = [_]F{ 4, 80, 80, 4 };
-    var slack: [4]F = undefined;
-    var edges: [4]HullMultiRoot.HullEdge = undefined;
-    HullMultiRoot.prepareEdgeSlack(&x, &y, &slack);
-    HullMultiRoot.prepareEdges(&x, &y, &edges);
+    var poly_fly = HullMultiRoot.HullPolyOnTheFly{ .count = @intCast(x.len) };
+    @memcpy(poly_fly.x[0..x.len], x[0..x.len]);
+    @memcpy(poly_fly.y[0..x.len], y[0..x.len]);
+    HullMultiRoot.calcEdgeTol(&x, &y, poly_fly.tol_edge[0..x.len]);
+
+    var poly_pre = HullMultiRoot.HullPolyPreCalc{ .count = @intCast(x.len) };
+    HullMultiRoot.prepareEdges(&x, &y, poly_pre.edges[0..x.len]);
     for (0..100) |yy| {
         for (0..100) |xx| {
             const px: F = @as(F, @floatFromInt(xx)) + 0.5;
             const py: F = @as(F, @floatFromInt(yy)) + 0.5;
             try std.testing.expectEqual(
-                HullMultiRoot.containsOnTheFly(&x, &y, &slack, px, py),
-                HullMultiRoot.containsPreCalc(&edges, px, py),
+                HullMultiRoot.containsOnTheFlyScalar(&poly_fly, px, py),
+                HullMultiRoot.containsPreCalcScalar(&poly_pre, px, py),
             );
         }
     }
@@ -1276,40 +1278,40 @@ fn checkPreparedHullEdges(camera: *const cam.CameraPrepared) !void {
         const px = 4 + offset;
         const py: F = 40;
         try std.testing.expectEqual(
-            HullMultiRoot.containsOnTheFly(&x, &y, &slack, px, py),
-            HullMultiRoot.containsPreCalc(&edges, px, py),
+            HullMultiRoot.containsOnTheFlyScalar(&poly_fly, px, py),
+            HullMultiRoot.containsPreCalcScalar(&poly_pre, px, py),
         );
     }
 
     const large_x = [_]F{ 1e6, 1e6, 1e6 + 1e-3, 1e6 + 1e-3 };
     const large_y = [_]F{ 1e6, 1e6 + 10, 1e6 + 10, 1e6 };
-    var large_slack: [4]F = undefined;
-    var large_edges: [4]HullMultiRoot.HullEdge = undefined;
-    HullMultiRoot.prepareEdgeSlack(&large_x, &large_y, &large_slack);
-    HullMultiRoot.prepareEdges(&large_x, &large_y, &large_edges);
+    var large_poly_fly = HullMultiRoot.HullPolyOnTheFly{ .count = 4 };
+    @memcpy(large_poly_fly.x[0..4], large_x[0..4]);
+    @memcpy(large_poly_fly.y[0..4], large_y[0..4]);
+    HullMultiRoot.calcEdgeTol(&large_x, &large_y, large_poly_fly.tol_edge[0..4]);
+
+    var large_poly_pre = HullMultiRoot.HullPolyPreCalc{ .count = 4 };
+    HullMultiRoot.prepareEdges(&large_x, &large_y, large_poly_pre.edges[0..4]);
     for ([_]F{ 0, 0.25, 0.5, 0.75, 1 }) |fraction| {
         const px = 1e6 + fraction * 1e-3;
         const py: F = 1e6 + 5;
-        const old = HullMultiRoot.containsOnTheFly(
-            &large_x,
-            &large_y,
-            &large_slack,
-            px,
-            py,
-        );
-        if (old) try std.testing.expect(HullMultiRoot.containsPreCalc(
-            &large_edges,
-            px,
-            py,
-        ));
+        const old = HullMultiRoot.containsOnTheFlyScalar(&large_poly_fly, px, py);
+        if (old) {
+            try std.testing.expect(
+                HullMultiRoot.containsPreCalcScalar(&large_poly_pre, px, py),
+            );
+        }
     }
 
-    var behind: frontend.GatheredElemCoords(4) = .{
+    var behind: frontend.ElemCoords(4) = .{
         .x = .{ 0, 1, 1, 0 },
         .y = .{ 0, 0, 1, 1 },
         .z = .{ 0, 0, 0, 0 },
     };
-    try std.testing.expectEqual(@as(u8, 0), HullMultiRoot.buildPointsFromClip(4, camera, behind).count);
+    try std.testing.expectEqual(
+        @as(u8, 0),
+        HullMultiRoot.buildPointsFromClip(4, camera, behind).count,
+    );
     behind.z = .{ 1, 1, 1, 1 };
     behind.x = .{ 0, 0, 0, 0 };
     behind.y = .{ 0, 0, 0, 0 };
@@ -1320,7 +1322,7 @@ fn checkPreparedHullEdges(camera: *const cam.CameraPrepared) !void {
 
 fn checkParentOnlyHierarchyMisses(camera: *const cam.CameraPrepared) !void {
     const parents = comptime gk.parentNodeCoords(9);
-    var coords: frontend.GatheredElemCoords(9) = undefined;
+    var coords: frontend.ElemCoords(9) = undefined;
     for (parents, 0..) |parent, nn| {
         const u = parent[0];
         const v = parent[1];
@@ -1329,15 +1331,15 @@ fn checkParentOnlyHierarchyMisses(camera: *const cam.CameraPrepared) !void {
         coords.z[nn] = 1 + 0.2 * u;
     }
     const parent_hull = HullMultiRoot.buildPointsFromClip(9, camera, coords);
-    var leaves: [4]HullMultiRoot.BezierLeaf = undefined;
-    HullMultiRoot.prepareFourBezierLeaves(9, camera, coords, &leaves, .on_the_fly);
+    var leaves: [4]HullMultiRoot.BezierLeafOnTheFly = undefined;
+    HullMultiRoot.prepareFourBezierLeavesOnTheFly(9, camera, coords, &leaves);
     var rejected_misses: usize = 0;
     for (0..100) |yy| {
         const py: F = @as(F, @floatFromInt(yy)) + 0.5;
         for (0..100) |xx| {
             const px: F = @as(F, @floatFromInt(xx)) + 0.5;
             if (!parent_hull.contains(px, py)) continue;
-            if (HullMultiRoot.childMaskScalar(&leaves, px, py, .on_the_fly) == 0)
+            if (HullMultiRoot.childMaskOnTheFlyScalar(&leaves, px, py) == 0)
                 rejected_misses += 1;
         }
     }
@@ -1347,7 +1349,7 @@ fn checkParentOnlyHierarchyMisses(camera: *const cam.CameraPrepared) !void {
 fn checkThreeRootQuad8(camera: *const cam.CameraPrepared) !void {
     const parents = comptime gk.parentNodeCoords(8);
     for ([_]F{ -1, 1 }) |polarity| {
-        var coords: frontend.GatheredElemCoords(8) = undefined;
+        var coords: frontend.ElemCoords(8) = undefined;
         for (parents, 0..) |parent, nn| {
             const u = parent[0];
             const v = parent[1];

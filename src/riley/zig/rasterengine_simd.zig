@@ -731,12 +731,28 @@ fn rasterNewtonMultiSIMDImpl(
     if (slot == std.math.maxInt(u32)) return error.MissingMultiRootData;
 
     const hull_count = prepared.hull_count.get(slot);
-    const hx = prepared.hull_x.getSlice(slot)[0..hull_count];
-    const hy = prepared.hull_y.getSlice(slot)[0..hull_count];
     const edge_fun_mode = ctx_rast.config.advanced.solver.multiroot.edge_fun_mode;
-    var tol_edge: [9]F = undefined;
-    if (edge_fun_mode == .on_the_fly)
-        HullMultiRoot.calcEdgeTol(hx, hy, tol_edge[0..hull_count]);
+
+    var outer_poly_pre: HullMultiRoot.HullPolyPreCalc = undefined;
+    var outer_poly_fly: HullMultiRoot.HullPolyOnTheFly = undefined;
+    if (edge_fun_mode == .pre_calc) {
+        outer_poly_pre.count = @intCast(hull_count);
+        @memcpy(
+            outer_poly_pre.edges[0..hull_count],
+            prepared.hull_edges[slot][0..hull_count],
+        );
+    } else {
+        outer_poly_fly.count = @intCast(hull_count);
+        const hx = prepared.hull_x.getSlice(slot)[0..hull_count];
+        const hy = prepared.hull_y.getSlice(slot)[0..hull_count];
+        @memcpy(outer_poly_fly.x[0..hull_count], hx);
+        @memcpy(outer_poly_fly.y[0..hull_count], hy);
+        HullMultiRoot.calcEdgeTol(
+            hx,
+            hy,
+            outer_poly_fly.tol_edge[0..hull_count],
+        );
+    }
 
     const leaf_start: usize = slot * 4;
     const leaves_pre_calc = if (edge_fun_mode == .pre_calc)
@@ -778,10 +794,6 @@ fn rasterNewtonMultiSIMDImpl(
     };
     var candidates_count: usize = 0;
 
-    const outer_edges: []const HullMultiRoot.HullEdge = if (edge_fun_mode == .pre_calc)
-        prepared.hull_edges[slot][0..hull_count]
-    else
-        &.{};
     const v_lane_idx: VecSU = std.simd.iota(usize, S);
     const v_end_x: VecSU = @splat(rast_bounds.end_x_u);
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
@@ -794,16 +806,14 @@ fn rasterNewtonMultiSIMDImpl(
             const v_py = simdops.loadVecSF(ideal_y_plane, idx);
             const outer_mask = if (edge_fun_mode == .pre_calc)
                 HullMultiRoot.containsPreCalcSIMD(
-                    outer_edges,
+                    &outer_poly_pre,
                     v_px,
                     v_py,
                     valid,
                 )
             else
                 HullMultiRoot.containsOnTheFlySIMD(
-                    hx,
-                    hy,
-                    tol_edge[0..hull_count],
+                    &outer_poly_fly,
                     v_px,
                     v_py,
                     valid,

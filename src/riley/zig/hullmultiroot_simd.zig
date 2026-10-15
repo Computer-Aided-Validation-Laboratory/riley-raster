@@ -73,14 +73,14 @@ pub fn prepareEdgesSIMD(x: []const F, y: []const F, edges: []HullEdge) void {
 }
 
 pub fn containsPreCalcSIMD(
-    edges: []const HullEdge,
+    poly: *const hullcommon.HullPolyPreCalc,
     v_px: VecSF,
     v_py: VecSF,
     valid: VecSB,
 ) VecSB {
-    if (edges.len < 3) return @splat(false);
+    if (poly.count < 3) return @splat(false);
     var inside = valid;
-    for (edges) |edge| {
+    for (poly.edges[0..poly.count]) |edge| {
         const a: VecSF = @splat(edge.a);
         const b: VecSF = @splat(edge.b);
         const c: VecSF = @splat(edge.c);
@@ -91,25 +91,23 @@ pub fn containsPreCalcSIMD(
 }
 
 pub fn containsOnTheFlySIMD(
-    x: []const F,
-    y: []const F,
-    tol_edge: []const F,
+    poly: *const hullcommon.HullPolyOnTheFly,
     v_px: VecSF,
     v_py: VecSF,
     valid: VecSB,
 ) VecSB {
-    if (x.len < 3) return @splat(false);
+    if (poly.count < 3) return @splat(false);
     var inside = valid;
-    for (0..x.len) |ii| {
-        const jj = (ii + 1) % x.len;
+    for (0..poly.count) |ii| {
+        const jj = (ii + 1) % poly.count;
         inside &= edgeops.edgeFun3SIMD(
-            x[ii],
-            y[ii],
-            x[jj],
-            y[jj],
+            poly.x[ii],
+            poly.y[ii],
+            poly.x[jj],
+            poly.y[jj],
             v_px,
             v_py,
-        ) >= @as(VecSF, @splat(-tol_edge[ii]));
+        ) >= @as(VecSF, @splat(-poly.tol_edge[ii]));
         if (!@reduce(.Or, inside)) break;
     }
     return inside;
@@ -132,9 +130,8 @@ pub fn childMaskPreCalcSIMD(
             (v_py >= min_y) & (v_py <= max_y);
         if (!@reduce(.Or, bbox_mask)) continue;
 
-        const count = leaf.poly.count;
         const hit = containsPreCalcSIMD(
-            leaf.poly.edges[0..count],
+            &leaf.poly,
             v_px,
             v_py,
             bbox_mask,
@@ -163,11 +160,8 @@ pub fn childMaskOnTheFlySIMD(
             (v_py >= min_y) & (v_py <= max_y);
         if (!@reduce(.Or, bbox_mask)) continue;
 
-        const count = leaf.poly.count;
         const hit = containsOnTheFlySIMD(
-            leaf.poly.x[0..count],
-            leaf.poly.y[0..count],
-            leaf.poly.tol_edge[0..count],
+            &leaf.poly,
             v_px,
             v_py,
             bbox_mask,
@@ -253,29 +247,37 @@ test "multi-root SIMD edge preparation and containment match scalar" {
         const v_py: VecSF = py;
         const v_valid: VecSB = valid;
 
+        var poly_pre = hullcommon.HullPolyPreCalc{ .count = @intCast(count) };
+        @memcpy(poly_pre.edges[0..count], vector_edges[0..count]);
+        var poly_scalar_pre = hullcommon.HullPolyPreCalc{ .count = @intCast(count) };
+        @memcpy(poly_scalar_pre.edges[0..count], scalar_edges[0..count]);
+
         const hits_pre: [S]bool = containsPreCalcSIMD(
-            &vector_edges,
+            &poly_pre,
             v_px,
             v_py,
             v_valid,
         );
         for (0..S) |lane| {
             const expected = valid[lane] and
-                hullcommon.containsPreCalcScalar(&scalar_edges, px[lane], py[lane]);
+                hullcommon.containsPreCalcScalar(&poly_scalar_pre, px[lane], py[lane]);
             try std.testing.expectEqual(expected, hits_pre[lane]);
         }
 
+        var poly_fly = hullcommon.HullPolyOnTheFly{ .count = @intCast(count) };
+        @memcpy(poly_fly.x[0..count], x[0..count]);
+        @memcpy(poly_fly.y[0..count], y[0..count]);
+        @memcpy(poly_fly.tol_edge[0..count], tol_edge[0..count]);
+
         const hits_fly: [S]bool = containsOnTheFlySIMD(
-            &x,
-            &y,
-            &tol_edge,
+            &poly_fly,
             v_px,
             v_py,
             v_valid,
         );
         for (0..S) |lane| {
             const expected = valid[lane] and
-                hullcommon.containsOnTheFlyScalar(&x, &y, &tol_edge, px[lane], py[lane]);
+                hullcommon.containsOnTheFlyScalar(&poly_fly, px[lane], py[lane]);
             try std.testing.expectEqual(expected, hits_fly[lane]);
         }
     }

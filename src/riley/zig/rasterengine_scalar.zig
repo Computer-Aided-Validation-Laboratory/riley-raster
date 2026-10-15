@@ -961,12 +961,29 @@ fn rasterNewtonMultiImpl(
     const slot = prepared.slot_by_visible_elem.get(overlap.elem_idx);
     if (slot == std.math.maxInt(u32)) return error.MissingMultiRootData;
     const hull_count = prepared.hull_count.get(slot);
-    const hx = prepared.hull_x.getSlice(slot)[0..hull_count];
-    const hy = prepared.hull_y.getSlice(slot)[0..hull_count];
     const edge_fun_mode = ctx_rast.config.advanced.solver.multiroot.edge_fun_mode;
-    var tol_edge: [9]F = undefined;
-    if (edge_fun_mode == .on_the_fly)
-        HullMultiRoot.calcEdgeTol(hx, hy, tol_edge[0..hull_count]);
+
+    var outer_poly_pre: HullMultiRoot.HullPolyPreCalc = undefined;
+    var outer_poly_fly: HullMultiRoot.HullPolyOnTheFly = undefined;
+    if (edge_fun_mode == .pre_calc) {
+        outer_poly_pre.count = @intCast(hull_count);
+        @memcpy(
+            outer_poly_pre.edges[0..hull_count],
+            prepared.hull_edges[slot][0..hull_count],
+        );
+    } else {
+        outer_poly_fly.count = @intCast(hull_count);
+        const hx = prepared.hull_x.getSlice(slot)[0..hull_count];
+        const hy = prepared.hull_y.getSlice(slot)[0..hull_count];
+        @memcpy(outer_poly_fly.x[0..hull_count], hx);
+        @memcpy(outer_poly_fly.y[0..hull_count], hy);
+        HullMultiRoot.calcEdgeTol(
+            hx,
+            hy,
+            outer_poly_fly.tol_edge[0..hull_count],
+        );
+    }
+
     const leaf_offset = @as(usize, slot) * 4;
     const leaves_pre_calc = if (edge_fun_mode == .pre_calc)
         prepared.leaves_pre_calc[leaf_offset .. leaf_offset + 4]
@@ -974,10 +991,6 @@ fn rasterNewtonMultiImpl(
         &.{};
     const leaves_on_the_fly = if (edge_fun_mode == .on_the_fly)
         prepared.leaves_on_the_fly[leaf_offset .. leaf_offset + 4]
-    else
-        &.{};
-    const outer_edges: []const HullMultiRoot.HullEdge = if (edge_fun_mode == .pre_calc)
-        prepared.hull_edges[slot][0..hull_count]
     else
         &.{};
     const fallback_seed_count = prepared.valid_depth.get(slot);
@@ -1013,15 +1026,9 @@ fn rasterNewtonMultiImpl(
                 scratch_y,
             );
             const has_hit = if (edge_fun_mode == .pre_calc)
-                HullMultiRoot.containsPreCalcScalar(outer_edges, ideal_x, ideal_y)
+                HullMultiRoot.containsPreCalcScalar(&outer_poly_pre, ideal_x, ideal_y)
             else
-                HullMultiRoot.containsOnTheFlyScalar(
-                    hx,
-                    hy,
-                    tol_edge[0..hull_count],
-                    ideal_x,
-                    ideal_y,
-                );
+                HullMultiRoot.containsOnTheFlyScalar(&outer_poly_fly, ideal_x, ideal_y);
             if (!has_hit) {
                 if (comptime report_mode == .full_stats) {
                     rasterreport.recordEarlyOut(

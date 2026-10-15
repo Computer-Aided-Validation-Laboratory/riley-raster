@@ -29,19 +29,15 @@ pub const Points = struct {
 
     pub fn contains(self: *const Points, px: F, py: F) bool {
         if (self.count < 3) return false;
-        var tol_edge: [9]F = undefined;
+        var poly = HullPolyOnTheFly{ .count = self.count };
+        @memcpy(poly.x[0..self.count], self.x[0..self.count]);
+        @memcpy(poly.y[0..self.count], self.y[0..self.count]);
         calcEdgeTol(
             self.x[0..self.count],
             self.y[0..self.count],
-            tol_edge[0..self.count],
+            poly.tol_edge[0..self.count],
         );
-        return containsOnTheFlyScalar(
-            self.x[0..self.count],
-            self.y[0..self.count],
-            tol_edge[0..self.count],
-            px,
-            py,
-        );
+        return containsOnTheFlyScalar(&poly, px, py);
     }
 };
 
@@ -141,39 +137,6 @@ pub fn prepareEdgesScalar(x: []const F, y: []const F, edges: []HullEdge) void {
     }
 }
 
-pub fn containsPreCalcScalar(edges: []const HullEdge, px: F, py: F) bool {
-    if (edges.len < 3) return false;
-    for (edges) |edge| {
-        if (edge.eval(px, py) < 0) return false;
-    }
-    return true;
-}
-
-pub fn containsOnTheFlyScalar(
-    x: []const F,
-    y: []const F,
-    tol_edge: []const F,
-    px: F,
-    py: F,
-) bool {
-    if (x.len < 3) return false;
-    for (0..x.len) |ii| {
-        const jj = (ii + 1) % x.len;
-        const edge = edgeops.edgeFun3(
-            x[ii],
-            y[ii],
-            x[jj],
-            y[jj],
-            px,
-            py,
-        );
-        if (edge < -tol_edge[ii]) {
-            return false;
-        }
-    }
-    return true;
-}
-
 pub const HullPolyPreCalc = struct {
     edges: [9]HullEdge = undefined,
     count: u8 = 0,
@@ -186,6 +149,31 @@ pub const HullPolyOnTheFly = struct {
     count: u8 = 0,
 };
 
+pub fn containsPreCalcScalar(poly: *const HullPolyPreCalc, px: F, py: F) bool {
+    if (poly.count < 3) return false;
+    for (poly.edges[0..poly.count]) |edge| {
+        if (edge.eval(px, py) < 0) return false;
+    }
+    return true;
+}
+
+pub fn containsOnTheFlyScalar(poly: *const HullPolyOnTheFly, px: F, py: F) bool {
+    if (poly.count < 3) return false;
+    for (0..poly.count) |ii| {
+        const jj = (ii + 1) % poly.count;
+        const edge = edgeops.edgeFun3(
+            poly.x[ii],
+            poly.y[ii],
+            poly.x[jj],
+            poly.y[jj],
+            px,
+            py,
+        );
+        if (edge < -poly.tol_edge[ii]) return false;
+    }
+    return true;
+}
+
 pub fn childMaskPreCalcScalar(
     leaves: []const BezierLeafPreCalc,
     px: F,
@@ -196,7 +184,7 @@ pub fn childMaskPreCalcScalar(
         if (px < leaf.bbox[0] or px > leaf.bbox[1] or
             py < leaf.bbox[2] or py > leaf.bbox[3]) continue;
 
-        if (containsPreCalcScalar(leaf.poly.edges[0..leaf.poly.count], px, py)) {
+        if (containsPreCalcScalar(&leaf.poly, px, py)) {
             mask |= @as(u8, 1) << @as(u3, @intCast(ii));
         }
     }
@@ -213,13 +201,7 @@ pub fn childMaskOnTheFlyScalar(
         if (px < leaf.bbox[0] or px > leaf.bbox[1] or
             py < leaf.bbox[2] or py > leaf.bbox[3]) continue;
 
-        if (containsOnTheFlyScalar(
-            leaf.poly.x[0..leaf.poly.count],
-            leaf.poly.y[0..leaf.poly.count],
-            leaf.poly.tol_edge[0..leaf.poly.count],
-            px,
-            py,
-        )) {
+        if (containsOnTheFlyScalar(&leaf.poly, px, py)) {
             mask |= @as(u8, 1) << @as(u3, @intCast(ii));
         }
     }
