@@ -230,11 +230,6 @@ pub fn build(b: *std.Build) void {
 
     const benches = [_]RunEntry{
         .{
-            .step_name = "bench-poly",
-            .description = "Benchmark polynomial forward, Jacobian and inverse kernels",
-            .source_path = "src/benchpoly.zig",
-        },
-        .{
             .step_name = "bench-dicuq",
             .description = "Run the DIC UQ benchmark",
             .source_path = "src/bench_dicuq.zig",

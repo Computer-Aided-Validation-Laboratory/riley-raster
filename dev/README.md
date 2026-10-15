@@ -21,48 +21,53 @@ The `dev/` directory provides comprehensive architectural, mathematical, testing
 ## Testing Architecture & Core Packaged Suites
 Riley provides a layered testing architecture designed for fast routine verification, rigorous mathematical validation, and exhaustive factorial test coverage:
 
+### Optimization Modes & Execution Policy
+
+Riley strictly separates optimization modes by task type:
+- **Verification and Basic test suites (`test-verif`, `test-basic`)**: Run in **Debug mode without optimisation flags** (default `zig build`), ensuring fastest compilation and developer feedback.
+- **Full test suite (`test-full`)**: Run in **ReleaseSafe mode** (`-Doptimize=ReleaseSafe`), enabling optimized factorial sweeps with safety assertions active.
+- **Benchmarks and Performance profiling (`bench-*`, `./scripts/bench_*.py`, `./scripts/perf_*.py`)**: Run in **ReleaseFast mode** (`-Doptimize=ReleaseFast`), ensuring maximum compiler vectorization and realistic production throughput.
+
+> [!IMPORTANT]
+> The combined target `zig build test-verif-basic` is intended **primarily for CI pipelines**. For **local development**, prefer running `zig build test-verif` and `zig build test-basic` as two separate terminal processes in parallel to cut turnaround time in half.
+
 ### Quick Commands
 
-For day-to-day development and routine checks, the **verification** and **basic**
-suites (`test-verif`, `test-basic`, and `test-verif-basic`) should be run in
-**Debug mode without optimisation flags** (the default `zig build` mode), which compiles
-much faster. The **full test suite** (`test-full`) tests multi-threaded execution
-and factorial sweeps and should be run in **ReleaseSafe mode** (`-Doptimize=ReleaseSafe`)
-for optimized execution with safety checks.
-
-Suite targets use Zig's standard terminal test runner with inherited console streams. Status 
-and suite/case timings are written to stdout using a buffered `std.Io` writer flushed after 
-each message; failure diagnostics remain on stderr. The test runner reports test counts; use 
-`--summary all` for build/run timings. Clearing `.zig-cache` is safe and only forces a rebuild.
-
 ```shell
-# 1. Combined Verification and Basic Suites (preferred routine development in Debug)
+# Local Development: Run verif and basic in parallel across two terminal tabs/jobs (Debug)
+zig build test-verif & zig build test-basic & wait
+
+# CI Combined Verification & Basic Suite (Debug)
 zig build test-verif-basic
 
-# 2. Analytic Verification Suite (Mathematical & Numerical Validation in Debug)
+# Analytic Verification Suite (Mathematical & Numerical Validation in Debug)
 zig build test-verif
 
-# 3. Basic Test Suite (Fast Core Feature Coverage in Debug)
+# Basic Test Suite (Fast Core Feature Coverage in Debug)
 zig build test-basic
 
-# 4. Full Test Suite (Exhaustive Factorial System & Threading Coverage in ReleaseSafe)
+# Full Test Suite (Exhaustive Factorial System & Threading Coverage in ReleaseSafe)
 zig build gen-gold-full -Doptimize=ReleaseSafe  # Generate Full gold (if needed)
 zig build test-full -Doptimize=ReleaseSafe
 
-# 5. Warning-only diagnostics for invalid-Jacobian element frames
+# Warning-only diagnostics for invalid-Jacobian element frames
 zig build test-full-badjac
 
-# 6. Python Integration Suite
+# Python Integration Suite
 pytest --pyargs riley.pytests -vs
+
+# Benchmarks & Performance Runs (Always ReleaseFast)
+zig build install-bench-multiroot -Doptimize=ReleaseFast -Dsimd=on
+zig build install-bench-buffer-psf -Doptimize=ReleaseFast -Dsimd=on
 ```
 
 ### Core Suites Summary
 
 | Suite Name | Command | Primary Role | Reference Data |
 | :--- | :--- | :--- | :--- |
-| **Combined Core Suite** | `zig build test-verif-basic` | Fast routine development/verification in Debug mode (no optimization flags) | `gold/verif/`, `gold/basic/` |
 | **Verification Suite** | `zig build test-verif` | Inverse solver recovery, silhouette area/centroid, depth ordering, and camera distortion oracles (Debug) | `gold/verif/` |
 | **Basic Suite** | `zig build test-basic` | Fast coverage across 1-element, 2-shape FE interaction, and feature zoo cases (Debug) | `gold/basic/` |
+| **Combined Core Suite** | `zig build test-verif-basic` | Primarily for CI: runs verif and basic sequentially in Debug mode | `gold/verif/`, `gold/basic/` |
 | **Full Suite** | `zig build test-full -Doptimize=ReleaseSafe` | Exhaustive sweeps over shaders, textures, PSF/distortion, SSAA, hulls, tiling, scenes, threads, and outputs in ReleaseSafe | `gold/full_*/` |
 | **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | Warning-only renders of intentionally folded one-element frames, with actual/reference/diff artifacts under `fails/*_full_badjac/` | Existing basic and full-hull gold |
 | **Python Pytests** | `.venv/bin/pytest src/riley/pytests/` | Python/Cython API, mesh pipeline, Exodus conversion, and demo parity | Integrated / `gold/` |
