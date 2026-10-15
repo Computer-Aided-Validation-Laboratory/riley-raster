@@ -25,7 +25,7 @@ Riley provides a layered testing architecture designed for fast routine verifica
 
 For day-to-day development and routine checks, the **verification** and **basic**
 suites (`test-verif`, `test-basic`, and `test-verif-basic`) should be run in
-**Debug mode without optimization flags** (the default `zig build` mode), which compiles
+**Debug mode without optimisation flags** (the default `zig build` mode), which compiles
 much faster. The **full test suite** (`test-full`) tests multi-threaded execution
 and factorial sweeps and should be run in **ReleaseSafe mode** (`-Doptimize=ReleaseSafe`)
 for optimized execution with safety checks.
@@ -204,59 +204,6 @@ The current experiment groups are driven directly by constants in the script:
 - `EXPERIMENT1_CASES_BASE`
 
 If you want to change the study matrix, edit those constants first.
-
-## Multiroot Edge-Function Experiment
-
-`python3 scripts/bench_multiroot.py` builds the f64 SIMD multiroot benchmark in
-ReleaseSafe mode, then runs the existing solver comparison and Experiment3.
-Experiment3 crosses the `fast`/`robust` solver modes with the independent
-`oneroot.edge_fun_mode` and `multiroot.edge_fun_mode` settings, using
-`on_the_fly` and `pre_calc` for each. It covers both multi-root and one-root
-scenes. `experiment3_raw.csv` and `experiment3_summary.csv` report preparation,
-raster, and end-to-end timings; `experiment3_crossover.csv` repeats both edge
-modes at 1x, 2x, and 4x subsampling. Use `--quick` for a smoke run and `--runs`
-for a longer measurement. The default render configuration uses `pre_calc`
-for the multi-root path and `on_the_fly` for the adaptive one-root path.
-The SIMD multi-root raster path tests vectors of sample positions against the
-prepared outer hull and its four prepared child hulls before batching Newton
-solves. The scalar path uses the same hull geometry. Adaptive one-root
-containment skips barycentric seed calculation when the Newton seed mode is
-`centroid`.
-
-Raster code imports `HullAdaptive` from `hulladaptive.zig` and `HullMultiRoot`
-from `hullmultiroot.zig` directly. Each path has its own `hulladaptive_*` or
-`hullmultiroot_*` common, scalar, and SIMD implementation files. The shared
-edge-coefficient type lives in `hulledge.zig` and is exposed as
-`HullMultiRoot.HullEdge` for prepared multi-root data.
-`HullMultiRoot.BezierLeaf` holds a projected hull for one of the four fixed
-Bézier child patches; `HullAdaptive.Tessellation` belongs only to the adaptive
-one-root path.
-
-Raster work has three stages. `meshpipeline.zig` prepares each mesh using
-coordinate, visibility, and hull helpers in `rasterfrontend.zig`.
-It culls and classifies visible elements, then prepares adaptive hulls or
-multiroot hulls and seed data. `MeshFrame` carries the two prepared paths as
-`hull_adaptive` and `hull_multiroot`. `riley.zig` collects their descriptors in
-two compact per-mesh arrays and passes both through `MeshRootInputs` to the
-raster engines. Each element dispatch receives a pointer to its selected path;
-`RasterContext` contains frame-wide settings only.
-`elemtilebinning.zig` builds tile-local element overlaps, while
-`elemtilebinning_globbuff.zig` builds overlaps for a full global subpixel buffer
-or a stripe of it. `riley.zig` orchestrates preparation, binning, and the raster
-engines. Stripe mode repeats global-buffer binning for each stripe as needed.
-Global-buffer raster and resolve files use the `_globbuff` file suffix; their
-function names use `GlobBuff` in Zig camel case. `subpxframe_globbuff.zig` owns
-the shared full-frame target and reusable stripe buffer used by both global
-rasterisation and resolve.
-Stage 3 selects the tile-local or global-buffer raster lifecycle once in
-`riley.zig` through the thin `rasterengine.zig` facade.
-`rasterengine_tileloc.zig` owns tile-local workers and resolves each tile after
-the shared `rasterTileCore` work in `rasterengine_common.zig`.
-`rasterengine_globbuff.zig` owns global-buffer workers and both scalar/SIMD
-target-binding scratch types. It rasterises tile batches into a full-frame or
-stripe target that `riley.zig` resolves after the batch. The scalar and SIMD
-rasterengine files provide compile-time `RasterEngine` kernels for the selected
-scratch type.
 
 ## Additional Notes
 
