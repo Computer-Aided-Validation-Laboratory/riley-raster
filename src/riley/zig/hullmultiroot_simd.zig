@@ -117,7 +117,7 @@ pub fn childMaskPreCalcSIMD(
     leaves: []const hullcommon.BezierLeafPreCalc,
     v_px: VecSF,
     v_py: VecSF,
-    outer_mask: VecSB,
+    valid_mask: VecSB,
 ) [S]u8 {
     var masks: @Vector(S, u8) = @splat(0);
     for (leaves, 0..) |*leaf, ii| {
@@ -126,7 +126,7 @@ pub fn childMaskPreCalcSIMD(
         const min_y: VecSF = @splat(leaf.bbox[2]);
         const max_y: VecSF = @splat(leaf.bbox[3]);
 
-        const bbox_mask = outer_mask & (v_px >= min_x) & (v_px <= max_x) &
+        const bbox_mask = valid_mask & (v_px >= min_x) & (v_px <= max_x) &
             (v_py >= min_y) & (v_py <= max_y);
         if (!@reduce(.Or, bbox_mask)) continue;
 
@@ -147,7 +147,7 @@ pub fn childMaskOnTheFlySIMD(
     leaves: []const hullcommon.BezierLeafOnTheFly,
     v_px: VecSF,
     v_py: VecSF,
-    outer_mask: VecSB,
+    valid_mask: VecSB,
 ) [S]u8 {
     var masks: @Vector(S, u8) = @splat(0);
     for (leaves, 0..) |*leaf, ii| {
@@ -156,7 +156,7 @@ pub fn childMaskOnTheFlySIMD(
         const min_y: VecSF = @splat(leaf.bbox[2]);
         const max_y: VecSF = @splat(leaf.bbox[3]);
 
-        const bbox_mask = outer_mask & (v_px >= min_x) & (v_px <= max_x) &
+        const bbox_mask = valid_mask & (v_px >= min_x) & (v_px <= max_x) &
             (v_py >= min_y) & (v_py <= max_y);
         if (!@reduce(.Or, bbox_mask)) continue;
 

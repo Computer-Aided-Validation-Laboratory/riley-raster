@@ -959,17 +959,6 @@ fn rasterNewtonMultiImpl(
     if (slot == std.math.maxInt(u32)) return error.MissingMultiRootData;
     const edge_fun_mode = ctx_rast.config.advanced.solver.multiroot.edge_fun_mode;
 
-    const outer_poly_pre: HullMultiRoot.HullPolyPreCalc =
-        if (edge_fun_mode == .pre_calc)
-            prepared.outer_hulls_pre_calc[slot]
-        else
-            undefined;
-    const outer_poly_fly: HullMultiRoot.HullPolyOnTheFly =
-        if (edge_fun_mode == .on_the_fly)
-            prepared.outer_hulls_on_the_fly[slot]
-        else
-            undefined;
-
     const leaf_offset = @as(usize, slot) * 4;
     const leaves_pre_calc = if (edge_fun_mode == .pre_calc)
         prepared.leaves_pre_calc[leaf_offset .. leaf_offset + 4]
@@ -1011,11 +1000,14 @@ fn rasterNewtonMultiImpl(
                 sub_samp,
                 scratch_y,
             );
-            const has_hit = if (edge_fun_mode == .pre_calc)
-                HullMultiRoot.containsPreCalcScalar(&outer_poly_pre, ideal_x, ideal_y)
+
+            const child_mask = if (edge_fun_mode == .pre_calc)
+                HullMultiRoot.childMaskPreCalcScalar(leaves_pre_calc, ideal_x, ideal_y)
             else
-                HullMultiRoot.containsOnTheFlyScalar(&outer_poly_fly, ideal_x, ideal_y);
-            if (!has_hit) {
+                HullMultiRoot.childMaskOnTheFlyScalar(leaves_on_the_fly, ideal_x, ideal_y);
+
+            ctx_report.recordTessChecks(1);
+            if (child_mask == 0) {
                 if (comptime report_mode == .full_stats) {
                     rasterreport.recordEarlyOut(
                         ctx_report,
@@ -1026,6 +1018,15 @@ fn rasterNewtonMultiImpl(
                 }
                 continue;
             }
+            ctx_report.recordTessPasses(1);
+            if (comptime report_mode == .full_stats) {
+                rasterreport.recordEarlyOut(
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    true,
+                );
+            }
 
             var best_inv_z: F = -std.math.inf(F);
             var best_weights: ?[N]F = null;
@@ -1033,10 +1034,6 @@ fn rasterNewtonMultiImpl(
             var best_eta: F = 0;
             var had_candidate_child = false;
 
-            const child_mask = if (edge_fun_mode == .pre_calc)
-                HullMultiRoot.childMaskPreCalcScalar(leaves_pre_calc, ideal_x, ideal_y)
-            else
-                HullMultiRoot.childMaskOnTheFlyScalar(leaves_on_the_fly, ideal_x, ideal_y);
             inline for (0..4) |leaf_idx| {
                 if ((child_mask & (@as(u8, 1) << @as(u3, @intCast(leaf_idx)))) == 0) continue;
                 had_candidate_child = true;
@@ -1085,17 +1082,6 @@ fn rasterNewtonMultiImpl(
                         }
                     }
                 }
-            }
-
-            ctx_report.recordTessChecks(1);
-            if (has_hit) ctx_report.recordTessPasses(1);
-            if (comptime report_mode == .full_stats) {
-                rasterreport.recordEarlyOut(
-                    ctx_report,
-                    global_subx,
-                    global_suby,
-                    has_hit,
-                );
             }
 
             const weights = best_weights orelse continue;

@@ -718,22 +718,13 @@ fn rasterNewtonMultiSIMDImpl(
     if (slot == std.math.maxInt(u32)) return error.MissingMultiRootData;
 
     const edge_fun_mode = ctx_rast.config.advanced.solver.multiroot.edge_fun_mode;
-    const outer_poly_pre: HullMultiRoot.HullPolyPreCalc =
-        if (edge_fun_mode == .pre_calc)
-            prepared.outer_hulls_pre_calc[slot]
-        else
-            undefined;
-    const outer_poly_fly: HullMultiRoot.HullPolyOnTheFly =
-        if (edge_fun_mode == .on_the_fly)
-            prepared.outer_hulls_on_the_fly[slot]
-        else
-            undefined;
 
     const leaf_start: usize = slot * 4;
     const leaves_pre_calc = if (edge_fun_mode == .pre_calc)
         prepared.leaves_pre_calc[leaf_start .. leaf_start + 4]
     else
         &.{};
+
     const leaves_on_the_fly = if (edge_fun_mode == .on_the_fly)
         prepared.leaves_on_the_fly[leaf_start .. leaf_start + 4]
     else
@@ -741,12 +732,14 @@ fn rasterNewtonMultiSIMDImpl(
 
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
+
     const ideal_x_plane = cam.getIdealXPlaneScratch(
         subpx_scratch.ideal_pix_cent,
     );
     const ideal_y_plane = cam.getIdealYPlaneScratch(
         subpx_scratch.ideal_pix_cent,
     );
+
     var nodes_inv_z: [N]F = undefined;
     inline for (0..N) |nn| nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
 
@@ -773,63 +766,56 @@ fn rasterNewtonMultiSIMDImpl(
     const v_end_x: VecSU = @splat(rast_bounds.end_x_u);
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
         const row = scratch_y * subpx_dom.tile_size;
+
         var scratch_x = rast_bounds.start_x_u;
         while (scratch_x < rast_bounds.end_x_u) : (scratch_x += S) {
             const idx = row + scratch_x;
             const valid = @as(VecSU, @splat(scratch_x)) + v_lane_idx < v_end_x;
+
             const v_px = simdops.loadVecSF(ideal_x_plane, idx);
             const v_py = simdops.loadVecSF(ideal_y_plane, idx);
-            const outer_mask = if (edge_fun_mode == .pre_calc)
-                HullMultiRoot.containsPreCalcSIMD(
-                    &outer_poly_pre,
-                    v_px,
-                    v_py,
-                    valid,
-                )
-            else
-                HullMultiRoot.containsOnTheFlySIMD(
-                    &outer_poly_fly,
-                    v_px,
-                    v_py,
-                    valid,
-                );
+
             const child_masks = if (edge_fun_mode == .pre_calc)
                 HullMultiRoot.childMaskPreCalcSIMD(
                     leaves_pre_calc,
                     v_px,
                     v_py,
-                    outer_mask,
+                    valid,
                 )
             else
                 HullMultiRoot.childMaskOnTheFlySIMD(
                     leaves_on_the_fly,
                     v_px,
                     v_py,
-                    outer_mask,
+                    valid,
                 );
+
             const valid_arr: [S]bool = valid;
-            const outer_arr: [S]bool = outer_mask;
+
             for (0..S) |lane| {
                 if (!valid_arr[lane]) continue;
+
                 const sample_idx = idx + lane;
                 if (child_masks[lane] != 0) {
                     subpx_scratch.multi_root_child_masks[sample_idx] = child_masks[lane];
                     subpx_scratch.multi_root_candidate_indices[candidates_count] =
                         @intCast(sample_idx);
                     candidates_count += 1;
+                    ctx_report.recordTessPasses(1);
                 }
                 ctx_report.recordTessChecks(1);
-                if (outer_arr[lane]) ctx_report.recordTessPasses(1);
             }
         }
     }
 
     for (0..4) |leaf_idx| {
         const bit = @as(u8, 1) << @as(u3, @intCast(leaf_idx));
+
         const seed = if (edge_fun_mode == .pre_calc)
             leaves_pre_calc[leaf_idx].parameter_seed
         else
             leaves_on_the_fly[leaf_idx].parameter_seed;
+
         for (subpx_scratch.multi_root_candidate_indices[0..candidates_count]) |idx_u32| {
             const idx: usize = idx_u32;
             if ((subpx_scratch.multi_root_child_masks[idx] & bit) == 0) {
@@ -854,6 +840,7 @@ fn rasterNewtonMultiSIMDImpl(
                 subpx_scratch,
             );
         }
+
         flushMultiRootChunk(
             ScratchBuffs,
             Geom,

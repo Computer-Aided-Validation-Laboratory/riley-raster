@@ -65,8 +65,6 @@ pub const MeshStatic = struct {
 };
 
 pub const MultiRootHulls = struct {
-    outer_hulls_pre_calc: []HullMultiRoot.HullPolyPreCalc = &.{},
-    outer_hulls_on_the_fly: []HullMultiRoot.HullPolyOnTheFly = &.{},
     indices: matslice.MatSlice(u8),
     valid_depth: vecslice.VecSlice(u8),
     slot_by_visible_elem: vecslice.VecSlice(u32),
@@ -1299,39 +1297,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     }
                 }
 
-                const projected_hull = HullMultiRoot.buildPointsFromClip(
-                    N,
-                    stage.camera,
-                    coords,
-                );
-                if (stage.edge_fun_mode == .pre_calc) {
-                    var poly: *HullMultiRoot.HullPolyPreCalc =
-                        &stage.hulls.outer_hulls_pre_calc[slot];
-                    poly.count = projected_hull.count;
-                    if (projected_hull.count >= 3) {
-                        HullMultiRoot.prepareEdges(
-                            projected_hull.x[0..projected_hull.count],
-                            projected_hull.y[0..projected_hull.count],
-                            poly.edges[0..projected_hull.count],
-                        );
-                    }
-                } else {
-                    var poly: *HullMultiRoot.HullPolyOnTheFly =
-                        &stage.hulls.outer_hulls_on_the_fly[slot];
-                    poly.count = projected_hull.count;
-                    for (0..projected_hull.count) |nn| {
-                        poly.x[nn] = projected_hull.x[nn];
-                        poly.y[nn] = projected_hull.y[nn];
-                    }
-                    if (projected_hull.count >= 3) {
-                        HullMultiRoot.calcEdgeTol(
-                            poly.x[0..projected_hull.count],
-                            poly.y[0..projected_hull.count],
-                            poly.tol_edge[0..projected_hull.count],
-                        );
-                    }
-                }
-
                 const leaf_offset = @as(usize, slot) * 4;
                 if (stage.edge_fun_mode == .pre_calc) {
                     const leaf_slice = stage.hulls.leaves_pre_calc[
@@ -1484,20 +1449,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
 
             self.mesh_workspace.hull_multiroot = .{
-                .outer_hulls_pre_calc = if (self.multiroot_edge_fun_mode == .pre_calc)
-                    try outer_alloc.alloc(
-                        HullMultiRoot.HullPolyPreCalc,
-                        multi_count,
-                    )
-                else
-                    &.{},
-                .outer_hulls_on_the_fly = if (self.multiroot_edge_fun_mode == .on_the_fly)
-                    try outer_alloc.alloc(
-                        HullMultiRoot.HullPolyOnTheFly,
-                        multi_count,
-                    )
-                else
-                    &.{},
                 .indices = try matslice.MatSlice(u8).initAlloc(
                     outer_alloc,
                     multi_count,
