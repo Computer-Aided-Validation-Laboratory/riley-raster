@@ -26,9 +26,9 @@ const MatSlice = @import("matslice.zig").MatSlice;
 const scalar_kernel = @import("rasterengine_scalar.zig");
 const simd_kernel = @import("rasterengine_simd.zig");
 const SelectedRasterBackend = if (cfg.simd == .on)
-    SimdGlobalBackend
+    GlobalBackendSIMD
 else
-    ScalarGlobalBackend;
+    GlobalBackendScalar;
 const subpxframe = @import("subpxframe_globbuff.zig");
 
 pub fn rasterSceneGlobBuff(
@@ -216,13 +216,13 @@ fn rasterSceneGlobBuffImpl(
 // --------------------------------------------------------------------------------------
 // Scalar global-buffer scratch and kernel binding
 // --------------------------------------------------------------------------------------
-const ScalarGlobalSubpxScratchBuffs = struct {
+const GlobalSubpxBuffsScalar = struct {
     pub const exclusive_subpx_target = true;
 
     stride_subpx: usize,
     inv_z: []F,
-    image: @import("matslice.zig").MatSlice(F),
-    filter_tmp: @import("matslice.zig").MatSlice(F),
+    image: MatSlice(F),
+    filter_tmp: MatSlice(F),
     touched_min_x: []usize,
     touched_max_x: []usize,
     ideal_pix_cent: []F,
@@ -234,7 +234,7 @@ const ScalarGlobalSubpxScratchBuffs = struct {
     tile_origin_idx: usize = 0,
 
     pub inline fn resolveImageIdx(
-        self: *const ScalarGlobalSubpxScratchBuffs,
+        self: *const GlobalSubpxBuffsScalar,
         local_subx: usize,
         local_suby: usize,
         _: usize,
@@ -244,21 +244,21 @@ const ScalarGlobalSubpxScratchBuffs = struct {
     }
 };
 
-pub const ScalarGlobalBackend = struct {
-    pub const SubpxScratchBuffs = ScalarGlobalSubpxScratchBuffs;
+pub const GlobalBackendScalar = struct {
+    pub const SubpxScratchBuffs = GlobalSubpxBuffsScalar;
 
     pub fn initSubpxScratch(
         arena_alloc: std.mem.Allocator,
         fields_num: u8,
         subpx_tile_size: usize,
-    ) !ScalarGlobalSubpxScratchBuffs {
+    ) !GlobalSubpxBuffsScalar {
         const total = subpx_tile_size * subpx_tile_size;
         const image_mem = try arena_alloc.alloc(F, 0);
         return .{
             .stride_subpx = subpx_tile_size,
             .inv_z = try arena_alloc.alloc(F, total),
-            .image = @import("matslice.zig").MatSlice(F).init(image_mem, fields_num, 0),
-            .filter_tmp = @import("matslice.zig").MatSlice(F).init(
+            .image = MatSlice(F).init(image_mem, fields_num, 0),
+            .filter_tmp = MatSlice(F).init(
                 image_mem,
                 fields_num,
                 0,
@@ -269,8 +269,11 @@ pub const ScalarGlobalBackend = struct {
         };
     }
 
+    // Polymorphic interface matching tile-local backends. In global-buffer mode,
+    // target image memory is cleared once at frame scope, so the background value
+    // parameter is unused.
     pub fn resetSubpxScratch(
-        scratch: *ScalarGlobalSubpxScratchBuffs,
+        scratch: *GlobalSubpxBuffsScalar,
         subpx_tile_size: usize,
         _: F,
     ) void {
@@ -283,7 +286,7 @@ pub const ScalarGlobalBackend = struct {
         target: *subpxframe.SubpxTarget,
         tile: elemtilebin.ActiveTile,
         sub_samp: i32,
-        scratch: *ScalarGlobalSubpxScratchBuffs,
+        scratch: *GlobalSubpxBuffsScalar,
     ) void {
         const subpx = tile.calcSubpxBounds(sub_samp);
         scratch.image = target.image;
@@ -306,7 +309,7 @@ pub const ScalarGlobalBackend = struct {
         comptime root_class: frontend.ElemRootClass,
     ) type {
         return scalar_kernel.RasterEngine(
-            ScalarGlobalSubpxScratchBuffs,
+            GlobalSubpxBuffsScalar,
             GeomKern,
             ShaderKern,
             ShaderData,
@@ -318,13 +321,13 @@ pub const ScalarGlobalBackend = struct {
 // --------------------------------------------------------------------------------------
 // Simd global-buffer scratch and kernel binding
 // --------------------------------------------------------------------------------------
-const SimdGlobalSubpxScratchBuffs = struct {
+pub const GlobalSubpxBuffsSIMD = struct {
     pub const exclusive_subpx_target = true;
 
     stride_subpx: usize,
     inv_z: []align(64) F,
-    image: @import("matslice.zig").MatSlice(F),
-    filter_tmp: @import("matslice.zig").MatSlice(F),
+    image: MatSlice(F),
+    filter_tmp: MatSlice(F),
     simd_chunks: []simd_kernel.SubpxSimdChunk,
     multi_root_candidate_indices: []u32,
     multi_root_child_masks: []u8,
@@ -342,7 +345,7 @@ const SimdGlobalSubpxScratchBuffs = struct {
     tile_origin_idx: usize = 0,
 
     pub inline fn resolveImageIdx(
-        self: *const SimdGlobalSubpxScratchBuffs,
+        self: *const GlobalSubpxBuffsSIMD,
         local_subx: usize,
         local_suby: usize,
         _: usize,
@@ -352,14 +355,16 @@ const SimdGlobalSubpxScratchBuffs = struct {
     }
 };
 
-pub const SimdGlobalBackend = struct {
-    pub const SubpxScratchBuffs = SimdGlobalSubpxScratchBuffs;
+pub const GlobalSubPxBuffsSIMD = GlobalSubpxBuffsSIMD;
+
+pub const GlobalBackendSIMD = struct {
+    pub const SubpxScratchBuffs = GlobalSubpxBuffsSIMD;
 
     pub fn initSubpxScratch(
         arena_alloc: std.mem.Allocator,
         fields_num: u8,
         subpx_tile_size: usize,
-    ) !SimdGlobalSubpxScratchBuffs {
+    ) !GlobalSubpxBuffsSIMD {
         const subpx_tile_total = subpx_tile_size * subpx_tile_size;
         const subpx_tile_total_padded = std.mem.alignForward(
             usize,
@@ -432,8 +437,11 @@ pub const SimdGlobalBackend = struct {
         };
     }
 
+    // Polymorphic interface matching tile-local backends. In global-buffer mode,
+    // target image memory is cleared once at frame scope, so the background value
+    // parameter is unused.
     pub fn resetSubpxScratch(
-        scratch: *SimdGlobalSubpxScratchBuffs,
+        scratch: *GlobalSubpxBuffsSIMD,
         subpx_tile_size: usize,
         _: F,
     ) void {
@@ -446,7 +454,7 @@ pub const SimdGlobalBackend = struct {
         target: *subpxframe.SubpxTarget,
         tile: elemtilebin.ActiveTile,
         sub_samp: i32,
-        scratch: *SimdGlobalSubpxScratchBuffs,
+        scratch: *GlobalSubpxBuffsSIMD,
     ) void {
         const subpx = tile.calcSubpxBounds(sub_samp);
         scratch.image = target.image;
@@ -469,7 +477,7 @@ pub const SimdGlobalBackend = struct {
         comptime root_class: frontend.ElemRootClass,
     ) type {
         return simd_kernel.RasterEngine(
-            SimdGlobalSubpxScratchBuffs,
+            GlobalSubpxBuffsSIMD,
             GeomKern,
             ShaderKern,
             ShaderData,
