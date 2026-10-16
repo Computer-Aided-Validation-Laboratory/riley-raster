@@ -28,6 +28,12 @@ test run. Rendering, setup, or artifact-write errors still abort the current
 sub-suite, but the next sub-suite runs.
 The focused verification suite likewise continues through its remaining
 verification cases and reports failure at the end.
+The generated one-element bulge/tangent fixtures include deformation frames
+whose in-plane Jacobian becomes zero or changes sign. Normal basic and full
+comparisons cover only valid frames. Run `zig build test-full-badjac` to render
+the excluded frames as warning-only diagnostics. It writes actual, reference,
+and difference BMP/CSV files under `fails/*_full_badjac/`; changes in these
+out-of-domain renders do not fail the test command.
 After reviewing and approving distortion failures, run
 `zig build gen-gold-failed-distortion -Doptimize=ReleaseSafe` to regenerate
 only the distinct distortion/PSF and SSAA/pixel-map gold cases represented
@@ -47,6 +53,7 @@ Riley provides three core repository-packaged test suites intended for routine d
 | :--- | :--- | :--- | :--- | :--- |
 | **Verification Suite** | `zig build test-verif` | [`src/test_verif.zig`](file:///home/lloydf/riley-raster/src/test_verif.zig) | Mathematical validation against analytical Python oracles | `gold/verif/` |
 | **Basic Test Suite** | `zig build test-basic` | [`src/test_basic.zig`](file:///home/lloydf/riley-raster/src/test_basic.zig) | Fast, comprehensive coverage of core rasteriser features | `gold/basic/` |
+| **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | [`src/test_full_badjac.zig`](file:///home/lloydf/riley-raster/src/test_full_badjac.zig) | Warning-only renders and diffs for invalid one-element frames | Existing basic and full-hull gold |
 | **Python Pytest Suite** | `.venv/bin/pytest src/riley/pytests/` | [`src/riley/pytests/`](file:///home/lloydf/riley-raster/src/riley/pytests) | Python/Cython API, mesh pipeline, Exodus conversion, demo parity | Integrated / `gold/` |
 
 ### Regenerating Reference Gold for Core Suites
@@ -353,41 +360,3 @@ The Zig demos use the same numbered names and ordering:
 - Rabbit parity checks require greater than 10% foreground coverage in every render, ensuring blank or unrendered frames cannot pass verification.
 - Demos that clear previous output share `src/demo_common.zig` (`demo_common.resetOutputDir`). This removes the named demo output directory and recreates it cleanly.
 - `demo5_cameramodels` renders all 6 distortion families with pixel-box, Gaussian (separable/non-separable), aligned anisotropic Gaussian, and rotated anisotropic Gaussian PSFs across all 3 buffer modes (90 comparison images per run under `<distortion>/<psf>/<buffer-mode>/`). Parity checks require the entire matrix to match.
-
----
-
-`zig build test-poly` runs camera/model/loader unit tests without rendering
-the full regression scenes and accepts the normal precision/SIMD build options.
-Use it for f32/f64 and scalar/SIMD development checks. `test-verif` remains
-the production f64/SIMD analytic suite.
-
-The committed distortion oracle covers degrees 1–7, coordinate/displacement
-modes, each isolated monomial, dense asymmetric maps and BC/BCExt composition.
-Expected polynomial values/Jacobians come from NumPy `polyval2d`/`polyder`,
-not Riley. Inverse expected values are known preimages of independently
-generated forward outputs on well-conditioned cases. Cases equivalent to BC
-use OpenCV forward outputs and independent numerical Jacobians, covering
-tangential terms, radial k1/k2/k3 and the polynomial BCExt thin-prism subset.
-General rational/tilted BCExt is checked as composition, not polynomial equivalence.
-
-Oracle case CSV rows have 90 columns: ID, model, degree, mode, 14 Brown
-coefficients, and 36 interleaved coefficient pairs. Padding is fixture transport
-only; evaluated maps borrow exactly their validated active coefficient prefix.
-Fixtures remain alive for all model evaluations. Generation is explicit via
-`zig build gen-gold-verif`; ordinary tests never regenerate expected results.
-
-Python polynomial tests cover all 42 degree/mode/model combinations, invalid
-input, tiny-coefficient serialization precision, caller-buffer C loading,
-loaded storage lifetime, stereo ownership, and BC-equivalent flat-plate renders
-through both subpixel-map modes and one/four workers. The distortion-frontend
-regressions render the analytic Brown-Conrady k1 triangle whose observed
-interior extends beyond the distorted vertex bounds, across scalar/SIMD,
-subpixel-map, buffer and SSAA choices. Direct tests compare scalar/SIMD fixed
-edge sampling, including a smooth between-sample radial extremum. These
-checks are integration regressions, not a proof for arbitrary sharply varying
-distortion or an ideal hull that fails to enclose its element. Distortion-enabled
-full-suite gold images may change; inspect `fails/` before regenerating gold.
-
-`zig build bench-poly -Doptimize=ReleaseFast` measures runtime-selected
-degree-1/3/5/7 scalar/SIMD forward, Jacobian and inverse kernels in both modes.
-It reports warm-start repeated timings, checksums and descriptor sizes.

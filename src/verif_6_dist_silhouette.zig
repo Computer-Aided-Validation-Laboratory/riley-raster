@@ -266,7 +266,7 @@ fn writeStatsCsv(
     file_name: []const u8,
     distort_case: vconst.CameraDistortCase,
     stats: CentroidStats,
-    centroid_world: vector.Vec3f,
+    centroid_world: vector.Vec3F,
     scaling: cam.FOVScaling,
     pinhole_camera: *const cam.CameraPrepared,
     distorted_camera: *const cam.CameraPrepared,
@@ -331,8 +331,8 @@ fn writeStatsCsv(
 
 fn projectWorldNodeToRaster(
     camera_prepared: *const cam.CameraPrepared,
-    coord_world: vector.Vec3f,
-) vector.Vec3f {
+    coord_world: vector.Vec3F,
+) vector.Vec3F {
     var coord_raster = matrix.Mat44Ops.mulVec3(
         F,
         camera_prepared.world_to_cam_mat,

@@ -56,9 +56,9 @@ test "distorted tri3 interior reaches scalar or SIMD raster in both map modes" {
                 const camera_input = cam.CameraInput{
                     .pixels_num = .{ 200, 200 },
                     .pixels_size = .{ 0.01, 0.01 },
-                    .pos_world = vecstack.Vec3f.initSlice(&.{ 0.0, 0.0, 1.0 }),
+                    .pos_world = vecstack.Vec3F.initSlice(&.{ 0.0, 0.0, 1.0 }),
                     .rot_world = rotation.Rotation.init(0.0, 0.0, 0.0),
-                    .roi_cent_world = vecstack.Vec3f.initZeros(),
+                    .roi_cent_world = vecstack.Vec3F.initZeros(),
                     .focal_length = 1.0,
                     .sub_sample = sub_sample,
                     .subpixel_center_map = mode,

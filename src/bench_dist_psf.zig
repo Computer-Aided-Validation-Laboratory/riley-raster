@@ -402,7 +402,7 @@ pub fn main(init: std.process.Init) !void {
 
     var base_raster_config = tcfg.getRasterConfig(.bench);
     base_raster_config.parallel = .{ .threads = bench_args.total_threads };
-    base_raster_config.advanced.solver.hull_mode = bench_args.hull_mode;
+    base_raster_config.advanced.solver.oneroot.hull_mode = bench_args.hull_mode;
     base_raster_config.save_strategy = bench_args.save_strategy;
     base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .auto },

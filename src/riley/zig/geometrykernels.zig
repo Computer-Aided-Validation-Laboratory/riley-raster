@@ -16,13 +16,14 @@ const VecSF = buildconfig.VecSF;
 const VecSU8 = buildconfig.VecSU8;
 const tol = cfg.tol;
 
-const rops = @import("rasterops.zig");
+const frontend = @import("rasterfrontend.zig");
+const edgeops = @import("hulledge.zig");
 const newton = @import("newton.zig");
 const NewtonSeed = newton.NewtonSeed;
 const NewtonSeedSIMD = newton.NewtonSeedSIMD;
 const shapefun = @import("shapefun.zig");
 const NDArray = @import("ndarray.zig").NDArray;
-const Vec3Slices = rops.Vec3Slices;
+const Vec3Slices = frontend.Vec3Slices;
 const rastcfg = @import("rasterconfig.zig");
 
 // --------------------------------------------------------------------------------------
@@ -125,6 +126,57 @@ pub const NewtonParams = struct {
     w_const: F,
 };
 
+pub fn parentNodeCoords(comptime N: usize) [N][2]F {
+    return switch (N) {
+        4 => .{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+        },
+        6 => .{
+            .{ 0, 0 },   .{ 1, 0 },     .{ 0, 1 },
+            .{ 0.5, 0 }, .{ 0.5, 0.5 }, .{ 0, 0.5 },
+        },
+        8 => .{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+            .{ 0, -1 },  .{ 1, 0 },  .{ 0, 1 }, .{ -1, 0 },
+        },
+        9 => .{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+            .{ 0, -1 },  .{ 1, 0 },  .{ 0, 1 }, .{ -1, 0 },
+            .{ 0, 0 },
+        },
+        else => @compileError("parentNodeCoords requires a Newton element with 4,6,8,9 nodes"),
+    };
+}
+
+pub fn multiRootSeedCount(comptime N: usize) usize {
+    return switch (N) {
+        4, 6, 8 => 2 * N + 1,
+        9 => 2 * N - 1,
+        else => @compileError("multiRootSeedCount requires 4, 6, 8, or 9 nodes"),
+    };
+}
+
+pub fn multiRootSeedCoords(comptime N: usize, index: u8) [2]F {
+    std.debug.assert(index < multiRootSeedCount(N));
+
+    const parents = comptime parentNodeCoords(N);
+
+    const center: F = if (N == 6) 1.0 / 3.0 else 0;
+
+    if (index < N) return parents[index];
+
+    if (index < 2 * N - @as(usize, if (N == 9) 1 else 0)) {
+        const node = parents[index - N];
+        return .{ 0.5 * (center + node[0]), 0.5 * (center + node[1]) };
+    }
+
+    return .{ center, center };
+}
+
+// --------------------------------------------------------------------------------------
+// Public Geometry Kernels
+// --------------------------------------------------------------------------------------
+
 pub fn Tri3Kernel() type {
     return struct {
         pub const nodes_num = 3;
@@ -134,7 +186,7 @@ pub fn Tri3Kernel() type {
         pub const solver_kind = .hyperb;
 
         pub inline fn getInvElemArea(nodes: Vec3Slices(F)) F {
-            return 1.0 / rops.edgeFun3(
+            return 1.0 / edgeops.edgeFun3(
                 nodes.x[0],
                 nodes.y[0],
                 nodes.x[1],
@@ -166,7 +218,7 @@ pub fn Tri3Kernel() type {
             inv_area: F,
         ) [nodes_num]F {
             return [_]F{
-                rops.edgeFun3(
+                edgeops.edgeFun3(
                     nodes.x[1],
                     nodes.y[1],
                     nodes.x[2],
@@ -174,7 +226,7 @@ pub fn Tri3Kernel() type {
                     pixel_x,
                     pixel_y,
                 ) * inv_area,
-                rops.edgeFun3(
+                edgeops.edgeFun3(
                     nodes.x[2],
                     nodes.y[2],
                     nodes.x[0],
@@ -182,7 +234,7 @@ pub fn Tri3Kernel() type {
                     pixel_x,
                     pixel_y,
                 ) * inv_area,
-                rops.edgeFun3(
+                edgeops.edgeFun3(
                     nodes.x[0],
                     nodes.y[0],
                     nodes.x[1],
@@ -255,7 +307,7 @@ pub fn Tri3Kernel() type {
             v_inv_area: VecSF,
         ) [nodes_num]VecSF {
             return [_]VecSF{
-                rops.edgeFun3SIMD(
+                edgeops.edgeFun3SIMD(
                     nodes.x[1],
                     nodes.y[1],
                     nodes.x[2],
@@ -263,7 +315,7 @@ pub fn Tri3Kernel() type {
                     v_pixel_x,
                     v_pixel_y,
                 ) * v_inv_area,
-                rops.edgeFun3SIMD(
+                edgeops.edgeFun3SIMD(
                     nodes.x[2],
                     nodes.y[2],
                     nodes.x[0],
@@ -271,7 +323,7 @@ pub fn Tri3Kernel() type {
                     v_pixel_x,
                     v_pixel_y,
                 ) * v_inv_area,
-                rops.edgeFun3SIMD(
+                edgeops.edgeFun3SIMD(
                     nodes.x[0],
                     nodes.y[0],
                     nodes.x[1],
@@ -546,7 +598,10 @@ pub fn Quad4Kernel() type {
         pub const coord_space = .clip_px_leng;
         pub const solver_kind = .newton;
 
-        pub inline fn initSeed(seed_mode: rastcfg.NewtonSeedMode, hull_seed: ?NewtonSeed) NewtonSeed {
+        pub inline fn initSeed(
+            seed_mode: rastcfg.NewtonSeedMode,
+            hull_seed: ?NewtonSeed,
+        ) NewtonSeed {
             if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
@@ -598,6 +653,7 @@ pub fn Quad4Kernel() type {
                 eta_seed,
                 &node_vals,
             );
+
             if (comptime cfg.newton_solver_mode == .robust) {
                 if (result.conv) {
                     return .{
@@ -633,6 +689,7 @@ pub fn Quad4Kernel() type {
                     .eta_final = result.eta,
                 };
             }
+
             return .{
                 .weights = null,
                 .iters = result.iters,
@@ -748,7 +805,10 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const coord_space = .clip_px_leng;
         pub const solver_kind = .newton;
 
-        pub inline fn initSeed(seed_mode: rastcfg.NewtonSeedMode, hull_seed: ?NewtonSeed) NewtonSeed {
+        pub inline fn initSeed(
+            seed_mode: rastcfg.NewtonSeedMode,
+            hull_seed: ?NewtonSeed,
+        ) NewtonSeed {
             if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;

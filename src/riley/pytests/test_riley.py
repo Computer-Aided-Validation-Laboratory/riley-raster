@@ -8,6 +8,7 @@
 # --------------------------------------------------------------------------
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
 import shutil
@@ -175,7 +176,7 @@ def _has_renders(dir_path: Path) -> bool:
 
 
 def _has_cameramodel_renders(dir_path: Path) -> bool:
-    """Require the complete distortion/PSF/buffer matrix, not a partial render."""
+    """Require full distortion/PSF/buffer matrix, not a partial render."""
     distorts = (
         "none",
         "brown_conrady",
@@ -196,7 +197,8 @@ def _has_cameramodel_renders(dir_path: Path) -> bool:
     for distort in distorts:
         for psf in psfs:
             for mode in modes:
-                expected.add(Path(distort) / psf / mode / "cam0_frame0_field0.bmp")
+                rel = Path(distort) / psf / mode / "cam0_frame0_field0.bmp"
+                expected.add(rel)
     actual = {path.relative_to(dir_path) for path in _render_paths(dir_path)}
     return actual == expected
 
@@ -260,7 +262,9 @@ def _compare_renders(path_a: Path, path_b: Path) -> None:
         and arr_b_raw.dtype == np.uint8
     ):
         if not np.array_equal(arr_a_raw, arr_b_raw):
-            diff = np.abs(arr_a_raw.astype(np.int16) - arr_b_raw.astype(np.int16))
+            diff = np.abs(
+                arr_a_raw.astype(np.int16) - arr_b_raw.astype(np.int16)
+            )
             raise AssertionError(
                 f"render mismatch for {path_a.name}: "
                 f"max_abs_diff={int(np.max(diff))}, "
@@ -279,10 +283,16 @@ def _compare_renders(path_a: Path, path_b: Path) -> None:
 
 
 def _compare_render_dirs(dir_a: Path, dir_b: Path) -> None:
-    files_a = sorted(path_a.relative_to(dir_a) for path_a in _render_paths(dir_a))
-    files_b = sorted(path_b.relative_to(dir_b) for path_b in _render_paths(dir_b))
+    files_a = sorted(
+        path_a.relative_to(dir_a) for path_a in _render_paths(dir_a)
+    )
+    files_b = sorted(
+        path_b.relative_to(dir_b) for path_b in _render_paths(dir_b)
+    )
     if files_a != files_b:
-        raise AssertionError(f"output file mismatch: zig={files_a}, python={files_b}")
+        raise AssertionError(
+            f"output file mismatch: zig={files_a}, python={files_b}"
+        )
 
     print(f"Comparing renders in {dir_a} against {dir_b}...")
     start_time = perf_counter()
@@ -297,7 +307,9 @@ def _verify_rabbit_coverage(dir_path: Path) -> None:
     assert images, f"no rabbit renders in {dir_path}"
     for image_path in images:
         image = np.asarray(Image.open(image_path))
-        foreground = np.any(image != 128, axis=2) if image.ndim == 3 else image != 128
+        foreground = (
+            np.any(image != 128, axis=2) if image.ndim == 3 else image != 128
+        )
         coverage = np.count_nonzero(foreground) / foreground.size
         assert coverage > 0.10, (
             f"rabbit foreground coverage for {image_path} is "
@@ -334,6 +346,24 @@ def ensure_repo_context() -> None:
         )
 
 
+def _compute_zig_demo_sources_sha() -> str:
+    hasher = hashlib.sha256()
+    paths: list[Path] = []
+    src_dir = PROJECT_ROOT / "src"
+    if src_dir.is_dir():
+        paths.extend(src_dir.rglob("*.zig"))
+    for dir_name in ("data", "texture"):
+        asset_dir = PROJECT_ROOT / dir_name
+        if asset_dir.is_dir():
+            paths.extend(f for f in asset_dir.rglob("*") if f.is_file())
+    paths.sort()
+    for path in paths:
+        rel_str = str(path.relative_to(PROJECT_ROOT).as_posix())
+        hasher.update(rel_str.encode("utf-8"))
+        hasher.update(path.read_bytes())
+    return hasher.hexdigest()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def ensure_zig_demo_renders() -> None:
     if not _repo_assets_available():
@@ -347,18 +377,38 @@ def ensure_zig_demo_renders() -> None:
     silent_env = dict(os.environ)
     silent_env["RILEY_DEMO_SILENT"] = "1"
 
-    force_zig_render = os.environ.get("RILEY_FORCE_ZIG_RENDER", "0") == "1"
-    if force_zig_render:
-        for _, _, zig_dir, _, _ in DEMO_CASES:
-            shutil.rmtree(PROJECT_ROOT / zig_dir, ignore_errors=True)
+    stamp_path = PROJECT_ROOT / "out" / ".zig_demos.sha256"
+    current_sha = _compute_zig_demo_sources_sha()
+    cached_sha = ""
+    if stamp_path.is_file():
+        try:
+            cached_sha = stamp_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            cached_sha = ""
+    hash_mismatch = cached_sha != current_sha
 
-    needs_zig_render = force_zig_render or any(
-        not _has_expected_demo_renders(PROJECT_ROOT / zig_dir, frames_num)
-        for _, _, zig_dir, _, frames_num in DEMO_CASES
+    force_zig_render = os.environ.get("RILEY_FORCE_ZIG_RENDER", "0") == "1"
+
+    needs_zig_render = (
+        force_zig_render
+        or hash_mismatch
+        or any(
+            not _has_expected_demo_renders(PROJECT_ROOT / zig_dir, frames_num)
+            for _, _, zig_dir, _, frames_num in DEMO_CASES
+        )
     )
 
     if needs_zig_render:
+        if hash_mismatch and not force_zig_render:
+            print(
+                f"Zig sources or assets changed (cached={cached_sha[:8]}, "
+                f"current={current_sha[:8]}); re-rendering Zig demos."
+            )
+        for _, _, zig_dir, _, _ in DEMO_CASES:
+            shutil.rmtree(PROJECT_ROOT / zig_dir, ignore_errors=True)
         _run_command("zig demo render", _get_zig_run_cmd(), silent_env)
+        stamp_path.parent.mkdir(parents=True, exist_ok=True)
+        stamp_path.write_text(f"{current_sha}\n", encoding="utf-8")
     else:
         print("Reusing cached Zig demo renders.")
 

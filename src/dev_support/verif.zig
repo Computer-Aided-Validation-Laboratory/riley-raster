@@ -16,7 +16,7 @@ const iio = @import("../riley/zig/imageio.zig");
 const matrix = @import("../riley/zig/matstack.zig");
 const ndarray = @import("../riley/zig/ndarray.zig");
 const newton = @import("../riley/zig/newton.zig");
-const rops = @import("../riley/zig/rasterops.zig");
+const frontend = @import("../riley/zig/rasterfrontend.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const shapefun = @import("../riley/zig/shapefun.zig");
 const vecstack = @import("../riley/zig/vecstack.zig");
@@ -156,7 +156,7 @@ pub fn fordMapWorldForMeshType(
 fn worldToCamera(
     camera: *const cam.CameraPrepared,
     world_point: Vec3,
-) vecstack.Vec3f {
+) vecstack.Vec3F {
     return matrix.Mat44Ops.mulVec3(
         F,
         camera.world_to_cam_mat,
@@ -259,7 +259,7 @@ pub fn worldNodesToSolverCoords(
 pub fn toVec3Slices(
     comptime N: usize,
     nodes: *const ElementNodes(N),
-) rops.Vec3Slices(F) {
+) frontend.Vec3Slices(F) {
     return .{
         .x = @constCast(nodes.x[0..]),
         .y = @constCast(nodes.y[0..]),

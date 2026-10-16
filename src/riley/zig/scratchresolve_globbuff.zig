@@ -6,14 +6,19 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cfg = @import("buildconfig.zig").config;
+const std = @import("std");
 const cam = @import("camera.zig");
 const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const common = @import("scratchresolveglobal_common.zig");
-const subpxframe = @import("subpxframe.zig");
+const impl = if (cfg.simd == .on)
+    @import("scratchresolve_globbuff_simd.zig")
+else
+    @import("scratchresolve_globbuff_scalar.zig");
+const subpxframe = @import("subpxframe_globbuff.zig");
 
-pub fn resolve(
+pub fn resolveGlobBuff(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     target: *const subpxframe.SubpxTarget,
@@ -22,21 +27,18 @@ pub fn resolve(
     image_out_arr: *ndarray.NDArray(F),
     requested_workers: u16,
 ) !usize {
-    return common.resolveParallel(
-        false,
+    return impl.resolveGlobBuff(
         outer_alloc,
         io,
         target,
         camera,
         background_value,
         image_out_arr,
-        0,
-        target.domain.image_h_subpx / @as(usize, camera.sub_sample),
         requested_workers,
     );
 }
 
-pub fn resolveRows(
+pub fn resolveRowsGlobBuff(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     target: *const subpxframe.SubpxTarget,
@@ -47,8 +49,7 @@ pub fn resolveRows(
     image_y_max: usize,
     requested_workers: u16,
 ) !usize {
-    return common.resolveParallel(
-        false,
+    return impl.resolveRowsGlobBuff(
         outer_alloc,
         io,
         target,
@@ -60,4 +61,3 @@ pub fn resolveRows(
         requested_workers,
     );
 }
-const std = @import("std");

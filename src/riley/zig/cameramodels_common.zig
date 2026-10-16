@@ -11,12 +11,12 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
 const matstack = @import("matstack.zig");
-const Mat22f = matstack.Mat22f;
+const Mat22F = matstack.Mat22F;
 const Mat22Ops = matstack.Mat22Ops;
-const Mat33f = matstack.Mat33f;
+const Mat33F = matstack.Mat33F;
 const Mat33Ops = matstack.Mat33Ops;
-const Vec2f = @import("vecstack.zig").Vec2f;
-const Vec3f = @import("vecstack.zig").Vec3f;
+const Vec2F = @import("vecstack.zig").Vec2F;
+const Vec3F = @import("vecstack.zig").Vec3F;
 
 const cfg = buildconfig.config;
 const tol = cfg.tol;
@@ -35,7 +35,7 @@ pub const DistortCoords = struct {
 
 pub const DistortFordJacResult = struct {
     coords: DistortCoords,
-    jac: Mat22f,
+    jac: Mat22F,
 };
 
 pub const BrownConParams = struct {
@@ -144,12 +144,12 @@ pub const BrownConExt = struct {
 
 const TiltResult = struct {
     coords: DistortCoords,
-    jac: Mat22f,
+    jac: Mat22F,
 };
 
 pub const TiltProjection = struct {
-    ford_matrix: Mat33f,
-    inv_matrix: Mat33f,
+    ford_matrix: Mat33F,
+    inv_matrix: Mat33F,
 };
 
 fn isTiltActive(params: BrownConExtParams) bool {
@@ -210,12 +210,12 @@ fn fordLensWithJac(
 fn applyTilt(tilt: ?TiltProjection, x: F, y: F) TiltResult {
     const projection = tilt orelse return .{
         .coords = .{ .x = x, .y = y },
-        .jac = Mat22f.initIdentity(),
+        .jac = Mat22F.initIdentity(),
     };
 
     return applyHomography(projection.ford_matrix, x, y) catch .{
         .coords = .{ .x = std.math.nan(F), .y = std.math.nan(F) },
-        .jac = Mat22f.initFill(std.math.nan(F)),
+        .jac = Mat22F.initFill(std.math.nan(F)),
     };
 }
 
@@ -224,7 +224,7 @@ fn removeTilt(tilt: ?TiltProjection, x: F, y: F) !DistortCoords {
     return (try applyHomography(projection.inv_matrix, x, y)).coords;
 }
 
-pub fn calcTiltMatrix(tau_x: F, tau_y: F) Mat33f {
+pub fn calcTiltMatrix(tau_x: F, tau_y: F) Mat33F {
     const cos_x = @cos(tau_x);
     const sin_x = @sin(tau_x);
     const cos_y = @cos(tau_y);
@@ -233,16 +233,16 @@ pub fn calcTiltMatrix(tau_x: F, tau_y: F) Mat33f {
     const r12 = sin_x;
     const r22 = cos_y * cos_x;
 
-    return Mat33f.initRows(.{
+    return Mat33F.initRows(.{
         .{ r22 * cos_y - r02 * sin_y, r22 * sin_y * sin_x + r02 * cos_y * sin_x, 0.0 },
         .{ -r12 * sin_y, r22 * cos_x + r12 * cos_y * sin_x, 0.0 },
         .{ sin_y, -cos_y * sin_x, r22 },
     });
 }
 
-fn applyHomography(matrix: Mat33f, x: F, y: F) !TiltResult {
+fn applyHomography(matrix: Mat33F, x: F, y: F) !TiltResult {
     const mat = matrix.mat;
-    const projected = matrix.mulVec(Vec3f.initSlice(&[_]F{ x, y, 1.0 }));
+    const projected = matrix.mulVec(Vec3F.initSlice(&[_]F{ x, y, 1.0 }));
     const numerator_x = projected.get(0);
     const numerator_y = projected.get(1);
     const denominator = projected.get(2);
@@ -258,7 +258,7 @@ fn applyHomography(matrix: Mat33f, x: F, y: F) !TiltResult {
 
     return .{
         .coords = .{ .x = out_x, .y = out_y },
-        .jac = Mat22f.initRows(.{
+        .jac = Mat22F.initRows(.{
             .{
                 (mat[0][0] * denominator - numerator_x * mat[2][0]) * inv_denominator_sq,
                 (mat[0][1] * denominator - numerator_x * mat[2][1]) * inv_denominator_sq,
@@ -333,7 +333,7 @@ pub const PolyMap = struct {
         const result = evalPoly(F, true, self, x, y);
         return .{
             .coords = .{ .x = result.x, .y = result.y },
-            .jac = Mat22f.initRows(.{
+            .jac = Mat22F.initRows(.{
                 .{ result.xx, result.xy },
                 .{ result.yx, result.yy },
             }),
@@ -705,7 +705,7 @@ fn invFromFordWithJac(
         const delta = Mat22Ops.solveChecked(
             F,
             fwd.jac,
-            Vec2f.initSlice(&.{ -f0, -f1 }),
+            Vec2F.initSlice(&.{ -f0, -f1 }),
             tol.distort.det,
         ) catch return error.SingularJac;
         x += delta.x();
@@ -757,7 +757,7 @@ fn distortFordWithJacFromRadialScale(
 
     return .{
         .coords = distorted,
-        .jac = Mat22f.initRows(.{
+        .jac = Mat22F.initRows(.{
             .{ dx_fwd_dx, dx_fwd_dy },
             .{ dy_fwd_dx, dy_fwd_dy },
         }),
@@ -961,7 +961,7 @@ test "BrownConradyExt cached tilt matrices compose to identity" {
     const ford = projection.ford_matrix;
     const inv = projection.inv_matrix;
     const product = ford.mulMat(inv);
-    const identity = Mat33f.initIdentity();
+    const identity = Mat33F.initIdentity();
     const identity_mat = identity.mat;
     const product_mat = product.mat;
     inline for (0..3) |row| {

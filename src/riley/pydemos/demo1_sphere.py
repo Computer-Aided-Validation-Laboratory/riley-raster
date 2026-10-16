@@ -91,7 +91,6 @@ def main() -> None:
     config = riley.RasterConfig(
         parallel=total_threads,
         save_strategy=riley.SaveStrategy.disk,
-        image_save_mode=riley.ImageSaveMode.grey,
         save_scaling=riley.ScaleStrategy.auto,
     )
 
@@ -106,7 +105,9 @@ def main() -> None:
     if image_array is None:
         print(f"Rendered disk output to {out_dir}")
     else:
-        print(f"Rendered image array with shape {image_array.shape} to {out_dir}")
+        print(
+            f"Rendered image array with shape {image_array.shape} to {out_dir}"
+        )
 
 
 if __name__ == "__main__":

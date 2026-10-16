@@ -13,10 +13,11 @@ const ndarray = @import("ndarray.zig");
 const iio = @import("imageio.zig");
 const matslice = @import("matslice.zig");
 const cam = @import("camera.zig");
-const mo = @import("meshpipeline.zig");
+const meshpipe = @import("meshpipeline.zig");
 const newton = @import("newton.zig");
 const rastcfg = @import("rasterconfig.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
+const elemtilebin = @import("elemtilebinning.zig");
 pub const ReportMode = rastcfg.ReportMode;
 
 // --------------------------------------------------------------------------------------
@@ -84,6 +85,97 @@ pub fn rasterStageTime(frame_times: FrameTimes) F {
     return frame_times.raster_loop;
 }
 
+pub fn initGlobalSubpxStats(
+    buffer_mode: rastcfg.BufferMode,
+    pixels_num: [2]u32,
+    sub_sample: u32,
+    halo_px: u16,
+    actual_tile_size: u16,
+    frame_times: *FrameTimes,
+) void {
+    const sub_samp: usize = @intCast(sub_sample);
+    frame_times.global_subpx_stats = .{
+        .mode = buffer_mode,
+        .output_w_subpx = @as(usize, pixels_num[0]) * sub_samp,
+        .output_h_subpx = @as(usize, pixels_num[1]) * sub_samp,
+        .outer_halo_subpx = @as(usize, halo_px) * sub_samp,
+        .tile_core_subpx = @as(usize, actual_tile_size) * sub_samp,
+        .tile_scratch_subpx = (@as(usize, actual_tile_size) +
+            2 * @as(usize, halo_px)) * sub_samp,
+    };
+}
+
+pub fn recordTilingStatsGlobBuff(
+    tiling: elemtilebin.TileElemOverlaps,
+    tile_grid_count: usize,
+    stats: *GlobalSubpxStats,
+) void {
+    stats.tile_grid_count += tile_grid_count;
+    stats.active_tile_count += tiling.active_tiles.len;
+    stats.overlap_refs_total += tiling.overlaps.len;
+    for (tiling.active_tiles) |tile| {
+        stats.overlap_refs_max = @max(stats.overlap_refs_max, tile.overlap_count);
+    }
+}
+
+pub fn recordGlobalSubpxFullStats(
+    pixels_num: [2]u32,
+    actual_tile_size: u16,
+    tiling: elemtilebin.TileElemOverlaps,
+    frame_times: *FrameTimes,
+) void {
+    if (frame_times.global_subpx_stats) |*stats| {
+        const tiles_x = std.math.divCeil(
+            usize,
+            pixels_num[0],
+            actual_tile_size,
+        ) catch unreachable;
+        const tiles_y = std.math.divCeil(
+            usize,
+            pixels_num[1],
+            actual_tile_size,
+        ) catch unreachable;
+        recordTilingStatsGlobBuff(tiling, tiles_x * tiles_y, stats);
+    }
+}
+
+pub fn recordGlobalSubpxStripeStats(
+    cam_w_px: u32,
+    actual_tile_size: u16,
+    core_suby_min: usize,
+    core_suby_max: usize,
+    sub_samp: usize,
+    stripe_subpx: usize,
+    storage_w_subpx: usize,
+    storage_h_subpx: usize,
+    stripe_tiling: elemtilebin.TileElemOverlaps,
+    frame_times: *FrameTimes,
+) void {
+    if (frame_times.global_subpx_stats) |*stats| {
+        const tiles_x = std.math.divCeil(
+            usize,
+            cam_w_px,
+            actual_tile_size,
+        ) catch unreachable;
+        const stripe_h_px = (core_suby_max - core_suby_min) / sub_samp;
+        const tiles_y = std.math.divCeil(
+            usize,
+            stripe_h_px,
+            actual_tile_size,
+        ) catch unreachable;
+        recordTilingStatsGlobBuff(stripe_tiling, tiles_x * tiles_y, stats);
+
+        stats.stripe_core_subpx = stripe_subpx;
+        stats.stripe_count += 1;
+        stats.final_stripe_core_subpx = core_suby_max - core_suby_min;
+        stats.stripe_storage_w_subpx = storage_w_subpx;
+        stats.stripe_storage_h_subpx = storage_h_subpx;
+        stats.stripe_storage_samples_cleared += @intCast(
+            storage_w_subpx * storage_h_subpx,
+        );
+    }
+}
+
 pub const EndToEndTimes = struct {
     setup_time: F = 0,
     setup_other_time: F = 0,
@@ -100,6 +192,7 @@ pub const BenchLog = struct {
     solver_calls: u64 = 0,
     total_solver_iters: u64 = 0,
     solver_diverged: u64 = 0,
+    coherent: CoherentStats = .{},
     tess_checks: u64 = 0,
     tess_passes: u64 = 0,
     total_shaded_px: u64 = 0,
@@ -109,6 +202,26 @@ pub const BenchLog = struct {
     cam_time_ns: F = 0,
     elem_time_ns: F = 0,
     resolve_time_ns: F = 0,
+};
+
+pub const CoherentStats = struct {
+    candidate_children: u64 = 0,
+    cache_eligible: u64 = 0,
+    cache_attempts: u64 = 0,
+    cache_successes: u64 = 0,
+    cache_failures: u64 = 0,
+    extrap_attempts: u64 = 0,
+    extrap_successes: u64 = 0,
+    center_attempts: u64 = 0,
+    center_successes: u64 = 0,
+    center_failures: u64 = 0,
+    reuse_recoveries: u64 = 0,
+    bank_fallbacks: u64 = 0,
+    bank_fallback_successes: u64 = 0,
+    bank_improved: u64 = 0,
+    bank_recovered: u64 = 0,
+    bank_numerical_ties: u64 = 0,
+    cross_child: u64 = 0,
 };
 
 pub const FrameBenchCapture = struct {
@@ -171,9 +284,9 @@ pub fn publishFrameResults(
     total_nodes_num: usize,
     total_elems_num: usize,
     total_elems_in_image: usize,
-    prep_meshes: []const mo.MeshPrepared,
+    prep_meshes: []const meshpipe.MeshPrepared,
 ) !void {
-    const nodes_per_elem = mo.calcNodesPerElem(prep_meshes);
+    const nodes_per_elem = meshpipe.calcNodesPerElem(prep_meshes);
     try publishFrameResultsWithNodesPerElem(
         outer_alloc,
         io,
@@ -303,6 +416,9 @@ pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
     dst.solver_calls += src.solver_calls;
     dst.total_solver_iters += src.total_solver_iters;
     dst.solver_diverged += src.solver_diverged;
+    inline for (std.meta.fields(CoherentStats)) |field| {
+        @field(dst.coherent, field.name) += @field(src.coherent, field.name);
+    }
     dst.tess_checks += src.tess_checks;
     dst.tess_passes += src.tess_passes;
     dst.total_shaded_px += src.total_shaded_px;
@@ -1386,6 +1502,18 @@ pub fn ReportContext(comptime mode: ReportMode) type {
         pub inline fn recordSolverCalls(self: @This(), solver_calls: u64) void {
             if (self.bench()) |bench_log| {
                 bench_log.solver_calls += solver_calls;
+            }
+        }
+
+        pub inline fn recordCoherentStats(
+            self: @This(),
+            counts: CoherentStats,
+        ) void {
+            if (self.bench()) |bench_log| {
+                inline for (std.meta.fields(CoherentStats)) |field| {
+                    @field(bench_log.coherent, field.name) +=
+                        @field(counts, field.name);
+                }
             }
         }
 

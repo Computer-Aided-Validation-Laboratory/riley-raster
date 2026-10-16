@@ -2,7 +2,7 @@
   <img src="https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/riley_logo.png" alt="Riley Logo" width="620">
 </p>
 
-<p align="center"><strong>A high performance software rasteriser for digital image correlation uncertainty quantification.</strong></p>
+<p align="center"><strong>A high performance rasteriser for digital image correlation uncertainty quantification.</strong></p>
 
 <p align="center">
   <a href="https://ziglang.org/download/"><img src="https://img.shields.io/badge/Zig-0.16.0-F7A41D?logo=zig&logoColor=white" alt="Zig version"></a>
@@ -13,9 +13,9 @@
   <a href="https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Computer-Aided-Validation-Laboratory/riley-raster" alt="MIT license"></a>
 </p>
 
-Riley is a high performance Zig software rasteriser for digital image correlation uncertainty quantification (DIC UQ). It synthesises deformed speckle images from finite element simulations, with higher order surface elements (`tri3`, `tri6`, `quad4`, `quad8`, and `quad9`), camera models and distortion, texture/nodal/analytic shaders, and mixed scenes.
+Riley is a high performance software rasteriser written in Zig for digital image correlation uncertainty quantification (DIC UQ). It synthesises deformed speckle images from finite element simulations, with higher order surface elements (`tri3`, `tri6`, `quad4`, `quad8`, and `quad9`), realistic camera models and distortion as well as texture/nodal/analytic shaders, and mixed scenes.
 
-Riley's Zig core uses `comptime` specialisation and SIMD with `@Vector` to keep its rendering path direct. It also uses hierarchical offline parallelisation allowing scaling over cameras and timesteps to be rendered. Riley is available as a Zig library and executable, a C compatible ABI, and the [`riley-raster`](https://pypi.org/project/riley-raster/) Python package.
+Riley's Zig core uses `comptime` specialisation and SIMD with `@Vector` to keep its rendering path fast and direct. It also uses hierarchical offline parallelisation allowing scaling over cameras and timesteps to be rendered. Riley is available as a Zig library and executable, a C compatible ABI, and the [`riley-raster`](https://pypi.org/project/riley-raster/) Python package which provides python bindings to the compiled Zig library.
 
 ## Quick start: Zig
 
@@ -28,7 +28,7 @@ zig build demo0-quickstart -Doptimize=ReleaseFast
 Renders are written to `out/`. Run the combined test suite with:
 
 ```shell
-zig build test-verif-basic -Doptimize=ReleaseSafe
+zig build test-verif-basic
 ```
 
 ## Quick start: Python

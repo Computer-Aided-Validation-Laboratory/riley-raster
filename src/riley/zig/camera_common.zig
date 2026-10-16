@@ -15,7 +15,7 @@ const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cm = @import("cameramodels.zig");
-const db = @import("distortbounds.zig");
+const distbounds = @import("distortbounds.zig");
 const camera_scalar = @import("camera_scalar.zig");
 const camera_simd = @import("camera_simd.zig");
 
@@ -29,9 +29,9 @@ const camera_impl = if (cfg.simd == .on) camera_simd else camera_scalar;
 pub const CameraInput = struct {
     pixels_num: [2]u32,
     pixels_size: [2]F,
-    pos_world: vec.Vec3f,
+    pos_world: vec.Vec3F,
     rot_world: rotation.Rotation,
-    roi_cent_world: vec.Vec3f,
+    roi_cent_world: vec.Vec3F,
     focal_length: F,
     sub_sample: u32,
     distort: cm.DistortParams = .none,
@@ -123,23 +123,23 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
 
         pixels_num: [2]u32,
         pixels_size: [2]F,
-        pos_world: vec.Vec3f,
+        pos_world: vec.Vec3F,
         rot_world: rotation.Rotation,
-        roi_cent_world: vec.Vec3f,
+        roi_cent_world: vec.Vec3F,
         focal_length: F,
         sub_sample: u32,
         sensor_size: [2]F,
         image_dims: [2]F,
         image_dist: F,
-        cam_to_world_mat: matrix.Mat44f,
-        world_to_cam_mat: matrix.Mat44f,
+        cam_to_world_mat: matrix.Mat44F,
+        world_to_cam_mat: matrix.Mat44F,
         distort: cm.DistortModel,
         psf: cm.PointSpreadFunc,
         prep_psf: cm.PreparedPSF,
         coord_sys: CameraCoordSys,
         ideal_pixel_centers: ndarray.NDArray(F),
         subpixel_center_map: SubPixelCenterMap,
-        ideal_sensor_bounds: ?db.DistortBounds = null,
+        ideal_sensor_bounds: ?distbounds.DistortBounds = null,
 
         pub fn init(
             allocator: std.mem.Allocator,
@@ -165,7 +165,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
                 (image_dist / input.focal_length) * sensor_size[1],
             };
 
-            var cam_to_world_mat = matrix.Mat44f.initIdentity();
+            var cam_to_world_mat = matrix.Mat44F.initIdentity();
             cam_to_world_mat.insertColVec(3, 0, 3, pos_w);
             cam_to_world_mat.insertSubMat(0, 0, 3, 3, rot_matrix);
 
@@ -227,7 +227,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             self.ideal_sensor_bounds = if (isNoDistort(self.distort))
                 null
             else
-                try db.idealSensorBounds(&self, self.prep_psf.halo_px);
+                try distbounds.idealSensorBounds(&self, self.prep_psf.halo_px);
 
             return self;
         }
@@ -362,7 +362,7 @@ const coord_x = [_]F{ -bb, bb, bb, -bb, -bb, bb, bb, -bb };
 const coord_y = [_]F{ bb, bb, -bb, -bb, bb, bb, -bb, -bb };
 const coord_z = [_]F{ bb, bb, bb, bb, -bb, -bb, -bb, -bb };
 const roi_world_arr = [_]F{ 0, 0, 0 };
-const roi_world = vec.Vec3f.initSlice(&roi_world_arr);
+const roi_world = vec.Vec3F.initSlice(&roi_world_arr);
 const sub_samp: u32 = 2;
 
 fn expectApproxEqRelAbs(
@@ -457,9 +457,9 @@ test "CameraPrepared.init rejects singular distortion before camera setup" {
         CameraPrepared.init(std.testing.allocator, .{
             .pixels_num = .{ 10, 10 },
             .pixels_size = .{ 0.01, 0.01 },
-            .pos_world = vec.Vec3f.initZeros(),
+            .pos_world = vec.Vec3F.initZeros(),
             .rot_world = rotation.Rotation.init(0, 0, 0),
-            .roi_cent_world = vec.Vec3f.initZeros(),
+            .roi_cent_world = vec.Vec3F.initZeros(),
             .focal_length = 1.0,
             .sub_sample = 1,
             .distort = .{ .brown_con_ext = .{
@@ -643,9 +643,9 @@ test "CameraPrepared.distortionNone" {
     const input = CameraInput{
         .pixels_num = .{ 10, 10 },
         .pixels_size = .{ 0.01, 0.01 },
-        .pos_world = vec.Vec3f.initZeros(),
+        .pos_world = vec.Vec3F.initZeros(),
         .rot_world = rotation.Rotation.init(0, 0, 0),
-        .roi_cent_world = vec.Vec3f.initZeros(),
+        .roi_cent_world = vec.Vec3F.initZeros(),
         .focal_length = 1.0,
         .sub_sample = 1,
         .distort = .none,
@@ -673,9 +673,9 @@ test "CameraPrepared.brownConradyExtDistortionApplied" {
     const input = CameraInput{
         .pixels_num = .{ 10, 10 },
         .pixels_size = .{ 0.01, 0.01 },
-        .pos_world = vec.Vec3f.initZeros(),
+        .pos_world = vec.Vec3F.initZeros(),
         .rot_world = rotation.Rotation.init(0, 0, 0),
-        .roi_cent_world = vec.Vec3f.initZeros(),
+        .roi_cent_world = vec.Vec3F.initZeros(),
         .focal_length = 1.0,
         .sub_sample = 1,
         .distort = .{ .brown_con_ext = distort },
@@ -772,9 +772,9 @@ test "camera preparation propagates polynomial inverse errors without leaking" {
     var input = CameraInput{
         .pixels_num = .{ 2, 2 },
         .pixels_size = .{ 0.001, 0.001 },
-        .pos_world = @import("vecstack.zig").Vec3f.initSlice(&.{ 0.0, 0.0, 1.0 }),
+        .pos_world = @import("vecstack.zig").Vec3F.initSlice(&.{ 0.0, 0.0, 1.0 }),
         .rot_world = @import("rotation.zig").Rotation.init(0.0, 0.0, 0.0),
-        .roi_cent_world = @import("vecstack.zig").Vec3f.initZeros(),
+        .roi_cent_world = @import("vecstack.zig").Vec3F.initZeros(),
         .focal_length = 0.1,
         .sub_sample = 1,
         .subpixel_center_map = .full_in_mem,

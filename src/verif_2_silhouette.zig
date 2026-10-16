@@ -251,7 +251,7 @@ fn writeStatsCsv(
     out_dir: std.Io.Dir,
     file_name: []const u8,
     stats: CentroidStats,
-    centroid_world: vector.Vec3f,
+    centroid_world: vector.Vec3F,
     scaling: cam.FOVScaling,
     camera_prepared: *const cam.CameraPrepared,
     frame_coords: *const meshio.Coords,
@@ -313,8 +313,8 @@ fn writeStatsCsv(
 
 fn projectWorldNodeToRaster(
     camera_prepared: *const cam.CameraPrepared,
-    coord_world: vector.Vec3f,
-) vector.Vec3f {
+    coord_world: vector.Vec3F,
+) vector.Vec3F {
     var coord_raster = matrix.Mat44Ops.mulVec3(
         F,
         camera_prepared.world_to_cam_mat,
