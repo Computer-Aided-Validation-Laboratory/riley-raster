@@ -1,0 +1,475 @@
+// Ordered shader-pipe output slots and prepared, sample-domain resolution.
+// Slot and program bounds are checked during preparation, not during rasterisation.
+const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
+
+pub const max_slots = 16;
+pub const max_operations = 64;
+pub const max_stack = 16;
+pub const max_channels = buildconfig.config.max_image_channels;
+
+pub const Family = union(enum) {
+    mono,
+    rgb,
+    ir,
+    multichannel: u8,
+
+    pub fn channels(self: Family) u8 {
+        return switch (self) {
+            .mono, .ir => 1,
+            .rgb => 3,
+            .multichannel => |count| count,
+        };
+    }
+};
+
+pub const SlotKind = enum { channel, field, parameter, constant };
+pub const Slot = struct { kind: SlotKind, index: u8 };
+
+pub fn Outputs(comptime T: type) type {
+    return struct {
+        channel: [max_slots]T = undefined,
+        field: [max_slots]T = undefined,
+        parameter: [max_slots]T = undefined,
+
+        pub inline fn get(self: *const @This(), slot: Slot) T {
+            return switch (slot.kind) {
+                .channel => self.channel[slot.index],
+                .field => self.field[slot.index],
+                .parameter => self.parameter[slot.index],
+                .constant => unreachable,
+            };
+        }
+
+        pub inline fn set(self: *@This(), slot: Slot, value: T) void {
+            switch (slot.kind) {
+                .channel => self.channel[slot.index] = value,
+                .field => self.field[slot.index] = value,
+                .parameter => self.parameter[slot.index] = value,
+                .constant => unreachable,
+            }
+        }
+    };
+}
+
+pub const ScalarOutputs = Outputs(F);
+pub const VectorOutputs = Outputs(buildconfig.VecSF);
+
+pub const Op = union(enum) {
+    load: Slot,
+    add,
+    subtract,
+    multiply,
+    divide,
+    power4,
+    clamp01,
+    clamp: struct { lower: F, upper: F },
+    lut: u8,
+    store: u8,
+};
+
+pub const Lookup = struct {
+    first: F,
+    step: F,
+    values: []const F,
+
+    pub fn validate(self: Lookup) !void {
+        if (!std.math.isFinite(self.first) or !std.math.isFinite(self.step) or
+            self.step <= 0 or self.values.len < 2) return error.InvalidLookup;
+        for (self.values) |value| {
+            if (!std.math.isFinite(value)) return error.InvalidLookup;
+        }
+    }
+
+    pub inline fn sample(self: Lookup, value: F) F {
+        const x = std.math.clamp((value - self.first) / self.step, 0, @as(F, @floatFromInt(self.values.len - 1)));
+        const i: usize = @intFromFloat(x);
+        if (i == self.values.len - 1) return self.values[i];
+        const t = x - @as(F, @floatFromInt(i));
+        return self.values[i] + t * (self.values[i + 1] - self.values[i]);
+    }
+};
+
+/// Integrates blackbody spectral radiance against an absolute, dimensionless
+/// camera response. Wavelengths are metres; values are W/(m² sr).
+pub const BandResponse = struct {
+    wavelengths_m: []const F,
+    response: []const F,
+
+    pub fn prepareRadianceLookup(self: BandResponse, allocator: std.mem.Allocator, temp_first_k: F, temp_last_k: F, temp_step_k: F) !Lookup {
+        if (self.wavelengths_m.len < 2 or self.wavelengths_m.len != self.response.len or
+            !std.math.isFinite(temp_first_k) or !std.math.isFinite(temp_last_k) or
+            !std.math.isFinite(temp_step_k) or temp_first_k <= 0 or
+            temp_last_k <= temp_first_k or temp_step_k <= 0)
+            return error.InvalidBandResponse;
+        var any_response = false;
+        for (self.wavelengths_m, self.response, 0..) |lambda, weight, i| {
+            if (!std.math.isFinite(lambda) or !std.math.isFinite(weight) or
+                lambda <= 0 or weight < 0 or
+                (i > 0 and lambda <= self.wavelengths_m[i - 1]))
+                return error.InvalidBandResponse;
+            any_response = any_response or weight > 0;
+        }
+        if (!any_response) return error.InvalidBandResponse;
+        const count: usize = @as(usize, @intFromFloat(@ceil((temp_last_k - temp_first_k) / temp_step_k))) + 1;
+        if (count < 2 or count > 65536) return error.InvalidBandResponse;
+        const values = try allocator.alloc(F, count);
+        for (values, 0..) |*result, ti| {
+            const temp = temp_first_k + @as(F, @floatFromInt(ti)) * temp_step_k;
+            var total: F = 0;
+            for (1..self.wavelengths_m.len) |wi| {
+                const a = self.wavelengths_m[wi - 1];
+                const b = self.wavelengths_m[wi];
+                total += (b - a) * 0.5 *
+                    (self.response[wi - 1] * planckSpectralRadiance(a, temp) +
+                        self.response[wi] * planckSpectralRadiance(b, temp));
+            }
+            result.* = total;
+        }
+        return .{ .first = temp_first_k, .step = temp_step_k, .values = values };
+    }
+};
+
+pub fn planckSpectralRadiance(wavelength_m: F, temperature_k: F) F {
+    const h: F = 6.62607015e-34;
+    const c: F = 299792458.0;
+    const k: F = 1.380649e-23;
+    const lambda2 = wavelength_m * wavelength_m;
+    const lambda5 = lambda2 * lambda2 * wavelength_m;
+    return (2 * h * c * c) / (lambda5 * @exp(h * c / (wavelength_m * k * temperature_k)) - lambda5);
+}
+
+pub const Written = struct {
+    channel: u16 = 0,
+    field: u16 = 0,
+    parameter: u16 = 0,
+
+    pub fn has(self: Written, slot: Slot) bool {
+        if (slot.index >= max_slots or slot.kind == .constant) return false;
+        const mask: u16 = @as(u16, 1) << @intCast(slot.index);
+        return switch (slot.kind) {
+            .channel => self.channel & mask != 0,
+            .field => self.field & mask != 0,
+            .parameter => self.parameter & mask != 0,
+            .constant => unreachable,
+        };
+    }
+
+    pub fn add(self: *Written, slot: Slot) !void {
+        if (slot.index >= max_slots or slot.kind == .constant) return error.InvalidSlot;
+        if (self.has(slot)) return error.RepeatedWriter;
+        const mask: u16 = @as(u16, 1) << @intCast(slot.index);
+        switch (slot.kind) {
+            .channel => self.channel |= mask,
+            .field => self.field |= mask,
+            .parameter => self.parameter |= mask,
+            .constant => unreachable,
+        }
+    }
+};
+
+pub const Program = struct {
+    operations: []const Op,
+    constants: []const F = &.{},
+    lookups: []const Lookup = &.{},
+
+    pub fn validate(self: Program, written: Written, channels: u8) !void {
+        if (channels == 0 or channels > max_channels or self.operations.len == 0 or
+            self.operations.len > max_operations or self.constants.len > max_slots)
+            return error.InvalidProgram;
+        for (self.constants) |value| {
+            if (!std.math.isFinite(value)) return error.InvalidConstant;
+        }
+        for (self.lookups) |lut| try lut.validate();
+        var depth: usize = 0;
+        var stored: u16 = 0;
+        for (self.operations) |op| switch (op) {
+            .load => |slot| {
+                if (slot.kind == .constant) {
+                    if (slot.index >= self.constants.len) return error.InvalidSlot;
+                } else if (!written.has(slot)) return error.UnwrittenSlot;
+                depth += 1;
+                if (depth > max_stack) return error.InvalidProgram;
+            },
+            .add, .subtract, .multiply, .divide => {
+                if (depth < 2) return error.InvalidProgram;
+                depth -= 1;
+            },
+            .power4, .clamp01 => {
+                if (depth < 1) return error.InvalidProgram;
+            },
+            .clamp => |bounds| {
+                if (depth < 1 or !std.math.isFinite(bounds.lower) or
+                    !std.math.isFinite(bounds.upper) or bounds.lower > bounds.upper)
+                    return error.InvalidProgram;
+            },
+            .lut => |idx| {
+                if (depth < 1 or idx >= self.lookups.len) return error.InvalidProgram;
+            },
+            .store => |idx| {
+                if (depth != 1 or idx >= channels) return error.InvalidProgram;
+                const bit: u16 = @as(u16, 1) << @intCast(idx);
+                if (stored & bit != 0) return error.InvalidProgram;
+                stored |= bit;
+                depth = 0;
+            },
+        };
+        if (depth != 0 or stored != (@as(u16, 1) << @intCast(channels)) - 1)
+            return error.InvalidProgram;
+    }
+
+    pub fn evaluate(self: Program, inputs: anytype, channels: u8, out: anytype) void {
+        const T = @TypeOf(out.*[0]);
+        var stack: [max_stack]T = undefined;
+        var depth: usize = 0;
+        for (self.operations) |op| switch (op) {
+            .load => |slot| {
+                stack[depth] = if (slot.kind == .constant)
+                    splat(T, self.constants[slot.index])
+                else
+                    inputs.get(slot);
+                depth += 1;
+            },
+            .add => {
+                depth -= 1;
+                stack[depth - 1] += stack[depth];
+            },
+            .subtract => {
+                depth -= 1;
+                stack[depth - 1] -= stack[depth];
+            },
+            .multiply => {
+                depth -= 1;
+                stack[depth - 1] *= stack[depth];
+            },
+            .divide => {
+                depth -= 1;
+                stack[depth - 1] /= stack[depth];
+            },
+            .power4 => {
+                const v = stack[depth - 1];
+                stack[depth - 1] = (v * v) * (v * v);
+            },
+            .clamp01 => {
+                stack[depth - 1] = @min(splat(T, 1), @max(splat(T, 0), stack[depth - 1]));
+            },
+            .clamp => |bounds| {
+                stack[depth - 1] = @min(splat(T, bounds.upper), @max(splat(T, bounds.lower), stack[depth - 1]));
+            },
+            .lut => |idx| {
+                if (T == F) {
+                    stack[depth - 1] = self.lookups[idx].sample(stack[depth - 1]);
+                } else {
+                    var lanes: [buildconfig.SimdWidth]F = @bitCast(stack[depth - 1]);
+                    for (&lanes) |*lane| lane.* = self.lookups[idx].sample(lane.*);
+                    stack[depth - 1] = @bitCast(lanes);
+                }
+            },
+            .store => |idx| {
+                out.*[idx] = stack[0];
+                depth = 0;
+            },
+        };
+        _ = channels;
+    }
+};
+
+inline fn splat(comptime T: type, value: F) T {
+    return if (T == F) value else @splat(value);
+}
+
+pub const Resolver = union(enum) {
+    identity: []const Slot,
+    sum: []const Slot,
+    modulate: struct { sources: []const Slot, factor: Slot, ambient: F = 0, gain: F = 1 },
+    weighted_sum: struct { sources: []const Slot, weights: []const F },
+    greybody_bolometric: struct { temperature: Slot, emissivity: Slot },
+    greybody_band: struct { temperature: Slot, emissivity: Slot, radiance: Lookup },
+    expression: Program,
+
+    pub fn validate(self: Resolver, written: Written, constants: []const F, channels: u8) !void {
+        if (channels == 0 or channels > max_channels) return error.InvalidChannels;
+        switch (self) {
+            .identity => |slots| {
+                if (slots.len != channels) return error.InvalidChannels;
+                for (slots) |slot| {
+                    if (slot.kind != .channel) return error.InvalidResolver;
+                    try checkSlot(slot, written, constants.len);
+                }
+            },
+            .sum => |slots| {
+                if (slots.len < channels or slots.len % channels != 0) return error.InvalidChannels;
+                for (slots) |slot| {
+                    if (slot.kind != .channel) return error.InvalidResolver;
+                    try checkSlot(slot, written, constants.len);
+                }
+            },
+            .modulate => |m| {
+                if (m.sources.len != channels or !std.math.isFinite(m.ambient) or
+                    !std.math.isFinite(m.gain)) return error.InvalidResolver;
+                for (m.sources) |slot| {
+                    if (slot.kind != .channel) return error.InvalidResolver;
+                    try checkSlot(slot, written, constants.len);
+                }
+                if (m.factor.kind != .parameter) return error.InvalidResolver;
+                try checkSlot(m.factor, written, constants.len);
+            },
+            .weighted_sum => |w| {
+                if (w.sources.len < channels or w.sources.len % channels != 0 or
+                    w.sources.len != w.weights.len) return error.InvalidResolver;
+                for (w.sources) |slot| {
+                    if (slot.kind != .channel) return error.InvalidResolver;
+                    try checkSlot(slot, written, constants.len);
+                }
+                for (w.weights) |weight| if (!std.math.isFinite(weight)) return error.InvalidResolver;
+            },
+            .greybody_bolometric => |g| {
+                if (channels != 1 or g.temperature.kind != .field or
+                    g.emissivity.kind != .parameter) return error.InvalidResolver;
+                try checkSlot(g.temperature, written, constants.len);
+                try checkSlot(g.emissivity, written, constants.len);
+            },
+            .greybody_band => |g| {
+                if (channels != 1 or g.temperature.kind != .field or
+                    g.emissivity.kind != .parameter) return error.InvalidResolver;
+                try checkSlot(g.temperature, written, constants.len);
+                try checkSlot(g.emissivity, written, constants.len);
+                try g.radiance.validate();
+            },
+            .expression => |p| try p.validate(written, channels),
+        }
+    }
+
+    pub fn evaluate(self: Resolver, inputs: anytype, constants: []const F, channels: u8, out: anytype) void {
+        const T = @TypeOf(out.*[0]);
+        switch (self) {
+            .identity => |slots| for (slots, 0..) |slot, i| {
+                out.*[i] = readSlot(T, inputs, constants, slot);
+            },
+            .sum => |slots| {
+                for (0..channels) |ch| out.*[ch] = splat(T, 0);
+                for (slots, 0..) |slot, i| out.*[i % channels] += readSlot(T, inputs, constants, slot);
+            },
+            .modulate => |m| {
+                const factor = readSlot(T, inputs, constants, m.factor);
+                for (m.sources, 0..) |slot, i| out.*[i] =
+                    (readSlot(T, inputs, constants, slot) * factor + splat(T, m.ambient)) * splat(T, m.gain);
+            },
+            .weighted_sum => |w| {
+                for (0..channels) |ch| out.*[ch] = splat(T, 0);
+                for (w.sources, w.weights, 0..) |slot, weight, i| out.*[i % channels] += readSlot(T, inputs, constants, slot) * splat(T, weight);
+            },
+            .greybody_bolometric => |g| {
+                const temp = readSlot(T, inputs, constants, g.temperature);
+                const square = temp * temp;
+                out.*[0] = readSlot(T, inputs, constants, g.emissivity) * splat(T, 5.670374419e-8) * square * square;
+            },
+            .greybody_band => |g| {
+                const temp = readSlot(T, inputs, constants, g.temperature);
+                var radiant: T = undefined;
+                if (T == F) {
+                    radiant = g.radiance.sample(temp);
+                } else {
+                    var lanes: [buildconfig.SimdWidth]F = @bitCast(temp);
+                    for (&lanes) |*lane| lane.* = g.radiance.sample(lane.*);
+                    radiant = @bitCast(lanes);
+                }
+                out.*[0] = readSlot(T, inputs, constants, g.emissivity) * radiant;
+            },
+            .expression => |p| p.evaluate(inputs, channels, out),
+        }
+    }
+};
+
+fn checkSlot(slot: Slot, written: Written, constant_count: usize) !void {
+    if (slot.kind == .constant) {
+        if (slot.index >= constant_count) return error.InvalidSlot;
+    } else if (!written.has(slot)) return error.UnwrittenSlot;
+}
+
+fn readSlot(comptime T: type, inputs: anytype, constants: []const F, slot: Slot) T {
+    return if (slot.kind == .constant) splat(T, constants[slot.index]) else inputs.get(slot);
+}
+
+test "resolver arithmetic retains earlier outputs" {
+    var written: Written = .{};
+    try written.add(.{ .kind = .channel, .index = 0 });
+    try written.add(.{ .kind = .channel, .index = 1 });
+    try written.add(.{ .kind = .parameter, .index = 0 });
+    try std.testing.expectError(error.RepeatedWriter, written.add(.{ .kind = .channel, .index = 0 }));
+    const ops = [_]Op{
+        .{ .load = .{ .kind = .channel, .index = 0 } },
+        .{ .load = .{ .kind = .parameter, .index = 0 } },
+        .multiply,
+        .{ .load = .{ .kind = .channel, .index = 1 } },
+        .add,
+        .{ .store = 0 },
+        .{ .load = .{ .kind = .channel, .index = 0 } },
+        .{ .load = .{ .kind = .channel, .index = 1 } },
+        .subtract,
+        .{ .store = 1 },
+    };
+    const resolver: Resolver = .{ .expression = .{ .operations = &ops } };
+    try resolver.validate(written, &.{}, 2);
+    var inputs: ScalarOutputs = .{};
+    inputs.channel[0] = 0.75;
+    inputs.channel[1] = 0.25;
+    inputs.parameter[0] = 0.5;
+    var out: [2]F = undefined;
+    resolver.evaluate(&inputs, &.{}, 2, &out);
+    try std.testing.expectApproxEqAbs(@as(F, 0.625), out[0], 1e-12);
+    try std.testing.expectApproxEqAbs(@as(F, 0.5), out[1], 1e-12);
+    try std.testing.expectEqual(@as(F, 0.75), inputs.channel[0]);
+}
+
+test "bolometric emission and LUT agree with independent values" {
+    var written: Written = .{};
+    try written.add(.{ .kind = .field, .index = 0 });
+    try written.add(.{ .kind = .parameter, .index = 0 });
+    var inputs: ScalarOutputs = .{};
+    inputs.field[0] = 300;
+    inputs.parameter[0] = 0.8;
+    var out: [1]F = undefined;
+    const bolometric: Resolver = .{ .greybody_bolometric = .{
+        .temperature = .{ .kind = .field, .index = 0 },
+        .emissivity = .{ .kind = .parameter, .index = 0 },
+    } };
+    try bolometric.validate(written, &.{}, 1);
+    bolometric.evaluate(&inputs, &.{}, 1, &out);
+    try std.testing.expectApproxEqAbs(@as(F, 367.4402623512), out[0], 1e-9);
+
+    const lut = Lookup{ .first = 290, .step = 20, .values = &.{ 10, 30 } };
+    const band: Resolver = .{ .greybody_band = .{
+        .temperature = .{ .kind = .field, .index = 0 },
+        .emissivity = .{ .kind = .parameter, .index = 0 },
+        .radiance = lut,
+    } };
+    try band.validate(written, &.{}, 1);
+    band.evaluate(&inputs, &.{}, 1, &out);
+    try std.testing.expectApproxEqAbs(@as(F, 16), out[0], 1e-12);
+}
+
+test "resolver rejects missing writers and outputs" {
+    const missing = [_]Op{ .{ .load = .{ .kind = .field, .index = 0 } }, .{ .store = 0 } };
+    try std.testing.expectError(error.UnwrittenSlot, (Program{ .operations = &missing }).validate(.{}, 1));
+    const incomplete = [_]Op{ .{ .load = .{ .kind = .constant, .index = 0 } }, .{ .store = 0 } };
+    try std.testing.expectError(error.InvalidProgram, (Program{ .operations = &incomplete, .constants = &.{1} }).validate(.{}, 2));
+}
+
+test "band Planck LUT is positive, temperature ordered, and interpolates" {
+    try std.testing.expectApproxEqRel(@as(F, 9_924_033.330070695),
+        planckSpectralRadiance(10e-6, 300), 1e-12);
+    const response: BandResponse = .{
+        .wavelengths_m = &.{ 8e-6, 9e-6, 10e-6, 11e-6, 12e-6 },
+        .response = &.{ 0, 1, 1, 1, 0 },
+    };
+    const lut = try response.prepareRadianceLookup(std.testing.allocator, 280, 320, 1);
+    defer std.testing.allocator.free(lut.values);
+    try std.testing.expect(lut.values[0] > 0);
+    try std.testing.expect(lut.values[40] > lut.values[0]);
+    const midpoint = lut.sample(300.5);
+    try std.testing.expectApproxEqAbs((lut.values[20] + lut.values[21]) / 2, midpoint, 1e-12);
+    try std.testing.expectError(error.InvalidBandResponse, (BandResponse{ .wavelengths_m = &.{ 10e-6, 9e-6 }, .response = &.{ 1, 1 } })
+        .prepareRadianceLookup(std.testing.allocator, 280, 320, 1));
+}

@@ -850,6 +850,25 @@ fn prepareJobBatch(
     for (job_indices, 0..) |job_idx, ii| {
         const frame_idx = @divFloor(job_idx, cameras.len);
         const camera_idx = @mod(job_idx, cameras.len);
+        var selected_meshes = mesh_static;
+        var selected_scaling = nodal_global_scaling;
+        if (cameras[camera_idx].pipe_request) |family| {
+            var count: usize = 0;
+            for (mesh_static) |mesh| {
+                if (meshpipe.meshSupportsFamily(mesh, family)) count += 1;
+            }
+            const dense_meshes = try group_alloc.alloc(meshpipe.MeshStatic, count);
+            const dense_scaling = try group_alloc.alloc(?imageops.ScalingParams, count);
+            var index: usize = 0;
+            for (mesh_static, nodal_global_scaling) |mesh, scaling| {
+                if (!meshpipe.meshSupportsFamily(mesh, family)) continue;
+                dense_meshes[index] = mesh;
+                dense_scaling[index] = scaling;
+                index += 1;
+            }
+            selected_meshes = dense_meshes;
+            selected_scaling = dense_scaling;
+        }
         jobs[ii] = PreparedFrameJob.init(
             group_alloc,
             .{
@@ -860,8 +879,8 @@ fn prepareJobBatch(
                 .config = config,
                 .out_dir = out_dir,
                 .out_dir_path = out_dir_path,
-                .mesh_static = mesh_static,
-                .nodal_global_scaling = nodal_global_scaling,
+                .mesh_static = selected_meshes,
+                .nodal_global_scaling = selected_scaling,
                 .images_arr = images_arr,
                 .bench_capture = bench_capture,
                 .cameras_num = cameras.len,
@@ -1372,6 +1391,7 @@ fn initMeshStaticSlice(
 
     for (meshes, 0..) |mesh, ii| {
         mesh_static[ii] = try meshpipe.initMeshStatic(allocator, &mesh);
+        mesh_static[ii].scene_mesh_idx = ii;
     }
 
     return mesh_static;

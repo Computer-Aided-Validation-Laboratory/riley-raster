@@ -51,7 +51,7 @@ maths/
 *.png
 *.jpg
 
-# Keep the min test suite to ship with the repo
+# Keep the basic test suite to ship with the repo
 !data/min/
 !data/min/**/*.csv
 !data/cubes/

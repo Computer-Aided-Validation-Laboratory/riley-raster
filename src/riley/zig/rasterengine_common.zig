@@ -36,6 +36,7 @@ const TexPrepared = shaderops.TexPrepared;
 const FuncPrepared = shaderops.FuncPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
+const pipekerns = @import("shaderpipekernels.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 
 // --------------------------------------------------------------------------------------
@@ -341,6 +342,16 @@ pub fn rasterTileCore(
             const mesh_idx: usize = ov.mesh_idx;
             const mesh_ptr = &meshes[mesh_idx];
             std.debug.assert(mesh_ptr.mesh_type == geom_tag);
+            if (ctx_rast.camera.pipe_request) |request| {
+                var compatible = false;
+                switch (mesh_ptr.shader) {
+                    .pipes => |pipes| for (pipes) |pipe| {
+                        if (std.meta.eql(pipe.family, request)) compatible = true;
+                    },
+                    else => {},
+                }
+                if (!compatible) continue;
+            }
             const coords = &mesh_ptr.coords;
             const hull = if (comptime root_class == .multi_root) blk: {
                 std.debug.assert(mesh_idx < mesh_hulls.hull_multiroot_by_mesh.len);
@@ -397,9 +408,43 @@ pub fn rasterTileCore(
                     .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
                     .func => 1,
                     .func_rgb => 3,
+                    .pipes => |pipes| blk: {
+                        const request = ctx_rast.camera.pipe_request orelse pipes[0].family;
+                        for (pipes) |pipe| {
+                            if (std.meta.eql(pipe.family, request)) break :blk pipe.family.channels();
+                        }
+                        break :blk 0;
+                    },
                 };
 
                 switch (mesh_ptr.shader) {
+                    .pipes => |pipes| {
+                        const request = ctx_rast.camera.pipe_request orelse pipes[0].family;
+                        for (pipes) |*pipe| {
+                            if (!std.meta.eql(pipe.family, request)) continue;
+                            const SK = pipekerns.PipeKernel(N);
+                            var local_buf: SK.LocalBuff = .{};
+                            local_buf.load(pipe, ov.elem_idx);
+                            shaded_px += try RasterBackend.RasterEngine(
+                                GK,
+                                SK,
+                                shaderops.PipePrepared,
+                                root_class,
+                            ).rasterElemInTile(
+                                report_mode,
+                                ctx_rast,
+                                ctx_report,
+                                tile,
+                                ov,
+                                coords,
+                                hull,
+                                pipe,
+                                &local_buf,
+                                subpx_scratch,
+                            );
+                            break;
+                        }
+                    },
                     .nodal => |*shader| {
                         const SK = shadekerns.NodalKernel(N);
                         var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};

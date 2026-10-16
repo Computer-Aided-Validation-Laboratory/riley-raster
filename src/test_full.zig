@@ -21,6 +21,7 @@ const scene_camera_threads_suite = @import(
     "tests/test_full_scene_camera_threads.zig",
 );
 const image_output_suite = @import("tests/test_full_image_output.zig");
+const shaderpipe_suite = @import("tests/test_full_shaderpipe.zig");
 
 test "full test suite" {
     const allocator = std.testing.allocator;
@@ -31,6 +32,7 @@ test "full test suite" {
     try testsuites.printStatus(io, "\nRunning full test suite.\n\n", .{});
     try testsuites.runSuite("input_verif", allocator, io, input_verif_suite.run);
     try testsuites.runSuite("shader", allocator, io, shader_suite.run);
+    try testsuites.runSuite("shaderpipe", allocator, io, shaderpipe_suite.run);
     try testsuites.runSuite("texture", allocator, io, texture_suite.run);
     try testsuites.runSuite("dist_psf", allocator, io, dist_psf_suite.run);
     try testsuites.runSuite(

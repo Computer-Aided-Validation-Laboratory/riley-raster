@@ -30,12 +30,18 @@ pub const FuncPrepared = comm.FuncPrepared;
 pub const ShadeContext = comm.ShadeContext;
 pub const InterpData = comm.InterpData;
 pub const ShaderInput = comm.ShaderInput;
+pub const PipeInput = comm.PipeInput;
+pub const PipeStageInput = comm.PipeStageInput;
 pub const normFuncShaderParams = comm.normFuncShaderParams;
 pub const NodalStatic = comm.NodalStatic;
 pub const TexStatic = comm.TexStatic;
 pub const FuncStatic = comm.FuncStatic;
 pub const ShaderStatic = comm.ShaderStatic;
 pub const ShaderPrepared = comm.ShaderPrepared;
+pub const PipeStatic = comm.PipeStatic;
+pub const PipeStageStatic = comm.PipeStageStatic;
+pub const PipePrepared = comm.PipePrepared;
+pub const PipeStagePrepared = comm.PipeStagePrepared;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func

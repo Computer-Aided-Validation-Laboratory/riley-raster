@@ -22,6 +22,7 @@ const texops = @import("textureops.zig");
 const meshio = @import("meshio.zig");
 const maths_simd = @import("maths_simd.zig");
 const simd_impl = @import("shaderops_simd.zig");
+const shaderpipe = @import("shaderpipe.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -162,6 +163,30 @@ pub const ShaderInput = union(enum) {
     tex_rgb_f: TexInput(F, 3),
     func: FuncInput,
     func_rgb: FuncInput,
+    pipes: []const PipeInput,
+};
+
+pub const PipeInput = struct {
+    family: shaderpipe.Family,
+    stages: []const PipeStageInput,
+    resolver: shaderpipe.Resolver,
+    constants: []const F = &.{},
+};
+
+pub const GreyToEmissivity = struct {
+    source: shaderpipe.Slot,
+    destination: shaderpipe.Slot,
+    black: F,
+    white: F,
+    grey_black: F = 0,
+    grey_white: F = 1,
+};
+pub const ClampStage = struct { source: shaderpipe.Slot, destination: shaderpipe.Slot, lower: F, upper: F };
+
+pub const PipeStageInput = union(enum) {
+    source: struct { shader: ShaderInput, destination: shaderpipe.Slot },
+    grey_to_emissivity: GreyToEmissivity,
+    clamp: ClampStage,
 };
 
 pub const FuncCoordMode = enum {
@@ -314,6 +339,20 @@ pub const ShaderStatic = union(enum) {
     tex_rgb_f: TexStatic(F, 3),
     func: FuncStatic,
     func_rgb: FuncStatic,
+    pipes: []const PipeStatic,
+};
+
+pub const PipeStatic = struct {
+    family: shaderpipe.Family,
+    stages: []const PipeStageStatic,
+    resolver: shaderpipe.Resolver,
+    constants: []const F,
+};
+
+pub const PipeStageStatic = union(enum) {
+    source: struct { shader: ShaderStatic, destination: shaderpipe.Slot, global_scaling: ?imageops.ScalingParams = null },
+    grey_to_emissivity: GreyToEmissivity,
+    clamp: ClampStage,
 };
 
 // Prep: Culled and expanded shader data for a SINGLE frame.
@@ -373,6 +412,20 @@ pub const ShaderPrepared = union(enum) {
     tex_rgb_f: TexPrepared(F, 3),
     func: FuncPrepared,
     func_rgb: FuncPrepared,
+    pipes: []const PipePrepared,
+};
+
+pub const PipePrepared = struct {
+    family: shaderpipe.Family,
+    stages: []const PipeStagePrepared,
+    resolver: shaderpipe.Resolver,
+    constants: []const F,
+};
+
+pub const PipeStagePrepared = union(enum) {
+    source: struct { shader: ShaderPrepared, destination: shaderpipe.Slot },
+    grey_to_emissivity: GreyToEmissivity,
+    clamp: ClampStage,
 };
 
 pub const ShadeContext = struct {

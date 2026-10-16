@@ -18,6 +18,7 @@ const ndarray = @import("ndarray.zig");
 const rastcfg = @import("rasterconfig.zig");
 const report = @import("report.zig");
 const shaderops = @import("shaderops_common.zig");
+const shaderpipe = @import("shaderpipe.zig");
 const texops = @import("textureops.zig");
 
 const F = buildconfig.F;
@@ -97,6 +98,9 @@ pub const InputValidationError = error{
     InvalidValidateInputMode,
     NoMeshFrames,
     NoOutputFields,
+    InvalidShaderPipe,
+    MissingCameraPipeRequest,
+    NoCompatibleShaderPipe,
 };
 
 pub const ValidSummary = struct {
@@ -128,6 +132,7 @@ pub fn checkRenderInps(
     try imageio.validateOutputNameFormat(config.output_name_format);
     try checkMeshesMetadata(meshes, cam_inps);
     try checkCameras(cam_inps, config);
+    try checkPipeCompatibility(cam_inps, meshes);
 
     const num_time = meshpipe.countFrames(meshes);
     if (num_time == 0) {
@@ -167,6 +172,32 @@ pub fn checkRenderInps(
         .out_num_fields = out_num_fields,
         .img_dims = img_dims,
     };
+}
+
+fn checkPipeCompatibility(cameras: []const cam.CameraInput, meshes: []const meshpipe.MeshInput) InputValidationError!void {
+    var any_pipes = false;
+    for (meshes) |mesh| {
+        if (mesh.shader == .pipes) any_pipes = true;
+    }
+    if (!any_pipes) {
+        for (cameras) |camera| {
+            if (camera.pipe_request != null) return error.NoCompatibleShaderPipe;
+        }
+        return;
+    }
+    for (cameras) |camera| {
+        const request = camera.pipe_request orelse return error.MissingCameraPipeRequest;
+        if (request.channels() == 0 or request.channels() > shaderpipe.max_channels)
+            return error.InvalidShaderPipe;
+        var compatible = false;
+        for (meshes) |mesh| switch (mesh.shader) {
+            .pipes => |pipes| for (pipes) |pipe| {
+                if (std.meta.eql(pipe.family, request)) compatible = true;
+            },
+            else => {},
+        };
+        if (!compatible) return error.NoCompatibleShaderPipe;
+    }
 }
 
 /// Computes metadata needed for allocations in `.off` mode without executing validation.
@@ -491,6 +522,51 @@ fn checkShaderMetadata(
     coords_num: usize,
 ) InputValidationError!void {
     switch (shader) {
+        .pipes => |pipes| {
+            if (pipes.len == 0 or pipes.len > 4) return error.InvalidShaderPipe;
+            for (pipes, 0..) |pipe, pi| {
+                if (pipe.family.channels() == 0 or pipe.family.channels() > shaderpipe.max_channels or
+                    pipe.stages.len == 0 or pipe.stages.len > 8) return error.InvalidShaderPipe;
+                for (pipes[0..pi]) |previous| {
+                    if (std.meta.eql(previous.family, pipe.family)) return error.InvalidShaderPipe;
+                }
+                var written: shaderpipe.Written = .{};
+                for (pipe.stages) |stage| switch (stage) {
+                    .source => |src| {
+                        if (src.shader == .pipes) return error.InvalidShaderPipe;
+                        try checkShaderMetadata(src.shader, coords_num);
+                        const count: u8 = switch (src.shader) {
+                            .nodal => |n| n.field.getFieldsN(),
+                            .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f, .func_rgb => 3,
+                            .pipes => unreachable,
+                            else => 1,
+                        };
+                        for (0..count) |offset| {
+                            var dest = src.destination;
+                            dest.index += @intCast(offset);
+                            written.add(dest) catch return error.InvalidShaderPipe;
+                        }
+                    },
+                    .grey_to_emissivity => |m| {
+                        if (!written.has(m.source) or m.source.kind != .channel or
+                            m.destination.kind != .parameter or
+                            !std.math.isFinite(m.black) or !std.math.isFinite(m.white) or
+                            !std.math.isFinite(m.grey_black) or !std.math.isFinite(m.grey_white) or
+                            m.grey_white <= m.grey_black or
+                            m.black < 0 or m.black > 1 or m.white < 0 or m.white > 1)
+                            return error.InvalidShaderPipe;
+                        written.add(m.destination) catch return error.InvalidShaderPipe;
+                    },
+                    .clamp => |c| {
+                        if (!written.has(c.source) or !std.math.isFinite(c.lower) or
+                            !std.math.isFinite(c.upper) or c.lower > c.upper)
+                            return error.InvalidShaderPipe;
+                        written.add(c.destination) catch return error.InvalidShaderPipe;
+                    },
+                };
+                pipe.resolver.validate(written, pipe.constants, pipe.family.channels()) catch return error.InvalidShaderPipe;
+            }
+        },
         .tex_u8 => |tex_shader| {
             try checkTexMetadata(tex_shader.tex, 1);
             try checkTexUvMetadata(tex_shader.uvs, coords_num);
@@ -917,4 +993,3 @@ test "raster configuration rejects invalid distortion edge spacing" {
         );
     }
 }
-

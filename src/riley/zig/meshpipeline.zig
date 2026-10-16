@@ -57,6 +57,7 @@ pub const MeshInput = struct {
 // meshio.Coords/Fields: Node-order [total_nodes, ...]
 // Shader UVs: Elem-order (gathered during static init as they are usually static).
 pub const MeshStatic = struct {
+    scene_mesh_idx: usize = 0,
     mesh_type: geomkerns.MeshType,
     coords_orig: meshio.Coords,
     connect: meshio.Connect,
@@ -114,6 +115,7 @@ pub const MeshFrame = struct {
 // Prep means culled elem-order ndarray.NDArray data ready for the raster loop.
 // Elem-order [vis_elems, field, nodes_per_elem]
 pub const MeshPrepared = struct {
+    scene_mesh_idx: usize = 0,
     mesh_type: geomkerns.MeshType,
     coords: ndarray.NDArray(F),
     shader: shaderops.ShaderPrepared,
@@ -138,12 +140,22 @@ pub fn countFrames(meshes: []const MeshInput) usize {
     for (meshes) |mesh| {
         if (mesh.disp) |field| {
             num_time = @max(num_time, field.array.dims[dim_time_pre]);
-        } else switch (mesh.shader) {
+        }
+        switch (mesh.shader) {
             .nodal => |shader| {
                 num_time = @max(
                     num_time,
                     shader.field.array.dims[dim_time_pre],
                 );
+            },
+            .pipes => |pipes| for (pipes) |pipe| {
+                for (pipe.stages) |stage| switch (stage) {
+                    .source => |src| switch (src.shader) {
+                        .nodal => |n| num_time = @max(num_time, n.field.array.dims[dim_time_pre]),
+                        else => {},
+                    },
+                    else => {},
+                };
             },
             else => {},
         }
@@ -160,6 +172,11 @@ pub fn countOutputFields(meshes: []const MeshInput) u8 {
             .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
             .func => 1,
             .func_rgb => 3,
+            .pipes => |pipes| blk: {
+                var count: u8 = 0;
+                for (pipes) |pipe| count = @max(count, pipe.family.channels());
+                break :blk count;
+            },
         };
         num_fields = @max(num_fields, mesh_fields);
     }
@@ -172,6 +189,16 @@ pub fn countStaticMeshElems(mesh_static: []const MeshStatic) usize {
         total += mesh.connect.table.rows_num;
     }
     return total;
+}
+
+pub fn meshSupportsFamily(mesh: MeshStatic, family: @import("shaderpipe.zig").Family) bool {
+    return switch (mesh.shader) {
+        .pipes => |pipes| blk: {
+            for (pipes) |pipe| if (std.meta.eql(pipe.family, family)) break :blk true;
+            break :blk false;
+        },
+        else => false,
+    };
 }
 
 pub fn countMeshInputElems(meshes: []const MeshInput) usize {
@@ -308,8 +335,42 @@ pub fn initMeshStatic(
         mesh_input.coords,
     );
 
+    const shader_static = try initShaderStatic(allocator, mesh_input.shader, &mesh_input.connect);
+
+    return .{
+        .mesh_type = mesh_input.mesh_type,
+        .coords_orig = coords_orig,
+        .connect = mesh_input.connect,
+        .disp = mesh_input.disp,
+        .shader = shader_static,
+    };
+}
+
+fn initShaderStatic(allocator: std.mem.Allocator, shader_in: shaderops.ShaderInput, connect: *const meshio.Connect) !shaderops.ShaderStatic {
     var shader_static: shaderops.ShaderStatic = undefined;
-    switch (mesh_input.shader) {
+    switch (shader_in) {
+        .pipes => |pipes_in| {
+            const pipes = try allocator.alloc(shaderops.PipeStatic, pipes_in.len);
+            for (pipes_in, 0..) |pipe, pi| {
+                const stages = try allocator.alloc(shaderops.PipeStageStatic, pipe.stages.len);
+                for (pipe.stages, 0..) |stage, si| {
+                    stages[si] = switch (stage) {
+                        .source => |src| .{ .source = .{
+                            .shader = try initShaderStatic(allocator, src.shader, connect),
+                            .destination = src.destination,
+                            .global_scaling = switch (src.shader) {
+                                .nodal => |n| if (n.scale_over == .over_frames) imageops.getScalingParamsNDArray(&n.field.array, null, n.scaling) else null,
+                                else => null,
+                            },
+                        } },
+                        .grey_to_emissivity => |m| .{ .grey_to_emissivity = m },
+                        .clamp => |c| .{ .clamp = c },
+                    };
+                }
+                pipes[pi] = .{ .family = pipe.family, .stages = stages, .resolver = pipe.resolver, .constants = pipe.constants };
+            }
+            shader_static = .{ .pipes = pipes };
+        },
         .nodal => |nodal_in| {
             shader_static = .{ .nodal = .{
                 .field = nodal_in.field,
@@ -323,7 +384,7 @@ pub fn initMeshStatic(
             const elem_uvs = try prepUVs(
                 allocator,
                 &tex_in.uvs,
-                &mesh_input.connect,
+                connect,
             );
             shader_static = .{ .tex_u8 = .{
                 .elem_uvs = elem_uvs,
@@ -338,7 +399,7 @@ pub fn initMeshStatic(
             const elem_uvs = try prepUVs(
                 allocator,
                 &tex_in.uvs,
-                &mesh_input.connect,
+                connect,
             );
             shader_static = .{ .tex_u16 = .{
                 .elem_uvs = elem_uvs,
@@ -353,7 +414,7 @@ pub fn initMeshStatic(
             const elem_uvs = try prepUVs(
                 allocator,
                 &tex_in.uvs,
-                &mesh_input.connect,
+                connect,
             );
             shader_static = .{ .tex_f = .{
                 .elem_uvs = elem_uvs,
@@ -368,7 +429,7 @@ pub fn initMeshStatic(
             const elem_uvs = try prepUVs(
                 allocator,
                 &tex_in.uvs,
-                &mesh_input.connect,
+                connect,
             );
             shader_static = .{ .tex_rgb_u8 = .{
                 .elem_uvs = elem_uvs,
@@ -383,7 +444,7 @@ pub fn initMeshStatic(
             const elem_uvs = try prepUVs(
                 allocator,
                 &tex_in.uvs,
-                &mesh_input.connect,
+                connect,
             );
             shader_static = .{ .tex_rgb_u16 = .{
                 .elem_uvs = elem_uvs,
@@ -398,7 +459,7 @@ pub fn initMeshStatic(
             const elem_uvs = try prepUVs(
                 allocator,
                 &tex_in.uvs,
-                &mesh_input.connect,
+                connect,
             );
             shader_static = .{ .tex_rgb_f = .{
                 .elem_uvs = elem_uvs,
@@ -414,7 +475,7 @@ pub fn initMeshStatic(
                 try prepUVs(
                     allocator,
                     &uvs,
-                    &mesh_input.connect,
+                    connect,
                 )
             else
                 null;
@@ -436,7 +497,7 @@ pub fn initMeshStatic(
                 try prepUVs(
                     allocator,
                     &uvs,
-                    &mesh_input.connect,
+                    connect,
                 )
             else
                 null;
@@ -455,13 +516,7 @@ pub fn initMeshStatic(
         },
     }
 
-    return .{
-        .mesh_type = mesh_input.mesh_type,
-        .coords_orig = coords_orig,
-        .connect = mesh_input.connect,
-        .disp = mesh_input.disp,
-        .shader = shader_static,
-    };
+    return shader_static;
 }
 
 pub const GeomTimes = struct {
@@ -604,11 +659,7 @@ fn initMeshFrameWorkspace(
             allocator,
             mesh_static.coords_orig.mat.rows_num,
         ),
-        .coords_nodes_def_world = if (switch (mesh_static.shader) {
-            .func => |func_static| func_static.coord_mode == .world_deformed,
-            .func_rgb => |func_static| func_static.coord_mode == .world_deformed,
-            else => false,
-        })
+        .coords_nodes_def_world = if (shaderNeedsDeformedWorld(mesh_static.shader))
             try meshio.Coords.initAlloc(
                 allocator,
                 mesh_static.coords_orig.mat.rows_num,
@@ -624,6 +675,21 @@ fn initMeshFrameWorkspace(
         .hull_multiroot = null,
         .vis_counts_by_chunk = &.{},
         .vis_offsets_by_chunk = &.{},
+    };
+}
+
+fn shaderNeedsDeformedWorld(shader: shaderops.ShaderStatic) bool {
+    return switch (shader) {
+        .func => |func_static| func_static.coord_mode == .world_deformed,
+        .func_rgb => |func_static| func_static.coord_mode == .world_deformed,
+        .pipes => |pipes| blk: {
+            for (pipes) |pipe| for (pipe.stages) |stage| switch (stage) {
+                .source => |src| if (shaderNeedsDeformedWorld(src.shader)) break :blk true,
+                else => {},
+            };
+            break :blk false;
+        },
+        else => false,
     };
 }
 
@@ -1189,6 +1255,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
 
             return .{
+                .scene_mesh_idx = self.mesh_static.scene_mesh_idx,
                 .mesh_type = MT,
                 .coords = elem_coords,
                 .shader = undefined,
@@ -1299,9 +1366,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
                 const leaf_offset = @as(usize, slot) * 4;
                 if (stage.edge_fun_mode == .pre_calc) {
-                    const leaf_slice = stage.hulls.leaves_pre_calc[
-                        leaf_offset .. leaf_offset + 4
-                    ];
+                    const leaf_slice = stage.hulls.leaves_pre_calc[leaf_offset .. leaf_offset + 4];
                     HullMultiRoot.prepareFourBezierLeavesPreCalc(
                         N,
                         stage.camera,
@@ -1309,9 +1374,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         leaf_slice[0..4],
                     );
                 } else {
-                    const leaf_slice = stage.hulls.leaves_on_the_fly[
-                        leaf_offset .. leaf_offset + 4
-                    ];
+                    const leaf_slice = stage.hulls.leaves_on_the_fly[leaf_offset .. leaf_offset + 4];
                     HullMultiRoot.prepareFourBezierLeavesOnTheFly(
                         N,
                         stage.camera,
@@ -1495,15 +1558,40 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             outer_alloc: std.mem.Allocator,
             mesh_prep: *MeshPrepared,
         ) !void {
-            switch (self.mesh_static.shader) {
+            mesh_prep.shader = try self.prepareShaderStatic(outer_alloc, self.mesh_static.shader, self.scaling_params);
+        }
+
+        fn prepareShaderStatic(self: *FrameMeshPipelineType, outer_alloc: std.mem.Allocator, shader_static: shaderops.ShaderStatic, scaling: ?imageops.ScalingParams) !shaderops.ShaderPrepared {
+            const previous_scaling = self.scaling_params;
+            self.scaling_params = scaling;
+            defer self.scaling_params = previous_scaling;
+            switch (shader_static) {
+                .pipes => |pipes_static| {
+                    const pipes = try outer_alloc.alloc(shaderops.PipePrepared, pipes_static.len);
+                    for (pipes_static, 0..) |pipe, pi| {
+                        const stages = try outer_alloc.alloc(shaderops.PipeStagePrepared, pipe.stages.len);
+                        for (pipe.stages, 0..) |stage, si| {
+                            stages[si] = switch (stage) {
+                                .source => |src| .{ .source = .{
+                                    .shader = try self.prepareShaderStatic(outer_alloc, src.shader, if (src.shader == .nodal and src.global_scaling == null) imageops.getScalingParamsNDArray(&src.shader.nodal.field.array, self.frame_idx, src.shader.nodal.scaling) else src.global_scaling),
+                                    .destination = src.destination,
+                                } },
+                                .grey_to_emissivity => |m| .{ .grey_to_emissivity = m },
+                                .clamp => |c| .{ .clamp = c },
+                            };
+                        }
+                        pipes[pi] = .{ .family = pipe.family, .stages = stages, .resolver = pipe.resolver, .constants = pipe.constants };
+                    }
+                    return .{ .pipes = pipes };
+                },
                 .nodal => |nodal_static| {
-                    mesh_prep.shader = try self.prepareNodalShader(
+                    return try self.prepareNodalShader(
                         outer_alloc,
                         nodal_static,
                     );
                 },
                 .tex_u8 => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(
+                    return try prepareTexShader(
                         u8,
                         1,
                         outer_alloc,
@@ -1512,7 +1600,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
                 },
                 .tex_u16 => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(
+                    return try prepareTexShader(
                         u16,
                         1,
                         outer_alloc,
@@ -1521,7 +1609,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
                 },
                 .tex_f => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(
+                    return try prepareTexShader(
                         F,
                         1,
                         outer_alloc,
@@ -1530,7 +1618,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
                 },
                 .tex_rgb_u8 => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(
+                    return try prepareTexShader(
                         u8,
                         3,
                         outer_alloc,
@@ -1539,7 +1627,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
                 },
                 .tex_rgb_u16 => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(
+                    return try prepareTexShader(
                         u16,
                         3,
                         outer_alloc,
@@ -1548,7 +1636,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
                 },
                 .tex_rgb_f => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(
+                    return try prepareTexShader(
                         F,
                         3,
                         outer_alloc,
@@ -1557,7 +1645,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
                 },
                 .func => |func_static| {
-                    mesh_prep.shader = try prepareFuncShader(
+                    return try prepareFuncShader(
                         1,
                         outer_alloc,
                         self,
@@ -1565,7 +1653,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
                 },
                 .func_rgb => |func_static| {
-                    mesh_prep.shader = try prepareFuncShader(
+                    return try prepareFuncShader(
                         3,
                         outer_alloc,
                         self,

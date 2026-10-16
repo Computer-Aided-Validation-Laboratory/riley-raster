@@ -28,6 +28,8 @@ const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
 pub fn NodalKernel(comptime N: usize) type {
     return struct {
+        pub const LocalBuff = shaderops.LocalShaderBuff(N);
+
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
@@ -116,6 +118,8 @@ pub fn TexKernel(
     comptime C: usize,
 ) type {
     return struct {
+        pub const LocalBuff = shaderops.LocalShaderBuff(N);
+
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
@@ -327,6 +331,8 @@ pub fn FuncKernel(
     comptime C: usize,
 ) type {
     return struct {
+        pub const LocalBuff = shaderops.LocalShaderBuff(N);
+
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,

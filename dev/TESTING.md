@@ -28,6 +28,19 @@ test run. Rendering, setup, or artifact-write errors still abort the current
 sub-suite, but the next sub-suite runs.
 The focused verification suite likewise continues through its remaining
 verification cases and reports failure at the end.
+
+Shader-pipe coverage is registered in `src/tests/test_basic_shaderpipe.zig` and
+`src/tests/test_full_shaderpipe.zig`. The basic suite renders retained channels,
+grey-to-emissivity mapping, IR band radiance, RGB/multichannel camera selection,
+and a four-namespace resolver expression. The full suite renders Scene 0 with
+texture plus Lambertian modulation across five element types and compares
+tile-local, full global, and stripe buffers. Its references live only under
+`gold/basic/shaderpipe_*` and `gold/full_shaderpipe/`. To regenerate **only
+these new shader-pipe references** during development, run
+`zig run src/gen_gold_shaderpipe.zig -lc`; ordinary tests never write gold.
+Inspect both BMP previews and floating-point FIMG values before accepting
+new references. Existing gold directories must not be regenerated for a
+shader-pipe change.
 The generated one-element bulge/tangent fixtures include deformation frames
 whose in-plane Jacobian becomes zero or changes sign. Normal basic and full
 comparisons cover only valid frames. Run `zig build test-full-badjac` to render

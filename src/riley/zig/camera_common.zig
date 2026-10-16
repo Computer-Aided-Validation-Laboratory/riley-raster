@@ -18,6 +18,7 @@ const cm = @import("cameramodels.zig");
 const distbounds = @import("distortbounds.zig");
 const camera_scalar = @import("camera_scalar.zig");
 const camera_simd = @import("camera_simd.zig");
+const shaderpipe = @import("shaderpipe.zig");
 
 const cfg = buildconfig.config;
 const camera_impl = if (cfg.simd == .on) camera_simd else camera_scalar;
@@ -38,6 +39,7 @@ pub const CameraInput = struct {
     psf: cm.PointSpreadFunc = .{ .pixel_box = .{} },
     coord_sys: CameraCoordSys = .opengl,
     subpixel_center_map: SubPixelCenterMap = .per_tile,
+    pipe_request: ?shaderpipe.Family = null,
 };
 
 pub const StereoPairInput = struct {
@@ -139,6 +141,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         coord_sys: CameraCoordSys,
         ideal_pixel_centers: ndarray.NDArray(F),
         subpixel_center_map: SubPixelCenterMap,
+        pipe_request: ?shaderpipe.Family = null,
         ideal_sensor_bounds: ?distbounds.DistortBounds = null,
 
         pub fn init(
@@ -194,6 +197,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             };
             var self = Self{
                 .pixels_num = input.pixels_num,
+                .pipe_request = input.pipe_request,
                 .pixels_size = input.pixels_size,
                 .pos_world = input.pos_world,
                 .rot_world = input.rot_world,
