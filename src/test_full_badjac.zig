@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const testsuites = @import("dev_support/testsuites.zig");
-const oneelem = @import("tests/test_gold_oneelem.zig");
+const oneelem = @import("tests/test_basic_oneelem.zig");
 const hull = @import("tests/test_full_hull.zig");
 
 test "invalid-Jacobian diagnostic renders" {

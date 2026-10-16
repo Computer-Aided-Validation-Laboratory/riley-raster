@@ -147,6 +147,9 @@ pub fn main(init: std.process.Init) !void {
         .{ .builtin = .sinusoidal_approx, .coord_mode = .param },
         .{ .builtin = .sinusoidal_approx, .coord_mode = .uv },
     };
+    const shaderpipe_func_cases = [_]common.TexFuncCase{
+        .{ .builtin = .checker, .coord_mode = .param },
+    };
 
     var stats = try benchstats.BenchStatsCollector.init(
         outer_alloc,
@@ -211,7 +214,10 @@ pub fn main(init: std.process.Init) !void {
             shader_types[0..],
             tex_func_shader_types[0..],
             samp_cfgs[0..],
-            tex_func_cases[0..],
+            if (bench_args.shader_subset == .shaderpipe_baseline)
+                shaderpipe_func_cases[0..]
+            else
+                tex_func_cases[0..],
         ),
         .u16 => try runBenchmarksForTextureType(
             u16,
@@ -225,7 +231,10 @@ pub fn main(init: std.process.Init) !void {
             shader_types[0..],
             tex_func_shader_types[0..],
             samp_cfgs[0..],
-            tex_func_cases[0..],
+            if (bench_args.shader_subset == .shaderpipe_baseline)
+                shaderpipe_func_cases[0..]
+            else
+                tex_func_cases[0..],
         ),
     }
 
@@ -285,6 +294,15 @@ fn runBenchmarksForTextureType(
             shader_types;
         for (selected_shader_types) |st| {
             for (samp_cfgs) |sc| {
+                if (bench_args.shader_subset == .shaderpipe_baseline) {
+                    if (st != .nodal_grey and st != .tex8_grey) continue;
+                    if (st == .tex8_grey and
+                        (sc.mode != .direct or
+                            (sc.sample != .linear and sc.sample != .cubic_catmull_rom)))
+                    {
+                        continue;
+                    }
+                }
                 var data_dir_buf: [256]u8 = undefined;
                 const folder_name = if (mt == .tri3opt) "tri3" else @tagName(mt);
                 const data_dir = try std.fmt.bufPrint(
@@ -383,6 +401,12 @@ fn runBenchmarksForTextureType(
 
         for (tex_func_shader_types) |st| {
             for (tex_func_cases) |tex_func_case| {
+                if (bench_args.shader_subset == .shaderpipe_baseline and
+                    (st != .func or tex_func_case.builtin != .checker or
+                        tex_func_case.coord_mode != .param))
+                {
+                    continue;
+                }
                 var data_dir_buf: [256]u8 = undefined;
                 const folder_name = if (mt == .tri3opt) "tri3" else @tagName(mt);
                 const data_dir = try std.fmt.bufPrint(

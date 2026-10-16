@@ -204,11 +204,27 @@ The current experiment groups are driven directly by constants in the script:
 
 - `DEFAULT_EXPERIMENT1`
 - `DEFAULT_EXPERIMENT2`
+- `DEFAULT_EXPERIMENT3` (off by default)
 - `EXPERIMENT1_SUB_SAMPLES`
 - `EXPERIMENT2_SUB_SAMPLES`
 - `EXPERIMENT1_CASES_BASE`
+- `EXPERIMENT3_CASES`
 
 If you want to change the study matrix, edit those constants first.
+
+Experiment 3 is the one-stage shader-pipe baseline: six mesh types (`tri3`,
+`tri3opt`, `tri6`, `quad4`, `quad8`, `quad9`) times nodal grey, parametric
+checker, direct linear greyscale texture, and direct cubic Catmull-Rom greyscale
+texture. Its default profile is f64, SIMD width 8, SSAA=2, one thread, and
+memory output. Run only this experiment with:
+
+```shell
+python ./scripts/bench_perf_raster.py --no-experiment1 --no-experiment2 --experiment3
+```
+
+Pass `--experiment3-binary PATH` to use a preserved baseline binary after the
+normal installed benchmark binary has been rebuilt. Use `--dry-run` to inspect
+the command without rendering.
 
 ## Additional Notes
 

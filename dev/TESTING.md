@@ -172,15 +172,15 @@ This runs the Zig input generator followed by `./src/gengold/gengold_verif.py`. 
 The **Basic Suite** is the primary regression suite packaged with the repository, structured into three sub-suites:
 
 ### A. Single Element Deformation & Edge Curvature (`test_oneelem`)
-- **Driver**: [`src/tests/test_gold_oneelem.zig`](file:///home/lloydf/riley-raster/src/tests/test_gold_oneelem.zig)
+- **Driver**: [`src/tests/test_basic_oneelem.zig`](file:///home/lloydf/riley-raster/src/tests/test_basic_oneelem.zig)
 - **Coverage**: 10-frame continuous deformations (rotation, shear, stretch) and midside node bulging across `tri3`, `tri6`, `quad4`, `quad8`, and `quad9`, plus extreme inverted curvature edge cases.
 
 ### B. Multi-Mesh Occlusion & Shader Matrix (`test_twoshapes`)
-- **Driver**: [`src/tests/test_gold_twoshapes.zig`](file:///home/lloydf/riley-raster/src/tests/test_gold_twoshapes.zig)
+- **Driver**: [`src/tests/test_basic_twoshapes.zig`](file:///home/lloydf/riley-raster/src/tests/test_basic_twoshapes.zig)
 - **Coverage**: Multi-body occlusion between a sphere and a cube across 5 element types $\times$ 13 curated mono and RGB shaders.
 
 ### C. Complete Feature Zoo (`test_featurezoo`)
-- **Driver**: [`src/tests/test_gold_featurezoo.zig`](file:///home/lloydf/riley-raster/src/tests/test_gold_featurezoo.zig)
+- **Driver**: [`src/tests/test_basic_featurezoo.zig`](file:///home/lloydf/riley-raster/src/tests/test_basic_featurezoo.zig)
 - **Coverage**: 2 rows $\times$ 3 columns of FE simulation meshes rendered under 6 distinct camera/distortion/PSF configurations across 8 parallel thread and buffer architectures (`tile_local`, `global_subpx_full`, `global_subpx_stripe`, multi-group `in_order` and `offline`).
 
 ---

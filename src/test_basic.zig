@@ -10,9 +10,9 @@ const std = @import("std");
 const testsuites = @import("dev_support/testsuites.zig");
 const demo_common = @import("demo_common.zig");
 
-const oneelem = @import("tests/test_gold_oneelem.zig");
-const twoshapes = @import("tests/test_gold_twoshapes.zig");
-const featurezoo = @import("tests/test_gold_featurezoo.zig");
+const oneelem = @import("tests/test_basic_oneelem.zig");
+const twoshapes = @import("tests/test_basic_twoshapes.zig");
+const featurezoo = @import("tests/test_basic_featurezoo.zig");
 
 test "output reset demo helpers" {
     _ = demo_common;

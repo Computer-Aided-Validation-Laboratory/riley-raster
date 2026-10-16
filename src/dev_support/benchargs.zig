@@ -51,6 +51,7 @@ pub const TextureStorage = enum {
 pub const ShaderSubset = enum {
     all,
     texture,
+    shaderpipe_baseline,
 };
 
 pub const MeshSubset = enum {
