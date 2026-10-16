@@ -135,7 +135,7 @@ pub fn main(init: std.process.Init) !void {
 
     const matched_roi = [3]F{ 0.0125, 0.0175, 0.0005 };
 
-    const target_roi = vecstack.Vec3f.initSlice(matched_roi[0..]);
+    const target_roi = vecstack.Vec3F.initSlice(matched_roi[0..]);
     sceneops.centerCoordsAt(&sim_data.coords, target_roi.vec);
     const roi_pos = sceneops.boundsCenter(&sim_data.coords);
 
@@ -168,8 +168,8 @@ pub fn main(init: std.process.Init) !void {
         std.math.degreesToRadians(0.0),
     );
 
-    const cam0_pos = vecstack.Vec3f.initSlice(matched_cam0_pos[0..]);
-    const cam1_pos = vecstack.Vec3f.initSlice(matched_cam1_pos[0..]);
+    const cam0_pos = vecstack.Vec3F.initSlice(matched_cam0_pos[0..]);
+    const cam1_pos = vecstack.Vec3F.initSlice(matched_cam1_pos[0..]);
 
     const cam0_in = CameraInput{
         .pixels_num = pixels_num,

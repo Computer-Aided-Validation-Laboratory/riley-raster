@@ -6,22 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
-const cfg = @import("buildconfig.zig").config;
-const impl = if (cfg.simd == .on)
-    @import("rasterengine_simd.zig")
-else
-    @import("rasterengine_scalar.zig");
-const simd_impl = @import("rasterengine_simd.zig");
-
-// --------------------------------------------------------------------------------------
-// Public Constants & Public Types
-// --------------------------------------------------------------------------------------
-
-pub const ScratchBuffs = simd_impl.ScratchBuffs;
-
-// --------------------------------------------------------------------------------------
-// Public Entry-Point Func
-// --------------------------------------------------------------------------------------
-
-pub const rasterScene = impl.rasterScene;
-pub const RasterEngine = impl.RasterEngine;
+pub const rasterSceneTileLoc =
+    @import("rasterengine_tileloc.zig").rasterSceneTileLoc;
+pub const rasterSceneGlobBuff =
+    @import("rasterengine_globbuff.zig").rasterSceneGlobBuff;

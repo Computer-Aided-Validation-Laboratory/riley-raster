@@ -374,7 +374,7 @@ pub fn writeBenchmarkConfig(
     );
     try writer.print(
         "hull_mode={s}\n",
-        .{@tagName(config.advanced.solver.hull_mode)},
+        .{@tagName(config.advanced.solver.oneroot.hull_mode)},
     );
     try writer.print(
         "subpixel_center_map={s}\n",

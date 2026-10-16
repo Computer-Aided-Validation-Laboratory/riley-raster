@@ -17,7 +17,7 @@ const gk = @import("geometrykernels.zig");
 const iio = @import("imageio.zig");
 const imageops = @import("imageops.zig");
 const meshio = @import("meshio.zig");
-const mo = @import("meshpipeline.zig");
+const meshpipe = @import("meshpipeline.zig");
 const ndarray = @import("ndarray.zig");
 const riley = @import("riley.zig");
 const rotation = @import("rotation.zig");
@@ -288,9 +288,12 @@ pub const CRasterConfig = extern struct {
     thread_count: u16,
     save_strategy: u32,
     image_save_mode: u32,
-    hull_mode: u32,
-    newton_seed_mode: u32,
-    newton_seed_reuse: u32,
+    oneroot_hull_mode: u32,
+    oneroot_newton_seed_mode: u32,
+    oneroot_newton_seed_reuse: u32,
+    oneroot_edge_fun_mode: u32,
+    multiroot_mode: u32,
+    multiroot_edge_fun_mode: u32,
     validate_input: u32,
     report: u32,
     tile_size_min: u16,
@@ -304,6 +307,7 @@ pub const CRasterConfig = extern struct {
     global_subpx_stripe_size_min: u16,
     global_subpx_stripe_size_max: u16,
     global_subpx_stripe_size_override: u16,
+    raster_halo_px_override: u16,
     save_frame_buff_count: usize,
     save_format: u32,
     save_bits: u32,
@@ -329,7 +333,7 @@ pub const CRasterConfig = extern struct {
 };
 
 const MeshInputBuilt = struct {
-    mesh_input: mo.MeshInput,
+    mesh_input: meshpipe.MeshInput,
     disp_array: ?ndarray.NDArray(F) = null,
     uvs_array: ?ndarray.NDArray(F) = null,
     tex_array_u8: ?ndarray.NDArray(u8) = null,
@@ -398,7 +402,7 @@ pub export fn rileyGetLastError(
     return copy_len;
 }
 
-fn cVec3ToVec3(in_vec: CVec3F64) vec.Vec3f {
+fn cVec3ToVec3(in_vec: CVec3F64) vec.Vec3F {
     return vec.initVec3(
         F,
         in_vec.x,
@@ -407,7 +411,7 @@ fn cVec3ToVec3(in_vec: CVec3F64) vec.Vec3f {
     );
 }
 
-fn vec3ToCVec3(in_vec: vec.Vec3f) CVec3F64 {
+fn vec3ToCVec3(in_vec: vec.Vec3F) CVec3F64 {
     return .{
         .x = in_vec.get(0),
         .y = in_vec.get(1),
@@ -534,7 +538,6 @@ fn subpxCenterMapFromC(subpx_map: u32) !cam.SubPixelCenterMap {
 
 fn hullModeFromC(hull_mode: u32) !rastcfg.HullMode {
     return switch (hull_mode) {
-        @intFromEnum(rastcfg.HullMode.off) => .off,
         @intFromEnum(rastcfg.HullMode.on_no_fallback) => .on_no_fallback,
         @intFromEnum(rastcfg.HullMode.on_convex_fallback) => .on_convex_fallback,
         else => error.InvalidHullMode,
@@ -558,6 +561,26 @@ fn newtonSeedReuseFromC(
         @intFromEnum(rastcfg.NewtonSeedReuse.off) => .off,
         @intFromEnum(rastcfg.NewtonSeedReuse.last_conv) => .last_conv,
         else => error.InvalidNewtonSeedReuse,
+    };
+}
+
+fn multirootModeFromC(
+    mode: u32,
+) !rastcfg.MultirootSolverMode {
+    return switch (mode) {
+        @intFromEnum(rastcfg.MultirootSolverMode.fast) => .fast,
+        @intFromEnum(rastcfg.MultirootSolverMode.robust) => .robust,
+        else => error.InvalidMultirootSolverMode,
+    };
+}
+
+fn edgeFunModeFromC(
+    mode: u32,
+) !rastcfg.EdgeFunMode {
+    return switch (mode) {
+        @intFromEnum(rastcfg.EdgeFunMode.on_the_fly) => .on_the_fly,
+        @intFromEnum(rastcfg.EdgeFunMode.pre_calc) => .pre_calc,
+        else => error.InvalidEdgeFunMode,
     };
 }
 
@@ -1496,8 +1519,8 @@ fn buildMeshInputSlice(
 fn extractMeshInputs(
     allocator: std.mem.Allocator,
     built_meshes: []const MeshInputBuilt,
-) ![]mo.MeshInput {
-    const mesh_inputs = try allocator.alloc(mo.MeshInput, built_meshes.len);
+) ![]meshpipe.MeshInput {
+    const mesh_inputs = try allocator.alloc(meshpipe.MeshInput, built_meshes.len);
     for (built_meshes, 0..) |built_mesh, nn| {
         mesh_inputs[nn] = built_mesh.mesh_input;
     }
@@ -1531,12 +1554,23 @@ fn buildRasterConfig(
     };
     config.save_strategy = try saveStrategyFromC(in_config.save_strategy);
     config.output.image_save_mode = try imageSaveModeFromC(in_config.image_save_mode);
-    config.advanced.solver.hull_mode = try hullModeFromC(in_config.hull_mode);
-    config.advanced.solver.newton_seed_mode = try newtonSeedModeFromC(
-        in_config.newton_seed_mode,
+    config.advanced.solver.oneroot.hull_mode = try hullModeFromC(
+        in_config.oneroot_hull_mode,
     );
-    config.advanced.solver.newton_seed_reuse = try newtonSeedReuseFromC(
-        in_config.newton_seed_reuse,
+    config.advanced.solver.oneroot.newton_seed_mode = try newtonSeedModeFromC(
+        in_config.oneroot_newton_seed_mode,
+    );
+    config.advanced.solver.oneroot.newton_seed_reuse = try newtonSeedReuseFromC(
+        in_config.oneroot_newton_seed_reuse,
+    );
+    config.advanced.solver.oneroot.edge_fun_mode = try edgeFunModeFromC(
+        in_config.oneroot_edge_fun_mode,
+    );
+    config.advanced.solver.multiroot.mode = try multirootModeFromC(
+        in_config.multiroot_mode,
+    );
+    config.advanced.solver.multiroot.edge_fun_mode = try edgeFunModeFromC(
+        in_config.multiroot_edge_fun_mode,
     );
     config.validation = try validateInputFromC(
         in_config.validate_input,
@@ -1588,6 +1622,11 @@ fn buildRasterConfig(
             null
         else
             in_config.global_subpx_stripe_size_override;
+    config.advanced.raster.raster_halo_px_override =
+        if (in_config.raster_halo_px_override == 0)
+            null
+        else
+            in_config.raster_halo_px_override;
     if (in_config.save_frame_buff_count != 0) {
         config.output.save_frame_buff_count = in_config.save_frame_buff_count;
     }

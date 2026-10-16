@@ -10,10 +10,10 @@ const cam = @import("camera.zig");
 const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const common = @import("scratchresolveglobal_common.zig");
-const subpxframe = @import("subpxframe.zig");
+const common = @import("scratchresolve_globbuff_common.zig");
+const subpxframe = @import("subpxframe_globbuff.zig");
 
-pub fn resolve(
+pub fn resolveGlobBuff(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     target: *const subpxframe.SubpxTarget,
@@ -22,7 +22,7 @@ pub fn resolve(
     image_out_arr: *ndarray.NDArray(F),
     requested_workers: u16,
 ) !usize {
-    return common.resolveParallel(
+    return common.resolveParallelGlobBuff(
         true,
         outer_alloc,
         io,
@@ -36,7 +36,7 @@ pub fn resolve(
     );
 }
 
-pub fn resolveRows(
+pub fn resolveRowsGlobBuff(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     target: *const subpxframe.SubpxTarget,
@@ -47,7 +47,7 @@ pub fn resolveRows(
     image_y_max: usize,
     requested_workers: u16,
 ) !usize {
-    return common.resolveParallel(
+    return common.resolveParallelGlobBuff(
         true,
         outer_alloc,
         io,

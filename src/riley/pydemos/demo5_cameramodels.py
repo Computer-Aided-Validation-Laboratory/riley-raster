@@ -178,7 +178,6 @@ def main() -> None:
     config = riley.RasterConfig(
         parallel=raster_threads,
         save_strategy=riley.SaveStrategy.disk,
-        image_save_mode=riley.ImageSaveMode.grey,
         save_scaling=riley.ScaleStrategy.auto,
     )
 

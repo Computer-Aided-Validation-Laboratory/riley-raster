@@ -329,8 +329,8 @@ pub fn boundsForMeshGroup(
     return bounds;
 }
 
-pub fn meanCenter(coords: *const meshio.Coords) vec.Vec3f {
-    var center_world = vec.Vec3f.initZeros();
+pub fn meanCenter(coords: *const meshio.Coords) vec.Vec3F {
+    var center_world = vec.Vec3F.initZeros();
     const coords_num = coords.mat.rows_num;
 
     for (0..coords_num) |nn| {
@@ -344,7 +344,7 @@ pub fn meanCenter(coords: *const meshio.Coords) vec.Vec3f {
     );
 }
 
-pub fn boundsCenter(coords: *const meshio.Coords) vec.Vec3f {
+pub fn boundsCenter(coords: *const meshio.Coords) vec.Vec3F {
     const bounds = boundsForCoords(coords);
     return vec.initVec3(
         F,
@@ -354,7 +354,7 @@ pub fn boundsCenter(coords: *const meshio.Coords) vec.Vec3f {
     );
 }
 
-pub fn boundsCenterOverMeshes(meshes: anytype) vec.Vec3f {
+pub fn boundsCenterOverMeshes(meshes: anytype) vec.Vec3F {
     const bounds = boundsForMeshes(meshes);
     return vec.initVec3(
         F,
@@ -426,7 +426,7 @@ pub fn extentInRotatedFrameOverMeshes(
 }
 
 pub fn transformCoords(
-    transform: matrix.Mat44f,
+    transform: matrix.Mat44F,
     coords: *meshio.Coords,
 ) void {
     for (0..coords.mat.rows_num) |nn| {
@@ -439,14 +439,14 @@ pub fn transformCoords(
 }
 
 pub fn moveMesh(
-    transform: matrix.Mat44f,
+    transform: matrix.Mat44F,
     mesh: anytype,
 ) void {
     transformCoords(transform, &mesh.coords);
 }
 
 pub fn moveMeshGroup(
-    transform: matrix.Mat44f,
+    transform: matrix.Mat44F,
     meshes: anytype,
     group: MeshGroup,
 ) void {
@@ -1142,7 +1142,7 @@ test "transformCoords applies affine transform" {
     coords.mat.set(0, 1, 2.0);
     coords.mat.set(0, 2, 3.0);
 
-    var transform = matrix.Mat44f.initIdentity();
+    var transform = matrix.Mat44F.initIdentity();
     transform.set(0, 0, 2.0);
     transform.set(1, 1, 3.0);
     transform.set(2, 2, 4.0);
