@@ -1154,6 +1154,10 @@ fn calcTexFuncParams(tex_func_case: TexFuncCase) so.FuncShaderParams {
     const wave_num = 2.0 * pi * oscillations;
 
     return switch (tex_func_case.builtin) {
+        .checker => .{
+            .coord_scale = .{ 8.0, 8.0 },
+            .settings = .{ .checker = .{} },
+        },
         .sinusoidal => .{
             .settings = .{
                 .sinusoidal = .{
