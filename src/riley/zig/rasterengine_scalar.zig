@@ -1016,7 +1016,7 @@ fn rasterNewtonMultiImpl(
             var best_eta: F = 0;
             var had_candidate_child = false;
 
-            inline for (0..4) |leaf_idx| {
+            for (0..4) |leaf_idx| {
                 const bit = @as(u8, 1) << @as(u3, @intCast(leaf_idx));
                 if ((child_mask & bit) == 0) continue;
                 had_candidate_child = true;

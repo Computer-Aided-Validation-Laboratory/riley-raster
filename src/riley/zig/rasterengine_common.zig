@@ -424,7 +424,7 @@ pub fn rasterTileCore(
                             if (!std.meta.eql(pipe.family, request)) continue;
                             const SK = pipekerns.PipeKernel(N);
                             var local_buf: SK.LocalBuff = .{};
-                            local_buf.load(pipe, ov.elem_idx);
+                            local_buf.load(pipe, ov.elem_idx, ctx_rast.frame_idx);
                             shaded_px += try RasterBackend.RasterEngine(
                                 GK,
                                 SK,

@@ -18,7 +18,7 @@ pub fn LocalPipeBuff(comptime N: usize) type {
     return struct {
         stages: [8]shaderops.LocalShaderBuff(N) = undefined,
 
-        pub fn load(self: *@This(), pipe: *const shaderops.PipePrepared, elem_idx: usize) void {
+        pub fn load(self: *@This(), pipe: *const shaderops.PipePrepared, elem_idx: usize, frame_idx: usize) void {
             for (pipe.stages, 0..) |stage, si| switch (stage) {
                 .source => |src| {
                     const buf = &self.stages[si];
@@ -31,7 +31,7 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                             const idx = if (shader.elem_field.dims.len == 3)
                                 shader.elem_field.getFlatIdx(&.{ elem_idx, 0, 0 })
                             else
-                                shader.elem_field.getFlatIdx(&.{ 0, elem_idx, 0, 0 });
+                                shader.elem_field.getFlatIdx(&.{ @min(frame_idx, shader.elem_field.dims[0] - 1), elem_idx, 0, 0 });
                             buf.load(shader.elem_field, idx, count);
                             if (shader.elem_normals) |normals| buf.loadNormals(normals.array, normals.map[elem_idx] * 3 * N);
                         },

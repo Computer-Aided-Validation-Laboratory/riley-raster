@@ -543,7 +543,9 @@ fn checkShaderMetadata(
                         };
                         for (0..count) |offset| {
                             var dest = src.destination;
-                            dest.index += @intCast(offset);
+                            const index = @as(usize, dest.index) + offset;
+                            if (index >= shaderpipe.max_slots) return error.InvalidShaderPipe;
+                            dest.index = @intCast(index);
                             written.add(dest) catch return error.InvalidShaderPipe;
                         }
                     },
