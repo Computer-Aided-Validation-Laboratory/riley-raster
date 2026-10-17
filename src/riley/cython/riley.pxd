@@ -104,6 +104,8 @@ cdef extern from "riley.h":
         CPSF psf
         uint32_t coord_sys
         uint32_t subpixel_center_map
+        uint32_t pipe_family
+        uint32_t pipe_channels
 
     ctypedef struct CFuncShaderParams:
         double coord_scale_0
@@ -209,12 +211,64 @@ cdef extern from "riley.h":
         CFuncShaderParams func_shader_params
         uint32_t normal_type
 
+    ctypedef struct CSlot:
+        uint32_t kind
+        uint32_t index
+
+    ctypedef struct COperation:
+        uint32_t tag
+        CSlot slot
+        double lower
+        double upper
+
+    ctypedef struct CLookup:
+        double first
+        double step
+        const double* values
+        size_t values_len
+
+    ctypedef struct CResolver:
+        uint32_t tag
+        const CSlot* slots
+        size_t slots_len
+        const double* weights
+        size_t weights_len
+        CSlot factor
+        CSlot temperature
+        CSlot emissivity
+        double ambient
+        double gain
+        CLookup lookup
+        const COperation* operations
+        size_t operations_len
+
+    ctypedef struct CPipeStage:
+        uint32_t tag
+        const CShaderInput* shader
+        CSlot source
+        CSlot destination
+        double lower
+        double upper
+        double black
+        double white
+
+    ctypedef struct CPipe:
+        uint32_t family
+        uint32_t channels
+        const CPipeStage* stages
+        size_t stages_len
+        CResolver resolver
+        const double* constants
+        size_t constants_len
+
     ctypedef struct CMeshInput:
         uint32_t mesh_type
         CArray2DF64 coords
         CArray2DUsize connect
         CArray3DF64 disp
         CShaderInput shader
+        const CPipe* pipes
+        size_t pipes_len
 
     ctypedef struct CRasterConfig:
         uint32_t render_mode

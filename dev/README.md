@@ -11,7 +11,8 @@ This project follows the Computer Aided Validation Laboratory style guides for P
 ## Development Guides
 The `dev/` directory provides comprehensive architectural, mathematical, testing, and conventions documentation for Riley developers:
 
-- [**`dev/TESTING.md`**](./dev/TESTING.md): Complete testing architecture, quickstart commands, descriptions of the 4 test scenes, detailed breakdown of all 8 test suites, gold reference generation, and automated regression diagnostics.
+- [**`dev/TESTING.md`**](./dev/TESTING.md): Testing architecture, quickstart commands, scene descriptions, suite coverage, reference generation and automated regression diagnostics.
+- [**`dev/SHADERPIPE.md`**](./SHADERPIPE.md): Camera pipe families, Python and C configuration, resolver expressions, and mixed camera output layout.
 - [**`dev/THEORY.md`**](./dev/THEORY.md): Mathematical foundations and engine design details, including polynomial camera distortion formulation, distortion-aware rasterisation frontend bounds, render thread budgets, and image save mode mechanics.
 - [**`dev/ASSUMPTIONS.md`**](./dev/ASSUMPTIONS.md): Supported engineering operating envelope, mesh validity contracts, conservative numerical margins, and reasoning guidelines for review.
 - [**`dev/MESHCONVENTION.md`**](./dev/MESHCONVENTION.md): Riley standard mesh representation, surface element definitions (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`), 3D continuum elements, node ordering, and connectivity conventions.
@@ -73,7 +74,7 @@ zig build install-bench-buffer-psf -Doptimize=ReleaseFast -Dsimd=on
 | **Python Pytests** | `.venv/bin/pytest src/riley/pytests/` | Python/Cython API, mesh pipeline, Exodus conversion, and demo parity | Integrated / `gold/` |
 
 > [!NOTE]
-> For complete documentation of all 4 test scenes, 8 sub-suites, gold generation, tolerances, and design contracts, see [**`dev/TESTING.md`**](./dev/TESTING.md).
+> For scene descriptions, suite coverage, reference generation, tolerances, and design contracts, see [**`dev/TESTING.md`**](./dev/TESTING.md).
 
 ## Precision and SIMD Build Matrix
 The `zig build` workflow supports direct control over precision, SIMD mode, Newton solver mode, and SIMD vector width:

@@ -2,6 +2,22 @@
 
 ---
 
+## Render reference data commit policy
+
+For render test gold, commit only the smallest floating-point comparison data needed by the
+Verification and Basic suites under `gold/verif/` and `gold/basic/`. Select
+representative cases and frames; review numerical values and the corresponding
+test before adding or changing a reference. Do not commit digitised gold images
+(`.bmp` or other integer image formats), even when they are generated for
+visual inspection. Do not commit any Full suite gold. Full suite references,
+including shader-pipe references, are generated and kept locally for testing.
+Generated previews and failure diagnostics are local artifacts as well.
+The benchmark statistics in `gold/perf_stats_ref/` follow their separate
+performance reference policy.
+
+Never regenerate existing gold as a side effect of testing. A gold change
+requires a targeted generator run and review of its numerical diff.
+
 ## 1. Quickstart Guide
 
 The recommended testing workflow for Riley is:
@@ -30,14 +46,20 @@ The focused verification suite likewise continues through its remaining
 verification cases and reports failure at the end.
 
 Shader-pipe coverage is registered in `src/tests/test_basic_shaderpipe.zig` and
-`src/tests/test_full_shaderpipe.zig`. The basic suite renders retained channels,
+`src/tests/test_full_shaderpipe.zig`; the public Cython boundary has focused
+coverage in `src/riley/pytests/test_shaderpipe.py`. The basic suite renders
+retained channels,
 grey-to-emissivity mapping, IR band radiance, RGB/multichannel camera selection,
 and a four-namespace resolver expression. The full suite renders Scene 0 with
 texture plus Lambertian modulation across five element types and compares
 tile-local, full global, and stripe buffers. Its references live only under
-`gold/basic/shaderpipe_*` and `gold/full_shaderpipe/`. To regenerate **only
-these new shader-pipe references** during development, run
+`gold/basic/shaderpipe_*` and `gold/full_shaderpipe/`. Only the selected Basic
+FIMG comparison frames are committed; Full references and BMP previews remain
+local. To regenerate only these new shader-pipe references during development,
+run
 `zig run src/gen_gold_shaderpipe.zig -lc`; ordinary tests never write gold.
+The standard `gen-gold-full` command also generates the Full shader-pipe
+references locally, without touching the committed Basic references.
 Inspect both BMP previews and floating-point FIMG values before accepting
 new references. Existing gold directories must not be regenerated for a
 shader-pipe change.
@@ -202,15 +224,15 @@ The **Basic Suite** is the primary regression suite packaged with the repository
 
 - **Driver**: [`src/test_full.zig`](file:///home/lloydf/riley-raster/src/test_full.zig)
 - **Generator**: [`src/gen_gold_full.zig`](file:///home/lloydf/riley-raster/src/gen_gold_full.zig)
-- **Data Location**: `gold/full_*/` (uncommitted, generated locally)
+- **Data Location**: `gold/full_*/` (generated locally; never committed)
 
-The **Full Test Suite** is an exhaustive factorial regression suite replacing legacy benchmark and monolithic test runs. Gold reference images are generated locally on-demand and verified across 8 specialized sub-suites:
+The **Full Test Suite** is an exhaustive factorial regression suite replacing legacy benchmark and monolithic test runs. Gold reference images are generated locally on demand and verified across the Full sub-suites:
 
 ```bash
-# Generate reference gold for all 8 sub-suites
+# Generate local references for all Full gold sub-suites
 zig build gen-gold-full -Doptimize=ReleaseSafe
 
-# Run all 8 sub-suites against generated gold
+# Run the Full suite against generated gold
 zig build test-full -Doptimize=ReleaseSafe
 ```
 

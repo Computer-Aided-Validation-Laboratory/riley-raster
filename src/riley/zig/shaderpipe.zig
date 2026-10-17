@@ -437,7 +437,7 @@ test "bolometric emission and LUT agree with independent values" {
     } };
     try bolometric.validate(written, &.{}, 1);
     bolometric.evaluate(&inputs, &.{}, 1, &out);
-    try std.testing.expectApproxEqAbs(@as(F, 367.4402623512), out[0], 1e-9);
+    try std.testing.expectApproxEqAbs(@as(F, 367.4402623512), out[0], if (F == f32) 1e-4 else 1e-9);
 
     const lut = Lookup{ .first = 290, .step = 20, .values = &.{ 10, 30 } };
     const band: Resolver = .{ .greybody_band = .{
@@ -458,8 +458,7 @@ test "resolver rejects missing writers and outputs" {
 }
 
 test "band Planck LUT is positive, temperature ordered, and interpolates" {
-    try std.testing.expectApproxEqRel(@as(F, 9_924_033.330070695),
-        planckSpectralRadiance(10e-6, 300), 1e-12);
+    try std.testing.expectApproxEqRel(@as(F, 9_924_033.330070695), planckSpectralRadiance(10e-6, 300), if (F == f32) 1e-5 else 1e-12);
     const response: BandResponse = .{
         .wavelengths_m = &.{ 8e-6, 9e-6, 10e-6, 11e-6, 12e-6 },
         .response = &.{ 0, 1, 1, 1, 0 },
@@ -469,7 +468,7 @@ test "band Planck LUT is positive, temperature ordered, and interpolates" {
     try std.testing.expect(lut.values[0] > 0);
     try std.testing.expect(lut.values[40] > lut.values[0]);
     const midpoint = lut.sample(300.5);
-    try std.testing.expectApproxEqAbs((lut.values[20] + lut.values[21]) / 2, midpoint, 1e-12);
+    try std.testing.expectApproxEqRel((lut.values[20] + lut.values[21]) / 2, midpoint, if (F == f32) 1e-6 else 1e-12);
     try std.testing.expectError(error.InvalidBandResponse, (BandResponse{ .wavelengths_m = &.{ 10e-6, 9e-6 }, .response = &.{ 1, 1 } })
         .prepareRadianceLookup(std.testing.allocator, 280, 320, 1));
 }

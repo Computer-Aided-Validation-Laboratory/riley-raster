@@ -9,6 +9,9 @@ import numpy.typing as npt
 
 from riley.cython.riley import (
     FunctionShader,
+    PipelineShader,
+    ShaderPipe,
+    ShaderSource,
     Mesh,
     MeshType,
     NodalShader,
@@ -283,6 +286,22 @@ def _prepare_shader(
         If shader properties or field array shapes/dtypes are invalid.
     """
     match shader:
+        case PipelineShader():
+            return PipelineShader(tuple(
+                ShaderPipe(
+                    family=pipe.family,
+                    stages=tuple(
+                        ShaderSource(
+                            _prepare_shader(stage.shader, nodes_num, source_node_idxs),
+                            stage.destination,
+                        ) if isinstance(stage, ShaderSource) else stage
+                        for stage in pipe.stages
+                    ),
+                    resolver=pipe.resolver,
+                    channels=pipe.channels,
+                    constants=pipe.constants,
+                ) for pipe in shader.pipes
+            ))
         case TextureShader():
             texture = np.asarray(shader.texture)
 
@@ -545,7 +564,7 @@ def create_mesh(
         Connectivity table of shape `(E, M)` or `(M, E)` with integer dtype,
         where `E` is elements and `M` is nodes per element.
     shader : RileyShader
-        Configured texture, nodal, or procedural function shader.
+        Configured texture, nodal, function, or pipeline shader.
     disp : tuple of numpy.ndarray or None, default=None
         Optional displacement field tuple `(disp_x, disp_y, disp_z)`, where
         each component has shape `(N,)` or `(N, T)` with floating dtype.

@@ -18,9 +18,19 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
 
 pub fn generateGold(allocator: std.mem.Allocator, io: std.Io) !void {
     try runCase(allocator, io, true);
+    // Keep only the two floating-point comparison frames selected above.
+    // BMP previews remain local and ignored by Git.
+    inline for (.{ "shaderpipe_sum_quad4", "shaderpipe_ir_quad4" }) |case_name| {
+        for (1..12) |frame| {
+            var path_buf: [256]u8 = undefined;
+            const path = try std.fmt.bufPrint(&path_buf, "{s}/{s}/cam0_frame{d}_field0.fimg", .{ policy.goldRoot(.basic), case_name, frame });
+            try std.Io.Dir.cwd().deleteFile(io, path);
+        }
+    }
 }
 
 fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void {
+    const sample_tol: F = if (F == f32) 1e-5 else 1e-9;
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const aa = arena.allocator();
@@ -93,7 +103,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     try std.testing.expect(dark_count > 0);
     try std.testing.expect(light_count > 0);
     if (!generate_gold) {
-        for (0..image.dims[1]) |frame| {
+        for ([_]usize{ 0, image.dims[1] - 1 }) |frame| {
             const gold = try common.findGoldPath(aa, io, sum_gold_dir, 0, frame, 0, false);
             try common.compareNDArrayToGold(aa, io, &image, 0, frame, 0, 1, gold, tcfg.REL_TOL, tcfg.ABS_TOL);
         }
@@ -158,7 +168,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     try std.testing.expect(ir_max < radiance.sample(340));
     try std.testing.expect(ir_max > ir_min * 1.01);
     if (!generate_gold) {
-        for (0..ir_image.dims[1]) |frame| {
+        for ([_]usize{ 0, ir_image.dims[1] - 1 }) |frame| {
             const gold = try common.findGoldPath(aa, io, ir_gold_dir, 0, frame, 0, false);
             try common.compareNDArrayToGold(aa, io, &ir_image, 0, frame, 0, 1, gold, tcfg.REL_TOL, tcfg.ABS_TOL);
         }
@@ -224,11 +234,11 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     for (0..mixed_image.dims[3]) |y| {
         for (0..mixed_image.dims[4]) |x| {
             if (mixed_image.get(&.{ 1, 0, 0, y, x }) < 0.099) continue;
-            try std.testing.expectApproxEqAbs(@as(F, 0.2), mixed_image.get(&.{ 0, 0, 0, y, x }), 1e-9);
-            try std.testing.expectApproxEqAbs(@as(F, 0.5), mixed_image.get(&.{ 0, 0, 1, y, x }), 1e-9);
-            try std.testing.expectApproxEqAbs(@as(F, 0.8), mixed_image.get(&.{ 0, 0, 2, y, x }), 1e-9);
+            try std.testing.expectApproxEqAbs(@as(F, 0.2), mixed_image.get(&.{ 0, 0, 0, y, x }), sample_tol);
+            try std.testing.expectApproxEqAbs(@as(F, 0.5), mixed_image.get(&.{ 0, 0, 1, y, x }), sample_tol);
+            try std.testing.expectApproxEqAbs(@as(F, 0.8), mixed_image.get(&.{ 0, 0, 2, y, x }), sample_tol);
             try std.testing.expectEqual(@as(F, 0), mixed_image.get(&.{ 0, 0, 3, y, x }));
-            try std.testing.expectApproxEqAbs(@as(F, 0.4), mixed_image.get(&.{ 1, 0, 3, y, x }), 1e-9);
+            try std.testing.expectApproxEqAbs(@as(F, 0.4), mixed_image.get(&.{ 1, 0, 3, y, x }), sample_tol);
             found = true;
             break;
         }
@@ -288,7 +298,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     var expr_found = false;
     for (expr_image.slice) |pixel| {
         if (pixel < 0.35) continue;
-        try std.testing.expectApproxEqAbs(@as(F, 0.36), pixel, 1e-9);
+        try std.testing.expectApproxEqAbs(@as(F, 0.36), pixel, sample_tol);
         expr_found = true;
     }
     try std.testing.expect(expr_found);
@@ -300,8 +310,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     for (0..front_coords.mat.rows_num) |node| {
         for (0..3) |axis| {
             const toward_camera = cam_in.pos_world.get(axis) - cam_in.roi_cent_world.get(axis);
-            front_coords.mat.set(node, axis,
-                front_coords.mat.get(node, axis) + toward_camera * 0.01);
+            front_coords.mat.set(node, axis, front_coords.mat.get(node, axis) + toward_camera * 0.01);
         }
     }
     const front_rgb_pipe = [_]shaderops.PipeInput{mixed_pipes[0]};
@@ -311,24 +320,19 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     var rear_mono_mesh = mesh;
     rear_mono_mesh.disp = null;
     const mixed_scene = [_]meshpipe.MeshInput{ front_rgb_mesh, rear_mono_mesh };
-    const mixed_scene_result = try riley.raster(aa, io, &.{ cam_in, rgb_cam },
-        &mixed_scene, memory_config, null);
+    const mixed_scene_result = try riley.raster(aa, io, &.{ cam_in, rgb_cam }, &mixed_scene, memory_config, null);
     const mixed_scene_image = mixed_scene_result orelse return error.NoResult;
     defer aa.free(mixed_scene_image.slice);
-    const mono_only_result = try riley.raster(aa, io, &.{cam_in},
-        &.{rear_mono_mesh}, memory_config, null);
+    const mono_only_result = try riley.raster(aa, io, &.{cam_in}, &.{rear_mono_mesh}, memory_config, null);
     const mono_only = mono_only_result orelse return error.NoResult;
     defer aa.free(mono_only.slice);
-    const rgb_only_result = try riley.raster(aa, io, &.{rgb_cam},
-        &.{front_rgb_mesh}, memory_config, null);
+    const rgb_only_result = try riley.raster(aa, io, &.{rgb_cam}, &.{front_rgb_mesh}, memory_config, null);
     const rgb_only = rgb_only_result orelse return error.NoResult;
     defer aa.free(rgb_only.slice);
     for (0..mixed_scene_image.dims[3]) |y| for (0..mixed_scene_image.dims[4]) |x| {
-        try std.testing.expectEqual(mono_only.get(&.{ 0, 0, 0, y, x }),
-            mixed_scene_image.get(&.{ 0, 0, 0, y, x }));
+        try std.testing.expectEqual(mono_only.get(&.{ 0, 0, 0, y, x }), mixed_scene_image.get(&.{ 0, 0, 0, y, x }));
         for (0..3) |ch| {
-            try std.testing.expectEqual(rgb_only.get(&.{ 0, 0, ch, y, x }),
-                mixed_scene_image.get(&.{ 1, 0, ch, y, x }));
+            try std.testing.expectEqual(rgb_only.get(&.{ 0, 0, ch, y, x }), mixed_scene_image.get(&.{ 1, 0, ch, y, x }));
         }
     };
 }

@@ -21,6 +21,7 @@ pub fn generateGold(allocator: std.mem.Allocator, io: std.Io) !void {
 }
 
 fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void {
+    const parity_tol: F = if (F == f32) 1e-5 else 1e-9;
     var textures = try fixture.FullTextures.init(allocator, io);
     defer textures.deinit(allocator);
     const mesh_types = [_]geom.MeshType{ .tri3, .tri6, .quad4, .quad8, .quad9 };
@@ -112,7 +113,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                 defer aa.free(other.slice);
                 try std.testing.expectEqual(image.slice.len, other.slice.len);
                 for (image.slice, other.slice) |a, b| {
-                    try std.testing.expectApproxEqAbs(a, b, 1e-9);
+                    try std.testing.expectApproxEqAbs(a, b, parity_tol);
                 }
             }
 
@@ -135,7 +136,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             const expression_image = expression_result orelse return error.NoResult;
             defer aa.free(expression_image.slice);
             for (image.slice, expression_image.slice) |a, b| {
-                try std.testing.expectApproxEqAbs(a, b, 1e-9);
+                try std.testing.expectApproxEqAbs(a, b, parity_tol);
             }
         }
     }
