@@ -94,7 +94,7 @@ fn loadFuncMeshInput(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = .{
+        .shaders = .{ .direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
@@ -104,7 +104,7 @@ fn loadFuncMeshInput(
                 .scaling = .none,
                 .normal_type = .none,
             },
-        },
+        } },
     };
 }
 

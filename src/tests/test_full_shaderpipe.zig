@@ -65,14 +65,14 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             .sources = &channel_slots,
             .factor = .{ .kind = .parameter, .index = 0 },
         } };
-        const sphere_pipes = [_]shaderops.PipeInput{.{ .family = .mono, .stages = &sphere_stages, .resolver = resolver }};
-        const cylinder_pipes = [_]shaderops.PipeInput{.{ .family = .mono, .stages = &cylinder_stages, .resolver = resolver }};
+        const sphere_pipes = [_]shaderops.PipeInput{.{ .stages = &sphere_stages, .resolver = resolver }};
+        const cylinder_pipes = [_]shaderops.PipeInput{.{ .stages = &cylinder_stages, .resolver = resolver }};
         const meshes = [_]meshpipe.MeshInput{
-            .{ .mesh_type = mesh_type, .coords = scene.sphere_coords, .connect = scene.sphere_connect, .disp = scene.sphere_disp, .shader = .{ .pipes = &sphere_pipes } },
-            .{ .mesh_type = mesh_type, .coords = scene.cylinder_coords, .connect = scene.cylinder_connect, .disp = scene.cylinder_disp, .shader = .{ .pipes = &cylinder_pipes } },
+            .{ .mesh_type = mesh_type, .coords = scene.sphere_coords, .connect = scene.sphere_connect, .disp = scene.sphere_disp, .shaders = .{ .mono = sphere_pipes[0] } },
+            .{ .mesh_type = mesh_type, .coords = scene.cylinder_coords, .connect = scene.cylinder_connect, .disp = scene.cylinder_disp, .shaders = .{ .mono = cylinder_pipes[0] } },
         };
         var camera = scene.camera_input;
-        camera.pipe_request = .mono;
+        camera.shader_selection = .mono;
         var config = tcfg.getRasterConfig(.testing);
         config.save_strategy = if (generate_gold) .both else .memory;
         if (generate_gold) config.output.image_save_opts = &.{
@@ -126,11 +126,11 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             const expression_resolver: shaderpipe.Resolver = .{
                 .expression = .{ .operations = &operations },
             };
-            const sphere_expr = [_]shaderops.PipeInput{.{ .family = .mono, .stages = &sphere_stages, .resolver = expression_resolver }};
-            const cylinder_expr = [_]shaderops.PipeInput{.{ .family = .mono, .stages = &cylinder_stages, .resolver = expression_resolver }};
+            const sphere_expr = [_]shaderops.PipeInput{.{ .stages = &sphere_stages, .resolver = expression_resolver }};
+            const cylinder_expr = [_]shaderops.PipeInput{.{ .stages = &cylinder_stages, .resolver = expression_resolver }};
             var expression_meshes = meshes;
-            expression_meshes[0].shader = .{ .pipes = &sphere_expr };
-            expression_meshes[1].shader = .{ .pipes = &cylinder_expr };
+            expression_meshes[0].shaders = .{ .mono = sphere_expr[0] };
+            expression_meshes[1].shaders = .{ .mono = cylinder_expr[0] };
             config.advanced.raster.buffer_mode = .tile_local;
             const expression_result = try riley.raster(aa, io, &.{camera}, &expression_meshes, config, null);
             const expression_image = expression_result orelse return error.NoResult;

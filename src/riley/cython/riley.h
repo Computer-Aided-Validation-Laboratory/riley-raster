@@ -106,8 +106,10 @@ typedef struct c_camera_input {
     CPSF psf;
     uint32_t coord_sys;
     uint32_t subpixel_center_map;
-    uint32_t pipe_family;
-    uint32_t pipe_channels;
+    uint32_t shader_selection;
+    uint32_t output_encoding; /* 0=native, 1=12-bit grid in u16, 2=linear u16 */
+    double encoding_min;
+    double encoding_max;
 } CCameraInput;
 
 typedef struct c_func_shader_params {
@@ -241,7 +243,8 @@ typedef struct c_lookup {
 
 typedef struct c_resolver {
     /* tag: identity=0, sum=1, modulate=2, weighted_sum=3,
-     * greybody_bolometric=4, greybody_band=5, expression=6. */
+     * greybody_bolometric=4, greybody_band=5, expression=6,
+     * greybody_band_apparent_c=7 (ambient is in kelvin). */
     uint32_t tag;
     const CSlot* slots;
     size_t slots_len;
@@ -270,8 +273,8 @@ typedef struct c_pipe_stage {
 } CPipeStage;
 
 typedef struct c_pipe {
-    /* family: mono=1, rgb=2, ir=3, multichannel=4. */
-    uint32_t family;
+    /* shader_selection: mono=1, rgb=2, ir=3, multifield=4. */
+    uint32_t shader_selection;
     uint32_t channels;
     const CPipeStage* stages;
     size_t stages_len;
@@ -285,6 +288,7 @@ typedef struct c_mesh_input {
     CArray2DF64 coords;
     CArray2DUsize connect;
     CArray3DF64 disp;
+    uint8_t has_direct;
     CShaderInput shader;
     const CPipe* pipes;
     size_t pipes_len;

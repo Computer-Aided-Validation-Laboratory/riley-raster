@@ -163,15 +163,51 @@ pub const ShaderInput = union(enum) {
     tex_rgb_f: TexInput(F, 3),
     func: FuncInput,
     func_rgb: FuncInput,
-    pipes: []const PipeInput,
 };
 
 pub const PipeInput = struct {
-    family: shaderpipe.Family,
     stages: []const PipeStageInput,
     resolver: shaderpipe.Resolver,
     constants: []const F = &.{},
+    channels: u8 = 0,
 };
+
+pub const ShaderSelection = enum(u8) { direct, mono, rgb, ir, multifield };
+
+pub fn ShaderSet(comptime Direct: type, comptime Pipe: type) type {
+    return struct {
+        direct: ?Direct = null,
+        mono: ?Pipe = null,
+        rgb: ?Pipe = null,
+        ir: ?Pipe = null,
+        multifield: ?Pipe = null,
+
+        pub fn select(self: *const @This(), selection: ShaderSelection) ?union(enum) {
+            direct: *const Direct,
+            pipe: *const Pipe,
+        } {
+            return switch (selection) {
+                .direct => if (self.direct) |*shader| .{ .direct = shader } else null,
+                .mono => if (self.mono) |*pipe| .{ .pipe = pipe } else null,
+                .rgb => if (self.rgb) |*pipe| .{ .pipe = pipe } else null,
+                .ir => if (self.ir) |*pipe| .{ .pipe = pipe } else null,
+                .multifield => if (self.multifield) |*pipe| .{ .pipe = pipe } else null,
+            };
+        }
+
+        pub fn has(self: *const @This(), selection: ShaderSelection) bool {
+            return switch (selection) {
+                .direct => self.direct != null,
+                .mono => self.mono != null,
+                .rgb => self.rgb != null,
+                .ir => self.ir != null,
+                .multifield => self.multifield != null,
+            };
+        }
+    };
+}
+
+pub const ShaderSetInput = ShaderSet(ShaderInput, PipeInput);
 
 pub const GreyToEmissivity = struct {
     source: shaderpipe.Slot,
@@ -339,15 +375,15 @@ pub const ShaderStatic = union(enum) {
     tex_rgb_f: TexStatic(F, 3),
     func: FuncStatic,
     func_rgb: FuncStatic,
-    pipes: []const PipeStatic,
 };
 
 pub const PipeStatic = struct {
-    family: shaderpipe.Family,
     stages: []const PipeStageStatic,
     resolver: shaderpipe.Resolver,
     constants: []const F,
+    channels: u8,
 };
+pub const ShaderSetStatic = ShaderSet(ShaderStatic, PipeStatic);
 
 pub const PipeStageStatic = union(enum) {
     source: struct { shader: ShaderStatic, destination: shaderpipe.Slot, global_scaling: ?imageops.ScalingParams = null },
@@ -412,15 +448,15 @@ pub const ShaderPrepared = union(enum) {
     tex_rgb_f: TexPrepared(F, 3),
     func: FuncPrepared,
     func_rgb: FuncPrepared,
-    pipes: []const PipePrepared,
 };
 
 pub const PipePrepared = struct {
-    family: shaderpipe.Family,
     stages: []const PipeStagePrepared,
     resolver: shaderpipe.Resolver,
     constants: []const F,
+    channels: u8,
 };
+pub const ShaderSetPrepared = ShaderSet(ShaderPrepared, PipePrepared);
 
 pub const PipeStagePrepared = union(enum) {
     source: struct { shader: ShaderPrepared, destination: shaderpipe.Slot },

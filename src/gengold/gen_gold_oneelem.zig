@@ -73,7 +73,7 @@ pub fn generateOneElemCase(
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shader = .{
+        .shaders = .{ .direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
@@ -83,7 +83,7 @@ pub fn generateOneElemCase(
                 .scaling = .auto,
                 .normal_type = .none,
             },
-        },
+        } },
     };
 
     const camera_input = CameraInput{

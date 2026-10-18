@@ -151,6 +151,21 @@ pub fn build(b: *std.Build) void {
             .description = "Run the complete feature-zoo demo",
             .source_path = "src/demo6_featurezoo.zig",
         },
+        .{
+            .step_name = "demo7-shaderpipe-quickstart",
+            .description = "Run the ShaderSet quickstart demo",
+            .source_path = "src/demo7_shaderpipe_quickstart.zig",
+        },
+        .{
+            .step_name = "demo8-shaderpipe-gallery",
+            .description = "Run the ShaderPipe gallery demo",
+            .source_path = "src/demo8_shaderpipe_gallery.zig",
+        },
+        .{
+            .step_name = "demo9-diciruq",
+            .description = "Run the multimodal DIC and IR demo",
+            .source_path = "src/demo9_diciruq.zig",
+        },
     };
 
     const demos_step = b.step("demos", "Run all demo entrypoints");

@@ -513,6 +513,7 @@ pub fn completeSaveSlot(
         &output_frame_arr,
         imageSaveChannelsOverride(config.output.image_save_mode),
         config.output.image_save_opts,
+        slot.camera.?.output_encoding,
         config.output_name_format,
     );
     const time_end_save = Timestamp.now(save_io, .awake);

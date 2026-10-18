@@ -243,7 +243,7 @@ fn loadZooMesh(
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = if (case_index % 2 == 1) disp else null,
-        .shader = shader,
+        .shaders = .{ .direct = shader },
     };
 }
 

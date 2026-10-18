@@ -125,7 +125,7 @@ fn duplicateMeshInput(
     }
 
     var new_shader: shaderops.ShaderInput = undefined;
-    switch (base_mesh.shader) {
+    switch (base_mesh.shaders.direct.?) {
         .func => |base_func| {
             var new_uvs: ?NDArray(F) = null;
             if (base_func.uvs) |base_uvs| {
@@ -169,7 +169,7 @@ fn duplicateMeshInput(
         .coords = new_coords,
         .connect = new_connect,
         .disp = null,
-        .shader = new_shader,
+        .shaders = .{ .direct = new_shader },
     };
 }
 

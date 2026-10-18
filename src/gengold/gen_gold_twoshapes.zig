@@ -274,7 +274,7 @@ fn loadShapeMesh(
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = disp,
-        .shader = shader,
+        .shaders = .{ .direct = shader },
     };
 }
 

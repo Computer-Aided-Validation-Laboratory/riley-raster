@@ -168,8 +168,10 @@ pub const CCameraInput = extern struct {
     psf: CPSF,
     coord_sys: u32,
     subpixel_center_map: u32,
-    pipe_family: u32,
-    pipe_channels: u32,
+    shader_selection: u32,
+    output_encoding: u32,
+    encoding_min: F,
+    encoding_max: F,
 };
 
 pub const CFuncShaderParams = extern struct {
@@ -316,7 +318,7 @@ pub const CPipeStage = extern struct {
     white: F,
 };
 pub const CPipe = extern struct {
-    family: u32,
+    shader_selection: u32,
     channels: u32,
     stages: [*c]const CPipeStage,
     stages_len: usize,
@@ -330,6 +332,7 @@ pub const CMeshInput = extern struct {
     coords: CArray2DF64,
     connect: CArray2DUsize,
     disp: CArray3DF64,
+    has_direct: u8,
     shader: CShaderInput,
     pipes: [*c]const CPipe,
     pipes_len: usize,
@@ -1218,23 +1221,23 @@ fn buildCameraInput(
         .distort = try distortFromC(&in_camera.distort),
         .psf = try psfFromC(&in_camera.psf),
         .coord_sys = try coordSysFromC(in_camera.coord_sys),
-        .pipe_request = if (in_camera.pipe_family == 0) null else try pipeFamilyFromC(in_camera.pipe_family, in_camera.pipe_channels),
+        .shader_selection = switch (in_camera.shader_selection) {
+            0 => .direct,
+            1 => .mono,
+            2 => .rgb,
+            3 => .ir,
+            4 => .multifield,
+            else => return error.InvalidShaderSelection,
+        },
+        .output_encoding = switch (in_camera.output_encoding) {
+            0 => .native,
+            1 => .{ .grid12_to_u16 = .{ in_camera.encoding_min, in_camera.encoding_max } },
+            2 => .{ .linear_u16 = .{ in_camera.encoding_min, in_camera.encoding_max } },
+            else => return error.InvalidImageEncoding,
+        },
         .subpixel_center_map = try subpxCenterMapFromC(
             in_camera.subpixel_center_map,
         ),
-    };
-}
-
-fn pipeFamilyFromC(tag: u32, count: u32) !shaderpipe.Family {
-    return switch (tag) {
-        1 => .mono,
-        2 => .rgb,
-        3 => .ir,
-        4 => if (count > 0 and count <= shaderpipe.max_channels)
-            .{ .multichannel = @intCast(count) }
-        else
-            error.InvalidPipeFamily,
-        else => error.InvalidPipeFamily,
     };
 }
 
@@ -1276,6 +1279,7 @@ fn resolverFromC(allocator: std.mem.Allocator, input: CResolver, constants: []co
         3 => .{ .weighted_sum = .{ .sources = slots, .weights = try cConstSlice(F, input.weights, input.weights_len) } },
         4 => .{ .greybody_bolometric = .{ .temperature = try pipeSlotFromC(input.temperature), .emissivity = try pipeSlotFromC(input.emissivity) } },
         5 => .{ .greybody_band = .{ .temperature = try pipeSlotFromC(input.temperature), .emissivity = try pipeSlotFromC(input.emissivity), .radiance = try lookupFromC(input.lookup) } },
+        7 => .{ .greybody_band_apparent_c = .{ .temperature = try pipeSlotFromC(input.temperature), .emissivity = try pipeSlotFromC(input.emissivity), .radiance = try lookupFromC(input.lookup), .ambient_k = input.ambient } },
         6 => blk: {
             const input_ops = try cConstSlice(COperation, input.operations, input.operations_len);
             const ops = try allocator.alloc(shaderpipe.Op, input_ops.len);
@@ -1325,7 +1329,7 @@ fn buildMeshInput(
             .coords = coords,
             .connect = connect,
             .disp = null,
-            .shader = undefined,
+            .shaders = .{},
         },
     };
 
@@ -1361,11 +1365,12 @@ fn buildMeshInput(
                         const source_shader = try cConstSlice(CShaderInput, input_stage.shader, 1);
                         var source_mesh = in_mesh.*;
                         source_mesh.shader = source_shader[0];
+                        source_mesh.has_direct = 1;
                         source_mesh.pipes = null;
                         source_mesh.pipes_len = 0;
                         source_mesh.disp = .{ .elems = null, .dim0 = 0, .dim1 = 0, .dim2 = 0 };
                         built.pipe_sources[source_idx] = try buildMeshInput(allocator, &source_mesh);
-                        const source = built.pipe_sources[source_idx].mesh_input.shader;
+                        const source = built.pipe_sources[source_idx].mesh_input.shaders.direct.?;
                         source_idx += 1;
                         break :blk .{ .source = .{ .shader = source, .destination = try pipeSlotFromC(input_stage.destination) } };
                     },
@@ -1388,15 +1393,36 @@ fn buildMeshInput(
             }
             const constants = try cConstSlice(F, pipe.constants, pipe.constants_len);
             built.pipe_inputs[pi] = .{
-                .family = try pipeFamilyFromC(pipe.family, pipe.channels),
                 .stages = stages,
                 .resolver = try resolverFromC(allocator, pipe.resolver, constants),
                 .constants = constants,
+                .channels = if (pipe.shader_selection == 4) @intCast(pipe.channels) else 0,
             };
+            switch (pipe.shader_selection) {
+                1 => {
+                    if (built.mesh_input.shaders.mono != null) return error.DuplicatePipeRole;
+                    built.mesh_input.shaders.mono = built.pipe_inputs[pi];
+                },
+                2 => {
+                    if (built.mesh_input.shaders.rgb != null) return error.DuplicatePipeRole;
+                    built.mesh_input.shaders.rgb = built.pipe_inputs[pi];
+                },
+                3 => {
+                    if (built.mesh_input.shaders.ir != null) return error.DuplicatePipeRole;
+                    built.mesh_input.shaders.ir = built.pipe_inputs[pi];
+                },
+                4 => {
+                    if (pipe.channels == 0 or pipe.channels > shaderpipe.max_channels) return error.InvalidPipeChannels;
+                    if (built.mesh_input.shaders.multifield != null) return error.DuplicatePipeRole;
+                    built.mesh_input.shaders.multifield = built.pipe_inputs[pi];
+                },
+                else => return error.InvalidPipeRole,
+            }
         }
-        built.mesh_input.shader = .{ .pipes = built.pipe_inputs };
-        return built;
     }
+
+    if (in_mesh.has_direct == 0) return built;
+    if (in_mesh.has_direct != 1) return error.InvalidDirectShaderFlag;
 
     const in_shader = &in_mesh.shader;
     const bits = try bitsFromC(in_shader.bits);
@@ -1437,7 +1463,7 @@ fn buildMeshInput(
                     1,
                 );
                 errdefer tex_array.deinit(allocator);
-                built.mesh_input.shader = .{ .tex_u16 = .{
+                built.mesh_input.shaders.direct = .{ .tex_u16 = .{
                     .uvs = uvs_array,
                     .tex = texops.Tex(u16, 1){
                         .array = tex_array,
@@ -1453,7 +1479,7 @@ fn buildMeshInput(
             } else if (in_shader.texture_storage == 2) {
                 var tex_array = try buildTexArray(F, allocator, &in_shader.tex, 1);
                 errdefer tex_array.deinit(allocator);
-                built.mesh_input.shader = .{ .tex_f = .{
+                built.mesh_input.shaders.direct = .{ .tex_f = .{
                     .uvs = uvs_array,
                     .tex = texops.Tex(F, 1){
                         .array = tex_array,
@@ -1474,7 +1500,7 @@ fn buildMeshInput(
                     1,
                 );
                 errdefer tex_array.deinit(allocator);
-                built.mesh_input.shader = .{ .tex_u8 = .{
+                built.mesh_input.shaders.direct = .{ .tex_u8 = .{
                     .uvs = uvs_array,
                     .tex = texops.Tex(u8, 1){
                         .array = tex_array,
@@ -1517,7 +1543,7 @@ fn buildMeshInput(
                     3,
                 );
                 errdefer tex_array.deinit(allocator);
-                built.mesh_input.shader = .{ .tex_rgb_u16 = .{
+                built.mesh_input.shaders.direct = .{ .tex_rgb_u16 = .{
                     .uvs = uvs_array,
                     .tex = texops.Tex(u16, 3){
                         .array = tex_array,
@@ -1533,7 +1559,7 @@ fn buildMeshInput(
             } else if (in_shader.texture_storage == 2) {
                 var tex_array = try buildTexArray(F, allocator, &in_shader.tex, 3);
                 errdefer tex_array.deinit(allocator);
-                built.mesh_input.shader = .{ .tex_rgb_f = .{
+                built.mesh_input.shaders.direct = .{ .tex_rgb_f = .{
                     .uvs = uvs_array,
                     .tex = texops.Tex(F, 3){
                         .array = tex_array,
@@ -1554,7 +1580,7 @@ fn buildMeshInput(
                     3,
                 );
                 errdefer tex_array.deinit(allocator);
-                built.mesh_input.shader = .{ .tex_rgb_u8 = .{
+                built.mesh_input.shaders.direct = .{ .tex_rgb_u8 = .{
                     .uvs = uvs_array,
                     .tex = texops.Tex(u8, 3){
                         .array = tex_array,
@@ -1577,7 +1603,7 @@ fn buildMeshInput(
             if (nodal_built.field == null or nodal_built.array == null) {
                 return error.MissingNodalField;
             }
-            built.mesh_input.shader = .{ .nodal = .{
+            built.mesh_input.shaders.direct = .{ .nodal = .{
                 .field = nodal_built.field.?,
                 .bits = bits,
                 .scaling = scaling,
@@ -1597,7 +1623,7 @@ fn buildMeshInput(
             if (nodal_built.field.?.getFieldsN() != 3) {
                 return error.InvalidNodalRgbFieldCount;
             }
-            built.mesh_input.shader = .{ .nodal = .{
+            built.mesh_input.shaders.direct = .{ .nodal = .{
                 .field = nodal_built.field.?,
                 .bits = bits,
                 .scaling = scaling,
@@ -1622,7 +1648,7 @@ fn buildMeshInput(
             const builtin = try funcShaderBuiltinFromC(
                 in_shader.func_shader_builtin,
             );
-            built.mesh_input.shader = .{ .func = .{
+            built.mesh_input.shaders.direct = .{ .func = .{
                 .uvs = uvs_array_opt,
                 .coord_mode = try funcCoordModeFromC(
                     in_shader.func_shader_coord_mode,
@@ -1654,7 +1680,7 @@ fn buildMeshInput(
             const builtin = try funcShaderBuiltinFromC(
                 in_shader.func_shader_builtin,
             );
-            built.mesh_input.shader = .{ .func_rgb = .{
+            built.mesh_input.shaders.direct = .{ .func_rgb = .{
                 .uvs = uvs_array_opt,
                 .coord_mode = try funcCoordModeFromC(
                     in_shader.func_shader_coord_mode,
@@ -1926,13 +1952,20 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
         .roi_cent_world = vec3ToCVec3(in_camera.roi_cent_world),
         .focal_length = in_camera.focal_length,
         .sub_sample = in_camera.sub_sample,
-        .pipe_family = if (in_camera.pipe_request) |family| switch (family) {
-            .mono => 1,
-            .rgb => 2,
-            .ir => 3,
-            .multichannel => 4,
-        } else 0,
-        .pipe_channels = if (in_camera.pipe_request) |family| family.channels() else 0,
+        .shader_selection = @intFromEnum(in_camera.shader_selection),
+        .output_encoding = switch (in_camera.output_encoding) {
+            .native => 0,
+            .grid12_to_u16 => 1,
+            .linear_u16 => 2,
+        },
+        .encoding_min = switch (in_camera.output_encoding) {
+            .native => 0,
+            inline else => |range| range[0],
+        },
+        .encoding_max = switch (in_camera.output_encoding) {
+            .native => 0,
+            inline else => |range| range[1],
+        },
         .distort = .{
             .distort_model = 0,
             .distort_k1 = 0.0,

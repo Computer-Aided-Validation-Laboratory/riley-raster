@@ -910,12 +910,12 @@ pub fn runSingleMeshSuiteDriver(
                 .coords = prepared.sim_data.coords,
                 .connect = prepared.sim_data.connect,
                 .disp = if (add_disp) prepared.sim_data.field else null,
-                .shader = .{
+                .shaders = .{ .direct = .{
                     .nodal = .{
                         .field = prepared.sim_data.field.?,
                         .bits = 8,
                     },
-                },
+                } },
             };
 
             var run_config = config;
@@ -1058,13 +1058,13 @@ pub fn runSingleMeshSuiteDriver(
                     .coords = prepared.sim_data.coords,
                     .connect = prepared.sim_data.connect,
                     .disp = if (add_disp) prepared.sim_data.field else null,
-                    .shader = .{
+                    .shaders = .{ .direct = .{
                         .tex_u8 = .{
                             .uvs = prepared.uvs.array,
                             .tex = texture,
                             .samp_cfg = sc,
                         },
-                    },
+                    } },
                 };
 
                 var run_config = config;
@@ -1746,14 +1746,14 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shader = .{
+        .shaders = .{ .direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
                 .builtin = .constant,
                 .normal_type = .none,
             },
-        },
+        } },
     };
 
     var run_config = config;

@@ -211,7 +211,7 @@ pub fn main(init: std.process.Init) !void {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = selected_disp,
-        .shader = .{ .tex_u8 = .{
+        .shaders = .{ .direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = .{
@@ -220,7 +220,7 @@ pub fn main(init: std.process.Init) !void {
             },
             .bits = 8,
             .scaling = .none,
-        } },
+        } } },
     };
 
     const config = RasterConfig{

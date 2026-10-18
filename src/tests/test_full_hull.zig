@@ -98,7 +98,7 @@ fn runOneElemHullCaseTest(
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shader = .{
+        .shaders = .{ .direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
@@ -108,7 +108,7 @@ fn runOneElemHullCaseTest(
                 .scaling = .auto,
                 .normal_type = .none,
             },
-        },
+        } },
     };
 
     const case_dir_name = try fullcase_hull.formatCaseDirName(

@@ -100,17 +100,17 @@ fn checkMeshDisplacements(mesh: meshpipe.MeshInput) InputArrayError!void {
 // --------------------------------------------------------------------------------------
 
 fn checkMeshShaderArrays(mesh: meshpipe.MeshInput) InputArrayError!void {
-    return checkShaderArrays(mesh.shader);
+    if (mesh.shaders.direct) |shader| try checkShaderArrays(shader);
+    inline for (.{ mesh.shaders.mono, mesh.shaders.rgb, mesh.shaders.ir, mesh.shaders.multifield }) |pipe_opt| {
+        if (pipe_opt) |pipe| for (pipe.stages) |stage| switch (stage) {
+            .source => |src| try checkShaderArrays(src.shader),
+            else => {},
+        };
+    }
 }
 
 fn checkShaderArrays(shader: shaderops.ShaderInput) InputArrayError!void {
     switch (shader) {
-        .pipes => |pipes| for (pipes) |pipe| {
-            for (pipe.stages) |stage| switch (stage) {
-                .source => |src| try checkShaderArrays(src.shader),
-                else => {},
-            };
-        },
         .tex_u8 => |tex_shader| {
             if (!isFiniteSlice(tex_shader.uvs.slice)) {
                 return error.NonFiniteUvs;

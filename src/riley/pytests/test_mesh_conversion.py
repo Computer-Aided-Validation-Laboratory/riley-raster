@@ -80,9 +80,9 @@ def test_two_stage_source_construction_matches_create_mesh() -> None:
     )
 
     direct = riley.create_mesh(
-        convention, riley.MeshType.tri3, coords, connect, shader
+        convention, riley.MeshType.tri3, coords, connect, riley.ShaderSet(direct=shader)
     )
-    staged = riley.create_mesh_from_conversion(conversion, shader)
+    staged = riley.create_mesh_from_conversion(conversion, riley.ShaderSet(direct=shader))
 
     np.testing.assert_array_equal(staged.coords, direct.coords)
     np.testing.assert_array_equal(staged.connect, direct.connect)
@@ -113,7 +113,7 @@ def test_prepared_construction_accepts_converted_uvs() -> None:
     texture = np.zeros((1, 2, 2), dtype=np.uint8)
 
     mesh = riley.create_mesh_from_prepared(
-        conversion, riley.TextureShader(uvs, texture)
+        conversion, riley.ShaderSet(direct=riley.TextureShader(uvs, texture))
     )
 
-    np.testing.assert_array_equal(mesh.shader.uvs, uvs)
+    np.testing.assert_array_equal(mesh.shaders.direct.uvs, uvs)

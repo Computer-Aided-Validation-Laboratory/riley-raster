@@ -160,11 +160,11 @@ pub fn main(init: std.process.Init) !void {
                         .coords = try orch.copyCoords(ra, sim_data.coords),
                         .connect = sim_data.connect,
                         .disp = null,
-                        .shader = undefined,
+                        .shaders = .{},
                     };
 
                     if (std.mem.eql(u8, shader_name, "funcconst")) {
-                        mesh_input.shader = .{ .func = .{
+                        mesh_input.shaders = .{ .direct = .{ .func = .{
                             .uvs = uv_map.array,
                             .coord_mode = .uv,
                             .builtin = .constant,
@@ -172,9 +172,9 @@ pub fn main(init: std.process.Init) !void {
                             .bits = 8,
                             .scaling = .auto,
                             .normal_type = .none,
-                        } };
+                        } } };
                     } else {
-                        mesh_input.shader = .{ .tex_u8 = .{
+                        mesh_input.shaders = .{ .direct = .{ .tex_u8 = .{
                             .uvs = uv_map.array,
                             .tex = texture,
                             .samp_cfg = .{
@@ -184,7 +184,7 @@ pub fn main(init: std.process.Init) !void {
                             .bits = 8,
                             .scaling = .none,
                             .normal_type = .none,
-                        } };
+                        } } };
                     }
 
                     const mesh_inputs = &[_]MeshInput{mesh_input};

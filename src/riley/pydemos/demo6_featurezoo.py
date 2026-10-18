@@ -175,7 +175,7 @@ def build_scene(channels: int, bits: int, options: DemoOptions) -> list[riley.Me
                 mesh_type,
                 coords,
                 connect,
-                shader,
+                riley.ShaderSet(direct=shader),
                 disp=disp if index % 2 else None,
             )
         )

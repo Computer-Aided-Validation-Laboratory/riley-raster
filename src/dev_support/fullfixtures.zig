@@ -421,14 +421,14 @@ pub fn prepareScene0(
         .coords = sphere_coords,
         .connect = sphere_connect,
         .disp = sphere_disp,
-        .shader = .{ .nodal = .{ .field = sphere_temp } },
+        .shaders = .{ .direct = .{ .nodal = .{ .field = sphere_temp } } },
     };
     const dummy_cylinder = MeshInput{
         .mesh_type = mesh_type,
         .coords = cylinder_coords,
         .connect = cylinder_connect,
         .disp = cylinder_disp,
-        .shader = .{ .nodal = .{ .field = cylinder_temp } },
+        .shaders = .{ .direct = .{ .nodal = .{ .field = cylinder_temp } } },
     };
     const dummy_meshes = [_]MeshInput{ dummy_sphere, dummy_cylinder };
     const camera_input = createScene0Camera(&dummy_meshes);
@@ -571,7 +571,7 @@ pub fn prepareScene1(
         .coords = coords,
         .connect = connect,
         .disp = null,
-        .shader = .{
+        .shaders = .{ .direct = .{
             .func = .{
                 .uvs = uvs.array,
                 .builtin = .checker,
@@ -585,7 +585,7 @@ pub fn prepareScene1(
                 .scaling = .auto,
                 .normal_type = .none,
             },
-        },
+        } },
     };
     const dummy_meshes = [_]MeshInput{dummy_mesh};
     const camera_input = createScene1Camera(&dummy_meshes);
@@ -686,14 +686,14 @@ pub fn buildScene2Meshes(
             .coords = prep.sphere1_coords,
             .connect = prep.sphere1_connect,
             .disp = null,
-            .shader = sphere1_shader,
+            .shaders = .{ .direct = sphere1_shader },
         },
         .{
             .mesh_type = prep.mesh_type,
             .coords = prep.sphere2_coords,
             .connect = prep.sphere2_connect,
             .disp = null,
-            .shader = sphere2_shader,
+            .shaders = .{ .direct = sphere2_shader },
         },
     };
 }
@@ -1198,7 +1198,7 @@ pub fn buildScene3Meshes(
             .coords = prep.meshes[ii].coords,
             .connect = prep.meshes[ii].connect,
             .disp = prep.meshes[ii].disp,
-            .shader = shader,
+            .shaders = .{ .direct = shader },
         };
     }
 
@@ -1481,14 +1481,14 @@ pub fn buildScene2ImageOutputMeshes(
             .coords = prep.sphere1_coords,
             .connect = prep.sphere1_connect,
             .disp = null,
-            .shader = sphere1_shader,
+            .shaders = .{ .direct = sphere1_shader },
         },
         .{
             .mesh_type = prep.mesh_type,
             .coords = prep.sphere2_coords,
             .connect = prep.sphere2_connect,
             .disp = null,
-            .shader = sphere2_shader,
+            .shaders = .{ .direct = sphere2_shader },
         },
     };
 }

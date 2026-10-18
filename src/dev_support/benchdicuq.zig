@@ -246,13 +246,13 @@ pub fn prepareBenchmark(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = sim_data.disp,
-        .shader = .{ .tex_u8 = .{
+        .shaders = .{ .direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = samp_cfg,
             .bits = 8,
             .scaling = .none,
-        } },
+        } } },
     };
 
     const pixel_size = defaults.pixels_size;

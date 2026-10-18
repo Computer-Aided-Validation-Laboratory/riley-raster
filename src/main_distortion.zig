@@ -163,7 +163,7 @@ fn renderCase(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = .{ .func = .{
+        .shaders = .{ .direct = .{ .func = .{
             .uvs = uvs.array,
             .coord_mode = .uv,
             .builtin = SHADER_BUILTIN,
@@ -171,7 +171,7 @@ fn renderCase(
             .bits = 8,
             .scaling = .none,
             .normal_type = .none,
-        } },
+        } } },
     };
     const camera_input = makeCameraInput(
         &sim_data.coords,

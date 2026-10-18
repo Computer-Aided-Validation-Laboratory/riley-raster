@@ -89,7 +89,7 @@ def make_mesh_input(
         mesh_type,
         np.array(coords, copy=True),
         connect,
-        shader=shader,
+        shaders=riley.ShaderSet(direct=shader),
     )
 
 

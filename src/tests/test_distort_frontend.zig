@@ -39,12 +39,12 @@ test "distorted tri3 interior reaches scalar or SIMD raster in both map modes" {
         .coords = coords,
         .connect = connect,
         .disp = null,
-        .shader = .{ .func = .{
+        .shaders = .{ .direct = .{ .func = .{
             .builtin = .constant,
             .params = .{ .settings = .{ .constant = .{ .value = 1.0 } } },
             .bits = 8,
             .scaling = .none,
-        } },
+        } } },
     };
     const modes = [_]cam.SubPixelCenterMap{ .full_in_mem, .per_tile };
     const buffers = [_]riley.BufferMode{ .tile_local, .global_subpx_full };

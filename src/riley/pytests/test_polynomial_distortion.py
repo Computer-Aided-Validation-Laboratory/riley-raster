@@ -201,7 +201,7 @@ def test_flat_plate_bc_poly_render_equivalence(
         params=riley.FuncShaderParams(constant_value=1),
         scaling_type=riley.ScaleStrategy.none,
     )
-    mesh = riley.create_mesh(convention, riley.MeshType.tri3, coords, connect, shader)
+    mesh = riley.create_mesh(convention, riley.MeshType.tri3, coords, connect, riley.ShaderSet(direct=shader))
     camera = riley.Camera(
         pixels_num=(65, 49),
         pixels_size=(0.001, 0.001),

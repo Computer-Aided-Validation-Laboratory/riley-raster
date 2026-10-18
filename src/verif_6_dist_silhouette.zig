@@ -373,14 +373,14 @@ fn renderScalarMap(
         .coords = frame_coords,
         .connect = connect,
         .disp = null,
-        .shader = .{
+        .shaders = .{ .direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
                 .builtin = .constant,
                 .normal_type = .none,
             },
-        },
+        } },
     };
 
     const result = (try riley.raster(
@@ -441,14 +441,14 @@ fn buildCentroidCameraInputOverFrames(
             .coords = frame_coords,
             .connect = sim_data.connect,
             .disp = null,
-            .shader = .{
+            .shaders = .{ .direct = .{
                 .func = .{
                     .uvs = null,
                     .coord_mode = .para,
                     .builtin = .constant,
                     .normal_type = .none,
                 },
-            },
+            } },
         };
     }
 

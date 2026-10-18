@@ -40,6 +40,7 @@ pub const ImageSaveOpts = struct {
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
     channels: usize = 1,
+    encoding: ImageEncoding = .native,
 
     pub fn init(
         format: ImageFormat,
@@ -54,6 +55,12 @@ pub const ImageSaveOpts = struct {
             .channels = channels,
         };
     }
+};
+
+pub const ImageEncoding = union(enum) {
+    native,
+    grid12_to_u16: [2]F,
+    linear_u16: [2]F,
 };
 
 const OutputNameField = enum {
@@ -143,6 +150,7 @@ pub fn saveImages(
     frame_arr: *const ndarray.NDArray(F),
     channels_override: ?usize,
     opts_slice: []const ImageSaveOpts,
+    encoding_override: ?ImageEncoding,
     output_name_format: []const u8,
 ) !void {
     const save_dir = out_dir orelse return;
@@ -153,6 +161,9 @@ pub fn saveImages(
         const channels = channels_override orelse opts.channels;
         var save_opts = opts;
         save_opts.channels = channels;
+        if (encoding_override) |encoding| save_opts.encoding = encoding;
+        if (save_opts.encoding != .native and (save_opts.format != .tiff or save_opts.bits != 16))
+            return error.InvalidImageEncoding;
         var ff: usize = 0;
         while (ff + channels <= @as(usize, num_fields)) {
             const file_name = try formatFrameFieldBaseName(
@@ -592,7 +603,17 @@ pub fn saveTIFF(
                 val *= max_v;
             }
 
-            const px_clamped = imageops.applyClamping(val, bits);
+            const px_clamped = switch (opts.encoding) {
+                .native => imageops.applyClamping(val, bits),
+                .grid12_to_u16 => |range| blk: {
+                    const norm = std.math.clamp((raw_val - range[0]) / (range[1] - range[0]), 0, 1);
+                    break :blk @round(norm * 4095.0) * 16.0;
+                },
+                .linear_u16 => |range| blk: {
+                    const norm = std.math.clamp((raw_val - range[0]) / (range[1] - range[0]), 0, 1);
+                    break :blk @round(norm * 65535.0);
+                },
+            };
             if (bits == 16) {
                 try writer.writeInt(u16, @as(u16, @intFromFloat(px_clamped)), .little);
             } else {
@@ -1383,6 +1404,38 @@ test "Save and Load All Formats 8-bit and 16-bit" {
                 try testing.expectEqual(cols, loaded.cols_num);
             }
         }
+    }
+}
+
+test "camera TIFF encodings quantise DIC and apparent temperature independently" {
+    const allocator = testing.allocator;
+    const io = std.testing.io;
+    try ensureTempTestDir(io);
+    defer deleteTempTestDir(io);
+    const samples = [_]F{ 0, 63.75, 127.5, 191.25, 255, 300 };
+    const mat = matslice.MatSlice(F).init(@constCast(&samples), 2, 3);
+    try saveMatAsImage(io, std.Io.Dir.cwd(), temp_test_dir ++ "/dic_grid", &mat, .{
+        .format = .tiff,
+        .bits = 16,
+        .encoding = .{ .grid12_to_u16 = .{ 0, 255 } },
+    });
+    var dic = try loadImage(u16, 1, allocator, io, temp_test_dir ++ "/dic_grid.tiff", .tiff);
+    defer dic.deinit(allocator);
+    const expected_dic = [_]u16{ 0, 16384, 32768, 49136, 65520, 65520 };
+    for (dic.array.slice, expected_dic) |actual, expected| try testing.expectEqual(expected, actual);
+    for (dic.array.slice) |code| try testing.expectEqual(@as(u16, 0), code % 16);
+
+    const temperatures = [_]F{ 0, 25, 50, 100, 200, 250 };
+    const thermal = matslice.MatSlice(F).init(@constCast(&temperatures), 2, 3);
+    try saveMatAsImage(io, std.Io.Dir.cwd(), temp_test_dir ++ "/ir_linear", &thermal, .{
+        .format = .tiff,
+        .bits = 16,
+        .encoding = .{ .linear_u16 = .{ 0, 250 } },
+    });
+    var ir = try loadImage(u16, 1, allocator, io, temp_test_dir ++ "/ir_linear.tiff", .tiff);
+    defer ir.deinit(allocator);
+    for (ir.array.slice, temperatures) |code, celsius| {
+        try testing.expectApproxEqAbs(celsius, @as(F, @floatFromInt(code)) * 250 / 65535, @as(F, 0.002));
     }
 }
 

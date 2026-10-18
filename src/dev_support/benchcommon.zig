@@ -15,6 +15,7 @@ const uvio = @import("../riley/zig/uvio.zig");
 const csvio = @import("../riley/zig/csvio.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const so = @import("../riley/zig/shaderops.zig");
+const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
@@ -445,6 +446,8 @@ pub const TexFuncCase = struct {
     coord_mode: TexFuncCoordMode,
 };
 
+pub const BenchShaderPath = enum { direct, one_stage_pipe };
+
 pub const BenchRenderDefaults = struct {
     pixels_num: [2]u32,
     sub_sample: u32,
@@ -453,6 +456,7 @@ pub const BenchRenderDefaults = struct {
     fov_scale: F,
     rot: Rotation,
     distort: DistortParams = .none,
+    shader_path: BenchShaderPath = .direct,
 };
 
 pub const RunMode = enum { all, element, texture, interpolator };
@@ -769,7 +773,7 @@ pub fn loadBenchmarkMeshInput(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = shader,
+        .shaders = .{ .direct = shader },
     };
 }
 
@@ -930,7 +934,7 @@ fn runBenchmarkInternal(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const mesh_input = try loadBenchmarkMeshInput(
+    var mesh_input = try loadBenchmarkMeshInput(
         T,
         aa,
         io,
@@ -943,6 +947,20 @@ fn runBenchmarkInternal(
         texture_rgb,
     );
     _ = calcOutputChannels(shader_type);
+
+    const output_slot: shaderpipe.Slot = .{ .kind = .channel, .index = 0 };
+    const pipe_stages = [_]so.PipeStageInput{.{ .source = .{
+        .shader = mesh_input.shaders.direct.?,
+        .destination = output_slot,
+    } }};
+    const pipe_slots = [_]shaderpipe.Slot{output_slot};
+    if (render_defaults.shader_path == .one_stage_pipe) {
+        std.debug.assert(calcOutputChannels(shader_type) == 1);
+        mesh_input.shaders = .{ .mono = .{
+            .stages = &pipe_stages,
+            .resolver = .{ .identity = &pipe_slots },
+        } };
+    }
 
     const roi_pos = sceneops.boundsCenter(&mesh_input.coords);
     const cam_pos = cameraops.posFillFrameFromRot(
@@ -976,6 +994,7 @@ fn runBenchmarkInternal(
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
         .distort = render_defaults.distort,
+        .shader_selection = if (render_defaults.shader_path == .one_stage_pipe) .mono else .direct,
     };
 
     var config_run = config;

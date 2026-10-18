@@ -25,6 +25,7 @@ DEFAULT_MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP = 1
 DEFAULT_EXPERIMENT1 = True
 DEFAULT_EXPERIMENT2 = True
 DEFAULT_EXPERIMENT3 = False
+DEFAULT_EXPERIMENT4 = False
 
 EXPERIMENT1_SUB_SAMPLES = [2]
 EXPERIMENT2_SUB_SAMPLES = [1, 2]
@@ -38,6 +39,20 @@ EXPERIMENT3_CASES: list[dict[str, object]] = [
         "lanes": 8,
         "texture_storage": "u8",
         "shader_subset": "shaderpipe_baseline",
+        "mesh_subset": "all",
+        "sub_sample": 2,
+    },
+]
+
+EXPERIMENT4_CASES: list[dict[str, object]] = [
+    {
+        "study_group": "experiment4",
+        "experiment": "one_stage_pipe_compare",
+        "case_name": "tiltraster_one_stage_pipe_compare_f64_simd_v8_ssaa2",
+        "precision": "f64",
+        "lanes": 8,
+        "texture_storage": "u8",
+        "shader_subset": "shaderpipe_compare",
         "mesh_subset": "all",
         "sub_sample": 2,
     },
@@ -352,6 +367,11 @@ def main() -> int:
         action=argparse.BooleanOptionalAction,
         default=DEFAULT_EXPERIMENT3,
     )
+    parser.add_argument(
+        "--experiment4",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_EXPERIMENT4,
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--experiment3-binary", type=pathlib.Path, default=None)
     args = parser.parse_args()
@@ -363,6 +383,8 @@ def main() -> int:
         selected_cases.extend(EXPERIMENT2_CASES)
     if args.experiment3:
         selected_cases.extend(EXPERIMENT3_CASES)
+    if args.experiment4:
+        selected_cases.extend(EXPERIMENT4_CASES)
     if not selected_cases:
         raise SystemExit("No experiments selected.")
 

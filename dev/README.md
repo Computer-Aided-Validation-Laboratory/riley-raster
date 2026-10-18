@@ -206,6 +206,7 @@ The current experiment groups are driven directly by constants in the script:
 - `DEFAULT_EXPERIMENT1`
 - `DEFAULT_EXPERIMENT2`
 - `DEFAULT_EXPERIMENT3` (off by default)
+- `DEFAULT_EXPERIMENT4` (off by default)
 - `EXPERIMENT1_SUB_SAMPLES`
 - `EXPERIMENT2_SUB_SAMPLES`
 - `EXPERIMENT1_CASES_BASE`
@@ -226,6 +227,17 @@ python ./scripts/bench_perf_raster.py --no-experiment1 --no-experiment2 --experi
 Pass `--experiment3-binary PATH` to use a preserved baseline binary after the
 normal installed benchmark binary has been rebuilt. Use `--dry-run` to inspect
 the command without rendering.
+
+Experiment 4 compares the current `direct` single-shader path (formerly
+`single_fast`) with a mono pipe containing that same shader and an identity
+resolver. It uses the same six mesh types, four shaders, and run profile as
+Experiment 3. Each repeat measures both paths; their order alternates between
+repeats. The median CSV has paired `_direct` and `_one_stage_pipe` rows. Run it
+after compiling the current benchmark binary with:
+
+```shell
+python ./scripts/bench_perf_raster.py --no-experiment1 --no-experiment2 --experiment4
+```
 
 ## Additional Notes
 

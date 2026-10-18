@@ -139,14 +139,14 @@ fn initCameraForSimDataAllFrames(
             .coords = frame_coords,
             .connect = sim_data.connect,
             .disp = null,
-            .shader = .{
+            .shaders = .{ .direct = .{
                 .func = .{
                     .uvs = null,
                     .coord_mode = .para,
                     .builtin = .constant,
                     .normal_type = .none,
                 },
-            },
+            } },
         };
     }
 
@@ -417,12 +417,12 @@ pub fn buildMixedMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .nodal = .{
+            .shaders = .{ .direct = .{ .nodal = .{
                 .field = sim_datas[ii].field.?,
                 .bits = 8,
                 .scaling = .auto,
                 .scale_over = .within_frames,
-            } },
+            } } },
         };
     }
 
@@ -439,7 +439,7 @@ pub fn buildMixedMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .tex_u8 = .{
+            .shaders = .{ .direct = .{ .tex_u8 = .{
                 .uvs = uvs.array,
                 .tex = texture,
                 .samp_cfg = .{
@@ -448,7 +448,7 @@ pub fn buildMixedMeshInputs(
                 },
                 .bits = 8,
                 .scaling = .none,
-            } },
+            } } },
         };
     }
 
@@ -481,7 +481,7 @@ pub fn buildMixedRgbMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .tex_rgb_u8 = .{
+            .shaders = .{ .direct = .{ .tex_rgb_u8 = .{
                 .uvs = uvs.array,
                 .tex = texture,
                 .samp_cfg = .{
@@ -490,7 +490,7 @@ pub fn buildMixedRgbMeshInputs(
                 },
                 .bits = 8,
                 .scaling = .none,
-            } },
+            } } },
         };
     }
 
@@ -506,12 +506,12 @@ pub fn buildMixedRgbMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .nodal = .{
+            .shaders = .{ .direct = .{ .nodal = .{
                 .field = rgb_field,
                 .bits = 8,
                 .scaling = .auto,
                 .scale_over = .within_frames,
-            } },
+            } } },
         };
     }
 

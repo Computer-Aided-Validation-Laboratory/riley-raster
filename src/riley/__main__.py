@@ -22,6 +22,9 @@ _DEMO_FUNCS = {
     "demo4_stereocal": "riley.pydemos.demo4_stereocal",
     "demo5_cameramodels": "riley.pydemos.demo5_cameramodels",
     "demo6_featurezoo": "riley.pydemos.demo6_featurezoo",
+    "demo7_shaderpipe_quickstart": "riley.pydemos.demo7_shaderpipe_quickstart",
+    "demo8_shaderpipe_gallery": "riley.pydemos.demo8_shaderpipe_gallery",
+    "demo9_diciruq": "riley.pydemos.demo9_diciruq",
 }
 
 

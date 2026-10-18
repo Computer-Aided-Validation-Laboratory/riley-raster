@@ -104,8 +104,10 @@ cdef extern from "riley.h":
         CPSF psf
         uint32_t coord_sys
         uint32_t subpixel_center_map
-        uint32_t pipe_family
-        uint32_t pipe_channels
+        uint32_t shader_selection
+        uint32_t output_encoding
+        double encoding_min
+        double encoding_max
 
     ctypedef struct CFuncShaderParams:
         double coord_scale_0
@@ -253,7 +255,7 @@ cdef extern from "riley.h":
         double white
 
     ctypedef struct CPipe:
-        uint32_t family
+        uint32_t shader_selection
         uint32_t channels
         const CPipeStage* stages
         size_t stages_len
@@ -266,6 +268,7 @@ cdef extern from "riley.h":
         CArray2DF64 coords
         CArray2DUsize connect
         CArray3DF64 disp
+        uint8_t has_direct
         CShaderInput shader
         const CPipe* pipes
         size_t pipes_len

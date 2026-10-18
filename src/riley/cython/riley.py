@@ -78,8 +78,10 @@ class Camera:
     psf_theta: float = 0.0
     psf_support_rad: float = 0.0
     psf_separable: int = 1
-    pipe_family: int = 0
-    pipe_channels: int = 0
+    shader_selection: int = 0
+    output_encoding: int = 0
+    encoding_min: float = 0.0
+    encoding_max: float = 1.0
 
 
 CameraInput = Camera
@@ -424,11 +426,18 @@ class FunctionShader:
     normal_type: NormalType = NormalType.none
 
 
-class PipeFamily(IntEnum):
+class ShaderSelection(IntEnum):
+    direct = 0
     mono = 1
     rgb = 2
     ir = 3
-    multichannel = 4
+    multifield = 4
+
+
+class OutputEncoding(IntEnum):
+    native = 0
+    grid12_to_u16 = 1
+    linear_u16 = 2
 
 
 class SlotKind(IntEnum):
@@ -446,6 +455,7 @@ class ResolverKind(IntEnum):
     greybody_bolometric = 4
     greybody_band = 5
     expression = 6
+    greybody_band_apparent_c = 7
 
 
 class OperationKind(IntEnum):
@@ -517,7 +527,6 @@ class ClampStage:
 
 @dataclass(slots=True)
 class ShaderPipe:
-    family: PipeFamily
     stages: tuple[ShaderSource | GreyToEmissivity | ClampStage, ...]
     resolver: ShaderResolver
     channels: int = 0
@@ -525,11 +534,15 @@ class ShaderPipe:
 
 
 @dataclass(slots=True)
-class PipelineShader:
-    pipes: tuple[ShaderPipe, ...]
+class ShaderSet:
+    direct: TextureShader | NodalShader | FunctionShader | None = None
+    mono: ShaderPipe | None = None
+    rgb: ShaderPipe | None = None
+    ir: ShaderPipe | None = None
+    multifield: ShaderPipe | None = None
 
 
-RileyShader = TextureShader | NodalShader | FunctionShader | PipelineShader
+RileyShader = TextureShader | NodalShader | FunctionShader
 Shader = RileyShader
 
 
@@ -541,7 +554,7 @@ class Mesh:
     coords: np.ndarray
     connect: np.ndarray
     disp: np.ndarray | None
-    shader: Shader
+    shaders: ShaderSet
 
 
 class ImageFormat(IntEnum):
@@ -660,8 +673,10 @@ def _make_camera_input(camera: Any, keepalive: list[Any]) -> cr.CCameraInput:
     camera_out.distort.distort_tau_y = float(camera.distort_tau_y)
     camera_out.coord_sys = int(camera.coord_sys)
     camera_out.subpixel_center_map = int(camera.subpixel_center_map)
-    camera_out.pipe_family = int(camera.pipe_family)
-    camera_out.pipe_channels = int(camera.pipe_channels)
+    camera_out.shader_selection = int(camera.shader_selection)
+    camera_out.output_encoding = int(camera.output_encoding)
+    camera_out.encoding_min = float(camera.encoding_min)
+    camera_out.encoding_max = float(camera.encoding_max)
     camera_out.psf.psf_type = int(camera.psf_type)
     camera_out.psf.psf_sigma_x = float(camera.psf_sigma_x)
     camera_out.psf.psf_sigma_y = float(camera.psf_sigma_y)
@@ -728,8 +743,10 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
         psf_theta=camera_in.psf.psf_theta,
         psf_support_rad=camera_in.psf.psf_supp_rad,
         psf_separable=camera_in.psf.psf_separable,
-        pipe_family=camera_in.pipe_family,
-        pipe_channels=camera_in.pipe_channels,
+        shader_selection=camera_in.shader_selection,
+        output_encoding=camera_in.output_encoding,
+        encoding_min=camera_in.encoding_min,
+        encoding_max=camera_in.encoding_max,
     )
 
 
@@ -1311,10 +1328,17 @@ def _fill_pipe_array(
     keepalive: list[Any],
     allocations: list[int],
 ) -> None:
-    pipeline = mesh.shader
-    pipes_len: cython.size_t = len(pipeline.pipes)
-    if not 1 <= pipes_len <= 4:
-        raise ValueError("pipeline requires between one and four pipes")
+    choices = tuple(
+        (role, pipe) for role, pipe in (
+            (ShaderSelection.mono, mesh.shaders.mono),
+            (ShaderSelection.rgb, mesh.shaders.rgb),
+            (ShaderSelection.ir, mesh.shaders.ir),
+            (ShaderSelection.multifield, mesh.shaders.multifield),
+        ) if pipe is not None
+    )
+    pipes_len: cython.size_t = len(choices)
+    if pipes_len == 0:
+        return
     pipes = cython.cast(
         cython.pointer[cr.CPipe], malloc(pipes_len * cython.sizeof(cr.CPipe)),
     )
@@ -1326,8 +1350,8 @@ def _fill_pipe_array(
     pi: cython.size_t
     si: cython.size_t
     for pi in range(pipes_len):
-        pipe = pipeline.pipes[pi]
-        pipes[pi].family = int(pipe.family)
+        role, pipe = choices[pi]
+        pipes[pi].shader_selection = int(role)
         pipes[pi].channels = int(pipe.channels)
         stages_len: cython.size_t = len(pipe.stages)
         if not 1 <= stages_len <= 8:
@@ -1353,7 +1377,7 @@ def _fill_pipe_array(
                     raise TypeError("source stage requires a texture, nodal, or function shader")
                 stages[si].tag = 0
                 stages[si].destination = _make_slot(stage.destination)
-                source_mesh = Mesh(mesh.mesh_type, mesh.coords, mesh.connect, None, stage.shader)
+                source_mesh = Mesh(mesh.mesh_type, mesh.coords, mesh.connect, None, ShaderSet(direct=stage.shader))
                 temporary = cython.cast(
                     cython.pointer[cr.CMeshInput], malloc(cython.sizeof(cr.CMeshInput)),
                 )
@@ -1501,10 +1525,13 @@ def _fill_mesh_array(
             )
             keepalive.append(disp_np)
 
-        shader = mesh.shader
-        if isinstance(shader, PipelineShader):
-            _fill_pipe_array(mesh, cython.address(mesh_array[nn]), keepalive, allocations)
-            shader = FunctionShader(FuncShaderBuiltin.constant)
+        _fill_pipe_array(mesh, cython.address(mesh_array[nn]), keepalive, allocations)
+        shader = mesh.shaders.direct
+        mesh_array[nn].has_direct = int(shader is not None)
+        if shader is None:
+            if mesh_array[nn].pipes_len == 0:
+                raise ValueError("mesh needs at least one shader choice")
+            continue
         texture_channels = 0
         if isinstance(shader, TextureShader):
             texture_channels = int(shader.texture.shape[0])
@@ -1531,7 +1558,7 @@ def _fill_mesh_array(
             )
             texture_storage = int(TextureStorage.u8)
         else:
-            raise TypeError("mesh.shader must be a Riley shader object")
+            raise TypeError("mesh.shaders.direct must be a Riley shader object")
 
         mesh_array[nn].shader.shader_tag = shader_tag
         mesh_array[nn].shader.texture_storage = texture_storage

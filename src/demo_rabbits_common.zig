@@ -268,7 +268,7 @@ fn makeMeshInput(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = shader,
+        .shaders = .{ .direct = shader },
     };
 }
 

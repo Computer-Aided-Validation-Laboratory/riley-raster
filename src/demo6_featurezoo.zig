@@ -196,7 +196,7 @@ fn loadMesh(
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = if (mesh_index % 2 == 1) disp else null,
-        .shader = shader,
+        .shaders = .{ .direct = shader },
     };
 }
 
@@ -467,7 +467,7 @@ pub fn main(init: std.process.Init) !void {
         .mesh_shapes = &mesh_shapes,
         .mesh_centers = &mesh_centers,
     };
-    
+
     // -------------------------------------------------------------------------
     // Clean output root and render all combinations
     // -------------------------------------------------------------------------

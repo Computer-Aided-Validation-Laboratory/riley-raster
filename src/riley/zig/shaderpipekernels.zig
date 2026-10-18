@@ -48,7 +48,6 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                             }
                             if (shader.elem_normals) |normals| buf.loadNormals(normals.array, normals.map[elem_idx] * 3 * N);
                         },
-                        .pipes => unreachable,
                     }
                 },
                 else => {},
@@ -97,8 +96,8 @@ pub fn PipeKernel(comptime N: usize) type {
             };
 
             var resolved: [shaderpipe.max_channels]F = undefined;
-            pipe.resolver.evaluate(&outputs, pipe.constants, pipe.family.channels(), &resolved);
-            for (0..pipe.family.channels()) |ch| {
+            pipe.resolver.evaluate(&outputs, pipe.constants, pipe.channels, &resolved);
+            for (0..pipe.channels) |ch| {
                 spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] = resolved[ch];
             }
         }
@@ -147,8 +146,8 @@ pub fn PipeKernel(comptime N: usize) type {
             };
 
             var resolved: [shaderpipe.max_channels]VecSF = undefined;
-            pipe.resolver.evaluate(&outputs, pipe.constants, pipe.family.channels(), &resolved);
-            for (0..pipe.family.channels()) |ch| {
+            pipe.resolver.evaluate(&outputs, pipe.constants, pipe.channels, &resolved);
+            for (0..pipe.channels) |ch| {
                 const idx = ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx;
                 if (ctx_shade.exclusive_subpx_target) {
                     const lanes: [S]F = resolved[ch];
@@ -168,7 +167,6 @@ fn sourceChannels(source: shaderops.ShaderPrepared) u8 {
     return switch (source) {
         .nodal => |n| if (n.elem_field.dims.len == 3) @intCast(n.elem_field.dims[1]) else @intCast(n.elem_field.dims[2]),
         .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f, .func_rgb => 3,
-        .pipes => unreachable,
         else => 1,
     };
 }
@@ -184,7 +182,6 @@ fn shadeSource(comptime N: usize, comptime coord_space: CoordSpace, ctx: shadero
         .tex_rgb_f => |*s| shadekerns.TexKernel(N, F, 3).shade(coord_space, ctx, interp, buf, s, ctx_report, scratch),
         .func => |*s| shadekerns.FuncKernel(N, 1).shade(coord_space, ctx, interp, buf, s, ctx_report, scratch),
         .func_rgb => |*s| shadekerns.FuncKernel(N, 3).shade(coord_space, ctx, interp, buf, s, ctx_report, scratch),
-        .pipes => unreachable,
     }
 }
 
@@ -199,6 +196,5 @@ fn shadeSourceSIMD(comptime N: usize, comptime coord_space: CoordSpace, ctx: sha
         .tex_rgb_f => |*s| shadekerns.TexKernel(N, F, 3).shadeSIMD(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, scratch),
         .func => |*s| shadekerns.FuncKernel(N, 1).shadeSIMD(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, scratch),
         .func_rgb => |*s| shadekerns.FuncKernel(N, 3).shadeSIMD(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, scratch),
-        .pipes => unreachable,
     }
 }

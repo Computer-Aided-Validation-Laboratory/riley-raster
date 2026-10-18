@@ -271,8 +271,16 @@ pub fn calcAllFramesImageDims(
     std.debug.assert(cam_inps.len > 0);
     std.debug.assert(meshes.len > 0);
 
-    const num_time = meshpipe.countFrames(meshes);
-    const raw_num_fields = meshpipe.countOutputFields(meshes);
+    for (cam_inps) |camera| {
+        var compatible = false;
+        for (meshes) |mesh| {
+            if (mesh.shaders.has(camera.shader_selection)) compatible = true;
+        }
+        if (!compatible) return error.NoCompatibleShader;
+    }
+
+    const num_time = meshpipe.countFrames(meshes, cam_inps);
+    const raw_num_fields = meshpipe.countOutputFields(meshes, cam_inps);
     const num_fields = try valinp.calcOutFieldsForImgSaveMode(
         config.output.image_save_mode,
         raw_num_fields,
@@ -302,7 +310,7 @@ fn resolveRenderParallelPlan(
     meshes: []const meshpipe.MeshInput,
     config: RasterConfig,
 ) RenderParallelPlan {
-    const num_time = meshpipe.countFrames(meshes);
+    const num_time = meshpipe.countFrames(meshes, cam_inps);
     const total_elems = meshpipe.countMeshInputElems(meshes);
     const workload = ParallelWorkload{
         .camera_count = cam_inps.len,
@@ -852,16 +860,21 @@ fn prepareJobBatch(
         const camera_idx = @mod(job_idx, cameras.len);
         var selected_meshes = mesh_static;
         var selected_scaling = nodal_global_scaling;
-        if (cameras[camera_idx].pipe_request) |family| {
+        const selection = cameras[camera_idx].shader_selection;
+        var all_supported = true;
+        for (mesh_static) |mesh| {
+            if (!meshpipe.meshSupportsSelection(mesh, selection)) all_supported = false;
+        }
+        if (!all_supported) {
             var count: usize = 0;
             for (mesh_static) |mesh| {
-                if (meshpipe.meshSupportsFamily(mesh, family)) count += 1;
+                if (meshpipe.meshSupportsSelection(mesh, selection)) count += 1;
             }
             const dense_meshes = try group_alloc.alloc(meshpipe.MeshStatic, count);
             const dense_scaling = try group_alloc.alloc(?imageops.ScalingParams, count);
             var index: usize = 0;
             for (mesh_static, nodal_global_scaling) |mesh, scaling| {
-                if (!meshpipe.meshSupportsFamily(mesh, family)) continue;
+                if (!meshpipe.meshSupportsSelection(mesh, selection)) continue;
                 dense_meshes[index] = mesh;
                 dense_scaling[index] = scaling;
                 index += 1;
@@ -1366,7 +1379,7 @@ fn initNodalGlobalScaling(
 
     for (meshes, 0..) |mesh, ii| {
         nodal_global_scaling[ii] = null;
-        switch (mesh.shader) {
+        if (mesh.shaders.direct) |shader| switch (shader) {
             .nodal => |s| {
                 if (s.scale_over == .over_frames) {
                     nodal_global_scaling[ii] = imageops.getScalingParamsNDArray(
@@ -1377,7 +1390,7 @@ fn initNodalGlobalScaling(
                 }
             },
             else => {},
-        }
+        };
     }
 
     return nodal_global_scaling;
@@ -2030,6 +2043,7 @@ fn saveFrame(
             &output_frame_arr,
             saveoverlap.imageSaveChannelsOverride(input.config.output.image_save_mode),
             input.config.output.image_save_opts,
+            input.camera.output_encoding,
             input.config.output_name_format,
         );
     }

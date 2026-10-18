@@ -9,21 +9,6 @@ pub const max_operations = 64;
 pub const max_stack = 16;
 pub const max_channels = buildconfig.config.max_image_channels;
 
-pub const Family = union(enum) {
-    mono,
-    rgb,
-    ir,
-    multichannel: u8,
-
-    pub fn channels(self: Family) u8 {
-        return switch (self) {
-            .mono, .ir => 1,
-            .rgb => 3,
-            .multichannel => |count| count,
-        };
-    }
-};
-
 pub const SlotKind = enum { channel, field, parameter, constant };
 pub const Slot = struct { kind: SlotKind, index: u8 };
 
@@ -88,6 +73,20 @@ pub const Lookup = struct {
         if (i == self.values.len - 1) return self.values[i];
         const t = x - @as(F, @floatFromInt(i));
         return self.values[i] + t * (self.values[i + 1] - self.values[i]);
+    }
+
+    pub fn inverseMonotonic(self: Lookup, value: F) F {
+        if (value <= self.values[0]) return self.first;
+        const last = self.values.len - 1;
+        if (value >= self.values[last]) return self.first + self.step * @as(F, @floatFromInt(last));
+        var lo: usize = 0;
+        var hi: usize = last;
+        while (lo + 1 < hi) {
+            const mid = lo + (hi - lo) / 2;
+            if (self.values[mid] <= value) lo = mid else hi = mid;
+        }
+        const fraction = (value - self.values[lo]) / (self.values[hi] - self.values[lo]);
+        return self.first + self.step * (@as(F, @floatFromInt(lo)) + fraction);
     }
 };
 
@@ -286,6 +285,7 @@ pub const Resolver = union(enum) {
     weighted_sum: struct { sources: []const Slot, weights: []const F },
     greybody_bolometric: struct { temperature: Slot, emissivity: Slot },
     greybody_band: struct { temperature: Slot, emissivity: Slot, radiance: Lookup },
+    greybody_band_apparent_c: struct { temperature: Slot, emissivity: Slot, radiance: Lookup, ambient_k: F },
     expression: Program,
 
     pub fn validate(self: Resolver, written: Written, constants: []const F, channels: u8) !void {
@@ -337,6 +337,18 @@ pub const Resolver = union(enum) {
                 try checkSlot(g.emissivity, written, constants.len);
                 try g.radiance.validate();
             },
+            .greybody_band_apparent_c => |g| {
+                if (channels != 1 or g.temperature.kind != .field or g.emissivity.kind != .parameter or
+                    !std.math.isFinite(g.ambient_k)) return error.InvalidResolver;
+                try checkSlot(g.temperature, written, constants.len);
+                try checkSlot(g.emissivity, written, constants.len);
+                try g.radiance.validate();
+                const last_k = g.radiance.first + g.radiance.step * @as(F, @floatFromInt(g.radiance.values.len - 1));
+                if (g.ambient_k < g.radiance.first or g.ambient_k > last_k) return error.InvalidResolver;
+                for (1..g.radiance.values.len) |i| {
+                    if (g.radiance.values[i] <= g.radiance.values[i - 1]) return error.InvalidResolver;
+                }
+            },
             .expression => |p| try p.validate(written, channels),
         }
     }
@@ -376,6 +388,24 @@ pub const Resolver = union(enum) {
                     radiant = @bitCast(lanes);
                 }
                 out.*[0] = readSlot(T, inputs, constants, g.emissivity) * radiant;
+            },
+            .greybody_band_apparent_c => |g| {
+                const temp = readSlot(T, inputs, constants, g.temperature);
+                const emissivity = readSlot(T, inputs, constants, g.emissivity);
+                const ambient = g.radiance.sample(g.ambient_k);
+                if (T == F) {
+                    const measured = emissivity * g.radiance.sample(temp) + (1 - emissivity) * ambient;
+                    out.*[0] = g.radiance.inverseMonotonic(measured) - 273.15;
+                } else {
+                    const temp_lanes: [buildconfig.SimdWidth]F = @bitCast(temp);
+                    const emissivity_lanes: [buildconfig.SimdWidth]F = @bitCast(emissivity);
+                    var result: [buildconfig.SimdWidth]F = undefined;
+                    for (&result, temp_lanes, emissivity_lanes) |*lane, t, e| {
+                        const measured = e * g.radiance.sample(t) + (1 - e) * ambient;
+                        lane.* = g.radiance.inverseMonotonic(measured) - 273.15;
+                    }
+                    out.*[0] = @bitCast(result);
+                }
             },
             .expression => |p| p.evaluate(inputs, channels, out),
         }
@@ -471,4 +501,39 @@ test "band Planck LUT is positive, temperature ordered, and interpolates" {
     try std.testing.expectApproxEqRel((lut.values[20] + lut.values[21]) / 2, midpoint, if (F == f32) 1e-6 else 1e-12);
     try std.testing.expectError(error.InvalidBandResponse, (BandResponse{ .wavelengths_m = &.{ 10e-6, 9e-6 }, .response = &.{ 1, 1 } })
         .prepareRadianceLookup(std.testing.allocator, 280, 320, 1));
+}
+
+test "apparent temperature includes reflected ambient and inverts band radiance" {
+    var written: Written = .{};
+    try written.add(.{ .kind = .field, .index = 0 });
+    try written.add(.{ .kind = .parameter, .index = 0 });
+    const values = [_]F{ 10, 20, 30, 40, 50 };
+    const resolver: Resolver = .{ .greybody_band_apparent_c = .{
+        .temperature = .{ .kind = .field, .index = 0 },
+        .emissivity = .{ .kind = .parameter, .index = 0 },
+        .radiance = .{ .first = 280, .step = 10, .values = &values },
+        .ambient_k = 290,
+    } };
+    try resolver.validate(written, &.{}, 1);
+    var inputs: ScalarOutputs = .{};
+    inputs.field[0] = 310;
+    inputs.parameter[0] = 0.8;
+    var output: [1]F = undefined;
+    resolver.evaluate(&inputs, &.{}, 1, &output);
+    try std.testing.expectApproxEqAbs(@as(F, 32.85), output[0], 1e-10);
+    inputs.parameter[0] = 1;
+    resolver.evaluate(&inputs, &.{}, 1, &output);
+    try std.testing.expectApproxEqAbs(@as(F, 36.85), output[0], 1e-10);
+    inputs.parameter[0] = 0;
+    resolver.evaluate(&inputs, &.{}, 1, &output);
+    try std.testing.expectApproxEqAbs(@as(F, 16.85), output[0], 1e-10);
+    var bad = values;
+    bad[2] = bad[1];
+    const invalid: Resolver = .{ .greybody_band_apparent_c = .{
+        .temperature = .{ .kind = .field, .index = 0 },
+        .emissivity = .{ .kind = .parameter, .index = 0 },
+        .radiance = .{ .first = 280, .step = 10, .values = &bad },
+        .ambient_k = 290,
+    } };
+    try std.testing.expectError(error.InvalidResolver, invalid.validate(written, &.{}, 1));
 }
