@@ -25,6 +25,7 @@ _DEMO_FUNCS = {
     "demo7_shaderpipe_quickstart": "riley.pydemos.demo7_shaderpipe_quickstart",
     "demo8_shaderpipe_gallery": "riley.pydemos.demo8_shaderpipe_gallery",
     "demo9_diciruq": "riley.pydemos.demo9_diciruq",
+    "demo10_sphere_lit": "riley.pydemos.demo10_sphere_lit",
 }
 
 

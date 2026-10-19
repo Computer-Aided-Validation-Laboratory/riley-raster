@@ -156,7 +156,7 @@ pub fn countFrames(meshes: []const MeshInput, cameras: []const cam.CameraInput) 
                 &mesh.shaders,
                 camera.shader_selection,
             ) orelse continue;
-            
+
             switch (selected_shader) {
                 .direct => |shader| switch (shader.*) {
                     .nodal => |nodal| {
@@ -186,7 +186,7 @@ pub fn countFrames(meshes: []const MeshInput, cameras: []const cam.CameraInput) 
             }
         }
     }
-    
+
     return num_time;
 }
 
@@ -228,7 +228,7 @@ pub fn countStaticMeshElems(mesh_static: []const MeshStatic) usize {
 }
 
 pub fn meshSupportsSelection(
-    mesh: MeshStatic,
+    mesh: *const MeshStatic,
     selection: shaderops.CameraShaderSelection,
 ) bool {
     return shaderops.hasShader(mesh.shaders, selection);
@@ -640,7 +640,7 @@ pub fn prepMeshFrames(
         if (mesh_static.shaders.direct) |shader| switch (shader) {
             .nodal => |s| {
                 if (s.scale_over == .over_frames) {
-                    nodal_frame_scaling = nodal_global_scaling[ii];
+                    nodal_frame_scaling = nodal_global_scaling[mesh_static.scene_mesh_idx];
                 } else { // .within_frames
                     nodal_frame_scaling = imageops.getScalingParamsNDArray(
                         &s.field.array,

@@ -720,4 +720,52 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             }
         }
     }
+
+    // A selected mesh at scene index 1 must retain its own global nodal
+    // scaling after the incompatible mesh at index 0 is filtered out.
+    var scaled_direct_mesh = direct_mesh;
+    scaled_direct_mesh.shaders = .{ .direct = .{ .nodal = .{
+        .field = timed_field,
+        .bits = null,
+        .scaling = .{ .fixed = .{ 0, 0.8 } },
+    } } };
+    const scaled_only_result = try riley.raster(
+        aa,
+        io,
+        &.{direct_cam},
+        &.{scaled_direct_mesh},
+        memory_config,
+        null,
+    );
+    const scaled_only = scaled_only_result orelse return error.NoResult;
+    defer aa.free(scaled_only.slice);
+
+    const selected_scene = [_]meshpipe.MeshInput{ front_rgb_mesh, scaled_direct_mesh };
+    for ([_]riley.RenderMode{ .offline, .in_order }) |mode| {
+        var selected_config = memory_config;
+        selected_config.render_mode = mode;
+        const selected_result = try riley.raster(
+            aa,
+            io,
+            &.{ rgb_cam, direct_cam, direct_cam },
+            &selected_scene,
+            selected_config,
+            null,
+        );
+        const selected_image = selected_result orelse return error.NoResult;
+        defer aa.free(selected_image.slice);
+        try std.testing.expectEqual(@as(usize, 4), selected_image.dims[1]);
+        for (0..2) |camera_offset| {
+            for (0..4) |frame_idx| {
+                for (0..selected_image.dims[3]) |yy| {
+                    for (0..selected_image.dims[4]) |xx| {
+                        try std.testing.expectEqual(
+                            scaled_only.get(&.{ 0, frame_idx, 0, yy, xx }),
+                            selected_image.get(&.{ camera_offset + 1, frame_idx, 0, yy, xx }),
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

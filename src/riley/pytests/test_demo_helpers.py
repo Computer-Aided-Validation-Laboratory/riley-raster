@@ -42,6 +42,7 @@ def test_numbered_demo_cli_modules_are_importable() -> None:
         "demo7_shaderpipe_quickstart",
         "demo8_shaderpipe_gallery",
         "demo9_diciruq",
+        "demo10_sphere_lit",
     )
     assert tuple(_DEMO_FUNCS) == expected
     for name in expected:

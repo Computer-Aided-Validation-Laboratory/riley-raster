@@ -268,3 +268,80 @@ def test_unselected_pipe_does_not_add_frames_or_channels() -> None:
     image = riley.raster(mesh, camera, config)
     assert image.shape == (1, 1, 1, 32, 32)
     np.testing.assert_allclose(image[0, 0, 0, 16, 16], 0.25, atol=1e-12)
+
+
+def test_python_sphere_lit_modulates_speckle_and_lambertian() -> None:
+    data_dir = riley.data.sphere200_case_path()
+    coords = riley.load_csv(data_dir / "coords.csv")
+    connect = riley.load_csv(data_dir / "connect.csv", dtype=np.int64)
+    uvs = riley.load_csv(data_dir / "uvs.csv")
+    texture = riley.load_texture_mono_u8(riley.data.speckle_texture_path())
+
+    convention = riley.ConnectConvention(
+        riley.EElemType.TRI6,
+        riley.EConnectAxis.ROW,
+        0,
+        riley.ENodeOrder.RILEY,
+    )
+    speckle = riley.TextureShader(uvs=uvs, texture=texture)
+    lambertian = riley.FunctionShader(
+        builtin=riley.FuncShaderBuiltin.lambertian_normal_z,
+        params=riley.FuncShaderParams(lambertian_coeffs=(0.2, 0.8)),
+        normal_type=riley.NormalType.exact,
+        bits=-1,
+        scaling_type=riley.ScaleStrategy.none,
+    )
+    ch = riley.Slot(riley.SlotKind.channel, 0)
+    param = riley.Slot(riley.SlotKind.parameter, 0)
+    pipe = riley.ShaderPipe(
+        stages=(
+            riley.ShaderSource(speckle, ch),
+            riley.ShaderSource(lambertian, param),
+        ),
+        resolver=riley.ShaderResolver(
+            riley.ResolverKind.modulate,
+            slots=(ch,),
+            factor=param,
+        ),
+    )
+    mesh = riley.create_mesh(
+        convention,
+        riley.MeshType.tri6,
+        coords,
+        connect,
+        riley.MeshShaderSet(direct=speckle, mono=pipe),
+    )
+    pixels_num = (64, 64)
+    pixels_size = (5.3e-6, 5.3e-6)
+    focal_length = 50.0e-3
+    rot_world = (0.0, 0.0, 0.0)
+    pos_world = riley.pos_frame_coords(
+        coords, pixels_num, pixels_size, focal_length, rot_world
+    )
+    camera = riley.Camera(
+        pixels_num=pixels_num,
+        pixels_size=pixels_size,
+        pos_world=pos_world,
+        rot_world=rot_world,
+        roi_cent_world=riley.roi_cent_from_coords(coords),
+        focal_length=focal_length,
+        sub_sample=1,
+        shader_selection=riley.CameraShaderSelection.direct,
+    )
+    config = riley.RasterConfig(
+        parallel=1,
+        save_strategy=riley.SaveStrategy.memory,
+        save_scaling=riley.ScaleStrategy.none,
+        report=riley.ReportMode.off,
+    )
+    img_direct = riley.raster(mesh, camera, config)
+    camera_mono = replace(
+        camera, shader_selection=riley.CameraShaderSelection.mono
+    )
+    img_lit = riley.raster(mesh, camera_mono, config)
+    assert img_direct.shape == (1, 1, 1, 64, 64)
+    assert img_lit.shape == (1, 1, 1, 64, 64)
+    fg = img_direct > 0
+    assert fg.any()
+    assert (img_lit[fg] <= img_direct[fg] + 1e-6).all()
+

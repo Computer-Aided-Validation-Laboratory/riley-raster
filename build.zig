@@ -166,6 +166,11 @@ pub fn build(b: *std.Build) void {
             .description = "Run the multimodal DIC and IR demo",
             .source_path = "src/demo9_diciruq.zig",
         },
+        .{
+            .step_name = "demo10-sphere-lit",
+            .description = "Run the lit sphere shaderpipe demo",
+            .source_path = "src/demo10_sphere_lit.zig",
+        },
     };
 
     const demos_step = b.step("demos", "Run all demo entrypoints");

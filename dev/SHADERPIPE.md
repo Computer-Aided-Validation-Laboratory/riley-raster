@@ -32,6 +32,6 @@ A pipe source is an ordinary *direct* shader; pipes cannot recursively contain p
 
 ## Examples and migration
 
-`demo7_shaderpipe_quickstart` renders one checker mesh through a direct and a lit mono choice. `demo8_shaderpipe_gallery` has four self-contained pipe examples. `demo9_diciruq` uses one deforming FE mesh for two direct stereo DIC cameras and one IR camera. Each has Zig and Python versions.
+`demo7_shaderpipe_quickstart` renders one checker mesh through a direct and a lit mono choice. `demo8_shaderpipe_gallery` has four self-contained pipe examples. `demo9_diciruq` uses one deforming FE mesh for two direct stereo DIC cameras and one IR camera. `demo10_sphere_lit` renders the sphere simulation under three conditions: direct speckle, direct Lambertian lighting, and their combined modulated shader pipe. Each has Zig and Python versions.
 
 The previous mesh `.shader`/`PipelineShader` and camera `pipe_request`/`pipe_family` API was removed. Use mesh `.shaders = .{ .direct = shader }` and camera `.shader_selection`. Pipes no longer carry a family: the `ShaderSet` slot defines the role.
