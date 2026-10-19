@@ -76,3 +76,5 @@ pub const fillTexClipSIMD = simd_impl.fillTexClipSIMD;
 pub const fillTexPerspSIMD = simd_impl.fillTexPerspSIMD;
 pub const fillFuncClipSIMD = simd_impl.fillFuncClipSIMD;
 pub const fillFuncPerspSIMD = simd_impl.fillFuncPerspSIMD;
+pub const evalFuncShaderGreyNormSIMD = simd_impl.evalFuncShaderGreyNormSIMD;
+pub const evalFuncShaderRGBNormSIMD = simd_impl.evalFuncShaderRGBNormSIMD;

@@ -8,7 +8,10 @@ import riley
 
 
 def scene() -> tuple[riley.Mesh, riley.Camera, riley.RasterConfig]:
-    coords = np.array(((-0.5, -0.5, 0), (0.5, -0.5, 0), (0, 0.5, 0)), dtype=np.float64)
+    coords = np.array(
+        ((-0.5, -0.5, 0), (0.5, -0.5, 0), (0, 0.5, 0)),
+        dtype=np.float64,
+    )
     connect = np.array(((0, 1, 2),), dtype=np.int64)
     convention = riley.ConnectConvention(
         riley.EElemType.TRI3, riley.EConnectAxis.ROW, 0, riley.ENodeOrder.RILEY,
@@ -53,14 +56,21 @@ def test_python_sum_pipe_matches_two_constant_sources() -> None:
     ch0 = riley.Slot(riley.SlotKind.channel, 0)
     ch1 = riley.Slot(riley.SlotKind.channel, 1)
     mesh.shaders = riley.MeshShaderSet(mono=riley.ShaderPipe(
-        stages=(riley.ShaderSource(first, ch0), riley.ShaderSource(second, ch1)),
+        stages=(
+            riley.ShaderSource(first, ch0),
+            riley.ShaderSource(second, ch1),
+        ),
         resolver=riley.ShaderResolver(riley.ResolverKind.sum, slots=(ch0, ch1)),
     ))
     convention = riley.ConnectConvention(
         riley.EElemType.TRI3, riley.EConnectAxis.ROW, 0, riley.ENodeOrder.RILEY,
     )
     mesh = riley.create_mesh(
-        convention, riley.MeshType.tri3, mesh.coords, mesh.connect, mesh.shaders,
+        convention,
+        riley.MeshType.tri3,
+        mesh.coords,
+        mesh.connect,
+        mesh.shaders,
     )
     image = riley.raster(mesh, camera, config)
     assert image.shape == (1, 1, 1, 32, 32)
@@ -94,14 +104,20 @@ def test_python_expression_reads_field_parameter_and_constant() -> None:
         riley.Operation(riley.OperationKind.store),
     )
     mesh.shaders = riley.MeshShaderSet(mono=riley.ShaderPipe(
-        stages=(riley.ShaderSource(temp, field), riley.ShaderSource(emissivity, parameter)),
-        resolver=riley.ShaderResolver(riley.ResolverKind.expression, operations=ops),
+        stages=(
+            riley.ShaderSource(temp, field),
+            riley.ShaderSource(emissivity, parameter),
+        ),
+        resolver=riley.ShaderResolver(
+            riley.ResolverKind.expression, operations=ops,
+        ),
         constants=(5.670374419e-8,),
     ))
     image = riley.raster(mesh, camera, config)
     foreground = image[0, 0, 0] > 0
     assert foreground.any() and (~foreground).any()
-    np.testing.assert_allclose(image[0, 0, 0, 16, 16], 0.8 * 5.670374419e-8 * 300**4, rtol=1e-12)
+    expected = 0.8 * 5.670374419e-8 * 300**4
+    np.testing.assert_allclose(image[0, 0, 0, 16, 16], expected, rtol=1e-12)
 
 
 def test_python_ir_nodal_temperature_and_emissivity_mapping() -> None:
@@ -135,7 +151,9 @@ def test_python_ir_nodal_temperature_and_emissivity_mapping() -> None:
     convention = riley.ConnectConvention(
         riley.EElemType.TRI3, riley.EConnectAxis.ROW, 0, riley.ENodeOrder.RILEY,
     )
-    mesh = riley.create_mesh(convention, riley.MeshType.tri3, mesh.coords, mesh.connect, pipe)
+    mesh = riley.create_mesh(
+        convention, riley.MeshType.tri3, mesh.coords, mesh.connect, pipe,
+    )
     image = riley.raster(mesh, camera, config)
     np.testing.assert_allclose(image[0, 0, 0, 16, 16], 16.0, atol=1e-12)
 
@@ -153,25 +171,40 @@ def test_python_camera_selects_mono_and_rgb_pipes() -> None:
     mesh.shaders = riley.MeshShaderSet(
         mono=riley.ShaderPipe(
             stages=(riley.ShaderSource(mesh.shaders.direct, ch[0]),),
-            resolver=riley.ShaderResolver(riley.ResolverKind.identity, slots=(ch[0],)),
+            resolver=riley.ShaderResolver(
+                riley.ResolverKind.identity, slots=(ch[0],),
+            ),
         ),
         rgb=riley.ShaderPipe(
             stages=(riley.ShaderSource(rgb_source, ch[0]),),
-            resolver=riley.ShaderResolver(riley.ResolverKind.identity, slots=ch),
+            resolver=riley.ShaderResolver(
+                riley.ResolverKind.identity, slots=ch,
+            ),
         ),
     )
     image = riley.raster(mesh, (mono, rgb), config)
     assert image.shape == (2, 1, 3, 32, 32)
-    np.testing.assert_allclose(image[0, 0, :, 16, 16], (0.25, 0, 0), atol=1e-12)
-    np.testing.assert_allclose(image[1, 0, :, 16, 16], (0.2, 0.5, 0.8), atol=1e-12)
+    np.testing.assert_allclose(
+        image[0, 0, :, 16, 16], (0.25, 0, 0), atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        image[1, 0, :, 16, 16], (0.2, 0.5, 0.8), atol=1e-12,
+    )
 
 
 def test_invalid_python_pipe_fails_during_preparation() -> None:
     mesh, camera, config = scene()
     missing = riley.Slot(riley.SlotKind.channel, 1)
     mesh.shaders = riley.MeshShaderSet(mono=riley.ShaderPipe(
-        stages=(riley.ShaderSource(mesh.shaders.direct, riley.Slot(riley.SlotKind.channel, 0)),),
-        resolver=riley.ShaderResolver(riley.ResolverKind.identity, slots=(missing,)),
+        stages=(
+            riley.ShaderSource(
+                mesh.shaders.direct,
+                riley.Slot(riley.SlotKind.channel, 0),
+            ),
+        ),
+        resolver=riley.ShaderResolver(
+            riley.ResolverKind.identity, slots=(missing,),
+        ),
     ))
     with pytest.raises(RuntimeError, match="InvalidShaderPipe"):
         riley.raster(mesh, camera, config)
@@ -186,7 +219,9 @@ def test_shader_set_three_cameras_share_mesh_and_select_roles() -> None:
         direct=source,
         ir=riley.ShaderPipe(
             stages=(riley.ShaderSource(source, ch0),),
-            resolver=riley.ShaderResolver(riley.ResolverKind.identity, slots=(ch0,)),
+            resolver=riley.ShaderResolver(
+                riley.ResolverKind.identity, slots=(ch0,),
+            ),
         ),
     )
     ir = replace(mono, shader_selection=riley.CameraShaderSelection.ir)
@@ -213,12 +248,22 @@ def test_unselected_pipe_does_not_add_frames_or_channels() -> None:
         multifield=riley.ShaderPipe(
             channels=4,
             stages=(riley.ShaderSource(unused_source, slots[0]),),
-            resolver=riley.ShaderResolver(riley.ResolverKind.identity, slots=slots),
+            resolver=riley.ShaderResolver(
+                riley.ResolverKind.identity, slots=slots,
+            ),
         ),
     )
     mesh = riley.create_mesh(
-        riley.ConnectConvention(riley.EElemType.TRI3, riley.EConnectAxis.ROW, 0, riley.ENodeOrder.RILEY),
-        riley.MeshType.tri3, mesh.coords, mesh.connect, mesh.shaders,
+        riley.ConnectConvention(
+            riley.EElemType.TRI3,
+            riley.EConnectAxis.ROW,
+            0,
+            riley.ENodeOrder.RILEY,
+        ),
+        riley.MeshType.tri3,
+        mesh.coords,
+        mesh.connect,
+        mesh.shaders,
     )
     image = riley.raster(mesh, camera, config)
     assert image.shape == (1, 1, 1, 32, 32)

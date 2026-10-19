@@ -12,13 +12,18 @@ from riley.pydemos import demo_rabbits_common as common
 
 
 @pytest.mark.parametrize("channels", (1, 3))
-def test_rabbit_uv_field_has_one_frame_and_expected_channels(channels: int) -> None:
+def test_rabbit_uv_field_has_one_frame_and_expected_channels(
+    channels: int,
+) -> None:
     uvs = np.array([[0.2, 0.6], [0.0, 1.0]])
     field = common.build_uv_field(uvs, channels)
     assert field.shape == (2, 1, channels)
     assert field.dtype == np.float64
     assert field.flags.c_contiguous
-    expected = [[0.4], [0.5]] if channels == 1 else [[0.2, 0.6, 0.4], [0.0, 1.0, 0.5]]
+    if channels == 1:
+        expected = [[0.4], [0.5]]
+    else:
+        expected = [[0.2, 0.6, 0.4], [0.0, 1.0, 0.5]]
     np.testing.assert_allclose(field[:, 0, :], expected)
 
 
@@ -68,7 +73,13 @@ def test_cameramodel_cache_rejects_partial_matrices(tmp_path: Path) -> None:
         for psf in psfs:
             for mode in modes:
                 assert not _has_cameramodel_renders(tmp_path)
-                path = tmp_path / distort / psf / mode / "cam0_frame0_field0.bmp"
+                path = (
+                    tmp_path
+                    / distort
+                    / psf
+                    / mode
+                    / "cam0_frame0_field0.bmp"
+                )
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.touch()
     assert _has_cameramodel_renders(tmp_path)

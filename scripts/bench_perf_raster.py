@@ -335,7 +335,10 @@ def run_case(
     stdout_path = output_dir / "stdout.txt"
     stderr_path = output_dir / "stderr.txt"
     start = time.perf_counter()
-    with stdout_path.open("w") as stdout_file, stderr_path.open("w") as stderr_file:
+    with (
+        stdout_path.open("w") as stdout_file,
+        stderr_path.open("w") as stderr_file,
+    ):
         subprocess.run(
             command,
             check=True,

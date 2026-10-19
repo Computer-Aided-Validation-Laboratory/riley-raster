@@ -84,7 +84,8 @@ pub const Lookup = struct {
     }
 
     pub inline fn sample(self: Lookup, value: F) F {
-        const x = std.math.clamp((value - self.first) / self.step, 0, @as(F, @floatFromInt(self.values.len - 1)));
+        const max_val = @as(F, @floatFromInt(self.values.len - 1));
+        const x = std.math.clamp((value - self.first) / self.step, 0, max_val);
         const i: usize = @intFromFloat(x);
         if (i == self.values.len - 1) return self.values[i];
         const t = x - @as(F, @floatFromInt(i));
@@ -94,7 +95,9 @@ pub const Lookup = struct {
     pub fn inverseMonotonic(self: Lookup, value: F) F {
         if (value <= self.values[0]) return self.first;
         const last = self.values.len - 1;
-        if (value >= self.values[last]) return self.first + self.step * @as(F, @floatFromInt(last));
+        if (value >= self.values[last]) {
+            return self.first + self.step * @as(F, @floatFromInt(last));
+        }
         var lo: usize = 0;
         var hi: usize = last;
         while (lo + 1 < hi) {
@@ -112,7 +115,13 @@ pub const BandResponse = struct {
     wavelengths_m: []const F,
     response: []const F,
 
-    pub fn prepareRadianceLookup(self: BandResponse, allocator: std.mem.Allocator, temp_first_k: F, temp_last_k: F, temp_step_k: F) !Lookup {
+    pub fn prepareRadianceLookup(
+        self: BandResponse,
+        allocator: std.mem.Allocator,
+        temp_first_k: F,
+        temp_last_k: F,
+        temp_step_k: F,
+    ) !Lookup {
         if (self.wavelengths_m.len < 2 or self.wavelengths_m.len != self.response.len or
             !std.math.isFinite(temp_first_k) or !std.math.isFinite(temp_last_k) or
             !std.math.isFinite(temp_step_k) or temp_first_k <= 0 or
@@ -127,7 +136,8 @@ pub const BandResponse = struct {
             any_response = any_response or weight > 0;
         }
         if (!any_response) return error.InvalidBandResponse;
-        const count: usize = @as(usize, @intFromFloat(@ceil((temp_last_k - temp_first_k) / temp_step_k))) + 1;
+        const count_f = @ceil((temp_last_k - temp_first_k) / temp_step_k);
+        const count: usize = @as(usize, @intFromFloat(count_f)) + 1;
         if (count < 2 or count > 65536) return error.InvalidBandResponse;
         const values = try allocator.alloc(F, count);
         for (values, 0..) |*result, ti| {
@@ -152,7 +162,8 @@ pub fn planckSpectralRadiance(wavelength_m: F, temperature_k: F) F {
     const k: F = 1.380649e-23;
     const lambda2 = wavelength_m * wavelength_m;
     const lambda5 = lambda2 * lambda2 * wavelength_m;
-    return (2 * h * c * c) / (lambda5 * @exp(h * c / (wavelength_m * k * temperature_k)) - lambda5);
+    const denom = lambda5 * @exp(h * c / (wavelength_m * k * temperature_k)) - lambda5;
+    return (2 * h * c * c) / denom;
 }
 
 pub const Written = struct {
@@ -270,7 +281,9 @@ pub const Program = struct {
                 stack[depth - 1] = @min(splat(T, 1), @max(splat(T, 0), stack[depth - 1]));
             },
             .clamp => |bounds| {
-                stack[depth - 1] = @min(splat(T, bounds.upper), @max(splat(T, bounds.lower), stack[depth - 1]));
+                const lower = splat(T, bounds.lower);
+                const upper = splat(T, bounds.upper);
+                stack[depth - 1] = @min(upper, @max(lower, stack[depth - 1]));
             },
             .lut => |idx| {
                 if (T == F) {
@@ -297,15 +310,42 @@ inline fn splat(comptime T: type, value: F) T {
 pub const Resolver = union(enum) {
     identity: []const Slot,
     sum: []const Slot,
-    modulate: struct { sources: []const Slot, factor: Slot, ambient: F = 0, gain: F = 1 },
-    weighted_sum: struct { sources: []const Slot, weights: []const F },
-    greybody_bolometric: struct { temperature: Slot, emissivity: Slot },
-    greybody_band: struct { temperature: Slot, emissivity: Slot, radiance: Lookup },
-    greybody_band_apparent_c: struct { temperature: Slot, emissivity: Slot, radiance: Lookup, ambient_k: F },
+    modulate: struct {
+        sources: []const Slot,
+        factor: Slot,
+        ambient: F = 0,
+        gain: F = 1,
+    },
+    weighted_sum: struct {
+        sources: []const Slot,
+        weights: []const F,
+    },
+    greybody_bolometric: struct {
+        temperature: Slot,
+        emissivity: Slot,
+    },
+    greybody_band: struct {
+        temperature: Slot,
+        emissivity: Slot,
+        radiance: Lookup,
+    },
+    greybody_band_apparent_c: struct {
+        temperature: Slot,
+        emissivity: Slot,
+        radiance: Lookup,
+        ambient_k: F,
+    },
     expression: Program,
 
-    pub fn validate(self: Resolver, written: Written, constants: []const F, channels: u8) !void {
-        if (channels == 0 or channels > max_channels) return error.InvalidChannels;
+    pub fn validate(
+        self: Resolver,
+        written: Written,
+        constants: []const F,
+        channels: u8,
+    ) !void {
+        if (channels == 0 or channels > max_channels) {
+            return error.InvalidChannels;
+        }
         switch (self) {
             .identity => |slots| {
                 if (slots.len != channels) return error.InvalidChannels;
@@ -315,7 +355,9 @@ pub const Resolver = union(enum) {
                 }
             },
             .sum => |slots| {
-                if (slots.len < channels or slots.len % channels != 0) return error.InvalidChannels;
+                if (slots.len < channels or slots.len % channels != 0) {
+                    return error.InvalidChannels;
+                }
                 for (slots) |slot| {
                     if (slot.kind != .channel) return error.InvalidResolver;
                     try checkSlot(slot, written, constants.len);
@@ -338,7 +380,9 @@ pub const Resolver = union(enum) {
                     if (slot.kind != .channel) return error.InvalidResolver;
                     try checkSlot(slot, written, constants.len);
                 }
-                for (w.weights) |weight| if (!std.math.isFinite(weight)) return error.InvalidResolver;
+                for (w.weights) |weight| {
+                    if (!std.math.isFinite(weight)) return error.InvalidResolver;
+                }
             },
             .greybody_bolometric => |g| {
                 if (channels != 1 or g.temperature.kind != .field or
@@ -354,44 +398,71 @@ pub const Resolver = union(enum) {
                 try g.radiance.validate();
             },
             .greybody_band_apparent_c => |g| {
-                if (channels != 1 or g.temperature.kind != .field or g.emissivity.kind != .parameter or
-                    !std.math.isFinite(g.ambient_k)) return error.InvalidResolver;
+                if (channels != 1 or
+                    g.temperature.kind != .field or
+                    g.emissivity.kind != .parameter or
+                    !std.math.isFinite(g.ambient_k))
+                {
+                    return error.InvalidResolver;
+                }
                 try checkSlot(g.temperature, written, constants.len);
                 try checkSlot(g.emissivity, written, constants.len);
                 try g.radiance.validate();
-                const last_k = g.radiance.first + g.radiance.step * @as(F, @floatFromInt(g.radiance.values.len - 1));
-                if (g.ambient_k < g.radiance.first or g.ambient_k > last_k) return error.InvalidResolver;
-                for (1..g.radiance.values.len) |i| {
-                    if (g.radiance.values[i] <= g.radiance.values[i - 1]) return error.InvalidResolver;
+                const num_vals = @as(F, @floatFromInt(g.radiance.values.len - 1));
+                const last_k = g.radiance.first + g.radiance.step * num_vals;
+                if (g.ambient_k < g.radiance.first or g.ambient_k > last_k) {
+                    return error.InvalidResolver;
+                }
+                for (1..g.radiance.values.len) |ii| {
+                    if (g.radiance.values[ii] <= g.radiance.values[ii - 1]) {
+                        return error.InvalidResolver;
+                    }
                 }
             },
             .expression => |p| try p.validate(written, channels),
         }
     }
 
-    pub fn evaluate(self: Resolver, inputs: anytype, constants: []const F, channels: u8, out: anytype) void {
+    pub fn evaluate(
+        self: Resolver,
+        inputs: anytype,
+        constants: []const F,
+        channels: u8,
+        out: anytype,
+    ) void {
         const T = @TypeOf(out.*[0]);
         switch (self) {
-            .identity => |slots| for (slots, 0..) |slot, i| {
-                out.*[i] = readSlot(T, inputs, constants, slot);
+            .identity => |slots| for (slots, 0..) |slot, ii| {
+                out.*[ii] = readSlot(T, inputs, constants, slot);
             },
             .sum => |slots| {
                 for (0..channels) |ch| out.*[ch] = splat(T, 0);
-                for (slots, 0..) |slot, i| out.*[i % channels] += readSlot(T, inputs, constants, slot);
+                for (slots, 0..) |slot, ii| {
+                    out.*[ii % channels] += readSlot(T, inputs, constants, slot);
+                }
             },
             .modulate => |m| {
                 const factor = readSlot(T, inputs, constants, m.factor);
-                for (m.sources, 0..) |slot, i| out.*[i] =
-                    (readSlot(T, inputs, constants, slot) * factor + splat(T, m.ambient)) * splat(T, m.gain);
+                const ambient_splat = splat(T, m.ambient);
+                const gain_splat = splat(T, m.gain);
+                for (m.sources, 0..) |slot, ii| {
+                    const src_val = readSlot(T, inputs, constants, slot);
+                    out.*[ii] = (src_val * factor + ambient_splat) * gain_splat;
+                }
             },
             .weighted_sum => |w| {
                 for (0..channels) |ch| out.*[ch] = splat(T, 0);
-                for (w.sources, w.weights, 0..) |slot, weight, i| out.*[i % channels] += readSlot(T, inputs, constants, slot) * splat(T, weight);
+                for (w.sources, w.weights, 0..) |slot, weight, ii| {
+                    const src_val = readSlot(T, inputs, constants, slot);
+                    out.*[ii % channels] += src_val * splat(T, weight);
+                }
             },
             .greybody_bolometric => |g| {
                 const temp = readSlot(T, inputs, constants, g.temperature);
                 const square = temp * temp;
-                out.*[0] = readSlot(T, inputs, constants, g.emissivity) * splat(T, 5.670374419e-8) * square * square;
+                const em_val = readSlot(T, inputs, constants, g.emissivity);
+                const stefan_boltzmann = splat(T, 5.670374419e-8);
+                out.*[0] = em_val * stefan_boltzmann * square * square;
             },
             .greybody_band => |g| {
                 const temp = readSlot(T, inputs, constants, g.temperature);
@@ -410,7 +481,8 @@ pub const Resolver = union(enum) {
                 const emissivity = readSlot(T, inputs, constants, g.emissivity);
                 const ambient = g.radiance.sample(g.ambient_k);
                 if (T == F) {
-                    const measured = emissivity * g.radiance.sample(temp) + (1 - emissivity) * ambient;
+                    const rad_temp = g.radiance.sample(temp);
+                    const measured = emissivity * rad_temp + (1 - emissivity) * ambient;
                     out.*[0] = g.radiance.inverseMonotonic(measured) - 273.15;
                 } else {
                     const temp_lanes: [buildconfig.SimdWidth]F = @bitCast(temp);
@@ -435,7 +507,10 @@ fn checkSlot(slot: Slot, written: Written, constant_count: usize) !void {
 }
 
 fn readSlot(comptime T: type, inputs: anytype, constants: []const F, slot: Slot) T {
-    return if (slot.kind == .constant) splat(T, constants[slot.index]) else inputs.get(slot);
+    return if (slot.kind == .constant)
+        splat(T, constants[slot.index])
+    else
+        inputs.get(slot);
 }
 
 test "resolver arithmetic retains earlier outputs" {
@@ -443,7 +518,10 @@ test "resolver arithmetic retains earlier outputs" {
     try written.add(.{ .kind = .channel, .index = 0 });
     try written.add(.{ .kind = .channel, .index = 1 });
     try written.add(.{ .kind = .parameter, .index = 0 });
-    try std.testing.expectError(error.RepeatedWriter, written.add(.{ .kind = .channel, .index = 0 }));
+    try std.testing.expectError(
+        error.RepeatedWriter,
+        written.add(.{ .kind = .channel, .index = 0 }),
+    );
     const ops = [_]Op{
         .{ .load = .{ .kind = .channel, .index = 0 } },
         .{ .load = .{ .kind = .parameter, .index = 0 } },
@@ -483,7 +561,8 @@ test "bolometric emission and LUT agree with independent values" {
     } };
     try bolometric.validate(written, &.{}, 1);
     bolometric.evaluate(&inputs, &.{}, 1, &out);
-    try std.testing.expectApproxEqAbs(@as(F, 367.4402623512), out[0], if (F == f32) 1e-4 else 1e-9);
+    const tol: F = if (F == f32) 1e-4 else 1e-9;
+    try std.testing.expectApproxEqAbs(@as(F, 367.4402623512), out[0], tol);
 
     const lut = Lookup{ .first = 290, .step = 20, .values = &.{ 10, 30 } };
     const band: Resolver = .{ .greybody_band = .{
@@ -497,26 +576,58 @@ test "bolometric emission and LUT agree with independent values" {
 }
 
 test "resolver rejects missing writers and outputs" {
-    const missing = [_]Op{ .{ .load = .{ .kind = .field, .index = 0 } }, .{ .store = 0 } };
-    try std.testing.expectError(error.UnwrittenSlot, (Program{ .operations = &missing }).validate(.{}, 1));
-    const incomplete = [_]Op{ .{ .load = .{ .kind = .constant, .index = 0 } }, .{ .store = 0 } };
-    try std.testing.expectError(error.InvalidProgram, (Program{ .operations = &incomplete, .constants = &.{1} }).validate(.{}, 2));
+    const missing = [_]Op{
+        .{ .load = .{ .kind = .field, .index = 0 } },
+        .{ .store = 0 },
+    };
+    const prog_missing = Program{ .operations = &missing };
+    try std.testing.expectError(error.UnwrittenSlot, prog_missing.validate(.{}, 1));
+    const incomplete = [_]Op{
+        .{ .load = .{ .kind = .constant, .index = 0 } },
+        .{ .store = 0 },
+    };
+    const prog_incomplete = Program{
+        .operations = &incomplete,
+        .constants = &.{1},
+    };
+    try std.testing.expectError(
+        error.InvalidProgram,
+        prog_incomplete.validate(.{}, 2),
+    );
 }
 
 test "band Planck LUT is positive, temperature ordered, and interpolates" {
-    try std.testing.expectApproxEqRel(@as(F, 9_924_033.330070695), planckSpectralRadiance(10e-6, 300), if (F == f32) 1e-5 else 1e-12);
+    const rel_tol: F = if (F == f32) 1e-5 else 1e-12;
+    try std.testing.expectApproxEqRel(
+        @as(F, 9_924_033.330070695),
+        planckSpectralRadiance(10e-6, 300),
+        rel_tol,
+    );
     const response: BandResponse = .{
         .wavelengths_m = &.{ 8e-6, 9e-6, 10e-6, 11e-6, 12e-6 },
         .response = &.{ 0, 1, 1, 1, 0 },
     };
-    const lut = try response.prepareRadianceLookup(std.testing.allocator, 280, 320, 1);
+    const lut = try response.prepareRadianceLookup(
+        std.testing.allocator,
+        280,
+        320,
+        1,
+    );
     defer std.testing.allocator.free(lut.values);
     try std.testing.expect(lut.values[0] > 0);
     try std.testing.expect(lut.values[40] > lut.values[0]);
     const midpoint = lut.sample(300.5);
-    try std.testing.expectApproxEqRel((lut.values[20] + lut.values[21]) / 2, midpoint, if (F == f32) 1e-6 else 1e-12);
-    try std.testing.expectError(error.InvalidBandResponse, (BandResponse{ .wavelengths_m = &.{ 10e-6, 9e-6 }, .response = &.{ 1, 1 } })
-        .prepareRadianceLookup(std.testing.allocator, 280, 320, 1));
+    const interp_tol: F = if (F == f32) 1e-6 else 1e-12;
+    const avg_val = (lut.values[20] + lut.values[21]) / 2;
+    try std.testing.expectApproxEqRel(avg_val, midpoint, interp_tol);
+    const bad_response = BandResponse{
+        .wavelengths_m = &.{ 10e-6, 9e-6 },
+        .response = &.{ 1, 1 },
+    };
+    try std.testing.expectError(
+        error.InvalidBandResponse,
+        bad_response.prepareRadianceLookup(std.testing.allocator, 280, 320, 1),
+    );
 }
 
 test "apparent temperature includes reflected ambient and inverts band radiance" {

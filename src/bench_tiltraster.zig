@@ -320,7 +320,22 @@ fn runBenchmarksForTextureType(
                         sc
                     else
                         null;
-                    try runShaderCase(T, outer_alloc, io, stats, bench_args, base_raster_config, render_defaults, texture_grey, texture_rgb, mt, st, samp_cfg, null, data_dir);
+                    try runShaderCase(
+                        T,
+                        outer_alloc,
+                        io,
+                        stats,
+                        bench_args,
+                        base_raster_config,
+                        render_defaults,
+                        texture_grey,
+                        texture_rgb,
+                        mt,
+                        st,
+                        samp_cfg,
+                        null,
+                        data_dir,
+                    );
                 }
             }
         }
@@ -345,7 +360,22 @@ fn runBenchmarksForTextureType(
                     "data/tilt/{s}_{s}",
                     .{ folder_name, DEFAULT_DATA_DIR_SUFFIX },
                 );
-                try runShaderCase(T, outer_alloc, io, stats, bench_args, base_raster_config, render_defaults, texture_grey, texture_rgb, mt, st, null, tex_func_case, data_dir);
+                try runShaderCase(
+                    T,
+                    outer_alloc,
+                    io,
+                    stats,
+                    bench_args,
+                    base_raster_config,
+                    render_defaults,
+                    texture_grey,
+                    texture_rgb,
+                    mt,
+                    st,
+                    null,
+                    tex_func_case,
+                    data_dir,
+                );
             }
         }
     }
@@ -399,7 +429,8 @@ fn runShaderCase(
     };
     defer for (&samples) |*sample| sample.deinit(outer_alloc);
 
-    std.debug.print("Case: {s}{s}\n", .{ base_name, if (compare) " (direct / one-stage pipe)" else "" });
+    const note_str = if (compare) " (direct / one-stage pipe)" else "";
+    std.debug.print("Case: {s}{s}\n", .{ base_name, note_str });
     const run_out_dir_base = if (bench_args.save_strategy == .disk or
         bench_args.save_strategy == .both)
         bench_args.out_dir

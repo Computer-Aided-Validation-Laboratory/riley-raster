@@ -121,7 +121,20 @@ pub fn NodalKernel(comptime N: usize) type {
             spx_image_scratch: *MatSlice(F),
         ) void {
             var sink = shaderops.ImageSink{ .ctx = ctx_shade, .scratch = spx_image_scratch };
-            shadeSIMDTo(coord_space, ctx_shade, ctx_report, v_mask_active, v_weights, v_xi, v_eta, v_nodes_inv_z, v_subpx_z, shader_buf, shader, &sink);
+            shadeSIMDTo(
+                coord_space,
+                ctx_shade,
+                ctx_report,
+                v_mask_active,
+                v_weights,
+                v_xi,
+                v_eta,
+                v_nodes_inv_z,
+                v_subpx_z,
+                shader_buf,
+                shader,
+                &sink,
+            );
         }
     };
 }
@@ -209,7 +222,20 @@ pub fn TexKernel(
             spx_img_scratch: *MatSlice(F),
         ) void {
             var sink = shaderops.ImageSink{ .ctx = ctx_shade, .scratch = spx_img_scratch };
-            shadeSIMDTo(coord_space, ctx_shade, ctx_report, v_mask_active, v_weights, v_xi, v_eta, v_nodes_inv_z, v_subpx_z, shader_buf, shader, &sink);
+            shadeSIMDTo(
+                coord_space,
+                ctx_shade,
+                ctx_report,
+                v_mask_active,
+                v_weights,
+                v_xi,
+                v_eta,
+                v_nodes_inv_z,
+                v_subpx_z,
+                shader_buf,
+                shader,
+                &sink,
+            );
         }
     };
 }
@@ -467,7 +493,20 @@ pub fn FuncKernel(
             spx_image_scratch: *MatSlice(F),
         ) void {
             var sink = shaderops.ImageSink{ .ctx = ctx_shade, .scratch = spx_image_scratch };
-            shadeSIMDTo(coord_space, ctx_shade, ctx_report, v_mask_active, v_weights, v_xi, v_eta, v_nodes_inv_z, v_subpx_z, shader_buf, shader, &sink);
+            shadeSIMDTo(
+                coord_space,
+                ctx_shade,
+                ctx_report,
+                v_mask_active,
+                v_weights,
+                v_xi,
+                v_eta,
+                v_nodes_inv_z,
+                v_subpx_z,
+                shader_buf,
+                shader,
+                &sink,
+            );
         }
     };
 }

@@ -366,7 +366,8 @@ def test_create_mesh_nodal_shader_rejects_invalid_field_count() -> None:
     shader = NodalShader(np.ones((3, 1, 9), dtype=np.float64))
 
     with pytest.raises(
-        ValueError, match="nodal field must contain between one and eight fields"
+        ValueError,
+        match="nodal field must contain between one and eight fields",
     ):
         meshio.create_mesh(
             convention=convention,

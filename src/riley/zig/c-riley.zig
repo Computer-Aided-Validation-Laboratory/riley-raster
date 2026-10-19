@@ -1255,10 +1255,16 @@ fn pipeSlotFromC(in_slot: CSlot) !shaderpipe.Slot {
     };
 }
 
-fn pipeSlotsFromC(allocator: std.mem.Allocator, slots: [*c]const CSlot, count: usize) ![]shaderpipe.Slot {
+fn pipeSlotsFromC(
+    allocator: std.mem.Allocator,
+    slots: [*c]const CSlot,
+    count: usize,
+) ![]shaderpipe.Slot {
     const input = try cConstSlice(CSlot, slots, count);
     const output = try allocator.alloc(shaderpipe.Slot, count);
-    for (input, output) |slot, *dest| dest.* = try pipeSlotFromC(slot);
+    for (input, output) |slot, *dest| {
+        dest.* = try pipeSlotFromC(slot);
+    }
     return output;
 }
 
@@ -1270,37 +1276,80 @@ fn lookupFromC(input: CLookup) !shaderpipe.Lookup {
     };
 }
 
-fn resolverFromC(allocator: std.mem.Allocator, input: CResolver, constants: []const F) !shaderpipe.Resolver {
+fn resolverFromC(
+    allocator: std.mem.Allocator,
+    input: CResolver,
+    constants: []const F,
+) !shaderpipe.Resolver {
     const slots = try pipeSlotsFromC(allocator, input.slots, input.slots_len);
     return switch (input.tag) {
         0 => .{ .identity = slots },
         1 => .{ .sum = slots },
-        2 => .{ .modulate = .{ .sources = slots, .factor = try pipeSlotFromC(input.factor), .ambient = input.ambient, .gain = input.gain } },
-        3 => .{ .weighted_sum = .{ .sources = slots, .weights = try cConstSlice(F, input.weights, input.weights_len) } },
-        4 => .{ .greybody_bolometric = .{ .temperature = try pipeSlotFromC(input.temperature), .emissivity = try pipeSlotFromC(input.emissivity) } },
-        5 => .{ .greybody_band = .{ .temperature = try pipeSlotFromC(input.temperature), .emissivity = try pipeSlotFromC(input.emissivity), .radiance = try lookupFromC(input.lookup) } },
-        7 => .{ .greybody_band_apparent_c = .{ .temperature = try pipeSlotFromC(input.temperature), .emissivity = try pipeSlotFromC(input.emissivity), .radiance = try lookupFromC(input.lookup), .ambient_k = input.ambient } },
+        2 => .{ .modulate = .{
+            .sources = slots,
+            .factor = try pipeSlotFromC(input.factor),
+            .ambient = input.ambient,
+            .gain = input.gain,
+        } },
+        3 => .{ .weighted_sum = .{
+            .sources = slots,
+            .weights = try cConstSlice(F, input.weights, input.weights_len),
+        } },
+        4 => .{ .greybody_bolometric = .{
+            .temperature = try pipeSlotFromC(input.temperature),
+            .emissivity = try pipeSlotFromC(input.emissivity),
+        } },
+        5 => .{ .greybody_band = .{
+            .temperature = try pipeSlotFromC(input.temperature),
+            .emissivity = try pipeSlotFromC(input.emissivity),
+            .radiance = try lookupFromC(input.lookup),
+        } },
+        7 => .{ .greybody_band_apparent_c = .{
+            .temperature = try pipeSlotFromC(input.temperature),
+            .emissivity = try pipeSlotFromC(input.emissivity),
+            .radiance = try lookupFromC(input.lookup),
+            .ambient_k = input.ambient,
+        } },
         6 => blk: {
-            const input_ops = try cConstSlice(COperation, input.operations, input.operations_len);
+            const input_ops = try cConstSlice(
+                COperation,
+                input.operations,
+                input.operations_len,
+            );
             const ops = try allocator.alloc(shaderpipe.Op, input_ops.len);
-            for (input_ops, ops) |op, *dest| dest.* = switch (op.tag) {
-                0 => .{ .load = try pipeSlotFromC(op.slot) },
-                1 => .add,
-                2 => .subtract,
-                3 => .multiply,
-                4 => .divide,
-                5 => .power4,
-                6 => .clamp01,
-                7 => .{ .clamp = .{ .lower = op.lower, .upper = op.upper } },
-                8 => if (op.slot.index < 1) .{ .lut = 0 } else return error.InvalidPipeOperation,
-                9 => if (op.slot.index < shaderpipe.max_channels) .{ .store = @intCast(op.slot.index) } else return error.InvalidPipeOperation,
-                else => return error.InvalidPipeOperation,
-            };
+            for (input_ops, ops) |op, *dest| {
+                dest.* = switch (op.tag) {
+                    0 => .{ .load = try pipeSlotFromC(op.slot) },
+                    1 => .add,
+                    2 => .subtract,
+                    3 => .multiply,
+                    4 => .divide,
+                    5 => .power4,
+                    6 => .clamp01,
+                    7 => .{ .clamp = .{ .lower = op.lower, .upper = op.upper } },
+                    8 => if (op.slot.index < 1)
+                        .{ .lut = 0 }
+                    else
+                        return error.InvalidPipeOperation,
+                    9 => if (op.slot.index < shaderpipe.max_channels)
+                        .{ .store = @intCast(op.slot.index) }
+                    else
+                        return error.InvalidPipeOperation,
+                    else => return error.InvalidPipeOperation,
+                };
+            }
             const lookups = if (input.lookup.values_len > 0)
-                try allocator.dupe(shaderpipe.Lookup, &.{try lookupFromC(input.lookup)})
+                try allocator.dupe(
+                    shaderpipe.Lookup,
+                    &.{try lookupFromC(input.lookup)},
+                )
             else
                 &.{};
-            break :blk .{ .expression = .{ .operations = ops, .constants = constants, .lookups = lookups } };
+            break :blk .{ .expression = .{
+                .operations = ops,
+                .constants = constants,
+                .lookups = lookups,
+            } };
         },
         else => error.InvalidPipeResolver,
     };
@@ -1341,25 +1390,38 @@ fn buildMeshInput(
     built.disp_array = disp_built.array;
 
     if (in_mesh.pipes_len > 0) {
-        if (in_mesh.pipes_len > 4) return error.InvalidPipeCount;
+        if (in_mesh.pipes_len > 4) {
+            return error.InvalidPipeCount;
+        }
         const input_pipes = try cConstSlice(CPipe, in_mesh.pipes, in_mesh.pipes_len);
         var source_count: usize = 0;
         for (input_pipes) |pipe| {
-            if (pipe.stages_len == 0 or pipe.stages_len > 8) return error.InvalidPipeStageCount;
+            if (pipe.stages_len == 0 or pipe.stages_len > 8) {
+                return error.InvalidPipeStageCount;
+            }
             const stages = try cConstSlice(CPipeStage, pipe.stages, pipe.stages_len);
-            for (stages) |stage| if (stage.tag == 0) {
-                source_count += 1;
-            };
+            for (stages) |stage| {
+                if (stage.tag == 0) {
+                    source_count += 1;
+                }
+            }
         }
         built.pipe_sources = try allocator.alloc(MeshInputBuilt, source_count);
         built.pipe_stages = try allocator.alloc(
             []shaderops.ShaderPipeStageInput,
             input_pipes.len,
         );
-        built.pipe_inputs = try allocator.alloc(shaderops.ShaderPipeInput, input_pipes.len);
+        built.pipe_inputs = try allocator.alloc(
+            shaderops.ShaderPipeInput,
+            input_pipes.len,
+        );
         var source_idx: usize = 0;
         for (input_pipes, 0..) |pipe, pi| {
-            const input_stages = try cConstSlice(CPipeStage, pipe.stages, pipe.stages_len);
+            const input_stages = try cConstSlice(
+                CPipeStage,
+                pipe.stages,
+                pipe.stages_len,
+            );
             const stages = try allocator.alloc(
                 shaderops.ShaderPipeStageInput,
                 input_stages.len,
@@ -1368,17 +1430,31 @@ fn buildMeshInput(
             for (input_stages, stages) |input_stage, *stage| {
                 stage.* = switch (input_stage.tag) {
                     0 => blk: {
-                        const source_shader = try cConstSlice(CShaderInput, input_stage.shader, 1);
+                        const source_shader = try cConstSlice(
+                            CShaderInput,
+                            input_stage.shader,
+                            1,
+                        );
                         var source_mesh = in_mesh.*;
                         source_mesh.shader = source_shader[0];
                         source_mesh.has_direct = 1;
                         source_mesh.pipes = null;
                         source_mesh.pipes_len = 0;
-                        source_mesh.disp = .{ .elems = null, .dim0 = 0, .dim1 = 0, .dim2 = 0 };
-                        built.pipe_sources[source_idx] = try buildMeshInput(allocator, &source_mesh);
-                        const source = built.pipe_sources[source_idx].mesh_input.shaders.direct.?;
+                        source_mesh.disp = .{
+                            .elems = null,
+                            .dim0 = 0,
+                            .dim1 = 0,
+                            .dim2 = 0,
+                        };
+                        built.pipe_sources[source_idx] =
+                            try buildMeshInput(allocator, &source_mesh);
+                        const source =
+                            built.pipe_sources[source_idx].mesh_input.shaders.direct.?;
                         source_idx += 1;
-                        break :blk .{ .source = .{ .shader = source, .destination = try pipeSlotFromC(input_stage.destination) } };
+                        break :blk .{ .source = .{
+                            .shader = source,
+                            .destination = try pipeSlotFromC(input_stage.destination),
+                        } };
                     },
                     1 => .{ .grey_to_emissivity = .{
                         .source = try pipeSlotFromC(input_stage.source),
@@ -1406,20 +1482,32 @@ fn buildMeshInput(
             };
             switch (pipe.shader_selection) {
                 1 => {
-                    if (built.mesh_input.shaders.mono != null) return error.DuplicatePipeRole;
+                    if (built.mesh_input.shaders.mono != null) {
+                        return error.DuplicatePipeRole;
+                    }
                     built.mesh_input.shaders.mono = built.pipe_inputs[pi];
                 },
                 2 => {
-                    if (built.mesh_input.shaders.rgb != null) return error.DuplicatePipeRole;
+                    if (built.mesh_input.shaders.rgb != null) {
+                        return error.DuplicatePipeRole;
+                    }
                     built.mesh_input.shaders.rgb = built.pipe_inputs[pi];
                 },
                 3 => {
-                    if (built.mesh_input.shaders.ir != null) return error.DuplicatePipeRole;
+                    if (built.mesh_input.shaders.ir != null) {
+                        return error.DuplicatePipeRole;
+                    }
                     built.mesh_input.shaders.ir = built.pipe_inputs[pi];
                 },
                 4 => {
-                    if (pipe.channels == 0 or pipe.channels > shaderpipe.max_channels) return error.InvalidPipeChannels;
-                    if (built.mesh_input.shaders.multifield != null) return error.DuplicatePipeRole;
+                    if (pipe.channels == 0 or
+                        pipe.channels > shaderpipe.max_channels)
+                    {
+                        return error.InvalidPipeChannels;
+                    }
+                    if (built.mesh_input.shaders.multifield != null) {
+                        return error.DuplicatePipeRole;
+                    }
                     built.mesh_input.shaders.multifield = built.pipe_inputs[pi];
                 },
                 else => return error.InvalidPipeRole,

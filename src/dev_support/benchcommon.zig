@@ -20,6 +20,7 @@ const gk = @import("../riley/zig/geometrykernels.zig");
 const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
 const DistortParams = @import("../riley/zig/camera.zig").DistortParams;
+const SubPixelCenterMap = @import("../riley/zig/camera.zig").SubPixelCenterMap;
 const cameraops = @import("../riley/zig/cameraops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const report = @import("../riley/zig/report.zig");
@@ -320,7 +321,7 @@ pub fn writeBenchmarkConfig(
     image_out_dir_base: []const u8,
     benchmark_name: []const u8,
     argv: anytype,
-    subpixel_center_map: @import("../riley/zig/camera.zig").SubPixelCenterMap,
+    subpixel_center_map: SubPixelCenterMap,
     config: rastcfg.RasterConfig,
     render_group_workers: []const u16,
     pixel_num: [2]u32,
@@ -993,8 +994,10 @@ fn runBenchmarkInternal(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .distort = render_defaults.distort,
-        .shader_selection = if (render_defaults.shader_path == .one_stage_pipe) .mono else .direct,
+        .shader_selection = if (render_defaults.shader_path == .one_stage_pipe)
+            .mono
+        else
+            .direct,
     };
 
     var config_run = config;

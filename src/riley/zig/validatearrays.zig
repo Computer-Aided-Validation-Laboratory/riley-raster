@@ -12,7 +12,7 @@ const geomkerns = @import("geometrykernels.zig");
 const matslice = @import("matslice.zig");
 const meshpipe = @import("meshpipeline.zig");
 const ndarray = @import("ndarray.zig");
-const shaderops = @import("shaderops_common.zig");
+const shaderops = @import("shaderops.zig");
 const texops = @import("textureops.zig");
 
 const F = buildconfig.F;
@@ -100,12 +100,23 @@ fn checkMeshDisplacements(mesh: meshpipe.MeshInput) InputArrayError!void {
 // --------------------------------------------------------------------------------------
 
 fn checkMeshShaderArrays(mesh: meshpipe.MeshInput) InputArrayError!void {
-    if (mesh.shaders.direct) |shader| try checkShaderArrays(shader);
-    inline for (.{ mesh.shaders.mono, mesh.shaders.rgb, mesh.shaders.ir, mesh.shaders.multifield }) |pipe_opt| {
-        if (pipe_opt) |pipe| for (pipe.stages) |stage| switch (stage) {
-            .source => |src| try checkShaderArrays(src.shader),
-            else => {},
-        };
+    if (mesh.shaders.direct) |shader| {
+        try checkShaderArrays(shader);
+    }
+    inline for (.{
+        mesh.shaders.mono,
+        mesh.shaders.rgb,
+        mesh.shaders.ir,
+        mesh.shaders.multifield,
+    }) |pipe_opt| {
+        if (pipe_opt) |pipe| {
+            for (pipe.stages) |stage| {
+                switch (stage) {
+                    .source => |src| try checkShaderArrays(src.shader),
+                    else => {},
+                }
+            }
+        }
     }
 }
 

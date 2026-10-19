@@ -17,7 +17,7 @@ const meshpipe = @import("meshpipeline.zig");
 const ndarray = @import("ndarray.zig");
 const rastcfg = @import("rasterconfig.zig");
 const report = @import("report.zig");
-const shaderops = @import("shaderops_common.zig");
+const shaderops = @import("shaderops.zig");
 const shaderpipe = @import("shaderpipe.zig");
 const texops = @import("textureops.zig");
 
@@ -173,7 +173,10 @@ pub fn checkRenderInps(
     };
 }
 
-fn checkPipeCompatibility(cameras: []const cam.CameraInput, meshes: []const meshpipe.MeshInput) InputValidationError!void {
+fn checkPipeCompatibility(
+    cameras: []const cam.CameraInput,
+    meshes: []const meshpipe.MeshInput,
+) InputValidationError!void {
     for (cameras) |camera| {
         var compatible = false;
         for (meshes) |mesh| {
@@ -181,7 +184,9 @@ fn checkPipeCompatibility(cameras: []const cam.CameraInput, meshes: []const mesh
                 compatible = true;
             }
         }
-        if (!compatible) return error.NoCompatibleShader;
+        if (!compatible) {
+            return error.NoCompatibleShader;
+        }
     }
 }
 
@@ -192,7 +197,10 @@ pub fn summariseRenderInpsAssumeValid(
     config: rastcfg.RasterConfig,
 ) ValidSummary {
     const num_time = if (meshes.len > 0) meshpipe.countFrames(meshes, cam_inps) else 1;
-    const raw_num_fields = if (meshes.len > 0) meshpipe.countOutputFields(meshes, cam_inps) else 1;
+    const raw_num_fields = if (meshes.len > 0)
+        meshpipe.countOutputFields(meshes, cam_inps)
+    else
+        1;
     const out_num_fields = calcOutFieldsForImgSaveMode(
         config.output.image_save_mode,
         raw_num_fields,
@@ -367,12 +375,33 @@ fn checkMeshesMetadata(
         }
 
         const shaders = mesh.shaders;
-        if (shaders.direct == null and shaders.mono == null and shaders.rgb == null and shaders.ir == null and shaders.multifield == null) return error.InvalidShaderPipe;
-        if (shaders.direct) |shader| try checkShaderMetadata(shader, mesh.coords.mat.rows_num);
-        if (shaders.mono) |pipe| try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 1);
-        if (shaders.rgb) |pipe| try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 3);
-        if (shaders.ir) |pipe| try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 1);
-        if (shaders.multifield) |pipe| try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, pipe.channels);
+        if (shaders.direct == null and
+            shaders.mono == null and
+            shaders.rgb == null and
+            shaders.ir == null and
+            shaders.multifield == null)
+        {
+            return error.InvalidShaderPipe;
+        }
+        if (shaders.direct) |shader| {
+            try checkShaderMetadata(shader, mesh.coords.mat.rows_num);
+        }
+        if (shaders.mono) |pipe| {
+            try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 1);
+        }
+        if (shaders.rgb) |pipe| {
+            try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 3);
+        }
+        if (shaders.ir) |pipe| {
+            try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 1);
+        }
+        if (shaders.multifield) |pipe| {
+            try checkPipeMetadata(
+                pipe,
+                mesh.coords.mat.rows_num,
+                pipe.channels,
+            );
+        }
     }
 }
 
@@ -392,10 +421,14 @@ fn checkCameras(
         switch (cam_inp.output_encoding) {
             .native => {},
             .grid12_to_u16, .linear_u16 => |range| {
-                if (!isFiniteSlice(&range) or range[1] <= range[0]) return error.InvalidImageSaveOpts;
+                if (!isFiniteSlice(&range) or range[1] <= range[0]) {
+                    return error.InvalidImageSaveOpts;
+                }
                 if (config.save_strategy == .disk or config.save_strategy == .both) {
                     for (config.output.image_save_opts) |opts| {
-                        if (opts.format != .tiff or opts.bits != 16) return error.InvalidImageSaveOpts;
+                        if (opts.format != .tiff or opts.bits != 16) {
+                            return error.InvalidImageSaveOpts;
+                        }
                     }
                 }
             },
@@ -551,17 +584,23 @@ fn checkPipeMetadata(
                 !std.math.isFinite(m.grey_black) or !std.math.isFinite(m.grey_white) or
                 m.grey_white <= m.grey_black or
                 m.black < 0 or m.black > 1 or m.white < 0 or m.white > 1)
+            {
                 return error.InvalidShaderPipe;
+            }
             written.add(m.destination) catch return error.InvalidShaderPipe;
         },
         .clamp => |c| {
             if (!written.has(c.source) or !std.math.isFinite(c.lower) or
                 !std.math.isFinite(c.upper) or c.lower > c.upper)
+            {
                 return error.InvalidShaderPipe;
+            }
             written.add(c.destination) catch return error.InvalidShaderPipe;
         },
     };
-    pipe.resolver.validate(written, pipe.constants, channels) catch return error.InvalidShaderPipe;
+    pipe.resolver.validate(written, pipe.constants, channels) catch {
+        return error.InvalidShaderPipe;
+    };
 }
 
 fn checkShaderMetadata(

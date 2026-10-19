@@ -33,25 +33,64 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                                 @intCast(shader.elem_field.dims[1])
                             else
                                 @intCast(shader.elem_field.dims[2]);
+                            const frame_dim = shader.elem_field.dims[0] - 1;
                             const idx = if (shader.elem_field.dims.len == 3)
                                 shader.elem_field.getFlatIdx(&.{ elem_idx, 0, 0 })
                             else
-                                shader.elem_field.getFlatIdx(&.{ @min(frame_idx, shader.elem_field.dims[0] - 1), elem_idx, 0, 0 });
+                                shader.elem_field.getFlatIdx(&.{
+                                    @min(frame_idx, frame_dim),
+                                    elem_idx,
+                                    0,
+                                    0,
+                                });
                             buf.load(shader.elem_field, idx, count);
-                            if (shader.elem_normals) |normals| buf.loadNormals(normals.array, normals.map[elem_idx] * 3 * N);
+                            if (shader.elem_normals) |normals| {
+                                buf.loadNormals(
+                                    normals.array,
+                                    normals.map[elem_idx] * 3 * N,
+                                );
+                            }
                         },
-                        inline .tex_u8, .tex_u16, .tex_f, .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => |shader| {
+                        inline .tex_u8,
+                        .tex_u16,
+                        .tex_f,
+                        .tex_rgb_u8,
+                        .tex_rgb_u16,
+                        .tex_rgb_f,
+                        => |shader| {
                             buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
-                            if (shader.elem_normals) |normals| buf.loadNormals(normals.array, normals.map[elem_idx] * 3 * N);
+                            if (shader.elem_normals) |normals| {
+                                buf.loadNormals(
+                                    normals.array,
+                                    normals.map[elem_idx] * 3 * N,
+                                );
+                            }
                         },
                         .func, .func_rgb => |shader| {
                             switch (shader.coord_mode) {
-                                .uv => buf.loadFuncCoords(shader.elem_uvs.?, elem_idx * 2 * N, 2),
-                                .world_reference => buf.loadFuncCoords(shader.elem_world_ref.?, elem_idx * 3 * N, 3),
-                                .world_deformed => buf.loadFuncCoords(shader.elem_world_def.?, elem_idx * 3 * N, 3),
+                                .uv => buf.loadFuncCoords(
+                                    shader.elem_uvs.?,
+                                    elem_idx * 2 * N,
+                                    2,
+                                ),
+                                .world_reference => buf.loadFuncCoords(
+                                    shader.elem_world_ref.?,
+                                    elem_idx * 3 * N,
+                                    3,
+                                ),
+                                .world_deformed => buf.loadFuncCoords(
+                                    shader.elem_world_def.?,
+                                    elem_idx * 3 * N,
+                                    3,
+                                ),
                                 .para => {},
                             }
-                            if (shader.elem_normals) |normals| buf.loadNormals(normals.array, normals.map[elem_idx] * 3 * N);
+                            if (shader.elem_normals) |normals| {
+                                buf.loadNormals(
+                                    normals.array,
+                                    normals.map[elem_idx] * 3 * N,
+                                );
+                            }
                         },
                     }
                 },
@@ -85,7 +124,16 @@ pub fn PipeKernel(comptime N: usize) type {
                 .source => |*src| {
                     const count = sourceChannels(src.shader);
                     stage_ctx.actual_fields = count;
-                    shadeSource(N, coord_space, stage_ctx, interp, &pipe_buf.stages[si], &src.shader, ctx_report, &temp_mat);
+                    shadeSource(
+                        N,
+                        coord_space,
+                        stage_ctx,
+                        interp,
+                        &pipe_buf.stages[si],
+                        &src.shader,
+                        ctx_report,
+                        &temp_mat,
+                    );
                     for (0..count) |ch| {
                         var dest = src.destination;
                         dest.index += @intCast(ch);
@@ -97,13 +145,21 @@ pub fn PipeKernel(comptime N: usize) type {
                         (m.grey_white - m.grey_black), 0, 1);
                     outputs.set(m.destination, m.black + grey * (m.white - m.black));
                 },
-                .clamp => |c| outputs.set(c.destination, std.math.clamp(outputs.get(c.source), c.lower, c.upper)),
+                .clamp => |c| {
+                    const clamped = std.math.clamp(
+                        outputs.get(c.source),
+                        c.lower,
+                        c.upper,
+                    );
+                    outputs.set(c.destination, clamped);
+                },
             };
 
             var resolved: [shaderpipe.max_channels]F = undefined;
             pipe.resolver.evaluate(&outputs, pipe.constants, pipe.channels, &resolved);
             for (0..pipe.channels) |ch| {
-                spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] = resolved[ch];
+                const idx = ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx;
+                spx_image_scratch.slice[idx] = resolved[ch];
             }
         }
 
@@ -129,7 +185,21 @@ pub fn PipeKernel(comptime N: usize) type {
                     const count = sourceChannels(src.shader);
                     stage_ctx.actual_fields = count;
                     var source_values: shaderops.VectorSink(cfg.max_nodal_fields) = .{};
-                    shadeSourceSIMD(N, coord_space, stage_ctx, ctx_report, v_mask_active, v_weights, v_xi, v_eta, v_nodes_inv_z, v_subpx_z, &pipe_buf.stages[si], &src.shader, &source_values);
+                    shadeSourceSIMD(
+                        N,
+                        coord_space,
+                        stage_ctx,
+                        ctx_report,
+                        v_mask_active,
+                        v_weights,
+                        v_xi,
+                        v_eta,
+                        v_nodes_inv_z,
+                        v_subpx_z,
+                        &pipe_buf.stages[si],
+                        &src.shader,
+                        &source_values,
+                    );
                     for (0..count) |ch| {
                         var dest = src.destination;
                         dest.index += @intCast(ch);
@@ -137,12 +207,23 @@ pub fn PipeKernel(comptime N: usize) type {
                     }
                 },
                 .grey_to_emissivity => |m| {
-                    const grey = @min(@as(VecSF, @splat(1)), @max(@as(VecSF, @splat(0)), (outputs.get(m.source) - @as(VecSF, @splat(m.grey_black))) /
-                        @as(VecSF, @splat(m.grey_white - m.grey_black))));
-                    outputs.set(m.destination, @as(VecSF, @splat(m.black)) +
-                        grey * @as(VecSF, @splat(m.white - m.black)));
+                    const src_val = outputs.get(m.source);
+                    const gb = @as(VecSF, @splat(m.grey_black));
+                    const gw_gb = @as(VecSF, @splat(m.grey_white - m.grey_black));
+                    const raw_grey = (src_val - gb) / gw_gb;
+                    const one = @as(VecSF, @splat(1));
+                    const zero = @as(VecSF, @splat(0));
+                    const grey = @min(one, @max(zero, raw_grey));
+                    const blk_splat = @as(VecSF, @splat(m.black));
+                    const w_b = @as(VecSF, @splat(m.white - m.black));
+                    outputs.set(m.destination, blk_splat + grey * w_b);
                 },
-                .clamp => |c| outputs.set(c.destination, @min(@as(VecSF, @splat(c.upper)), @max(@as(VecSF, @splat(c.lower)), outputs.get(c.source)))),
+                .clamp => |c| {
+                    const upper = @as(VecSF, @splat(c.upper));
+                    const lower = @as(VecSF, @splat(c.lower));
+                    const clamped = @min(upper, @max(lower, outputs.get(c.source)));
+                    outputs.set(c.destination, clamped);
+                },
             };
 
             var resolved: [shaderpipe.max_channels]VecSF = undefined;
@@ -156,7 +237,12 @@ pub fn PipeKernel(comptime N: usize) type {
                         spx_image_scratch.slice[idx + lane] = lanes[lane];
                     };
                 } else {
-                    simdops.storeMaskedVecSF(spx_image_scratch.slice, idx, v_mask_active, resolved[ch]);
+                    simdops.storeMaskedVecSF(
+                        spx_image_scratch.slice,
+                        idx,
+                        v_mask_active,
+                        resolved[ch],
+                    );
                 }
             }
         }
@@ -185,15 +271,105 @@ fn shadeSource(
     scratch: *MatSlice(F),
 ) void {
     switch (source.*) {
-        .nodal => |*s| shadekerns.NodalKernel(N).shade(coord_space, ctx, interp, buf, s, ctx_report, scratch),
-        .tex_u8 => |*s| shadekerns.TexKernel(N, u8, 1).shade(coord_space, ctx, interp, buf, s, ctx_report, scratch),
-        .tex_u16 => |*s| shadekerns.TexKernel(N, u16, 1).shade(coord_space, ctx, interp, buf, s, ctx_report, scratch),
-        .tex_f => |*s| shadekerns.TexKernel(N, F, 1).shade(coord_space, ctx, interp, buf, s, ctx_report, scratch),
-        .tex_rgb_u8 => |*s| shadekerns.TexKernel(N, u8, 3).shade(coord_space, ctx, interp, buf, s, ctx_report, scratch),
-        .tex_rgb_u16 => |*s| shadekerns.TexKernel(N, u16, 3).shade(coord_space, ctx, interp, buf, s, ctx_report, scratch),
-        .tex_rgb_f => |*s| shadekerns.TexKernel(N, F, 3).shade(coord_space, ctx, interp, buf, s, ctx_report, scratch),
-        .func => |*s| shadekerns.FuncKernel(N, 1).shade(coord_space, ctx, interp, buf, s, ctx_report, scratch),
-        .func_rgb => |*s| shadekerns.FuncKernel(N, 3).shade(coord_space, ctx, interp, buf, s, ctx_report, scratch),
+        .nodal => |*s| {
+            shadekerns.NodalKernel(N).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                ctx_report,
+                scratch,
+            );
+        },
+        .tex_u8 => |*s| {
+            shadekerns.TexKernel(N, u8, 1).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                ctx_report,
+                scratch,
+            );
+        },
+        .tex_u16 => |*s| {
+            shadekerns.TexKernel(N, u16, 1).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                ctx_report,
+                scratch,
+            );
+        },
+        .tex_f => |*s| {
+            shadekerns.TexKernel(N, F, 1).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                ctx_report,
+                scratch,
+            );
+        },
+        .tex_rgb_u8 => |*s| {
+            shadekerns.TexKernel(N, u8, 3).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                ctx_report,
+                scratch,
+            );
+        },
+        .tex_rgb_u16 => |*s| {
+            shadekerns.TexKernel(N, u16, 3).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                ctx_report,
+                scratch,
+            );
+        },
+        .tex_rgb_f => |*s| {
+            shadekerns.TexKernel(N, F, 3).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                ctx_report,
+                scratch,
+            );
+        },
+        .func => |*s| {
+            shadekerns.FuncKernel(N, 1).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                ctx_report,
+                scratch,
+            );
+        },
+        .func_rgb => |*s| {
+            shadekerns.FuncKernel(N, 3).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                ctx_report,
+                scratch,
+            );
+        },
     }
 }
 
@@ -213,14 +389,149 @@ fn shadeSourceSIMD(
     sink: anytype,
 ) void {
     switch (source.*) {
-        .nodal => |*s| shadekerns.NodalKernel(N).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
-        .tex_u8 => |*s| shadekerns.TexKernel(N, u8, 1).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
-        .tex_u16 => |*s| shadekerns.TexKernel(N, u16, 1).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
-        .tex_f => |*s| shadekerns.TexKernel(N, F, 1).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
-        .tex_rgb_u8 => |*s| shadekerns.TexKernel(N, u8, 3).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
-        .tex_rgb_u16 => |*s| shadekerns.TexKernel(N, u16, 3).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
-        .tex_rgb_f => |*s| shadekerns.TexKernel(N, F, 3).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
-        .func => |*s| shadekerns.FuncKernel(N, 1).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
-        .func_rgb => |*s| shadekerns.FuncKernel(N, 3).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
+        .nodal => |*s| {
+            shadekerns.NodalKernel(N).shadeSIMDTo(
+                coord_space,
+                ctx,
+                ctx_report,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .tex_u8 => |*s| {
+            shadekerns.TexKernel(N, u8, 1).shadeSIMDTo(
+                coord_space,
+                ctx,
+                ctx_report,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .tex_u16 => |*s| {
+            shadekerns.TexKernel(N, u16, 1).shadeSIMDTo(
+                coord_space,
+                ctx,
+                ctx_report,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .tex_f => |*s| {
+            shadekerns.TexKernel(N, F, 1).shadeSIMDTo(
+                coord_space,
+                ctx,
+                ctx_report,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .tex_rgb_u8 => |*s| {
+            shadekerns.TexKernel(N, u8, 3).shadeSIMDTo(
+                coord_space,
+                ctx,
+                ctx_report,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .tex_rgb_u16 => |*s| {
+            shadekerns.TexKernel(N, u16, 3).shadeSIMDTo(
+                coord_space,
+                ctx,
+                ctx_report,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .tex_rgb_f => |*s| {
+            shadekerns.TexKernel(N, F, 3).shadeSIMDTo(
+                coord_space,
+                ctx,
+                ctx_report,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .func => |*s| {
+            shadekerns.FuncKernel(N, 1).shadeSIMDTo(
+                coord_space,
+                ctx,
+                ctx_report,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .func_rgb => |*s| {
+            shadekerns.FuncKernel(N, 3).shadeSIMDTo(
+                coord_space,
+                ctx,
+                ctx_report,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
     }
 }

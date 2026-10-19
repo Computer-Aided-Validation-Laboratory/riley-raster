@@ -12,7 +12,7 @@ const camera = @import("../riley/zig/camera.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
-const shaderops = @import("../riley/zig/shaderops_common.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
 const texops = @import("../riley/zig/textureops.zig");
 
 const F = buildconfig.F;

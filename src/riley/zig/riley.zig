@@ -189,6 +189,7 @@ pub fn rasterAdvanced(
         valid_summary,
         time_start_render,
     );
+
     return images_arr_opt;
 }
 
@@ -860,20 +861,25 @@ fn prepareJobBatch(
     for (job_indices, 0..) |job_idx, ii| {
         const frame_idx = @divFloor(job_idx, cameras.len);
         const camera_idx = @mod(job_idx, cameras.len);
+
         var selected_meshes = mesh_static;
         var selected_scaling = nodal_global_scaling;
         const selection = cameras[camera_idx].shader_selection;
+
         var all_supported = true;
         for (mesh_static) |mesh| {
             if (!meshpipe.meshSupportsSelection(mesh, selection)) all_supported = false;
         }
+
         if (!all_supported) {
             var count: usize = 0;
             for (mesh_static) |mesh| {
                 if (meshpipe.meshSupportsSelection(mesh, selection)) count += 1;
             }
+
             const dense_meshes = try group_alloc.alloc(meshpipe.MeshStatic, count);
             const dense_scaling = try group_alloc.alloc(?imageops.ScalingParams, count);
+
             var index: usize = 0;
             for (mesh_static, nodal_global_scaling) |mesh, scaling| {
                 if (!meshpipe.meshSupportsSelection(mesh, selection)) continue;
@@ -881,9 +887,11 @@ fn prepareJobBatch(
                 dense_scaling[index] = scaling;
                 index += 1;
             }
+
             selected_meshes = dense_meshes;
             selected_scaling = dense_scaling;
         }
+
         jobs[ii] = PreparedFrameJob.init(
             group_alloc,
             .{
@@ -1062,6 +1070,7 @@ fn processRasterBatch(
         @as(u16, 1)
     else
         @max(@as(u16, 1), group_workers);
+
     for (jobs) |*job| {
         defer job.deinit(group_alloc);
 
@@ -1264,9 +1273,11 @@ fn runRasterStage(
     raster_workers: u16,
 ) !void {
     const arena_alloc = job.arena.allocator();
+
     const time_start_fb = Timestamp.now(io, .awake);
     try prepareFrameBuff(arena_alloc, &job.desc, &job.ctx);
     const time_end_fb = Timestamp.now(io, .awake);
+
     job.ctx.frame_times.setup_frame_buff = @floatFromInt(
         time_start_fb.durationTo(time_end_fb).raw.nanoseconds,
     );

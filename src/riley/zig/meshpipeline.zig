@@ -142,7 +142,7 @@ pub fn countFrames(meshes: []const MeshInput, cameras: []const cam.CameraInput) 
                 selected = true;
             }
         }
-        
+
         if (!selected) continue;
 
         if (mesh.disp) |field| {
@@ -156,21 +156,37 @@ pub fn countFrames(meshes: []const MeshInput, cameras: []const cam.CameraInput) 
                 &mesh.shaders,
                 camera.shader_selection,
             ) orelse continue;
+            
             switch (selected_shader) {
                 .direct => |shader| switch (shader.*) {
-                    .nodal => |nodal| num_time = @max(num_time, nodal.field.array.dims[dim_time_pre]),
-                    else => {},
-                },
-                .pipe => |pipe| for (pipe.stages) |stage| switch (stage) {
-                    .source => |src| switch (src.shader) {
-                        .nodal => |n| num_time = @max(num_time, n.field.array.dims[dim_time_pre]),
-                        else => {},
+                    .nodal => |nodal| {
+                        num_time = @max(
+                            num_time,
+                            nodal.field.array.dims[dim_time_pre],
+                        );
                     },
                     else => {},
+                },
+                .pipe => |pipe| {
+                    for (pipe.stages) |stage| {
+                        switch (stage) {
+                            .source => |src| switch (src.shader) {
+                                .nodal => |nodal| {
+                                    num_time = @max(
+                                        num_time,
+                                        nodal.field.array.dims[dim_time_pre],
+                                    );
+                                },
+                                else => {},
+                            },
+                            else => {},
+                        }
+                    }
                 },
             }
         }
     }
+    
     return num_time;
 }
 
@@ -353,11 +369,45 @@ pub fn initMeshStatic(
     );
 
     var shaders: shaderops.MeshShaderSetStatic = .{};
-    if (mesh_input.shaders.direct) |shader| shaders.direct = try initShaderStatic(allocator, shader, &mesh_input.connect);
-    if (mesh_input.shaders.mono) |pipe| shaders.mono = try initPipeStatic(allocator, pipe, &mesh_input.connect, 1);
-    if (mesh_input.shaders.rgb) |pipe| shaders.rgb = try initPipeStatic(allocator, pipe, &mesh_input.connect, 3);
-    if (mesh_input.shaders.ir) |pipe| shaders.ir = try initPipeStatic(allocator, pipe, &mesh_input.connect, 1);
-    if (mesh_input.shaders.multifield) |pipe| shaders.multifield = try initPipeStatic(allocator, pipe, &mesh_input.connect, pipe.channels);
+    if (mesh_input.shaders.direct) |shader| {
+        shaders.direct = try initShaderStatic(
+            allocator,
+            shader,
+            &mesh_input.connect,
+        );
+    }
+    if (mesh_input.shaders.mono) |pipe| {
+        shaders.mono = try initPipeStatic(
+            allocator,
+            pipe,
+            &mesh_input.connect,
+            1,
+        );
+    }
+    if (mesh_input.shaders.rgb) |pipe| {
+        shaders.rgb = try initPipeStatic(
+            allocator,
+            pipe,
+            &mesh_input.connect,
+            3,
+        );
+    }
+    if (mesh_input.shaders.ir) |pipe| {
+        shaders.ir = try initPipeStatic(
+            allocator,
+            pipe,
+            &mesh_input.connect,
+            1,
+        );
+    }
+    if (mesh_input.shaders.multifield) |pipe| {
+        shaders.multifield = try initPipeStatic(
+            allocator,
+            pipe,
+            &mesh_input.connect,
+            pipe.channels,
+        );
+    }
 
     return .{
         .mesh_type = mesh_input.mesh_type,
@@ -1059,7 +1109,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             stage.vis_counts_by_chunk[chunk_idx] = vis_count;
         }
 
-        fn cullAndClassifyVisibleElems(self: *FrameMeshPipelineType, outer_alloc: std.mem.Allocator) !void {
+        fn cullAndClassifyVisibleElems(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+        ) !void {
             const has_distort = self.camera.ideal_sensor_bounds != null;
 
             var cached_distort_bboxes: ?[]?frontend.DistortElemBBox = null;
@@ -1406,7 +1459,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
                 const leaf_offset = @as(usize, slot) * 4;
                 if (stage.edge_fun_mode == .pre_calc) {
-                    const leaf_slice = stage.hulls.leaves_pre_calc[leaf_offset .. leaf_offset + 4];
+                    const leaf_slice =
+                        stage.hulls.leaves_pre_calc[leaf_offset .. leaf_offset + 4];
                     HullMultiRoot.prepareFourBezierLeavesPreCalc(
                         N,
                         stage.camera,
@@ -1414,7 +1468,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         leaf_slice[0..4],
                     );
                 } else {
-                    const leaf_slice = stage.hulls.leaves_on_the_fly[leaf_offset .. leaf_offset + 4];
+                    const leaf_slice =
+                        stage.hulls.leaves_on_the_fly[leaf_offset .. leaf_offset + 4];
                     HullMultiRoot.prepareFourBezierLeavesOnTheFly(
                         N,
                         stage.camera,
@@ -1598,11 +1653,37 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             outer_alloc: std.mem.Allocator,
             mesh_prep: *MeshPrepared,
         ) !void {
-            if (self.mesh_static.shaders.direct) |shader| mesh_prep.shaders.direct = try self.prepareShaderStatic(outer_alloc, shader, self.scaling_params);
-            if (self.mesh_static.shaders.mono) |pipe| mesh_prep.shaders.mono = try self.preparePipeStatic(outer_alloc, pipe);
-            if (self.mesh_static.shaders.rgb) |pipe| mesh_prep.shaders.rgb = try self.preparePipeStatic(outer_alloc, pipe);
-            if (self.mesh_static.shaders.ir) |pipe| mesh_prep.shaders.ir = try self.preparePipeStatic(outer_alloc, pipe);
-            if (self.mesh_static.shaders.multifield) |pipe| mesh_prep.shaders.multifield = try self.preparePipeStatic(outer_alloc, pipe);
+            if (self.mesh_static.shaders.direct) |shader| {
+                mesh_prep.shaders.direct = try self.prepareShaderStatic(
+                    outer_alloc,
+                    shader,
+                    self.scaling_params,
+                );
+            }
+            if (self.mesh_static.shaders.mono) |pipe| {
+                mesh_prep.shaders.mono = try self.preparePipeStatic(
+                    outer_alloc,
+                    pipe,
+                );
+            }
+            if (self.mesh_static.shaders.rgb) |pipe| {
+                mesh_prep.shaders.rgb = try self.preparePipeStatic(
+                    outer_alloc,
+                    pipe,
+                );
+            }
+            if (self.mesh_static.shaders.ir) |pipe| {
+                mesh_prep.shaders.ir = try self.preparePipeStatic(
+                    outer_alloc,
+                    pipe,
+                );
+            }
+            if (self.mesh_static.shaders.multifield) |pipe| {
+                mesh_prep.shaders.multifield = try self.preparePipeStatic(
+                    outer_alloc,
+                    pipe,
+                );
+            }
         }
 
         fn preparePipeStatic(

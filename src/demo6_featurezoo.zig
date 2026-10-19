@@ -19,7 +19,7 @@ const meshpipe = @import("riley/zig/meshpipeline.zig");
 const riley = @import("riley/zig/riley.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
-const shaderops = @import("riley/zig/shaderops_common.zig");
+const shaderops = @import("riley/zig/shaderops.zig");
 const texops = @import("riley/zig/textureops.zig");
 const uvio = @import("riley/zig/uvio.zig");
 

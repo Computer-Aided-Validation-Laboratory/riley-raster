@@ -13,7 +13,7 @@ const gk = @import("../riley/zig/geometrykernels.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const orch = @import("../dev_support/orchestration.zig");
-const shaderops = @import("../riley/zig/shaderops_common.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
 
 const F = buildconfig.F;
 const CameraInput = camera.CameraInput;

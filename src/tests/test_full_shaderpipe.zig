@@ -41,7 +41,13 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             } }, .destination = .{ .kind = .channel, .index = 0 } } },
             .{ .source = .{ .shader = .{ .func = .{
                 .builtin = .lambertian_normal_z,
-                .params = .{ .settings = .{ .lambertian_normal_z = .{ .coeffs = .{ 0.7, 0.3 } } } },
+                .params = .{
+                    .settings = .{
+                        .lambertian_normal_z = .{
+                            .coeffs = .{ 0.7, 0.3 },
+                        },
+                    },
+                },
                 .normal_type = .exact,
                 .bits = null,
             } }, .destination = .{ .kind = .parameter, .index = 0 } } },
@@ -55,7 +61,13 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             } }, .destination = .{ .kind = .channel, .index = 0 } } },
             .{ .source = .{ .shader = .{ .func = .{
                 .builtin = .lambertian_normal_z,
-                .params = .{ .settings = .{ .lambertian_normal_z = .{ .coeffs = .{ 0.7, 0.3 } } } },
+                .params = .{
+                    .settings = .{
+                        .lambertian_normal_z = .{
+                            .coeffs = .{ 0.7, 0.3 },
+                        },
+                    },
+                },
                 .normal_type = .exact,
                 .bits = null,
             } }, .destination = .{ .kind = .parameter, .index = 0 } } },
@@ -74,8 +86,20 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             .resolver = resolver,
         }};
         const meshes = [_]meshpipe.MeshInput{
-            .{ .mesh_type = mesh_type, .coords = scene.sphere_coords, .connect = scene.sphere_connect, .disp = scene.sphere_disp, .shaders = .{ .mono = sphere_pipes[0] } },
-            .{ .mesh_type = mesh_type, .coords = scene.cylinder_coords, .connect = scene.cylinder_connect, .disp = scene.cylinder_disp, .shaders = .{ .mono = cylinder_pipes[0] } },
+            .{
+                .mesh_type = mesh_type,
+                .coords = scene.sphere_coords,
+                .connect = scene.sphere_connect,
+                .disp = scene.sphere_disp,
+                .shaders = .{ .mono = sphere_pipes[0] },
+            },
+            .{
+                .mesh_type = mesh_type,
+                .coords = scene.cylinder_coords,
+                .connect = scene.cylinder_connect,
+                .disp = scene.cylinder_disp,
+                .shaders = .{ .mono = cylinder_pipes[0] },
+            },
         };
         var camera = scene.camera_input;
         camera.shader_selection = .mono;
@@ -85,8 +109,19 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             imageio.ImageSaveOpts{ .format = .fimg, .bits = null, .scaling = .none },
             imageio.ImageSaveOpts{ .format = .bmp, .bits = 8, .scaling = .auto },
         };
-        const gold_dir = try std.fmt.allocPrint(aa, "{s}/scene0_modulate_{s}", .{ policy.goldRoot(.full_shaderpipe), @tagName(mesh_type) });
-        const result = try riley.raster(aa, io, &.{camera}, &meshes, config, if (generate_gold) gold_dir else null);
+        const gold_dir = try std.fmt.allocPrint(
+            aa,
+            "{s}/scene0_modulate_{s}",
+            .{ policy.goldRoot(.full_shaderpipe), @tagName(mesh_type) },
+        );
+        const result = try riley.raster(
+            aa,
+            io,
+            &.{camera},
+            &meshes,
+            config,
+            if (generate_gold) gold_dir else null,
+        );
         const image = result orelse return error.NoResult;
         defer aa.free(image.slice);
         var min: F = std.math.inf(F);
@@ -99,14 +134,31 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         const rows = image.dims[3];
         const cols = image.dims[4];
         var frame_diff: F = 0;
-        for (0..rows) |y| for (0..cols) |x| {
-            frame_diff = @max(frame_diff, @abs(image.get(&.{ 0, 0, 0, y, x }) - image.get(&.{ 0, 1, 0, y, x })));
-        };
+        for (0..rows) |yy| {
+            for (0..cols) |xx| {
+                const diff = @abs(
+                    image.get(&.{ 0, 0, 0, yy, xx }) -
+                        image.get(&.{ 0, 1, 0, yy, xx }),
+                );
+                frame_diff = @max(frame_diff, diff);
+            }
+        }
         try std.testing.expect(frame_diff > 1e-3);
         if (!generate_gold) {
             for (0..image.dims[1]) |frame| {
                 const gold = try common.findGoldPath(aa, io, gold_dir, 0, frame, 0, false);
-                try common.compareNDArrayToGold(aa, io, &image, 0, frame, 0, 1, gold, tcfg.FULL_GOLD_REL_TOL, tcfg.FULL_GOLD_ABS_TOL);
+                try common.compareNDArrayToGold(
+                    aa,
+                    io,
+                    &image,
+                    0,
+                    frame,
+                    0,
+                    1,
+                    gold,
+                    tcfg.FULL_GOLD_REL_TOL,
+                    tcfg.FULL_GOLD_ABS_TOL,
+                );
             }
         }
 
@@ -114,7 +166,14 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             config.save_strategy = .memory;
             inline for (.{ .global_subpx_full, .global_subpx_stripe }) |mode| {
                 config.advanced.raster.buffer_mode = mode;
-                const other_result = try riley.raster(aa, io, &.{camera}, &meshes, config, null);
+                const other_result = try riley.raster(
+                    aa,
+                    io,
+                    &.{camera},
+                    &meshes,
+                    config,
+                    null,
+                );
                 const other = other_result orelse return error.NoResult;
                 defer aa.free(other.slice);
                 try std.testing.expectEqual(image.slice.len, other.slice.len);
@@ -144,7 +203,14 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             expression_meshes[0].shaders = .{ .mono = sphere_expr[0] };
             expression_meshes[1].shaders = .{ .mono = cylinder_expr[0] };
             config.advanced.raster.buffer_mode = .tile_local;
-            const expression_result = try riley.raster(aa, io, &.{camera}, &expression_meshes, config, null);
+            const expression_result = try riley.raster(
+                aa,
+                io,
+                &.{camera},
+                &expression_meshes,
+                config,
+                null,
+            );
             const expression_image = expression_result orelse return error.NoResult;
             defer aa.free(expression_image.slice);
             for (image.slice, expression_image.slice) |a, b| {

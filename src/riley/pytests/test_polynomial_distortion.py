@@ -70,7 +70,9 @@ def test_invalid_degree(tmp_path: Path, degree: float) -> None:
 def test_invalid_shape(tmp_path: Path, shape: tuple[int, ...]) -> None:
     camera = make_camera(
         distort_model=3,
-        distort_poly=riley.PolyMap(1, riley.EPolyMode.displacement, np.zeros(shape)),
+        distort_poly=riley.PolyMap(
+            1, riley.EPolyMode.displacement, np.zeros(shape)
+        ),
     )
     with pytest.raises(ValueError, match="shape"):
         riley.save_camera(str(tmp_path), "invalid.csv", 0, camera)
@@ -109,7 +111,9 @@ def test_poly_stereo_lifetime(tmp_path: Path) -> None:
         cameras.append(
             make_camera(
                 distort_model=3,
-                distort_poly=riley.PolyMap(degree, mode, np.ones((count, 2)) * 0.001),
+                distort_poly=riley.PolyMap(
+                    degree, mode, np.ones((count, 2)) * 0.001
+                ),
             )
         )
     riley.save_stereo_pair(str(tmp_path), "stereo_data.csv", *cameras)
@@ -135,13 +139,17 @@ def test_poly_stereo_lifetime(tmp_path: Path) -> None:
 def test_bad_csv(tmp_path: Path, metadata: str, error: str) -> None:
     camera = make_camera(
         distort_model=3,
-        distort_poly=riley.PolyMap(1, riley.EPolyMode.displacement, np.zeros((3, 2))),
+        distort_poly=riley.PolyMap(
+            1, riley.EPolyMode.displacement, np.zeros((3, 2))
+        ),
     )
     riley.save_camera(str(tmp_path), "camera.csv", 0, camera)
     path = tmp_path / "camera.csv"
     key = metadata.split(",")[0]
     lines = [
-        line for line in path.read_text().splitlines() if not line.startswith(key + ",")
+        line
+        for line in path.read_text().splitlines()
+        if not line.startswith(key + ",")
     ]
     path.write_text("\n".join(lines + [metadata]) + "\n")
     with pytest.raises(RuntimeError, match=error):
@@ -152,11 +160,14 @@ def test_public_poly_c_buffer_protocol(tmp_path: Path) -> None:
     compiler = shutil.which("cc")
     if compiler is None:
         pytest.skip("C compiler unavailable")
-    source = Path(__file__).resolve().parents[2] / "tests" / "c_distortion_abi.c"
+    repo_tests = Path(__file__).resolve().parents[2] / "tests"
+    source = repo_tests / "c_distortion_abi.c"
     lib_dir = Path(riley.__file__).resolve().parent / "cython"
     library = lib_dir / "libc_riley.so"
     if not source.exists() or not library.exists():
-        pytest.skip("repository C regression or Linux shared library unavailable")
+        pytest.skip(
+            "repository C regression or Linux shared library unavailable"
+        )
     camera = make_camera(
         distort_model=3,
         distort_poly=riley.PolyMap(

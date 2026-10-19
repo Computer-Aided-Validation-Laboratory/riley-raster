@@ -1373,8 +1373,12 @@ def _fill_pipe_array(
             stages[si].black = 0.0
             stages[si].white = 0.0
             if isinstance(stage, ShaderSource):
-                if not isinstance(stage.shader, (TextureShader, NodalShader, FunctionShader)):
-                    raise TypeError("source stage requires a texture, nodal, or function shader")
+                valid_shaders = (TextureShader, NodalShader, FunctionShader)
+                if not isinstance(stage.shader, valid_shaders):
+                    raise TypeError(
+                        "source stage requires a texture, nodal, or function"
+                        " shader"
+                    )
                 stages[si].tag = 0
                 stages[si].destination = _make_slot(stage.destination)
                 source_mesh = Mesh(
@@ -1385,14 +1389,18 @@ def _fill_pipe_array(
                     MeshShaderSet(direct=stage.shader),
                 )
                 temporary = cython.cast(
-                    cython.pointer[cr.CMeshInput], malloc(cython.sizeof(cr.CMeshInput)),
+                    cython.pointer[cr.CMeshInput],
+                    malloc(cython.sizeof(cr.CMeshInput)),
                 )
                 if temporary == cython.NULL:
                     raise MemoryError()
                 allocations.append(cython.cast(cython.size_t, temporary))
-                _fill_mesh_array([source_mesh], temporary, keepalive, allocations)
+                _fill_mesh_array(
+                    [source_mesh], temporary, keepalive, allocations
+                )
                 source = cython.cast(
-                    cython.pointer[cr.CShaderInput], malloc(cython.sizeof(cr.CShaderInput)),
+                    cython.pointer[cr.CShaderInput],
+                    malloc(cython.sizeof(cr.CShaderInput)),
                 )
                 if source == cython.NULL:
                     raise MemoryError()
@@ -1440,7 +1448,9 @@ def _fill_pipe_array(
         pipes[pi].resolver.weights = cython.NULL
         pipes[pi].resolver.weights_len = len(resolver.weights)
         if resolver.weights:
-            weights_np = np.ascontiguousarray(resolver.weights, dtype=np.float64)
+            weights_np = np.ascontiguousarray(
+                resolver.weights, dtype=np.float64
+            )
             keepalive.append(weights_np)
             weights_view: cython.double[::1] = weights_np
             pipes[pi].resolver.weights = cython.address(weights_view[0])
@@ -1450,7 +1460,9 @@ def _fill_pipe_array(
         pipes[pi].resolver.lookup.first = float(resolver.lookup_first)
         pipes[pi].resolver.lookup.step = float(resolver.lookup_step)
         if resolver.lookup_values is not None:
-            lookup_np = np.ascontiguousarray(resolver.lookup_values, dtype=np.float64)
+            lookup_np = np.ascontiguousarray(
+                resolver.lookup_values, dtype=np.float64
+            )
             if lookup_np.ndim != 1 or lookup_np.size < 2:
                 raise ValueError("resolver lookup needs at least two values")
             keepalive.append(lookup_np)
@@ -1479,7 +1491,9 @@ def _fill_pipe_array(
         pipes[pi].constants = cython.NULL
         pipes[pi].constants_len = len(pipe.constants)
         if pipe.constants:
-            constants_np = np.ascontiguousarray(pipe.constants, dtype=np.float64)
+            constants_np = np.ascontiguousarray(
+                pipe.constants, dtype=np.float64
+            )
             keepalive.append(constants_np)
             constants_view: cython.double[::1] = constants_np
             pipes[pi].constants = cython.address(constants_view[0])
@@ -1531,7 +1545,9 @@ def _fill_mesh_array(
             )
             keepalive.append(disp_np)
 
-        _fill_pipe_array(mesh, cython.address(mesh_array[nn]), keepalive, allocations)
+        _fill_pipe_array(
+            mesh, cython.address(mesh_array[nn]), keepalive, allocations
+        )
         shader = mesh.shaders.direct
         mesh_array[nn].has_direct = int(shader is not None)
         if shader is None:
@@ -1696,7 +1712,11 @@ def roi_cent_over_meshes(meshes: Any) -> tuple[float, float, float]:
             _raise_last_error()
     finally:
         for allocation in allocations:
-            free(cython.cast(cython.p_void, cython.cast(cython.size_t, allocation)))
+            free(
+                cython.cast(
+                    cython.p_void, cython.cast(cython.size_t, allocation)
+                )
+            )
         free(mesh_array)
     return (out_cent.x, out_cent.y, out_cent.z)
 
@@ -1762,7 +1782,11 @@ def pos_frame_meshes(
                 _raise_last_error()
     finally:
         for allocation in allocations:
-            free(cython.cast(cython.p_void, cython.cast(cython.size_t, allocation)))
+            free(
+                cython.cast(
+                    cython.p_void, cython.cast(cython.size_t, allocation)
+                )
+            )
         free(mesh_array)
     return (out_pos.x, out_pos.y, out_pos.z)
 
@@ -2080,7 +2104,11 @@ def raster(
             _raise_last_error()
     finally:
         for allocation in allocations:
-            free(cython.cast(cython.p_void, cython.cast(cython.size_t, allocation)))
+            free(
+                cython.cast(
+                    cython.p_void, cython.cast(cython.size_t, allocation)
+                )
+            )
         free(mesh_array)
         free(camera_array)
 

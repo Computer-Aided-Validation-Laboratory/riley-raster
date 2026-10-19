@@ -60,10 +60,10 @@ pub const evalFuncShaderBuiltinRGBNorm = shaderfunc.evalFuncShaderBuiltinRGBNorm
 // --------------------------------------------------------------------------------------
 // Stage 1: Input
 // --------------------------------------------------------------------------------------
-
 // Input: Raw user shader data for all frames.
 // Nodal Fields: Node-order [num_frames, total_nodes, num_fields]
 // UVs: Node-order [total_nodes, 2]
+
 pub const NodalInput = struct {
     field: meshio.Field,
     bits: ?u8 = 8,
@@ -132,10 +132,10 @@ pub const MeshShaderSetInput = struct {
 // --------------------------------------------------------------------------------------
 // Stage 2: Static
 // --------------------------------------------------------------------------------------
-
 // Static: Persistent multi-frame shader resources in engine memory.
 // Nodal Fields: Node-order [num_frames, total_nodes, num_fields]
 // UVs: Elem-order [total_elems, 2, nodes_per_elem]
+
 pub const NodalStatic = struct {
     field: meshio.Field,
     bits: ?u8 = 8,
@@ -209,11 +209,11 @@ pub const MeshShaderSetStatic = struct {
 // --------------------------------------------------------------------------------------
 // Stage 3: Prepared
 // --------------------------------------------------------------------------------------
-
 // Prep: Culled and expanded shader data for a SINGLE frame.
 // Prep means culled elem-order ndarray.NDArray data ready for the raster loop.
 // Nodal Fields: Elem-order [vis_elems, num_fields, nodes_per_elem]
 // UVs: Elem-order [vis_elems, 2, nodes_per_elem]
+
 pub const NodalPrepared = struct {
     elem_field: ndarray.NDArray(F),
     bits: ?u8 = 8,

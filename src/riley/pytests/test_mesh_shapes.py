@@ -525,7 +525,10 @@ def test_shape_create_mesh_end_to_end(
             assert np.isclose(mesh.disp[tt, ii, 0], disp_x[orig_idx, tt])
             assert np.isclose(mesh.disp[tt, ii, 1], disp_y[orig_idx, tt])
             assert np.isclose(mesh.disp[tt, ii, 2], disp_z[orig_idx, tt])
-            assert np.isclose(mesh.shaders.direct.field[tt, ii, 0], temp[orig_idx, tt])
+            assert np.isclose(
+                mesh.shaders.direct.field[tt, ii, 0],
+                temp[orig_idx, tt],
+            )
 
 
 _2D_PLATE_CASES = (
