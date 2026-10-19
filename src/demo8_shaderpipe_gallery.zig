@@ -10,7 +10,7 @@ const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const F = @import("riley/zig/buildconfig.zig").F;
 
-fn linear(x: F, y: F) shaderops.ShaderInput {
+fn linear(x: F, y: F) shaderops.ShaderDirectInput {
     return .{ .func = .{
         .builtin = .linear,
         .coord_mode = .world_reference,
@@ -64,7 +64,7 @@ pub fn main(init: std.process.Init) !void {
     const param0 = shaderpipe.Slot{ .kind = .parameter, .index = 0 };
     const field0 = shaderpipe.Slot{ .kind = .field, .index = 0 };
     const field1 = shaderpipe.Slot{ .kind = .field, .index = 1 };
-    const checker: shaderops.ShaderInput = .{ .func = .{
+    const checker: shaderops.ShaderDirectInput = .{ .func = .{
         .builtin = .checker,
         .coord_mode = .world_reference,
         .params = .{ .coord_scale = .{ 4, 4 }, .settings = .{ .checker = .{} } },
@@ -73,7 +73,7 @@ pub fn main(init: std.process.Init) !void {
     } };
 
     // A: the same checker samples are modulated by a smooth illumination field.
-    const mod_stages = [_]shaderops.PipeStageInput{
+    const mod_stages = [_]shaderops.ShaderPipeStageInput{
         .{ .source = .{ .shader = checker, .destination = ch0 } },
         .{ .source = .{ .shader = .{ .func = .{
             .builtin = .linear,
@@ -88,7 +88,7 @@ pub fn main(init: std.process.Init) !void {
     try render(init.gpa, init.io, mesh, base_camera, .mono, "./out/demo8_shaderpipe_gallery/a_modulation");
 
     // B: three independent gradients occupy the R, G and B channel slots.
-    const rgb_stages = [_]shaderops.PipeStageInput{
+    const rgb_stages = [_]shaderops.ShaderPipeStageInput{
         .{ .source = .{ .shader = linear(0.5, 0), .destination = ch0 } },
         .{ .source = .{ .shader = linear(0, 0.5), .destination = ch1 } },
         .{ .source = .{ .shader = linear(0.25, -0.25), .destination = ch2 } },
@@ -98,7 +98,7 @@ pub fn main(init: std.process.Init) !void {
     try render(init.gpa, init.io, mesh, base_camera, .rgb, "./out/demo8_shaderpipe_gallery/b_rgb");
 
     // C: an expression combines two fields with explicit weights and clamps to [0,1].
-    const expr_stages = [_]shaderops.PipeStageInput{
+    const expr_stages = [_]shaderops.ShaderPipeStageInput{
         .{ .source = .{ .shader = linear(0.5, 0), .destination = field0 } },
         .{ .source = .{ .shader = linear(0, 0.5), .destination = field1 } },
     };
@@ -112,7 +112,7 @@ pub fn main(init: std.process.Init) !void {
 
     // D: emissivity is a material parameter; the resolver explicitly maps
     // 0.90–0.96 to display greyscale 0–1, so this image is not radiance.
-    const emissivity_stages = [_]shaderops.PipeStageInput{
+    const emissivity_stages = [_]shaderops.ShaderPipeStageInput{
         .{ .source = .{ .shader = checker, .destination = ch0 } },
         .{ .grey_to_emissivity = .{ .source = ch0, .destination = param0, .black = 0.96, .white = 0.90 } },
     };

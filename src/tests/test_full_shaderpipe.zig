@@ -32,7 +32,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         defer arena.deinit();
         const aa = arena.allocator();
 
-        const sphere_stages = [_]shaderops.PipeStageInput{
+        const sphere_stages = [_]shaderops.ShaderPipeStageInput{
             .{ .source = .{ .shader = .{ .tex_u8 = .{
                 .uvs = scene.sphere_uvs.array,
                 .tex = textures.tex_u8_mono,
@@ -46,7 +46,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                 .bits = null,
             } }, .destination = .{ .kind = .parameter, .index = 0 } } },
         };
-        const cylinder_stages = [_]shaderops.PipeStageInput{
+        const cylinder_stages = [_]shaderops.ShaderPipeStageInput{
             .{ .source = .{ .shader = .{ .tex_u8 = .{
                 .uvs = scene.cylinder_uvs.array,
                 .tex = textures.tex_u8_mono,
@@ -65,8 +65,14 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             .sources = &channel_slots,
             .factor = .{ .kind = .parameter, .index = 0 },
         } };
-        const sphere_pipes = [_]shaderops.PipeInput{.{ .stages = &sphere_stages, .resolver = resolver }};
-        const cylinder_pipes = [_]shaderops.PipeInput{.{ .stages = &cylinder_stages, .resolver = resolver }};
+        const sphere_pipes = [_]shaderops.ShaderPipeInput{.{
+            .stages = &sphere_stages,
+            .resolver = resolver,
+        }};
+        const cylinder_pipes = [_]shaderops.ShaderPipeInput{.{
+            .stages = &cylinder_stages,
+            .resolver = resolver,
+        }};
         const meshes = [_]meshpipe.MeshInput{
             .{ .mesh_type = mesh_type, .coords = scene.sphere_coords, .connect = scene.sphere_connect, .disp = scene.sphere_disp, .shaders = .{ .mono = sphere_pipes[0] } },
             .{ .mesh_type = mesh_type, .coords = scene.cylinder_coords, .connect = scene.cylinder_connect, .disp = scene.cylinder_disp, .shaders = .{ .mono = cylinder_pipes[0] } },
@@ -126,8 +132,14 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             const expression_resolver: shaderpipe.Resolver = .{
                 .expression = .{ .operations = &operations },
             };
-            const sphere_expr = [_]shaderops.PipeInput{.{ .stages = &sphere_stages, .resolver = expression_resolver }};
-            const cylinder_expr = [_]shaderops.PipeInput{.{ .stages = &cylinder_stages, .resolver = expression_resolver }};
+            const sphere_expr = [_]shaderops.ShaderPipeInput{.{
+                .stages = &sphere_stages,
+                .resolver = expression_resolver,
+            }};
+            const cylinder_expr = [_]shaderops.ShaderPipeInput{.{
+                .stages = &cylinder_stages,
+                .resolver = expression_resolver,
+            }};
             var expression_meshes = meshes;
             expression_meshes[0].shaders = .{ .mono = sphere_expr[0] };
             expression_meshes[1].shaders = .{ .mono = cylinder_expr[0] };

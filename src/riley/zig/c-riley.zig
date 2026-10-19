@@ -397,8 +397,8 @@ const MeshInputBuilt = struct {
     tex_array_f: ?ndarray.NDArray(F) = null,
     nodal_field_array: ?ndarray.NDArray(F) = null,
     pipe_sources: []MeshInputBuilt = &.{},
-    pipe_stages: [][]shaderops.PipeStageInput = &.{},
-    pipe_inputs: []shaderops.PipeInput = &.{},
+    pipe_stages: [][]shaderops.ShaderPipeStageInput = &.{},
+    pipe_inputs: []shaderops.ShaderPipeInput = &.{},
 
     fn deinit(self: *MeshInputBuilt, allocator: std.mem.Allocator) void {
         if (self.disp_array) |*disp_array| {
@@ -1352,12 +1352,18 @@ fn buildMeshInput(
             };
         }
         built.pipe_sources = try allocator.alloc(MeshInputBuilt, source_count);
-        built.pipe_stages = try allocator.alloc([]shaderops.PipeStageInput, input_pipes.len);
-        built.pipe_inputs = try allocator.alloc(shaderops.PipeInput, input_pipes.len);
+        built.pipe_stages = try allocator.alloc(
+            []shaderops.ShaderPipeStageInput,
+            input_pipes.len,
+        );
+        built.pipe_inputs = try allocator.alloc(shaderops.ShaderPipeInput, input_pipes.len);
         var source_idx: usize = 0;
         for (input_pipes, 0..) |pipe, pi| {
             const input_stages = try cConstSlice(CPipeStage, pipe.stages, pipe.stages_len);
-            const stages = try allocator.alloc(shaderops.PipeStageInput, input_stages.len);
+            const stages = try allocator.alloc(
+                shaderops.ShaderPipeStageInput,
+                input_stages.len,
+            );
             built.pipe_stages[pi] = stages;
             for (input_stages, stages) |input_stage, *stage| {
                 stage.* = switch (input_stage.tag) {

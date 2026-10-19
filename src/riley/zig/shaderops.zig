@@ -29,23 +29,28 @@ pub const FuncInput = comm.FuncInput;
 pub const FuncPrepared = comm.FuncPrepared;
 pub const ShadeContext = comm.ShadeContext;
 pub const InterpData = comm.InterpData;
-pub const ShaderInput = comm.ShaderInput;
+pub const ShaderDirectInput = comm.ShaderDirectInput;
 pub const ShaderSelection = comm.ShaderSelection;
 pub const ShaderSetInput = comm.ShaderSetInput;
-pub const PipeInput = comm.PipeInput;
-pub const PipeStageInput = comm.PipeStageInput;
+pub const ShaderPipeInput = comm.ShaderPipeInput;
+pub const ShaderPipeStageInput = comm.ShaderPipeStageInput;
 pub const normFuncShaderParams = comm.normFuncShaderParams;
 pub const NodalStatic = comm.NodalStatic;
 pub const TexStatic = comm.TexStatic;
 pub const FuncStatic = comm.FuncStatic;
-pub const ShaderStatic = comm.ShaderStatic;
+pub const ShaderDirectStatic = comm.ShaderDirectStatic;
 pub const ShaderSetStatic = comm.ShaderSetStatic;
-pub const ShaderPrepared = comm.ShaderPrepared;
+pub const ShaderDirectPrepared = comm.ShaderDirectPrepared;
 pub const ShaderSetPrepared = comm.ShaderSetPrepared;
-pub const PipeStatic = comm.PipeStatic;
-pub const PipeStageStatic = comm.PipeStageStatic;
-pub const PipePrepared = comm.PipePrepared;
-pub const PipeStagePrepared = comm.PipeStagePrepared;
+pub const ShaderPipeStatic = comm.ShaderPipeStatic;
+pub const ShaderPipeStageStatic = comm.ShaderPipeStageStatic;
+pub const ShaderPipePrepared = comm.ShaderPipePrepared;
+pub const ShaderPipeStagePrepared = comm.ShaderPipeStagePrepared;
+pub const GreyToEmissivityStage = comm.GreyToEmissivityStage;
+pub const ClampStage = comm.ClampStage;
+pub const SelectedShader = comm.SelectedShader;
+pub const hasShader = comm.hasShader;
+pub const selectShader = comm.selectShader;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func

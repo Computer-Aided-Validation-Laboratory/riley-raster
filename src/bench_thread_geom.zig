@@ -124,7 +124,7 @@ fn duplicateMeshInput(
         }
     }
 
-    var new_shader: shaderops.ShaderInput = undefined;
+    var new_shader: shaderops.ShaderDirectInput = undefined;
     switch (base_mesh.shaders.direct.?) {
         .func => |base_func| {
             var new_uvs: ?NDArray(F) = null;

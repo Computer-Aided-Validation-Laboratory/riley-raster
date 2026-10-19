@@ -114,7 +114,7 @@ fn textureShader(
     comptime bits: u8,
     linear: bool,
     normal_type: shaderops.NormalType,
-) shaderops.ShaderInput {
+) shaderops.ShaderDirectInput {
     const samp_cfg = texops.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
@@ -180,7 +180,7 @@ fn loadZooMesh(
         else => .avg,
     };
 
-    const shader: shaderops.ShaderInput = switch (case_index) {
+    const shader: shaderops.ShaderDirectInput = switch (case_index) {
         0, 2 => textureShader(
             T,
             C,

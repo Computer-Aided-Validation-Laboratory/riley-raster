@@ -274,7 +274,9 @@ pub fn calcAllFramesImageDims(
     for (cam_inps) |camera| {
         var compatible = false;
         for (meshes) |mesh| {
-            if (mesh.shaders.has(camera.shader_selection)) compatible = true;
+            if (shaderops.hasShader(mesh.shaders, camera.shader_selection)) {
+                compatible = true;
+            }
         }
         if (!compatible) return error.NoCompatibleShader;
     }

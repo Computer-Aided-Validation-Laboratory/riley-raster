@@ -12,6 +12,22 @@ pub const max_channels = buildconfig.config.max_image_channels;
 pub const SlotKind = enum { channel, field, parameter, constant };
 pub const Slot = struct { kind: SlotKind, index: u8 };
 
+pub const GreyToEmissivityStage = struct {
+    source: Slot,
+    destination: Slot,
+    black: F,
+    white: F,
+    grey_black: F = 0,
+    grey_white: F = 1,
+};
+
+pub const ClampStage = struct {
+    source: Slot,
+    destination: Slot,
+    lower: F,
+    upper: F,
+};
+
 pub fn Outputs(comptime T: type) type {
     return struct {
         channel: [max_slots]T = undefined,

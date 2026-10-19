@@ -14,7 +14,7 @@ pub fn main(init: std.process.Init) !void {
     var coord_values = [_]F{ -1, -1, 0, 1, -1, 0, 0, 1, 0 };
     var connect_values = [_]usize{ 0, 1, 2 };
     const coords = meshio.Coords.init(&coord_values, 3);
-    const checker: shaderops.ShaderInput = .{ .func = .{
+    const checker: shaderops.ShaderDirectInput = .{ .func = .{
         .coord_mode = .world_reference,
         .builtin = .checker,
         .params = .{ .coord_scale = .{ 4, 4 }, .settings = .{ .checker = .{} } },
@@ -22,7 +22,7 @@ pub fn main(init: std.process.Init) !void {
     } };
     const channel = shaderpipe.Slot{ .kind = .channel, .index = 0 };
     const parameter = shaderpipe.Slot{ .kind = .parameter, .index = 0 };
-    const stages = [_]shaderops.PipeStageInput{
+    const stages = [_]shaderops.ShaderPipeStageInput{
         .{ .source = .{ .shader = checker, .destination = channel } },
         .{
             .source = .{

@@ -661,7 +661,7 @@ pub fn loadBenchmarkMeshInput(
         null,
         null,
     );
-    var shader: so.ShaderInput = undefined;
+    var shader: so.ShaderDirectInput = undefined;
     switch (shader_type) {
         .nodal_grey, .nodal_rgb => {
             const field_raw = try loadNDArrayFromCSV(
@@ -949,7 +949,7 @@ fn runBenchmarkInternal(
     _ = calcOutputChannels(shader_type);
 
     const output_slot: shaderpipe.Slot = .{ .kind = .channel, .index = 0 };
-    const pipe_stages = [_]so.PipeStageInput{.{ .source = .{
+    const pipe_stages = [_]so.ShaderPipeStageInput{.{ .source = .{
         .shader = mesh_input.shaders.direct.?,
         .destination = output_slot,
     } }};

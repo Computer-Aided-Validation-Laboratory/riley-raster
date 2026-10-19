@@ -221,7 +221,7 @@ fn makeMeshInput(
     const sim_data = try loadStaticMesh(outer_alloc, io, data_dir);
     const uvs = try loadRabbitUvMap(outer_alloc, io, data_dir);
 
-    const shader: shaderops.ShaderInput = switch (shader_mode) {
+    const shader: shaderops.ShaderDirectInput = switch (shader_mode) {
         .tex => blk: {
             const input = shaderops.TexInput(u8, C){
                 .uvs = uvs.array,

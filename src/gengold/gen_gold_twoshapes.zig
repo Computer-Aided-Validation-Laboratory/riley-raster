@@ -149,7 +149,7 @@ fn loadShapeMesh(
     const temp = try sliceFieldToSingleFrame(allocator, raw_temp);
     const disp = try sliceFieldToSingleFrame(allocator, raw_disp);
 
-    const shader: shaderops.ShaderInput = switch (shader_kind) {
+    const shader: shaderops.ShaderDirectInput = switch (shader_kind) {
         .nodal_grey => .{ .nodal = .{
             .field = temp,
             .bits = 8,

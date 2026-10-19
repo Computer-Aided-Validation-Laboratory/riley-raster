@@ -18,7 +18,12 @@ pub fn LocalPipeBuff(comptime N: usize) type {
     return struct {
         stages: [8]shaderops.LocalShaderBuff(N) = undefined,
 
-        pub fn load(self: *@This(), pipe: *const shaderops.PipePrepared, elem_idx: usize, frame_idx: usize) void {
+        pub fn load(
+            self: *@This(),
+            pipe: *const shaderops.ShaderPipePrepared,
+            elem_idx: usize,
+            frame_idx: usize,
+        ) void {
             for (pipe.stages, 0..) |stage, si| switch (stage) {
                 .source => |src| {
                     const buf = &self.stages[si];
@@ -65,7 +70,7 @@ pub fn PipeKernel(comptime N: usize) type {
             ctx_shade: shaderops.ShadeContext,
             interp: shaderops.InterpData(N),
             pipe_buf: *const LocalBuff,
-            pipe: *const shaderops.PipePrepared,
+            pipe: *const shaderops.ShaderPipePrepared,
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
@@ -113,7 +118,7 @@ pub fn PipeKernel(comptime N: usize) type {
             v_nodes_inv_z: [N]VecSF,
             v_subpx_z: VecSF,
             pipe_buf: *const LocalBuff,
-            pipe: *const shaderops.PipePrepared,
+            pipe: *const shaderops.ShaderPipePrepared,
             spx_image_scratch: *MatSlice(F),
         ) void {
             var outputs: shaderpipe.VectorOutputs = .{};
@@ -163,15 +168,27 @@ pub fn PipeKernel(comptime N: usize) type {
     };
 }
 
-fn sourceChannels(source: shaderops.ShaderPrepared) u8 {
+fn sourceChannels(source: shaderops.ShaderDirectPrepared) u8 {
     return switch (source) {
-        .nodal => |n| if (n.elem_field.dims.len == 3) @intCast(n.elem_field.dims[1]) else @intCast(n.elem_field.dims[2]),
+        .nodal => |n| if (n.elem_field.dims.len == 3)
+            @intCast(n.elem_field.dims[1])
+        else
+            @intCast(n.elem_field.dims[2]),
         .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f, .func_rgb => 3,
         else => 1,
     };
 }
 
-fn shadeSource(comptime N: usize, comptime coord_space: CoordSpace, ctx: shaderops.ShadeContext, interp: shaderops.InterpData(N), buf: *const shaderops.LocalShaderBuff(N), source: *const shaderops.ShaderPrepared, ctx_report: anytype, scratch: *MatSlice(F)) void {
+fn shadeSource(
+    comptime N: usize,
+    comptime coord_space: CoordSpace,
+    ctx: shaderops.ShadeContext,
+    interp: shaderops.InterpData(N),
+    buf: *const shaderops.LocalShaderBuff(N),
+    source: *const shaderops.ShaderDirectPrepared,
+    ctx_report: anytype,
+    scratch: *MatSlice(F),
+) void {
     switch (source.*) {
         .nodal => |*s| shadekerns.NodalKernel(N).shade(coord_space, ctx, interp, buf, s, ctx_report, scratch),
         .tex_u8 => |*s| shadekerns.TexKernel(N, u8, 1).shade(coord_space, ctx, interp, buf, s, ctx_report, scratch),
@@ -185,7 +202,21 @@ fn shadeSource(comptime N: usize, comptime coord_space: CoordSpace, ctx: shadero
     }
 }
 
-fn shadeSourceSIMD(comptime N: usize, comptime coord_space: CoordSpace, ctx: shaderops.ShadeContext, ctx_report: anytype, mask: VecSB, weights: [N]VecSF, xi: VecSF, eta: VecSF, inv_z: [N]VecSF, subpx_z: VecSF, buf: *const shaderops.LocalShaderBuff(N), source: *const shaderops.ShaderPrepared, scratch: *MatSlice(F)) void {
+fn shadeSourceSIMD(
+    comptime N: usize,
+    comptime coord_space: CoordSpace,
+    ctx: shaderops.ShadeContext,
+    ctx_report: anytype,
+    mask: VecSB,
+    weights: [N]VecSF,
+    xi: VecSF,
+    eta: VecSF,
+    inv_z: [N]VecSF,
+    subpx_z: VecSF,
+    buf: *const shaderops.LocalShaderBuff(N),
+    source: *const shaderops.ShaderDirectPrepared,
+    scratch: *MatSlice(F),
+) void {
     switch (source.*) {
         .nodal => |*s| shadekerns.NodalKernel(N).shadeSIMD(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, scratch),
         .tex_u8 => |*s| shadekerns.TexKernel(N, u8, 1).shadeSIMD(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, scratch),

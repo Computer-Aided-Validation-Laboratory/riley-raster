@@ -650,7 +650,7 @@ pub fn buildScene2Meshes(
     prep: *const Scene2Prepared,
     textures: *const FullTextures,
 ) [2]MeshInput {
-    const sphere1_shader = shaderops.ShaderInput{
+    const sphere1_shader = shaderops.ShaderDirectInput{
         .func = .{
             .uvs = prep.sphere1_uvs.array,
             .builtin = .checker,
@@ -666,7 +666,7 @@ pub fn buildScene2Meshes(
         },
     };
 
-    const sphere2_shader = shaderops.ShaderInput{
+    const sphere2_shader = shaderops.ShaderDirectInput{
         .tex_u8 = .{
             .uvs = prep.sphere2_uvs.array,
             .tex = textures.tex_u8_mono,
@@ -1088,7 +1088,7 @@ pub fn buildScene3Meshes(
     for (0..16) |ii| {
         const shader_idx = ii % 8;
         const shader = switch (shader_idx) {
-            0 => shaderops.ShaderInput{
+            0 => shaderops.ShaderDirectInput{
                 .nodal = .{
                     .field = prep.meshes[ii].field.?,
                     .scale_over = .within_frames,
@@ -1097,7 +1097,7 @@ pub fn buildScene3Meshes(
                     .normal_type = .none,
                 },
             },
-            1 => shaderops.ShaderInput{
+            1 => shaderops.ShaderDirectInput{
                 .func = .{
                     .uvs = prep.meshes[ii].uvs.array,
                     .builtin = .checker,
@@ -1112,7 +1112,7 @@ pub fn buildScene3Meshes(
                     .normal_type = .none,
                 },
             },
-            2 => shaderops.ShaderInput{
+            2 => shaderops.ShaderDirectInput{
                 .tex_u8 = .{
                     .uvs = prep.meshes[ii].uvs.array,
                     .tex = textures.tex_u8_mono,
@@ -1125,7 +1125,7 @@ pub fn buildScene3Meshes(
                     .normal_type = .none,
                 },
             },
-            3 => shaderops.ShaderInput{
+            3 => shaderops.ShaderDirectInput{
                 .func = .{
                     .uvs = prep.meshes[ii].uvs.array,
                     .builtin = .eggbox,
@@ -1140,7 +1140,7 @@ pub fn buildScene3Meshes(
                     .normal_type = .none,
                 },
             },
-            4 => shaderops.ShaderInput{
+            4 => shaderops.ShaderDirectInput{
                 .nodal = .{
                     .field = prep.meshes[ii].field.?,
                     .scale_over = .over_frames,
@@ -1149,7 +1149,7 @@ pub fn buildScene3Meshes(
                     .normal_type = .none,
                 },
             },
-            5 => shaderops.ShaderInput{
+            5 => shaderops.ShaderDirectInput{
                 .tex_u16 = .{
                     .uvs = prep.meshes[ii].uvs.array,
                     .tex = textures.tex_u16_mono,
@@ -1162,7 +1162,7 @@ pub fn buildScene3Meshes(
                     .normal_type = .none,
                 },
             },
-            6 => shaderops.ShaderInput{
+            6 => shaderops.ShaderDirectInput{
                 .func = .{
                     .uvs = prep.meshes[ii].uvs.array,
                     .builtin = .checker_smooth,
@@ -1177,7 +1177,7 @@ pub fn buildScene3Meshes(
                     .normal_type = .none,
                 },
             },
-            7 => shaderops.ShaderInput{
+            7 => shaderops.ShaderDirectInput{
                 .tex_f = .{
                     .uvs = prep.meshes[ii].uvs.array,
                     .tex = textures.tex_f64_mono,
@@ -1378,7 +1378,7 @@ pub fn buildScene2ImageOutputMeshes(
     is_u16: bool,
 ) [2]MeshInput {
     const bits: ?u8 = if (is_u16) 16 else 8;
-    const sphere1_shader: shaderops.ShaderInput = if (is_rgb)
+    const sphere1_shader: shaderops.ShaderDirectInput = if (is_rgb)
         .{
             .func_rgb = .{
                 .uvs = prep.sphere1_uvs.array,
@@ -1416,7 +1416,7 @@ pub fn buildScene2ImageOutputMeshes(
             },
         };
 
-    const sphere2_shader: shaderops.ShaderInput = if (is_rgb)
+    const sphere2_shader: shaderops.ShaderDirectInput = if (is_rgb)
         (if (is_u16)
             .{
                 .tex_rgb_u16 = .{

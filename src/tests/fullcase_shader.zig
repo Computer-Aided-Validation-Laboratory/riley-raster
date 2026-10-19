@@ -139,7 +139,7 @@ pub fn buildShaderCaseMeshes(
             else
                 prep.cylinder_temp;
 
-            const sphere_shader = shaderops.ShaderInput{
+            const sphere_shader = shaderops.ShaderDirectInput{
                 .nodal = .{
                     .field = sphere_field,
                     .bits = 8,
@@ -148,7 +148,7 @@ pub fn buildShaderCaseMeshes(
                     .normal_type = n.normal_type,
                 },
             };
-            const cyl_shader = shaderops.ShaderInput{
+            const cyl_shader = shaderops.ShaderDirectInput{
                 .nodal = .{
                     .field = cyl_field,
                     .bits = 8,
@@ -181,7 +181,7 @@ pub fn buildShaderCaseMeshes(
                 .mode = .direct,
             };
 
-            const sphere_shader: shaderops.ShaderInput = if (t.is_rgb)
+            const sphere_shader: shaderops.ShaderDirectInput = if (t.is_rgb)
                 switch (t.dtype) {
                     .u8 => .{
                         .tex_rgb_u8 = .{
@@ -235,7 +235,7 @@ pub fn buildShaderCaseMeshes(
                 },
             };
 
-            const cyl_shader: shaderops.ShaderInput = if (t.is_rgb)
+            const cyl_shader: shaderops.ShaderDirectInput = if (t.is_rgb)
                 switch (t.dtype) {
                     .u8 => .{
                         .tex_rgb_u8 = .{
@@ -332,7 +332,7 @@ pub fn buildShaderCaseMeshes(
                 .params = params,
                 .normal_type = f.normal_type,
             };
-            const sphere_shader: shaderops.ShaderInput = if (f.is_rgb)
+            const sphere_shader: shaderops.ShaderDirectInput = if (f.is_rgb)
                 .{ .func_rgb = sphere_func_input }
             else
                 .{ .func = sphere_func_input };
@@ -348,7 +348,7 @@ pub fn buildShaderCaseMeshes(
                 .params = params,
                 .normal_type = f.normal_type,
             };
-            const cyl_shader: shaderops.ShaderInput = if (f.is_rgb)
+            const cyl_shader: shaderops.ShaderDirectInput = if (f.is_rgb)
                 .{ .func_rgb = cyl_func_input }
             else
                 .{ .func = cyl_func_input };

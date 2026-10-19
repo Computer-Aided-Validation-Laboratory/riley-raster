@@ -214,7 +214,8 @@ pub fn main(init: std.process.Init) !void {
             shader_types[0..],
             tex_func_shader_types[0..],
             samp_cfgs[0..],
-            if (bench_args.shader_subset == .shaderpipe_baseline)
+            if (bench_args.shader_subset == .shaderpipe_baseline or
+                bench_args.shader_subset == .shaderpipe_compare)
                 shaderpipe_func_cases[0..]
             else
                 tex_func_cases[0..],
@@ -231,7 +232,8 @@ pub fn main(init: std.process.Init) !void {
             shader_types[0..],
             tex_func_shader_types[0..],
             samp_cfgs[0..],
-            if (bench_args.shader_subset == .shaderpipe_baseline)
+            if (bench_args.shader_subset == .shaderpipe_baseline or
+                bench_args.shader_subset == .shaderpipe_compare)
                 shaderpipe_func_cases[0..]
             else
                 tex_func_cases[0..],

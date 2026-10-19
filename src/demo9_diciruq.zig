@@ -45,7 +45,7 @@ pub fn main(init: std.process.Init) !void {
     const temperature = try buildTemperatureField(allocator, sim_data.coords, selected_disp.getTimeN());
     const uvs = try uvio.loadUVMap(allocator, io, data_dir ++ "uvs.csv");
     const texture = try imageio.loadImage(u8, 1, allocator, io, "texture/speckle_mono.bmp", .bmp);
-    const speckle: shaderops.ShaderInput = .{ .tex_u8 = .{
+    const speckle: shaderops.ShaderDirectInput = .{ .tex_u8 = .{
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
@@ -55,7 +55,7 @@ pub fn main(init: std.process.Init) !void {
     const channel = shaderpipe.Slot{ .kind = .channel, .index = 0 };
     const field = shaderpipe.Slot{ .kind = .field, .index = 0 };
     const parameter = shaderpipe.Slot{ .kind = .parameter, .index = 0 };
-    const stages = [_]shaderops.PipeStageInput{
+    const stages = [_]shaderops.ShaderPipeStageInput{
         .{ .source = .{ .shader = speckle, .destination = channel } },
         .{ .grey_to_emissivity = .{ .source = channel, .destination = parameter, .black = 0.96, .white = 0.90, .grey_black = 0, .grey_white = 255 } },
         .{ .source = .{ .shader = .{ .nodal = .{ .field = temperature, .bits = null, .scaling = .none } }, .destination = field } },

@@ -16,9 +16,7 @@ const vecslice = @import("vecslice.zig");
 const shapefun = @import("shapefun.zig");
 
 const meshio = @import("meshio.zig");
-
 const uvio = @import("uvio.zig");
-
 const imageio = @import("imageio.zig");
 
 const rastcfg = @import("rasterconfig.zig");
@@ -140,14 +138,24 @@ pub fn countFrames(meshes: []const MeshInput, cameras: []const cam.CameraInput) 
     for (meshes) |mesh| {
         var selected = false;
         for (cameras) |camera| {
-            if (mesh.shaders.has(camera.shader_selection)) selected = true;
+            if (shaderops.hasShader(mesh.shaders, camera.shader_selection)) {
+                selected = true;
+            }
         }
+        
         if (!selected) continue;
+
         if (mesh.disp) |field| {
             num_time = @max(num_time, field.array.dims[dim_time_pre]);
         }
+
         for (cameras) |camera| {
-            const selected_shader = mesh.shaders.select(camera.shader_selection) orelse continue;
+            const selected_shader = shaderops.selectShader(
+                shaderops.ShaderDirectInput,
+                shaderops.ShaderPipeInput,
+                &mesh.shaders,
+                camera.shader_selection,
+            ) orelse continue;
             switch (selected_shader) {
                 .direct => |shader| switch (shader.*) {
                     .nodal => |nodal| num_time = @max(num_time, nodal.field.array.dims[dim_time_pre]),
@@ -170,7 +178,12 @@ pub fn countOutputFields(meshes: []const MeshInput, cameras: []const cam.CameraI
     var num_fields: u8 = 0;
     for (meshes) |mesh| {
         for (cameras) |camera| {
-            const selected_shader = mesh.shaders.select(camera.shader_selection) orelse continue;
+            const selected_shader = shaderops.selectShader(
+                shaderops.ShaderDirectInput,
+                shaderops.ShaderPipeInput,
+                &mesh.shaders,
+                camera.shader_selection,
+            ) orelse continue;
             const mesh_fields: u8 = switch (selected_shader) {
                 .direct => |shader| switch (shader.*) {
                     .nodal => |nodal| nodal.field.getFieldsN(),
@@ -199,7 +212,7 @@ pub fn countStaticMeshElems(mesh_static: []const MeshStatic) usize {
 }
 
 pub fn meshSupportsSelection(mesh: MeshStatic, selection: shaderops.ShaderSelection) bool {
-    return mesh.shaders.has(selection);
+    return shaderops.hasShader(mesh.shaders, selection);
 }
 
 pub fn countMeshInputElems(meshes: []const MeshInput) usize {
@@ -352,15 +365,23 @@ pub fn initMeshStatic(
     };
 }
 
-fn initPipeStatic(allocator: std.mem.Allocator, pipe: shaderops.PipeInput, connect: *const meshio.Connect, channels: u8) !shaderops.PipeStatic {
-    const stages = try allocator.alloc(shaderops.PipeStageStatic, pipe.stages.len);
+fn initPipeStatic(
+    allocator: std.mem.Allocator,
+    pipe: shaderops.ShaderPipeInput,
+    connect: *const meshio.Connect,
+    channels: u8,
+) !shaderops.ShaderPipeStatic {
+    const stages = try allocator.alloc(shaderops.ShaderPipeStageStatic, pipe.stages.len);
     for (pipe.stages, 0..) |stage, si| {
         stages[si] = switch (stage) {
             .source => |src| .{ .source = .{
                 .shader = try initShaderStatic(allocator, src.shader, connect),
                 .destination = src.destination,
                 .global_scaling = switch (src.shader) {
-                    .nodal => |n| if (n.scale_over == .over_frames) imageops.getScalingParamsNDArray(&n.field.array, null, n.scaling) else null,
+                    .nodal => |n| if (n.scale_over == .over_frames)
+                        imageops.getScalingParamsNDArray(&n.field.array, null, n.scaling)
+                    else
+                        null,
                     else => null,
                 },
             } },
@@ -368,11 +389,20 @@ fn initPipeStatic(allocator: std.mem.Allocator, pipe: shaderops.PipeInput, conne
             .clamp => |c| .{ .clamp = c },
         };
     }
-    return .{ .stages = stages, .resolver = pipe.resolver, .constants = pipe.constants, .channels = channels };
+    return .{
+        .stages = stages,
+        .resolver = pipe.resolver,
+        .constants = pipe.constants,
+        .channels = channels,
+    };
 }
 
-fn initShaderStatic(allocator: std.mem.Allocator, shader_in: shaderops.ShaderInput, connect: *const meshio.Connect) !shaderops.ShaderStatic {
-    var shader_static: shaderops.ShaderStatic = undefined;
+fn initShaderStatic(
+    allocator: std.mem.Allocator,
+    shader_in: shaderops.ShaderDirectInput,
+    connect: *const meshio.Connect,
+) !shaderops.ShaderDirectStatic {
+    var shader_static: shaderops.ShaderDirectStatic = undefined;
     switch (shader_in) {
         .nodal => |nodal_in| {
             shader_static = .{ .nodal = .{
@@ -681,7 +711,7 @@ fn initMeshFrameWorkspace(
     };
 }
 
-fn shaderNeedsDeformedWorld(shader: shaderops.ShaderStatic) bool {
+fn shaderNeedsDeformedWorld(shader: shaderops.ShaderDirectStatic) bool {
     return switch (shader) {
         .func => |func_static| func_static.coord_mode == .world_deformed,
         .func_rgb => |func_static| func_static.coord_mode == .world_deformed,
@@ -1572,22 +1602,50 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             if (self.mesh_static.shaders.multifield) |pipe| mesh_prep.shaders.multifield = try self.preparePipeStatic(outer_alloc, pipe);
         }
 
-        fn preparePipeStatic(self: *FrameMeshPipelineType, outer_alloc: std.mem.Allocator, pipe: shaderops.PipeStatic) !shaderops.PipePrepared {
-            const stages = try outer_alloc.alloc(shaderops.PipeStagePrepared, pipe.stages.len);
+        fn preparePipeStatic(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+            pipe: shaderops.ShaderPipeStatic,
+        ) !shaderops.ShaderPipePrepared {
+            const stages = try outer_alloc.alloc(
+                shaderops.ShaderPipeStagePrepared,
+                pipe.stages.len,
+            );
             for (pipe.stages, 0..) |stage, si| {
                 stages[si] = switch (stage) {
                     .source => |src| .{ .source = .{
-                        .shader = try self.prepareShaderStatic(outer_alloc, src.shader, if (src.shader == .nodal and src.global_scaling == null) imageops.getScalingParamsNDArray(&src.shader.nodal.field.array, self.frame_idx, src.shader.nodal.scaling) else src.global_scaling),
+                        .shader = try self.prepareShaderStatic(
+                            outer_alloc,
+                            src.shader,
+                            if (src.shader == .nodal and src.global_scaling == null)
+                                imageops.getScalingParamsNDArray(
+                                    &src.shader.nodal.field.array,
+                                    self.frame_idx,
+                                    src.shader.nodal.scaling,
+                                )
+                            else
+                                src.global_scaling,
+                        ),
                         .destination = src.destination,
                     } },
                     .grey_to_emissivity => |m| .{ .grey_to_emissivity = m },
                     .clamp => |c| .{ .clamp = c },
                 };
             }
-            return .{ .stages = stages, .resolver = pipe.resolver, .constants = pipe.constants, .channels = pipe.channels };
+            return .{
+                .stages = stages,
+                .resolver = pipe.resolver,
+                .constants = pipe.constants,
+                .channels = pipe.channels,
+            };
         }
 
-        fn prepareShaderStatic(self: *FrameMeshPipelineType, outer_alloc: std.mem.Allocator, shader_static: shaderops.ShaderStatic, scaling: ?imageops.ScalingParams) !shaderops.ShaderPrepared {
+        fn prepareShaderStatic(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+            shader_static: shaderops.ShaderDirectStatic,
+            scaling: ?imageops.ScalingParams,
+        ) !shaderops.ShaderDirectPrepared {
             const previous_scaling = self.scaling_params;
             self.scaling_params = scaling;
             defer self.scaling_params = previous_scaling;
@@ -1709,7 +1767,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
             nodal_static: shaderops.NodalStatic,
-        ) !shaderops.ShaderPrepared {
+        ) !shaderops.ShaderDirectPrepared {
             const N = comptime MT.getNodesNum();
             var elem_field = try ndarray.NDArray(F).initFlat(
                 outer_alloc,
@@ -1789,7 +1847,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             outer_alloc: std.mem.Allocator,
             self: *FrameMeshPipelineType,
             tex_static: shaderops.TexStatic(T, C),
-        ) !shaderops.ShaderPrepared {
+        ) !shaderops.ShaderDirectPrepared {
             const params = imageops.getScalingParamsTex(
                 T,
                 C,
@@ -1909,7 +1967,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             outer_alloc: std.mem.Allocator,
             self: *FrameMeshPipelineType,
             func_static: shaderops.FuncStatic,
-        ) !shaderops.ShaderPrepared {
+        ) !shaderops.ShaderDirectPrepared {
             const factors = imageops.getScaleFactors(
                 func_static.scaling,
                 func_static.bits,

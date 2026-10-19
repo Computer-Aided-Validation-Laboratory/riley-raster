@@ -176,9 +176,11 @@ pub fn checkRenderInps(
 fn checkPipeCompatibility(cameras: []const cam.CameraInput, meshes: []const meshpipe.MeshInput) InputValidationError!void {
     for (cameras) |camera| {
         var compatible = false;
-        for (meshes) |mesh| if (mesh.shaders.has(camera.shader_selection)) {
-            compatible = true;
-        };
+        for (meshes) |mesh| {
+            if (shaderops.hasShader(mesh.shaders, camera.shader_selection)) {
+                compatible = true;
+            }
+        }
         if (!compatible) return error.NoCompatibleShader;
     }
 }
@@ -517,7 +519,11 @@ fn checkGlobalSubpxAlignment(
 // Shader & Texture Metadata Checks
 // --------------------------------------------------------------------------------------
 
-fn checkPipeMetadata(pipe: shaderops.PipeInput, coords_num: usize, channels: u8) InputValidationError!void {
+fn checkPipeMetadata(
+    pipe: shaderops.ShaderPipeInput,
+    coords_num: usize,
+    channels: u8,
+) InputValidationError!void {
     if (channels == 0 or channels > shaderpipe.max_channels or
         (pipe.channels != 0 and pipe.channels != channels) or
         pipe.stages.len == 0 or pipe.stages.len > 8) return error.InvalidShaderPipe;
@@ -559,7 +565,7 @@ fn checkPipeMetadata(pipe: shaderops.PipeInput, coords_num: usize, channels: u8)
 }
 
 fn checkShaderMetadata(
-    shader: shaderops.ShaderInput,
+    shader: shaderops.ShaderDirectInput,
     coords_num: usize,
 ) InputValidationError!void {
     switch (shader) {

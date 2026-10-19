@@ -36,7 +36,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     const aa = arena.allocator();
     const prepared = try orch.prepareSingleMeshCase(aa, io, "distort_rot", .quad4, .{ 48, 48 }, 1.15, "data/edge");
 
-    const stages = [_]shaderops.PipeStageInput{
+    const stages = [_]shaderops.ShaderPipeStageInput{
         .{ .source = .{ .shader = .{ .func = .{
             .builtin = .checker,
             .params = .{ .coord_scale = .{ 4, 4 }, .settings = .{ .checker = .{} } },
@@ -54,7 +54,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .{ .kind = .channel, .index = 0 },
         .{ .kind = .channel, .index = 1 },
     };
-    const pipes = [_]shaderops.PipeInput{.{
+    const pipes = [_]shaderops.ShaderPipeInput{.{
         .stages = &stages,
         .resolver = .{ .sum = &sum_slots },
     }};
@@ -88,7 +88,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     };
     const zero_disp = try meshio.Field.initAlloc(aa, 4, prepared.sim_data.coords.mat.rows_num, 3);
     @memset(zero_disp.array.slice, 0);
-    const nodal_shader: shaderops.ShaderInput = .{ .nodal = .{
+    const nodal_shader: shaderops.ShaderDirectInput = .{ .nodal = .{
         .field = timed_field,
         .bits = null,
         .scaling = .none,
@@ -103,12 +103,12 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     const direct_result = try riley.raster(aa, io, &.{direct_cam}, &.{direct_mesh}, parity_config, null);
     const direct_image = direct_result orelse return error.NoResult;
     defer aa.free(direct_image.slice);
-    const parity_stage = [_]shaderops.PipeStageInput{.{ .source = .{
+    const parity_stage = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
         .shader = nodal_shader,
         .destination = .{ .kind = .channel, .index = 0 },
     } }};
     const parity_slots = [_]shaderpipe.Slot{.{ .kind = .channel, .index = 0 }};
-    const parity_pipe = [_]shaderops.PipeInput{.{
+    const parity_pipe = [_]shaderops.ShaderPipeInput{.{
         .stages = &parity_stage,
         .resolver = .{ .identity = &parity_slots },
     }};
@@ -172,7 +172,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     };
     const radiance = try response.prepareRadianceLookup(aa, 280, 340, 0.25);
     const speckle = try imageio.loadImage(u8, 1, aa, io, "texture/speck128_mono_u8.bmp", .bmp);
-    const ir_stages = [_]shaderops.PipeStageInput{
+    const ir_stages = [_]shaderops.ShaderPipeStageInput{
         .{ .source = .{ .shader = .{ .nodal = .{
             .field = temperature,
             .bits = null,
@@ -192,7 +192,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             .white = 0.55,
         } },
     };
-    const ir_pipe = [_]shaderops.PipeInput{.{
+    const ir_pipe = [_]shaderops.ShaderPipeInput{.{
         .stages = &ir_stages,
         .resolver = .{ .greybody_band = .{
             .temperature = .{ .kind = .field, .index = 0 },
@@ -230,7 +230,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     memory_config.save_strategy = .memory;
     try std.testing.expectError(error.NoCompatibleShader, riley.raster(aa, io, &.{invalid_camera}, &.{mesh}, memory_config, null));
     const missing_slots = [_]shaderpipe.Slot{.{ .kind = .channel, .index = 4 }};
-    const invalid_pipe = [_]shaderops.PipeInput{.{
+    const invalid_pipe = [_]shaderops.ShaderPipeInput{.{
         .stages = &stages,
         .resolver = .{ .identity = &missing_slots },
     }};
@@ -240,7 +240,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
 
     // The fixed local buffer is indexed by total stage position, including
     // transforms. A source at the final valid position must load correctly.
-    var max_stages: [8]shaderops.PipeStageInput = undefined;
+    var max_stages: [8]shaderops.ShaderPipeStageInput = undefined;
     max_stages[0] = parity_stage[0];
     for (1..7) |si| max_stages[si] = .{ .clamp = .{
         .source = .{ .kind = .channel, .index = @intCast(si - 1) },
@@ -253,7 +253,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .destination = .{ .kind = .channel, .index = 7 },
     } };
     const last_slot = [_]shaderpipe.Slot{.{ .kind = .channel, .index = 7 }};
-    const max_pipe = [_]shaderops.PipeInput{.{
+    const max_pipe = [_]shaderops.ShaderPipeInput{.{
         .stages = &max_stages,
         .resolver = .{ .identity = &last_slot },
     }};
@@ -265,7 +265,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     for (direct_image.slice, max_image.slice) |expected, actual| {
         try std.testing.expectApproxEqAbs(expected, actual, sample_tol);
     }
-    var too_many_stages: [9]shaderops.PipeStageInput = undefined;
+    var too_many_stages: [9]shaderops.ShaderPipeStageInput = undefined;
     @memcpy(too_many_stages[0..8], max_stages[0..]);
     too_many_stages[8] = .{ .clamp = .{
         .source = .{ .kind = .channel, .index = 7 },
@@ -273,7 +273,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .lower = 0,
         .upper = 1,
     } };
-    const overflow_pipe = [_]shaderops.PipeInput{.{
+    const overflow_pipe = [_]shaderops.ShaderPipeInput{.{
         .stages = &too_many_stages,
         .resolver = .{ .identity = &last_slot },
     }};
@@ -285,7 +285,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     for (0..prepared.sim_data.coords.mat.rows_num) |node| {
         for (0..4) |ch| channels.array.set(&.{ 0, node, ch }, @as(F, @floatFromInt(ch + 1)) * 0.1);
     }
-    const rgb_stages = [_]shaderops.PipeStageInput{.{ .source = .{
+    const rgb_stages = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
         .shader = .{ .func_rgb = .{
             .builtin = .constant,
             .params = .{ .settings = .{ .constant = .{ .value_rgb = .{ 0.2, 0.5, 0.8 } } } },
@@ -294,7 +294,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         } },
         .destination = .{ .kind = .channel, .index = 0 },
     } }};
-    const multi_stages = [_]shaderops.PipeStageInput{.{ .source = .{
+    const multi_stages = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
         .shader = .{ .nodal = .{ .field = channels, .bits = null, .scaling = .none } },
         .destination = .{ .kind = .channel, .index = 0 },
     } }};
@@ -302,11 +302,11 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .{ .kind = .channel, .index = 0 }, .{ .kind = .channel, .index = 1 },
         .{ .kind = .channel, .index = 2 },
     };
-    const invalid_rgb_stages = [_]shaderops.PipeStageInput{.{ .source = .{
+    const invalid_rgb_stages = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
         .shader = rgb_stages[0].source.shader,
         .destination = .{ .kind = .channel, .index = 255 },
     } }};
-    const invalid_rgb_pipe = [_]shaderops.PipeInput{.{
+    const invalid_rgb_pipe = [_]shaderops.ShaderPipeInput{.{
         .stages = &invalid_rgb_stages,
         .resolver = .{ .identity = &rgb_slots },
     }};
@@ -319,7 +319,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .{ .kind = .channel, .index = 0 }, .{ .kind = .channel, .index = 1 },
         .{ .kind = .channel, .index = 2 }, .{ .kind = .channel, .index = 3 },
     };
-    const mixed_pipes = [_]shaderops.PipeInput{
+    const mixed_pipes = [_]shaderops.ShaderPipeInput{
         .{ .stages = &rgb_stages, .resolver = .{ .identity = &rgb_slots } },
         .{ .channels = 4, .stages = &multi_stages, .resolver = .{ .identity = &multi_slots } },
     };
@@ -352,7 +352,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
 
     const unused_field = try meshio.Field.initAlloc(aa, 6, prepared.sim_data.coords.mat.rows_num, 4);
     @memset(unused_field.array.slice, 0.1);
-    const unused_stages = [_]shaderops.PipeStageInput{.{ .source = .{
+    const unused_stages = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
         .shader = .{ .nodal = .{ .field = unused_field, .bits = null, .scaling = .none } },
         .destination = .{ .kind = .channel, .index = 0 },
     } }};
@@ -382,7 +382,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         try std.testing.expectApproxEqAbs(expected, multimodal.get(&.{ 2, frame, 0, y, x }), sample_tol);
     };
 
-    const expr_stages = [_]shaderops.PipeStageInput{
+    const expr_stages = [_]shaderops.ShaderPipeStageInput{
         rgb_stages[0],
         .{ .source = .{
             .shader = .{ .func_rgb = .{
@@ -421,7 +421,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .multiply,
         .{ .store = 0 },
     };
-    const expression_pipe = [_]shaderops.PipeInput{.{
+    const expression_pipe = [_]shaderops.ShaderPipeInput{.{
         .stages = &expr_stages,
         .resolver = .{ .expression = .{ .operations = &expression, .constants = &.{0.5} } },
     }};
@@ -448,7 +448,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             front_coords.mat.set(node, axis, front_coords.mat.get(node, axis) + toward_camera * 0.01);
         }
     }
-    const front_rgb_pipe = [_]shaderops.PipeInput{mixed_pipes[0]};
+    const front_rgb_pipe = [_]shaderops.ShaderPipeInput{mixed_pipes[0]};
     var front_rgb_mesh = mixed_mesh;
     front_rgb_mesh.coords = front_coords;
     front_rgb_mesh.shaders = .{ .rgb = front_rgb_pipe[0] };

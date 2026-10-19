@@ -109,7 +109,7 @@ fn checkMeshShaderArrays(mesh: meshpipe.MeshInput) InputArrayError!void {
     }
 }
 
-fn checkShaderArrays(shader: shaderops.ShaderInput) InputArrayError!void {
+fn checkShaderArrays(shader: shaderops.ShaderDirectInput) InputArrayError!void {
     switch (shader) {
         .tex_u8 => |tex_shader| {
             if (!isFiniteSlice(tex_shader.uvs.slice)) {

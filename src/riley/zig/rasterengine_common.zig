@@ -342,7 +342,12 @@ pub fn rasterTileCore(
             const mesh_idx: usize = ov.mesh_idx;
             const mesh_ptr = &meshes[mesh_idx];
             std.debug.assert(mesh_ptr.mesh_type == geom_tag);
-            const selected = mesh_ptr.shaders.select(ctx_rast.camera.shader_selection) orelse continue;
+            const selected = shaderops.selectShader(
+                shaderops.ShaderDirectPrepared,
+                shaderops.ShaderPipePrepared,
+                &mesh_ptr.shaders,
+                ctx_rast.camera.shader_selection,
+            ) orelse continue;
             const coords = &mesh_ptr.coords;
             const hull = if (comptime root_class == .multi_root) blk: {
                 std.debug.assert(mesh_idx < mesh_hulls.hull_multiroot_by_mesh.len);
@@ -412,7 +417,7 @@ pub fn rasterTileCore(
                         shaded_px += try RasterBackend.RasterEngine(
                             GK,
                             SK,
-                            shaderops.PipePrepared,
+                            shaderops.ShaderPipePrepared,
                             root_class,
                         ).rasterElemInTile(
                             report_mode,

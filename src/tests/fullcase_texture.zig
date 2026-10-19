@@ -75,7 +75,7 @@ pub fn buildTexSamplingCaseMeshes(
     textures: *const common_full.FullTextures,
     case: FullTexSamplingCase,
 ) [2]MeshInput {
-    const sphere_shader: shaderops.ShaderInput = if (case.is_rgb)
+    const sphere_shader: shaderops.ShaderDirectInput = if (case.is_rgb)
         switch (case.dtype) {
             .u8 => .{
                 .tex_rgb_u8 = .{
@@ -129,7 +129,7 @@ pub fn buildTexSamplingCaseMeshes(
         },
     };
 
-    const cyl_shader: shaderops.ShaderInput = if (case.is_rgb)
+    const cyl_shader: shaderops.ShaderDirectInput = if (case.is_rgb)
         switch (case.dtype) {
             .u8 => .{
                 .tex_rgb_u8 = .{
