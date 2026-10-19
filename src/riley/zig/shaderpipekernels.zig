@@ -122,23 +122,18 @@ pub fn PipeKernel(comptime N: usize) type {
             spx_image_scratch: *MatSlice(F),
         ) void {
             var outputs: shaderpipe.VectorOutputs = .{};
-            var temporary: [cfg.max_nodal_fields * S]F = @splat(0);
-            var temp_mat = MatSlice(F).init(&temporary, cfg.max_nodal_fields, S);
             var stage_ctx = ctx_shade;
-            stage_ctx.scratch_idx = 0;
-            stage_ctx.exclusive_subpx_target = true;
 
             for (pipe.stages, 0..) |*stage, si| switch (stage.*) {
                 .source => |*src| {
                     const count = sourceChannels(src.shader);
                     stage_ctx.actual_fields = count;
-                    shadeSourceSIMD(N, coord_space, stage_ctx, ctx_report, v_mask_active, v_weights, v_xi, v_eta, v_nodes_inv_z, v_subpx_z, &pipe_buf.stages[si], &src.shader, &temp_mat);
+                    var source_values: shaderops.VectorSink(cfg.max_nodal_fields) = .{};
+                    shadeSourceSIMD(N, coord_space, stage_ctx, ctx_report, v_mask_active, v_weights, v_xi, v_eta, v_nodes_inv_z, v_subpx_z, &pipe_buf.stages[si], &src.shader, &source_values);
                     for (0..count) |ch| {
-                        var lanes: [S]F = undefined;
-                        @memcpy(&lanes, temporary[ch * S ..][0..S]);
                         var dest = src.destination;
                         dest.index += @intCast(ch);
-                        outputs.set(dest, @bitCast(lanes));
+                        outputs.set(dest, source_values.values[ch]);
                     }
                 },
                 .grey_to_emissivity => |m| {
@@ -215,17 +210,17 @@ fn shadeSourceSIMD(
     subpx_z: VecSF,
     buf: *const shaderops.LocalShaderBuff(N),
     source: *const shaderops.ShaderDirectPrepared,
-    scratch: *MatSlice(F),
+    sink: anytype,
 ) void {
     switch (source.*) {
-        .nodal => |*s| shadekerns.NodalKernel(N).shadeSIMD(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, scratch),
-        .tex_u8 => |*s| shadekerns.TexKernel(N, u8, 1).shadeSIMD(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, scratch),
-        .tex_u16 => |*s| shadekerns.TexKernel(N, u16, 1).shadeSIMD(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, scratch),
-        .tex_f => |*s| shadekerns.TexKernel(N, F, 1).shadeSIMD(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, scratch),
-        .tex_rgb_u8 => |*s| shadekerns.TexKernel(N, u8, 3).shadeSIMD(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, scratch),
-        .tex_rgb_u16 => |*s| shadekerns.TexKernel(N, u16, 3).shadeSIMD(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, scratch),
-        .tex_rgb_f => |*s| shadekerns.TexKernel(N, F, 3).shadeSIMD(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, scratch),
-        .func => |*s| shadekerns.FuncKernel(N, 1).shadeSIMD(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, scratch),
-        .func_rgb => |*s| shadekerns.FuncKernel(N, 3).shadeSIMD(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, scratch),
+        .nodal => |*s| shadekerns.NodalKernel(N).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
+        .tex_u8 => |*s| shadekerns.TexKernel(N, u8, 1).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
+        .tex_u16 => |*s| shadekerns.TexKernel(N, u16, 1).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
+        .tex_f => |*s| shadekerns.TexKernel(N, F, 1).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
+        .tex_rgb_u8 => |*s| shadekerns.TexKernel(N, u8, 3).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
+        .tex_rgb_u16 => |*s| shadekerns.TexKernel(N, u16, 3).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
+        .tex_rgb_f => |*s| shadekerns.TexKernel(N, F, 3).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
+        .func => |*s| shadekerns.FuncKernel(N, 1).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
+        .func_rgb => |*s| shadekerns.FuncKernel(N, 3).shadeSIMDTo(coord_space, ctx, ctx_report, mask, weights, xi, eta, inv_z, subpx_z, buf, s, sink),
     }
 }
