@@ -54,8 +54,14 @@ def main() -> None:
         ),
     )
     convention = riley.ConnectConvention(riley.EElemType.QUAD8, riley.EConnectAxis.ROW, 0, riley.ENodeOrder.RILEY)
-    mesh = riley.create_mesh(convention, riley.MeshType.quad8, coords, connect,
-                             riley.ShaderSet(direct=speckle, ir=ir_pipe), disp=disp)
+    mesh = riley.create_mesh(
+        convention,
+        riley.MeshType.quad8,
+        coords,
+        connect,
+        riley.MeshShaderSet(direct=speckle, ir=ir_pipe),
+        disp=disp,
+    )
     target = riley.roi_cent_from_coords(coords)
     dic_pixels, dic_pitch, dic_focal = (2464, 2056), (3.45e-6, 3.45e-6), 0.05
     ir_pixels, ir_pitch, ir_focal = (640, 480), (17e-6, 17e-6), 0.035
@@ -75,7 +81,7 @@ def main() -> None:
         pixels_num=ir_pixels, pixels_size=ir_pitch,
         pos_world=riley.pos_frame_coords(coords, ir_pixels, ir_pitch, ir_focal, ir_rot, fov_scale=0.65, target=target),
         rot_world=ir_rot, roi_cent_world=target, focal_length=ir_focal, sub_sample=4,
-        shader_selection=riley.ShaderSelection.ir,
+        shader_selection=riley.CameraShaderSelection.ir,
         output_encoding=riley.OutputEncoding.linear_u16, encoding_min=0, encoding_max=250,
     )
     config = riley.RasterConfig(parallel=4, save_strategy=riley.SaveStrategy.disk,

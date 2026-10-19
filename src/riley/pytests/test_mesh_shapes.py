@@ -506,7 +506,7 @@ def test_shape_create_mesh_end_to_end(
         MeshType.tri3,
         coords,
         connect,
-        riley.ShaderSet(direct=shader),
+        riley.MeshShaderSet(direct=shader),
         disp=(disp_x, disp_y, disp_z),
     )
     assert mesh.mesh_type == MeshType.tri3
@@ -684,7 +684,7 @@ def test_platewithhole2d_riley_mesh_field_mapping(
         mesh_type_tri,
         coords,
         connect,
-        riley.ShaderSet(direct=shader),
+        riley.MeshShaderSet(direct=shader),
         disp=(disp_x, disp_y, disp_z),
     )
     assert mesh.mesh_type == MeshType.tri3

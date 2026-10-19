@@ -9,7 +9,7 @@ import numpy.typing as npt
 
 from riley.cython.riley import (
     FunctionShader,
-    ShaderSet,
+    MeshShaderSet,
     ShaderPipe,
     ShaderSource,
     Mesh,
@@ -268,7 +268,7 @@ def _prepare_shader(
 
     Parameters
     ----------
-    shaders : ShaderSet
+    shaders : MeshShaderSet
         Input texture, nodal, or function shader.
     nodes_num : int
         Expected original node count `N`.
@@ -470,14 +470,22 @@ def convert_mesh_for_render(
     )
 
 
-def _prepare_shader_set(shaders: ShaderSet, nodes_num: int, source_node_idxs: np.ndarray) -> ShaderSet:
+def _prepare_shader_set(
+    shaders: MeshShaderSet,
+    nodes_num: int,
+    source_node_idxs: np.ndarray,
+) -> MeshShaderSet:
     def prepare_pipe(pipe: ShaderPipe | None) -> ShaderPipe | None:
         if pipe is None:
             return None
         return ShaderPipe(
             stages=tuple(
-                ShaderSource(_prepare_shader(stage.shader, nodes_num, source_node_idxs), stage.destination)
-                if isinstance(stage, ShaderSource) else stage
+                ShaderSource(
+                    _prepare_shader(stage.shader, nodes_num, source_node_idxs),
+                    stage.destination,
+                )
+                if isinstance(stage, ShaderSource)
+                else stage
                 for stage in pipe.stages
             ),
             resolver=pipe.resolver,
@@ -485,8 +493,12 @@ def _prepare_shader_set(shaders: ShaderSet, nodes_num: int, source_node_idxs: np
             constants=pipe.constants,
         )
 
-    return ShaderSet(
-        direct=_prepare_shader(shaders.direct, nodes_num, source_node_idxs) if shaders.direct is not None else None,
+    return MeshShaderSet(
+        direct=(
+            _prepare_shader(shaders.direct, nodes_num, source_node_idxs)
+            if shaders.direct is not None
+            else None
+        ),
         mono=prepare_pipe(shaders.mono),
         rgb=prepare_pipe(shaders.rgb),
         ir=prepare_pipe(shaders.ir),
@@ -496,14 +508,14 @@ def _prepare_shader_set(shaders: ShaderSet, nodes_num: int, source_node_idxs: np
 
 def create_mesh_from_conversion(
     conversion: MeshConversion,
-    shaders: ShaderSet,
+    shaders: MeshShaderSet,
     disp: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
 ) -> Mesh:
     """Create a Riley mesh from source-indexed nodal attributes."""
     if not isinstance(conversion, MeshConversion):
         raise TypeError("conversion must be a MeshConversion.")
-    if not isinstance(shaders, ShaderSet):
-        raise TypeError("shaders must be a ShaderSet.")
+    if not isinstance(shaders, MeshShaderSet):
+        raise TypeError("shaders must be a MeshShaderSet.")
 
     geometry = conversion.geometry
     return Mesh(
@@ -525,7 +537,7 @@ def create_mesh_from_conversion(
 
 def create_mesh_from_prepared(
     conversion: MeshConversion,
-    shaders: ShaderSet,
+    shaders: MeshShaderSet,
     disp: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
 ) -> Mesh:
     """Create a Riley mesh from attributes indexed by converted mesh nodes."""
@@ -549,7 +561,7 @@ def create_mesh(
     mesh_type: MeshType,
     coords: np.ndarray,
     connect: np.ndarray,
-    shaders: ShaderSet,
+    shaders: MeshShaderSet,
     disp: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
 ) -> Mesh:
     """Build a renderable Riley Mesh from raw coordinates and connectivity.

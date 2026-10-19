@@ -19,12 +19,18 @@ def scene() -> tuple[riley.Mesh, riley.Camera, riley.RasterConfig]:
         bits=-1,
         scaling_type=riley.ScaleStrategy.none,
     )
-    mesh = riley.create_mesh(convention, riley.MeshType.tri3, coords, connect, riley.ShaderSet(direct=source))
+    mesh = riley.create_mesh(
+        convention,
+        riley.MeshType.tri3,
+        coords,
+        connect,
+        riley.MeshShaderSet(direct=source),
+    )
     camera = riley.Camera(
         pixels_num=(32, 32), pixels_size=(1 / 32, 1 / 32),
         pos_world=(0, 0, 1), rot_world=(0, 0, 0),
         roi_cent_world=(0, 0, 0), focal_length=1, sub_sample=1,
-        shader_selection=riley.ShaderSelection.mono,
+        shader_selection=riley.CameraShaderSelection.mono,
     )
     config = riley.RasterConfig(
         parallel=1, save_strategy=riley.SaveStrategy.memory,
@@ -46,7 +52,7 @@ def test_python_sum_pipe_matches_two_constant_sources() -> None:
     )
     ch0 = riley.Slot(riley.SlotKind.channel, 0)
     ch1 = riley.Slot(riley.SlotKind.channel, 1)
-    mesh.shaders = riley.ShaderSet(mono=riley.ShaderPipe(
+    mesh.shaders = riley.MeshShaderSet(mono=riley.ShaderPipe(
         stages=(riley.ShaderSource(first, ch0), riley.ShaderSource(second, ch1)),
         resolver=riley.ShaderResolver(riley.ResolverKind.sum, slots=(ch0, ch1)),
     ))
@@ -87,7 +93,7 @@ def test_python_expression_reads_field_parameter_and_constant() -> None:
         riley.Operation(riley.OperationKind.multiply),
         riley.Operation(riley.OperationKind.store),
     )
-    mesh.shaders = riley.ShaderSet(mono=riley.ShaderPipe(
+    mesh.shaders = riley.MeshShaderSet(mono=riley.ShaderPipe(
         stages=(riley.ShaderSource(temp, field), riley.ShaderSource(emissivity, parameter)),
         resolver=riley.ShaderResolver(riley.ResolverKind.expression, operations=ops),
         constants=(5.670374419e-8,),
@@ -100,7 +106,7 @@ def test_python_expression_reads_field_parameter_and_constant() -> None:
 
 def test_python_ir_nodal_temperature_and_emissivity_mapping() -> None:
     mesh, camera, config = scene()
-    camera.shader_selection = riley.ShaderSelection.ir
+    camera.shader_selection = riley.CameraShaderSelection.ir
     nodal = riley.NodalShader(
         field=np.full((mesh.coords.shape[0], 1, 1), 300.0),
         bits=-1, scaling_type=riley.ScaleStrategy.none,
@@ -113,7 +119,7 @@ def test_python_ir_nodal_temperature_and_emissivity_mapping() -> None:
     temperature = riley.Slot(riley.SlotKind.field, 0)
     channel = riley.Slot(riley.SlotKind.channel, 0)
     emissivity = riley.Slot(riley.SlotKind.parameter, 0)
-    pipe = riley.ShaderSet(ir=riley.ShaderPipe(
+    pipe = riley.MeshShaderSet(ir=riley.ShaderPipe(
         stages=(
             riley.ShaderSource(nodal, temperature),
             riley.ShaderSource(grey, channel),
@@ -136,7 +142,7 @@ def test_python_ir_nodal_temperature_and_emissivity_mapping() -> None:
 
 def test_python_camera_selects_mono_and_rgb_pipes() -> None:
     mesh, mono, config = scene()
-    rgb = replace(mono, shader_selection=riley.ShaderSelection.rgb)
+    rgb = replace(mono, shader_selection=riley.CameraShaderSelection.rgb)
     config.image_save_mode = riley.ImageSaveMode.multifield
     rgb_source = riley.FunctionShader(
         builtin=riley.FuncShaderBuiltin.constant,
@@ -144,7 +150,7 @@ def test_python_camera_selects_mono_and_rgb_pipes() -> None:
         channels=3, bits=-1, scaling_type=riley.ScaleStrategy.none,
     )
     ch = tuple(riley.Slot(riley.SlotKind.channel, i) for i in range(3))
-    mesh.shaders = riley.ShaderSet(
+    mesh.shaders = riley.MeshShaderSet(
         mono=riley.ShaderPipe(
             stages=(riley.ShaderSource(mesh.shaders.direct, ch[0]),),
             resolver=riley.ShaderResolver(riley.ResolverKind.identity, slots=(ch[0],)),
@@ -163,7 +169,7 @@ def test_python_camera_selects_mono_and_rgb_pipes() -> None:
 def test_invalid_python_pipe_fails_during_preparation() -> None:
     mesh, camera, config = scene()
     missing = riley.Slot(riley.SlotKind.channel, 1)
-    mesh.shaders = riley.ShaderSet(mono=riley.ShaderPipe(
+    mesh.shaders = riley.MeshShaderSet(mono=riley.ShaderPipe(
         stages=(riley.ShaderSource(mesh.shaders.direct, riley.Slot(riley.SlotKind.channel, 0)),),
         resolver=riley.ShaderResolver(riley.ResolverKind.identity, slots=(missing,)),
     ))
@@ -173,17 +179,17 @@ def test_invalid_python_pipe_fails_during_preparation() -> None:
 
 def test_shader_set_three_cameras_share_mesh_and_select_roles() -> None:
     mesh, mono, config = scene()
-    direct = replace(mono, shader_selection=riley.ShaderSelection.direct)
+    direct = replace(mono, shader_selection=riley.CameraShaderSelection.direct)
     source = mesh.shaders.direct
     ch0 = riley.Slot(riley.SlotKind.channel, 0)
-    mesh.shaders = riley.ShaderSet(
+    mesh.shaders = riley.MeshShaderSet(
         direct=source,
         ir=riley.ShaderPipe(
             stages=(riley.ShaderSource(source, ch0),),
             resolver=riley.ShaderResolver(riley.ResolverKind.identity, slots=(ch0,)),
         ),
     )
-    ir = replace(mono, shader_selection=riley.ShaderSelection.ir)
+    ir = replace(mono, shader_selection=riley.CameraShaderSelection.ir)
     images = riley.raster(mesh, (direct, ir, direct), config)
     assert images.shape == (3, 1, 1, 32, 32)
     np.testing.assert_array_equal(images[0], images[2])
@@ -196,13 +202,13 @@ def test_shader_set_three_cameras_share_mesh_and_select_roles() -> None:
 
 def test_unselected_pipe_does_not_add_frames_or_channels() -> None:
     mesh, camera, config = scene()
-    camera.shader_selection = riley.ShaderSelection.direct
+    camera.shader_selection = riley.CameraShaderSelection.direct
     slots = tuple(riley.Slot(riley.SlotKind.channel, i) for i in range(4))
     unused_source = riley.NodalShader(
         np.full((mesh.coords.shape[0], 6, 4), 0.5),
         bits=-1, scaling_type=riley.ScaleStrategy.none,
     )
-    mesh.shaders = riley.ShaderSet(
+    mesh.shaders = riley.MeshShaderSet(
         direct=mesh.shaders.direct,
         multifield=riley.ShaderPipe(
             channels=4,

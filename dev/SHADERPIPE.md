@@ -1,6 +1,6 @@
 # Shader sets and shader pipes
 
-A mesh owns one `ShaderSet` of optional, named alternatives: `direct`, `mono`, `rgb`, `ir`, and `multifield`. Each camera chooses one with `shader_selection` (default `direct`). A camera skips meshes without its selected role. Riley rejects a camera if no mesh in its scene supports that role; it never falls back to another shader. A single mesh can therefore serve optical and IR cameras using the same geometry and displacement frames.
+A mesh owns one `MeshShaderSet` of optional, named alternatives: `direct`, `mono`, `rgb`, `ir`, and `multifield`. Each camera chooses one with `shader_selection` (default `direct`). A camera skips meshes without its selected role. Riley rejects a camera if no mesh in its scene supports that role; it never falls back to another shader. A single mesh can therefore serve optical and IR cameras using the same geometry and displacement frames.
 
 `direct` holds one ordinary nodal, texture, or function shader and keeps the specialised direct raster kernel. The other roles hold a `ShaderPipe`. Mono and IR output one channel, RGB outputs three, and multifield requires an explicit `channels` count from 1 to 8. Camera batches return an array padded to the largest **selected** channel count; unused channels contain the background value. Unselected roles do not add frames or output channels. Selecting a pipe does not change image file format or ADC encoding.
 
@@ -16,11 +16,11 @@ pipe = riley.ShaderPipe(
             riley.ShaderSource(second_shader, ch1)),
     resolver=riley.ShaderResolver(riley.ResolverKind.sum, slots=(ch0, ch1)),
 )
-mesh.shaders = riley.ShaderSet(direct=first_shader, mono=pipe)
-mono_camera.shader_selection = riley.ShaderSelection.mono
+mesh.shaders = riley.MeshShaderSet(direct=first_shader, mono=pipe)
+mono_camera.shader_selection = riley.CameraShaderSelection.mono
 ```
 
-A pipe source is an ordinary *direct* shader; pipes cannot recursively contain pipes. In Python, `riley.create_mesh(..., shaders=riley.ShaderSet(...))` also remaps nodal and UV data into Riley's mesh convention. The same concepts are exposed in Zig through `ShaderSetInput`, `ShaderPipeInput`, and `ShaderSelection`. The C ABI transport is documented by the tags in `src/riley/cython/riley.h`.
+A pipe source is an ordinary *direct* shader; pipes cannot recursively contain pipes. In Python, `riley.create_mesh(..., shaders=riley.MeshShaderSet(...))` also remaps nodal and UV data into Riley's mesh convention. The same concepts are exposed in Zig through `MeshShaderSetInput`, `ShaderPipeInput`, and `CameraShaderSelection`. The C ABI transport is documented by the tags in `src/riley/cython/riley.h`.
 
 ## IR apparent temperature
 

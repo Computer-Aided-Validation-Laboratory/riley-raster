@@ -39,7 +39,7 @@ pub const CameraInput = struct {
     psf: cm.PointSpreadFunc = .{ .pixel_box = .{} },
     coord_sys: CameraCoordSys = .opengl,
     subpixel_center_map: SubPixelCenterMap = .per_tile,
-    shader_selection: @import("shaderops_common.zig").ShaderSelection = .direct,
+    shader_selection: @import("shaderops_common.zig").CameraShaderSelection = .direct,
     output_encoding: imageio.ImageEncoding = .native,
 };
 
@@ -142,7 +142,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         coord_sys: CameraCoordSys,
         ideal_pixel_centers: ndarray.NDArray(F),
         subpixel_center_map: SubPixelCenterMap,
-        shader_selection: @import("shaderops_common.zig").ShaderSelection = .direct,
+        shader_selection: @import("shaderops_common.zig").CameraShaderSelection = .direct,
         output_encoding: imageio.ImageEncoding = .native,
         ideal_sensor_bounds: ?distbounds.DistortBounds = null,
 

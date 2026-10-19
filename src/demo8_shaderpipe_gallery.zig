@@ -20,7 +20,14 @@ fn linear(x: F, y: F) shaderops.ShaderDirectInput {
     } };
 }
 
-fn render(allocator: std.mem.Allocator, io: std.Io, mesh: meshpipe.MeshInput, base_camera: camera.CameraInput, role: shaderops.ShaderSelection, path: []const u8) !void {
+fn render(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    mesh: meshpipe.MeshInput,
+    base_camera: camera.CameraInput,
+    role: shaderops.CameraShaderSelection,
+    path: []const u8,
+) !void {
     var selected_camera = base_camera;
     selected_camera.shader_selection = role;
     const config = riley.RasterConfig{

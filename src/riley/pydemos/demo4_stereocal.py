@@ -128,7 +128,9 @@ def main() -> None:
         coords=coords,
         connect=connect,
         disp=disp_components,
-        shaders=riley.ShaderSet(direct=riley.TextureShader(uvs=uvs, texture=texture)),
+        shaders=riley.MeshShaderSet(
+            direct=riley.TextureShader(uvs=uvs, texture=texture),
+        ),
     )
 
     config = riley.RasterConfig(

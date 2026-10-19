@@ -23,7 +23,7 @@ def main() -> None:
     )
     channel = riley.Slot(riley.SlotKind.channel, 0)
     parameter = riley.Slot(riley.SlotKind.parameter, 0)
-    shaders = riley.ShaderSet(
+    shaders = riley.MeshShaderSet(
         direct=checker,
         mono=riley.ShaderPipe(
             stages=(riley.ShaderSource(checker, channel), riley.ShaderSource(light, parameter)),
@@ -37,7 +37,7 @@ def main() -> None:
     position = riley.pos_frame_mesh(mesh, pixels_num, pixels_size, 1, (0, 0, 0), target=target)
     direct = riley.Camera(pixels_num, pixels_size, position, (0, 0, 0), target, 1, 4)
     lit = riley.Camera(pixels_num, pixels_size, position, (0, 0, 0), target, 1, 4,
-                       shader_selection=riley.ShaderSelection.mono)
+                       shader_selection=riley.CameraShaderSelection.mono)
     config = riley.RasterConfig(parallel=1, save_strategy=riley.SaveStrategy.disk,
                                 image_save_mode=riley.ImageSaveMode.grey)
     config.save_format = riley.ImageFormat.bmp

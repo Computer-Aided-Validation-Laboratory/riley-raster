@@ -22,7 +22,7 @@ def main() -> None:
     pixels_size = (0.02, 0.02)
     target = riley.roi_cent_from_coords(coords)
     base_mesh = riley.create_mesh(convention, riley.MeshType.tri3opt, coords, connect,
-                                  riley.ShaderSet(direct=linear(0, 0)))
+                                  riley.MeshShaderSet(direct=linear(0, 0)))
     position = riley.pos_frame_mesh(base_mesh, pixels_num, pixels_size, 1, (0, 0, 0), target=target)
     camera = riley.Camera(pixels_num, pixels_size, position, (0, 0, 0), target, 1, 4)
     config = riley.RasterConfig(parallel=1, save_strategy=riley.SaveStrategy.disk,
@@ -43,23 +43,32 @@ def main() -> None:
         bits=-1, scaling_type=riley.ScaleStrategy.none,
     )
 
-    def render(name: str, shaders: riley.ShaderSet, role: riley.ShaderSelection) -> None:
-        mesh = riley.create_mesh(convention, riley.MeshType.tri3opt, coords, connect, shaders)
+    def render(
+        name: str,
+        shaders: riley.MeshShaderSet,
+        role: riley.CameraShaderSelection,
+    ) -> None:
+        mesh = riley.create_mesh(
+            convention, riley.MeshType.tri3opt, coords, connect, shaders
+        )
         camera.shader_selection = role
-        riley.raster(mesh, camera, config, out_dir=str(Path.cwd() / "out_riley_py" / "demo8_shaderpipe_gallery" / name))
+        out_dir = str(
+            Path.cwd() / "out_riley_py" / "demo8_shaderpipe_gallery" / name
+        )
+        riley.raster(mesh, camera, config, out_dir=out_dir)
 
     # A: checker intensity multiplied by a spatially varying illumination parameter.
-    render("a_modulation", riley.ShaderSet(mono=riley.ShaderPipe(
+    render("a_modulation", riley.MeshShaderSet(mono=riley.ShaderPipe(
         stages=(riley.ShaderSource(checker, ch[0]), riley.ShaderSource(linear(0.375, 0, 0.625), param)),
         resolver=riley.ShaderResolver(riley.ResolverKind.modulate, slots=(ch[0],), factor=param),
-    )), riley.ShaderSelection.mono)
+    )), riley.CameraShaderSelection.mono)
 
     # B: each RGB channel receives a distinct procedural gradient.
-    render("b_rgb", riley.ShaderSet(rgb=riley.ShaderPipe(
+    render("b_rgb", riley.MeshShaderSet(rgb=riley.ShaderPipe(
         stages=tuple(riley.ShaderSource(shader, slot) for shader, slot in zip(
             (linear(0.5, 0), linear(0, 0.5), linear(0.25, -0.25)), ch)),
         resolver=riley.ShaderResolver(riley.ResolverKind.identity, slots=ch),
-    )), riley.ShaderSelection.rgb)
+    )), riley.CameraShaderSelection.rgb)
 
     # C: two fields are blended by a bounded expression with explicit constants.
     expression = (
@@ -73,11 +82,11 @@ def main() -> None:
         riley.Operation(riley.OperationKind.clamp01),
         riley.Operation(riley.OperationKind.store),
     )
-    render("c_expression", riley.ShaderSet(mono=riley.ShaderPipe(
+    render("c_expression", riley.MeshShaderSet(mono=riley.ShaderPipe(
         stages=(riley.ShaderSource(linear(0.5, 0), fields[0]), riley.ShaderSource(linear(0, 0.5), fields[1])),
         resolver=riley.ShaderResolver(riley.ResolverKind.expression, operations=expression),
         constants=(0.65, 0.35),
-    )), riley.ShaderSelection.mono)
+    )), riley.CameraShaderSelection.mono)
 
     # D: emissivity is a material parameter; output is a labelled 0.90–0.96 visualisation.
     emissivity_ops = (
@@ -89,12 +98,22 @@ def main() -> None:
         riley.Operation(riley.OperationKind.clamp01),
         riley.Operation(riley.OperationKind.store),
     )
-    render("d_emissivity_visualisation", riley.ShaderSet(mono=riley.ShaderPipe(
-        stages=(riley.ShaderSource(checker, ch[0]),
-                riley.GreyToEmissivity(ch[0], param, black=0.96, white=0.90)),
-        resolver=riley.ShaderResolver(riley.ResolverKind.expression, operations=emissivity_ops),
-        constants=(0.90, 1 / 0.06),
-    )), riley.ShaderSelection.mono)
+    render(
+        "d_emissivity_visualisation",
+        riley.MeshShaderSet(mono=riley.ShaderPipe(
+            stages=(
+                riley.ShaderSource(checker, ch[0]),
+                riley.GreyToEmissivity(
+                    ch[0], param, black=0.96, white=0.90
+                ),
+            ),
+            resolver=riley.ShaderResolver(
+                riley.ResolverKind.expression, operations=emissivity_ops
+            ),
+            constants=(0.90, 1 / 0.06),
+        )),
+        riley.CameraShaderSelection.mono,
+    )
 
 
 if __name__ == "__main__":

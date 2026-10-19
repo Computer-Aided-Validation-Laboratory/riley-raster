@@ -426,7 +426,7 @@ class FunctionShader:
     normal_type: NormalType = NormalType.none
 
 
-class ShaderSelection(IntEnum):
+class CameraShaderSelection(IntEnum):
     direct = 0
     mono = 1
     rgb = 2
@@ -534,7 +534,7 @@ class ShaderPipe:
 
 
 @dataclass(slots=True)
-class ShaderSet:
+class MeshShaderSet:
     direct: TextureShader | NodalShader | FunctionShader | None = None
     mono: ShaderPipe | None = None
     rgb: ShaderPipe | None = None
@@ -554,7 +554,7 @@ class Mesh:
     coords: np.ndarray
     connect: np.ndarray
     disp: np.ndarray | None
-    shaders: ShaderSet
+    shaders: MeshShaderSet
 
 
 class ImageFormat(IntEnum):
@@ -1330,10 +1330,10 @@ def _fill_pipe_array(
 ) -> None:
     choices = tuple(
         (role, pipe) for role, pipe in (
-            (ShaderSelection.mono, mesh.shaders.mono),
-            (ShaderSelection.rgb, mesh.shaders.rgb),
-            (ShaderSelection.ir, mesh.shaders.ir),
-            (ShaderSelection.multifield, mesh.shaders.multifield),
+            (CameraShaderSelection.mono, mesh.shaders.mono),
+            (CameraShaderSelection.rgb, mesh.shaders.rgb),
+            (CameraShaderSelection.ir, mesh.shaders.ir),
+            (CameraShaderSelection.multifield, mesh.shaders.multifield),
         ) if pipe is not None
     )
     pipes_len: cython.size_t = len(choices)
@@ -1377,7 +1377,13 @@ def _fill_pipe_array(
                     raise TypeError("source stage requires a texture, nodal, or function shader")
                 stages[si].tag = 0
                 stages[si].destination = _make_slot(stage.destination)
-                source_mesh = Mesh(mesh.mesh_type, mesh.coords, mesh.connect, None, ShaderSet(direct=stage.shader))
+                source_mesh = Mesh(
+                    mesh.mesh_type,
+                    mesh.coords,
+                    mesh.connect,
+                    None,
+                    MeshShaderSet(direct=stage.shader),
+                )
                 temporary = cython.cast(
                     cython.pointer[cr.CMeshInput], malloc(cython.sizeof(cr.CMeshInput)),
                 )

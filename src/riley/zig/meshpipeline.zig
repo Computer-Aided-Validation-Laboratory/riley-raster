@@ -48,7 +48,7 @@ pub const MeshInput = struct {
     coords: meshio.Coords,
     connect: meshio.Connect,
     disp: ?meshio.Field,
-    shaders: shaderops.ShaderSetInput,
+    shaders: shaderops.MeshShaderSetInput,
 };
 
 // Static: Persistent multi-frame resources in the engine's memory.
@@ -60,7 +60,7 @@ pub const MeshStatic = struct {
     coords_orig: meshio.Coords,
     connect: meshio.Connect,
     disp: ?meshio.Field,
-    shaders: shaderops.ShaderSetStatic,
+    shaders: shaderops.MeshShaderSetStatic,
 };
 
 pub const MultiRootHulls = struct {
@@ -116,7 +116,7 @@ pub const MeshPrepared = struct {
     scene_mesh_idx: usize = 0,
     mesh_type: geomkerns.MeshType,
     coords: ndarray.NDArray(F),
-    shaders: shaderops.ShaderSetPrepared,
+    shaders: shaderops.MeshShaderSetPrepared,
 };
 
 // --------------------------------------------------------------------------------------
@@ -211,7 +211,10 @@ pub fn countStaticMeshElems(mesh_static: []const MeshStatic) usize {
     return total;
 }
 
-pub fn meshSupportsSelection(mesh: MeshStatic, selection: shaderops.ShaderSelection) bool {
+pub fn meshSupportsSelection(
+    mesh: MeshStatic,
+    selection: shaderops.CameraShaderSelection,
+) bool {
     return shaderops.hasShader(mesh.shaders, selection);
 }
 
@@ -349,7 +352,7 @@ pub fn initMeshStatic(
         mesh_input.coords,
     );
 
-    var shaders: shaderops.ShaderSetStatic = .{};
+    var shaders: shaderops.MeshShaderSetStatic = .{};
     if (mesh_input.shaders.direct) |shader| shaders.direct = try initShaderStatic(allocator, shader, &mesh_input.connect);
     if (mesh_input.shaders.mono) |pipe| shaders.mono = try initPipeStatic(allocator, pipe, &mesh_input.connect, 1);
     if (mesh_input.shaders.rgb) |pipe| shaders.rgb = try initPipeStatic(allocator, pipe, &mesh_input.connect, 3);
@@ -719,7 +722,7 @@ fn shaderNeedsDeformedWorld(shader: shaderops.ShaderDirectStatic) bool {
     };
 }
 
-fn shaderSetNeedsDeformedWorld(shaders: shaderops.ShaderSetStatic) bool {
+fn shaderSetNeedsDeformedWorld(shaders: shaderops.MeshShaderSetStatic) bool {
     if (shaders.direct) |shader| if (shaderNeedsDeformedWorld(shader)) return true;
     inline for (.{ shaders.mono, shaders.rgb, shaders.ir, shaders.multifield }) |pipe_opt| {
         if (pipe_opt) |pipe| for (pipe.stages) |stage| switch (stage) {

@@ -28,7 +28,7 @@ pub const shaderfunc = @import("shaderfunc.zig");
 
 pub const ScaleOver = enum { within_frames, over_frames };
 pub const NormalType = enum { none, exact, avg };
-pub const ShaderSelection = enum(u8) { direct, mono, rgb, ir, multifield };
+pub const CameraShaderSelection = enum(u8) { direct, mono, rgb, ir, multifield };
 
 pub const GreyToEmissivityStage = shaderpipe.GreyToEmissivityStage;
 pub const ClampStage = shaderpipe.ClampStage;
@@ -121,7 +121,7 @@ pub const ShaderPipeInput = struct {
     channels: u8 = 0,
 };
 
-pub const ShaderSetInput = struct {
+pub const MeshShaderSetInput = struct {
     direct: ?ShaderDirectInput = null,
     mono: ?ShaderPipeInput = null,
     rgb: ?ShaderPipeInput = null,
@@ -198,7 +198,7 @@ pub const ShaderPipeStatic = struct {
     channels: u8,
 };
 
-pub const ShaderSetStatic = struct {
+pub const MeshShaderSetStatic = struct {
     direct: ?ShaderDirectStatic = null,
     mono: ?ShaderPipeStatic = null,
     rgb: ?ShaderPipeStatic = null,
@@ -282,7 +282,7 @@ pub const ShaderPipePrepared = struct {
     channels: u8,
 };
 
-pub const ShaderSetPrepared = struct {
+pub const MeshShaderSetPrepared = struct {
     direct: ?ShaderDirectPrepared = null,
     mono: ?ShaderPipePrepared = null,
     rgb: ?ShaderPipePrepared = null,
@@ -291,7 +291,7 @@ pub const ShaderSetPrepared = struct {
 };
 
 // --------------------------------------------------------------------------------------
-// ShaderSet Operations & Selection
+// MeshShaderSet Operations & Camera Selection
 // --------------------------------------------------------------------------------------
 
 pub fn SelectedShader(comptime Direct: type, comptime Pipe: type) type {
@@ -301,7 +301,7 @@ pub fn SelectedShader(comptime Direct: type, comptime Pipe: type) type {
     };
 }
 
-pub fn hasShader(shaders: anytype, selection: ShaderSelection) bool {
+pub fn hasShader(shaders: anytype, selection: CameraShaderSelection) bool {
     return switch (selection) {
         .direct => shaders.direct != null,
         .mono => shaders.mono != null,
@@ -315,7 +315,7 @@ pub fn selectShader(
     comptime Direct: type,
     comptime Pipe: type,
     shaders: anytype,
-    selection: ShaderSelection,
+    selection: CameraShaderSelection,
 ) ?SelectedShader(Direct, Pipe) {
     return switch (selection) {
         .direct => if (shaders.direct) |*shader| .{ .direct = shader } else null,
