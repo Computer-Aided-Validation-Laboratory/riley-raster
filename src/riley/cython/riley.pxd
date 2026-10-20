@@ -199,10 +199,6 @@ cdef extern from "riley.h":
         double eggbox_pitch_1
         double eggbox_phase_0
         double eggbox_phase_1
-        double extra_0
-        double extra_1
-        double extra_2
-        double extra_3
         CSpeckle2DParams speckle
 
 

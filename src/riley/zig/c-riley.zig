@@ -268,10 +268,6 @@ pub const CFuncShaderParams = extern struct {
     eggbox_pitch_1: F,
     eggbox_phase_0: F,
     eggbox_phase_1: F,
-    extra_0: F,
-    extra_1: F,
-    extra_2: F,
-    extra_3: F,
     speckle: CSpeckle2DParams,
 };
 

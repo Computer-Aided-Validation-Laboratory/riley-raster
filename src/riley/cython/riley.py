@@ -246,12 +246,6 @@ class FuncShaderParams:
     eggbox_contrast: float = 0.4
     eggbox_pitch: tuple[float, float] = (1.0, 1.0)
     eggbox_phase: tuple[float, float] = (0.0, 0.0)
-    extra: tuple[float, float, float, float] = (
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-    )
     speckle: Speckle2DParams = field(default_factory=Speckle2DParams)
 
 
@@ -958,10 +952,6 @@ def _make_func_params(params_in: Any) -> cr.CFuncShaderParams:
     params_out.eggbox_pitch_1 = float(params_in.eggbox_pitch[1])
     params_out.eggbox_phase_0 = float(params_in.eggbox_phase[0])
     params_out.eggbox_phase_1 = float(params_in.eggbox_phase[1])
-    params_out.extra_0 = float(params_in.extra[0])
-    params_out.extra_1 = float(params_in.extra[1])
-    params_out.extra_2 = float(params_in.extra[2])
-    params_out.extra_3 = float(params_in.extra[3])
     params_out.speckle = _make_speckle_params(
         getattr(params_in, "speckle", Speckle2DParams()),
     )
