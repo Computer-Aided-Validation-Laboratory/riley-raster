@@ -425,6 +425,7 @@ fn initPipeStatic(
     channels: u8,
 ) !shaderops.ShaderPipeStatic {
     const stages = try allocator.alloc(shaderops.ShaderPipeStageStatic, pipe.stages.len);
+
     for (pipe.stages, 0..) |stage, si| {
         stages[si] = switch (stage) {
             .source => |src| .{ .source = .{
@@ -442,6 +443,7 @@ fn initPipeStatic(
             .clamp => |c| .{ .clamp = c },
         };
     }
+
     return .{
         .stages = stages,
         .resolver = pipe.resolver,
