@@ -101,9 +101,6 @@ class Speckle2DParams:
     cells_per_uv : tuple[float, float], optional
         Positive finite scales along u and v, in cells per UV unit.
         Noninteger values are supported. Defaults to ``(192.0, 160.0)``.
-    uv_offset : tuple[float, float], optional
-        Finite offsets along u and v in procedural cell units, not UV units.
-        Defaults to ``(0.0, 0.0)``. See Notes for the coordinate transform.
     occupancy : float, optional
         Probability of placing a disk or Gaussian blob in each cell, finite
         and in ``[0, 1]``. This is not the image coverage fraction. Ignored
@@ -142,7 +139,7 @@ class Speckle2DParams:
     Notes
     -----
     Procedural coordinates are computed componentwise as
-    ``clip(uv, 0, 1) * cells_per_uv + uv_offset``.
+    ``clip(uv, 0, 1) * cells_per_uv``.
 
     Disks and Gaussian blobs require
     ``radius_mean + radius_jitter + edge_softness <= 1.0``. Hard disks cover
@@ -154,7 +151,7 @@ class Speckle2DParams:
     Resources are prepared once per mesh and reused for every frame.
 
     The Python binding uses f64. On each axis, the padded procedural interval
-    ``[uv_offset - 1, uv_offset + cells_per_uv + 1]`` must remain within
+    ``[-1, cells_per_uv + 1]`` must remain within
     ``[-2**45, 2**45]`` to retain sub-cell precision. Native resource generation
     also rejects patterns exceeding the selected evaluator's size limits.
 
@@ -167,7 +164,6 @@ class Speckle2DParams:
 
     seed: int = 0xA511E9B3
     cells_per_uv: tuple[float, float] = (192.0, 160.0)
-    uv_offset: tuple[float, float] = (0.0, 0.0)
     occupancy: float = 0.9
     radius_mean: float = 0.45
     radius_jitter: float = 0.0
@@ -805,8 +801,6 @@ def _make_speckle_params(params_in: Any) -> cr.CSpeckle2DParams:
     params_out.seed = int(params_in.seed)
     params_out.cells_per_uv_0 = float(params_in.cells_per_uv[0])
     params_out.cells_per_uv_1 = float(params_in.cells_per_uv[1])
-    params_out.uv_offset_0 = float(params_in.uv_offset[0])
-    params_out.uv_offset_1 = float(params_in.uv_offset[1])
     params_out.occupancy = float(params_in.occupancy)
     params_out.radius_mean = float(params_in.radius_mean)
     params_out.radius_jitter = float(params_in.radius_jitter)

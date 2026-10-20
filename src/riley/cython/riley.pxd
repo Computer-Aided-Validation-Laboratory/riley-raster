@@ -111,8 +111,6 @@ cdef extern from "riley.h":
         uint32_t pattern
         double cells_per_uv_0
         double cells_per_uv_1
-        double uv_offset_0
-        double uv_offset_1
         double occupancy
         double radius_mean
         double radius_jitter

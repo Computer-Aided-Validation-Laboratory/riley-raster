@@ -20,7 +20,6 @@ def speckle_mesh() -> riley.Mesh:
             params=riley.Speckle2DParams(
                 seed=7,
                 cells_per_uv=(12.0, 10.0),
-                uv_offset=(0.25, -0.5),
                 occupancy=0.75,
                 radius_mean=0.4,
                 perlin_coverage_threshold=0.1,
@@ -182,7 +181,7 @@ def test_speckle_odd_width_buffer_modes_match(speckle_mesh: riley.Mesh) -> None:
             riley.Speckle2DParams(cells_per_uv=(0.0, 10.0)), id="cells-u-zero",
         ),
         pytest.param(
-            riley.Speckle2DParams(uv_offset=(float("nan"), 0.0)), id="offset-u-nan",
+            riley.Speckle2DParams(cells_per_uv=(float("nan"), 1.0)), id="cells-u-nan",
         ),
         pytest.param(
             riley.Speckle2DParams(cells_per_uv=(2.0**45, 10.0)),

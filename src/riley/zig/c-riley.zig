@@ -180,8 +180,6 @@ pub const CSpeckle2DParams = extern struct {
     pattern: u32,
     cells_per_uv_0: F,
     cells_per_uv_1: F,
-    uv_offset_0: F,
-    uv_offset_1: F,
     occupancy: F,
     radius_mean: F,
     radius_jitter: F,
@@ -1022,10 +1020,6 @@ fn funcShaderParamsFromC(
                     .cells_per_uv = .{
                         in_params.speckle.cells_per_uv_0,
                         in_params.speckle.cells_per_uv_1,
-                    },
-                    .uv_offset = .{
-                        in_params.speckle.uv_offset_0,
-                        in_params.speckle.uv_offset_1,
                     },
                     .occupancy = in_params.speckle.occupancy,
                     .radius_mean = in_params.speckle.radius_mean,
@@ -2652,11 +2646,29 @@ pub export fn rileyRaster(
 
 test "C speckle conversion validates patterns and leaves evaluator policy at defaults" {
     var input = std.mem.zeroes(CFuncShaderParams);
+    input.speckle = .{
+        .seed = 7,
+        .pattern = 0,
+        .cells_per_uv_0 = 3.25,
+        .cells_per_uv_1 = 2.75,
+        .occupancy = 0.7,
+        .radius_mean = 0.35,
+        .radius_jitter = 0.08,
+        .edge_softness = 0.0,
+        .perlin_coverage_threshold = 0.1,
+        .perlin_coverage_transition_width = 0.2,
+        .foreground = 0.17,
+        .background = 0.83,
+    };
     const patterns = [_]speckleconfig.Pattern{ .disk, .gaussian, .perlin };
     for (patterns, 0..) |pattern, index| {
         input.speckle.pattern = @intCast(index);
         const params = try funcShaderParamsFromC(.speckle, input);
         try std.testing.expectEqual(pattern, params.settings.speckle.pattern);
+        try std.testing.expectEqual([2]F{ 3.25, 2.75 }, params.settings.speckle.cells_per_uv);
+        inline for (.{ "seed", "occupancy", "radius_mean", "radius_jitter", "edge_softness", "perlin_coverage_threshold", "perlin_coverage_transition_width", "foreground", "background" }) |field| {
+            try std.testing.expectEqual(@field(input.speckle, field), @field(params.settings.speckle, field));
+        }
         try std.testing.expect(params.settings.speckle.evaluator == null);
         try std.testing.expect(params.settings.speckle.neighbor_count == null);
     }

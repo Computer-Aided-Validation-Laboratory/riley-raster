@@ -380,7 +380,7 @@ test "speckle benchmark sink UV interpolation matches production grayscale shade
     // Test this benchmark's interpolation/output boundary, not the evaluator accuracy matrix.
     inline for (speckle.kernel_configs, 0..) |cfg, index| {
         if (comptime cfg.pattern == .gaussian and cfg.evaluator == .list_indexed and cfg.neighbor_count == 9) {
-            const params: speckle.Speckle2DParams = .{ .pattern = .gaussian, .cells_per_uv = .{ 3.25, 2.75 }, .uv_offset = .{ -0.37, 0.42 } };
+            const params: speckle.Speckle2DParams = .{ .pattern = .gaussian, .cells_per_uv = .{ 3.25, 2.75 } };
             var resources = try speckle.generateResources(std.testing.allocator, params);
             defer resources.deinit(std.testing.allocator);
             const shader: shaderops.FuncPrepared = .{ .elem_uvs = null, .speckle_resources = resources, .coord_mode = .uv, .builtin = .speckle, .params = .{ .settings = .{ .speckle = params } }, .bits = null };

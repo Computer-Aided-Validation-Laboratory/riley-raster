@@ -113,8 +113,6 @@ typedef struct c_speckle_2d_params {
     uint32_t pattern; /* 0: disk, 1: gaussian, 2: perlin; fixed across frames. */
     double cells_per_uv_0;
     double cells_per_uv_1;
-    double uv_offset_0;
-    double uv_offset_1;
     double occupancy;
     double radius_mean;
     double radius_jitter;
