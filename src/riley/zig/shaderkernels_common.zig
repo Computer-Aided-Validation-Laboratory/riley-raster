@@ -210,7 +210,6 @@ pub inline fn shadeFuncScalComm(
     comptime N: usize,
     comptime C: usize,
     comptime coord_space: CoordSpace,
-    comptime speckle_kernel: ?usize,
     ctx_shade: shaderops.ShadeContext,
     interp: shaderops.InterpData(N),
     shader_buf: *const shaderops.LocalShaderBuff(N),
@@ -243,7 +242,6 @@ pub inline fn shadeFuncScalComm(
         shaderops.fillFuncClipScal(
             N,
             C,
-            speckle_kernel,
             ctx_shade,
             interp,
             shader_buf,
@@ -254,7 +252,6 @@ pub inline fn shadeFuncScalComm(
         shaderops.fillFuncPerspScal(
             N,
             C,
-            speckle_kernel,
             ctx_shade,
             interp,
             shader_buf,

@@ -129,10 +129,10 @@ class Speckle2DParams:
         disks and Gaussian blobs. Defaults to ``0.12``.
     foreground : float, optional
         Speckle intensity, finite and in ``[0, 1]`` for every shape, before
-        function-shader output scaling. Defaults to ``0.0``.
+        speckle-shader output scaling. Defaults to ``0.0``.
     background : float, optional
         Uncovered intensity, finite and in ``[0, 1]`` for every shape, before
-        function-shader output scaling. Defaults to ``1.0``.
+        speckle-shader output scaling. Defaults to ``1.0``.
     pattern : SpecklePattern, optional
         Runtime choice of ``disk``, ``gaussian``, or ``perlin``. Defaults to
         ``SpecklePattern.disk``. Each mesh keeps its selected pattern across
@@ -159,11 +159,11 @@ class Speckle2DParams:
     ``[-2**45, 2**45]`` to retain sub-cell precision. Native resource generation
     also rejects patterns exceeding the selected evaluator's size limits.
 
-    Construction and ``to_func_shader_params`` do not validate these values.
+    Construction does not validate these values.
     Invalid pattern identifiers raise ``ValueError`` during binding conversion.
     Numerical validation occurs in the native rendering/resource-generation
     path. With default fast input validation, native parameter-validation
-    failures raise ``RuntimeError`` containing ``InvalidFuncShaderParams``.
+    failures raise ``RuntimeError`` containing ``InvalidSpeckleShaderParams``.
     """
 
     seed: int = 0xA511E9B3
@@ -177,16 +177,6 @@ class Speckle2DParams:
     foreground: float = 0.0
     background: float = 1.0
     pattern: SpecklePattern = SpecklePattern.disk
-
-    def to_func_shader_params(self) -> "FuncShaderParams":
-        """Wrap these settings without copying or validating them.
-
-        Returns
-        -------
-        FuncShaderParams
-            Function-shader parameters referencing this instance.
-        """
-        return FuncShaderParams(speckle=self)
 
 
 @dataclass(slots=True)
@@ -250,7 +240,7 @@ class FuncShaderParams:
     eggbox_contrast: float = 0.4
     eggbox_pitch: tuple[float, float] = (1.0, 1.0)
     eggbox_phase: tuple[float, float] = (0.0, 0.0)
-    speckle: Speckle2DParams = field(default_factory=Speckle2DParams)
+
 
 
 class RenderMode(IntEnum):
@@ -343,6 +333,7 @@ class ShaderType(IntEnum):
     func = 3
     func_rgb = 4
     nodal_rgb = 5
+    speckle = 6
 
 
 class TextureStorage(IntEnum):
@@ -422,7 +413,7 @@ class FuncShaderBuiltin(IntEnum):
     checker_smooth = 6
     lambertian_normal_z = 7
     eggbox = 8
-    speckle = 9
+
 
 
 class FuncCoordMode(IntEnum):
@@ -524,7 +515,27 @@ class FunctionShader:
     normal_type: NormalType = NormalType.none
 
 
-RileyShader = TextureShader | NodalShader | FunctionShader
+@dataclass(slots=True)
+class SpeckleShader:
+    """Configure a monochrome procedural speckle field on required nodal UVs.
+
+    ``uvs`` has shape ``(nodes, 2)``. Pattern parameters retain their cell-space
+    units. Output is ``coverage_intensity * output_scale + output_offset``
+    before bit-depth scaling. Automatic scaling matches FunctionShader's Python
+    default; use ``bits=-1, scaling_type=ScaleStrategy.none`` for raw intensities.
+    """
+
+    uvs: np.ndarray
+    params: Speckle2DParams = field(default_factory=Speckle2DParams)
+    output_scale: float = 1.0
+    output_offset: float = 0.0
+    bits: int = 8
+    scaling_type: ScaleStrategy = ScaleStrategy.auto
+    scaling_min: float = 0.0
+    scaling_max: float = 0.0
+
+
+RileyShader = TextureShader | NodalShader | FunctionShader | SpeckleShader
 Shader = RileyShader
 
 
@@ -991,9 +1002,7 @@ def _make_func_params(params_in: Any) -> cr.CFuncShaderParams:
     params_out.eggbox_pitch_1 = float(params_in.eggbox_pitch[1])
     params_out.eggbox_phase_0 = float(params_in.eggbox_phase[0])
     params_out.eggbox_phase_1 = float(params_in.eggbox_phase[1])
-    params_out.speckle = _make_speckle_params(
-        getattr(params_in, "speckle", Speckle2DParams()),
-    )
+
     return params_out
 
 
@@ -1374,6 +1383,11 @@ def _fill_mesh_array(
                 ShaderType.nodal_rgb if is_rgb else ShaderType.nodal
             )
             texture_storage = int(TextureStorage.u8)
+        elif isinstance(shader, SpeckleShader):
+            shader_tag = int(ShaderType.speckle)
+            texture_storage = int(TextureStorage.u8)
+            if shader.uvs is None:
+                raise ValueError("SpeckleShader requires uvs with shape (N, 2)")
         elif isinstance(shader, FunctionShader):
             is_rgb = (shader.channels == 3)
             shader_tag = int(
@@ -1402,10 +1416,17 @@ def _fill_mesh_array(
         mesh_array[nn].shader.func_shader_coord_mode = int(
             getattr(shader, "coord_mode", FuncCoordMode.parametric)
         )
-        mesh_array[nn].shader.func_shader_params = _make_func_params(
-            getattr(shader, "params", FuncShaderParams()),
+        if isinstance(shader, SpeckleShader):
+            mesh_array[nn].shader.speckle_params = _make_speckle_params(shader.params)
+            mesh_array[nn].shader.speckle_output_scale = float(shader.output_scale)
+            mesh_array[nn].shader.speckle_output_offset = float(shader.output_offset)
+        else:
+            mesh_array[nn].shader.func_shader_params = _make_func_params(
+                getattr(shader, "params", FuncShaderParams()),
+            )
+        mesh_array[nn].shader.normal_type = int(
+            getattr(shader, "normal_type", NormalType.none)
         )
-        mesh_array[nn].shader.normal_type = int(shader.normal_type)
 
         shader_uvs = getattr(shader, "uvs", None)
         if shader_uvs is None:
@@ -1413,6 +1434,10 @@ def _fill_mesh_array(
         else:
             uvs_np = _contig_f64_2d(shader_uvs, "uvs")
             uvs_shape = _as_shape_2d(uvs_np)
+            if isinstance(shader, SpeckleShader) and (
+                uvs_shape != (coords_shape[0], 2) or uvs_shape[0] == 0
+            ):
+                raise ValueError("SpeckleShader requires uvs with shape (N, 2), one row per node")
             uvs_view: cython.double[:, ::1] = uvs_np
             mesh_array[nn].shader.uvs = _make_array_2d_f64(
                 uvs_view,
@@ -1923,6 +1948,7 @@ __all__ = [
     "FuncShaderBuiltin",
     "FuncCoordMode",
     "FuncShaderParams",
+    "SpeckleShader",
     "Speckle2DParams",
     "SpecklePattern",
     "TextureSample",

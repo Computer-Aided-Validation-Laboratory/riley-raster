@@ -46,11 +46,7 @@ test "runtime speckle patterns prepare their production resources" {
         .coords = meshio.Coords.init(&coords, 3),
         .connect = meshio.Connect.init(&connect, 1, 3),
         .disp = null,
-        .shader = .{ .func = .{
-            .uvs = uvs,
-            .coord_mode = .uv,
-            .builtin = .speckle,
-        } },
+        .shader = .{ .speckle = .{ .uvs = uvs } },
     };
     const automatic = [_]struct {
         pattern: Pattern,
@@ -105,10 +101,10 @@ fn expectPreparedResources(
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     var mesh_input = base_input.*;
-    mesh_input.shader.func.params = .{ .settings = .{ .speckle = params } };
+    mesh_input.shader.speckle.params = params;
     const mesh_static = try meshpipeline.initMeshStatic(arena.allocator(), &mesh_input);
     const resources = switch (mesh_static.shader) {
-        .func => |func| func.speckle_resources,
+        .speckle => |shader| shader.resources,
         else => return error.UnexpectedShaderVariant,
     };
     try std.testing.expect(resources.kernel_index != null);

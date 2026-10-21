@@ -280,10 +280,11 @@ fn kernelIndex(config: speckleconfig.Config) u8 {
 
 /// Prepare only the resolved resource. Copies borrow it; the owner calls deinit.
 /// Keep the parameters/configuration immutable across frames using these resources.
+// Classification setup is alignment-sensitive; 64-byte alignment avoids a measured regression.
 pub fn generateResources(
     outer_alloc: std.mem.Allocator,
     params: Speckle2DParams,
-) !Resources {
+) align(64) !Resources {
     const resolved = try params.resolve();
     inline for (generation_configs) |config| {
         if (std.meta.eql(resolved, config)) {

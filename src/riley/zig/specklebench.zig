@@ -137,7 +137,7 @@ const texops = @import("textureops.zig");
 const TextureShader = shaderops.TexPrepared(u8, 1);
 
 fn SinkKernel(comptime kernel_index: ?usize, comptime filter: texops.TexSampConfig) type {
-    const Shader = if (kernel_index != null) shaderops.FuncPrepared else TextureShader;
+    const Shader = if (kernel_index != null) shaderops.SpecklePrepared else TextureShader;
     return struct {
         pub inline fn shade(
             comptime coord_space: geom.CoordSpace,
@@ -151,7 +151,7 @@ fn SinkKernel(comptime kernel_index: ?usize, comptime filter: texops.TexSampConf
             if (comptime coord_space != .clip_px_leng) @compileError("Benchmark requires tri6 clip coordinates");
             const u = buf.interpFuncCoord(0, interp.weights);
             const v = buf.interpFuncCoord(1, interp.weights);
-            const value = if (kernel_index) |index| speckle.Kernel(index).sampleScal(u, v, shader.params.settings.speckle, &shader.speckle_resources) else texops.sampScal(1, filter, &shader.tex, u, v)[0];
+            const value = if (kernel_index) |index| speckle.Kernel(index).sampleScal(u, v, shader.params, &shader.resources) else texops.sampScal(1, filter, &shader.tex, u, v)[0];
             sink.consumeScal(value);
         }
 
@@ -176,7 +176,7 @@ fn SinkKernel(comptime kernel_index: ?usize, comptime filter: texops.TexSampConf
                 u += weights[nn] * @as(VecSF, @splat(buf.func_coords[nn]));
                 v += weights[nn] * @as(VecSF, @splat(buf.func_coords[N + nn]));
             }
-            const values = if (kernel_index) |index| speckle.Kernel(index).sampleSIMD(u, v, active, shader.params.settings.speckle, &shader.speckle_resources) else texops.sampWide(1, filter, &shader.tex, u, v)[0];
+            const values = if (kernel_index) |index| speckle.Kernel(index).sampleSIMD(u, v, active, shader.params, &shader.resources) else texops.sampWide(1, filter, &shader.tex, u, v)[0];
             sink.consumeSIMD(values, active);
         }
     };
@@ -334,7 +334,7 @@ pub const Evaluation = struct {
     pub fn evaluate(self: *Evaluation, params: speckle.Speckle2DParams, resources: speckle.Resources, frames: usize) !void {
         const index = resources.kernel_index orelse return error.MissingPreparedSpeckleKernel;
         inline for (speckle.kernel_configs, 0..) |_, ii| {
-            if (index == ii) return self.evaluateKernel(ii, .{ .sample = .linear }, shaderops.FuncPrepared{ .elem_uvs = self.geometry.uvs, .speckle_resources = resources, .coord_mode = .uv, .builtin = .speckle, .params = .{ .settings = .{ .speckle = params } }, .bits = null, .scaling = .none }, frames);
+            if (index == ii) return self.evaluateKernel(ii, .{ .sample = .linear }, shaderops.SpecklePrepared{ .elem_uvs = self.geometry.uvs, .resources = resources, .params = params, .bits = null }, frames);
         }
         return error.UnsupportedBenchmarkEvaluator;
     }
@@ -444,7 +444,7 @@ test "speckle benchmark sink UV interpolation matches production grayscale shade
             const params: speckle.Speckle2DParams = .{ .pattern = .gaussian, .cells_per_uv = .{ 3.25, 2.75 } };
             var resources = try speckle.generateResources(std.testing.allocator, params);
             defer resources.deinit(std.testing.allocator);
-            const shader: shaderops.FuncPrepared = .{ .elem_uvs = null, .speckle_resources = resources, .coord_mode = .uv, .builtin = .speckle, .params = .{ .settings = .{ .speckle = params } }, .bits = null };
+            const shader: shaderops.SpecklePrepared = .{ .elem_uvs = undefined, .resources = resources, .params = params, .bits = null };
             var buf: shaderops.LocalShaderBuff(N) = .{};
             buf.func_coords = .{ 0, 1, 0, 0.5, 0.5, 0, 0, 0, 1, 0, 0.5, 0.5, 0, 0, 0, 0, 0, 0 };
             const weights = [N]F{ 0.1, 0.2, 0.3, 0.1, 0.1, 0.2 };
@@ -456,7 +456,7 @@ test "speckle benchmark sink UV interpolation matches production grayscale shade
             var image = MatSlice(F).init(&storage, 1, S);
             var expected: Accumulator = .{};
             var sink: Accumulator = .{};
-            @import("shaderkernels_scalar.zig").FuncKernel(N, 1, index).shade(.clip_px_leng, ctx, interp, &buf, &shader, ctx_report, &image);
+            @import("shaderkernels_scalar.zig").SpeckleKernel(N, index).shade(.clip_px_leng, ctx, interp, &buf, &shader, ctx_report, &image);
             expected.consumeScal(storage[0]);
             SinkKernel(index, .{ .sample = .linear }).shade(.clip_px_leng, ctx, interp, &buf, &shader, ctx_report, &sink);
             try std.testing.expectEqualDeep(expected.result(), sink.result());
@@ -464,7 +464,7 @@ test "speckle benchmark sink UV interpolation matches production grayscale shade
             inline for (0..N) |nn| v_weights[nn] = @splat(weights[nn]);
             var active: [S]bool = @splat(true);
             active[S - 1] = false;
-            @import("shaderkernels_simd.zig").FuncKernel(N, 1, index).shadeSIMD(.clip_px_leng, ctx, ctx_report, active, v_weights, @splat(0.2), @splat(0.3), @splat(@splat(1)), @splat(1), &buf, &shader, &image);
+            @import("shaderkernels_simd.zig").SpeckleKernel(N, index).shadeSIMD(.clip_px_leng, ctx, ctx_report, active, v_weights, @splat(0.2), @splat(0.3), @splat(@splat(1)), @splat(1), &buf, &shader, &image);
             expected = .{};
             expected.consumeSIMD(storage, active);
             sink = .{};

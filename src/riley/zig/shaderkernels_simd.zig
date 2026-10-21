@@ -16,7 +16,7 @@ const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 
-const comm = @import("shaderkernels_common.zig");
+const scal = @import("shaderkernels_scalar.zig");
 const shaderops = @import("shaderops.zig");
 const texops = @import("textureops.zig");
 const report = @import("report.zig");
@@ -29,26 +29,7 @@ const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
 pub fn NodalKernel(comptime N: usize) type {
     return struct {
-        pub inline fn shade(
-            comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
-            shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.NodalPrepared,
-            ctx_report: anytype,
-            spx_image_scratch: *MatSlice(F),
-        ) void {
-            comm.shadeNodalScalComm(
-                N,
-                coord_space,
-                ctx_shade,
-                interp,
-                shader_buf,
-                shader,
-                ctx_report,
-                spx_image_scratch,
-            );
-        }
+        pub const shade = scal.NodalKernel(N).shade;
 
         pub inline fn shadeSIMD(
             comptime coord_space: CoordSpace,
@@ -117,28 +98,7 @@ pub fn TexKernel(
     comptime C: usize,
 ) type {
     return struct {
-        pub inline fn shade(
-            comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
-            shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.TexPrepared(T, C),
-            ctx_report: anytype,
-            spx_img_scratch: *MatSlice(F),
-        ) void {
-            comm.shadeTexScalComm(
-                N,
-                T,
-                C,
-                coord_space,
-                ctx_shade,
-                interp,
-                shader_buf,
-                shader,
-                ctx_report,
-                spx_img_scratch,
-            );
-        }
+        pub const shade = scal.TexKernel(N, T, C).shade;
 
         pub inline fn shadeSIMD(
             comptime coord_space: CoordSpace,
@@ -326,34 +286,9 @@ inline fn shadeTexSIMDDispatchMode(
 pub fn FuncKernel(
     comptime N: usize,
     comptime C: usize,
-    comptime speckle_kernel: ?usize,
 ) type {
-    if (C != 1 and speckle_kernel != null) {
-        @compileError("Speckle kernels require one output channel.");
-    }
     return struct {
-        pub inline fn shade(
-            comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
-            shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.FuncPrepared,
-            ctx_report: anytype,
-            spx_image_scratch: *MatSlice(F),
-        ) void {
-            comm.shadeFuncScalComm(
-                N,
-                C,
-                coord_space,
-                speckle_kernel,
-                ctx_shade,
-                interp,
-                shader_buf,
-                shader,
-                ctx_report,
-                spx_image_scratch,
-            );
-        }
+        pub const shade = scal.FuncKernel(N, C).shade;
 
         pub inline fn shadeSIMD(
             comptime coord_space: CoordSpace,
@@ -387,7 +322,6 @@ pub fn FuncKernel(
                 shaderops.fillFuncPerspSIMD(
                     N,
                     C,
-                    speckle_kernel,
                     ctx_shade,
                     v_mask_active,
                     v_weights,
@@ -403,7 +337,6 @@ pub fn FuncKernel(
                 shaderops.fillFuncClipSIMD(
                     N,
                     C,
-                    speckle_kernel,
                     ctx_shade,
                     v_mask_active,
                     v_weights,
@@ -416,6 +349,54 @@ pub fn FuncKernel(
             } else {
                 @panic("shadeSIMD not implemented for this coord_space");
             }
+        }
+    };
+}
+
+// --------------------------------------------------------------------------------------
+// Speckle Shader
+// --------------------------------------------------------------------------------------
+
+pub fn SpeckleKernel(
+    comptime N: usize,
+    comptime kernel_index: usize,
+) type {
+    return struct {
+        pub const shade = scal.SpeckleKernel(N, kernel_index).shade;
+
+        pub inline fn shadeSIMD(
+            comptime coord_space: CoordSpace,
+            ctx_shade: shaderops.ShadeContext,
+            ctx_report: anytype,
+            v_mask_active: VecSB,
+            v_weights: [N]VecSF,
+            v_xi: VecSF,
+            v_eta: VecSF,
+            v_nodes_inv_z: [N]VecSF,
+            v_subpx_z: VecSF,
+            shader_buf: *const shaderops.LocalShaderBuff(N),
+            shader: *const shaderops.SpecklePrepared,
+            spx_image_scratch: *MatSlice(F),
+        ) void {
+            _ = ctx_report;
+            _ = v_xi;
+            _ = v_eta;
+            if (comptime coord_space != .raster and coord_space != .clip_px_leng) {
+                @panic("shadeSIMD not implemented for this coord_space");
+            }
+            shaderops.fillSpeckleSIMD(
+                N,
+                kernel_index,
+                coord_space,
+                ctx_shade,
+                v_mask_active,
+                v_weights,
+                v_nodes_inv_z,
+                v_subpx_z,
+                shader_buf,
+                shader,
+                spx_image_scratch,
+            );
         }
     };
 }

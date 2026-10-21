@@ -149,6 +149,15 @@ pub const FuncInput = struct {
     normal_type: NormalType = .none,
 };
 
+pub const SpeckleInput = struct {
+    uvs: ndarray.NDArray(F),
+    params: speckle.Speckle2DParams = .{},
+    output_scale: F = 1.0,
+    output_offset: F = 0.0,
+    bits: ?u8 = 8,
+    scaling: imageops.ScaleStrategy = .none,
+};
+
 pub const ShaderInput = union(enum) {
     nodal: NodalInput,
     tex_u8: TexInput(u8, 1),
@@ -159,6 +168,7 @@ pub const ShaderInput = union(enum) {
     tex_rgb_f: TexInput(F, 3),
     func: FuncInput,
     func_rgb: FuncInput,
+    speckle: SpeckleInput,
 };
 
 pub const FuncCoordMode = enum {
@@ -178,7 +188,6 @@ pub const FuncShaderBuiltin = enum {
     checker_smooth,
     lambertian_normal_z,
     eggbox,
-    speckle,
 };
 
 pub const ConstantParams = struct {
@@ -256,7 +265,6 @@ pub const FuncShaderParams = struct {
         checker_smooth: CheckerSmoothParams,
         lambertian_normal_z: LambertianParams,
         eggbox: EggboxParams,
-        speckle: speckle.Speckle2DParams,
     } = .{ .constant = .{} },
 };
 
@@ -287,13 +295,22 @@ pub fn TexStatic(comptime T: type, comptime C: usize) type {
 
 pub const FuncStatic = struct {
     elem_uvs: ?ndarray.NDArray(F),
-    speckle_resources: speckle.Resources = .{},
     coord_mode: FuncCoordMode = .para,
     builtin: FuncShaderBuiltin,
     params: FuncShaderParams = .{},
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
     normal_type: NormalType = .none,
+};
+
+pub const SpeckleStatic = struct {
+    elem_uvs: ndarray.NDArray(F),
+    resources: speckle.Resources,
+    params: speckle.Speckle2DParams,
+    output_scale: F = 1.0,
+    output_offset: F = 0.0,
+    bits: ?u8 = 8,
+    scaling: imageops.ScaleStrategy = .none,
 };
 
 pub const ShaderStatic = union(enum) {
@@ -306,6 +323,7 @@ pub const ShaderStatic = union(enum) {
     tex_rgb_f: TexStatic(F, 3),
     func: FuncStatic,
     func_rgb: FuncStatic,
+    speckle: SpeckleStatic,
 };
 
 // Prep: Culled and expanded shader data for a SINGLE frame.
@@ -342,7 +360,6 @@ pub fn TexPrepared(comptime T: type, comptime C: usize) type {
 
 pub const FuncPrepared = struct {
     elem_uvs: ?ndarray.NDArray(F),
-    speckle_resources: speckle.Resources = .{},
     elem_world_ref: ?ndarray.NDArray(F) = null,
     elem_world_def: ?ndarray.NDArray(F) = null,
     coord_mode: FuncCoordMode = .para,
@@ -356,6 +373,19 @@ pub const FuncPrepared = struct {
     elem_normals: ?ndarray.MappedNDArray(F) = null,
 };
 
+// Resources borrow the persistent static backing for this frame.
+pub const SpecklePrepared = struct {
+    elem_uvs: ndarray.NDArray(F),
+    resources: speckle.Resources,
+    params: speckle.Speckle2DParams,
+    output_scale: F = 1.0,
+    output_offset: F = 0.0,
+    bits: ?u8 = 8,
+    scaling: imageops.ScaleStrategy = .none,
+    scale_mul: F = 1.0,
+    scale_add: F = 0.0,
+};
+
 pub const ShaderPrepared = union(enum) {
     nodal: NodalPrepared,
     tex_u8: TexPrepared(u8, 1),
@@ -366,6 +396,7 @@ pub const ShaderPrepared = union(enum) {
     tex_rgb_f: TexPrepared(F, 3),
     func: FuncPrepared,
     func_rgb: FuncPrepared,
+    speckle: SpecklePrepared,
 };
 
 pub const ShadeContext = struct {
@@ -410,40 +441,25 @@ pub inline fn normFuncShaderParams(
         .checker_smooth => .{ .checker_smooth = .{} },
         .lambertian_normal_z => .{ .lambertian_normal_z = .{} },
         .eggbox => .{ .eggbox = .{} },
-        .speckle => .{ .speckle = .{} },
     };
     return out;
 }
 
-pub fn validateSpeckleInput(
-    input: FuncInput,
-    is_rgb: bool,
-    connect: *const meshio.Connect,
-) !void {
-    if (input.builtin != .speckle) return;
-    if (is_rgb) return error.SpeckleRequiresGrayscale;
-    if (input.coord_mode != .uv) return error.SpeckleRequiresUVCoordinates;
-    const uvs = input.uvs orelse return error.MissingUVsForSpeckleShader;
-    if (input.normal_type != .none) return error.SpeckleRequiresNoNormals;
-    if (uvs.dims.len != 2 or uvs.dims[1] != 2) {
-        return error.InvalidSpeckleUVShape;
+test "ordinary function builtin tags remain unchanged after speckle extraction" {
+    inline for (.{
+        FuncShaderBuiltin.constant,
+        FuncShaderBuiltin.linear,
+        FuncShaderBuiltin.quadratic,
+        FuncShaderBuiltin.sinusoidal,
+        FuncShaderBuiltin.sinusoidal_approx,
+        FuncShaderBuiltin.checker,
+        FuncShaderBuiltin.checker_smooth,
+        FuncShaderBuiltin.lambertian_normal_z,
+        FuncShaderBuiltin.eggbox,
+    }, 0..) |builtin, index| {
+        try std.testing.expectEqual(index, @intFromEnum(builtin));
     }
-    for (connect.table_mem) |node_idx| {
-        if (node_idx >= uvs.dims[0]) return error.InvalidSpeckleUVNodeIndex;
-    }
-    for (uvs.slice) |value| {
-        if (!std.math.isFinite(value)) return error.InvalidSpeckleUVValue;
-    }
-    if (input.params.coord_scale[0] != 1.0 or
-        input.params.coord_scale[1] != 1.0 or
-        input.params.coord_offset[0] != 0.0 or
-        input.params.coord_offset[1] != 0.0)
-    {
-        return error.SpeckleUsesTypedCoordinateParams;
-    }
-
-    const params = normFuncShaderParams(.speckle, input.params);
-    try params.settings.speckle.validate();
+    try std.testing.expectEqual(9, std.meta.fields(FuncShaderBuiltin).len);
 }
 
 test "texture input defaults to direct evaluation mode" {

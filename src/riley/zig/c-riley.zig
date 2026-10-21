@@ -268,7 +268,6 @@ pub const CFuncShaderParams = extern struct {
     eggbox_pitch_1: F,
     eggbox_phase_0: F,
     eggbox_phase_1: F,
-    speckle: CSpeckle2DParams,
 };
 
 pub const CShaderInput = extern struct {
@@ -290,6 +289,9 @@ pub const CShaderInput = extern struct {
     func_shader_coord_mode: u32,
     func_shader_params: CFuncShaderParams,
     normal_type: u32,
+    speckle_params: CSpeckle2DParams,
+    speckle_output_scale: F,
+    speckle_output_offset: F,
 };
 
 pub const CMeshInput = extern struct {
@@ -778,7 +780,6 @@ fn funcShaderBuiltinFromC(
 ) !shaderops.FuncShaderBuiltin {
     const lambertian = shaderops.FuncShaderBuiltin.lambertian_normal_z;
     const eggbox = shaderops.FuncShaderBuiltin.eggbox;
-    const speckle = shaderops.FuncShaderBuiltin.speckle;
     return switch (func_shader_builtin) {
         @intFromEnum(shaderops.FuncShaderBuiltin.constant) => .constant,
         @intFromEnum(shaderops.FuncShaderBuiltin.linear) => .linear,
@@ -789,7 +790,6 @@ fn funcShaderBuiltinFromC(
         @intFromEnum(shaderops.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
         @intFromEnum(lambertian) => .lambertian_normal_z,
         @intFromEnum(eggbox) => .eggbox,
-        @intFromEnum(speckle) => .speckle,
         else => error.InvalidFuncShaderBuiltin,
     };
 }
@@ -821,6 +821,22 @@ fn specklePatternFromC(pattern: u32) !speckleconfig.Pattern {
         1 => .gaussian,
         2 => .perlin,
         else => error.InvalidSpecklePattern,
+    };
+}
+
+fn speckleParamsFromC(in_params: CSpeckle2DParams) !shaderops.Speckle2DParams {
+    return .{
+        .pattern = try specklePatternFromC(in_params.pattern),
+        .seed = in_params.seed,
+        .cells_per_uv = .{ in_params.cells_per_uv_0, in_params.cells_per_uv_1 },
+        .occupancy = in_params.occupancy,
+        .radius_mean = in_params.radius_mean,
+        .radius_jitter = in_params.radius_jitter,
+        .edge_softness = in_params.edge_softness,
+        .perlin_coverage_threshold = in_params.perlin_coverage_threshold,
+        .perlin_coverage_transition_width = in_params.perlin_coverage_transition_width,
+        .foreground = in_params.foreground,
+        .background = in_params.background,
     };
 }
 
@@ -1017,24 +1033,6 @@ fn funcShaderParamsFromC(
                         in_params.eggbox_phase_0,
                         in_params.eggbox_phase_1,
                     },
-                },
-            },
-            .speckle => .{
-                .speckle = .{
-                    .pattern = try specklePatternFromC(in_params.speckle.pattern),
-                    .seed = in_params.speckle.seed,
-                    .cells_per_uv = .{
-                        in_params.speckle.cells_per_uv_0,
-                        in_params.speckle.cells_per_uv_1,
-                    },
-                    .occupancy = in_params.speckle.occupancy,
-                    .radius_mean = in_params.speckle.radius_mean,
-                    .radius_jitter = in_params.speckle.radius_jitter,
-                    .edge_softness = in_params.speckle.edge_softness,
-                    .perlin_coverage_threshold = in_params.speckle.perlin_coverage_threshold,
-                    .perlin_coverage_transition_width = in_params.speckle.perlin_coverage_transition_width,
-                    .foreground = in_params.speckle.foreground,
-                    .background = in_params.speckle.background,
                 },
             },
         },
@@ -1507,6 +1505,21 @@ fn buildMeshInput(
                 .normal_type = normal_type,
             } };
             built.uvs_array = uvs_array_opt;
+        },
+        6 => {
+            if (in_shader.uvs.cols_num != 2) return error.InvalidUVShape;
+            if (in_shader.uvs.rows_num == 0) return error.MissingUvs;
+            const params = try speckleParamsFromC(in_shader.speckle_params);
+            const uvs_array = try buildArray2DF64(allocator, &in_shader.uvs, 2);
+            built.mesh_input.shader = .{ .speckle = .{
+                .uvs = uvs_array,
+                .params = params,
+                .output_scale = in_shader.speckle_output_scale,
+                .output_offset = in_shader.speckle_output_offset,
+                .bits = bits,
+                .scaling = scaling,
+            } };
+            built.uvs_array = uvs_array;
         },
         else => return error.InvalidShaderTag,
     }
@@ -2660,9 +2673,93 @@ pub export fn rileyRaster(
     return 0;
 }
 
+test "C speckle mesh conversion owns UV metadata and preserves output controls" {
+    const alloc = std.testing.allocator;
+    var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+    var connect = [_]usize{ 0, 1, 2 };
+    var uvs = [_]F{ 0, 0, 1, 0, 0, 1 };
+    var input = std.mem.zeroes(CMeshInput);
+    input.mesh_type = @intFromEnum(gk.MeshType.tri3);
+    input.coords = .{ .elems = &coords, .rows_num = 3, .cols_num = 3 };
+    input.connect = .{ .elems = &connect, .rows_num = 1, .cols_num = 3 };
+    input.shader.shader_tag = 6;
+    input.shader.uvs = .{ .elems = &uvs, .rows_num = 3, .cols_num = 2 };
+    input.shader.bits = -1;
+    input.shader.scaling_tag = 2;
+    input.shader.scaling_min = -1;
+    input.shader.scaling_max = 2;
+    input.shader.speckle_output_scale = -2;
+    input.shader.speckle_output_offset = 0.5;
+    // Function-only fields are irrelevant to the dedicated shader.
+    input.shader.func_shader_builtin = 9;
+    input.shader.func_shader_coord_mode = std.math.maxInt(u32);
+    var built = try buildMeshInput(alloc, &input);
+    defer built.deinit(alloc);
+    const shader = built.mesh_input.shader.speckle;
+    try std.testing.expectEqualSlices(F, &uvs, shader.uvs.slice);
+    try std.testing.expect(built.uvs_array != null);
+    try std.testing.expectEqual(@as(F, -2), shader.output_scale);
+    try std.testing.expectEqual(@as(F, 0.5), shader.output_offset);
+    try std.testing.expect(shader.bits == null);
+    try std.testing.expectEqual([2]F{ -1, 2 }, shader.scaling.fixed);
+
+    input.shader.uvs.cols_num = 3;
+    try std.testing.expectError(error.InvalidUVShape, buildMeshInput(alloc, &input));
+    input.shader.uvs.cols_num = 2;
+    input.shader.uvs.rows_num = 0;
+    try std.testing.expectError(error.MissingUvs, buildMeshInput(alloc, &input));
+    input.shader.uvs.rows_num = 3;
+    input.shader.uvs.elems = null;
+    try std.testing.expectError(error.NullPointer, buildMeshInput(alloc, &input));
+    input.shader.uvs.elems = &uvs;
+    input.shader.speckle_params.pattern = 3;
+    try std.testing.expectError(error.InvalidSpecklePattern, buildMeshInput(alloc, &input));
+    input.shader.speckle_params.pattern = 0;
+    input.shader.shader_tag = 3;
+    try std.testing.expectError(error.InvalidFuncShaderBuiltin, buildMeshInput(alloc, &input));
+    input.shader.shader_tag = 4;
+    try std.testing.expectError(error.InvalidFuncShaderBuiltin, buildMeshInput(alloc, &input));
+}
+
+test "C shader ABI matches the public header" {
+    const c = @cImport({
+        @cInclude("riley.h");
+    });
+    comptime {
+        for (.{
+            .{ CSpeckle2DParams, c.CSpeckle2DParams },
+            .{ CFuncShaderParams, c.CFuncShaderParams },
+            .{ CShaderInput, c.CShaderInput },
+            .{ CMeshInput, c.CMeshInput },
+        }) |types| {
+            if (@sizeOf(types[0]) != @sizeOf(types[1]) or
+                @alignOf(types[0]) != @alignOf(types[1]))
+            {
+                @compileError("C ABI size/alignment mismatch: " ++ @typeName(types[0]));
+            }
+            for (@typeInfo(types[0]).@"struct".fields) |field| {
+                if (@offsetOf(types[0], field.name) != @offsetOf(types[1], field.name)) {
+                    @compileError("C ABI offset mismatch: " ++ field.name);
+                }
+            }
+        }
+    }
+}
+
+test "C function builtin IDs remain zero through eight and reject nine" {
+    inline for (std.meta.fields(shaderops.FuncShaderBuiltin), 0..) |field, index| {
+        try std.testing.expectEqual(index, field.value);
+        const builtin = try funcShaderBuiltinFromC(@intCast(index));
+        try std.testing.expectEqual(field.value, @intFromEnum(builtin));
+        const params = try funcShaderParamsFromC(builtin, std.mem.zeroes(CFuncShaderParams));
+        try std.testing.expectEqual(builtin, std.meta.activeTag(params.settings));
+    }
+    try std.testing.expectError(error.InvalidFuncShaderBuiltin, funcShaderBuiltinFromC(9));
+    try std.testing.expectError(error.InvalidFuncShaderBuiltin, funcShaderBuiltinFromC(std.math.maxInt(u32)));
+}
+
 test "C speckle conversion validates patterns and leaves evaluator policy at defaults" {
-    var input = std.mem.zeroes(CFuncShaderParams);
-    input.speckle = .{
+    var input = CSpeckle2DParams{
         .seed = 7,
         .pattern = 0,
         .cells_per_uv_0 = 3.25,
@@ -2678,24 +2775,21 @@ test "C speckle conversion validates patterns and leaves evaluator policy at def
     };
     const patterns = [_]speckleconfig.Pattern{ .disk, .gaussian, .perlin };
     for (patterns, 0..) |pattern, index| {
-        input.speckle.pattern = @intCast(index);
-        const params = try funcShaderParamsFromC(.speckle, input);
-        try std.testing.expectEqual(pattern, params.settings.speckle.pattern);
-        try std.testing.expectEqual([2]F{ 3.25, 2.75 }, params.settings.speckle.cells_per_uv);
+        input.pattern = @intCast(index);
+        const params = try speckleParamsFromC(input);
+        try std.testing.expectEqual(pattern, params.pattern);
+        try std.testing.expectEqual([2]F{ 3.25, 2.75 }, params.cells_per_uv);
         inline for (.{ "seed", "occupancy", "radius_mean", "radius_jitter", "edge_softness", "perlin_coverage_threshold", "perlin_coverage_transition_width", "foreground", "background" }) |field| {
-            try std.testing.expectEqual(@field(input.speckle, field), @field(params.settings.speckle, field));
+            try std.testing.expectEqual(@field(input, field), @field(params, field));
         }
-        try std.testing.expect(params.settings.speckle.evaluator == null);
-        try std.testing.expect(params.settings.speckle.neighbor_count == null);
+        try std.testing.expect(params.evaluator == null);
+        try std.testing.expect(params.neighbor_count == null);
     }
     for ([_]u32{ 3, std.math.maxInt(u32) }) |invalid| {
-        input.speckle.pattern = invalid;
+        input.pattern = invalid;
         try std.testing.expectError(
             error.InvalidSpecklePattern,
-            funcShaderParamsFromC(.speckle, input),
+            speckleParamsFromC(input),
         );
     }
-    // Unused speckle parameters must not reject another builtin.
-    const constant = try funcShaderParamsFromC(.constant, input);
-    try std.testing.expect(constant.settings == .constant);
 }

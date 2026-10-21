@@ -201,12 +201,12 @@ typedef struct c_func_shader_params {
     double eggbox_pitch_1;
     double eggbox_phase_0;
     double eggbox_phase_1;
-    CSpeckle2DParams speckle;
+
 } CFuncShaderParams;
 
 
 typedef struct c_shader_input {
-    uint32_t shader_tag;
+    uint32_t shader_tag; /* 0: tex, 1: tex_rgb, 2: nodal, 3: func, 4: func_rgb, 5: nodal_rgb, 6: speckle */
     CArray2DF64 uvs;
     CArray3DF64 tex;
     CArray3DU8 tex_u8;
@@ -224,6 +224,9 @@ typedef struct c_shader_input {
     uint32_t func_shader_coord_mode;
     CFuncShaderParams func_shader_params;
     uint32_t normal_type;
+    CSpeckle2DParams speckle_params;
+    double speckle_output_scale;
+    double speckle_output_offset;
 } CShaderInput;
 
 typedef struct c_mesh_input {

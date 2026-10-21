@@ -397,7 +397,7 @@ pub fn rasterTileCore(
                         @intCast(s.elem_field.dims[2]),
                     .tex_u8, .tex_u16, .tex_f => 1,
                     .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
-                    .func => 1,
+                    .func, .speckle => 1,
                     .func_rgb => 3,
                 };
 
@@ -623,6 +623,37 @@ pub fn rasterTileCore(
                             subpx_scratch,
                         );
                     },
+                    .speckle => |*shader| {
+                        @setEvalBranchQuota(100_000);
+                        var shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                        shader_buf.loadFuncCoords(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
+                        // Resolve the prepared evaluator once per overlap, outside sample loops.
+                        const index = shader.resources.kernel_index orelse
+                            return error.MissingPreparedSpeckleKernel;
+                        shaded_px += try switch (index) {
+                            inline 0...speckle.kernel_configs.len - 1 => |kernel_index| blk: {
+                                const SK = shadekerns.SpeckleKernel(N, kernel_index);
+                                break :blk RasterBackend.RasterEngine(
+                                    GK,
+                                    SK,
+                                    shaderops.SpecklePrepared,
+                                    root_class,
+                                ).rasterElemInTile(
+                                    report_mode,
+                                    ctx_rast,
+                                    ctx_report,
+                                    tile,
+                                    ov,
+                                    coords,
+                                    hull,
+                                    shader,
+                                    &shader_buf,
+                                    subpx_scratch,
+                                );
+                            },
+                            else => error.InvalidPreparedSpeckleKernel,
+                        };
+                    },
                     .func => |*shader| {
                         shaded_px += try renderFunc(
                             RasterBackend,
@@ -679,7 +710,6 @@ pub fn rasterTileCore(
     };
 }
 
-// Select the prepared speckle kernel once per overlap, before any raster sample loop.
 fn renderFunc(
     comptime RasterBackend: type,
     comptime GK: type,
@@ -716,34 +746,7 @@ fn renderFunc(
         shader_buf.loadNormals(normals.array, prep_idx * 3 * N);
     }
 
-    if (shader.builtin == .speckle) {
-        if (comptime C != 1) {
-            return error.SpeckleRequiresGrayscale;
-        } else {
-            const index = shader.speckle_resources.kernel_index orelse
-                return error.MissingPreparedSpeckleKernel;
-            return switch (index) {
-                inline 0...speckle.kernel_configs.len - 1 => |kernel_index| blk: {
-                    const SK = shadekerns.FuncKernel(N, C, kernel_index);
-                    break :blk RasterBackend.RasterEngine(GK, SK, FuncPrepared, root_class).rasterElemInTile(
-                        report_mode,
-                        ctx_rast,
-                        ctx_report,
-                        tile,
-                        overlap,
-                        coords,
-                        hull,
-                        shader,
-                        &shader_buf,
-                        subpx_scratch,
-                    );
-                },
-                else => error.InvalidPreparedSpeckleKernel,
-            };
-        }
-    }
-
-    const SK = shadekerns.FuncKernel(N, C, null);
+    const SK = shadekerns.FuncKernel(N, C);
     return RasterBackend.RasterEngine(GK, SK, FuncPrepared, root_class).rasterElemInTile(
         report_mode,
         ctx_rast,

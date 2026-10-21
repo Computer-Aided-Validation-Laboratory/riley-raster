@@ -97,9 +97,18 @@ UV-based grayscale patterns are selected per mesh and stay fixed across its fram
 | `perlin` | Thresholded gradient noise | Coverage threshold and transition width |
 
 All patterns share seed, cell density, and foreground/background controls.
-[Speckle2DParams](./src/riley/cython/riley.py) documents the parameters; Python uses
-`SpecklePattern` and `to_func_shader_params()`. Evaluators are selected automatically;
-see the [developer notes](./dev/README.md#procedural-generation-options) for native experiments.
+[Speckle2DParams](./src/riley/cython/riley.py) documents the parameters. Attach a
+`SpeckleShader` directly to a mesh; it requires UVs and produces grayscale output:
+
+```python
+shader = riley.SpeckleShader(
+    uvs=uvs,
+    params=riley.Speckle2DParams(pattern=riley.SpecklePattern.disk, seed=42),
+)
+```
+
+Evaluators are selected automatically; see the
+[developer notes](./dev/README.md#procedural-generation-options) for native experiments.
 
 ```shell
 zig build demo-procedural-sphere200 -Doptimize=ReleaseFast -- --pattern gaussian

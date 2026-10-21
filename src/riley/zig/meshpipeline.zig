@@ -160,7 +160,7 @@ pub fn countOutputFields(meshes: []const MeshInput) u8 {
             .nodal => |shader| shader.field.getFieldsN(),
             .tex_u8, .tex_u16, .tex_f => 1,
             .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
-            .func => 1,
+            .func, .speckle => 1,
             .func_rgb => 3,
         };
         num_fields = @max(num_fields, mesh_fields);
@@ -227,6 +227,7 @@ pub fn meshInputFromSimDataSlice(
                 .tex_rgb_f => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
+                .speckle => |shader| outer_alloc.free(shader.uvs.slice),
                 .func => |tex_func| {
                     if (tex_func.uvs) |uvs| outer_alloc.free(uvs.slice);
                 },
@@ -305,24 +306,11 @@ pub fn initMeshStatic(
     allocator: std.mem.Allocator,
     mesh_input: *const MeshInput,
 ) !MeshStatic {
-    switch (mesh_input.shader) {
-        .func => |func_input| try shaderops.validateSpeckleInput(
-            func_input,
-            false,
-            &mesh_input.connect,
-        ),
-        .func_rgb => |func_input| try shaderops.validateSpeckleInput(
-            func_input,
-            true,
-            &mesh_input.connect,
-        ),
-        else => {},
-    }
-
     const coords_orig = try sceneops.duplicateCoords(
         allocator,
         mesh_input.coords,
     );
+    errdefer allocator.free(coords_orig.mem);
 
     var shader_static: shaderops.ShaderStatic = undefined;
     switch (mesh_input.shader) {
@@ -427,6 +415,25 @@ pub fn initMeshStatic(
                 .normal_type = tex_in.normal_type,
             } };
         },
+        .speckle => |input| {
+            const elem_uvs = try prepUVs(allocator, &input.uvs, &mesh_input.connect);
+            errdefer {
+                allocator.free(elem_uvs.slice);
+                elem_uvs.deinit(allocator);
+            }
+            const resource_start = @import("benchtiming.zig").start();
+            const resources = try speckleops.generateResources(allocator, input.params);
+            @import("benchtiming.zig").resourceEnd(resource_start);
+            shader_static = .{ .speckle = .{
+                .elem_uvs = elem_uvs,
+                .resources = resources,
+                .params = input.params,
+                .output_scale = input.output_scale,
+                .output_offset = input.output_offset,
+                .bits = input.bits,
+                .scaling = input.scaling,
+            } };
+        },
         .func, .func_rgb => |func_input| {
             const elem_uvs = if (func_input.uvs) |uvs|
                 try prepUVs(
@@ -440,15 +447,9 @@ pub fn initMeshStatic(
                 func_input.builtin,
                 func_input.params,
             );
-            const resource_start = @import("benchtiming.zig").start();
-            const resources: speckleops.Resources = if (func_input.builtin == .speckle)
-                try speckleops.generateResources(allocator, params.settings.speckle)
-            else
-                .{};
-            if (func_input.builtin == .speckle) @import("benchtiming.zig").resourceEnd(resource_start);
+
             const func_static: shaderops.FuncStatic = .{
                 .elem_uvs = elem_uvs,
-                .speckle_resources = resources,
                 .coord_mode = func_input.coord_mode,
                 .builtin = func_input.builtin,
                 .params = params,
@@ -1561,6 +1562,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         tex_static,
                     );
                 },
+                .speckle => |speckle_static| {
+                    mesh_prep.shader = try self.prepareSpeckleShader(outer_alloc, speckle_static);
+                },
                 .func => |func_static| {
                     mesh_prep.shader = try prepareFuncShader(
                         1,
@@ -1692,6 +1696,30 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
 
+        fn gatherVisElemUVs(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+            elem_uvs_full: ndarray.NDArray(F),
+        ) !ndarray.NDArray(F) {
+            var elem_uvs = try ndarray.NDArray(F).initFlat(
+                outer_alloc,
+                &.{ self.mesh_workspace.elems_in_image, 2, elem_uvs_full.dims[2] },
+            );
+            var stage = GatherVisibleUVStage{
+                .elem_uvs_full = elem_uvs_full,
+                .vis_orig_elem_inds = self.mesh_workspace.vis_orig_elem_inds,
+                .elem_uvs = &elem_uvs,
+            };
+            pce.runStaticRange(
+                self.chunk_exec,
+                &stage,
+                runGatherVisibleUV,
+                self.mesh_workspace.elems_in_image,
+                self.vis_chunk_size,
+            );
+            return elem_uvs;
+        }
+
         fn prepareTexShader(
             comptime T: type,
             comptime C: usize,
@@ -1711,28 +1739,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 params,
             );
 
-            var elem_uvs = try ndarray.NDArray(F).initFlat(
-                outer_alloc,
-                &[_]usize{
-                    self.mesh_workspace.elems_in_image,
-                    2,
-                    tex_static.elem_uvs.dims[2],
-                },
-            );
-
-            var uv_stage = GatherVisibleUVStage{
-                .elem_uvs_full = tex_static.elem_uvs,
-                .vis_orig_elem_inds = self.mesh_workspace.vis_orig_elem_inds,
-                .elem_uvs = &elem_uvs,
-            };
-
-            pce.runStaticRange(
-                self.chunk_exec,
-                &uv_stage,
-                runGatherVisibleUV,
-                self.mesh_workspace.elems_in_image,
-                self.vis_chunk_size,
-            );
+            const elem_uvs = try self.gatherVisElemUVs(outer_alloc, tex_static.elem_uvs);
 
             const elem_normals = try self.prepVisNormals(
                 outer_alloc,
@@ -1813,6 +1820,30 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
 
+        fn prepareSpeckleShader(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+            speckle_static: shaderops.SpeckleStatic,
+        ) !shaderops.ShaderPrepared {
+            // Match the former function shader's normalized range, not sampled extrema.
+            const factors = imageops.getScaleFactors(
+                speckle_static.scaling,
+                speckle_static.bits,
+                .{ .min = 0.0, .range = 1.0 },
+            );
+            return .{ .speckle = .{
+                .elem_uvs = try self.gatherVisElemUVs(outer_alloc, speckle_static.elem_uvs),
+                .resources = speckle_static.resources,
+                .params = speckle_static.params,
+                .output_scale = speckle_static.output_scale,
+                .output_offset = speckle_static.output_offset,
+                .bits = speckle_static.bits,
+                .scaling = speckle_static.scaling,
+                .scale_mul = factors.mul,
+                .scale_add = factors.add,
+            } };
+        }
+
         fn prepareFuncShader(
             comptime C: usize,
             outer_alloc: std.mem.Allocator,
@@ -1825,33 +1856,13 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .{ .min = 0.0, .range = 1.0 },
             );
 
-            const elem_uvs = if (func_static.coord_mode == .uv) blk: {
-                const elem_uvs_full = func_static.elem_uvs orelse
-                    return error.MissingUVsForFuncShader;
-                var elem_uvs = try ndarray.NDArray(F).initFlat(
+            const elem_uvs = if (func_static.coord_mode == .uv)
+                try self.gatherVisElemUVs(
                     outer_alloc,
-                    &[_]usize{
-                        self.mesh_workspace.elems_in_image,
-                        2,
-                        elem_uvs_full.dims[2],
-                    },
-                );
-
-                var uv_stage = GatherVisibleUVStage{
-                    .elem_uvs_full = elem_uvs_full,
-                    .vis_orig_elem_inds = self.mesh_workspace.vis_orig_elem_inds,
-                    .elem_uvs = &elem_uvs,
-                };
-
-                pce.runStaticRange(
-                    self.chunk_exec,
-                    &uv_stage,
-                    runGatherVisibleUV,
-                    self.mesh_workspace.elems_in_image,
-                    self.vis_chunk_size,
-                );
-                break :blk elem_uvs;
-            } else null;
+                    func_static.elem_uvs orelse return error.MissingUVsForFuncShader,
+                )
+            else
+                null;
 
             const elem_world_ref = if (func_static.coord_mode == .world_reference)
                 try self.gatherVisElemCoordsFromNodes(
@@ -1876,7 +1887,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
             const func_prepared: shaderops.FuncPrepared = .{
                 .elem_uvs = elem_uvs,
-                .speckle_resources = func_static.speckle_resources,
                 .elem_world_ref = elem_world_ref,
                 .elem_world_def = elem_world_def,
                 .coord_mode = func_static.coord_mode,
@@ -1925,4 +1935,73 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
     };
+}
+
+test "speckle preparation gathers visible UVs and borrows static resources across frames" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0 };
+    var connect = [_]usize{ 0, 1, 2, 1, 3, 2 };
+    var uvs = [_]F{ 0, 0, 1, 0, 0, 1, 1, 1 };
+    const input = MeshInput{
+        .mesh_type = .tri3,
+        .coords = meshio.Coords.init(&coords, 4),
+        .connect = meshio.Connect.init(&connect, 2, 3),
+        .disp = null,
+        .shader = .{ .speckle = .{
+            .uvs = try ndarray.NDArray(F).init(alloc, &uvs, &.{ 4, 2 }),
+            .params = .{ .cells_per_uv = .{ 4, 3 } },
+            .output_scale = -0.75,
+            .output_offset = 0.875,
+        } },
+    };
+    const mesh_static = try initMeshStatic(alloc, &input);
+    const static = mesh_static.shader.speckle;
+    try std.testing.expectEqual(@as(u8, 1), countOutputFields(&.{input}));
+    try std.testing.expectEqualSlices(usize, &.{ 2, 2, 3 }, static.elem_uvs.dims);
+    try std.testing.expectEqualSlices(F, &.{ 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1 }, static.elem_uvs.slice);
+    try std.testing.expect(static.resources.classified != null);
+
+    var executor = pce.ParaChunkExecutor.init(std.testing.io, 1);
+    // Exercise shader preparation independently of projection/culling.
+    var pipeline: FrameMeshPipeline(.tri3) = undefined;
+    pipeline.chunk_exec = &executor;
+    pipeline.vis_chunk_size = 1;
+    var visible = [_]usize{ 1, 0 };
+    pipeline.mesh_workspace.vis_orig_elem_inds = &visible;
+    pipeline.mesh_workspace.elems_in_image = visible.len;
+    const strategies = [_]imageops.ScaleStrategy{
+        .none, .auto, .{ .fixed = .{ -2, 4 } }, .{ .frac = .{ 0.25, 0.75 } },
+    };
+    for (strategies) |strategy| {
+        for ([_]?u8{ null, 8, 16 }) |bits| {
+            var shader_static = static;
+            shader_static.scaling = strategy;
+            shader_static.bits = bits;
+            const prepared = (try pipeline.prepareSpeckleShader(alloc, shader_static)).speckle;
+            try std.testing.expectEqualSlices(F, &.{ 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1 }, prepared.elem_uvs.slice);
+            try std.testing.expectEqual(static.resources.classified.?.states.ptr, prepared.resources.classified.?.states.ptr);
+            try std.testing.expectEqual(static.resources.kernel_index, prepared.resources.kernel_index);
+            try std.testing.expectEqualDeep(.{ static.params, static.output_scale, static.output_offset }, .{ prepared.params, prepared.output_scale, prepared.output_offset });
+            // The old function path always used min=0/range=1, even for fixed bounds.
+            const max: F = if (bits) |b| @floatFromInt((@as(u32, 1) << @intCast(b)) - 1) else 1;
+            const expected_mul: F = switch (strategy) {
+                .none => 1,
+                .frac => 0.5 * max,
+                else => max,
+            };
+            const expected_add: F = if (strategy == .frac) 0.25 * max else 0;
+            try std.testing.expectEqual(expected_mul, prepared.scale_mul);
+            try std.testing.expectEqual(expected_add, prepared.scale_add);
+        }
+    }
+    visible[0] = 0;
+    pipeline.mesh_workspace.elems_in_image = 1;
+    const next = (try pipeline.prepareSpeckleShader(alloc, static)).speckle;
+    try std.testing.expectEqualSlices(F, static.elem_uvs.slice[0..6], next.elem_uvs.slice);
+    try std.testing.expectEqual(static.resources.classified.?.states.ptr, next.resources.classified.?.states.ptr);
+    pipeline.mesh_workspace.elems_in_image = 0;
+    const empty = (try pipeline.prepareSpeckleShader(alloc, static)).speckle;
+    try std.testing.expectEqual(@as(usize, 0), empty.elem_uvs.slice.len);
 }

@@ -268,7 +268,7 @@ const Scene = struct {
     uvs: uvio.UVMap,
 
     fn mesh(self: Scene, alloc: std.mem.Allocator, opts: Options, texture: ?texops.Tex(u8, 1)) !mo.MeshInput {
-        const shader: shaderops.ShaderInput = if (texture) |tex| .{ .tex_u8 = .{ .uvs = self.uvs.array, .tex = tex, .samp_cfg = opts.textureConfig(), .bits = null } } else .{ .func = .{ .uvs = self.uvs.array, .coord_mode = .uv, .builtin = .speckle, .params = .{ .settings = .{ .speckle = opts.params() } }, .bits = null } };
+        const shader: shaderops.ShaderInput = if (texture) |tex| .{ .tex_u8 = .{ .uvs = self.uvs.array, .tex = tex, .samp_cfg = opts.textureConfig(), .bits = null } } else .{ .speckle = .{ .uvs = self.uvs.array, .params = opts.params(), .bits = null } };
         // Zero displacement preserves production per-frame geometry preparation.
         return .{ .mesh_type = .tri6, .coords = self.sim.coords, .connect = self.sim.connect, .disp = try meshio.Field.initAlloc(alloc, opts.frames, self.sim.coords.mat.rows_num, 3), .shader = shader };
     }

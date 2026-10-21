@@ -199,7 +199,7 @@ cdef extern from "riley.h":
         double eggbox_pitch_1
         double eggbox_phase_0
         double eggbox_phase_1
-        CSpeckle2DParams speckle
+
 
 
     ctypedef struct CShaderInput:
@@ -221,6 +221,9 @@ cdef extern from "riley.h":
         uint32_t func_shader_coord_mode
         CFuncShaderParams func_shader_params
         uint32_t normal_type
+        CSpeckle2DParams speckle_params
+        double speckle_output_scale
+        double speckle_output_offset
 
     ctypedef struct CMeshInput:
         uint32_t mesh_type

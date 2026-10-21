@@ -103,14 +103,10 @@ pub fn runStaticTri6Demo(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = .{ .func = .{
+        .shader = .{ .speckle = .{
             .uvs = uvs.array,
-            .coord_mode = .uv,
-            .builtin = .speckle,
-            .params = .{ .settings = .{ .speckle = args.params } },
-            .bits = 8,
+            .params = args.params,
             .scaling = .auto,
-            .normal_type = .none,
         } },
     };
 

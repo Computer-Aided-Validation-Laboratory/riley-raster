@@ -85,11 +85,7 @@ pub fn TexKernel(
 pub fn FuncKernel(
     comptime N: usize,
     comptime C: usize,
-    comptime speckle_kernel: ?usize,
 ) type {
-    if (C != 1 and speckle_kernel != null) {
-        @compileError("Speckle kernels require one output channel.");
-    }
     return struct {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
@@ -104,12 +100,50 @@ pub fn FuncKernel(
                 N,
                 C,
                 coord_space,
-                speckle_kernel,
                 ctx_shade,
                 interp,
                 shader_buf,
                 shader,
                 ctx_report,
+                spx_image_scratch,
+            );
+        }
+    };
+}
+
+// --------------------------------------------------------------------------------------
+// Speckle Shader
+// --------------------------------------------------------------------------------------
+
+pub fn SpeckleKernel(
+    comptime N: usize,
+    comptime kernel_index: usize,
+) type {
+    return struct {
+        pub inline fn shade(
+            comptime coord_space: CoordSpace,
+            ctx_shade: shaderops.ShadeContext,
+            interp: shaderops.InterpData(N),
+            shader_buf: *const shaderops.LocalShaderBuff(N),
+            shader: *const shaderops.SpecklePrepared,
+            ctx_report: anytype,
+            spx_image_scratch: *MatSlice(F),
+        ) void {
+            if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
+                ctx_report.recordDepth(
+                    ctx_shade.global_subx,
+                    ctx_shade.global_suby,
+                    1.0 / interp.sub_pixel_z,
+                );
+            }
+            shaderops.fillSpeckleScal(
+                N,
+                kernel_index,
+                coord_space,
+                ctx_shade,
+                interp,
+                shader_buf,
+                shader,
                 spx_image_scratch,
             );
         }

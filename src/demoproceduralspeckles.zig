@@ -81,14 +81,10 @@ pub fn main(init: std.process.Init) !void {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = disp,
-        .shader = .{ .func = .{
+        .shader = .{ .speckle = .{
             .uvs = uvs.array,
-            .coord_mode = .uv,
-            .builtin = .speckle,
-            .params = .{ .settings = .{ .speckle = args.params } },
-            .bits = 8,
+            .params = args.params,
             .scaling = .auto,
-            .normal_type = .none,
         } },
     };
 

@@ -110,6 +110,25 @@ zig build test-basic -Dprecision=f32 -Dsimd=off
 
 ### Procedural generation options
 
+Speckles are a dedicated grayscale shader, not a function-shader builtin:
+
+```zig
+.shader = .{ .speckle = .{ .uvs = uvs, .params = .{ .seed = 42 } } }
+```
+
+Python uses `SpeckleShader(uvs=uvs, params=Speckle2DParams(seed=42))`.
+UVs are required; RGB, normals, and coordinate-mode controls are not exposed.
+`SpeckleInput` becomes `SpeckleStatic` at mesh setup (gathered UVs and generated
+resources), then `SpecklePrepared` per frame (visible UVs and borrowed resources).
+Parameter/shape checks run at the input boundary; UV payload scans require full
+validation. Output transforms retain the arithmetic order
+`(sample * output_scale + output_offset) * scale_mul + scale_add`.
+
+This replaces `FunctionShader` with the speckle builtin and
+`Speckle2DParams.to_func_shader_params()`; migrate callers rather than retaining
+that route. The C ABI uses shader tag 6 and dedicated speckle fields; rebuild
+native/Cython clients against the updated header. Other shader/builtin IDs are unchanged.
+
 `-Denable-all-evaluators=true` enables native-Zig `Speckle2DParams.evaluator` and
 `neighbor_count` overrides. Default builds reject every explicit override, even one
 matching a default. Counts are 1/4/9; omitted counts use 9, or 1 for explicit
