@@ -837,7 +837,7 @@ test "SIMD func builtin matches scalar builtin per lane" {
 
 test "direct fixed scalar handles active inactive nonfinite and scaling" {
     inline for (speckle.kernel_configs, 0..) |config, kernel_index| {
-        if (comptime config.evaluator != .direct_fixed) continue;
+        if (comptime std.meta.activeTag(config) != .direct_fixed) continue;
 
         const inactive: speckle.DirectFixedSpeckleCell2D = 0;
         const cells = [_]speckle.DirectFixedSpeckleCell2D{
@@ -850,7 +850,7 @@ test "direct fixed scalar handles active inactive nonfinite and scaling" {
         };
         const speckle_params: speckle.Speckle2DParams = .{
             .evaluator = .direct_fixed,
-            .neighbor_count = 1,
+            .neighbor_count = .one,
             .cells_per_uv = .{ 2.0, 1.0 },
             .occupancy = 0.5,
             .radius_mean = 0.25,
@@ -895,7 +895,7 @@ test "direct fixed scalar handles active inactive nonfinite and scaling" {
 
 test "u8 speckle mask scalar sampling handles scaling and nonfinite UVs" {
     inline for (speckle.kernel_configs, 0..) |config, kernel_index| {
-        if (comptime config.evaluator != .mask_u8) continue;
+        if (comptime std.meta.activeTag(config) != .mask_u8) continue;
 
         const bits = [_]u8{ 0, 64, 128, 255 };
         const mask_params: speckle.Speckle2DParams = .{

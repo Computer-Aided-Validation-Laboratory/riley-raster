@@ -129,10 +129,13 @@ This replaces `FunctionShader` with the speckle builtin and
 that route. The C ABI uses shader tag 6 and dedicated speckle fields; rebuild
 native/Cython clients against the updated header. Other shader/builtin IDs are unchanged.
 
-`-Denable-all-evaluators=true` enables native-Zig `Speckle2DParams.evaluator` and
-`neighbor_count` overrides. Default builds reject every explicit override, even one
-matching a default. Counts are 1/4/9; omitted counts use 9, or 1 for explicit
-`direct-fixed`. Non-mock Perlin rejects explicit neighborhood counts.
+Native Zig `Speckle2DParams.neighbor_count` uses `Neighborhood` (`.one`, `.four`,
+`.nine`); build settings use `MaskResolution` (`.eight`, `.twelve`, `.sixteen`).
+Resolved `Config` is a tagged evaluator union encoding valid combinations. `-Denable-all-evaluators=true` enables native evaluator and
+neighborhood overrides; default builds reject explicit overrides. Hard/soft edges
+apply only to disks. Perlin has no dummy neighborhood, and mock resolution erases
+ignored controls after external validation. CLI neighborhoods remain numeric
+1/4/9; `-Dspeckle-mask-samples-per-cell` remains 8/12/16.
 
 | Pattern | Default evaluator | Native alternatives |
 | --- | --- | --- |
@@ -146,10 +149,16 @@ All defaults preserve analytic coverage. Masks use nearest-grid sampling;
 ablation for every pattern. Python/C expose only the defaults.
 Compatibility rules are defined in [speckleconfig.zig](../src/riley/zig/speckleconfig.zig).
 
-`-Dspeckle-mask-samples-per-cell=8|12|16` selects mask/classification resolution
-(default 12). It affects all explicit masks, including Perlin, but not analytic
-field fidelity. Precision affects generation: a fixed seed does not guarantee
-identical f32/f64 results.
+The native catalogue has 45 distinct generators (12 equivalent mock
+configurations collapse to one); experimental sampling remains 28 configurations.
+Default generation and sampling each have four configurations.
+Perlin records have null neighborhood, and irrelevant pattern/neighborhood/edge
+metadata may be null. The benchmark request still carries the requested pattern
+and echoes explicit mock neighborhoods for driver validation. Python and C retain
+flat parameters and default-only policy; their representations do not change.
+`-Dspeckle-mask-samples-per-cell=8|12|16` selects mask resolution (default 12),
+affecting explicit masks but not analytic field fidelity. Precision affects
+generation: a fixed seed does not guarantee identical f32/f64 results.
 
 The benchmark runner reads the native catalogue; use `--a classified-indexed`
 or `--b classified-indexed`, not historical numbered selectors. It supports

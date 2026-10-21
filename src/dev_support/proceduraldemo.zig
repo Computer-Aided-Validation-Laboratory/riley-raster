@@ -176,7 +176,9 @@ pub fn parseDemoArgs(raw_args: anytype, comptime spec: DemoSpec) !?DemoArgs {
             args.params.evaluator = speckleconfig.parseEvaluator(value) orelse
                 return error.InvalidSpeckleEvaluator;
         } else if (std.mem.eql(u8, arg, "--neighbors")) {
-            args.params.neighbor_count = try std.fmt.parseInt(u8, value, 10);
+            const count = try std.fmt.parseInt(u8, value, 10);
+            args.params.neighbor_count = std.enums.fromInt(speckleconfig.Neighborhood, count) orelse
+                return error.InvalidSpeckleNeighborCount;
         } else if (std.mem.eql(u8, arg, "--size")) {
             args.params.radius_mean = try std.fmt.parseFloat(F, value);
         } else if (std.mem.eql(u8, arg, "--occupancy")) {
@@ -231,20 +233,18 @@ pub fn printProceduralConfig(
         );
     }
 
-    const perlin_note = if (resolved.pattern == .perlin)
-        " (not used by Perlin)"
-    else
-        "";
+    const evaluator = std.meta.activeTag(resolved);
 
     std.debug.print(
         "  evaluator (resolved): {s}\n",
-        .{speckleconfig.evaluatorName(resolved.evaluator)},
+        .{speckleconfig.evaluatorName(evaluator)},
     );
-    std.debug.print("  pattern (runtime): {s}\n", .{@tagName(resolved.pattern)});
-    std.debug.print(
-        "  neighbor count (resolved): {d}{s}\n",
-        .{ resolved.neighbor_count, perlin_note },
-    );
+    std.debug.print("  pattern (runtime): {s}\n", .{@tagName(params.pattern)});
+    if (resolved.neighborhood()) |neighbors| {
+        std.debug.print("  neighbor count (resolved): {d}\n", .{@intFromEnum(neighbors)});
+    } else {
+        std.debug.print("  neighbor count (resolved): not used\n", .{});
+    }
     std.debug.print(
         "  boundary half-width: {d} cell units\n",
         .{params.edge_softness},
@@ -255,7 +255,7 @@ pub fn printProceduralConfig(
         .{ params.cells_per_uv[0], params.cells_per_uv[1] },
     );
 
-    switch (resolved.pattern) {
+    switch (params.pattern) {
         .perlin => {
             std.debug.print(
                 "  coverage threshold: {d}\n",
@@ -267,7 +267,7 @@ pub fn printProceduralConfig(
             );
         },
         .disk, .gaussian => {
-            if (resolved.evaluator == .direct_fixed) {
+            if (evaluator == .direct_fixed) {
                 std.debug.print("  fixed radius: {d} cell units\n", .{params.radius_mean});
                 std.debug.print("  radius jitter: zero (required by direct-fixed)\n", .{});
             } else {
@@ -278,7 +278,7 @@ pub fn printProceduralConfig(
         },
     }
 
-    if (resolved.evaluator == .classified_indexed) {
+    if (evaluator == .classified_indexed) {
         const samples: F = @floatFromInt(buildconfig.speckle_mask_samples_per_cell);
         const classification_dims = [2]F{
             @floor(params.cells_per_uv[0] * samples) + 1.0,
@@ -295,13 +295,13 @@ pub fn printProceduralConfig(
         );
     }
 
-    if (resolved.evaluator == .mask_1bit or resolved.evaluator == .mask_u8) {
+    if (evaluator == .mask_1bit or evaluator == .mask_u8) {
         const samples: F = @floatFromInt(buildconfig.speckle_mask_samples_per_cell);
         const mask_dims = [2]F{
             @ceil(params.cells_per_uv[0] * samples) + 1.0,
             @ceil(params.cells_per_uv[1] * samples) + 1.0,
         };
-        const storage = if (resolved.evaluator == .mask_1bit)
+        const storage = if (evaluator == .mask_1bit)
             "packed 1-bit coverage"
         else
             "8-bit coverage";
@@ -435,7 +435,7 @@ test "demo experimental overrides preserve explicit values and enforce availabil
             parseDemoArgs(&invalid_neighbors, test_spec),
         );
         const counted = (try parseDemoArgs(&neighbors, test_spec)).?;
-        try std.testing.expectEqual(@as(u8, 9), counted.params.neighbor_count.?);
+        try std.testing.expectEqual(speckleconfig.Neighborhood.nine, counted.params.neighbor_count.?);
         const perlin = [_][*:0]const u8{ "demo", "--pattern", "perlin", "--neighbors", "9" };
         try std.testing.expectError(
             error.SpecklePerlinDoesNotUseNeighbors,

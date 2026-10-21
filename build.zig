@@ -35,7 +35,7 @@ const BuildOptions = struct {
     newton_solver: []const u8,
     simd_vector_width: u32,
     enable_all_evaluators: bool,
-    speckle_mask_samples_per_cell: u8,
+    speckle_mask_resolution: speckleconfig.MaskResolution,
     strip: bool,
 };
 
@@ -69,14 +69,13 @@ pub fn build(b: *std.Build) void {
         "enable-all-evaluators",
         "Enable experimental runtime evaluator and neighbor overrides (native Zig only)",
     ) orelse false;
-    options.speckle_mask_samples_per_cell = b.option(
+    const mask_samples = b.option(
         u8,
         "speckle-mask-samples-per-cell",
         "Speckle mask/classification resolution per cell: 8, 12, or 16",
-    ) orelse speckleconfig.default_mask_samples_per_cell;
-    if (!speckleconfig.isValidMaskSamplesPerCell(options.speckle_mask_samples_per_cell)) {
+    ) orelse @intFromEnum(speckleconfig.default_mask_resolution);
+    options.speckle_mask_resolution = std.enums.fromInt(speckleconfig.MaskResolution, mask_samples) orelse
         @panic("Supported -Dspeckle-mask-samples-per-cell values are 8, 12, and 16.");
-    }
     validatePrecision(options.precision);
     validateSimd(options.simd);
     validateNewtonSolver(options.newton_solver);
@@ -594,7 +593,7 @@ fn createBuildOptionsModule(b: *std.Build, build_options: BuildOptions) *std.Bui
     options.addOption([]const u8, "newton_solver", build_options.newton_solver);
     options.addOption(u32, "simd_vector_width", build_options.simd_vector_width);
     options.addOption(bool, "enable_all_evaluators", build_options.enable_all_evaluators);
-    options.addOption(u8, "speckle_mask_samples_per_cell", build_options.speckle_mask_samples_per_cell);
+    options.addOption(u8, "speckle_mask_samples_per_cell", @intFromEnum(build_options.speckle_mask_resolution));
     return options.createModule();
 }
 

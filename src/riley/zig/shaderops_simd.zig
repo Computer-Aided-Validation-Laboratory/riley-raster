@@ -1056,8 +1056,8 @@ test "specialized speckle routing scaling and masked stores across patterns" {
     };
     const experiments = if (buildconfig.enable_all_evaluators)
         [_]speckle.Speckle2DParams{
-            .{ .evaluator = .cell_hash, .neighbor_count = 4 },
-            .{ .evaluator = .list_naive, .neighbor_count = 1 },
+            .{ .evaluator = .cell_hash, .neighbor_count = .four },
+            .{ .evaluator = .list_naive, .neighbor_count = .one },
             .{ .evaluator = .direct_fixed },
             .{ .evaluator = .mask_1bit },
             .{ .evaluator = .mask_u8, .edge_softness = 0.04 },

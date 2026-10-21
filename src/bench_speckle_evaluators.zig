@@ -36,7 +36,7 @@ const Options = struct {
     pattern: policy.Pattern = .disk,
     jitter: F = 0.08,
     occupancy: F = 0.7,
-    neighbors: ?u8 = null,
+    neighbors: ?policy.Neighborhood = null,
     frames: usize = 16,
     width: u32 = 3840,
     height: u32 = 2160,
@@ -83,7 +83,8 @@ const Options = struct {
             } else if (std.mem.eql(u8, key, "--height")) {
                 out.height = try std.fmt.parseInt(u32, value, 10);
             } else if (std.mem.eql(u8, key, "--neighbors")) {
-                out.neighbors = try std.fmt.parseInt(u8, value, 10);
+                const count = try std.fmt.parseInt(u8, value, 10);
+                out.neighbors = std.enums.fromInt(policy.Neighborhood, count) orelse return error.InvalidSpeckleNeighborCount;
             } else if (std.mem.eql(u8, key, "--seed")) {
                 out.seed = try std.fmt.parseInt(u32, value, 0);
             } else if (std.mem.eql(u8, key, "--cells-u")) {
@@ -124,6 +125,14 @@ const Options = struct {
     }
 };
 
+fn recordNeighbors(opts: Options, resolved: policy.Config) ?u8 {
+    const neighbors = if (opts.texture_material or std.meta.activeTag(resolved) == .mock)
+        opts.neighbors orelse policy.default_neighborhood
+    else
+        resolved.neighborhood() orelse return null;
+    return @intFromEnum(neighbors);
+}
+
 fn listEvaluators() void {
     std.debug.print("{{\"evaluators\":[", .{});
     inline for (std.enums.values(policy.Evaluator), 0..) |evaluator, i| {
@@ -131,7 +140,13 @@ fn listEvaluators() void {
     }
     std.debug.print(",\"texture\"],\"overrides_enabled\":{},\"configs\":[", .{build.enable_all_evaluators});
     for (policy.generationConfigs(true), 0..) |cfg, i| {
-        std.debug.print("{s}{{\"evaluator\":\"{s}\",\"pattern\":\"{s}\",\"neighbors\":{d},\"soft_edges\":{}}}", .{ if (i == 0) "" else ",", policy.evaluatorName(cfg.evaluator), @tagName(cfg.pattern), cfg.neighbor_count, cfg.soft_edges });
+        std.debug.print("{s}{{\"evaluator\":\"{s}\",\"pattern\":", .{ if (i == 0) "" else ",", policy.evaluatorName(std.meta.activeTag(cfg)) });
+        if (cfg.pattern()) |pattern| std.debug.print("\"{s}\"", .{@tagName(pattern)}) else std.debug.print("null", .{});
+        std.debug.print(",\"neighbors\":", .{});
+        if (cfg.neighborhood()) |neighbors| std.debug.print("{d}", .{@intFromEnum(neighbors)}) else std.debug.print("null", .{});
+        std.debug.print(",\"soft_edges\":", .{});
+        if (cfg.edges()) |edges| std.debug.print("{}", .{edges == .soft}) else std.debug.print("null", .{});
+        std.debug.print("}}", .{});
     }
     std.debug.print("]}}\n", .{});
 }
@@ -192,11 +207,11 @@ pub fn main(init: std.process.Init) !void {
             result.checksum +%= @as(std.meta.Int(.unsigned, @bitSizeOf(F)), @bitCast(value));
         }
     }
-    const resolved = try policy.resolve(build.enable_all_evaluators, if (opts.texture_material) .disk else opts.pattern, if (opts.texture_material) null else opts.evaluator, if (opts.texture_material) null else opts.neighbors, !opts.texture_material and opts.softness > 0);
+    const resolved = try policy.resolve(build.enable_all_evaluators, if (opts.texture_material) .disk else opts.pattern, if (opts.texture_material) null else opts.evaluator, if (opts.texture_material) null else opts.neighbors, if (!opts.texture_material and opts.softness > 0) .soft else .hard);
     const record = .{
         .mode = @tagName(opts.mode),
         .workload_mode = if (opts.mode == .evaluation) bench.workload_mode else "production-raster-advanced-memory-v2",
-        .evaluator = if (opts.texture_material) "texture" else policy.evaluatorName(resolved.evaluator),
+        .evaluator = if (opts.texture_material) "texture" else policy.evaluatorName(std.meta.activeTag(resolved)),
         .scene = if (opts.plate) "plate" else "sphere",
         .pattern = if (opts.pattern == .disk) (if (opts.softness > 0) "soft" else "hard") else @tagName(opts.pattern),
         .threads = opts.threads,
@@ -210,7 +225,7 @@ pub fn main(init: std.process.Init) !void {
         .radius = opts.radius,
         .jitter = opts.jitter,
         .occupancy = opts.occupancy,
-        .neighbors = if (opts.texture_material) opts.neighbors orelse policy.default_neighbor_count else resolved.neighbor_count,
+        .neighbors = recordNeighbors(opts, resolved),
         .softness = opts.softness,
         .seed = opts.seed,
         .texture = opts.texture,
@@ -235,6 +250,15 @@ fn cameraInput(sim: meshio.SimData, opts: Options) camera.CameraInput {
     const pixel_size: [2]F = .{ 5.3e-6, 5.3e-6 };
     const rotation = @import("riley/zig/rotation.zig").Rotation.init(0, 0, 0);
     return .{ .pixels_num = opts.pixels(), .pixels_size = pixel_size, .pos_world = cameraops.posFillFrameFromRot(&sim.coords, opts.pixels(), pixel_size, 0.05, rotation, 1.15), .rot_world = rotation, .roi_cent_world = sceneops.boundsCenter(&sim.coords), .focal_length = 0.05, .sub_sample = 1, .subpixel_center_map = .per_tile };
+}
+
+test "speckle benchmark neighbor metadata preserves requested mock controls" {
+    const perlin = try policy.resolve(true, .perlin, null, null, .hard);
+    try std.testing.expectEqual(@as(?u8, null), recordNeighbors(.{ .pattern = .perlin }, perlin));
+    const mock = try policy.resolve(true, .perlin, .mock, .four, .hard);
+    try std.testing.expectEqual(@as(?u8, 4), recordNeighbors(.{ .evaluator = .mock, .pattern = .perlin, .neighbors = .four }, mock));
+    try std.testing.expectEqual(@as(?u8, 9), recordNeighbors(.{ .evaluator = .mock }, mock));
+    try std.testing.expectEqual(@as(?u8, 9), recordNeighbors(.{ .texture_material = true }, perlin));
 }
 
 test "speckle benchmark named options and default gate" {

@@ -6,7 +6,7 @@
 //
 // Authors: James Panayis
 // --------------------------------------------------------------------------------------
-//! Runtime speckle policy and compile-time specialization catalogues.
+//! Resolved speckle policy and compile-time specialization catalogues.
 const std = @import("std");
 
 pub const Pattern = enum(u8) { disk = 0, gaussian = 1, perlin = 2 };
@@ -21,21 +21,88 @@ pub const Evaluator = enum(u8) {
     mask_u8,
     mock,
 };
+pub const Neighborhood = enum(u8) { one = 1, four = 4, nine = 9 };
+pub const MaskResolution = enum(u8) { eight = 8, twelve = 12, sixteen = 16 };
+pub const Edges = enum { hard, soft };
+pub const default_pattern: Pattern = .disk;
+pub const default_neighborhood: Neighborhood = .nine;
+pub const default_mask_resolution: MaskResolution = .twelve;
 
-pub const Config = struct {
-    pattern: Pattern,
-    evaluator: Evaluator,
-    /// Nine is the internal placeholder for non-mock Perlin, which has no neighborhood setting.
-    neighbor_count: u8,
-    soft_edges: bool,
+pub const DiskConfig = struct { neighborhood: Neighborhood, edges: Edges };
+pub const Shape = union(enum) { disk: DiskConfig, gaussian: Neighborhood };
+pub const Field = union(Pattern) { disk: DiskConfig, gaussian: Neighborhood, perlin: void };
+pub const Config = union(Evaluator) {
+    cell_hash: Field,
+    gradient_lattice: void,
+    list_naive: Shape,
+    list_indexed: Shape,
+    classified_indexed: void,
+    direct_fixed: void,
+    mask_1bit: Neighborhood,
+    mask_u8: Field,
+    mock: void,
+
+    pub fn pattern(self: Config) ?Pattern {
+        return switch (self) {
+            .cell_hash, .mask_u8 => |field| std.meta.activeTag(field),
+            .list_naive, .list_indexed => |shape| switch (shape) {
+                .disk => .disk,
+                .gaussian => .gaussian,
+            },
+            .gradient_lattice => .perlin,
+            .classified_indexed, .direct_fixed, .mask_1bit => .disk,
+            .mock => null,
+        };
+    }
+
+    pub fn neighborhood(self: Config) ?Neighborhood {
+        return switch (self) {
+            .cell_hash, .mask_u8 => |field| switch (field) {
+                .disk => |disk| disk.neighborhood,
+                .gaussian => |neighbors| neighbors,
+                .perlin => null,
+            },
+            .list_naive, .list_indexed => |shape| switch (shape) {
+                .disk => |disk| disk.neighborhood,
+                .gaussian => |neighbors| neighbors,
+            },
+            .classified_indexed => .nine,
+            .direct_fixed => .one,
+            .mask_1bit => |neighbors| neighbors,
+            .gradient_lattice, .mock => null,
+        };
+    }
+
+    pub fn edges(self: Config) ?Edges {
+        return switch (self) {
+            .cell_hash, .mask_u8 => |field| switch (field) {
+                .disk => |disk| disk.edges,
+                .gaussian, .perlin => null,
+            },
+            .list_naive, .list_indexed => |shape| switch (shape) {
+                .disk => |disk| disk.edges,
+                .gaussian => null,
+            },
+            .classified_indexed, .direct_fixed, .mask_1bit => .hard,
+            .gradient_lattice => null,
+            .mock => null,
+        };
+    }
+
+    /// Capability, not the current edge setting. Mock's raw pattern is checked at the boundary.
+    pub fn supportsSoftEdges(self: Config) bool {
+        return switch (self) {
+            .cell_hash, .mask_u8 => |field| field == .disk,
+            .list_naive, .list_indexed => |shape| shape == .disk,
+            .mock => true,
+            else => false,
+        };
+    }
 };
 
-pub const default_pattern: Pattern = .disk;
-pub const default_neighbor_count: u8 = 9;
-pub const default_mask_samples_per_cell: u8 = 12;
-
-pub const CompatibilityError = error{
-    InvalidSpeckleNeighborCount,
+pub const ResolveError = error{
+    SpeckleOverridesDisabled,
+    SpecklePerlinDoesNotUseNeighbors,
     PerlinRequiresSupportedEvaluator,
     GradientLatticeRequiresPerlin,
     Mask1BitRequiresDisk,
@@ -43,11 +110,6 @@ pub const CompatibilityError = error{
     DirectFixedRequiresDiskAndOneNeighbor,
     SpeckleEdgeSoftnessRequiresDisk,
     SpeckleEvaluatorRequiresHardEdges,
-};
-
-pub const ResolveError = CompatibilityError || error{
-    SpeckleOverridesDisabled,
-    SpecklePerlinDoesNotUseNeighbors,
 };
 
 pub fn parsePattern(name: []const u8) ?Pattern {
@@ -75,102 +137,94 @@ pub fn evaluatorName(evaluator: Evaluator) []const u8 {
     };
 }
 
-pub fn isValidNeighborCount(count: anytype) bool {
-    return count == 1 or count == 4 or count == 9;
-}
-
-pub fn isValidMaskSamplesPerCell(samples: anytype) bool {
-    return samples == 8 or samples == 12 or samples == 16;
-}
-
-pub fn supportsSoftEdges(config: Config) bool {
-    return config.pattern == .disk and switch (config.evaluator) {
-        .cell_hash, .list_naive, .list_indexed, .mask_u8, .mock => true,
-        .classified_indexed, .direct_fixed, .mask_1bit, .gradient_lattice => false,
-    };
-}
-
-/// Numerical parameter ranges are checked by Speckle2DParams after policy resolution.
-pub fn validateCompatibility(config: Config) CompatibilityError!void {
-    if (!isValidNeighborCount(config.neighbor_count)) return error.InvalidSpeckleNeighborCount;
-    if (config.pattern == .perlin and config.evaluator != .gradient_lattice and config.evaluator != .cell_hash and config.evaluator != .mask_u8 and config.evaluator != .mock) {
-        return error.PerlinRequiresSupportedEvaluator;
-    }
-    switch (config.evaluator) {
-        .gradient_lattice => if (config.pattern != .perlin) return error.GradientLatticeRequiresPerlin,
-        .mask_1bit => if (config.pattern != .disk) return error.Mask1BitRequiresDisk,
-        .classified_indexed => if (config.pattern != .disk or config.neighbor_count != 9)
-            return error.ClassifiedIndexedRequiresDiskAndNineNeighbors,
-        .direct_fixed => if (config.pattern != .disk or config.neighbor_count != 1)
-            return error.DirectFixedRequiresDiskAndOneNeighbor,
-        .cell_hash, .list_naive, .list_indexed, .mask_u8, .mock => {},
-    }
-    if (config.soft_edges) {
-        if (config.pattern != .disk) return error.SpeckleEdgeSoftnessRequiresDisk;
-        if (!supportsSoftEdges(config)) return error.SpeckleEvaluatorRequiresHardEdges;
-    }
-}
-
-/// Overrides are an experimental-build feature, even when they name a default value.
-/// An omitted direct-fixed neighborhood selects one; explicit incompatible values fail.
+/// Validate external controls once, before constructing a policy containing only valid states.
+/// Overrides require an experimental build, even when they name a default value.
 pub fn resolve(
     comptime enable_all_evaluators: bool,
     pattern: Pattern,
     evaluator: ?Evaluator,
-    neighbor_count: ?u8,
-    soft_edges: bool,
+    neighbor_count: ?Neighborhood,
+    edges: Edges,
 ) ResolveError!Config {
-    if (!enable_all_evaluators and (evaluator != null or neighbor_count != null)) {
+    if (!enable_all_evaluators and (evaluator != null or neighbor_count != null))
         return error.SpeckleOverridesDisabled;
-    }
-    if (pattern == .perlin and evaluator != .mock and neighbor_count != null) {
+    if (pattern == .perlin and evaluator != .mock and neighbor_count != null)
         return error.SpecklePerlinDoesNotUseNeighbors;
-    }
     const neighbors = neighbor_count orelse
-        if (evaluator == .direct_fixed) @as(u8, 1) else default_neighbor_count;
+        if (evaluator == .direct_fixed) .one else default_neighborhood;
     const selected = evaluator orelse switch (pattern) {
-        .disk => if (!soft_edges and neighbors == 9)
+        .disk => if (edges == .hard and neighbors == .nine)
             Evaluator.classified_indexed
         else
             Evaluator.list_indexed,
         .gaussian => Evaluator.list_indexed,
         .perlin => Evaluator.gradient_lattice,
     };
-    const config: Config = .{
-        .pattern = pattern,
-        .evaluator = selected,
-        .neighbor_count = neighbors,
-        .soft_edges = soft_edges,
-    };
-    try validateCompatibility(config);
-    return config;
-}
-
-/// Mock ignores configuration fields; masks no longer depend on how they were generated.
-/// Naive lists retain centers/radii, so their sampler does not depend on the placement neighborhood.
-pub fn canonicalizeSampleConfig(config: Config) Config {
-    var result = config;
-    switch (config.evaluator) {
-        .mask_1bit, .mask_u8, .mock => {
-            result.pattern = .disk;
-            result.neighbor_count = 9;
-            result.soft_edges = false;
-        },
-        .list_naive => result.neighbor_count = 9,
+    if (pattern == .perlin and selected != .gradient_lattice and selected != .cell_hash and
+        selected != .mask_u8 and selected != .mock) return error.PerlinRequiresSupportedEvaluator;
+    switch (selected) {
+        .gradient_lattice => if (pattern != .perlin) return error.GradientLatticeRequiresPerlin,
+        .mask_1bit => if (pattern != .disk) return error.Mask1BitRequiresDisk,
+        .classified_indexed => if (pattern != .disk or neighbors != .nine)
+            return error.ClassifiedIndexedRequiresDiskAndNineNeighbors,
+        .direct_fixed => if (pattern != .disk or neighbors != .one)
+            return error.DirectFixedRequiresDiskAndOneNeighbor,
         else => {},
     }
-    return result;
+    if (edges == .soft) {
+        if (pattern != .disk) return error.SpeckleEdgeSoftnessRequiresDisk;
+        switch (selected) {
+            .classified_indexed, .direct_fixed, .mask_1bit, .gradient_lattice => return error.SpeckleEvaluatorRequiresHardEdges,
+            else => {},
+        }
+    }
+    // In particular, mock erases controls only after their external errors have been checked.
+    return switch (selected) {
+        .cell_hash, .mask_u8 => blk: {
+            const field: Field = switch (pattern) {
+                .disk => .{ .disk = .{ .neighborhood = neighbors, .edges = edges } },
+                .gaussian => .{ .gaussian = neighbors },
+                .perlin => .perlin,
+            };
+            break :blk if (selected == .cell_hash) .{ .cell_hash = field } else .{ .mask_u8 = field };
+        },
+        .list_naive, .list_indexed => blk: {
+            const shape: Shape = switch (pattern) {
+                .disk => .{ .disk = .{ .neighborhood = neighbors, .edges = edges } },
+                .gaussian => .{ .gaussian = neighbors },
+                .perlin => unreachable,
+            };
+            break :blk if (selected == .list_naive) .{ .list_naive = shape } else .{ .list_indexed = shape };
+        },
+        .gradient_lattice => .gradient_lattice,
+        .classified_indexed => .classified_indexed,
+        .direct_fixed => .direct_fixed,
+        .mask_1bit => .{ .mask_1bit = neighbors },
+        .mock => .mock,
+    };
+}
+
+/// Masks ignore generation policy; naive lists retain centers/radii rather than a neighborhood.
+pub fn canonicalizeSampleConfig(config: Config) Config {
+    return switch (config) {
+        .mask_1bit => .{ .mask_1bit = .nine },
+        .mask_u8 => .{ .mask_u8 = .{ .disk = .{ .neighborhood = .nine, .edges = .hard } } },
+        .list_naive => |shape| .{ .list_naive = switch (shape) {
+            .disk => |disk| .{ .disk = .{ .neighborhood = .nine, .edges = disk.edges } },
+            .gaussian => .{ .gaussian = .nine },
+        } },
+        else => config,
+    };
 }
 
 const default_configs = [_]Config{
-    .{ .pattern = .disk, .evaluator = .classified_indexed, .neighbor_count = 9, .soft_edges = false },
-    .{ .pattern = .disk, .evaluator = .list_indexed, .neighbor_count = 9, .soft_edges = true },
-    .{ .pattern = .gaussian, .evaluator = .list_indexed, .neighbor_count = 9, .soft_edges = false },
-    .{ .pattern = .perlin, .evaluator = .gradient_lattice, .neighbor_count = 9, .soft_edges = false },
+    .classified_indexed,
+    .{ .list_indexed = .{ .disk = .{ .neighborhood = .nine, .edges = .soft } } },
+    .{ .list_indexed = .{ .gaussian = .nine } },
+    .gradient_lattice,
 };
-
 const Catalogue = struct {
-    configs: [3 * std.enums.values(Evaluator).len * 3 * 2]Config = undefined,
+    configs: [45]Config = undefined,
     len: usize = 0,
 
     fn appendUnique(self: *Catalogue, config: Config) void {
@@ -181,12 +235,9 @@ const Catalogue = struct {
         self.len += 1;
     }
 };
-
 const all_generation_configs = enumerateGenerationConfigs();
 const default_sample_configs = enumerateSampleConfigs(&default_configs);
-const all_sample_configs = enumerateSampleConfigs(
-    all_generation_configs.configs[0..all_generation_configs.len],
-);
+const all_sample_configs = enumerateSampleConfigs(all_generation_configs.configs[0..all_generation_configs.len]);
 
 pub fn generationConfigs(comptime enable_all_evaluators: bool) []const Config {
     return if (enable_all_evaluators)
@@ -204,20 +255,18 @@ fn enumerateGenerationConfigs() Catalogue {
     @setEvalBranchQuota(100_000);
     var result: Catalogue = .{};
     for (default_configs) |config| result.appendUnique(config);
-    for (std.enums.values(Pattern)) |pattern| {
-        for (std.enums.values(Evaluator)) |evaluator| {
-            for ([_]u8{ 1, 4, 9 }) |neighbors| {
-                if (pattern == .perlin and evaluator != .mock and neighbors != 9) continue;
-                for ([_]bool{ false, true }) |soft| {
-                    const config: Config = .{
-                        .pattern = pattern,
-                        .evaluator = evaluator,
-                        .neighbor_count = neighbors,
-                        .soft_edges = soft,
-                    };
-                    validateCompatibility(config) catch continue;
-                    result.appendUnique(config);
-                }
+    result.appendUnique(.direct_fixed);
+    result.appendUnique(.mock);
+    inline for (.{ Evaluator.cell_hash, Evaluator.mask_u8 }) |evaluator|
+        result.appendUnique(@unionInit(Config, @tagName(evaluator), Field.perlin));
+    for (std.enums.values(Neighborhood)) |neighbors| {
+        result.appendUnique(.{ .mask_1bit = neighbors });
+        inline for (.{ Evaluator.cell_hash, Evaluator.mask_u8, Evaluator.list_naive, Evaluator.list_indexed }) |evaluator| {
+            const Payload = if (evaluator == .cell_hash or evaluator == .mask_u8) Field else Shape;
+            result.appendUnique(@unionInit(Config, @tagName(evaluator), Payload{ .gaussian = neighbors }));
+            for (std.enums.values(Edges)) |edges| {
+                const payload: Payload = .{ .disk = .{ .neighborhood = neighbors, .edges = edges } };
+                result.appendUnique(@unionInit(Config, @tagName(evaluator), payload));
             }
         }
     }
@@ -231,82 +280,96 @@ fn enumerateSampleConfigs(configs: []const Config) Catalogue {
     return result;
 }
 
-test "runtime evaluator names round trip and reject invalid spellings" {
+test "enum boundary conversions and pattern/evaluator spellings" {
+    for (0..256) |raw| {
+        const value: u8 = @intCast(raw);
+        const neighbors = std.enums.fromInt(Neighborhood, value);
+        const resolution = std.enums.fromInt(MaskResolution, value);
+        try std.testing.expectEqual(raw == 1 or raw == 4 or raw == 9, neighbors != null);
+        try std.testing.expectEqual(raw == 8 or raw == 12 or raw == 16, resolution != null);
+        if (neighbors) |n| try std.testing.expectEqual(value, @intFromEnum(n));
+        if (resolution) |r| try std.testing.expectEqual(value, @intFromEnum(r));
+    }
+    try std.testing.expectEqual(Neighborhood.nine, default_neighborhood);
+    try std.testing.expectEqual(MaskResolution.twelve, default_mask_resolution);
+    for (std.enums.values(Pattern)) |pattern|
+        try std.testing.expectEqual(pattern, parsePattern(@tagName(pattern)).?);
+    for ([_][]const u8{ "", "Disk", "hard", "soft", " perlin" }) |name|
+        try std.testing.expectEqual(null, parsePattern(name));
     for (std.enums.values(Evaluator)) |evaluator| {
         try std.testing.expectEqual(evaluator, parseEvaluator(evaluatorName(evaluator)).?);
         if (evaluator != .mock) try std.testing.expectEqual(null, parseEvaluator(@tagName(evaluator)));
     }
-    for ([_][]const u8{ "", "Cell-hash", " mask-u8", "mask", "MASK-U8", "list-indexed-2", "list-indexed-3", "list_indexed_2", "list_indexed_3", "classified-indexed-2", "classified-indexed-3", "classified-indexed-4", "classified-indexed-5", "classified-indexed-6", "classified-indexed-7", "classified-indexed-8", "classified-indexed-99" }) |name| {
+    for ([_][]const u8{ "", "Cell-hash", " mask-u8", "mask", "MASK-U8", "list-indexed-2", "classified-indexed-99" }) |name|
         try std.testing.expectEqual(null, parseEvaluator(name));
+}
+
+test "exhaustive external controls preserve acceptance errors and resolved semantics" {
+    inline for (.{ false, true }) |enabled| {
+        for (std.enums.values(Pattern)) |pattern| {
+            for (0..10) |choice| {
+                const evaluator: ?Evaluator = if (choice == 9) null else @enumFromInt(choice);
+                for ([_]?Neighborhood{ null, .one, .four, .nine }) |neighbors| {
+                    for (std.enums.values(Edges)) |edges| {
+                        // Independent raw-tuple oracle: original validation order, before erasure.
+                        const n: u8 = if (neighbors) |value| @intFromEnum(value) else if (evaluator == .direct_fixed) 1 else 9;
+                        const selected = evaluator orelse switch (pattern) {
+                            .disk => if (edges == .hard and n == 9) Evaluator.classified_indexed else Evaluator.list_indexed,
+                            .gaussian => Evaluator.list_indexed,
+                            .perlin => Evaluator.gradient_lattice,
+                        };
+                        const err: ?ResolveError = blk: {
+                            if (!enabled and (evaluator != null or neighbors != null)) break :blk error.SpeckleOverridesDisabled;
+                            if (pattern == .perlin and evaluator != .mock and neighbors != null) break :blk error.SpecklePerlinDoesNotUseNeighbors;
+                            if (pattern == .perlin and selected != .cell_hash and selected != .gradient_lattice and selected != .mask_u8 and selected != .mock) break :blk error.PerlinRequiresSupportedEvaluator;
+                            if (selected == .gradient_lattice and pattern != .perlin) break :blk error.GradientLatticeRequiresPerlin;
+                            if (selected == .mask_1bit and pattern != .disk) break :blk error.Mask1BitRequiresDisk;
+                            if (selected == .classified_indexed and (pattern != .disk or n != 9)) break :blk error.ClassifiedIndexedRequiresDiskAndNineNeighbors;
+                            if (selected == .direct_fixed and (pattern != .disk or n != 1)) break :blk error.DirectFixedRequiresDiskAndOneNeighbor;
+                            if (edges == .soft and pattern != .disk) break :blk error.SpeckleEdgeSoftnessRequiresDisk;
+                            if (edges == .soft and (selected == .classified_indexed or selected == .direct_fixed or selected == .mask_1bit or selected == .gradient_lattice)) break :blk error.SpeckleEvaluatorRequiresHardEdges;
+                            break :blk null;
+                        };
+                        const actual = resolve(enabled, pattern, evaluator, neighbors, edges);
+                        if (err) |expected| {
+                            try std.testing.expectError(expected, actual);
+                            continue;
+                        }
+                        const config = try actual;
+                        try std.testing.expectEqual(selected, std.meta.activeTag(config));
+                        try std.testing.expectEqual(if (selected == .mock) null else pattern, config.pattern());
+                        try std.testing.expectEqual(if (selected == .mock or pattern == .perlin) null else std.enums.fromInt(Neighborhood, n), config.neighborhood());
+                        try std.testing.expectEqual(if (selected == .mock or pattern != .disk) null else edges, config.edges());
+                        const capable = selected == .mock or (pattern == .disk and (selected == .cell_hash or selected == .list_naive or selected == .list_indexed or selected == .mask_u8));
+                        try std.testing.expectEqual(capable, config.supportsSoftEdges());
+                        var matches: usize = 0;
+                        for (generationConfigs(enabled)) |candidate| matches += @intFromBool(std.meta.eql(config, candidate));
+                        try std.testing.expectEqual(@as(usize, 1), matches);
+                    }
+                }
+            }
+        }
     }
 }
 
-test "experimental resolution selects defaults and rejects incompatible overrides" {
-    try std.testing.expectError(error.SpeckleOverridesDisabled, resolve(false, .disk, .mock, null, false));
-    try std.testing.expectEqual(Evaluator.mock, (try resolve(true, .perlin, .mock, 1, false)).evaluator);
-    for ([_]u8{ 1, 4, 9 }) |neighbors| {
-        const hard = try resolve(true, .disk, null, neighbors, false);
-        try std.testing.expectEqual(if (neighbors == 9) Evaluator.classified_indexed else Evaluator.list_indexed, hard.evaluator);
-        try std.testing.expectEqual(Evaluator.list_indexed, (try resolve(true, .disk, null, neighbors, true)).evaluator);
-        try std.testing.expectEqual(Evaluator.list_indexed, (try resolve(true, .gaussian, null, neighbors, false)).evaluator);
-    }
-    try std.testing.expectEqual(@as(u8, 1), (try resolve(true, .disk, .direct_fixed, null, false)).neighbor_count);
-    const cases = [_]struct {
-        pattern: Pattern = .disk,
-        evaluator: ?Evaluator = null,
-        neighbors: ?u8 = null,
-        soft: bool = false,
-        err: ResolveError,
-    }{
-        .{ .neighbors = 0, .err = error.InvalidSpeckleNeighborCount },
-        .{ .pattern = .perlin, .neighbors = 9, .err = error.SpecklePerlinDoesNotUseNeighbors },
-        .{ .pattern = .perlin, .evaluator = .list_indexed, .err = error.PerlinRequiresSupportedEvaluator },
-        .{ .pattern = .perlin, .evaluator = .mask_u8, .neighbors = 9, .err = error.SpecklePerlinDoesNotUseNeighbors },
-        .{ .pattern = .perlin, .evaluator = .mask_u8, .soft = true, .err = error.SpeckleEdgeSoftnessRequiresDisk },
-        .{ .pattern = .disk, .evaluator = .gradient_lattice, .err = error.GradientLatticeRequiresPerlin },
-        .{ .pattern = .gaussian, .evaluator = .mask_1bit, .err = error.Mask1BitRequiresDisk },
-        .{ .evaluator = .classified_indexed, .neighbors = 4, .err = error.ClassifiedIndexedRequiresDiskAndNineNeighbors },
-        .{ .evaluator = .direct_fixed, .neighbors = 9, .err = error.DirectFixedRequiresDiskAndOneNeighbor },
-        .{ .pattern = .gaussian, .soft = true, .err = error.SpeckleEdgeSoftnessRequiresDisk },
-        .{ .evaluator = .classified_indexed, .soft = true, .err = error.SpeckleEvaluatorRequiresHardEdges },
-        .{ .evaluator = .direct_fixed, .soft = true, .err = error.SpeckleEvaluatorRequiresHardEdges },
-        .{ .evaluator = .mask_1bit, .soft = true, .err = error.SpeckleEvaluatorRequiresHardEdges },
-    };
-    for (cases) |case| try std.testing.expectError(case.err, resolve(true, case.pattern, case.evaluator, case.neighbors, case.soft));
-}
-
-test "Perlin mask is explicit experimental approximation and shares the disk mask sampler" {
-    inline for (.{ false, true }) |experimental| {
-        try std.testing.expectEqual(Evaluator.gradient_lattice, (try resolve(experimental, .perlin, null, null, false)).evaluator);
-    }
-    try std.testing.expectError(error.SpeckleOverridesDisabled, resolve(false, .perlin, .mask_u8, null, false));
-    const mask = try resolve(true, .perlin, .mask_u8, null, false);
-    try std.testing.expectEqual(Evaluator.mask_u8, mask.evaluator);
-    try std.testing.expectEqualDeep(Config{ .pattern = .disk, .evaluator = .mask_u8, .neighbor_count = 9, .soft_edges = false }, canonicalizeSampleConfig(mask));
-    for (generationConfigs(false)) |config| {
-        if (config.pattern == .perlin) try std.testing.expectEqual(Evaluator.gradient_lattice, config.evaluator);
-    }
-}
-
-test "specialization catalogues are unique and cover every resolved generation config" {
-    try std.testing.expectEqual(9, std.enums.values(Evaluator).len);
-    try std.testing.expectEqual(56, generationConfigs(true).len);
+test "catalogues contain exactly the valid policies and canonical sampler behaviors" {
+    try std.testing.expectEqual(45, generationConfigs(true).len);
     try std.testing.expectEqual(28, sampleConfigs(true).len);
-    try std.testing.expectEqual(@as(usize, 4), generationConfigs(false).len);
-    try std.testing.expectEqual(@as(usize, 4), sampleConfigs(false).len);
-    inline for (.{ false, true }) |enable_all| {
-        const generators = generationConfigs(enable_all);
-        const samplers = sampleConfigs(enable_all);
-        for (generators) |config| {
-            try validateCompatibility(config);
+    try std.testing.expectEqual(4, generationConfigs(false).len);
+    try std.testing.expectEqual(4, sampleConfigs(false).len);
+    inline for (.{ false, true }) |enabled| {
+        for (generationConfigs(enabled), 0..) |config, index| {
+            for (generationConfigs(enabled)[index + 1 ..]) |other| try std.testing.expect(!std.meta.eql(config, other));
+            const resolved = try resolve(true, config.pattern() orelse .disk, std.meta.activeTag(config), config.neighborhood(), config.edges() orelse .hard);
+            try std.testing.expectEqualDeep(config, resolved);
             const canonical = canonicalizeSampleConfig(config);
-            if (config.evaluator == .mock) try std.testing.expectEqualDeep(Config{ .pattern = .disk, .evaluator = .mock, .neighbor_count = 9, .soft_edges = false }, canonical);
+            try std.testing.expectEqualDeep(canonical, canonicalizeSampleConfig(canonical));
             var matches: usize = 0;
-            for (samplers) |sample| matches += @intFromBool(std.meta.eql(sample, canonical));
+            for (sampleConfigs(enabled)) |sample| matches += @intFromBool(std.meta.eql(sample, canonical));
             try std.testing.expectEqual(@as(usize, 1), matches);
         }
-        for (samplers, 0..) |config, index| {
-            for (samplers[index + 1 ..]) |other| try std.testing.expect(!std.meta.eql(config, other));
+        for (sampleConfigs(enabled), 0..) |config, index| {
+            for (sampleConfigs(enabled)[index + 1 ..]) |other| try std.testing.expect(!std.meta.eql(config, other));
         }
     }
 }

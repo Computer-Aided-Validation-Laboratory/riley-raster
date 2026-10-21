@@ -54,16 +54,12 @@ pub const enable_all_evaluators: bool = if (@hasDecl(build_options, "enable_all_
     build_options.enable_all_evaluators
 else
     false;
-pub const speckle_mask_samples_per_cell: comptime_int = blk: {
-    const samples = if (@hasDecl(build_options, "speckle_mask_samples_per_cell"))
-        build_options.speckle_mask_samples_per_cell
-    else
-        speckleconfig.default_mask_samples_per_cell;
-    if (!speckleconfig.isValidMaskSamplesPerCell(samples)) {
-        @compileError("speckle_mask_samples_per_cell must be 8, 12, or 16.");
-    }
-    break :blk samples;
-};
+pub const speckle_mask_resolution: speckleconfig.MaskResolution = if (@hasDecl(build_options, "speckle_mask_samples_per_cell"))
+    std.enums.fromInt(speckleconfig.MaskResolution, build_options.speckle_mask_samples_per_cell) orelse
+        @compileError("speckle_mask_samples_per_cell must be 8, 12, or 16.")
+else
+    speckleconfig.default_mask_resolution;
+pub const speckle_mask_samples_per_cell: comptime_int = @intFromEnum(speckle_mask_resolution);
 
 pub const config = configForPrecision(F);
 

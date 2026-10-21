@@ -27,6 +27,16 @@ const fixture_params: Params = .{
     .radius_mean = 0.3,
 };
 
+test "speckle catalogues contain distinct generation and sampling variants" {
+    try std.testing.expectEqual(@as(usize, 45), speckleconfig.generationConfigs(true).len);
+    try std.testing.expectEqual(@as(usize, 28), speckleconfig.sampleConfigs(true).len);
+    for (speckleconfig.generationConfigs(true), 0..) |config, index| {
+        for (speckleconfig.generationConfigs(true)[0..index]) |previous| {
+            try std.testing.expect(!std.meta.eql(previous, config));
+        }
+    }
+}
+
 test "runtime speckle patterns prepare their production resources" {
     try std.testing.expectEqual(
         expected_config.enable_all_evaluators,
@@ -62,27 +72,27 @@ test "runtime speckle patterns prepare their production resources" {
         var params = fixture_params;
         params.pattern = case.pattern;
         params.edge_softness = case.softness;
-        try expectPreparedResources(std.testing.allocator, &mesh_input, params, case.evaluator, 9);
+        try expectPreparedResources(std.testing.allocator, &mesh_input, params, case.evaluator, if (case.pattern == .perlin) null else .nine);
     }
 
     if (comptime !buildconfig.enable_all_evaluators) return;
     for (speckleconfig.generationConfigs(true)) |config| {
         var params = fixture_params;
-        params.pattern = config.pattern;
-        params.edge_softness = if (config.soft_edges) 0.03 else 0.0;
-        params.evaluator = config.evaluator;
-        params.neighbor_count = if (config.pattern == .perlin and config.evaluator != .mock) null else config.neighbor_count;
+        params.pattern = config.pattern() orelse .disk;
+        params.edge_softness = if (config.edges() == .soft) 0.03 else 0.0;
+        params.evaluator = std.meta.activeTag(config);
+        params.neighbor_count = config.neighborhood();
         try expectPreparedResources(
             std.testing.allocator,
             &mesh_input,
             params,
-            config.evaluator,
-            config.neighbor_count,
+            std.meta.activeTag(config),
+            config.neighborhood(),
         );
     }
     var direct = fixture_params;
     direct.evaluator = .direct_fixed;
-    try expectPreparedResources(std.testing.allocator, &mesh_input, direct, .direct_fixed, 1);
+    try expectPreparedResources(std.testing.allocator, &mesh_input, direct, .direct_fixed, .one);
 }
 
 fn expectPreparedResources(
@@ -90,14 +100,15 @@ fn expectPreparedResources(
     base_input: *const meshpipeline.MeshInput,
     params: Params,
     evaluator: Evaluator,
-    neighbors: u8,
+    neighbors: ?speckleconfig.Neighborhood,
 ) !void {
-    const expected: speckleconfig.Config = .{
-        .pattern = params.pattern,
-        .evaluator = evaluator,
-        .neighbor_count = neighbors,
-        .soft_edges = params.edge_softness > 0.0,
-    };
+    const expected = try speckleconfig.resolve(
+        true,
+        params.pattern,
+        evaluator,
+        neighbors,
+        if (params.edge_softness > 0.0) .soft else .hard,
+    );
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     var mesh_input = base_input.*;
