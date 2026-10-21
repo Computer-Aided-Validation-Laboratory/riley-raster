@@ -82,7 +82,6 @@ pub fn buildTexSamplingCaseMeshes(
                     .uvs = prep.sphere_uvs.array,
                     .tex = textures.tex_u8_rgb,
                     .samp_cfg = case.samp_cfg,
-                    .normal_type = .none,
                 },
             },
             .u16 => .{
@@ -90,7 +89,6 @@ pub fn buildTexSamplingCaseMeshes(
                     .uvs = prep.sphere_uvs.array,
                     .tex = textures.tex_u16_rgb,
                     .samp_cfg = case.samp_cfg,
-                    .normal_type = .none,
                 },
             },
             .f64 => .{
@@ -98,7 +96,6 @@ pub fn buildTexSamplingCaseMeshes(
                     .uvs = prep.sphere_uvs.array,
                     .tex = textures.tex_f64_rgb,
                     .samp_cfg = case.samp_cfg,
-                    .normal_type = .none,
                 },
             },
         }
@@ -108,7 +105,6 @@ pub fn buildTexSamplingCaseMeshes(
                 .uvs = prep.sphere_uvs.array,
                 .tex = textures.tex_u8_mono,
                 .samp_cfg = case.samp_cfg,
-                .normal_type = .none,
             },
         },
         .u16 => .{
@@ -116,7 +112,6 @@ pub fn buildTexSamplingCaseMeshes(
                 .uvs = prep.sphere_uvs.array,
                 .tex = textures.tex_u16_mono,
                 .samp_cfg = case.samp_cfg,
-                .normal_type = .none,
             },
         },
         .f64 => .{
@@ -124,7 +119,6 @@ pub fn buildTexSamplingCaseMeshes(
                 .uvs = prep.sphere_uvs.array,
                 .tex = textures.tex_f64_mono,
                 .samp_cfg = case.samp_cfg,
-                .normal_type = .none,
             },
         },
     };
@@ -136,7 +130,6 @@ pub fn buildTexSamplingCaseMeshes(
                     .uvs = prep.cylinder_uvs.array,
                     .tex = textures.tex_u8_rgb,
                     .samp_cfg = case.samp_cfg,
-                    .normal_type = .none,
                 },
             },
             .u16 => .{
@@ -144,7 +137,6 @@ pub fn buildTexSamplingCaseMeshes(
                     .uvs = prep.cylinder_uvs.array,
                     .tex = textures.tex_u16_rgb,
                     .samp_cfg = case.samp_cfg,
-                    .normal_type = .none,
                 },
             },
             .f64 => .{
@@ -152,7 +144,6 @@ pub fn buildTexSamplingCaseMeshes(
                     .uvs = prep.cylinder_uvs.array,
                     .tex = textures.tex_f64_rgb,
                     .samp_cfg = case.samp_cfg,
-                    .normal_type = .none,
                 },
             },
         }
@@ -162,7 +153,6 @@ pub fn buildTexSamplingCaseMeshes(
                 .uvs = prep.cylinder_uvs.array,
                 .tex = textures.tex_u8_mono,
                 .samp_cfg = case.samp_cfg,
-                .normal_type = .none,
             },
         },
         .u16 => .{
@@ -170,7 +160,6 @@ pub fn buildTexSamplingCaseMeshes(
                 .uvs = prep.cylinder_uvs.array,
                 .tex = textures.tex_u16_mono,
                 .samp_cfg = case.samp_cfg,
-                .normal_type = .none,
             },
         },
         .f64 => .{
@@ -178,7 +167,6 @@ pub fn buildTexSamplingCaseMeshes(
                 .uvs = prep.cylinder_uvs.array,
                 .tex = textures.tex_f64_mono,
                 .samp_cfg = case.samp_cfg,
-                .normal_type = .none,
             },
         },
     };

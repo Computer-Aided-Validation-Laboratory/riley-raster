@@ -171,7 +171,6 @@ pub fn main(init: std.process.Init) !void {
                             .params = .{},
                             .bits = 8,
                             .scaling = .auto,
-                            .normal_type = .none,
                         } } };
                     } else {
                         mesh_input.shaders = .{ .direct = .{ .tex_u8 = .{
@@ -183,7 +182,6 @@ pub fn main(init: std.process.Init) !void {
                             },
                             .bits = 8,
                             .scaling = .none,
-                            .normal_type = .none,
                         } } };
                     }
 

@@ -81,7 +81,6 @@ pub fn generateOneElemCase(
                 .params = shader_params,
                 .bits = 8,
                 .scaling = .auto,
-                .normal_type = .none,
             },
         } },
     };

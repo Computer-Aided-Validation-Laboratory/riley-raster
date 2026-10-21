@@ -602,6 +602,7 @@ pub inline fn fillFuncClipSIMD(
     v_weights: [N]VecSF,
     v_xi: VecSF,
     v_eta: VecSF,
+    hit: comm.VectorMeshHit,
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.FuncPrepared,
     sink: anytype,
@@ -610,7 +611,15 @@ pub inline fn fillFuncClipSIMD(
     var v_coord_0: VecSF = v_xi;
     var v_coord_1: VecSF = v_eta;
 
-    switch (shader.coord_mode) {
+    const shared_coords = switch (shader.coord_mode) {
+        .world_reference => hit.coords_ref,
+        .world_deformed => hit.coords_def,
+        else => null,
+    };
+    if (shared_coords) |coords| {
+        v_coord_0 = coords[0];
+        v_coord_1 = coords[1];
+    } else switch (shader.coord_mode) {
         .uv, .world_reference, .world_deformed => {
             v_coord_0 = @splat(0.0);
             v_coord_1 = @splat(0.0);
@@ -625,12 +634,15 @@ pub inline fn fillFuncClipSIMD(
         .para => {},
     }
 
-    const normal_vecs = calcNormalLaneVecs(
-        N,
-        shader.elem_normals != null,
-        shader_buf,
-        v_weights,
-    );
+    const normal_vecs = if (shader.needs_normal and hit.surf_norm != null)
+        hit.surf_norm.?
+    else
+        calcNormalLaneVecs(
+            N,
+            shader.needs_normal,
+            shader_buf,
+            v_weights,
+        );
 
     const coord = comm.FuncCoordSIMD{
         .coord_0 = v_coord_0,
@@ -675,6 +687,7 @@ pub inline fn fillFuncPerspSIMD(
     v_eta: VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
+    hit: comm.VectorMeshHit,
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.FuncPrepared,
     sink: anytype,
@@ -683,7 +696,15 @@ pub inline fn fillFuncPerspSIMD(
     var v_coord_0: VecSF = v_xi;
     var v_coord_1: VecSF = v_eta;
 
-    switch (shader.coord_mode) {
+    const shared_coords = switch (shader.coord_mode) {
+        .world_reference => hit.coords_ref,
+        .world_deformed => hit.coords_def,
+        else => null,
+    };
+    if (shared_coords) |coords| {
+        v_coord_0 = coords[0];
+        v_coord_1 = coords[1];
+    } else switch (shader.coord_mode) {
         .uv, .world_reference, .world_deformed => {
             v_coord_0 = @splat(0.0);
             v_coord_1 = @splat(0.0);
@@ -703,12 +724,15 @@ pub inline fn fillFuncPerspSIMD(
         .para => {},
     }
 
-    const normal_vecs = calcNormalLaneVecs(
-        N,
-        shader.elem_normals != null,
-        shader_buf,
-        v_weights,
-    );
+    const normal_vecs = if (shader.needs_normal and hit.surf_norm != null)
+        hit.surf_norm.?
+    else
+        calcNormalLaneVecs(
+            N,
+            shader.needs_normal,
+            shader_buf,
+            v_weights,
+        );
 
     const coord = comm.FuncCoordSIMD{
         .coord_0 = v_coord_0,

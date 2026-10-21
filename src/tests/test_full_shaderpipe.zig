@@ -48,7 +48,6 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                         },
                     },
                 },
-                .normal_type = .exact,
                 .bits = null,
             } }, .destination = .{ .kind = .parameter, .index = 0 } } },
         };
@@ -68,7 +67,6 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                         },
                     },
                 },
-                .normal_type = .exact,
                 .bits = null,
             } }, .destination = .{ .kind = .parameter, .index = 0 } } },
         };

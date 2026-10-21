@@ -155,7 +155,6 @@ fn duplicateMeshInput(
                     .params = base_func.params,
                     .bits = base_func.bits,
                     .scaling = base_func.scaling,
-                    .normal_type = base_func.normal_type,
                 },
             };
         },

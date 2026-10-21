@@ -24,20 +24,20 @@ pub const FullNodalCase = struct {
     is_rgb: bool,
     scaling: imageops.ScaleStrategy,
     scale_over: shaderops.ScaleOver,
-    normal_type: shaderops.NormalType,
+    normal_type: shaderops.NormalType = .none,
 };
 
 pub const FullTexCase = struct {
     is_rgb: bool,
     dtype: enum { u8, u16, f64 },
-    normal_type: shaderops.NormalType,
+    normal_type: shaderops.NormalType = .none,
 };
 
 pub const FullFuncCase = struct {
     is_rgb: bool,
     builtin: shaderops.FuncShaderBuiltin,
     coord: shaderops.FuncCoordMode,
-    normal_type: shaderops.NormalType,
+    normal_type: shaderops.NormalType = .none,
 };
 
 pub const FullShaderCase = union(enum) {
@@ -145,7 +145,6 @@ pub fn buildShaderCaseMeshes(
                     .bits = 8,
                     .scaling = n.scaling,
                     .scale_over = n.scale_over,
-                    .normal_type = n.normal_type,
                 },
             };
             const cyl_shader = shaderops.ShaderDirectInput{
@@ -154,13 +153,13 @@ pub fn buildShaderCaseMeshes(
                     .bits = 8,
                     .scaling = n.scaling,
                     .scale_over = n.scale_over,
-                    .normal_type = n.normal_type,
                 },
             };
 
             return [_]MeshInput{
                 .{
                     .mesh_type = mesh_type,
+                    .normal_type = n.normal_type,
                     .coords = prep.sphere_coords,
                     .connect = prep.sphere_connect,
                     .disp = prep.sphere_disp,
@@ -168,6 +167,7 @@ pub fn buildShaderCaseMeshes(
                 },
                 .{
                     .mesh_type = mesh_type,
+                    .normal_type = n.normal_type,
                     .coords = prep.cylinder_coords,
                     .connect = prep.cylinder_connect,
                     .disp = prep.cylinder_disp,
@@ -188,7 +188,6 @@ pub fn buildShaderCaseMeshes(
                             .uvs = prep.sphere_uvs.array,
                             .tex = textures.tex_u8_rgb,
                             .samp_cfg = samp_cfg,
-                            .normal_type = t.normal_type,
                         },
                     },
                     .u16 => .{
@@ -196,7 +195,6 @@ pub fn buildShaderCaseMeshes(
                             .uvs = prep.sphere_uvs.array,
                             .tex = textures.tex_u16_rgb,
                             .samp_cfg = samp_cfg,
-                            .normal_type = t.normal_type,
                         },
                     },
                     .f64 => .{
@@ -204,7 +202,6 @@ pub fn buildShaderCaseMeshes(
                             .uvs = prep.sphere_uvs.array,
                             .tex = textures.tex_f64_rgb,
                             .samp_cfg = samp_cfg,
-                            .normal_type = t.normal_type,
                         },
                     },
                 }
@@ -214,7 +211,6 @@ pub fn buildShaderCaseMeshes(
                         .uvs = prep.sphere_uvs.array,
                         .tex = textures.tex_u8_mono,
                         .samp_cfg = samp_cfg,
-                        .normal_type = t.normal_type,
                     },
                 },
                 .u16 => .{
@@ -222,7 +218,6 @@ pub fn buildShaderCaseMeshes(
                         .uvs = prep.sphere_uvs.array,
                         .tex = textures.tex_u16_mono,
                         .samp_cfg = samp_cfg,
-                        .normal_type = t.normal_type,
                     },
                 },
                 .f64 => .{
@@ -230,7 +225,6 @@ pub fn buildShaderCaseMeshes(
                         .uvs = prep.sphere_uvs.array,
                         .tex = textures.tex_f64_mono,
                         .samp_cfg = samp_cfg,
-                        .normal_type = t.normal_type,
                     },
                 },
             };
@@ -242,7 +236,6 @@ pub fn buildShaderCaseMeshes(
                             .uvs = prep.cylinder_uvs.array,
                             .tex = textures.tex_u8_rgb,
                             .samp_cfg = samp_cfg,
-                            .normal_type = t.normal_type,
                         },
                     },
                     .u16 => .{
@@ -250,7 +243,6 @@ pub fn buildShaderCaseMeshes(
                             .uvs = prep.cylinder_uvs.array,
                             .tex = textures.tex_u16_rgb,
                             .samp_cfg = samp_cfg,
-                            .normal_type = t.normal_type,
                         },
                     },
                     .f64 => .{
@@ -258,7 +250,6 @@ pub fn buildShaderCaseMeshes(
                             .uvs = prep.cylinder_uvs.array,
                             .tex = textures.tex_f64_rgb,
                             .samp_cfg = samp_cfg,
-                            .normal_type = t.normal_type,
                         },
                     },
                 }
@@ -268,7 +259,6 @@ pub fn buildShaderCaseMeshes(
                         .uvs = prep.cylinder_uvs.array,
                         .tex = textures.tex_u8_mono,
                         .samp_cfg = samp_cfg,
-                        .normal_type = t.normal_type,
                     },
                 },
                 .u16 => .{
@@ -276,7 +266,6 @@ pub fn buildShaderCaseMeshes(
                         .uvs = prep.cylinder_uvs.array,
                         .tex = textures.tex_u16_mono,
                         .samp_cfg = samp_cfg,
-                        .normal_type = t.normal_type,
                     },
                 },
                 .f64 => .{
@@ -284,7 +273,6 @@ pub fn buildShaderCaseMeshes(
                         .uvs = prep.cylinder_uvs.array,
                         .tex = textures.tex_f64_mono,
                         .samp_cfg = samp_cfg,
-                        .normal_type = t.normal_type,
                     },
                 },
             };
@@ -292,6 +280,7 @@ pub fn buildShaderCaseMeshes(
             return [_]MeshInput{
                 .{
                     .mesh_type = mesh_type,
+                    .normal_type = t.normal_type,
                     .coords = prep.sphere_coords,
                     .connect = prep.sphere_connect,
                     .disp = prep.sphere_disp,
@@ -299,6 +288,7 @@ pub fn buildShaderCaseMeshes(
                 },
                 .{
                     .mesh_type = mesh_type,
+                    .normal_type = t.normal_type,
                     .coords = prep.cylinder_coords,
                     .connect = prep.cylinder_connect,
                     .disp = prep.cylinder_disp,
@@ -330,7 +320,6 @@ pub fn buildShaderCaseMeshes(
                 .coord_mode = f.coord,
                 .builtin = f.builtin,
                 .params = params,
-                .normal_type = f.normal_type,
             };
             const sphere_shader: shaderops.ShaderDirectInput = if (f.is_rgb)
                 .{ .func_rgb = sphere_func_input }
@@ -346,7 +335,6 @@ pub fn buildShaderCaseMeshes(
                 .coord_mode = f.coord,
                 .builtin = f.builtin,
                 .params = params,
-                .normal_type = f.normal_type,
             };
             const cyl_shader: shaderops.ShaderDirectInput = if (f.is_rgb)
                 .{ .func_rgb = cyl_func_input }
@@ -356,6 +344,7 @@ pub fn buildShaderCaseMeshes(
             return [_]MeshInput{
                 .{
                     .mesh_type = mesh_type,
+                    .normal_type = f.normal_type,
                     .coords = prep.sphere_coords,
                     .connect = prep.sphere_connect,
                     .disp = prep.sphere_disp,
@@ -363,6 +352,7 @@ pub fn buildShaderCaseMeshes(
                 },
                 .{
                     .mesh_type = mesh_type,
+                    .normal_type = f.normal_type,
                     .coords = prep.cylinder_coords,
                     .connect = prep.cylinder_connect,
                     .disp = prep.cylinder_disp,

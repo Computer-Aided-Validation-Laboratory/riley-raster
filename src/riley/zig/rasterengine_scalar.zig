@@ -449,7 +449,7 @@ pub fn rasterDirectScalComm(
                     .global_subx = global_subx,
                     .global_suby = global_suby,
                 },
-                shaderops.InterpData(GeomKern.nodes_num){
+                shaderops.MeshHit(GeomKern.nodes_num){
                     .weights = weights,
                     .nodes_inv_z = nodes_inv_z,
                     .sub_pixel_z = 1.0 / inv_z,
@@ -803,7 +803,7 @@ fn rasterNewtonImpl(
                 .global_subx = global_subx,
                 .global_suby = global_suby,
             };
-            const interp_data = shaderops.InterpData(N){
+            const interp_data = shaderops.MeshHit(N){
                 .weights = weights,
                 .nodes_inv_z = nodes_inv_z,
                 .sub_pixel_z = subpx_z,
@@ -1090,7 +1090,7 @@ fn rasterNewtonMultiImpl(
                 .global_suby = global_suby,
             };
 
-            const interp_data = shaderops.InterpData(N){
+            const interp_data = shaderops.MeshHit(N){
                 .weights = weights,
                 .nodes_inv_z = nodes_inv_z,
                 .sub_pixel_z = 1.0 / best_inv_z,
@@ -1357,7 +1357,7 @@ fn rasterSteppedScalFixP(
                         .global_suby = global_suby,
                     };
 
-                    const interp_data = shaderops.InterpData(N){
+                    const interp_data = shaderops.MeshHit(N){
                         .weights = weights,
                         .nodes_inv_z = nodes_inv_z,
                         .sub_pixel_z = subpx_z,
@@ -1606,7 +1606,7 @@ fn rasterSteppedScalFloat(
                         .global_subx = global_subx,
                         .global_suby = global_suby,
                     };
-                    const interp_data = shaderops.InterpData(N){
+                    const interp_data = shaderops.MeshHit(N){
                         .weights = weights,
                         .nodes_inv_z = nodes_inv_z,
                         .sub_pixel_z = subpx_z,

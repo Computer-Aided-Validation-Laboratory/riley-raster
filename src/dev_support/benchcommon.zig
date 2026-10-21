@@ -441,13 +441,13 @@ pub const ShaderType = enum {
     func_rgb,
 };
 const TextureSampleConfig = @import("../riley/zig/textureops.zig").TextureSampleConfig;
-pub const TexFuncCoordMode = enum { uv, param };
+pub const TexFuncCoordMode = enum { uv, param, world_reference };
 pub const TexFuncCase = struct {
     builtin: so.FuncShaderBuiltin,
     coord_mode: TexFuncCoordMode,
 };
 
-pub const BenchShaderPath = enum { direct, one_stage_pipe };
+pub const BenchShaderPath = enum { direct, one_stage_pipe, multi_source_pipe };
 
 pub const BenchRenderDefaults = struct {
     pixels_num: [2]u32,
@@ -737,12 +737,15 @@ pub fn loadBenchmarkMeshInput(
                 null;
             shader = .{ .func = .{
                 .uvs = tex_func_uvs,
-                .coord_mode = if (tex_case.coord_mode == .uv) .uv else .para,
+                .coord_mode = switch (tex_case.coord_mode) {
+                    .uv => .uv,
+                    .param => .para,
+                    .world_reference => .world_reference,
+                },
                 .builtin = tex_case.builtin,
                 .params = calcTexFuncParams(tex_case),
                 .bits = 8,
                 .scaling = .none,
-                .normal_type = .none,
             } };
         },
         .func_rgb => {
@@ -759,12 +762,15 @@ pub fn loadBenchmarkMeshInput(
                 null;
             shader = .{ .func_rgb = .{
                 .uvs = tex_func_uvs,
-                .coord_mode = if (tex_case.coord_mode == .uv) .uv else .para,
+                .coord_mode = switch (tex_case.coord_mode) {
+                    .uv => .uv,
+                    .param => .para,
+                    .world_reference => .world_reference,
+                },
                 .builtin = tex_case.builtin,
                 .params = calcTexFuncParams(tex_case),
                 .bits = 8,
                 .scaling = .none,
-                .normal_type = .none,
             } };
         },
     }
@@ -955,11 +961,41 @@ fn runBenchmarkInternal(
         .destination = output_slot,
     } }};
     const pipe_slots = [_]shaderpipe.Slot{output_slot};
+    var deformed_shader = mesh_input.shaders.direct.?;
+    if (render_defaults.shader_path == .multi_source_pipe) {
+        std.debug.assert(deformed_shader == .func);
+        deformed_shader.func.coord_mode = .world_deformed;
+    }
+    const multi_stages = [_]so.ShaderPipeStageInput{
+        .{ .source = .{
+            .shader = mesh_input.shaders.direct.?,
+            .destination = .{ .kind = .channel, .index = 0 },
+        } },
+        .{ .source = .{
+            .shader = deformed_shader,
+            .destination = .{ .kind = .channel, .index = 1 },
+        } },
+        .{ .source = .{
+            .shader = mesh_input.shaders.direct.?,
+            .destination = .{ .kind = .channel, .index = 2 },
+        } },
+    };
+    const multi_slots = [_]shaderpipe.Slot{
+        .{ .kind = .channel, .index = 0 },
+        .{ .kind = .channel, .index = 1 },
+        .{ .kind = .channel, .index = 2 },
+    };
     if (render_defaults.shader_path == .one_stage_pipe) {
         std.debug.assert(calcOutputChannels(shader_type) == 1);
         mesh_input.shaders = .{ .mono = .{
             .stages = &pipe_stages,
             .resolver = .{ .identity = &pipe_slots },
+        } };
+    } else if (render_defaults.shader_path == .multi_source_pipe) {
+        std.debug.assert(calcOutputChannels(shader_type) == 1);
+        mesh_input.shaders = .{ .mono = .{
+            .stages = &multi_stages,
+            .resolver = .{ .sum = &multi_slots },
         } };
     }
 
@@ -994,7 +1030,7 @@ fn runBenchmarkInternal(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .shader_selection = if (render_defaults.shader_path == .one_stage_pipe)
+        .shader_selection = if (render_defaults.shader_path != .direct)
             .mono
         else
             .direct,
@@ -1177,7 +1213,10 @@ fn calcTexFuncParams(tex_func_case: TexFuncCase) so.FuncShaderParams {
 
     return switch (tex_func_case.builtin) {
         .checker => .{
-            .coord_scale = .{ 8.0, 8.0 },
+            .coord_scale = if (tex_func_case.coord_mode == .world_reference)
+                .{ 1000.0, 1000.0 }
+            else
+                .{ 8.0, 8.0 },
             .settings = .{ .checker = .{} },
         },
         .sinusoidal => .{

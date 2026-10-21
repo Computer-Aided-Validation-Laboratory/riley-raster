@@ -144,7 +144,6 @@ fn initCameraForSimDataAllFrames(
                     .uvs = null,
                     .coord_mode = .para,
                     .builtin = .constant,
-                    .normal_type = .none,
                 },
             } },
         };

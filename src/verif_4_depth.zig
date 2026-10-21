@@ -290,7 +290,6 @@ fn runCase(
             },
             .bits = 8,
             .scaling = .none,
-            .normal_type = .none,
         } } },
     };
     var back_mesh = MeshInput{
@@ -308,7 +307,6 @@ fn runCase(
             },
             .bits = 8,
             .scaling = .none,
-            .normal_type = .none,
         } } },
     };
 

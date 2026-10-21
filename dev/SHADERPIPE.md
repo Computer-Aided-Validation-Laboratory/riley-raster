@@ -30,6 +30,21 @@ A pipe source is an ordinary *direct* shader; pipes cannot recursively contain p
 
 `Camera.output_encoding` is independent of shader selection. `native` uses the existing image save scaling. `grid12_to_u16` maps a declared raw range to 12-bit codes 0–4095, then stores each as `16 * code` (0–65520) in a 16-bit TIFF. `linear_u16` maps a declared raw range linearly to 0–65535. Both encodings clamp outside the declared range, require 16-bit TIFF disk output, and leave returned floating-point memory images in physical/raw units. Demo9 uses 0–255 source intensity for DIC and 0–250 °C apparent temperature for IR. Decode IR TIFF codes as `C = code * 250 / 65535`.
 
+## Mesh hits and normals
+
+Each accepted raster sample carries a `MeshHit` with parametric coordinates,
+shape weights, depth and perspective data. A shader pipe selects any shared
+reference coordinates, deformed coordinates and surface normal required by its
+sources. Riley prepares each selected geometry field once per mesh and evaluates
+it once per accepted sample. Texture UVs remain local to each texture source.
+
+Normal mode belongs to the mesh: `MeshInput.normal_type` in Zig and
+`create_mesh(..., normal_type=...)` in Python. The default is `.exact`; `.avg`
+averages adjacent element-node normals, and `.none` disables normal evaluation.
+The existing `.exact` mode calculates Jacobian normals at element nodes and
+interpolates those normals at a sample. It does not evaluate a Jacobian at the
+sample. A normal map requested through full statistics also selects normals.
+
 ## Examples and migration
 
 `demo7_shaderpipe_quickstart` renders one checker mesh through a direct and a lit mono choice. `demo8_shaderpipe_gallery` has four self-contained pipe examples. `demo9_diciruq` uses one deforming FE mesh for two direct stereo DIC cameras and one IR camera. `demo10_sphere_lit` renders the sphere simulation under three conditions: direct speckle, direct Lambertian lighting, and their combined modulated shader pipe. Each has Zig and Python versions.

@@ -14,6 +14,7 @@ from riley.cython.riley import (
     ShaderSource,
     Mesh,
     MeshType,
+    NormalType,
     NodalShader,
     RileyShader,
     TextureShader,
@@ -313,7 +314,7 @@ def _prepare_shader(
             return TextureShader(
                 uvs, np.ascontiguousarray(texture), shader.sample,
                 shader.sample_mode, shader.bits, shader.scaling_type,
-                shader.scaling_min, shader.scaling_max, shader.normal_type,
+                shader.scaling_min, shader.scaling_max,
             )
 
         case NodalShader():
@@ -351,7 +352,6 @@ def _prepare_shader(
                 scaling_min=shader.scaling_min,
                 scaling_max=shader.scaling_max,
                 scale_over=shader.scale_over,
-                normal_type=shader.normal_type,
             )
 
         case FunctionShader():
@@ -377,7 +377,6 @@ def _prepare_shader(
                 scaling_type=shader.scaling_type,
                 scaling_min=shader.scaling_min,
                 scaling_max=shader.scaling_max,
-                normal_type=shader.normal_type,
             )
 
         case _:
@@ -510,6 +509,7 @@ def create_mesh_from_conversion(
     conversion: MeshConversion,
     shaders: MeshShaderSet,
     disp: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
+    normal_type: NormalType = NormalType.exact,
 ) -> Mesh:
     """Create a Riley mesh from source-indexed nodal attributes."""
     if not isinstance(conversion, MeshConversion):
@@ -532,6 +532,7 @@ def create_mesh_from_conversion(
             conversion.source_node_count,
             conversion.source_node_indices,
         ),
+        normal_type,
     )
 
 
@@ -539,6 +540,7 @@ def create_mesh_from_prepared(
     conversion: MeshConversion,
     shaders: MeshShaderSet,
     disp: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
+    normal_type: NormalType = NormalType.exact,
 ) -> Mesh:
     """Create a Riley mesh from attributes indexed by converted mesh nodes."""
     if not isinstance(conversion, MeshConversion):
@@ -553,6 +555,7 @@ def create_mesh_from_prepared(
         np.ascontiguousarray(geometry.connect, dtype=np.uintp),
         _prepare_disp(disp, nodes_num, identity),
         _prepare_shader_set(shaders, nodes_num, identity),
+        normal_type,
     )
 
 
@@ -563,6 +566,7 @@ def create_mesh(
     connect: np.ndarray,
     shaders: MeshShaderSet,
     disp: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
+    normal_type: NormalType = NormalType.exact,
 ) -> Mesh:
     """Build a renderable Riley Mesh from raw coordinates and connectivity.
 
@@ -583,11 +587,14 @@ def create_mesh(
     connect : numpy.ndarray
         Connectivity table of shape `(E, M)` or `(M, E)` with integer dtype,
         where `E` is elements and `M` is nodes per element.
-    shader : RileyShader
+    shaders : MeshShaderSet
         A set of direct and/or pipeline shader choices.
     disp : tuple of numpy.ndarray or None, default=None
         Optional displacement field tuple `(disp_x, disp_y, disp_z)`, where
         each component has shape `(N,)` or `(N, T)` with floating dtype.
+    normal_type : NormalType, default=NormalType.exact
+        Mesh normal mode shared by all shader choices. ``none`` skips normals;
+        ``exact`` and ``averaged`` retain Riley's element-node methods.
 
     Returns
     -------
@@ -603,7 +610,7 @@ def create_mesh(
     conversion = convert_mesh_for_render(
         convention, mesh_type, coords, connect
     )
-    return create_mesh_from_conversion(conversion, shaders, disp)
+    return create_mesh_from_conversion(conversion, shaders, disp, normal_type)
 
 
 __all__ = [

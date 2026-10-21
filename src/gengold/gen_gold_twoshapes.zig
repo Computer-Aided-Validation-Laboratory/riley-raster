@@ -155,14 +155,12 @@ fn loadShapeMesh(
             .bits = 8,
             .scaling = .auto,
             .scale_over = .over_frames,
-            .normal_type = .none,
         } },
         .nodal_rgb => .{ .nodal = .{
             .field = try buildRgbField(allocator, temp, disp),
             .bits = 8,
             .scaling = .auto,
             .scale_over = .over_frames,
-            .normal_type = .none,
         } },
         .tex_u8_mono_catmull_direct => .{ .tex_u8 = .{
             .uvs = uvs.array,
@@ -170,7 +168,6 @@ fn loadShapeMesh(
             .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
             .bits = 8,
             .scaling = .auto,
-            .normal_type = .none,
         } },
         .tex_u8_mono_catmull_lutlerp => .{ .tex_u8 = .{
             .uvs = uvs.array,
@@ -178,7 +175,6 @@ fn loadShapeMesh(
             .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
             .bits = 8,
             .scaling = .auto,
-            .normal_type = .none,
         } },
         .tex_u8_mono_linear_direct => .{ .tex_u8 = .{
             .uvs = uvs.array,
@@ -186,7 +182,6 @@ fn loadShapeMesh(
             .samp_cfg = .{ .sample = .linear, .mode = .direct },
             .bits = 8,
             .scaling = .auto,
-            .normal_type = .none,
         } },
         .tex_u16_mono_catmull_direct => .{ .tex_u16 = .{
             .uvs = uvs.array,
@@ -194,7 +189,6 @@ fn loadShapeMesh(
             .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
             .bits = 16,
             .scaling = .auto,
-            .normal_type = .none,
         } },
         .tex_f64_mono_catmull_direct => .{ .tex_f = .{
             .uvs = uvs.array,
@@ -202,7 +196,6 @@ fn loadShapeMesh(
             .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
             .bits = 8,
             .scaling = .auto,
-            .normal_type = .none,
         } },
         .tex_u8_rgb_catmull_direct => .{ .tex_rgb_u8 = .{
             .uvs = uvs.array,
@@ -210,7 +203,6 @@ fn loadShapeMesh(
             .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
             .bits = 8,
             .scaling = .auto,
-            .normal_type = .none,
         } },
         .func_checker_uvs => .{ .func = .{
             .uvs = uvs.array,
@@ -222,7 +214,6 @@ fn loadShapeMesh(
             },
             .bits = 8,
             .scaling = .auto,
-            .normal_type = .none,
         } },
         .func_eggbox_worldc => .{ .func = .{
             .coord_mode = .world_reference,
@@ -233,7 +224,6 @@ fn loadShapeMesh(
             },
             .bits = 8,
             .scaling = .auto,
-            .normal_type = .none,
         } },
         .func_lambertian_normavg => .{ .func = .{
             .coord_mode = .para,
@@ -243,7 +233,6 @@ fn loadShapeMesh(
             },
             .bits = 8,
             .scaling = .auto,
-            .normal_type = .avg,
         } },
         .func_lambertian_normexact => .{ .func = .{
             .coord_mode = .para,
@@ -253,7 +242,6 @@ fn loadShapeMesh(
             },
             .bits = 8,
             .scaling = .auto,
-            .normal_type = .exact,
         } },
         .func_rgb_checker_uvs => .{ .func_rgb = .{
             .uvs = uvs.array,
@@ -265,12 +253,16 @@ fn loadShapeMesh(
             },
             .bits = 8,
             .scaling = .auto,
-            .normal_type = .none,
         } },
     };
 
     return .{
         .mesh_type = mesh_type,
+        .normal_type = switch (shader_kind) {
+            .func_lambertian_normavg => .avg,
+            .func_lambertian_normexact => .exact,
+            else => .none,
+        },
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = disp,

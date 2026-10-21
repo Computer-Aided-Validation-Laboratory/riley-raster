@@ -8,7 +8,6 @@
 // --------------------------------------------------------------------------------------
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
 const texops = @import("textureops.zig");
 const comm = @import("shaderops_common.zig");
@@ -20,7 +19,7 @@ const comm = @import("shaderops_common.zig");
 pub inline fn fillNodalClipScal(
     comptime N: usize,
     ctx_shade: comm.ShadeContext,
-    interp: comm.InterpData(N),
+    interp: comm.MeshHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.NodalPrepared,
     spx_img_scratch: *matslice.MatSlice(F),
@@ -35,7 +34,7 @@ pub inline fn fillNodalClipScal(
 pub inline fn fillNodalPerspScal(
     comptime N: usize,
     ctx_shade: comm.ShadeContext,
-    interp: comm.InterpData(N),
+    interp: comm.MeshHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.NodalPrepared,
     spx_img_scratch: *matslice.MatSlice(F),
@@ -65,7 +64,7 @@ pub inline fn fillTexClipScal(
     comptime C: usize,
     comptime samp_cfg: texops.TexSampConfig,
     ctx_shade: comm.ShadeContext,
-    interp: comm.InterpData(N),
+    interp: comm.MeshHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.TexPrepared(T, C),
     spx_img_scratch: *matslice.MatSlice(F),
@@ -97,7 +96,7 @@ pub inline fn fillTexPerspScal(
     comptime C: usize,
     comptime samp_cfg: texops.TexSampConfig,
     ctx_shade: comm.ShadeContext,
-    interp: comm.InterpData(N),
+    interp: comm.MeshHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.TexPrepared(T, C),
     spx_img_scratch: *matslice.MatSlice(F),
@@ -130,12 +129,12 @@ pub inline fn fillTexPerspScal(
 
 inline fn getFuncCoord(
     comptime N: usize,
-    interp: comm.InterpData(N),
+    interp: comm.MeshHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
-    elem_normals: ?ndarray.MappedNDArray(F),
+    needs_normal: bool,
 ) comm.FuncCoord {
-    if (elem_normals != null) {
-        const normal = shader_buf.interpNormal(interp.weights);
+    if (needs_normal) {
+        const normal = interp.surf_norm orelse shader_buf.interpNormal(interp.weights);
         return .{
             .coord_0 = 0.0,
             .coord_1 = 0.0,
@@ -165,7 +164,7 @@ inline fn setCoordValues(
 
 inline fn resolveFuncCoordsClip(
     comptime N: usize,
-    interp: comm.InterpData(N),
+    interp: comm.MeshHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.FuncPrepared,
 ) struct { coord_0: F, coord_1: F } {
@@ -178,19 +177,37 @@ inline fn resolveFuncCoordsClip(
             .coord_0 = interp.xi,
             .coord_1 = interp.eta,
         },
-        .world_reference, .world_deformed => .{
-            .coord_0 = shader_buf.interpFuncCoord(0, interp.weights),
-            .coord_1 = shader_buf.interpFuncCoord(1, interp.weights),
+        .world_reference => blk: {
+            const coords = interp.coords_ref orelse break :blk .{
+                .coord_0 = shader_buf.interpFuncCoord(0, interp.weights),
+                .coord_1 = shader_buf.interpFuncCoord(1, interp.weights),
+            };
+            break :blk .{ .coord_0 = coords[0], .coord_1 = coords[1] };
+        },
+        .world_deformed => blk: {
+            const coords = interp.coords_def orelse break :blk .{
+                .coord_0 = shader_buf.interpFuncCoord(0, interp.weights),
+                .coord_1 = shader_buf.interpFuncCoord(1, interp.weights),
+            };
+            break :blk .{ .coord_0 = coords[0], .coord_1 = coords[1] };
         },
     };
 }
 
 inline fn resolveFuncCoordsPersp(
     comptime N: usize,
-    interp: comm.InterpData(N),
+    interp: comm.MeshHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.FuncPrepared,
 ) struct { coord_0: F, coord_1: F } {
+    const shared_coords = switch (shader.coord_mode) {
+        .world_reference => interp.coords_ref,
+        .world_deformed => interp.coords_def,
+        else => null,
+    };
+    if (shared_coords) |coords| {
+        return .{ .coord_0 = coords[0], .coord_1 = coords[1] };
+    }
     return switch (shader.coord_mode) {
         .uv, .world_reference, .world_deformed => blk: {
             var coord_0: F = 0.0;
@@ -218,12 +235,12 @@ pub inline fn fillFuncClipScal(
     comptime N: usize,
     comptime C: usize,
     ctx_shade: comm.ShadeContext,
-    interp: comm.InterpData(N),
+    interp: comm.MeshHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.FuncPrepared,
     spx_img_scratch: *matslice.MatSlice(F),
 ) void {
-    var coord = getFuncCoord(N, interp, shader_buf, shader.elem_normals);
+    var coord = getFuncCoord(N, interp, shader_buf, shader.needs_normal);
     const coords = resolveFuncCoordsClip(N, interp, shader_buf, shader);
     setCoordValues(&coord, coords.coord_0, coords.coord_1);
     const params = shader.params;
@@ -255,12 +272,12 @@ pub inline fn fillFuncPerspScal(
     comptime N: usize,
     comptime C: usize,
     ctx_shade: comm.ShadeContext,
-    interp: comm.InterpData(N),
+    interp: comm.MeshHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.FuncPrepared,
     spx_img_scratch: *matslice.MatSlice(F),
 ) void {
-    var coord = getFuncCoord(N, interp, shader_buf, shader.elem_normals);
+    var coord = getFuncCoord(N, interp, shader_buf, shader.needs_normal);
     const coords = resolveFuncCoordsPersp(N, interp, shader_buf, shader);
     setCoordValues(&coord, coords.coord_0, coords.coord_1);
     const params = shader.params;

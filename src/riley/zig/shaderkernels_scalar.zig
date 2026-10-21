@@ -24,7 +24,7 @@ pub fn NodalKernel(comptime N: usize) type {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
+            interp: shaderops.MeshHit(N),
             shader_buf: *const shaderops.LocalShaderBuff(N),
             shader: *const shaderops.NodalPrepared,
             ctx_report: anytype,
@@ -59,7 +59,7 @@ pub fn TexKernel(
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
+            interp: shaderops.MeshHit(N),
             shader_buf: *const shaderops.LocalShaderBuff(N),
             shader: *const shaderops.TexPrepared(T, C),
             ctx_report: anytype,
@@ -95,7 +95,7 @@ pub fn FuncKernel(
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
+            interp: shaderops.MeshHit(N),
             shader_buf: *const shaderops.LocalShaderBuff(N),
             shader: *const shaderops.FuncPrepared,
             ctx_report: anytype,

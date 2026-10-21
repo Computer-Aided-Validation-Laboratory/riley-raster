@@ -394,7 +394,6 @@ class TextureShader:
     scaling_type: ScaleStrategy = ScaleStrategy.none
     scaling_min: float = 0.0
     scaling_max: float = 0.0
-    normal_type: NormalType = NormalType.none
 
 
 @dataclass(slots=True)
@@ -407,7 +406,6 @@ class NodalShader:
     scaling_min: float = 0.0
     scaling_max: float = 0.0
     scale_over: ScaleOver = ScaleOver.over_frames
-    normal_type: NormalType = NormalType.none
 
 
 @dataclass(slots=True)
@@ -423,7 +421,6 @@ class FunctionShader:
     scaling_type: ScaleStrategy = ScaleStrategy.auto
     scaling_min: float = 0.0
     scaling_max: float = 0.0
-    normal_type: NormalType = NormalType.none
 
 
 class CameraShaderSelection(IntEnum):
@@ -555,6 +552,7 @@ class Mesh:
     connect: np.ndarray
     disp: np.ndarray | None
     shaders: MeshShaderSet
+    normal_type: NormalType = NormalType.exact
 
 
 class ImageFormat(IntEnum):
@@ -1518,6 +1516,7 @@ def _fill_mesh_array(
         coords_view: cython.double[:, ::1] = coords_np
         connect_view: cython.size_t[:, ::1] = connect_np
         mesh_array[nn].mesh_type = int(mesh.mesh_type)
+        mesh_array[nn].normal_type = int(mesh.normal_type)
         mesh_array[nn].coords = _make_array_2d_f64(
             coords_view,
             coords_np.shape[0],
@@ -1604,7 +1603,6 @@ def _fill_mesh_array(
         mesh_array[nn].shader.func_shader_params = _make_func_params(
             getattr(shader, "params", FuncShaderParams()),
         )
-        mesh_array[nn].shader.normal_type = int(shader.normal_type)
 
         shader_uvs = getattr(shader, "uvs", None)
         if shader_uvs is None:

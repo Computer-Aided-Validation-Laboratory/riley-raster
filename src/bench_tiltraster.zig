@@ -150,6 +150,9 @@ pub fn main(init: std.process.Init) !void {
     const shaderpipe_func_cases = [_]common.TexFuncCase{
         .{ .builtin = .checker, .coord_mode = .param },
     };
+    const multisource_func_cases = [_]common.TexFuncCase{
+        .{ .builtin = .checker, .coord_mode = .world_reference },
+    };
 
     var stats = try benchstats.BenchStatsCollector.init(
         outer_alloc,
@@ -214,7 +217,9 @@ pub fn main(init: std.process.Init) !void {
             shader_types[0..],
             tex_func_shader_types[0..],
             samp_cfgs[0..],
-            if (bench_args.shader_subset == .shaderpipe_baseline or
+            if (bench_args.shader_subset == .shaderpipe_multisource)
+                multisource_func_cases[0..]
+            else if (bench_args.shader_subset == .shaderpipe_baseline or
                 bench_args.shader_subset == .shaderpipe_compare)
                 shaderpipe_func_cases[0..]
             else
@@ -232,7 +237,9 @@ pub fn main(init: std.process.Init) !void {
             shader_types[0..],
             tex_func_shader_types[0..],
             samp_cfgs[0..],
-            if (bench_args.shader_subset == .shaderpipe_baseline or
+            if (bench_args.shader_subset == .shaderpipe_multisource)
+                multisource_func_cases[0..]
+            else if (bench_args.shader_subset == .shaderpipe_baseline or
                 bench_args.shader_subset == .shaderpipe_compare)
                 shaderpipe_func_cases[0..]
             else
@@ -295,6 +302,7 @@ fn runBenchmarksForTextureType(
         else
             shader_types;
         for (selected_shader_types) |st| {
+            if (bench_args.shader_subset == .shaderpipe_multisource) continue;
             for (samp_cfgs) |sc| {
                 if (bench_args.shader_subset == .shaderpipe_baseline or
                     bench_args.shader_subset == .shaderpipe_compare)
@@ -346,6 +354,12 @@ fn runBenchmarksForTextureType(
 
         for (tex_func_shader_types) |st| {
             for (tex_func_cases) |tex_func_case| {
+                if (bench_args.shader_subset == .shaderpipe_multisource and
+                    (st != .func or tex_func_case.builtin != .checker or
+                        tex_func_case.coord_mode != .world_reference))
+                {
+                    continue;
+                }
                 if ((bench_args.shader_subset == .shaderpipe_baseline or
                     bench_args.shader_subset == .shaderpipe_compare) and
                     (st != .func or tex_func_case.builtin != .checker or
@@ -397,9 +411,13 @@ fn runShaderCase(
     tex_func_case: ?common.TexFuncCase,
     data_dir: []const u8,
 ) !void {
-    const compare = bench_args.shader_subset == .shaderpipe_compare;
+    const multisource = bench_args.shader_subset == .shaderpipe_multisource;
+    const compare = bench_args.shader_subset == .shaderpipe_compare or multisource;
     const paths: []const common.BenchShaderPath = if (compare)
-        &.{ .direct, .one_stage_pipe }
+        if (multisource)
+            &.{ .direct, .multi_source_pipe }
+        else
+            &.{ .direct, .one_stage_pipe }
     else
         &.{.direct};
     const base_name = try common.calcCaseName(
@@ -416,7 +434,9 @@ fn runShaderCase(
     else
         base_name;
     defer if (compare) outer_alloc.free(direct_name);
-    const pipe_name = if (compare)
+    const pipe_name = if (multisource)
+        try std.fmt.allocPrint(outer_alloc, "{s}_multi_source_pipe", .{base_name})
+    else if (compare)
         try std.fmt.allocPrint(outer_alloc, "{s}_one_stage_pipe", .{base_name})
     else
         "";
@@ -429,7 +449,12 @@ fn runShaderCase(
     };
     defer for (&samples) |*sample| sample.deinit(outer_alloc);
 
-    const note_str = if (compare) " (direct / one-stage pipe)" else "";
+    const note_str = if (multisource)
+        " (direct / three-source pipe)"
+    else if (compare)
+        " (direct / one-stage pipe)"
+    else
+        "";
     std.debug.print("Case: {s}{s}\n", .{ base_name, note_str });
     const run_out_dir_base = if (bench_args.save_strategy == .disk or
         bench_args.save_strategy == .both)

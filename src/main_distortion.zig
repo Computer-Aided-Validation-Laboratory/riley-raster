@@ -170,7 +170,6 @@ fn renderCase(
             .params = SHADER_PARAMS,
             .bits = 8,
             .scaling = .none,
-            .normal_type = .none,
         } } },
     };
     const camera_input = makeCameraInput(

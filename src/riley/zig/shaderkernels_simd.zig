@@ -33,7 +33,7 @@ pub fn NodalKernel(comptime N: usize) type {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
+            interp: shaderops.MeshHit(N),
             shader_buf: *const shaderops.LocalShaderBuff(N),
             shader: *const shaderops.NodalPrepared,
             ctx_report: anytype,
@@ -154,7 +154,7 @@ pub fn TexKernel(
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
+            interp: shaderops.MeshHit(N),
             shader_buf: *const shaderops.LocalShaderBuff(N),
             shader: *const shaderops.TexPrepared(T, C),
             ctx_report: anytype,
@@ -398,7 +398,7 @@ pub fn FuncKernel(
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
+            interp: shaderops.MeshHit(N),
             shader_buf: *const shaderops.LocalShaderBuff(N),
             shader: *const shaderops.FuncPrepared,
             ctx_report: anytype,
@@ -431,6 +431,38 @@ pub fn FuncKernel(
             shader: *const shaderops.FuncPrepared,
             sink: anytype,
         ) void {
+            shadeSIMDToHit(
+                coord_space,
+                ctx_shade,
+                ctx_report,
+                v_mask_active,
+                v_weights,
+                v_xi,
+                v_eta,
+                v_nodes_inv_z,
+                v_subpx_z,
+                .{},
+                shader_buf,
+                shader,
+                sink,
+            );
+        }
+
+        pub inline fn shadeSIMDToHit(
+            comptime coord_space: CoordSpace,
+            ctx_shade: shaderops.ShadeContext,
+            ctx_report: anytype,
+            v_mask_active: VecSB,
+            v_weights: [N]VecSF,
+            v_xi: VecSF,
+            v_eta: VecSF,
+            v_nodes_inv_z: [N]VecSF,
+            v_subpx_z: VecSF,
+            hit: shaderops.VectorMeshHit,
+            shader_buf: *const shaderops.LocalShaderBuff(N),
+            shader: *const shaderops.FuncPrepared,
+            sink: anytype,
+        ) void {
             if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
                 if (shader.elem_normals != null) {
                     report.recordNormalSIMD(
@@ -456,6 +488,7 @@ pub fn FuncKernel(
                     v_eta,
                     v_nodes_inv_z,
                     v_subpx_z,
+                    hit,
                     shader_buf,
                     shader,
                     sink,
@@ -469,6 +502,7 @@ pub fn FuncKernel(
                     v_weights,
                     v_xi,
                     v_eta,
+                    hit,
                     shader_buf,
                     shader,
                     sink,

@@ -215,7 +215,6 @@ typedef struct c_shader_input {
     uint32_t func_shader_builtin;
     uint32_t func_shader_coord_mode;
     CFuncShaderParams func_shader_params;
-    uint32_t normal_type;
 } CShaderInput;
 
 typedef struct c_slot {
@@ -285,6 +284,7 @@ typedef struct c_pipe {
 
 typedef struct c_mesh_input {
     uint32_t mesh_type;
+    uint32_t normal_type;
     CArray2DF64 coords;
     CArray2DUsize connect;
     CArray3DF64 disp;

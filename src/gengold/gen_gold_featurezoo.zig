@@ -113,7 +113,6 @@ fn textureShader(
     uvs: uvio.UVMap,
     comptime bits: u8,
     linear: bool,
-    normal_type: shaderops.NormalType,
 ) shaderops.ShaderDirectInput {
     const samp_cfg = texops.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
@@ -125,7 +124,6 @@ fn textureShader(
         .samp_cfg = samp_cfg,
         .bits = bits,
         .scaling = .auto,
-        .normal_type = normal_type,
     };
     if (C == 1 and T == u8) return .{ .tex_u8 = input };
     if (C == 3 and T == u8) return .{ .tex_rgb_u8 = input };
@@ -188,7 +186,6 @@ fn loadZooMesh(
             uvs,
             bits,
             case_index != 0,
-            normal_type,
         ),
         1, 5 => blk: {
             const field = if (C == 1)
@@ -203,7 +200,6 @@ fn loadZooMesh(
                     .over_frames
                 else
                     .within_frames,
-                .normal_type = normal_type,
             } };
         },
         3, 4 => blk: {
@@ -228,7 +224,6 @@ fn loadZooMesh(
                 .params = params,
                 .bits = bits,
                 .scaling = .auto,
-                .normal_type = normal_type,
             };
             break :blk if (C == 1)
                 .{ .func = input }
@@ -240,6 +235,7 @@ fn loadZooMesh(
 
     return .{
         .mesh_type = case.mesh_type,
+        .normal_type = normal_type,
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = if (case_index % 2 == 1) disp else null,

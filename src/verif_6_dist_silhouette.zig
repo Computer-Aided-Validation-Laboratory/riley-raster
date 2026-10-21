@@ -379,7 +379,6 @@ fn renderScalarMap(
                 .uvs = null,
                 .coord_mode = .para,
                 .builtin = .constant,
-                .normal_type = .none,
             },
         } },
     };
@@ -447,7 +446,6 @@ fn buildCentroidCameraInputOverFrames(
                     .uvs = null,
                     .coord_mode = .para,
                     .builtin = .constant,
-                    .normal_type = .none,
                 },
             } },
         };

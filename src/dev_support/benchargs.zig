@@ -53,6 +53,7 @@ pub const ShaderSubset = enum {
     texture,
     shaderpipe_baseline,
     shaderpipe_compare,
+    shaderpipe_multisource,
 };
 
 pub const MeshSubset = enum {

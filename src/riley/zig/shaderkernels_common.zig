@@ -24,7 +24,7 @@ pub inline fn shadeNodalScalComm(
     comptime N: usize,
     comptime coord_space: CoordSpace,
     ctx_shade: shaderops.ShadeContext,
-    interp: shaderops.InterpData(N),
+    interp: shaderops.MeshHit(N),
     shader_buf: *const shaderops.LocalShaderBuff(N),
     shader: *const shaderops.NodalPrepared,
     ctx_report: anytype,
@@ -39,7 +39,7 @@ pub inline fn shadeNodalScalComm(
     }
 
     if (shader.elem_normals != null) {
-        const normal = shader_buf.interpNormal(interp.weights);
+        const normal = interp.surf_norm orelse shader_buf.interpNormal(interp.weights);
         if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
             ctx_report.recordNormal(
                 ctx_shade.global_subx,
@@ -82,7 +82,7 @@ pub inline fn shadeTexScalComm(
     comptime C: usize,
     comptime coord_space: CoordSpace,
     ctx_shade: shaderops.ShadeContext,
-    interp: shaderops.InterpData(N),
+    interp: shaderops.MeshHit(N),
     shader_buf: *const shaderops.LocalShaderBuff(N),
     shader: *const shaderops.TexPrepared(T, C),
     ctx_report: anytype,
@@ -97,7 +97,7 @@ pub inline fn shadeTexScalComm(
     }
 
     if (shader.elem_normals != null) {
-        const normal = shader_buf.interpNormal(interp.weights);
+        const normal = interp.surf_norm orelse shader_buf.interpNormal(interp.weights);
         if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
             ctx_report.recordNormal(
                 ctx_shade.global_subx,
@@ -130,7 +130,7 @@ inline fn shadeTexScalDispatchSample(
     comptime coord_space: CoordSpace,
     samp_cfg: TexSampConfig,
     ctx_shade: shaderops.ShadeContext,
-    interp: shaderops.InterpData(N),
+    interp: shaderops.MeshHit(N),
     shader_buf: *const shaderops.LocalShaderBuff(N),
     shader: *const shaderops.TexPrepared(T, C),
     spx_img_scratch: *MatSlice(F),
@@ -161,7 +161,7 @@ inline fn shadeTexScalDispatchMode(
     comptime samp_type: texops.TexSamp,
     mode: texops.TexSampMode,
     ctx_shade: shaderops.ShadeContext,
-    interp: shaderops.InterpData(N),
+    interp: shaderops.MeshHit(N),
     shader_buf: *const shaderops.LocalShaderBuff(N),
     shader: *const shaderops.TexPrepared(T, C),
     spx_img_scratch: *MatSlice(F),
@@ -211,7 +211,7 @@ pub inline fn shadeFuncScalComm(
     comptime C: usize,
     comptime coord_space: CoordSpace,
     ctx_shade: shaderops.ShadeContext,
-    interp: shaderops.InterpData(N),
+    interp: shaderops.MeshHit(N),
     shader_buf: *const shaderops.LocalShaderBuff(N),
     shader: *const shaderops.FuncPrepared,
     ctx_report: anytype,
@@ -226,7 +226,7 @@ pub inline fn shadeFuncScalComm(
     }
 
     if (shader.elem_normals != null) {
-        const normal = shader_buf.interpNormal(interp.weights);
+        const normal = interp.surf_norm orelse shader_buf.interpNormal(interp.weights);
         if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
             ctx_report.recordNormal(
                 ctx_shade.global_subx,

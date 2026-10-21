@@ -583,7 +583,6 @@ pub fn prepareScene1(
                 .coord_mode = .uv,
                 .bits = 8,
                 .scaling = .auto,
-                .normal_type = .none,
             },
         } },
     };
@@ -662,7 +661,6 @@ pub fn buildScene2Meshes(
             .coord_mode = .uv,
             .bits = 8,
             .scaling = .auto,
-            .normal_type = .none,
         },
     };
 
@@ -676,7 +674,6 @@ pub fn buildScene2Meshes(
             },
             .bits = 8,
             .scaling = .auto,
-            .normal_type = .none,
         },
     };
 
@@ -1094,7 +1091,6 @@ pub fn buildScene3Meshes(
                     .scale_over = .within_frames,
                     .bits = 16,
                     .scaling = .auto,
-                    .normal_type = .none,
                 },
             },
             1 => shaderops.ShaderDirectInput{
@@ -1109,7 +1105,6 @@ pub fn buildScene3Meshes(
                     .coord_mode = .uv,
                     .bits = 16,
                     .scaling = .auto,
-                    .normal_type = .none,
                 },
             },
             2 => shaderops.ShaderDirectInput{
@@ -1122,7 +1117,6 @@ pub fn buildScene3Meshes(
                     },
                     .bits = 16,
                     .scaling = .auto,
-                    .normal_type = .none,
                 },
             },
             3 => shaderops.ShaderDirectInput{
@@ -1137,7 +1131,6 @@ pub fn buildScene3Meshes(
                     .coord_mode = .uv,
                     .bits = 16,
                     .scaling = .auto,
-                    .normal_type = .none,
                 },
             },
             4 => shaderops.ShaderDirectInput{
@@ -1146,7 +1139,6 @@ pub fn buildScene3Meshes(
                     .scale_over = .over_frames,
                     .bits = 16,
                     .scaling = .auto,
-                    .normal_type = .none,
                 },
             },
             5 => shaderops.ShaderDirectInput{
@@ -1159,7 +1151,6 @@ pub fn buildScene3Meshes(
                     },
                     .bits = 16,
                     .scaling = .auto,
-                    .normal_type = .none,
                 },
             },
             6 => shaderops.ShaderDirectInput{
@@ -1174,7 +1165,6 @@ pub fn buildScene3Meshes(
                     .coord_mode = .uv,
                     .bits = 16,
                     .scaling = .auto,
-                    .normal_type = .none,
                 },
             },
             7 => shaderops.ShaderDirectInput{
@@ -1187,7 +1177,6 @@ pub fn buildScene3Meshes(
                     },
                     .bits = 16,
                     .scaling = .auto,
-                    .normal_type = .none,
                 },
             },
             else => unreachable,
@@ -1396,7 +1385,6 @@ pub fn buildScene2ImageOutputMeshes(
                 .coord_mode = .uv,
                 .bits = bits,
                 .scaling = .auto,
-                .normal_type = .none,
             },
         }
     else
@@ -1412,7 +1400,6 @@ pub fn buildScene2ImageOutputMeshes(
                 .coord_mode = .uv,
                 .bits = bits,
                 .scaling = .auto,
-                .normal_type = .none,
             },
         };
 
@@ -1428,7 +1415,6 @@ pub fn buildScene2ImageOutputMeshes(
                     },
                     .bits = 16,
                     .scaling = .auto,
-                    .normal_type = .none,
                 },
             }
         else
@@ -1442,7 +1428,6 @@ pub fn buildScene2ImageOutputMeshes(
                     },
                     .bits = 8,
                     .scaling = .auto,
-                    .normal_type = .none,
                 },
             })
     else
@@ -1457,7 +1442,6 @@ pub fn buildScene2ImageOutputMeshes(
                     },
                     .bits = 16,
                     .scaling = .auto,
-                    .normal_type = .none,
                 },
             }
         else
@@ -1471,7 +1455,6 @@ pub fn buildScene2ImageOutputMeshes(
                     },
                     .bits = 8,
                     .scaling = .auto,
-                    .normal_type = .none,
                 },
             });
 

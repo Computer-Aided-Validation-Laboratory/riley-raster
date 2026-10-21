@@ -57,12 +57,6 @@ def make_shader(
     disp: tuple[np.ndarray, np.ndarray, np.ndarray],
     texture: np.ndarray,
 ) -> riley.Shader:
-    normal_modes = (
-        riley.NormalType.none,
-        riley.NormalType.exact,
-        riley.NormalType.averaged,
-    )
-    normal_type = normal_modes[mesh_index % len(normal_modes)]
 
     if mesh_index in (0, 2):
         sample = (
@@ -82,7 +76,6 @@ def make_shader(
             sample_mode=sample_mode,
             bits=bits,
             scaling_type=riley.ScaleStrategy.auto,
-            normal_type=normal_type,
         )
 
     if mesh_index in (1, 5):
@@ -101,7 +94,6 @@ def make_shader(
                 if mesh_index == 1
                 else riley.ScaleOver.within_frames
             ),
-            normal_type=normal_type,
         )
 
     builtin = (
@@ -123,7 +115,6 @@ def make_shader(
         channels=channels,
         bits=bits,
         scaling_type=riley.ScaleStrategy.auto,
-        normal_type=normal_type,
     )
 
 
@@ -193,6 +184,11 @@ def build_scene(
                 connect,
                 riley.MeshShaderSet(direct=shader),
                 disp=disp if index % 2 else None,
+                normal_type=(
+                    riley.NormalType.none,
+                    riley.NormalType.exact,
+                    riley.NormalType.averaged,
+                )[index % 3],
             )
         )
 

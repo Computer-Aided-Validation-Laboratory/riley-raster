@@ -1209,7 +1209,6 @@ fn testNonFiniteTexels(
             },
             .bits = 16,
             .scaling = .auto,
-            .normal_type = .none,
         },
     } };
 

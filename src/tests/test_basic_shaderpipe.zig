@@ -176,6 +176,8 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     try std.testing.expectApproxEqAbs(frame_max[0] * 3, frame_max[2], sample_tol);
     try std.testing.expectApproxEqAbs(frame_max[2], frame_max[3], sample_tol);
 
+    try runSharedWorldGeometryCase(aa, io, mesh, cam_in, parity_config, sample_tol);
+
     if (generate_gold) config.output.image_save_opts = &.{
         imageio.ImageSaveOpts{ .format = .fimg, .bits = null, .scaling = .none },
         imageio.ImageSaveOpts{ .format = .bmp, .bits = 8, .scaling = .auto },
@@ -768,4 +770,85 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             }
         }
     }
+}
+
+fn runSharedWorldGeometryCase(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    mesh: meshpipe.MeshInput,
+    camera_mono: camera.CameraInput,
+    config: riley.RasterConfig,
+    tolerance: F,
+) !void {
+    const ref_shader: shaderops.ShaderDirectInput = .{ .func = .{
+        .coord_mode = .world_reference,
+        .builtin = .linear,
+        .params = .{ .settings = .{ .linear = .{ .coeffs = .{ 0.5, 20, -10 } } } },
+        .bits = null,
+        .scaling = .none,
+    } };
+    const def_shader: shaderops.ShaderDirectInput = .{ .func = .{
+        .coord_mode = .world_deformed,
+        .builtin = .linear,
+        .params = .{ .settings = .{ .linear = .{ .coeffs = .{ 0.25, -10, 20 } } } },
+        .bits = null,
+        .scaling = .none,
+    } };
+    var direct_camera = camera_mono;
+    direct_camera.shader_selection = .direct;
+    var direct_mesh = mesh;
+    direct_mesh.shaders = .{ .direct = ref_shader };
+    const ref_result = try riley.raster(
+        allocator,
+        io,
+        &.{direct_camera},
+        &.{direct_mesh},
+        config,
+        null,
+    );
+    const ref_image = ref_result orelse return error.NoResult;
+    defer allocator.free(ref_image.slice);
+    direct_mesh.shaders = .{ .direct = def_shader };
+    const def_result = try riley.raster(
+        allocator,
+        io,
+        &.{direct_camera},
+        &.{direct_mesh},
+        config,
+        null,
+    );
+    const def_image = def_result orelse return error.NoResult;
+    defer allocator.free(def_image.slice);
+
+    const stages = [_]shaderops.ShaderPipeStageInput{
+        .{ .source = .{ .shader = ref_shader, .destination = .{ .kind = .channel, .index = 0 } } },
+        .{ .source = .{ .shader = ref_shader, .destination = .{ .kind = .channel, .index = 1 } } },
+        .{ .source = .{ .shader = def_shader, .destination = .{ .kind = .channel, .index = 2 } } },
+    };
+    const slots = [_]shaderpipe.Slot{
+        .{ .kind = .channel, .index = 0 },
+        .{ .kind = .channel, .index = 1 },
+        .{ .kind = .channel, .index = 2 },
+    };
+    var pipe_mesh = mesh;
+    pipe_mesh.shaders = .{ .mono = .{
+        .stages = &stages,
+        .resolver = .{ .sum = &slots },
+    } };
+    const pipe_result = try riley.raster(
+        allocator,
+        io,
+        &.{camera_mono},
+        &.{pipe_mesh},
+        config,
+        null,
+    );
+    const pipe_image = pipe_result orelse return error.NoResult;
+    defer allocator.free(pipe_image.slice);
+    var varied_pixels: usize = 0;
+    for (ref_image.slice, def_image.slice, pipe_image.slice) |ref, def, actual| {
+        try std.testing.expectApproxEqAbs(2 * ref + def, actual, tolerance);
+        if (@abs(ref - def) > 0.01) varied_pixels += 1;
+    }
+    try std.testing.expect(varied_pixels > 0);
 }

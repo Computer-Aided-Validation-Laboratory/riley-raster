@@ -158,7 +158,6 @@ pub fn buildScene1Mesh(prep: *const common_full.Scene1Prepared) MeshInput {
                 .coord_mode = .uv,
                 .bits = 8,
                 .scaling = .auto,
-                .normal_type = .none,
             },
         } },
     };

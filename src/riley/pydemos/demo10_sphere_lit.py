@@ -57,7 +57,6 @@ def main() -> None:
     lambertian = riley.FunctionShader(
         builtin=riley.FuncShaderBuiltin.lambertian_normal_z,
         params=riley.FuncShaderParams(lambertian_coeffs=(0.2, 0.8)),
-        normal_type=riley.NormalType.exact,
         bits=-1,
         scaling_type=riley.ScaleStrategy.none,
     )

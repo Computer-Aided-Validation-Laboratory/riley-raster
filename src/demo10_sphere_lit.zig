@@ -89,7 +89,6 @@ pub fn main(init: std.process.Init) !void {
                     },
                 },
             },
-            .normal_type = .exact,
             .bits = null,
             .scaling = .none,
         },

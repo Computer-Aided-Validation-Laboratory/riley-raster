@@ -11,6 +11,7 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
 const F = buildconfig.F;
+const VecSF = buildconfig.VecSF;
 const VecSB = buildconfig.VecSB;
 
 const ndarray = @import("ndarray.zig");
@@ -29,6 +30,15 @@ pub const shaderfunc = @import("shaderfunc.zig");
 pub const ScaleOver = enum { within_frames, over_frames };
 pub const NormalType = enum { none, exact, avg };
 pub const CameraShaderSelection = enum(u8) { direct, mono, rgb, ir, multifield };
+pub const MeshHitField = enum { coords_ref, coords_def, surf_norm };
+pub const MeshHitSelection = std.EnumSet(MeshHitField);
+
+pub const HitGeometryPrepared = struct {
+    selection: MeshHitSelection = MeshHitSelection.initEmpty(),
+    coords_ref: ?ndarray.NDArray(F) = null,
+    coords_def: ?ndarray.NDArray(F) = null,
+    surf_norm: ?ndarray.MappedNDArray(F) = null,
+};
 
 pub const GreyToEmissivityStage = shaderpipe.GreyToEmissivityStage;
 pub const ClampStage = shaderpipe.ClampStage;
@@ -69,7 +79,6 @@ pub const NodalInput = struct {
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
-    normal_type: NormalType = .none,
 };
 
 pub fn TexInput(comptime T: type, comptime C: usize) type {
@@ -82,7 +91,6 @@ pub fn TexInput(comptime T: type, comptime C: usize) type {
         },
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
-        normal_type: NormalType = .none,
     };
 }
 
@@ -93,7 +101,6 @@ pub const FuncInput = struct {
     params: FuncShaderParams = .{},
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
-    normal_type: NormalType = .none,
 };
 
 pub const ShaderDirectInput = union(enum) {
@@ -141,7 +148,6 @@ pub const NodalStatic = struct {
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
-    normal_type: NormalType = .none,
 };
 
 pub fn TexStatic(comptime T: type, comptime C: usize) type {
@@ -154,7 +160,6 @@ pub fn TexStatic(comptime T: type, comptime C: usize) type {
         },
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
-        normal_type: NormalType = .none,
     };
 }
 
@@ -166,7 +171,6 @@ pub const FuncStatic = struct {
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
-    normal_type: NormalType = .none,
 };
 
 pub const ShaderDirectStatic = union(enum) {
@@ -221,7 +225,6 @@ pub const NodalPrepared = struct {
     scale_over: ScaleOver = .over_frames,
     scale_mul: F = 1.0,
     scale_add: F = 0.0,
-    normal_type: NormalType = .none,
     elem_normals: ?ndarray.MappedNDArray(F) = null,
 };
 
@@ -237,7 +240,6 @@ pub fn TexPrepared(comptime T: type, comptime C: usize) type {
         scaling: imageops.ScaleStrategy = .none,
         scale_mul: F = 1.0,
         scale_add: F = 0.0,
-        normal_type: NormalType = .none,
         elem_normals: ?ndarray.MappedNDArray(F) = null,
     };
 }
@@ -253,7 +255,7 @@ pub const FuncPrepared = struct {
     scaling: imageops.ScaleStrategy = .none,
     scale_mul: F = 1.0,
     scale_add: F = 0.0,
-    normal_type: NormalType = .none,
+    needs_normal: bool = false,
     elem_normals: ?ndarray.MappedNDArray(F) = null,
 };
 
@@ -280,6 +282,7 @@ pub const ShaderPipePrepared = struct {
     resolver: shaderpipe.Resolver,
     constants: []const F,
     channels: u8,
+    hit_geometry: HitGeometryPrepared = .{},
 };
 
 pub const MeshShaderSetPrepared = struct {
@@ -330,7 +333,7 @@ pub fn selectShader(
 // Rasterisation Runtime Context & Buffers
 // --------------------------------------------------------------------------------------
 
-// Local buffer for hoisting element shader data into cache once per element before we 
+// Local buffer for hoisting element shader data into cache once per element before we
 // enter the sub-pixel raster loop.
 pub fn LocalShaderBuff(comptime N: usize) type {
     return struct {
@@ -431,15 +434,24 @@ pub const ShadeContext = struct {
     exclusive_subpx_target: bool = false,
 };
 
-pub fn InterpData(comptime N: usize) type {
+pub fn MeshHit(comptime N: usize) type {
     return struct {
         weights: [N]F,
         nodes_inv_z: [N]F,
         sub_pixel_z: F,
         xi: F,
         eta: F,
+        coords_ref: ?[3]F = null,
+        coords_def: ?[3]F = null,
+        surf_norm: ?[3]F = null,
     };
 }
+
+pub const VectorMeshHit = struct {
+    coords_ref: ?[3]VecSF = null,
+    coords_def: ?[3]VecSF = null,
+    surf_norm: ?[3]VecSF = null,
+};
 
 // --------------------------------------------------------------------------------------
 // Tests

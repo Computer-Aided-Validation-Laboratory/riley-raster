@@ -102,7 +102,6 @@ fn loadFuncMeshInput(
                 .params = sinusoidalParams(builtin),
                 .bits = 8,
                 .scaling = .none,
-                .normal_type = .none,
             },
         } },
     };

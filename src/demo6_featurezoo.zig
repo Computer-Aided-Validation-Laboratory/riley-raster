@@ -65,7 +65,6 @@ fn textureShader(
     uvs: uvio.UVMap,
     comptime bits: u8,
     linear: bool,
-    normal_type: shaderops.NormalType,
 ) shaderops.ShaderDirectInput {
     const samp_cfg = texops.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
@@ -77,7 +76,6 @@ fn textureShader(
         .samp_cfg = samp_cfg,
         .bits = bits,
         .scaling = .auto,
-        .normal_type = normal_type,
     };
     if (C == 1 and T == u8) return .{ .tex_u8 = input };
     if (C == 1 and T == u16) return .{ .tex_u16 = input };
@@ -142,7 +140,6 @@ fn loadMesh(
             uvs,
             bits,
             mesh_index != 0,
-            normal_type,
         ),
         1, 5 => blk: {
             const field = if (C == 1)
@@ -157,7 +154,6 @@ fn loadMesh(
                     .over_frames
                 else
                     .within_frames,
-                .normal_type = normal_type,
             } };
         },
         3, 4 => blk: {
@@ -182,7 +178,6 @@ fn loadMesh(
                 .params = params,
                 .bits = bits,
                 .scaling = .auto,
-                .normal_type = normal_type,
             };
             break :blk if (C == 1)
                 .{ .func = input }
@@ -193,6 +188,7 @@ fn loadMesh(
     };
     return .{
         .mesh_type = mesh_shape.mesh_type,
+        .normal_type = normal_type,
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = if (mesh_index % 2 == 1) disp else null,

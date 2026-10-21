@@ -540,7 +540,6 @@ fn runUVBoundaryRasterPipelineTests(
                         .uvs = out_of_range_uvs,
                         .tex = tex_small,
                         .samp_cfg = samp_cfg,
-                        .normal_type = .none,
                     },
                 } },
             },

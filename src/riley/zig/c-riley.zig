@@ -276,7 +276,6 @@ pub const CShaderInput = extern struct {
     func_shader_builtin: u32,
     func_shader_coord_mode: u32,
     func_shader_params: CFuncShaderParams,
-    normal_type: u32,
 };
 
 pub const CSlot = extern struct { kind: u32, index: u32 };
@@ -329,6 +328,7 @@ pub const CPipe = extern struct {
 
 pub const CMeshInput = extern struct {
     mesh_type: u32,
+    normal_type: u32,
     coords: CArray2DF64,
     connect: CArray2DUsize,
     disp: CArray3DF64,
@@ -1375,6 +1375,7 @@ fn buildMeshInput(
     var built = MeshInputBuilt{
         .mesh_input = .{
             .mesh_type = mesh_type,
+            .normal_type = try normalTypeFromC(in_mesh.normal_type),
             .coords = coords,
             .connect = connect,
             .disp = null,
@@ -1525,7 +1526,6 @@ fn buildMeshInput(
         in_shader.scaling_min,
         in_shader.scaling_max,
     );
-    const normal_type = try normalTypeFromC(in_shader.normal_type);
     if (in_shader.texture_storage > 2) return error.InvalidTextureStorage;
 
     switch (in_shader.shader_tag) {
@@ -1567,7 +1567,6 @@ fn buildMeshInput(
                     .samp_cfg = samp_cfg,
                     .bits = bits,
                     .scaling = scaling,
-                    .normal_type = normal_type,
                 } };
                 built.tex_array_u16 = tex_array;
             } else if (in_shader.texture_storage == 2) {
@@ -1583,7 +1582,6 @@ fn buildMeshInput(
                     .samp_cfg = samp_cfg,
                     .bits = bits,
                     .scaling = scaling,
-                    .normal_type = normal_type,
                 } };
                 built.tex_array_f = tex_array;
             } else {
@@ -1604,7 +1602,6 @@ fn buildMeshInput(
                     .samp_cfg = samp_cfg,
                     .bits = bits,
                     .scaling = scaling,
-                    .normal_type = normal_type,
                 } };
                 built.tex_array_u8 = tex_array;
             }
@@ -1647,7 +1644,6 @@ fn buildMeshInput(
                     .samp_cfg = samp_cfg,
                     .bits = bits,
                     .scaling = scaling,
-                    .normal_type = normal_type,
                 } };
                 built.tex_array_u16 = tex_array;
             } else if (in_shader.texture_storage == 2) {
@@ -1663,7 +1659,6 @@ fn buildMeshInput(
                     .samp_cfg = samp_cfg,
                     .bits = bits,
                     .scaling = scaling,
-                    .normal_type = normal_type,
                 } };
                 built.tex_array_f = tex_array;
             } else {
@@ -1684,7 +1679,6 @@ fn buildMeshInput(
                     .samp_cfg = samp_cfg,
                     .bits = bits,
                     .scaling = scaling,
-                    .normal_type = normal_type,
                 } };
                 built.tex_array_u8 = tex_array;
             }
@@ -1702,7 +1696,6 @@ fn buildMeshInput(
                 .bits = bits,
                 .scaling = scaling,
                 .scale_over = try scaleOverFromC(in_shader.scale_over),
-                .normal_type = normal_type,
             } };
             built.nodal_field_array = nodal_built.array;
         },
@@ -1722,7 +1715,6 @@ fn buildMeshInput(
                 .bits = bits,
                 .scaling = scaling,
                 .scale_over = try scaleOverFromC(in_shader.scale_over),
-                .normal_type = normal_type,
             } };
             built.nodal_field_array = nodal_built.array;
         },
@@ -1754,7 +1746,6 @@ fn buildMeshInput(
                 ),
                 .bits = bits,
                 .scaling = scaling,
-                .normal_type = normal_type,
             } };
             built.uvs_array = uvs_array_opt;
         },
@@ -1786,7 +1777,6 @@ fn buildMeshInput(
                 ),
                 .bits = bits,
                 .scaling = scaling,
-                .normal_type = normal_type,
             } };
             built.uvs_array = uvs_array_opt;
         },

@@ -211,7 +211,6 @@ cdef extern from "riley.h":
         uint32_t func_shader_builtin
         uint32_t func_shader_coord_mode
         CFuncShaderParams func_shader_params
-        uint32_t normal_type
 
     ctypedef struct CSlot:
         uint32_t kind
@@ -265,6 +264,7 @@ cdef extern from "riley.h":
 
     ctypedef struct CMeshInput:
         uint32_t mesh_type
+        uint32_t normal_type
         CArray2DF64 coords
         CArray2DUsize connect
         CArray3DF64 disp

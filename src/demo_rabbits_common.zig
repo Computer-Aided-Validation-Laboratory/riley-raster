@@ -232,7 +232,6 @@ fn makeMeshInput(
                 },
                 .bits = 8,
                 .scaling = .none,
-                .normal_type = .none,
             };
             break :blk if (C == 1) .{ .tex_u8 = input } else .{ .tex_rgb_u8 = input };
         },
@@ -241,7 +240,6 @@ fn makeMeshInput(
             .bits = 8,
             .scaling = .auto,
             .scale_over = .over_frames,
-            .normal_type = .none,
         } },
         .func => blk: {
             const input = shaderops.FuncInput{
@@ -257,7 +255,6 @@ fn makeMeshInput(
                 },
                 .bits = 8,
                 .scaling = .auto,
-                .normal_type = .none,
             };
             break :blk if (C == 1) .{ .func = input } else .{ .func_rgb = input };
         },

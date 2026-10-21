@@ -382,7 +382,6 @@ fn runNodalScalingTests(
                         .is_rgb = is_rgb,
                         .scaling = scaling_mode,
                         .scale_over = .within_frames,
-                        .normal_type = .none,
                     },
                 },
             );

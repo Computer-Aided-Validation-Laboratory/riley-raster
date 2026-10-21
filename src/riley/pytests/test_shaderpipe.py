@@ -287,7 +287,6 @@ def test_python_sphere_lit_modulates_speckle_and_lambertian() -> None:
     lambertian = riley.FunctionShader(
         builtin=riley.FuncShaderBuiltin.lambertian_normal_z,
         params=riley.FuncShaderParams(lambertian_coeffs=(0.2, 0.8)),
-        normal_type=riley.NormalType.exact,
         bits=-1,
         scaling_type=riley.ScaleStrategy.none,
     )
@@ -344,4 +343,8 @@ def test_python_sphere_lit_modulates_speckle_and_lambertian() -> None:
     fg = img_direct > 0
     assert fg.any()
     assert (img_lit[fg] <= img_direct[fg] + 1e-6).all()
+    assert mesh.normal_type == riley.NormalType.exact
+    mesh.normal_type = riley.NormalType.none
+    img_no_normals = riley.raster(mesh, camera_mono, config)
+    np.testing.assert_allclose(img_no_normals, img_direct, atol=1e-9)
 

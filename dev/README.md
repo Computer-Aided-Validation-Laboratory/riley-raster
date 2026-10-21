@@ -239,6 +239,18 @@ after compiling the current benchmark binary with:
 python ./scripts/bench_perf_raster.py --no-experiment1 --no-experiment2 --experiment4
 ```
 
+Pass `--experiment4-binary PATH` to run the same experiment against a preserved
+baseline binary. This lets the direct and one-stage-pipe timings be compared
+between engine revisions without replacing `bin/bench_tiltraster_f64_simd`.
+
+Experiment 5 compares a direct world-reference checker with a three-source
+mono pipe using reference, deformed, and reference world coordinates. It
+exercises the shared MeshHit geometry on all six mesh types:
+
+```shell
+python ./scripts/bench_perf_raster.py --no-experiment1 --no-experiment2 --experiment5
+```
+
 ## Additional Notes
 
 - Plain `zig run` and `zig test` under `./src/` use the default Riley path of `f64` with SIMD enabled. Run the suite drivers through `zig build` to select precision, SIMD, solver, or vector-width options.

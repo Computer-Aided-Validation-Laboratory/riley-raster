@@ -240,9 +240,9 @@ zig build test-full -Doptimize=ReleaseSafe
 - **Driver**: [`src/tests/test_full_shader.zig`](file:///home/lloydf/riley-raster/src/tests/test_full_shader.zig)
 - **Scene**: Scene 0 (Sphere + Cylinder, 5 element types: `tri3`, `tri6`, `quad4`, `quad8`, `quad9`)
 - **Coverage** (1,260 cases + 252 `tri3opt` parity checks):
-  - **Nodal Shaders**: Mono & RGB scalar/vector fields, scaling strategies (`none`, `auto` within frames, `auto` over frames), normal lighting types (`none`, interpolated `.avg`, analytic `.exact`).
-  - **Texture Shaders**: Mono & RGB texture sampling across `u8`, `u16`, and `f64` precisions with normal lighting options.
-  - **Procedural Function Shaders**: 9 built-in functions (`constant`, `linear`, `quadratic`, `sinusoidal`, `sinusoidal_approx`, `checker`, `checker_smooth`, `lambertian_normal_z`, `eggbox`) evaluated across 4 coordinate spaces (`parametric`, `uv`, `world_reference`, `world_deformed`) with normal lighting options.
+  - **Nodal Shaders**: Mono & RGB scalar/vector fields and scaling strategies (`none`, `auto` within frames, `auto` over frames). Normal mode is configured on the mesh.
+  - **Texture Shaders**: Mono & RGB texture sampling across `u8`, `u16`, and `f64` precisions. Normal mode is configured on the mesh.
+  - **Procedural Function Shaders**: 9 built-in functions (`constant`, `linear`, `quadratic`, `sinusoidal`, `sinusoidal_approx`, `checker`, `checker_smooth`, `lambertian_normal_z`, `eggbox`) evaluated across 4 coordinate spaces (`parametric`, `uv`, `world_reference`, `world_deformed`). Lambertian lighting uses the mesh normal mode.
   - **`tri3opt` Parity**: Verifies that the fixed-point subpixel snapped fast triangle pipeline matches standard `tri3` floating-point reference renders within tight tolerances.
 
 ### Sub-Suite 2: Full Texture Sampling Suite (`test_full_texture`)
