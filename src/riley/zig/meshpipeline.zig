@@ -422,7 +422,7 @@ pub fn initMeshStatic(
                 elem_uvs.deinit(allocator);
             }
             const resource_start = @import("benchtiming.zig").start();
-            const resources = try speckleops.generateResources(allocator, input.params);
+            const resources = try speckleops.Resources.init(allocator, input.params);
             @import("benchtiming.zig").resourceEnd(resource_start);
             shader_static = .{ .speckle = .{
                 .elem_uvs = elem_uvs,
@@ -1562,7 +1562,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         tex_static,
                     );
                 },
-                .speckle => |speckle_static| {
+                .speckle => |*speckle_static| {
                     mesh_prep.shader = try self.prepareSpeckleShader(outer_alloc, speckle_static);
                 },
                 .func => |func_static| {
@@ -1823,7 +1823,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         fn prepareSpeckleShader(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
-            speckle_static: shaderops.SpeckleStatic,
+            speckle_static: *const shaderops.SpeckleStatic,
         ) !shaderops.ShaderPrepared {
             // Match the former function shader's normalized range, not sampled extrema.
             const factors = imageops.getScaleFactors(
@@ -1833,7 +1833,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
             return .{ .speckle = .{
                 .elem_uvs = try self.gatherVisElemUVs(outer_alloc, speckle_static.elem_uvs),
-                .resources = speckle_static.resources,
+                .resources = &speckle_static.resources,
                 .params = speckle_static.params,
                 .output_scale = speckle_static.output_scale,
                 .output_offset = speckle_static.output_offset,
@@ -1956,16 +1956,18 @@ test "speckle preparation gathers visible UVs and borrows static resources acros
             .output_offset = 0.875,
         } },
     };
-    const mesh_static = try initMeshStatic(alloc, &input);
-    const static = mesh_static.shader.speckle;
+    var mesh_static = try initMeshStatic(alloc, &input);
+    const static = &mesh_static.shader.speckle;
     try std.testing.expectEqual(@as(u8, 1), countOutputFields(&.{input}));
     try std.testing.expectEqualSlices(usize, &.{ 2, 2, 3 }, static.elem_uvs.dims);
     try std.testing.expectEqualSlices(F, &.{ 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1 }, static.elem_uvs.slice);
-    try std.testing.expect(static.resources.classified != null);
+    try std.testing.expect(static.resources.data == .classified);
+    const states = static.resources.data.classified.states.ptr;
 
     var executor = pce.ParaChunkExecutor.init(std.testing.io, 1);
     // Exercise shader preparation independently of projection/culling.
     var pipeline: FrameMeshPipeline(.tri3) = undefined;
+    pipeline.mesh_static = &mesh_static;
     pipeline.chunk_exec = &executor;
     pipeline.vis_chunk_size = 1;
     var visible = [_]usize{ 1, 0 };
@@ -1976,12 +1978,14 @@ test "speckle preparation gathers visible UVs and borrows static resources acros
     };
     for (strategies) |strategy| {
         for ([_]?u8{ null, 8, 16 }) |bits| {
-            var shader_static = static;
-            shader_static.scaling = strategy;
-            shader_static.bits = bits;
-            const prepared = (try pipeline.prepareSpeckleShader(alloc, shader_static)).speckle;
+            static.scaling = strategy;
+            static.bits = bits;
+            var mesh_prep: MeshPrepared = undefined;
+            try pipeline.prepareShader(alloc, &mesh_prep);
+            const prepared = mesh_prep.shader.speckle;
             try std.testing.expectEqualSlices(F, &.{ 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1 }, prepared.elem_uvs.slice);
-            try std.testing.expectEqual(static.resources.classified.?.states.ptr, prepared.resources.classified.?.states.ptr);
+            try std.testing.expectEqual(&static.resources, prepared.resources);
+            try std.testing.expectEqual(states, prepared.resources.data.classified.states.ptr);
             try std.testing.expectEqual(static.resources.kernel_index, prepared.resources.kernel_index);
             try std.testing.expectEqualDeep(.{ static.params, static.output_scale, static.output_offset }, .{ prepared.params, prepared.output_scale, prepared.output_offset });
             // The old function path always used min=0/range=1, even for fixed bounds.
@@ -1998,10 +2002,52 @@ test "speckle preparation gathers visible UVs and borrows static resources acros
     }
     visible[0] = 0;
     pipeline.mesh_workspace.elems_in_image = 1;
-    const next = (try pipeline.prepareSpeckleShader(alloc, static)).speckle;
+    var next_mesh: MeshPrepared = undefined;
+    try pipeline.prepareShader(alloc, &next_mesh);
+    const next = next_mesh.shader.speckle;
     try std.testing.expectEqualSlices(F, static.elem_uvs.slice[0..6], next.elem_uvs.slice);
-    try std.testing.expectEqual(static.resources.classified.?.states.ptr, next.resources.classified.?.states.ptr);
+    try std.testing.expectEqual(&static.resources, next.resources);
+    try std.testing.expectEqual(states, next.resources.data.classified.states.ptr);
     pipeline.mesh_workspace.elems_in_image = 0;
-    const empty = (try pipeline.prepareSpeckleShader(alloc, static)).speckle;
+    var empty_mesh: MeshPrepared = undefined;
+    try pipeline.prepareShader(alloc, &empty_mesh);
+    const empty = empty_mesh.shader.speckle;
     try std.testing.expectEqual(@as(usize, 0), empty.elem_uvs.slice.len);
+    try std.testing.expectEqual(next.resources, empty.resources);
+
+    const other_mesh = try initMeshStatic(alloc, &input);
+    pipeline.mesh_static = &other_mesh;
+    var other_prep: MeshPrepared = undefined;
+    try pipeline.prepareShader(alloc, &other_prep);
+    try std.testing.expectEqual(&other_mesh.shader.speckle.resources, other_prep.shader.speckle.resources);
+    try std.testing.expect(other_prep.shader.speckle.resources != next.resources);
+    try std.testing.expectEqual(states, next.resources.data.classified.states.ptr);
+}
+
+test "speckle static setup releases partial allocations" {
+    const Setup = struct {
+        fn run(alloc: std.mem.Allocator) !void {
+            var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+            var connect = [_]usize{ 0, 1, 2 };
+            var uvs = [_]F{ 0, 0, 1, 0, 0, 1 };
+            var dims = [_]usize{ 3, 2 };
+            var strides = [_]usize{ 2, 1 };
+            const input = MeshInput{
+                .mesh_type = .tri3,
+                .coords = meshio.Coords.init(&coords, 3),
+                .connect = meshio.Connect.init(&connect, 1, 3),
+                .disp = null,
+                .shader = .{ .speckle = .{
+                    .uvs = .{ .slice = &uvs, .dims = &dims, .strides = &strides },
+                    .params = .{ .cells_per_uv = .{ 4, 3 } },
+                } },
+            };
+            var mesh = try initMeshStatic(alloc, &input);
+            defer alloc.free(mesh.coords_orig.mem);
+            defer alloc.free(mesh.shader.speckle.elem_uvs.slice);
+            defer mesh.shader.speckle.elem_uvs.deinit(alloc);
+            defer mesh.shader.speckle.resources.deinit(alloc);
+        }
+    };
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, Setup.run, .{});
 }

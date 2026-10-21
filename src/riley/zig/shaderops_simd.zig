@@ -864,7 +864,7 @@ pub inline fn fillSpeckleSIMD(
         v,
         v_mask_active,
         shader.params,
-        &shader.resources,
+        shader.resources,
     );
     const value = sample * @as(VecSF, @splat(shader.output_scale)) +
         @as(VecSF, @splat(shader.output_offset));
@@ -930,11 +930,11 @@ test "speckle kernels preserve perspective interpolation and staged output arith
         .foreground = 0.19,
         .background = 0.83,
     };
-    var resources = try speckle.generateResources(std.testing.allocator, p);
+    var resources = try speckle.Resources.init(std.testing.allocator, p);
     defer resources.deinit(std.testing.allocator);
     const shader: comm.SpecklePrepared = .{
         .elem_uvs = undefined,
-        .resources = resources,
+        .resources = &resources,
         .params = p,
         .output_scale = 1.3,
         .output_offset = -0.39,
@@ -1094,11 +1094,11 @@ test "specialized speckle routing scaling and masked stores across patterns" {
         p.radius_mean = 0.25;
         p.foreground = 0.2;
         p.background = 0.8;
-        var resources = try speckle.generateResources(std.testing.allocator, p);
+        var resources = try speckle.Resources.init(std.testing.allocator, p);
         defer resources.deinit(std.testing.allocator);
         const shader: comm.SpecklePrepared = .{
             .elem_uvs = undefined,
-            .resources = resources,
+            .resources = &resources,
             .params = p,
             .output_scale = 1.75,
             .output_offset = -0.125,

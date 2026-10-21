@@ -528,7 +528,7 @@ pub inline fn evalSpecklePreparedScal(
     u: F,
     v: F,
 ) F {
-    return speckle.Kernel(kernel_index).sampleScal(u, v, shader.params, &shader.resources) *
+    return speckle.Kernel(kernel_index).sampleScal(u, v, shader.params, shader.resources) *
         shader.output_scale + shader.output_offset;
 }
 
@@ -864,12 +864,13 @@ test "direct fixed scalar handles active inactive nonfinite and scaling" {
             .cell_dims = .{ 3, 2 },
             .radius2 = 0.25 * 0.25,
         };
+        const resources: speckle.Resources = .{
+            .kernel_index = @as(u8, @intCast(kernel_index)),
+            .data = .{ .direct_fixed = direct },
+        };
         const shader: comm.SpecklePrepared = .{
             .elem_uvs = undefined,
-            .resources = .{
-                .kernel_index = @as(u8, @intCast(kernel_index)),
-                .direct_fixed = direct,
-            },
+            .resources = &resources,
             .params = speckle_params,
             .output_scale = 1.75,
             .output_offset = -0.125,
@@ -909,12 +910,13 @@ test "u8 speckle mask scalar sampling handles scaling and nonfinite UVs" {
             .uv_to_texel = .{ 1.0, 1.0 },
             .params = mask_params,
         };
+        const resources: speckle.Resources = .{
+            .kernel_index = @as(u8, @intCast(kernel_index)),
+            .data = .{ .mask = mask },
+        };
         const shader: comm.SpecklePrepared = .{
             .elem_uvs = undefined,
-            .resources = .{
-                .kernel_index = @as(u8, @intCast(kernel_index)),
-                .mask = mask,
-            },
+            .resources = &resources,
             .params = mask_params,
             .output_scale = 1.75,
             .output_offset = -0.125,

@@ -36,6 +36,7 @@ pub fn NDArray(comptime T: type) type {
             assert(slice.len >= dim_prod);
 
             const dims_heap = try allocator.dupe(usize, dims);
+            errdefer allocator.free(dims_heap);
             const strides_heap = try allocator.alloc(usize, dims.len);
 
             var ndarray = NDArray(T){
@@ -58,6 +59,7 @@ pub fn NDArray(comptime T: type) type {
             }
 
             const slice = try allocator.alloc(T, dim_prod);
+            errdefer allocator.free(slice);
 
             return try Self.init(allocator, slice, dims);
         }

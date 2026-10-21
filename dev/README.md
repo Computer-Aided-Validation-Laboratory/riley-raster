@@ -159,8 +159,19 @@ or `--b classified-indexed`, not historical numbered selectors. It supports
 #### Implementation constraints
 
 Generation and sampling live in [speckleops.zig](../src/riley/zig/speckleops.zig).
-Prepared resources are immutable and own their parameters; frames and workers
-borrow them. Finite UVs clamp to `[0,1]` before procedural scaling.
+`Resources.init(allocator, params)` replaces `generateResources`; its `.data`
+tagged union has exactly one active backing variant: `none`, `list`,
+`strip_list`, `classified`, `direct_fixed`, `mask`, or `perlin`. `deinit(allocator)`
+releases the active allocation and resets the value. Resources own no allocator;
+the static shader owns the resource value, and `Prepared.resources: *const Resources`
+is borrowed from that stable static shader for frame/worker use. Frames do not
+deinitialize it. Speckle parameters remain in the shader input/static shader,
+not in `Resources`. Finite UVs clamp to `[0,1]` before procedural scaling.
+
+Input validation happens before render allocations: fast validation checks
+metadata, shapes, and parameters; full validation additionally scans array
+payloads, including UV finiteness and connectivity indices. Resource initialization
+is itself a checked preparation boundary for direct low-level callers.
 
 - `classified-indexed` stores nine candidate bits and a foreground flag per
   procedural-aligned microcell. Its 256 MiB state limit returns

@@ -104,7 +104,7 @@ fn expectPreparedResources(
     mesh_input.shader.speckle.params = params;
     const mesh_static = try meshpipeline.initMeshStatic(arena.allocator(), &mesh_input);
     const resources = switch (mesh_static.shader) {
-        .speckle => |shader| shader.resources,
+        .speckle => |*shader| &shader.resources,
         else => return error.UnexpectedShaderVariant,
     };
     try std.testing.expect(resources.kernel_index != null);
@@ -112,13 +112,14 @@ fn expectPreparedResources(
         speckleconfig.canonicalizeSampleConfig(expected),
         speckleops.kernel_configs[resources.kernel_index.?],
     );
-    try std.testing.expectEqual(evaluator == .gradient_lattice, resources.perlin != null);
-    try std.testing.expectEqual(evaluator == .list_naive, resources.list != null);
-    try std.testing.expectEqual(evaluator == .list_indexed, resources.strip_list != null);
-    try std.testing.expectEqual(evaluator == .classified_indexed, resources.classified != null);
-    try std.testing.expectEqual(evaluator == .direct_fixed, resources.direct_fixed != null);
-    try std.testing.expectEqual(
-        evaluator == .mask_1bit or evaluator == .mask_u8,
-        resources.mask != null,
-    );
+    const expected_backing: std.meta.Tag(speckleops.Backing) = switch (evaluator) {
+        .gradient_lattice => .perlin,
+        .list_naive => .list,
+        .list_indexed => .strip_list,
+        .classified_indexed => .classified,
+        .direct_fixed => .direct_fixed,
+        .mask_1bit, .mask_u8 => .mask,
+        .cell_hash, .mock => .none,
+    };
+    try std.testing.expectEqual(expected_backing, std.meta.activeTag(resources.data));
 }

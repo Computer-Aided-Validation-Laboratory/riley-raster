@@ -303,6 +303,7 @@ pub const FuncStatic = struct {
     normal_type: NormalType = .none,
 };
 
+/// Owns UVs and resources for the render lifetime; must stay at a stable address while borrowed.
 pub const SpeckleStatic = struct {
     elem_uvs: ndarray.NDArray(F),
     resources: speckle.Resources,
@@ -373,10 +374,10 @@ pub const FuncPrepared = struct {
     elem_normals: ?ndarray.MappedNDArray(F) = null,
 };
 
-// Resources borrow the persistent static backing for this frame.
+/// Borrows resources from the persistent SpeckleStatic, which must outlive this frame.
 pub const SpecklePrepared = struct {
     elem_uvs: ndarray.NDArray(F),
-    resources: speckle.Resources,
+    resources: *const speckle.Resources,
     params: speckle.Speckle2DParams,
     output_scale: F = 1.0,
     output_offset: F = 0.0,

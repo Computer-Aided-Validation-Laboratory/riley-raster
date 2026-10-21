@@ -228,35 +228,58 @@ pub const SpeckleMask2D = struct {
     params: Speckle2DParams,
 };
 
-/// Static feature data returned by generateResources. Copies borrow the allocations;
-/// only the original owner may deinit them with the allocator used for generation.
-/// Arena-backed resources may instead be released with their static arena. Do not
-/// free borrowed resources or per-frame copies, or alias owned slices across fields.
+pub const Backing = union(enum) {
+    none,
+    list: SpeckleList2D,
+    strip_list: StripSpeckleList2D,
+    classified: ClassifiedIndexedSpeckle2D,
+    direct_fixed: DirectFixedSpeckle2D,
+    mask: SpeckleMask2D,
+    perlin: PerlinLattice2D,
+};
+
+/// Static feature owner. Only the owner calls deinit with its original allocator;
+/// frames and workers borrow *const Resources and cannot free the backing.
+/// Arena-backed resources may instead be released with their owning static arena.
 pub const Resources = struct {
     /// Index into kernel_configs, set even when cell hashing needs no allocation.
     kernel_index: ?u8 = null,
-    list: ?SpeckleList2D = null,
-    strip_list: ?StripSpeckleList2D = null,
-    classified: ?ClassifiedIndexedSpeckle2D = null,
-    direct_fixed: ?DirectFixedSpeckle2D = null,
-    mask: ?SpeckleMask2D = null,
-    perlin: ?PerlinLattice2D = null,
+    data: Backing = .none,
+
+    /// Prepare only the resolved backing; keep parameters/configuration immutable thereafter.
+    // Classification setup is alignment-sensitive; 64-byte alignment avoids a measured regression.
+    pub fn init(
+        outer_alloc: std.mem.Allocator,
+        params: Speckle2DParams,
+    ) align(64) !Resources {
+        const resolved = try params.resolve();
+        inline for (generation_configs) |config| {
+            if (std.meta.eql(resolved, config)) {
+                var resources = try Implementation(config).generateConfiguredResources(outer_alloc, params);
+                resources.kernel_index = comptime kernelIndex(config);
+                return resources;
+            }
+        }
+        unreachable;
+    }
 
     pub fn deinit(self: *Resources, allocator: std.mem.Allocator) void {
-        if (self.list) |speckles| {
-            allocator.free(speckles.disks);
+        switch (self.data) {
+            .none => {},
+            .list => |speckles| allocator.free(speckles.disks),
+            .strip_list => |speckles| {
+                allocator.free(speckles.centers);
+                allocator.free(speckles.disks);
+            },
+            .classified => |classified| {
+                allocator.free(classified.states);
+                allocator.free(classified.speckles.centers);
+                allocator.free(classified.speckles.disks);
+            },
+            .direct_fixed => |direct| allocator.free(direct.cells),
+            .mask => |mask| allocator.free(mask.bits),
+            .perlin => |perlin| allocator.free(perlin.gradients),
         }
-        if (self.strip_list) |speckles| {
-            if (speckles.centers.len != 0) allocator.free(speckles.centers) else allocator.free(speckles.disks);
-        }
-        if (self.classified) |classified| {
-            allocator.free(classified.states);
-            allocator.free(classified.speckles.centers);
-            allocator.free(classified.speckles.disks);
-        }
-        if (self.direct_fixed) |direct| allocator.free(direct.cells);
-        if (self.mask) |mask| allocator.free(mask.bits);
-        if (self.perlin) |perlin| allocator.free(perlin.gradients);
         self.* = .{};
     }
 };
@@ -276,24 +299,6 @@ fn kernelIndex(config: speckleconfig.Config) u8 {
         if (std.meta.eql(sample, canonical)) return @intCast(index);
     }
     unreachable; // Resolution and the catalogue share the same availability policy.
-}
-
-/// Prepare only the resolved resource. Copies borrow it; the owner calls deinit.
-/// Keep the parameters/configuration immutable across frames using these resources.
-// Classification setup is alignment-sensitive; 64-byte alignment avoids a measured regression.
-pub fn generateResources(
-    outer_alloc: std.mem.Allocator,
-    params: Speckle2DParams,
-) align(64) !Resources {
-    const resolved = try params.resolve();
-    inline for (generation_configs) |config| {
-        if (std.meta.eql(resolved, config)) {
-            var resources = try Implementation(config).generateConfiguredResources(outer_alloc, params);
-            resources.kernel_index = comptime kernelIndex(config);
-            return resources;
-        }
-    }
-    unreachable;
 }
 
 /// The renderer selects this type outside sample loops using Resources.kernel_index.
@@ -693,10 +698,10 @@ test "exact Perlin budget fallback owns parameters without narrowing coordinates
     else
         &.{.{ 65_535, 65_535 }};
     for (scales) |scale| {
-        var resources = try generateResources(std.testing.failing_allocator, .{ .pattern = .perlin, .cells_per_uv = scale });
+        var resources = try Resources.init(std.testing.failing_allocator, .{ .pattern = .perlin, .cells_per_uv = scale });
         defer resources.deinit(std.testing.failing_allocator);
-        try std.testing.expectEqual(@as(usize, 0), resources.perlin.?.gradients.len);
-        const params = resources.perlin.?.params;
+        try std.testing.expectEqual(@as(usize, 0), resources.data.perlin.gradients.len);
+        const params = resources.data.perlin.params;
         for ([_][2]F{ .{ 0, 0 }, .{ 1, 1 }, .{ 1, 0.61 }, .{ 0.37, 1 }, .{ std.math.nextAfter(F, 1, 0), 0.37 }, .{ 0.37, std.math.nextAfter(F, 1, 0) } }) |uv| {
             const expected = PerlinReference.evalPerlinSpeckle2D(uv, params);
             try expectPerlinBits(expected, sampleScal(uv[0], uv[1], .{}, &resources));
@@ -707,10 +712,10 @@ test "exact Perlin budget fallback owns parameters without narrowing coordinates
 }
 
 test "exact Perlin propagates allocation failure and releases owned storage" {
-    try std.testing.expectError(error.OutOfMemory, generateResources(std.testing.failing_allocator, .{ .pattern = .perlin }));
+    try std.testing.expectError(error.OutOfMemory, Resources.init(std.testing.failing_allocator, .{ .pattern = .perlin }));
     const Allocation = struct {
         fn run(allocator: std.mem.Allocator) !void {
-            var owned = try generateResources(allocator, .{ .pattern = .perlin, .cells_per_uv = .{ 2.17, 1.31 } });
+            var owned = try Resources.init(allocator, .{ .pattern = .perlin, .cells_per_uv = .{ 2.17, 1.31 } });
             defer owned.deinit(allocator);
         }
     };
@@ -730,10 +735,10 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             outer_alloc: std.mem.Allocator,
             params: Speckle2DParams,
         ) !Resources {
-            return switch (comptime config.evaluator) {
+            return .{ .data = switch (comptime config.evaluator) {
                 .cell_hash, .mock => blk: {
                     try params.validateResolved(config);
-                    break :blk .{};
+                    break :blk .none;
                 },
                 .gradient_lattice => blk: {
                     try params.validateResolved(config);
@@ -750,7 +755,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 .mask_1bit, .mask_u8 => .{
                     .mask = try generateSpeckleMask2D(outer_alloc, params),
                 },
-            };
+            } };
         }
 
         /// Prepared resources are required and supply their own parameters; only cell hashing
@@ -763,14 +768,14 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             resources: *const Resources,
         ) F {
             return switch (comptime config.evaluator) {
-                .gradient_lattice => samplePerlinScal(u, v, resources.perlin.?),
+                .gradient_lattice => samplePerlinScal(u, v, resources.data.perlin),
                 .mock => 0.5 * (u + v),
                 .cell_hash => evalSpeckle2DImpl(soft_edges, u, v, params),
-                .list_naive => evalSpeckleList2DNaiveImpl(soft_edges, u, v, resources.list.?),
-                .list_indexed => evalStripSpeckleList2DImpl(soft_edges, u, v, resources.strip_list.?),
-                .classified_indexed => evalClassifiedIndexedSpeckle2D(.{ u, v }, resources.classified.?),
-                .direct_fixed => evalDirectFixedSpeckle2D(.{ u, v }, resources.direct_fixed.?),
-                .mask_1bit, .mask_u8 => evalSpeckleMask2D(.{ u, v }, resources.mask.?),
+                .list_naive => evalSpeckleList2DNaiveImpl(soft_edges, u, v, resources.data.list),
+                .list_indexed => evalStripSpeckleList2DImpl(soft_edges, u, v, resources.data.strip_list),
+                .classified_indexed => evalClassifiedIndexedSpeckle2D(.{ u, v }, resources.data.classified),
+                .direct_fixed => evalDirectFixedSpeckle2D(.{ u, v }, resources.data.direct_fixed),
+                .mask_1bit, .mask_u8 => evalSpeckleMask2D(.{ u, v }, resources.data.mask),
             };
         }
 
@@ -783,7 +788,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             resources: *const Resources,
         ) VecSF {
             return switch (comptime config.evaluator) {
-                .gradient_lattice => samplePerlinSIMD(u, v, active, resources.perlin.?),
+                .gradient_lattice => samplePerlinSIMD(u, v, active, resources.data.perlin),
                 .mock => @as(VecSF, @splat(0.5)) * (u + v),
                 .cell_hash => blk: {
                     const values = evalSpeckleSIMDImpl(soft_edges, evalSpeckle2DImpl, u, v, params, params.background);
@@ -797,17 +802,17 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     evalSpeckleList2DNaiveImpl,
                     u,
                     v,
-                    resources.list.?,
-                    resources.list.?.params.background,
+                    resources.data.list,
+                    resources.data.list.params.background,
                 ),
                 .list_indexed => blk: {
-                    const strip = resources.strip_list.?;
+                    const strip = resources.data.strip_list;
                     if (strip.centers.len != 0) break :blk evalSpeckleSIMDImpl(soft_edges, evalFixedStripSpeckleList2DImpl, u, v, strip, strip.params.background);
                     break :blk evalSpeckleSIMDImpl(soft_edges, evalGeneralStripSpeckleList2DImpl, u, v, strip, strip.params.background);
                 },
-                .classified_indexed => evalClassifiedIndexedSpeckleSIMDImpl(u, v, active, &resources.classified.?),
-                .direct_fixed => evalDirectFixedSpeckleSIMDImpl(u, v, active, &resources.direct_fixed.?),
-                .mask_1bit, .mask_u8 => evalSpeckleMaskSIMDImpl(u, v, active, &resources.mask.?),
+                .classified_indexed => evalClassifiedIndexedSpeckleSIMDImpl(u, v, active, &resources.data.classified),
+                .direct_fixed => evalDirectFixedSpeckleSIMDImpl(u, v, active, &resources.data.direct_fixed),
+                .mask_1bit, .mask_u8 => evalSpeckleMaskSIMDImpl(u, v, active, &resources.data.mask),
             };
         }
 
@@ -1586,9 +1591,9 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                         .background = 0.23,
                     };
                     _ = try expectClassifiedExact(params);
-                    var resources = try generateResources(testing.allocator, params);
+                    var resources = try Resources.init(testing.allocator, params);
                     defer resources.deinit(testing.allocator);
-                    const masked = resources.classified.?;
+                    const masked = resources.data.classified;
                     const axes = speckleClassificationAxes(masked.dims, params);
                     // Dense two-axis microcell crossings supplement nextAfter edge samples.
                     for (0..masked.dims[1] + 1) |yy| {
@@ -1609,7 +1614,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                         fn run(allocator: std.mem.Allocator, radius_jitter: F, owner_occupancy: F) !void {
                             var resources = try generateConfiguredResources(allocator, .{ .cells_per_uv = .{ 2, 2 }, .radius_jitter = radius_jitter, .occupancy = owner_occupancy });
                             defer resources.deinit(allocator);
-                            const masked = resources.classified.?;
+                            const masked = resources.data.classified;
                             if (owner_occupancy == 0.0) {
                                 try testing.expectEqual(@as(usize, 0), masked.speckles.recordCount());
                                 for (masked.states) |state| try testing.expectEqual(@as(u16, 0), state);
@@ -1732,9 +1737,9 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 
         test "unconditional classified loads keep inactive and nonfinite lanes backgrounded" {
             if (comptime config.evaluator != .classified_indexed) return;
-            var resources = try generateResources(testing.allocator, .{ .cells_per_uv = .{ 0.031, 1.17 }, .foreground = -0.0, .background = 0.23 });
+            var resources = try Resources.init(testing.allocator, .{ .cells_per_uv = .{ 0.031, 1.17 }, .foreground = -0.0, .background = 0.23 });
             defer resources.deinit(testing.allocator);
-            const params = resources.classified.?.speckles.params;
+            const params = resources.data.classified.speckles.params;
             const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
             const probes = [_]F{ -std.math.inf(F), std.math.nan(F), std.math.inf(F), -1, -0.0, 0, 1, 2 };
             for (0..probes.len) |batch| {
@@ -1784,9 +1789,9 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 try testing.expectEqual(@as(usize, @intFromFloat(cells * speckle_mask_samples_per_cell)) + 1, dims[0]);
                 if (cells > 2) continue; // Mathematical ceiling probes need no huge allocation.
                 for ([_]F{ 0, 0.08 }) |jitter| {
-                    var resources = try generateResources(testing.allocator, .{ .cells_per_uv = params.cells_per_uv, .radius_jitter = jitter, .foreground = -0.0, .background = 0.23 });
+                    var resources = try Resources.init(testing.allocator, .{ .cells_per_uv = params.cells_per_uv, .radius_jitter = jitter, .foreground = -0.0, .background = 0.23 });
                     defer resources.deinit(testing.allocator);
-                    try expectNeighborMaskCandidates(resources.classified.?);
+                    try expectNeighborMaskCandidates(resources.data.classified);
                     for ([_][2]F{ .{ 0, 0 }, .{ -0.0, 1 }, .{ 1, 1 }, .{ 0.5, 0.5 }, .{ -1, 2 } }) |uv| try expectClassifiedSample(&resources, uv);
                 }
             }
@@ -1797,10 +1802,10 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             const tiny = @sqrt(std.math.floatMin(F)) * 0.25;
             for ([_]F{ tiny, 0.35 }) |radius| {
                 for ([_][2]F{ .{ 0.23, -0.0 }, .{ -0.0, 0.0 }, .{ 0.0, -0.0 }, .{ 1.0, 0.0 } }) |colours| {
-                    var resources = try generateResources(testing.allocator, .{ .cells_per_uv = .{ 2.17, 1.31 }, .radius_mean = radius, .radius_jitter = 0, .occupancy = 1, .background = colours[0], .foreground = colours[1] });
+                    var resources = try Resources.init(testing.allocator, .{ .cells_per_uv = .{ 2.17, 1.31 }, .radius_mean = radius, .radius_jitter = 0, .occupancy = 1, .background = colours[0], .foreground = colours[1] });
                     defer resources.deinit(testing.allocator);
                     for ([_][2]F{ .{ 0, 0 }, .{ 1, 1 }, .{ -2, 3 }, .{ 0.5, 0.5 }, .{ std.math.nan(F), 0 }, .{ 0, -std.math.inf(F) } }) |uv| try expectClassifiedSample(&resources, uv);
-                    const strip = resources.classified.?.speckles;
+                    const strip = resources.data.classified.speckles;
                     for (0..strip.recordCount() / 3) |index| {
                         const disk = strip.record(index * 3 + 1);
                         if (!std.math.isFinite(disk.center[0])) continue;
@@ -2844,7 +2849,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 };
                 try testing.expectEqual(softness, speckleSoftness(params));
                 const speckles = try generateSpeckleList2D(testing.allocator, params);
-                defer deinitTestResources(.{ .list = speckles });
+                defer deinitTestResources(.{ .data = .{ .list = speckles } });
                 if (softness == 0.2) {
                     for (speckles.disks) |disk| {
                         for (disk.center) |coordinate| try testing.expectEqual(@floor(coordinate), coordinate);
@@ -2861,9 +2866,9 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                         try testing.expectEqual(value, if (softness > 0.0) evalSpeckleList2DNaiveImpl(true, uv[0], uv[1], speckles) else evalSpeckleList2DNaiveImpl(false, uv[0], uv[1], speckles));
                         if (comptime config.evaluator == .cell_hash or config.evaluator == .list_naive) {
                             const prepared = if (softness > 0.0)
-                                samplePreparedScal(true, uv[0], uv[1], params, &.{ .list = speckles })
+                                samplePreparedScal(true, uv[0], uv[1], params, &.{ .data = .{ .list = speckles } })
                             else
-                                samplePreparedScal(false, uv[0], uv[1], params, &.{ .list = speckles });
+                                samplePreparedScal(false, uv[0], uv[1], params, &.{ .data = .{ .list = speckles } });
                             try testing.expectEqual(value, prepared);
                         }
                         found_intermediate = found_intermediate or (value > 0.0 and value < 1.0);
@@ -2914,11 +2919,11 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 .background = 0.85,
             };
             const first = try generateDirectFixedSpeckle2D(testing.allocator, params);
-            defer deinitTestResources(.{ .direct_fixed = first });
+            defer deinitTestResources(.{ .data = .{ .direct_fixed = first } });
             var inactive_params = params;
             inactive_params.occupancy = 0.0;
             const inactive = try generateDirectFixedSpeckle2D(testing.allocator, inactive_params);
-            defer deinitTestResources(.{ .direct_fixed = inactive });
+            defer deinitTestResources(.{ .data = .{ .direct_fixed = inactive } });
             for (inactive.cells) |descriptor| try testing.expectEqual(@as(u64, 0), descriptor);
 
             try testing.expectEqual(@as(usize, 8), @sizeOf(DirectFixedSpeckleCell2D));
@@ -3010,7 +3015,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         fn expectClassifiedSample(resources: *const Resources, uv: [2]F) !void {
-            const strip = resources.classified.?.speckles;
+            const strip = resources.data.classified.speckles;
             const params = strip.params;
             const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
             const expected = if (strip.recordCount() == 0 or !std.math.isFinite(uv[0]) or !std.math.isFinite(uv[1])) params.background else evalSpeckle2D(uv, params);
@@ -3026,10 +3031,10 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 
         fn expectClassifiedExact(params: Speckle2DParams) !bool {
             const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
-            var resources = try generateResources(testing.allocator, params);
+            var resources = try Resources.init(testing.allocator, params);
             defer resources.deinit(testing.allocator);
             try testing.expectEqual(@as(?u8, kernelIndex(config)), resources.kernel_index);
-            const classified = resources.classified.?;
+            const classified = resources.data.classified;
             const strip = classified.speckles;
             try expectNeighborMaskCandidates(classified);
             const bounds = speckleProceduralCellBounds(params, 1).?;
@@ -3246,7 +3251,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 
             const params = speckleMaskTestParams();
             const speckles = try generateSpeckleList2D(testing.allocator, params);
-            defer deinitTestResources(.{ .list = speckles });
+            defer deinitTestResources(.{ .data = .{ .list = speckles } });
 
             var mask_storage: [1200]u8 = undefined;
             var fixed = std.heap.FixedBufferAllocator.init(&mask_storage);
@@ -3302,7 +3307,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 params.occupancy = if (equal_colour) 1.0 else 0.0;
                 if (equal_colour) params.foreground = params.background;
                 const mask = try generateSpeckleMask2D(testing.allocator, params);
-                defer deinitTestResources(.{ .mask = mask });
+                defer deinitTestResources(.{ .data = .{ .mask = mask } });
                 if (speckle_shape == .perlin and !equal_colour) {
                     try testing.expect(mask.bits.len > 0);
                 } else {
@@ -3327,7 +3332,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 config.evaluator != .mask_u8) return;
 
             const mask = try generateSpeckleMask2D(testing.allocator, speckleMaskTestParams());
-            defer deinitTestResources(.{ .mask = mask });
+            defer deinitTestResources(.{ .data = .{ .mask = mask } });
 
             try testing.expectEqual(
                 evalSpeckleMask2D(.{ 0.0, 1.0 }, mask),
@@ -3367,11 +3372,11 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     std.mem.doNotOptimizeAway(&params);
                     var mask = try generateSpeckleMask2D(testing.allocator, params);
                     std.mem.doNotOptimizeAway(&mask);
-                    defer deinitTestResources(.{ .mask = mask });
+                    defer deinitTestResources(.{ .data = .{ .mask = mask } });
                     try testing.expectEqual(mask.dims[0], mask.row_stride);
                     try testing.expectEqual(mask.dims[0] * mask.dims[1], mask.bits.len);
                     try testing.expectEqualDeep(params, mask.params);
-                    const resources: Resources = .{ .kernel_index = comptime kernelIndex(config), .mask = mask };
+                    const resources: Resources = .{ .kernel_index = comptime kernelIndex(config), .data = .{ .mask = mask } };
                     const K = Kernel(kernelIndex(config));
                     const expected = evalSpeckleMask2D(.{ 0.37, 0.61 }, mask);
                     try testing.expectApproxEqAbs(expected, K.sampleScal(0.37, 0.61, params, &resources), unit_tol);
@@ -3415,9 +3420,9 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 
             const params = speckleMaskTestParams();
             const speckles = try generateSpeckleList2D(testing.allocator, params);
-            defer deinitTestResources(.{ .list = speckles });
+            defer deinitTestResources(.{ .data = .{ .list = speckles } });
             const mask = try generateSpeckleMask2D(testing.allocator, params);
-            defer deinitTestResources(.{ .mask = mask });
+            defer deinitTestResources(.{ .data = .{ .mask = mask } });
 
             try testing.expectEqual(@as(u8, 0), quantizeSpeckleCoverage(-1.0));
             try testing.expectEqual(@as(u8, 0), quantizeSpeckleCoverage(0.0));
@@ -3534,7 +3539,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 .cell_dims = .{ 3, 2 },
                 .radius2 = 0.25 * 0.25,
             };
-            const resources: Resources = .{ .direct_fixed = direct };
+            const resources: Resources = .{ .data = .{ .direct_fixed = direct } };
             try expectPreparedSpeckleSIMD(params, &resources, &.{
                 .{ .uv = .{ 0.25, 0.5 }, .expected = params.foreground },
                 .{ .uv = .{ 0.375, 0.5 }, .expected = params.background },
@@ -3558,11 +3563,11 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 .background = 0.83,
             };
             const classified = try generateClassifiedSpeckle2D(testing.allocator, params);
-            defer deinitTestResources(.{ .classified = classified });
+            defer deinitTestResources(.{ .data = .{ .classified = classified } });
 
             const state_uv = try classifiedStateSamples(classified);
 
-            const resources: Resources = .{ .classified = classified };
+            const resources: Resources = .{ .data = .{ .classified = classified } };
             try expectPreparedSpeckleSIMD(params, &resources, &.{
                 .{ .uv = state_uv[0] },
                 .{ .uv = state_uv[1] },
@@ -3587,7 +3592,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 .uv_to_texel = .{ 8.0, 1.0 },
                 .params = params,
             };
-            const resources: Resources = .{ .mask = mask };
+            const resources: Resources = .{ .data = .{ .mask = mask } };
             try expectPreparedSpeckleSIMD(params, &resources, &.{
                 .{ .uv = .{ -2.0, 0.0 } },
                 .{ .uv = .{ 0.0, 1.0 } },
@@ -3616,7 +3621,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 .uv_to_texel = .{ 1.0, 1.0 },
                 .params = params,
             };
-            const resources: Resources = .{ .mask = mask };
+            const resources: Resources = .{ .data = .{ .mask = mask } };
             var cases = [_]SpeckleSIMDCase{
                 .{ .uv = .{ -1.0, 0.0 } },
                 .{ .uv = .{ 1.0, 0.0 } },
@@ -3630,7 +3635,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 
             var no_gather_mask = mask;
             no_gather_mask.bits = &.{};
-            const no_gather: Resources = .{ .mask = no_gather_mask };
+            const no_gather: Resources = .{ .data = .{ .mask = no_gather_mask } };
             try expectPreparedSpeckleSIMDBackground(params, &no_gather);
         }
 
@@ -3666,14 +3671,14 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 else switch (comptime config.evaluator) {
                     .mock => unreachable,
                     .cell_hash, .gradient_lattice => evalSpeckle2D(uv, params),
-                    .list_naive => evalSpeckleList2DNaiveImpl(config.soft_edges, uv[0], uv[1], resources.list.?),
-                    .list_indexed => evalStripSpeckleList2DImpl(config.soft_edges, uv[0], uv[1], resources.strip_list.?),
+                    .list_naive => evalSpeckleList2DNaiveImpl(config.soft_edges, uv[0], uv[1], resources.data.list),
+                    .list_indexed => evalStripSpeckleList2DImpl(config.soft_edges, uv[0], uv[1], resources.data.strip_list),
                     .classified_indexed => evalClassifiedIndexedSpeckle2D(
                         uv,
-                        resources.classified.?,
+                        resources.data.classified,
                     ),
-                    .direct_fixed => evalDirectFixedSpeckle2D(uv, resources.direct_fixed.?),
-                    .mask_1bit, .mask_u8 => evalSpeckleMask2D(uv, resources.mask.?),
+                    .direct_fixed => evalDirectFixedSpeckle2D(uv, resources.data.direct_fixed),
+                    .mask_1bit, .mask_u8 => evalSpeckleMask2D(uv, resources.data.mask),
                 };
                 try testing.expectEqual(expected, samplePreparedScal(false, uv[0], uv[1], fallback_params, &resources));
                 const actual: [S]F = samplePreparedSIMD(
@@ -3687,8 +3692,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 for (actual) |value| try testing.expectEqual(expected, value);
             }
             resources.deinit(testing.allocator);
-            try testing.expect(resources.list == null and resources.strip_list == null and resources.classified == null and
-                resources.direct_fixed == null and resources.mask == null and resources.perlin == null);
+            try testing.expectEqualDeep(Resources{}, resources);
         }
     };
 }
@@ -3706,16 +3710,16 @@ comptime {
 
 test "runtime override policy and invalid settings fail before allocation" {
     const bad_softness: Speckle2DParams = .{ .edge_softness = std.math.nan(F) };
-    try std.testing.expectError(error.InvalidSpeckleEdgeSoftness, generateResources(std.testing.failing_allocator, bad_softness));
+    try std.testing.expectError(error.InvalidSpeckleEdgeSoftness, Resources.init(std.testing.failing_allocator, bad_softness));
     for ([_]speckleconfig.Pattern{ .gaussian, .perlin }) |pattern| {
-        try std.testing.expectError(error.SpeckleEdgeSoftnessRequiresDisk, generateResources(std.testing.failing_allocator, .{ .pattern = pattern, .edge_softness = 0.1 }));
+        try std.testing.expectError(error.SpeckleEdgeSoftnessRequiresDisk, Resources.init(std.testing.failing_allocator, .{ .pattern = pattern, .edge_softness = 0.1 }));
     }
     if (comptime !buildconfig.enable_all_evaluators) {
         for (std.enums.values(speckleconfig.Evaluator)) |evaluator| {
-            try std.testing.expectError(error.SpeckleOverridesDisabled, generateResources(std.testing.failing_allocator, .{ .evaluator = evaluator }));
+            try std.testing.expectError(error.SpeckleOverridesDisabled, Resources.init(std.testing.failing_allocator, .{ .evaluator = evaluator }));
         }
         for ([_]u8{ 0, 1, 4, 9, 255 }) |neighbors| {
-            try std.testing.expectError(error.SpeckleOverridesDisabled, generateResources(std.testing.failing_allocator, .{ .neighbor_count = neighbors }));
+            try std.testing.expectError(error.SpeckleOverridesDisabled, Resources.init(std.testing.failing_allocator, .{ .neighbor_count = neighbors }));
         }
     } else {
         const cases = [_]struct { params: Speckle2DParams, err: anyerror }{
@@ -3732,11 +3736,11 @@ test "runtime override policy and invalid settings fail before allocation" {
             .{ .params = .{ .evaluator = .direct_fixed, .radius_mean = 0.6 }, .err = error.InvalidDirectFixedSpeckleRadius },
             .{ .params = .{ .neighbor_count = 1, .radius_jitter = 0.1 }, .err = error.InvalidSpeckleNeighborhoodRadius },
         };
-        for (cases) |case| try std.testing.expectError(case.err, generateResources(std.testing.failing_allocator, case.params));
+        for (cases) |case| try std.testing.expectError(case.err, Resources.init(std.testing.failing_allocator, case.params));
         const direct = try (Speckle2DParams{ .evaluator = .direct_fixed }).resolve();
         try std.testing.expectEqual(@as(u8, 1), direct.neighbor_count);
         for ([_]speckleconfig.Evaluator{ .cell_hash, .mock }) |evaluator| {
-            var resources = try generateResources(std.testing.failing_allocator, .{ .evaluator = evaluator });
+            var resources = try Resources.init(std.testing.failing_allocator, .{ .evaluator = evaluator });
             defer resources.deinit(std.testing.failing_allocator);
             try std.testing.expect(resources.kernel_index != null);
             try std.testing.expectEqualDeep(Resources{ .kernel_index = resources.kernel_index }, resources);
@@ -3752,7 +3756,7 @@ test "classified owner strips clean up every allocation failure" {
         fn generate(allocator: std.mem.Allocator, jitter: F, occupancy: F) !void {
             var tracking = std.testing.FailingAllocator.init(allocator, .{});
             const tracked_allocator = tracking.allocator();
-            var resources = try generateResources(tracked_allocator, .{
+            var resources = try Resources.init(tracked_allocator, .{
                 .cells_per_uv = .{ 2, 1 },
                 .occupancy = occupancy,
                 .radius_mean = 0.35,
@@ -3760,7 +3764,7 @@ test "classified owner strips clean up every allocation failure" {
             });
             defer resources.deinit(tracked_allocator);
             try std.testing.expectEqual(@as(usize, 2), tracking.allocations);
-            const strip = resources.classified.?.speckles;
+            const strip = resources.data.classified.speckles;
             try std.testing.expectEqual(occupancy == 0.0, strip.recordCount() == 0);
             if (strip.recordCount() != 0) {
                 try std.testing.expectEqual(3 * strip.cell_dims[0] * strip.cell_dims[1], strip.recordCount());
@@ -3780,12 +3784,12 @@ test "positive-occupancy empty owner strips preserve stored negative-zero backgr
     const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
     for ([_]F{ 0.0, 0.08 }) |jitter| {
         const params: Speckle2DParams = .{ .seed = 0, .cells_per_uv = .{ 0.03125, 0.0625 }, .occupancy = 0.001, .radius_mean = 0.35, .radius_jitter = jitter, .foreground = 0.91, .background = -0.0 };
-        var resources = try generateResources(std.testing.allocator, params);
+        var resources = try Resources.init(std.testing.allocator, params);
         defer resources.deinit(std.testing.allocator);
-        const strip = resources.classified.?.speckles;
+        const strip = resources.data.classified.speckles;
         try std.testing.expectEqual(@as(usize, 0), strip.centers.len);
         try std.testing.expectEqual(@as(usize, 0), strip.disks.len);
-        for (resources.classified.?.states) |state| try std.testing.expectEqual(@as(u16, 0), state);
+        for (resources.data.classified.states) |state| try std.testing.expectEqual(@as(u16, 0), state);
         const expected: Bits = @bitCast(params.background);
         for ([_]F{ 0.0, 0.5, 1.0, std.math.nan(F) }) |u| {
             try std.testing.expectEqual(expected, @as(Bits, @bitCast(sampleScal(u, 0.5, params, &resources))));
@@ -3798,6 +3802,9 @@ test "positive-occupancy empty owner strips preserve stored negative-zero backgr
 }
 
 test "runtime resources select only one resource and canonical scalar SIMD kernels" {
+    var empty: Resources = .{};
+    empty.deinit(std.testing.failing_allocator);
+    try std.testing.expectEqualDeep(Resources{}, empty);
     inline for (generation_configs) |config| {
         var params: Speckle2DParams = .{
             .pattern = config.pattern,
@@ -3818,17 +3825,33 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
         try std.testing.expectEqual(raw, sampleScal(0.37, 0.61, params, &.{}));
         const raw_simd: [S]F = sampleSIMD(@splat(0.37), @splat(0.61), @splat(false), params, &.{});
         for (raw_simd) |value| try std.testing.expectEqual(raw, value);
-        var resources = try generateResources(std.testing.allocator, params);
+        var resources = try Resources.init(std.testing.allocator, params);
         defer resources.deinit(std.testing.allocator);
         const index = comptime kernelIndex(config);
         try std.testing.expectEqual(@as(?u8, index), resources.kernel_index);
-        const allocated = @as(usize, @intFromBool(resources.list != null)) +
-            @intFromBool(resources.classified != null) + @intFromBool(resources.direct_fixed != null) +
-            @intFromBool(resources.mask != null) + @intFromBool(resources.strip_list != null) + @intFromBool(resources.perlin != null);
-        try std.testing.expectEqual(@as(usize, if (config.evaluator == .cell_hash or config.evaluator == .mock) 0 else 1), allocated);
-        try std.testing.expectEqual(config.evaluator == .list_naive, resources.list != null);
-        try std.testing.expectEqual(config.evaluator == .list_indexed, resources.strip_list != null);
-        try std.testing.expectEqual(config.evaluator == .classified_indexed, resources.classified != null);
+        const backing_tag: std.meta.Tag(Backing) = switch (config.evaluator) {
+            .cell_hash, .mock => .none,
+            .list_naive => .list,
+            .list_indexed => .strip_list,
+            .classified_indexed => .classified,
+            .direct_fixed => .direct_fixed,
+            .mask_1bit, .mask_u8 => .mask,
+            .gradient_lattice => .perlin,
+        };
+        try std.testing.expectEqual(backing_tag, @as(std.meta.Tag(Backing), resources.data));
+        if (comptime config.evaluator == .cell_hash or config.evaluator == .mock) {
+            var allocation_free = try Resources.init(std.testing.failing_allocator, params);
+            allocation_free.deinit(std.testing.failing_allocator);
+            try std.testing.expectEqualDeep(Resources{}, allocation_free);
+        }
+        try std.testing.checkAllAllocationFailures(std.testing.allocator, struct {
+            fn run(allocator: std.mem.Allocator, input: Speckle2DParams) !void {
+                var owned = try Resources.init(allocator, input);
+                defer owned.deinit(allocator);
+                owned.deinit(allocator);
+                try std.testing.expectEqualDeep(Resources{}, owned);
+            }
+        }.run, .{params});
         const points = [_][2]F{ .{ 0, 0 }, .{ 1, 1 }, .{ -2, 0.37 }, .{ 0.35, 0.61 }, .{ 0.67, 0.41 }, .{ 0.37, 2 } };
         for (points) |uv| {
             const Impl = Implementation(config);
@@ -3840,9 +3863,9 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
                     params.background
                 else
                     params.foreground,
-                .list_naive => Impl.evalSpeckleList2DNaiveImpl(config.soft_edges, uv[0], uv[1], resources.list.?),
+                .list_naive => Impl.evalSpeckleList2DNaiveImpl(config.soft_edges, uv[0], uv[1], resources.data.list),
                 .classified_indexed => Impl.evalSpeckle2D(uv, params),
-                .mask_1bit, .mask_u8 => Impl.evalSpeckleMask2D(uv, resources.mask.?),
+                .mask_1bit, .mask_u8 => Impl.evalSpeckleMask2D(uv, resources.data.mask),
             };
             try std.testing.expectEqual(reference, Kernel(index).sampleScal(uv[0], uv[1], params, &resources));
             try std.testing.expectEqual(reference, sampleScal(uv[0], uv[1], params, &resources));
@@ -3874,8 +3897,7 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
         }
         resources.deinit(std.testing.allocator);
         try std.testing.expectEqual(@as(?u8, null), resources.kernel_index);
-        try std.testing.expect(resources.list == null and resources.strip_list == null and resources.classified == null and
-            resources.direct_fixed == null and resources.mask == null and resources.perlin == null);
+        try std.testing.expectEqualDeep(Resources{}, resources);
     }
 }
 
@@ -3911,14 +3933,14 @@ test "strip indexed records and samples match exhaustive lists bitwise across oc
                 };
                 var reference_params = params;
                 reference_params.evaluator = .list_naive;
-                var reference_resources = try generateResources(std.testing.allocator, reference_params);
+                var reference_resources = try Resources.init(std.testing.allocator, reference_params);
                 defer reference_resources.deinit(std.testing.allocator);
                 var tracking = std.testing.FailingAllocator.init(std.testing.allocator, .{});
-                var indexed = try generateResources(tracking.allocator(), params);
+                var indexed = try Resources.init(tracking.allocator(), params);
                 defer indexed.deinit(tracking.allocator());
                 try std.testing.expectEqual(@as(usize, 1), tracking.allocations);
-                const table = reference_resources.list.?;
-                const strip = indexed.strip_list.?;
+                const table = reference_resources.data.list;
+                const strip = indexed.data.strip_list;
                 const length: usize = switch (config.neighbor_count) {
                     9 => 3,
                     4 => 2,
@@ -4083,13 +4105,13 @@ test "strip indexed zero radius soft disk coverage and default gate" {
         try std.testing.expectError(error.SpeckleOverridesDisabled, params.resolve());
         return;
     }
-    var strip = try generateResources(std.testing.allocator, params);
+    var strip = try Resources.init(std.testing.allocator, params);
     defer strip.deinit(std.testing.allocator);
     var reference_params = params;
     reference_params.evaluator = .list_naive;
-    var reference = try generateResources(std.testing.allocator, reference_params);
+    var reference = try Resources.init(std.testing.allocator, reference_params);
     defer reference.deinit(std.testing.allocator);
-    const table = strip.strip_list.?;
+    const table = strip.data.strip_list;
     const disk = table.disks[@as(usize, @intCast(-table.cell_origin[1])) * table.cell_dims[0] + @as(usize, @intCast(-table.cell_origin[0]))];
     try std.testing.expectEqual(@as(F, 0), disk.radius);
     try std.testing.expectApproxEqAbs(@as(F, 0.1723602294921875), disk.center[0], 0.000001);

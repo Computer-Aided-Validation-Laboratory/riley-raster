@@ -165,13 +165,13 @@ pub fn main(init: std.process.Init) !void {
         const geometry = try bench.Geometry.prepare(alloc, io, &cam, scene.sim.coords, scene.sim.connect, scene.uvs.array, config, opts.threads);
         var evaluation = try bench.Evaluation.init(alloc, io, &cam, &geometry, config, opts.threads);
         const resource_start = std.Io.Timestamp.now(io, .awake);
-        var resources = if (texture == null) try speckle.generateResources(init.gpa, params) else speckle.Resources{};
+        var resources = if (texture == null) try speckle.Resources.init(init.gpa, params) else speckle.Resources{};
         defer resources.deinit(init.gpa);
         // Production UV gathering; interpolation LUTs are compile-time constants.
         const prepared: ?shaderops.TexPrepared(u8, 1) = if (texture) |tex| .{ .elem_uvs = try mo.prepUVs(alloc, &scene.uvs.array, &scene.sim.connect), .tex = tex, .samp_cfg = opts.textureConfig(), .bits = null } else null;
         resource_ns = resource_start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
         const eval_start = std.Io.Timestamp.now(io, .awake);
-        if (prepared) |shader| try evaluation.evaluateTexture(shader, opts.frames) else try evaluation.evaluate(params, resources, opts.frames);
+        if (prepared) |shader| try evaluation.evaluateTexture(shader, opts.frames) else try evaluation.evaluate(params, &resources, opts.frames);
         render_ns = eval_start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
         combined_ns = resource_ns + render_ns;
         result = evaluation.result();
@@ -340,17 +340,17 @@ test "speckle benchmark rejects occluded samples but keeps closer depth updates"
     overlaps[1].elem_idx = 1;
     fixture.geometry.tiling = .{ .active_tiles = &tiles, .overlaps = &overlaps };
     var evaluation = try fixture.evaluation(alloc, 1);
-    var resources = try speckle.generateResources(alloc, smoke.params());
+    var resources = try speckle.Resources.init(alloc, smoke.params());
     defer resources.deinit(alloc);
-    try evaluation.evaluate(smoke.params(), resources, 1);
+    try evaluation.evaluate(smoke.params(), &resources, 1);
     const front_only = evaluation.result();
     try std.testing.expect(front_only.shaded_samples > 0);
     tiles[0].overlap_count = 2;
     tiles[0].bins[one_root_bin].count = 2;
-    try evaluation.evaluate(smoke.params(), resources, 1);
+    try evaluation.evaluate(smoke.params(), &resources, 1);
     try std.testing.expectEqualDeep(front_only, evaluation.result()); // Near first rejects far.
     std.mem.swap(@TypeOf(overlaps[0]), &overlaps[0], &overlaps[1]);
-    try evaluation.evaluate(smoke.params(), resources, 1);
+    try evaluation.evaluate(smoke.params(), &resources, 1);
     var both = front_only;
     both.merge(front_only);
     try std.testing.expectEqualDeep(both, evaluation.result()); // Far first shades both.
@@ -416,7 +416,7 @@ test "speckle benchmark workers depth resets and texture filters" {
             };
             const texture_variant = variant == .nearest or variant == .linear or variant == .cubic_catmull_rom;
             opts.texture_filter = if (texture_variant) std.meta.stringToEnum(texops.TexSamp, @tagName(variant)).? else .linear;
-            var resources = if (texture_variant) speckle.Resources{} else try speckle.generateResources(alloc, params);
+            var resources = if (texture_variant) speckle.Resources{} else try speckle.Resources.init(alloc, params);
             defer resources.deinit(alloc);
             var once: bench.Result = undefined;
             for ([_]usize{ 1, 2 }) |frames| {
@@ -425,8 +425,8 @@ test "speckle benchmark workers depth resets and texture filters" {
                     try single.evaluateTexture(shader, frames);
                     try parallel.evaluateTexture(shader, frames);
                 } else {
-                    try single.evaluate(params, resources, frames);
-                    try parallel.evaluate(params, resources, frames);
+                    try single.evaluate(params, &resources, frames);
+                    try parallel.evaluate(params, &resources, frames);
                 }
                 try std.testing.expect(single.result().shaded_samples > 0);
                 if (!plate) try std.testing.expect(single.result().backface_rejections > 0);
