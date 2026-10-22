@@ -317,7 +317,6 @@ cdef extern from "riley.h":
         uint8_t full_stats_save_depth_map
         uint8_t full_stats_save_earlyout_map
         uint8_t full_stats_save_pixel_occupancy_map
-        uint8_t full_stats_save_normals_map
         uint32_t buffer_mode
         const char* output_name_format
         double edge_spacing_px

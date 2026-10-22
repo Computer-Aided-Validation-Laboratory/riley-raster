@@ -25,12 +25,12 @@ const cam = @import("camera.zig");
 const pce = @import("parachunkexec.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 const frontend = @import("rasterfrontend.zig");
-const report = @import("report.zig");
 const sceneops = @import("sceneops.zig");
 const texops = @import("textureops.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 
 const shaderops = @import("shaderops.zig");
+const meshhit = @import("meshhit.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
 const HullMultiRoot = @import("hullmultiroot.zig").HullMultiRoot;
@@ -45,7 +45,7 @@ const distbounds = @import("distortbounds.zig");
 // meshio.Connect: Connectivity table links nodes to elems.
 pub const MeshInput = struct {
     mesh_type: geomkerns.MeshType,
-    normal_type: shaderops.NormalType = .exact,
+    normal_type: normals.NormalType = .exact,
     coords: meshio.Coords,
     connect: meshio.Connect,
     disp: ?meshio.Field,
@@ -58,7 +58,7 @@ pub const MeshInput = struct {
 pub const MeshStatic = struct {
     scene_mesh_idx: usize = 0,
     mesh_type: geomkerns.MeshType,
-    normal_type: shaderops.NormalType = .exact,
+    normal_type: normals.NormalType = .exact,
     coords_orig: meshio.Coords,
     connect: meshio.Connect,
     disp: ?meshio.Field,
@@ -118,11 +118,9 @@ pub const MeshPrepared = struct {
     scene_mesh_idx: usize = 0,
     mesh_type: geomkerns.MeshType,
     coords: ndarray.NDArray(F),
-    hit_geometry: HitGeometryPrepared = .{},
+    hit_geometry: meshhit.MeshHitGeomPrepared = .{},
     shaders: shaderops.MeshShaderSetPrepared,
 };
-
-pub const HitGeometryPrepared = shaderops.HitGeometryPrepared;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -230,13 +228,6 @@ pub fn countStaticMeshElems(mesh_static: []const MeshStatic) usize {
         total += mesh.connect.table.rows_num;
     }
     return total;
-}
-
-pub fn meshSupportsSelection(
-    mesh: *const MeshStatic,
-    selection: shaderops.CameraShaderSelection,
-) bool {
-    return shaderops.hasShader(mesh.shaders, selection);
 }
 
 pub fn countMeshInputElems(meshes: []const MeshInput) usize {
@@ -373,14 +364,14 @@ pub fn initMeshStatic(
 
     var shaders: shaderops.MeshShaderSetStatic = .{};
     if (mesh_input.shaders.direct) |shader| {
-        shaders.direct = try initShaderStatic(
+        shaders.direct = try initShaderDirectStatic(
             allocator,
             shader,
             &mesh_input.connect,
         );
     }
     if (mesh_input.shaders.mono) |pipe| {
-        shaders.mono = try initPipeStatic(
+        shaders.mono = try initShaderPipeStatic(
             allocator,
             pipe,
             &mesh_input.connect,
@@ -388,7 +379,7 @@ pub fn initMeshStatic(
         );
     }
     if (mesh_input.shaders.rgb) |pipe| {
-        shaders.rgb = try initPipeStatic(
+        shaders.rgb = try initShaderPipeStatic(
             allocator,
             pipe,
             &mesh_input.connect,
@@ -396,7 +387,7 @@ pub fn initMeshStatic(
         );
     }
     if (mesh_input.shaders.ir) |pipe| {
-        shaders.ir = try initPipeStatic(
+        shaders.ir = try initShaderPipeStatic(
             allocator,
             pipe,
             &mesh_input.connect,
@@ -404,7 +395,7 @@ pub fn initMeshStatic(
         );
     }
     if (mesh_input.shaders.multifield) |pipe| {
-        shaders.multifield = try initPipeStatic(
+        shaders.multifield = try initShaderPipeStatic(
             allocator,
             pipe,
             &mesh_input.connect,
@@ -422,7 +413,7 @@ pub fn initMeshStatic(
     };
 }
 
-fn initPipeStatic(
+fn initShaderPipeStatic(
     allocator: std.mem.Allocator,
     pipe: shaderops.ShaderPipeInput,
     connect: *const meshio.Connect,
@@ -433,7 +424,7 @@ fn initPipeStatic(
     for (pipe.stages, 0..) |stage, si| {
         stages[si] = switch (stage) {
             .source => |src| .{ .source = .{
-                .shader = try initShaderStatic(allocator, src.shader, connect),
+                .shader = try initShaderDirectStatic(allocator, src.shader, connect),
                 .destination = src.destination,
                 .global_scaling = switch (src.shader) {
                     .nodal => |n| if (n.scale_over == .over_frames)
@@ -456,7 +447,7 @@ fn initPipeStatic(
     };
 }
 
-fn initShaderStatic(
+fn initShaderDirectStatic(
     allocator: std.mem.Allocator,
     shader_in: shaderops.ShaderDirectInput,
     connect: *const meshio.Connect,
@@ -693,8 +684,6 @@ pub fn prepMeshFrame(
                 config.advanced.distortion.edge_spacing_px,
                 scaling_params,
                 chunk_exec,
-                config.report.mode == .full_stats and
-                    config.report.full_stats_opts.save_normals_map,
                 workers_num,
             );
             return try pipeline.run(outer_alloc, timing);
@@ -774,9 +763,9 @@ fn shaderNeedsDeformedWorld(shader: shaderops.ShaderDirectStatic) bool {
 
 fn shaderHitSelection(
     shader: shaderops.ShaderDirectStatic,
-    normal_type: shaderops.NormalType,
-) shaderops.MeshHitSelection {
-    var selection = shaderops.MeshHitSelection.initEmpty();
+    normal_type: normals.NormalType,
+) meshhit.MeshHitSelection {
+    var selection = meshhit.MeshHitSelection.initEmpty();
     switch (shader) {
         .func, .func_rgb => |s| {
             switch (s.coord_mode) {
@@ -796,9 +785,9 @@ fn shaderHitSelection(
 fn shaderSetHitSelection(
     shaders: shaderops.MeshShaderSetStatic,
     role: shaderops.CameraShaderSelection,
-    normal_type: shaderops.NormalType,
-) shaderops.MeshHitSelection {
-    var selection = shaderops.MeshHitSelection.initEmpty();
+    normal_type: normals.NormalType,
+) meshhit.MeshHitSelection {
+    var selection = meshhit.MeshHitSelection.initEmpty();
     const selected = shaderops.selectShader(
         shaderops.ShaderDirectStatic,
         shaderops.ShaderPipeStatic,
@@ -919,7 +908,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         edge_spacing_px: F,
         scaling_params: ?imageops.ScalingParams,
         chunk_exec: *pce.ParaChunkExecutor,
-        report_normals: bool,
         workers_num: usize,
         nodes_num: usize,
         elems_num: usize,
@@ -928,7 +916,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         elem_chunks_num: usize,
         vis_chunk_size: usize,
         mesh_workspace: MeshFrameWorkspace,
-        hit_geometry: HitGeometryPrepared = .{},
+        hit_geometry: meshhit.MeshHitGeomPrepared = .{},
 
         fn init(
             outer_alloc: std.mem.Allocator,
@@ -941,7 +929,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             edge_spacing_px: F,
             scaling_params: ?imageops.ScalingParams,
             chunk_exec: *pce.ParaChunkExecutor,
-            report_normals: bool,
             workers_num: usize,
         ) !FrameMeshPipelineType {
             const nodes_num = mesh_static.coords_orig.mat.rows_num;
@@ -965,7 +952,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .edge_spacing_px = edge_spacing_px,
                 .scaling_params = scaling_params,
                 .chunk_exec = chunk_exec,
-                .report_normals = report_normals,
                 .workers_num = workers_num,
                 .nodes_num = nodes_num,
                 .elems_num = elems_num,
@@ -1756,16 +1742,13 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         fn prepareHitGeometry(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
-        ) !HitGeometryPrepared {
+        ) !meshhit.MeshHitGeomPrepared {
             var selection = shaderSetHitSelection(
                 self.mesh_static.shaders,
                 self.camera.shader_selection,
                 self.mesh_static.normal_type,
             );
-            if (self.report_normals and self.mesh_static.normal_type != .none) {
-                selection.insert(.surf_norm);
-            }
-            var hit_geometry = HitGeometryPrepared{ .selection = selection };
+            var hit_geometry = meshhit.MeshHitGeomPrepared{ .selection = selection };
             if (selection.contains(.coords_ref)) {
                 hit_geometry.coords_ref = try self.gatherVisElemCoordsFromNodes(
                     outer_alloc,
@@ -1841,7 +1824,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                                 src.global_scaling,
                         );
                         switch (prepared_shader) {
-                            inline else => |*shader| shader.elem_normals = null,
+                            .func, .func_rgb => |*shader| shader.hit_geometry = .{},
+                            else => {},
                         }
                         break :blk .{ .source = .{
                             .shader = prepared_shader,
@@ -2027,7 +2011,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .scale_over = nodal_static.scale_over,
                 .scale_mul = factors.mul,
                 .scale_add = factors.add,
-                .elem_normals = self.hit_geometry.surf_norm,
             } };
         }
 
@@ -2100,7 +2083,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 self.vis_chunk_size,
             );
 
-            const elem_normals = self.hit_geometry.surf_norm;
             if (comptime T == u8 and C == 1) {
                 return .{ .tex_u8 = .{
                     .elem_uvs = elem_uvs,
@@ -2110,7 +2092,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .scaling = tex_static.scaling,
                     .scale_mul = factors.mul,
                     .scale_add = factors.add,
-                    .elem_normals = elem_normals,
                 } };
             } else if (comptime T == u16 and C == 1) {
                 return .{ .tex_u16 = .{
@@ -2121,7 +2102,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .scaling = tex_static.scaling,
                     .scale_mul = factors.mul,
                     .scale_add = factors.add,
-                    .elem_normals = elem_normals,
                 } };
             } else if (comptime T == F and C == 1) {
                 return .{ .tex_f = .{
@@ -2132,7 +2112,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .scaling = tex_static.scaling,
                     .scale_mul = factors.mul,
                     .scale_add = factors.add,
-                    .elem_normals = elem_normals,
                 } };
             } else if (comptime T == u8 and C == 3) {
                 return .{ .tex_rgb_u8 = .{
@@ -2143,7 +2122,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .scaling = tex_static.scaling,
                     .scale_mul = factors.mul,
                     .scale_add = factors.add,
-                    .elem_normals = elem_normals,
                 } };
             } else if (comptime T == u16 and C == 3) {
                 return .{ .tex_rgb_u16 = .{
@@ -2154,7 +2132,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .scaling = tex_static.scaling,
                     .scale_mul = factors.mul,
                     .scale_add = factors.add,
-                    .elem_normals = elem_normals,
                 } };
             } else {
                 return .{ .tex_rgb_f = .{
@@ -2165,7 +2142,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .scaling = tex_static.scaling,
                     .scale_mul = factors.mul,
                     .scale_add = factors.add,
-                    .elem_normals = elem_normals,
                 } };
             }
         }
@@ -2210,14 +2186,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 break :blk elem_uvs;
             } else null;
 
-            const elem_world_ref = self.hit_geometry.coords_ref;
-            const elem_world_def = self.hit_geometry.coords_def;
-            const elem_normals = self.hit_geometry.surf_norm;
             if (comptime C == 1) {
                 return .{ .func = .{
                     .elem_uvs = elem_uvs,
-                    .elem_world_ref = elem_world_ref,
-                    .elem_world_def = elem_world_def,
+                    .hit_geometry = self.hit_geometry,
                     .coord_mode = func_static.coord_mode,
                     .builtin = func_static.builtin,
                     .params = shaderops.normFuncShaderParams(
@@ -2230,13 +2202,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .scale_add = factors.add,
                     .needs_normal = func_static.builtin == .lambertian_normal_z and
                         self.mesh_static.normal_type != .none,
-                    .elem_normals = elem_normals,
                 } };
             } else {
                 return .{ .func_rgb = .{
                     .elem_uvs = elem_uvs,
-                    .elem_world_ref = elem_world_ref,
-                    .elem_world_def = elem_world_def,
+                    .hit_geometry = self.hit_geometry,
                     .coord_mode = func_static.coord_mode,
                     .builtin = func_static.builtin,
                     .params = shaderops.normFuncShaderParams(
@@ -2249,7 +2219,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .scale_add = factors.add,
                     .needs_normal = func_static.builtin == .lambertian_normal_z and
                         self.mesh_static.normal_type != .none,
-                    .elem_normals = elem_normals,
                 } };
             }
         }
@@ -2257,7 +2226,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         fn prepVisNormals(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
-            normal_type: shaderops.NormalType,
+            normal_type: normals.NormalType,
         ) !?ndarray.MappedNDArray(F) {
             if (normal_type == .none) {
                 return null;

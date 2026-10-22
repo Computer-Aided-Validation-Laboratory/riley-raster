@@ -21,6 +21,7 @@ const maths_simd = @import("maths_simd.zig");
 const texops = @import("textureops.zig");
 const TexSampConfig = texops.TexSampConfig;
 const comm = @import("shaderops_common.zig");
+const meshhit = @import("meshhit.zig");
 const scal = @import("shaderops_scalar.zig");
 const simdops = @import("simdops.zig");
 
@@ -602,7 +603,7 @@ pub inline fn fillFuncClipSIMD(
     v_weights: [N]VecSF,
     v_xi: VecSF,
     v_eta: VecSF,
-    hit: comm.VectorMeshHit,
+    hit: meshhit.MeshHitGeomSIMD,
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.FuncPrepared,
     sink: anytype,
@@ -687,7 +688,7 @@ pub inline fn fillFuncPerspSIMD(
     v_eta: VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    hit: comm.VectorMeshHit,
+    hit: meshhit.MeshHitGeomSIMD,
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.FuncPrepared,
     sink: anytype,

@@ -219,5 +219,4 @@ pub const FullStatsOpts = struct {
     save_depth_map: bool = true,
     save_earlyout_map: bool = true,
     save_pixel_occupancy_map: bool = true,
-    save_normals_map: bool = false,
 };

@@ -24,6 +24,7 @@ const rotation = @import("rotation.zig");
 const rastcfg = @import("rasterconfig.zig");
 const sceneops = @import("sceneops.zig");
 const shaderops = @import("shaderops.zig");
+const normals = @import("normals.zig");
 const shaderpipe = @import("shaderpipe.zig");
 const texops = @import("textureops.zig");
 const vec = @import("vecstack.zig");
@@ -382,7 +383,6 @@ pub const CRasterConfig = extern struct {
     full_stats_save_depth_map: u8,
     full_stats_save_earlyout_map: u8,
     full_stats_save_pixel_occupancy_map: u8,
-    full_stats_save_normals_map: u8,
     buffer_mode: u32,
     output_name_format: ?[*:0]const u8,
     edge_spacing_px: F,
@@ -850,11 +850,11 @@ fn funcCoordModeFromC(
     };
 }
 
-fn normalTypeFromC(normal_type: u32) !shaderops.NormalType {
+fn normalTypeFromC(normal_type: u32) !normals.NormalType {
     return switch (normal_type) {
-        @intFromEnum(shaderops.NormalType.none) => .none,
-        @intFromEnum(shaderops.NormalType.exact) => .exact,
-        @intFromEnum(shaderops.NormalType.avg) => .avg,
+        @intFromEnum(normals.NormalType.none) => .none,
+        @intFromEnum(normals.NormalType.exact) => .exact,
+        @intFromEnum(normals.NormalType.avg) => .avg,
         else => error.InvalidNormalType,
     };
 }
@@ -1972,7 +1972,6 @@ fn buildRasterConfig(
         .save_depth_map = in_config.full_stats_save_depth_map != 0,
         .save_earlyout_map = in_config.full_stats_save_earlyout_map != 0,
         .save_pixel_occupancy_map = in_config.full_stats_save_pixel_occupancy_map != 0,
-        .save_normals_map = in_config.full_stats_save_normals_map != 0,
     };
 
     return config;

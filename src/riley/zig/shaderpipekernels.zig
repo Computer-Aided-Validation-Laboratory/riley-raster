@@ -8,6 +8,7 @@ const VecSF = buildconfig.VecSF;
 const VecSB = buildconfig.VecSB;
 const cfg = buildconfig.config;
 const shaderops = @import("shaderops.zig");
+const meshhit = @import("meshhit.zig");
 const shaderpipe = @import("shaderpipe.zig");
 const shadekerns = @import("shaderkernels.zig");
 const simdops = @import("simdops.zig");
@@ -59,12 +60,6 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                                     0,
                                 });
                             buf.load(shader.elem_field, idx, count);
-                            if (shader.elem_normals) |normals| {
-                                buf.loadNormals(
-                                    normals.array,
-                                    normals.map[elem_idx] * 3 * N,
-                                );
-                            }
                         },
                         inline .tex_u8,
                         .tex_u16,
@@ -74,12 +69,6 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                         .tex_rgb_f,
                         => |shader| {
                             buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
-                            if (shader.elem_normals) |normals| {
-                                buf.loadNormals(
-                                    normals.array,
-                                    normals.map[elem_idx] * 3 * N,
-                                );
-                            }
                         },
                         .func, .func_rgb => |shader| {
                             switch (shader.coord_mode) {
@@ -100,19 +89,19 @@ pub fn LocalPipeBuff(comptime N: usize) type {
         pub inline fn completeHit(
             self: *const @This(),
             comptime coord_space: CoordSpace,
-            base: shaderops.MeshHit(N),
-            selection: shaderops.MeshHitSelection,
-        ) shaderops.MeshHit(N) {
+            base: meshhit.MeshHit(N),
+            selection: meshhit.MeshHitSelection,
+        ) meshhit.MeshHit(N) {
             if (selection.count() == 0) return base;
             var hit = base;
             if (selection.contains(.coords_ref)) {
-                hit.coords_ref = interpCoords(N, coord_space, &self.coords_ref, base);
+                hit.coords_ref = meshhit.interpCoords(N, coord_space, &self.coords_ref, base);
             }
             if (selection.contains(.coords_def)) {
-                hit.coords_def = interpCoords(N, coord_space, &self.coords_def, base);
+                hit.coords_def = meshhit.interpCoords(N, coord_space, &self.coords_def, base);
             }
             if (selection.contains(.surf_norm)) {
-                hit.surf_norm = interpCoords(N, .clip_px_leng, &self.surf_norm, base);
+                hit.surf_norm = meshhit.interpCoords(N, .clip_px_leng, &self.surf_norm, base);
             }
             return hit;
         }
@@ -124,12 +113,12 @@ pub fn LocalPipeBuff(comptime N: usize) type {
             weights: [N]VecSF,
             nodes_inv_z: [N]VecSF,
             subpx_z: VecSF,
-            selection: shaderops.MeshHitSelection,
-        ) shaderops.VectorMeshHit {
+            selection: meshhit.MeshHitSelection,
+        ) meshhit.MeshHitGeomSIMD {
             if (selection.count() == 0) return .{};
-            var hit: shaderops.VectorMeshHit = .{};
+            var hit: meshhit.MeshHitGeomSIMD = .{};
             if (selection.contains(.coords_ref)) {
-                hit.coords_ref = interpCoordsSIMD(
+                hit.coords_ref = meshhit.interpCoordsSIMD(
                     N,
                     coord_space,
                     &self.coords_ref,
@@ -140,7 +129,7 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                 );
             }
             if (selection.contains(.coords_def)) {
-                hit.coords_def = interpCoordsSIMD(
+                hit.coords_def = meshhit.interpCoordsSIMD(
                     N,
                     coord_space,
                     &self.coords_def,
@@ -151,7 +140,7 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                 );
             }
             if (selection.contains(.surf_norm)) {
-                hit.surf_norm = interpCoordsSIMD(
+                hit.surf_norm = meshhit.interpCoordsSIMD(
                     N,
                     .clip_px_leng,
                     &self.surf_norm,
@@ -166,78 +155,21 @@ pub fn LocalPipeBuff(comptime N: usize) type {
     };
 }
 
-inline fn interpCoordsSIMD(
-    comptime N: usize,
-    comptime coord_space: CoordSpace,
-    values: *const [3 * N]F,
-    mask: VecSB,
-    weights: [N]VecSF,
-    nodes_inv_z: [N]VecSF,
-    subpx_z: VecSF,
-) [3]VecSF {
-    const zero: VecSF = @splat(0);
-    var result: [3]VecSF = @splat(zero);
-    inline for (0..3) |cc| {
-        inline for (0..N) |nn| {
-            const weight = @select(F, mask, weights[nn], zero);
-            const value: VecSF = @splat(values[cc * N + nn]);
-            result[cc] += if (comptime coord_space == .raster)
-                weight * value * @select(F, mask, nodes_inv_z[nn], zero)
-            else
-                weight * value;
-        }
-        if (comptime coord_space == .raster) {
-            result[cc] *= @select(F, mask, subpx_z, zero);
-        }
-    }
-    return result;
-}
-
-inline fn interpCoords(
-    comptime N: usize,
-    comptime coord_space: CoordSpace,
-    values: *const [3 * N]F,
-    hit: shaderops.MeshHit(N),
-) [3]F {
-    var result: [3]F = @splat(0);
-    inline for (0..3) |cc| {
-        inline for (0..N) |nn| {
-            const value = values[cc * N + nn];
-            result[cc] += if (comptime coord_space == .raster)
-                hit.weights[nn] * value * hit.nodes_inv_z[nn]
-            else
-                hit.weights[nn] * value;
-        }
-        if (comptime coord_space == .raster) result[cc] *= hit.sub_pixel_z;
-    }
-    return result;
-}
-
 pub fn PipeKernel(comptime N: usize) type {
     return struct {
         pub const LocalBuff = LocalPipeBuff(N);
+        pub const Hit = meshhit.MeshHit(N);
 
         pub fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.MeshHit(N),
+            interp: meshhit.MeshHit(N),
             pipe_buf: *const LocalBuff,
             pipe: *const shaderops.ShaderPipePrepared,
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
             const hit = pipe_buf.completeHit(coord_space, interp, pipe.hit_geometry.selection);
-            if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-                if (hit.surf_norm) |normal| {
-                    ctx_report.recordNormal(
-                        ctx_shade.global_subx,
-                        ctx_shade.global_suby,
-                        normal[0],
-                        normal[1],
-                        normal[2],
-                    );
-                }
-            }
             var outputs: shaderpipe.ScalarOutputs = .{};
             var temporary: [cfg.max_nodal_fields]F = @splat(0);
             var temp_mat = MatSlice(F).init(&temporary, cfg.max_nodal_fields, 1);
@@ -310,20 +242,6 @@ pub fn PipeKernel(comptime N: usize) type {
                 v_subpx_z,
                 pipe.hit_geometry.selection,
             );
-            if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-                if (hit.surf_norm) |normals| {
-                    const lane_mask: [S]bool = v_mask_active;
-                    inline for (0..S) |lane| if (lane_mask[lane]) {
-                        ctx_report.recordNormal(
-                            ctx_shade.global_subx + lane,
-                            ctx_shade.global_suby,
-                            normals[0][lane],
-                            normals[1][lane],
-                            normals[2][lane],
-                        );
-                    };
-                }
-            }
             var outputs: shaderpipe.VectorOutputs = .{};
             var stage_ctx = ctx_shade;
 
@@ -412,7 +330,7 @@ fn shadeSource(
     comptime N: usize,
     comptime coord_space: CoordSpace,
     ctx: shaderops.ShadeContext,
-    interp: shaderops.MeshHit(N),
+    interp: meshhit.MeshHit(N),
     buf: *const shaderops.LocalShaderBuff(N),
     source: *const shaderops.ShaderDirectPrepared,
     ctx_report: anytype,
@@ -423,7 +341,7 @@ fn shadeSource(
             shadekerns.NodalKernel(N).shade(
                 coord_space,
                 ctx,
-                interp,
+                interp.core(),
                 buf,
                 s,
                 ctx_report,
@@ -434,7 +352,7 @@ fn shadeSource(
             shadekerns.TexKernel(N, u8, 1).shade(
                 coord_space,
                 ctx,
-                interp,
+                interp.core(),
                 buf,
                 s,
                 ctx_report,
@@ -445,7 +363,7 @@ fn shadeSource(
             shadekerns.TexKernel(N, u16, 1).shade(
                 coord_space,
                 ctx,
-                interp,
+                interp.core(),
                 buf,
                 s,
                 ctx_report,
@@ -456,7 +374,7 @@ fn shadeSource(
             shadekerns.TexKernel(N, F, 1).shade(
                 coord_space,
                 ctx,
-                interp,
+                interp.core(),
                 buf,
                 s,
                 ctx_report,
@@ -467,7 +385,7 @@ fn shadeSource(
             shadekerns.TexKernel(N, u8, 3).shade(
                 coord_space,
                 ctx,
-                interp,
+                interp.core(),
                 buf,
                 s,
                 ctx_report,
@@ -478,7 +396,7 @@ fn shadeSource(
             shadekerns.TexKernel(N, u16, 3).shade(
                 coord_space,
                 ctx,
-                interp,
+                interp.core(),
                 buf,
                 s,
                 ctx_report,
@@ -489,7 +407,7 @@ fn shadeSource(
             shadekerns.TexKernel(N, F, 3).shade(
                 coord_space,
                 ctx,
-                interp,
+                interp.core(),
                 buf,
                 s,
                 ctx_report,
@@ -532,7 +450,7 @@ fn shadeSourceSIMD(
     eta: VecSF,
     inv_z: [N]VecSF,
     subpx_z: VecSF,
-    hit: shaderops.VectorMeshHit,
+    hit: meshhit.MeshHitGeomSIMD,
     buf: *const shaderops.LocalShaderBuff(N),
     source: *const shaderops.ShaderDirectPrepared,
     sink: anytype,
@@ -694,14 +612,14 @@ test "MeshHit shares selected geometry with scalar and SIMD stages" {
     buff.coords_ref = .{ 1, 3, 5, 2, 4, 6, 7, 8, 9 };
     buff.coords_def = .{ 2, 4, 6, 3, 5, 7, 8, 9, 10 };
     buff.surf_norm = .{ 0, 0, 0, 0, 0, 0, 1, 0, 1 };
-    const base: shaderops.MeshHit(N) = .{
+    const base: meshhit.MeshHit(N) = .{
         .weights = .{ 0.2, 0.3, 0.5 },
         .nodes_inv_z = .{ 1, 2, 4 },
         .sub_pixel_z = 0.5,
         .xi = 0.3,
         .eta = 0.5,
     };
-    var selection = shaderops.MeshHitSelection.initEmpty();
+    var selection = meshhit.MeshHitSelection.initEmpty();
     const empty_hit = buff.completeHit(.raster, base, selection);
     try std.testing.expect(empty_hit.coords_ref == null);
     try std.testing.expect(empty_hit.coords_def == null);

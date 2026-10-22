@@ -10,6 +10,7 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const comm = @import("shaderkernels_common.zig");
 const shaderops = @import("shaderops.zig");
+const meshhit = @import("meshhit.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
@@ -20,11 +21,12 @@ const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 pub fn NodalKernel(comptime N: usize) type {
     return struct {
         pub const LocalBuff = shaderops.LocalShaderBuff(N);
+        pub const Hit = meshhit.RasterHit(N);
 
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.MeshHit(N),
+            interp: meshhit.RasterHit(N),
             shader_buf: *const shaderops.LocalShaderBuff(N),
             shader: *const shaderops.NodalPrepared,
             ctx_report: anytype,
@@ -55,11 +57,12 @@ pub fn TexKernel(
 ) type {
     return struct {
         pub const LocalBuff = shaderops.LocalShaderBuff(N);
+        pub const Hit = meshhit.RasterHit(N);
 
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.MeshHit(N),
+            interp: meshhit.RasterHit(N),
             shader_buf: *const shaderops.LocalShaderBuff(N),
             shader: *const shaderops.TexPrepared(T, C),
             ctx_report: anytype,
@@ -91,22 +94,24 @@ pub fn FuncKernel(
 ) type {
     return struct {
         pub const LocalBuff = shaderops.LocalShaderBuff(N);
+        pub const Hit = meshhit.MeshHit(N);
 
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.MeshHit(N),
+            interp: meshhit.MeshHit(N),
             shader_buf: *const shaderops.LocalShaderBuff(N),
             shader: *const shaderops.FuncPrepared,
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
+            const hit = comm.completeFuncHit(N, coord_space, interp, shader_buf, shader);
             comm.shadeFuncScalComm(
                 N,
                 C,
                 coord_space,
                 ctx_shade,
-                interp,
+                hit,
                 shader_buf,
                 shader,
                 ctx_report,

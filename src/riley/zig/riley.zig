@@ -1413,7 +1413,7 @@ fn initCameraMeshSelections(
         } else {
             var count: usize = 0;
             for (mesh_static) |*mesh| {
-                if (meshpipe.meshSupportsSelection(mesh, camera.shader_selection)) {
+                if (shaderops.hasShader(mesh.shaders, camera.shader_selection)) {
                     count += 1;
                 }
             }
@@ -1427,7 +1427,7 @@ fn initCameraMeshSelections(
             const selected = try allocator.alloc(meshpipe.MeshStatic, count);
             var nn: usize = 0;
             for (mesh_static) |*mesh| {
-                if (!meshpipe.meshSupportsSelection(mesh, camera.shader_selection)) {
+                if (!shaderops.hasShader(mesh.shaders, camera.shader_selection)) {
                     continue;
                 }
                 selected[nn] = mesh.*;

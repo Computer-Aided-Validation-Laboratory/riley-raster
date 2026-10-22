@@ -449,7 +449,7 @@ pub fn rasterDirectScalComm(
                     .global_subx = global_subx,
                     .global_suby = global_suby,
                 },
-                shaderops.MeshHit(GeomKern.nodes_num){
+                ShaderKern.Hit{
                     .weights = weights,
                     .nodes_inv_z = nodes_inv_z,
                     .sub_pixel_z = 1.0 / inv_z,
@@ -803,7 +803,7 @@ fn rasterNewtonImpl(
                 .global_subx = global_subx,
                 .global_suby = global_suby,
             };
-            const interp_data = shaderops.MeshHit(N){
+            const interp_data = ShaderKern.Hit{
                 .weights = weights,
                 .nodes_inv_z = nodes_inv_z,
                 .sub_pixel_z = subpx_z,
@@ -1090,7 +1090,7 @@ fn rasterNewtonMultiImpl(
                 .global_suby = global_suby,
             };
 
-            const interp_data = shaderops.MeshHit(N){
+            const interp_data = ShaderKern.Hit{
                 .weights = weights,
                 .nodes_inv_z = nodes_inv_z,
                 .sub_pixel_z = 1.0 / best_inv_z,
@@ -1210,7 +1210,6 @@ fn rasterSteppedScalFixP(
     subpx_scratch: *ScratchBuffs,
     fixed: comm.Tri3FixedEdges,
 ) !u64 {
-    const N = GeomKern.nodes_num;
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
@@ -1357,7 +1356,7 @@ fn rasterSteppedScalFixP(
                         .global_suby = global_suby,
                     };
 
-                    const interp_data = shaderops.MeshHit(N){
+                    const interp_data = ShaderKern.Hit{
                         .weights = weights,
                         .nodes_inv_z = nodes_inv_z,
                         .sub_pixel_z = subpx_z,
@@ -1417,7 +1416,6 @@ fn rasterSteppedScalFloat(
     shader_buf: *const ShaderKern.LocalBuff,
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
-    const N = GeomKern.nodes_num;
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
@@ -1606,7 +1604,7 @@ fn rasterSteppedScalFloat(
                         .global_subx = global_subx,
                         .global_suby = global_suby,
                     };
-                    const interp_data = shaderops.MeshHit(N){
+                    const interp_data = ShaderKern.Hit{
                         .weights = weights,
                         .nodes_inv_z = nodes_inv_z,
                         .sub_pixel_z = subpx_z,

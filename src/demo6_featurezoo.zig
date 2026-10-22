@@ -20,6 +20,7 @@ const riley = @import("riley/zig/riley.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
+const normals = @import("riley/zig/normals.zig");
 const texops = @import("riley/zig/textureops.zig");
 const uvio = @import("riley/zig/uvio.zig");
 
@@ -126,7 +127,7 @@ fn loadMesh(
 
     const temp = sim.field orelse return error.MissingTemperature;
     const disp = sim.disp orelse return error.MissingDisplacement;
-    const normal_type: shaderops.NormalType = switch (mesh_index % 3) {
+    const normal_type: normals.NormalType = switch (mesh_index % 3) {
         0 => .none,
         1 => .exact,
         else => .avg,

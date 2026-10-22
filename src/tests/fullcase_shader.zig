@@ -14,6 +14,7 @@ const gk = @import("../riley/zig/geometrykernels.zig");
 const imageops = @import("../riley/zig/imageops.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const shaderops = @import("../riley/zig/shaderops.zig");
+const normals = @import("../riley/zig/normals.zig");
 const texops = @import("../riley/zig/textureops.zig");
 
 const F = buildconfig.F;
@@ -24,20 +25,20 @@ pub const FullNodalCase = struct {
     is_rgb: bool,
     scaling: imageops.ScaleStrategy,
     scale_over: shaderops.ScaleOver,
-    normal_type: shaderops.NormalType = .none,
+    normal_type: normals.NormalType = .none,
 };
 
 pub const FullTexCase = struct {
     is_rgb: bool,
     dtype: enum { u8, u16, f64 },
-    normal_type: shaderops.NormalType = .none,
+    normal_type: normals.NormalType = .none,
 };
 
 pub const FullFuncCase = struct {
     is_rgb: bool,
     builtin: shaderops.FuncShaderBuiltin,
     coord: shaderops.FuncCoordMode,
-    normal_type: shaderops.NormalType = .none,
+    normal_type: normals.NormalType = .none,
 };
 
 pub const FullShaderCase = union(enum) {

@@ -19,6 +19,7 @@ const policy = @import("../dev_support/testpolicy.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const riley = @import("../riley/zig/riley.zig");
 const shaderops = @import("../riley/zig/shaderops_common.zig");
+const normals = @import("../riley/zig/normals.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const F = buildconfig.F;
@@ -203,7 +204,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
         .quad9,
         .tri3opt,
     };
-    const normal_types = [_]shaderops.NormalType{
+    const normal_types = [_]normals.NormalType{
         .none,
         .avg,
         .exact,

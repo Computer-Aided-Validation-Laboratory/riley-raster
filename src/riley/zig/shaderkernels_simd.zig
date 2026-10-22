@@ -17,8 +17,8 @@ const VecSF = buildconfig.VecSF;
 
 const comm = @import("shaderkernels_common.zig");
 const shaderops = @import("shaderops.zig");
+const meshhit = @import("meshhit.zig");
 const texops = @import("textureops.zig");
-const report = @import("report.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
@@ -29,11 +29,12 @@ const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 pub fn NodalKernel(comptime N: usize) type {
     return struct {
         pub const LocalBuff = shaderops.LocalShaderBuff(N);
+        pub const Hit = meshhit.RasterHit(N);
 
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.MeshHit(N),
+            interp: meshhit.RasterHit(N),
             shader_buf: *const shaderops.LocalShaderBuff(N),
             shader: *const shaderops.NodalPrepared,
             ctx_report: anytype,
@@ -67,19 +68,8 @@ pub fn NodalKernel(comptime N: usize) type {
         ) void {
             _ = v_xi;
             _ = v_eta;
-            if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-                if (shader.elem_normals != null) {
-                    report.recordNormalSIMD(
-                        N,
-                        S,
-                        ctx_report,
-                        ctx_shade,
-                        shader_buf,
-                        v_mask_active,
-                        v_weights,
-                    );
-                }
-            }
+            _ = v_mask_active;
+            _ = ctx_report;
 
             if (comptime coord_space == CoordSpace.raster) {
                 shaderops.fillNodalPerspSIMD(
@@ -150,11 +140,12 @@ pub fn TexKernel(
 ) type {
     return struct {
         pub const LocalBuff = shaderops.LocalShaderBuff(N);
+        pub const Hit = meshhit.RasterHit(N);
 
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.MeshHit(N),
+            interp: meshhit.RasterHit(N),
             shader_buf: *const shaderops.LocalShaderBuff(N),
             shader: *const shaderops.TexPrepared(T, C),
             ctx_report: anytype,
@@ -259,19 +250,7 @@ fn shadeTexSIMD(
 ) void {
     _ = v_xi;
     _ = v_eta;
-    if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-        if (shader.elem_normals != null) {
-            report.recordNormalSIMD(
-                N,
-                S,
-                ctx_report,
-                ctx_shade,
-                shader_buf,
-                v_mask_active,
-                v_weights,
-            );
-        }
-    }
+    _ = ctx_report;
 
     shadeTexSIMDDispatchSample(
         N,
@@ -394,22 +373,24 @@ pub fn FuncKernel(
 ) type {
     return struct {
         pub const LocalBuff = shaderops.LocalShaderBuff(N);
+        pub const Hit = meshhit.MeshHit(N);
 
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.MeshHit(N),
+            interp: meshhit.MeshHit(N),
             shader_buf: *const shaderops.LocalShaderBuff(N),
             shader: *const shaderops.FuncPrepared,
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
+            const hit = comm.completeFuncHit(N, coord_space, interp, shader_buf, shader);
             comm.shadeFuncScalComm(
                 N,
                 C,
                 coord_space,
                 ctx_shade,
-                interp,
+                hit,
                 shader_buf,
                 shader,
                 ctx_report,
@@ -431,6 +412,16 @@ pub fn FuncKernel(
             shader: *const shaderops.FuncPrepared,
             sink: anytype,
         ) void {
+            const hit = comm.completeFuncHitSIMD(
+                N,
+                coord_space,
+                v_mask_active,
+                v_weights,
+                v_nodes_inv_z,
+                v_subpx_z,
+                shader_buf,
+                shader,
+            );
             shadeSIMDToHit(
                 coord_space,
                 ctx_shade,
@@ -441,7 +432,7 @@ pub fn FuncKernel(
                 v_eta,
                 v_nodes_inv_z,
                 v_subpx_z,
-                .{},
+                hit,
                 shader_buf,
                 shader,
                 sink,
@@ -458,24 +449,12 @@ pub fn FuncKernel(
             v_eta: VecSF,
             v_nodes_inv_z: [N]VecSF,
             v_subpx_z: VecSF,
-            hit: shaderops.VectorMeshHit,
+            hit: meshhit.MeshHitGeomSIMD,
             shader_buf: *const shaderops.LocalShaderBuff(N),
             shader: *const shaderops.FuncPrepared,
             sink: anytype,
         ) void {
-            if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-                if (shader.elem_normals != null) {
-                    report.recordNormalSIMD(
-                        N,
-                        S,
-                        ctx_report,
-                        ctx_shade,
-                        shader_buf,
-                        v_mask_active,
-                        v_weights,
-                    );
-                }
-            }
+            _ = ctx_report;
 
             if (comptime coord_space == CoordSpace.raster) {
                 shaderops.fillFuncPerspSIMD(

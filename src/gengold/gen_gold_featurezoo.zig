@@ -21,6 +21,7 @@ const riley = @import("../riley/zig/riley.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const sceneops = @import("../riley/zig/sceneops.zig");
 const shaderops = @import("../riley/zig/shaderops.zig");
+const normals = @import("../riley/zig/normals.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 const texops = @import("../riley/zig/textureops.zig");
 const uvio = @import("../riley/zig/uvio.zig");
@@ -172,7 +173,7 @@ fn loadZooMesh(
     const temp = try sliceFieldToTwoFrames(allocator, raw_temp);
     const disp = try sliceFieldToTwoFrames(allocator, raw_disp);
 
-    const normal_type: shaderops.NormalType = switch (case_index % 3) {
+    const normal_type: normals.NormalType = switch (case_index % 3) {
         0 => .none,
         1 => .exact,
         else => .avg,

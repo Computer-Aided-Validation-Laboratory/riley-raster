@@ -455,10 +455,6 @@ pub fn rasterTileCore(
                                 start_idx,
                                 mesh_fields_num,
                             );
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[ov.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
 
                             shaded_px += try RasterBackend.RasterEngine(
                                 GK,
@@ -486,10 +482,6 @@ pub fn rasterTileCore(
                                 ov.elem_idx * 2 * N,
                                 2,
                             );
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[ov.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
 
                             shaded_px += try RasterBackend.RasterEngine(
                                 GK,
@@ -517,10 +509,6 @@ pub fn rasterTileCore(
                                 ov.elem_idx * 2 * N,
                                 2,
                             );
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[ov.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
 
                             shaded_px += try RasterBackend.RasterEngine(
                                 GK,
@@ -544,10 +532,6 @@ pub fn rasterTileCore(
                             const SK = shadekerns.TexKernel(N, F, 1);
                             var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
                             local_shader_buf.load(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[ov.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
                             shaded_px += try RasterBackend.RasterEngine(
                                 GK,
                                 SK,
@@ -574,10 +558,6 @@ pub fn rasterTileCore(
                                 ov.elem_idx * 2 * N,
                                 2,
                             );
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[ov.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
 
                             shaded_px += try RasterBackend.RasterEngine(
                                 GK,
@@ -605,10 +585,6 @@ pub fn rasterTileCore(
                                 ov.elem_idx * 2 * N,
                                 2,
                             );
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[ov.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
 
                             shaded_px += try RasterBackend.RasterEngine(
                                 GK,
@@ -632,10 +608,6 @@ pub fn rasterTileCore(
                             const SK = shadekerns.TexKernel(N, F, 3);
                             var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
                             local_shader_buf.load(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[ov.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
                             shaded_px += try RasterBackend.RasterEngine(
                                 GK,
                                 SK,
@@ -667,21 +639,22 @@ pub fn rasterTileCore(
                                 },
                                 .world_reference => {
                                     local_shader_buf.loadFuncCoords(
-                                        shader.elem_world_ref.?,
+                                        shader.hit_geometry.coords_ref.?,
                                         ov.elem_idx * 3 * N,
                                         3,
                                     );
                                 },
                                 .world_deformed => {
                                     local_shader_buf.loadFuncCoords(
-                                        shader.elem_world_def.?,
+                                        shader.hit_geometry.coords_def.?,
                                         ov.elem_idx * 3 * N,
                                         3,
                                     );
                                 },
                                 .para => {},
                             }
-                            if (shader.elem_normals) |en| {
+                            if (shader.needs_normal) {
+                                const en = shader.hit_geometry.surf_norm.?;
                                 const prep_idx = en.map[ov.elem_idx];
                                 local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
@@ -717,21 +690,22 @@ pub fn rasterTileCore(
                                 },
                                 .world_reference => {
                                     local_shader_buf.loadFuncCoords(
-                                        shader.elem_world_ref.?,
+                                        shader.hit_geometry.coords_ref.?,
                                         ov.elem_idx * 3 * N,
                                         3,
                                     );
                                 },
                                 .world_deformed => {
                                     local_shader_buf.loadFuncCoords(
-                                        shader.elem_world_def.?,
+                                        shader.hit_geometry.coords_def.?,
                                         ov.elem_idx * 3 * N,
                                         3,
                                     );
                                 },
                                 .para => {},
                             }
-                            if (shader.elem_normals) |en| {
+                            if (shader.needs_normal) {
+                                const en = shader.hit_geometry.surf_norm.?;
                                 const prep_idx = en.map[ov.elem_idx];
                                 local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }

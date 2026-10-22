@@ -21,6 +21,7 @@ const imageops = @import("imageops.zig");
 const texops = @import("textureops.zig");
 const meshio = @import("meshio.zig");
 const shaderpipe = @import("shaderpipe.zig");
+const meshhit = @import("meshhit.zig");
 pub const shaderfunc = @import("shaderfunc.zig");
 
 // --------------------------------------------------------------------------------------
@@ -28,17 +29,7 @@ pub const shaderfunc = @import("shaderfunc.zig");
 // --------------------------------------------------------------------------------------
 
 pub const ScaleOver = enum { within_frames, over_frames };
-pub const NormalType = enum { none, exact, avg };
 pub const CameraShaderSelection = enum(u8) { direct, mono, rgb, ir, multifield };
-pub const MeshHitField = enum { coords_ref, coords_def, surf_norm };
-pub const MeshHitSelection = std.EnumSet(MeshHitField);
-
-pub const HitGeometryPrepared = struct {
-    selection: MeshHitSelection = MeshHitSelection.initEmpty(),
-    coords_ref: ?ndarray.NDArray(F) = null,
-    coords_def: ?ndarray.NDArray(F) = null,
-    surf_norm: ?ndarray.MappedNDArray(F) = null,
-};
 
 pub const GreyToEmissivityStage = shaderpipe.GreyToEmissivityStage;
 pub const ClampStage = shaderpipe.ClampStage;
@@ -225,7 +216,6 @@ pub const NodalPrepared = struct {
     scale_over: ScaleOver = .over_frames,
     scale_mul: F = 1.0,
     scale_add: F = 0.0,
-    elem_normals: ?ndarray.MappedNDArray(F) = null,
 };
 
 pub fn TexPrepared(comptime T: type, comptime C: usize) type {
@@ -240,14 +230,12 @@ pub fn TexPrepared(comptime T: type, comptime C: usize) type {
         scaling: imageops.ScaleStrategy = .none,
         scale_mul: F = 1.0,
         scale_add: F = 0.0,
-        elem_normals: ?ndarray.MappedNDArray(F) = null,
     };
 }
 
 pub const FuncPrepared = struct {
     elem_uvs: ?ndarray.NDArray(F),
-    elem_world_ref: ?ndarray.NDArray(F) = null,
-    elem_world_def: ?ndarray.NDArray(F) = null,
+    hit_geometry: meshhit.MeshHitGeomPrepared = .{},
     coord_mode: FuncCoordMode = .para,
     builtin: FuncShaderBuiltin,
     params: FuncShaderParams = .{},
@@ -256,7 +244,6 @@ pub const FuncPrepared = struct {
     scale_mul: F = 1.0,
     scale_add: F = 0.0,
     needs_normal: bool = false,
-    elem_normals: ?ndarray.MappedNDArray(F) = null,
 };
 
 pub const ShaderDirectPrepared = union(enum) {
@@ -282,7 +269,7 @@ pub const ShaderPipePrepared = struct {
     resolver: shaderpipe.Resolver,
     constants: []const F,
     channels: u8,
-    hit_geometry: HitGeometryPrepared = .{},
+    hit_geometry: meshhit.MeshHitGeomPrepared = .{},
 };
 
 pub const MeshShaderSetPrepared = struct {
@@ -432,25 +419,6 @@ pub const ShadeContext = struct {
     global_suby: usize,
     v_mask_active: ?VecSB = null,
     exclusive_subpx_target: bool = false,
-};
-
-pub fn MeshHit(comptime N: usize) type {
-    return struct {
-        weights: [N]F,
-        nodes_inv_z: [N]F,
-        sub_pixel_z: F,
-        xi: F,
-        eta: F,
-        coords_ref: ?[3]F = null,
-        coords_def: ?[3]F = null,
-        surf_norm: ?[3]F = null,
-    };
-}
-
-pub const VectorMeshHit = struct {
-    coords_ref: ?[3]VecSF = null,
-    coords_def: ?[3]VecSF = null,
-    surf_norm: ?[3]VecSF = null,
 };
 
 // --------------------------------------------------------------------------------------

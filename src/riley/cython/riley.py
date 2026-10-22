@@ -212,7 +212,6 @@ class RasterConfig:
     full_stats_save_depth_map: bool = True
     full_stats_save_earlyout_map: bool = True
     full_stats_save_pixel_occupancy_map: bool = True
-    full_stats_save_normals_map: bool = False
     buffer_mode: int = 0
     output_name_format: str = "cam{camera}_frame{frame}_field{field}"
     edge_spacing_px: float = 1.0
@@ -839,9 +838,6 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
     )
     config_out.full_stats_save_pixel_occupancy_map = int(
         config.full_stats_save_pixel_occupancy_map,
-    )
-    config_out.full_stats_save_normals_map = int(
-        config.full_stats_save_normals_map,
     )
     config_out.buffer_mode = int(config.buffer_mode)
     config_out.edge_spacing_px = float(config.edge_spacing_px)

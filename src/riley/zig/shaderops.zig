@@ -16,10 +16,6 @@ const simd_impl = @import("shaderops_simd.zig");
 // --------------------------------------------------------------------------------------
 
 pub const ScaleOver = comm.ScaleOver;
-pub const NormalType = comm.NormalType;
-pub const MeshHitField = comm.MeshHitField;
-pub const MeshHitSelection = comm.MeshHitSelection;
-pub const HitGeometryPrepared = comm.HitGeometryPrepared;
 pub const FuncCoordMode = comm.FuncCoordMode;
 pub const FuncShaderBuiltin = comm.FuncShaderBuiltin;
 pub const FuncShaderParams = comm.FuncShaderParams;
@@ -31,8 +27,6 @@ pub const TexPrepared = comm.TexPrepared;
 pub const FuncInput = comm.FuncInput;
 pub const FuncPrepared = comm.FuncPrepared;
 pub const ShadeContext = comm.ShadeContext;
-pub const MeshHit = comm.MeshHit;
-pub const VectorMeshHit = comm.VectorMeshHit;
 pub const ShaderDirectInput = comm.ShaderDirectInput;
 pub const CameraShaderSelection = comm.CameraShaderSelection;
 pub const MeshShaderSetInput = comm.MeshShaderSetInput;

@@ -11,6 +11,7 @@ const F = buildconfig.F;
 const matslice = @import("matslice.zig");
 const texops = @import("textureops.zig");
 const comm = @import("shaderops_common.zig");
+const meshhit = @import("meshhit.zig");
 
 // --------------------------------------------------------------------------------------
 // Nodal Interp Shader
@@ -19,7 +20,7 @@ const comm = @import("shaderops_common.zig");
 pub inline fn fillNodalClipScal(
     comptime N: usize,
     ctx_shade: comm.ShadeContext,
-    interp: comm.MeshHit(N),
+    interp: meshhit.RasterHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.NodalPrepared,
     spx_img_scratch: *matslice.MatSlice(F),
@@ -34,7 +35,7 @@ pub inline fn fillNodalClipScal(
 pub inline fn fillNodalPerspScal(
     comptime N: usize,
     ctx_shade: comm.ShadeContext,
-    interp: comm.MeshHit(N),
+    interp: meshhit.RasterHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.NodalPrepared,
     spx_img_scratch: *matslice.MatSlice(F),
@@ -64,7 +65,7 @@ pub inline fn fillTexClipScal(
     comptime C: usize,
     comptime samp_cfg: texops.TexSampConfig,
     ctx_shade: comm.ShadeContext,
-    interp: comm.MeshHit(N),
+    interp: meshhit.RasterHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.TexPrepared(T, C),
     spx_img_scratch: *matslice.MatSlice(F),
@@ -96,7 +97,7 @@ pub inline fn fillTexPerspScal(
     comptime C: usize,
     comptime samp_cfg: texops.TexSampConfig,
     ctx_shade: comm.ShadeContext,
-    interp: comm.MeshHit(N),
+    interp: meshhit.RasterHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.TexPrepared(T, C),
     spx_img_scratch: *matslice.MatSlice(F),
@@ -129,7 +130,7 @@ pub inline fn fillTexPerspScal(
 
 inline fn getFuncCoord(
     comptime N: usize,
-    interp: comm.MeshHit(N),
+    interp: meshhit.MeshHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     needs_normal: bool,
 ) comm.FuncCoord {
@@ -164,7 +165,7 @@ inline fn setCoordValues(
 
 inline fn resolveFuncCoordsClip(
     comptime N: usize,
-    interp: comm.MeshHit(N),
+    interp: meshhit.MeshHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.FuncPrepared,
 ) struct { coord_0: F, coord_1: F } {
@@ -196,7 +197,7 @@ inline fn resolveFuncCoordsClip(
 
 inline fn resolveFuncCoordsPersp(
     comptime N: usize,
-    interp: comm.MeshHit(N),
+    interp: meshhit.MeshHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.FuncPrepared,
 ) struct { coord_0: F, coord_1: F } {
@@ -235,7 +236,7 @@ pub inline fn fillFuncClipScal(
     comptime N: usize,
     comptime C: usize,
     ctx_shade: comm.ShadeContext,
-    interp: comm.MeshHit(N),
+    interp: meshhit.MeshHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.FuncPrepared,
     spx_img_scratch: *matslice.MatSlice(F),
@@ -272,7 +273,7 @@ pub inline fn fillFuncPerspScal(
     comptime N: usize,
     comptime C: usize,
     ctx_shade: comm.ShadeContext,
-    interp: comm.MeshHit(N),
+    interp: meshhit.MeshHit(N),
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.FuncPrepared,
     spx_img_scratch: *matslice.MatSlice(F),

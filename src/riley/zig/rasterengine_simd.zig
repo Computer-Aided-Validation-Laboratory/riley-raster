@@ -881,7 +881,7 @@ fn rasterNewtonMultiSIMDImpl(
                 ),
             };
 
-            const interp_data = shaderops.MeshHit(N){
+            const interp_data = ShaderKern.Hit{
                 .weights = weights,
                 .nodes_inv_z = nodes_inv_z,
                 .sub_pixel_z = 1.0 / inv_z,
