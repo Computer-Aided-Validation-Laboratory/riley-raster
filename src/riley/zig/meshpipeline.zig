@@ -1778,28 +1778,28 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         ) !void {
             switch (self.camera.shader_selection) {
                 .direct => if (self.mesh_static.shaders.direct) |shader| {
-                    mesh_prep.shaders.direct = try self.prepareShaderStatic(
+                    mesh_prep.shaders.direct = try self.prepareShaderDirect(
                         outer_alloc,
                         shader,
                         self.scaling_params,
                     );
                 },
                 .mono => if (self.mesh_static.shaders.mono) |pipe| {
-                    mesh_prep.shaders.mono = try self.preparePipeStatic(outer_alloc, pipe);
+                    mesh_prep.shaders.mono = try self.prepareShaderPipe(outer_alloc, pipe);
                 },
                 .rgb => if (self.mesh_static.shaders.rgb) |pipe| {
-                    mesh_prep.shaders.rgb = try self.preparePipeStatic(outer_alloc, pipe);
+                    mesh_prep.shaders.rgb = try self.prepareShaderPipe(outer_alloc, pipe);
                 },
                 .ir => if (self.mesh_static.shaders.ir) |pipe| {
-                    mesh_prep.shaders.ir = try self.preparePipeStatic(outer_alloc, pipe);
+                    mesh_prep.shaders.ir = try self.prepareShaderPipe(outer_alloc, pipe);
                 },
                 .multifield => if (self.mesh_static.shaders.multifield) |pipe| {
-                    mesh_prep.shaders.multifield = try self.preparePipeStatic(outer_alloc, pipe);
+                    mesh_prep.shaders.multifield = try self.prepareShaderPipe(outer_alloc, pipe);
                 },
             }
         }
 
-        fn preparePipeStatic(
+        fn prepareShaderPipe(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
             pipe: shaderops.ShaderPipeStatic,
@@ -1811,7 +1811,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             for (pipe.stages, 0..) |stage, si| {
                 stages[si] = switch (stage) {
                     .source => |src| blk: {
-                        var prepared_shader = try self.prepareShaderStatic(
+                        var prepared_shader = try self.prepareShaderDirect(
                             outer_alloc,
                             src.shader,
                             if (src.shader == .nodal and src.global_scaling == null)
@@ -1845,7 +1845,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             };
         }
 
-        fn prepareShaderStatic(
+        fn prepareShaderDirect(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
             shader_static: shaderops.ShaderDirectStatic,

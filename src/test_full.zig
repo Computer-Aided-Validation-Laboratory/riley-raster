@@ -22,6 +22,7 @@ const scene_camera_threads_suite = @import(
 );
 const image_output_suite = @import("tests/test_full_image_output.zig");
 const shaderpipe_suite = @import("tests/test_full_shaderpipe.zig");
+const maths_simd_suite = @import("tests/test_full_maths_simd.zig");
 
 test "full test suite" {
     const allocator = std.testing.allocator;
@@ -55,6 +56,12 @@ test "full test suite" {
         allocator,
         io,
         image_output_suite.run,
+    );
+    try testsuites.runSuite(
+        "maths_simd",
+        allocator,
+        io,
+        maths_simd_suite.run,
     );
 
     const end = std.Io.Clock.Timestamp.now(io, .awake);
