@@ -15,10 +15,12 @@ const uvio = @import("../riley/zig/uvio.zig");
 const csvio = @import("../riley/zig/csvio.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const so = @import("../riley/zig/shaderops.zig");
+const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
 const DistortParams = @import("../riley/zig/camera.zig").DistortParams;
+const SubPixelCenterMap = @import("../riley/zig/camera.zig").SubPixelCenterMap;
 const cameraops = @import("../riley/zig/cameraops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const report = @import("../riley/zig/report.zig");
@@ -319,7 +321,7 @@ pub fn writeBenchmarkConfig(
     image_out_dir_base: []const u8,
     benchmark_name: []const u8,
     argv: anytype,
-    subpixel_center_map: @import("../riley/zig/camera.zig").SubPixelCenterMap,
+    subpixel_center_map: SubPixelCenterMap,
     config: rastcfg.RasterConfig,
     render_group_workers: []const u16,
     pixel_num: [2]u32,
@@ -439,11 +441,13 @@ pub const ShaderType = enum {
     func_rgb,
 };
 const TextureSampleConfig = @import("../riley/zig/textureops.zig").TextureSampleConfig;
-pub const TexFuncCoordMode = enum { uv, param };
+pub const TexFuncCoordMode = enum { uv, param, world_reference };
 pub const TexFuncCase = struct {
     builtin: so.FuncShaderBuiltin,
     coord_mode: TexFuncCoordMode,
 };
+
+pub const BenchShaderPath = enum { direct, one_stage_pipe, multi_source_pipe };
 
 pub const BenchRenderDefaults = struct {
     pixels_num: [2]u32,
@@ -453,6 +457,7 @@ pub const BenchRenderDefaults = struct {
     fov_scale: F,
     rot: Rotation,
     distort: DistortParams = .none,
+    shader_path: BenchShaderPath = .direct,
 };
 
 pub const RunMode = enum { all, element, texture, interpolator };
@@ -657,7 +662,7 @@ pub fn loadBenchmarkMeshInput(
         null,
         null,
     );
-    var shader: so.ShaderInput = undefined;
+    var shader: so.ShaderDirectInput = undefined;
     switch (shader_type) {
         .nodal_grey, .nodal_rgb => {
             const field_raw = try loadNDArrayFromCSV(
@@ -732,12 +737,15 @@ pub fn loadBenchmarkMeshInput(
                 null;
             shader = .{ .func = .{
                 .uvs = tex_func_uvs,
-                .coord_mode = if (tex_case.coord_mode == .uv) .uv else .para,
+                .coord_mode = switch (tex_case.coord_mode) {
+                    .uv => .uv,
+                    .param => .para,
+                    .world_reference => .world_reference,
+                },
                 .builtin = tex_case.builtin,
                 .params = calcTexFuncParams(tex_case),
                 .bits = 8,
                 .scaling = .none,
-                .normal_type = .none,
             } };
         },
         .func_rgb => {
@@ -754,12 +762,15 @@ pub fn loadBenchmarkMeshInput(
                 null;
             shader = .{ .func_rgb = .{
                 .uvs = tex_func_uvs,
-                .coord_mode = if (tex_case.coord_mode == .uv) .uv else .para,
+                .coord_mode = switch (tex_case.coord_mode) {
+                    .uv => .uv,
+                    .param => .para,
+                    .world_reference => .world_reference,
+                },
                 .builtin = tex_case.builtin,
                 .params = calcTexFuncParams(tex_case),
                 .bits = 8,
                 .scaling = .none,
-                .normal_type = .none,
             } };
         },
     }
@@ -769,7 +780,7 @@ pub fn loadBenchmarkMeshInput(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = shader,
+        .shaders = .{ .direct = shader },
     };
 }
 
@@ -930,7 +941,7 @@ fn runBenchmarkInternal(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const mesh_input = try loadBenchmarkMeshInput(
+    var mesh_input = try loadBenchmarkMeshInput(
         T,
         aa,
         io,
@@ -943,6 +954,50 @@ fn runBenchmarkInternal(
         texture_rgb,
     );
     _ = calcOutputChannels(shader_type);
+
+    const output_slot: shaderpipe.Slot = .{ .kind = .channel, .index = 0 };
+    const pipe_stages = [_]so.ShaderPipeStageInput{.{ .source = .{
+        .shader = mesh_input.shaders.direct.?,
+        .destination = output_slot,
+    } }};
+    const pipe_slots = [_]shaderpipe.Slot{output_slot};
+    var deformed_shader = mesh_input.shaders.direct.?;
+    if (render_defaults.shader_path == .multi_source_pipe) {
+        std.debug.assert(deformed_shader == .func);
+        deformed_shader.func.coord_mode = .world_deformed;
+    }
+    const multi_stages = [_]so.ShaderPipeStageInput{
+        .{ .source = .{
+            .shader = mesh_input.shaders.direct.?,
+            .destination = .{ .kind = .channel, .index = 0 },
+        } },
+        .{ .source = .{
+            .shader = deformed_shader,
+            .destination = .{ .kind = .channel, .index = 1 },
+        } },
+        .{ .source = .{
+            .shader = mesh_input.shaders.direct.?,
+            .destination = .{ .kind = .channel, .index = 2 },
+        } },
+    };
+    const multi_slots = [_]shaderpipe.Slot{
+        .{ .kind = .channel, .index = 0 },
+        .{ .kind = .channel, .index = 1 },
+        .{ .kind = .channel, .index = 2 },
+    };
+    if (render_defaults.shader_path == .one_stage_pipe) {
+        std.debug.assert(calcOutputChannels(shader_type) == 1);
+        mesh_input.shaders = .{ .mono = .{
+            .stages = &pipe_stages,
+            .resolver = .{ .identity = &pipe_slots },
+        } };
+    } else if (render_defaults.shader_path == .multi_source_pipe) {
+        std.debug.assert(calcOutputChannels(shader_type) == 1);
+        mesh_input.shaders = .{ .mono = .{
+            .stages = &multi_stages,
+            .resolver = .{ .sum = &multi_slots },
+        } };
+    }
 
     const roi_pos = sceneops.boundsCenter(&mesh_input.coords);
     const cam_pos = cameraops.posFillFrameFromRot(
@@ -975,7 +1030,10 @@ fn runBenchmarkInternal(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .distort = render_defaults.distort,
+        .shader_selection = if (render_defaults.shader_path != .direct)
+            .mono
+        else
+            .direct,
     };
 
     var config_run = config;
@@ -1154,6 +1212,13 @@ fn calcTexFuncParams(tex_func_case: TexFuncCase) so.FuncShaderParams {
     const wave_num = 2.0 * pi * oscillations;
 
     return switch (tex_func_case.builtin) {
+        .checker => .{
+            .coord_scale = if (tex_func_case.coord_mode == .world_reference)
+                .{ 1000.0, 1000.0 }
+            else
+                .{ 8.0, 8.0 },
+            .settings = .{ .checker = .{} },
+        },
         .sinusoidal => .{
             .settings = .{
                 .sinusoidal = .{

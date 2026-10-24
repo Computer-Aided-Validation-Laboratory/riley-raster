@@ -45,7 +45,7 @@ def main() -> None:
         riley.MeshType.tri3opt,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(direct=shader),
     )
 
     # --------------------------------------------------------------------------

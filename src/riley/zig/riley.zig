@@ -189,6 +189,7 @@ pub fn rasterAdvanced(
         valid_summary,
         time_start_render,
     );
+
     return images_arr_opt;
 }
 
@@ -271,8 +272,18 @@ pub fn calcAllFramesImageDims(
     std.debug.assert(cam_inps.len > 0);
     std.debug.assert(meshes.len > 0);
 
-    const num_time = meshpipe.countFrames(meshes);
-    const raw_num_fields = meshpipe.countOutputFields(meshes);
+    for (cam_inps) |camera| {
+        var compatible = false;
+        for (meshes) |mesh| {
+            if (shaderops.hasShader(mesh.shaders, camera.shader_selection)) {
+                compatible = true;
+            }
+        }
+        if (!compatible) return error.NoCompatibleShader;
+    }
+
+    const num_time = meshpipe.countFrames(meshes, cam_inps);
+    const raw_num_fields = meshpipe.countOutputFields(meshes, cam_inps);
     const num_fields = try valinp.calcOutFieldsForImgSaveMode(
         config.output.image_save_mode,
         raw_num_fields,
@@ -302,7 +313,7 @@ fn resolveRenderParallelPlan(
     meshes: []const meshpipe.MeshInput,
     config: RasterConfig,
 ) RenderParallelPlan {
-    const num_time = meshpipe.countFrames(meshes);
+    const num_time = meshpipe.countFrames(meshes, cam_inps);
     const total_elems = meshpipe.countMeshInputElems(meshes);
     const workload = ParallelWorkload{
         .camera_count = cam_inps.len,
@@ -361,6 +372,7 @@ fn rasterIntoValidated(
     // Init. static data across all frames - here we reshape uv's once if we have them so
     // we don't need to do this every frames
     const mesh_static = try initMeshStaticSlice(static_alloc, meshes);
+    const camera_meshes = try initCameraMeshSelections(static_alloc, cams, mesh_static);
     const nodal_glob_scaling = try initNodalGlobalScaling(outer_alloc, meshes);
     defer outer_alloc.free(nodal_glob_scaling);
 
@@ -395,7 +407,7 @@ fn rasterIntoValidated(
             out_dir_path,
             num_time,
             num_fields,
-            mesh_static,
+            camera_meshes,
             nodal_glob_scaling,
             images_arr,
             bench_capt,
@@ -410,7 +422,7 @@ fn rasterIntoValidated(
             out_dir_path,
             num_time,
             num_fields,
-            mesh_static,
+            camera_meshes,
             nodal_glob_scaling,
             images_arr,
             bench_capt,
@@ -506,7 +518,7 @@ const OfflineDispatchShared = struct {
     out_dir_path: ?[]const u8,
     num_time: usize,
     num_fields: u8,
-    mesh_static: []const meshpipe.MeshStatic,
+    camera_meshes: []const []const meshpipe.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
@@ -525,7 +537,7 @@ fn dispatchFrameJobsOffline(
     out_dir_path: ?[]const u8,
     num_time: usize,
     num_fields: u8,
-    mesh_static: []const meshpipe.MeshStatic,
+    camera_meshes: []const []const meshpipe.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
@@ -539,11 +551,11 @@ fn dispatchFrameJobsOffline(
         .out_dir_path = out_dir_path,
         .num_time = num_time,
         .num_fields = num_fields,
-        .mesh_static = mesh_static,
+        .camera_meshes = camera_meshes,
         .nodal_global_scaling = nodal_global_scaling,
         .images_arr = images_arr,
         .bench_capture = bench_capture,
-        .total_scene_elems = meshpipe.countStaticMeshElems(mesh_static),
+        .total_scene_elems = maxCameraMeshElems(camera_meshes),
         .batch_size = 1,
         .err_state = &err_state,
     };
@@ -623,7 +635,7 @@ fn processOfflineRenderGroupLoop(
             shared.out_dir,
             shared.out_dir_path,
             shared.num_fields,
-            shared.mesh_static,
+            shared.camera_meshes,
             shared.nodal_global_scaling,
             shared.images_arr,
             shared.bench_capture,
@@ -665,7 +677,7 @@ const InOrderDispatchShared = struct {
     out_dir_path: ?[]const u8,
     frame_idx: usize,
     num_fields: u8,
-    mesh_static: []const meshpipe.MeshStatic,
+    camera_meshes: []const []const meshpipe.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
@@ -685,12 +697,12 @@ fn dispatchFrameJobsInOrder(
     out_dir_path: ?[]const u8,
     num_time: usize,
     num_fields: u8,
-    mesh_static: []const meshpipe.MeshStatic,
+    camera_meshes: []const []const meshpipe.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
-    const total_scene_elems = meshpipe.countStaticMeshElems(mesh_static);
+    const total_scene_elems = maxCameraMeshElems(camera_meshes);
     const batch_size = 1;
 
     for (0..num_time) |frame_idx| {
@@ -703,7 +715,7 @@ fn dispatchFrameJobsInOrder(
             .out_dir_path = out_dir_path,
             .frame_idx = frame_idx,
             .num_fields = num_fields,
-            .mesh_static = mesh_static,
+            .camera_meshes = camera_meshes,
             .nodal_global_scaling = nodal_global_scaling,
             .images_arr = images_arr,
             .bench_capture = bench_capture,
@@ -794,7 +806,7 @@ fn processInOrderRenderGroupLoop(
             shared.out_dir,
             shared.out_dir_path,
             shared.num_fields,
-            shared.mesh_static,
+            shared.camera_meshes,
             shared.nodal_global_scaling,
             shared.images_arr,
             shared.bench_capture,
@@ -835,7 +847,7 @@ fn prepareJobBatch(
     out_dir: ?std.Io.Dir,
     out_dir_path: ?[]const u8,
     num_fields: u8,
-    mesh_static: []const meshpipe.MeshStatic,
+    camera_meshes: []const []const meshpipe.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
@@ -850,6 +862,7 @@ fn prepareJobBatch(
     for (job_indices, 0..) |job_idx, ii| {
         const frame_idx = @divFloor(job_idx, cameras.len);
         const camera_idx = @mod(job_idx, cameras.len);
+
         jobs[ii] = PreparedFrameJob.init(
             group_alloc,
             .{
@@ -860,7 +873,7 @@ fn prepareJobBatch(
                 .config = config,
                 .out_dir = out_dir,
                 .out_dir_path = out_dir_path,
-                .mesh_static = mesh_static,
+                .mesh_static = camera_meshes[camera_idx],
                 .nodal_global_scaling = nodal_global_scaling,
                 .images_arr = images_arr,
                 .bench_capture = bench_capture,
@@ -1028,6 +1041,7 @@ fn processRasterBatch(
         @as(u16, 1)
     else
         @max(@as(u16, 1), group_workers);
+
     for (jobs) |*job| {
         defer job.deinit(group_alloc);
 
@@ -1230,9 +1244,11 @@ fn runRasterStage(
     raster_workers: u16,
 ) !void {
     const arena_alloc = job.arena.allocator();
+
     const time_start_fb = Timestamp.now(io, .awake);
     try prepareFrameBuff(arena_alloc, &job.desc, &job.ctx);
     const time_end_fb = Timestamp.now(io, .awake);
+
     job.ctx.frame_times.setup_frame_buff = @floatFromInt(
         time_start_fb.durationTo(time_end_fb).raw.nanoseconds,
     );
@@ -1347,7 +1363,7 @@ fn initNodalGlobalScaling(
 
     for (meshes, 0..) |mesh, ii| {
         nodal_global_scaling[ii] = null;
-        switch (mesh.shader) {
+        if (mesh.shaders.direct) |shader| switch (shader) {
             .nodal => |s| {
                 if (s.scale_over == .over_frames) {
                     nodal_global_scaling[ii] = imageops.getScalingParamsNDArray(
@@ -1358,7 +1374,7 @@ fn initNodalGlobalScaling(
                 }
             },
             else => {},
-        }
+        };
     }
 
     return nodal_global_scaling;
@@ -1372,9 +1388,64 @@ fn initMeshStaticSlice(
 
     for (meshes, 0..) |mesh, ii| {
         mesh_static[ii] = try meshpipe.initMeshStatic(allocator, &mesh);
+        mesh_static[ii].scene_mesh_idx = ii;
     }
 
     return mesh_static;
+}
+
+fn initCameraMeshSelections(
+    allocator: std.mem.Allocator,
+    cameras: []const cam.CameraPrepared,
+    mesh_static: []const meshpipe.MeshStatic,
+) ![]const []const meshpipe.MeshStatic {
+    const camera_meshes = try allocator.alloc(
+        []const meshpipe.MeshStatic,
+        cameras.len,
+    );
+
+    for (cameras, 0..) |*camera, cc| {
+        for (cameras[0..cc], 0..) |*previous, pp| {
+            if (previous.shader_selection == camera.shader_selection) {
+                camera_meshes[cc] = camera_meshes[pp];
+                break;
+            }
+        } else {
+            var count: usize = 0;
+            for (mesh_static) |*mesh| {
+                if (shaderops.hasShader(mesh.shaders, camera.shader_selection)) {
+                    count += 1;
+                }
+            }
+            if (count == 0) return error.NoCompatibleShader;
+
+            if (count == mesh_static.len) {
+                camera_meshes[cc] = mesh_static;
+                continue;
+            }
+
+            const selected = try allocator.alloc(meshpipe.MeshStatic, count);
+            var nn: usize = 0;
+            for (mesh_static) |*mesh| {
+                if (!shaderops.hasShader(mesh.shaders, camera.shader_selection)) {
+                    continue;
+                }
+                selected[nn] = mesh.*;
+                nn += 1;
+            }
+            camera_meshes[cc] = selected;
+        }
+    }
+
+    return camera_meshes;
+}
+
+fn maxCameraMeshElems(camera_meshes: []const []const meshpipe.MeshStatic) usize {
+    var max_elems: usize = 0;
+    for (camera_meshes) |meshes| {
+        max_elems = @max(max_elems, meshpipe.countStaticMeshElems(meshes));
+    }
+    return max_elems;
 }
 
 fn calcAllFramesDimsFromPixels(
@@ -2010,6 +2081,7 @@ fn saveFrame(
             &output_frame_arr,
             saveoverlap.imageSaveChannelsOverride(input.config.output.image_save_mode),
             input.config.output.image_save_opts,
+            input.camera.output_encoding,
             input.config.output_name_format,
         );
     }

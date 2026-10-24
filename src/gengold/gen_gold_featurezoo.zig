@@ -20,7 +20,8 @@ const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const riley = @import("../riley/zig/riley.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const sceneops = @import("../riley/zig/sceneops.zig");
-const shaderops = @import("../riley/zig/shaderops_common.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
+const normals = @import("../riley/zig/normals.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 const texops = @import("../riley/zig/textureops.zig");
 const uvio = @import("../riley/zig/uvio.zig");
@@ -113,8 +114,7 @@ fn textureShader(
     uvs: uvio.UVMap,
     comptime bits: u8,
     linear: bool,
-    normal_type: shaderops.NormalType,
-) shaderops.ShaderInput {
+) shaderops.ShaderDirectInput {
     const samp_cfg = texops.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
@@ -125,7 +125,6 @@ fn textureShader(
         .samp_cfg = samp_cfg,
         .bits = bits,
         .scaling = .auto,
-        .normal_type = normal_type,
     };
     if (C == 1 and T == u8) return .{ .tex_u8 = input };
     if (C == 3 and T == u8) return .{ .tex_rgb_u8 = input };
@@ -174,13 +173,13 @@ fn loadZooMesh(
     const temp = try sliceFieldToTwoFrames(allocator, raw_temp);
     const disp = try sliceFieldToTwoFrames(allocator, raw_disp);
 
-    const normal_type: shaderops.NormalType = switch (case_index % 3) {
+    const normal_type: normals.NormalType = switch (case_index % 3) {
         0 => .none,
         1 => .exact,
         else => .avg,
     };
 
-    const shader: shaderops.ShaderInput = switch (case_index) {
+    const shader: shaderops.ShaderDirectInput = switch (case_index) {
         0, 2 => textureShader(
             T,
             C,
@@ -188,7 +187,6 @@ fn loadZooMesh(
             uvs,
             bits,
             case_index != 0,
-            normal_type,
         ),
         1, 5 => blk: {
             const field = if (C == 1)
@@ -203,7 +201,6 @@ fn loadZooMesh(
                     .over_frames
                 else
                     .within_frames,
-                .normal_type = normal_type,
             } };
         },
         3, 4 => blk: {
@@ -228,7 +225,6 @@ fn loadZooMesh(
                 .params = params,
                 .bits = bits,
                 .scaling = .auto,
-                .normal_type = normal_type,
             };
             break :blk if (C == 1)
                 .{ .func = input }
@@ -240,10 +236,11 @@ fn loadZooMesh(
 
     return .{
         .mesh_type = case.mesh_type,
+        .normal_type = normal_type,
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = if (case_index % 2 == 1) disp else null,
-        .shader = shader,
+        .shaders = .{ .direct = shader },
     };
 }
 

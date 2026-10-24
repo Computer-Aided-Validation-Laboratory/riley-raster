@@ -263,7 +263,7 @@ def test_create_mesh_builds_and_renders_for_all_supported_surface_types(
         mesh_type,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(direct=shader),
     )
     assert mesh.mesh_type == mesh_type
 
@@ -321,7 +321,7 @@ def test_create_mesh_converts_volume_hex8_to_quad4() -> None:
         riley.MeshType.quad4,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(direct=shader),
     )
     assert mesh.mesh_type == riley.MeshType.quad4
     assert mesh.coords.shape[0] == 8
@@ -344,7 +344,7 @@ def test_create_mesh_converts_volume_tet4_to_tri3() -> None:
         riley.MeshType.tri3,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(direct=shader),
     )
     assert mesh.mesh_type == riley.MeshType.tri3
     assert mesh.coords.shape[0] == 4
@@ -370,7 +370,7 @@ def test_create_mesh_maps_displacements_from_source_volume_to_surface() -> None:
         riley.MeshType.quad4,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(direct=shader),
         disp=(disp_x, disp_y, disp_z),
     )
 
@@ -397,7 +397,7 @@ def test_create_mesh_reduces_order_from_quad8_to_quad4() -> None:
         riley.MeshType.quad4,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(direct=shader),
     )
     assert mesh.mesh_type == riley.MeshType.quad4
     assert mesh.coords.shape[0] == 4
@@ -429,7 +429,7 @@ def test_create_mesh_triangulates_quad8_to_tri3() -> None:
         riley.MeshType.tri3,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(direct=shader),
     )
     assert mesh.mesh_type == riley.MeshType.tri3
     assert mesh.coords.shape[0] == 8
@@ -452,7 +452,7 @@ def test_create_mesh_triangulates_quad4_to_tri3() -> None:
         riley.MeshType.tri3,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(direct=shader),
     )
     assert mesh.mesh_type == riley.MeshType.tri3
     assert mesh.coords.shape[0] == 4
@@ -475,7 +475,7 @@ def test_create_mesh_triangulates_tri6_to_tri3() -> None:
         riley.MeshType.tri3,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(direct=shader),
     )
     assert mesh.mesh_type == riley.MeshType.tri3
     assert mesh.coords.shape[0] == 6
@@ -508,12 +508,12 @@ def test_create_mesh_supports_temporal_fields() -> None:
         riley.MeshType.tri3,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(direct=shader),
         disp=(disp_x, disp_y, disp_z),
     )
     assert mesh.disp is not None
     assert mesh.disp.shape == (3, 3, 3)
-    assert mesh.shader.field.shape == (3, 3, 1)
+    assert mesh.shaders.direct.field.shape == (3, 3, 1)
 
 
 def test_create_mesh_from_prepared_creates_mesh() -> None:
@@ -535,7 +535,7 @@ def test_create_mesh_from_prepared_creates_mesh() -> None:
 
     mesh = riley.create_mesh_from_prepared(
         conversion,
-        shader,
+        riley.MeshShaderSet(direct=shader),
     )
     assert mesh.mesh_type == riley.MeshType.tri3
     assert mesh.coords.shape == (3, 3)

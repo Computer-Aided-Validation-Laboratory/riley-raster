@@ -569,7 +569,7 @@ pub fn main(init: std.process.Init) !void {
                     };
 
                     // Function shader: eggbox grid with 5 pixels per period (0.1 world units)
-                    const shader_input = shaderops.ShaderInput{
+                    const shader_input = shaderops.ShaderDirectInput{
                         .func = .{
                             .builtin = .eggbox,
                             .coord_mode = .world_reference,
@@ -604,7 +604,7 @@ pub fn main(init: std.process.Init) !void {
                         .coords = sim_data.coords,
                         .connect = sim_data.connect,
                         .disp = disp_field,
-                        .shader = shader_input,
+                        .shaders = .{ .direct = shader_input },
                     };
 
                     const needs_images_arr = base_raster_config.save_strategy == .memory or

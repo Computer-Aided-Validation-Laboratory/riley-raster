@@ -124,8 +124,8 @@ fn duplicateMeshInput(
         }
     }
 
-    var new_shader: shaderops.ShaderInput = undefined;
-    switch (base_mesh.shader) {
+    var new_shader: shaderops.ShaderDirectInput = undefined;
+    switch (base_mesh.shaders.direct.?) {
         .func => |base_func| {
             var new_uvs: ?NDArray(F) = null;
             if (base_func.uvs) |base_uvs| {
@@ -155,7 +155,6 @@ fn duplicateMeshInput(
                     .params = base_func.params,
                     .bits = base_func.bits,
                     .scaling = base_func.scaling,
-                    .normal_type = base_func.normal_type,
                 },
             };
         },
@@ -169,7 +168,7 @@ fn duplicateMeshInput(
         .coords = new_coords,
         .connect = new_connect,
         .disp = null,
-        .shader = new_shader,
+        .shaders = .{ .direct = new_shader },
     };
 }
 

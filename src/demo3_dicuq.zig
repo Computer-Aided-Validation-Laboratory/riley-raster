@@ -91,7 +91,6 @@ pub fn main(init: std.process.Init) !void {
         .report = .{ .mode = .bench },
     };
 
-
     // -------------------------------------------------------------------------
     // 2. Load simulation data, frames, and texture shader
     // -------------------------------------------------------------------------
@@ -146,7 +145,7 @@ pub fn main(init: std.process.Init) !void {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = selected_disp,
-        .shader = .{ .tex_u8 = .{
+        .shaders = .{ .direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = .{
@@ -155,7 +154,7 @@ pub fn main(init: std.process.Init) !void {
             },
             .bits = 8,
             .scaling = .none,
-        } },
+        } } },
     };
 
     // -------------------------------------------------------------------------
@@ -231,7 +230,7 @@ pub fn main(init: std.process.Init) !void {
     const images = try riley.raster(
         outer_alloc,
         io,
-        &.{cam0_in, cam1_in},
+        &.{ cam0_in, cam1_in },
         &.{mesh_input},
         config,
         out_dir_root,

@@ -280,7 +280,7 @@ fn runCase(
         .coords = front_coords_mut,
         .connect = front_sim_data.connect,
         .disp = null,
-        .shader = .{ .func = .{
+        .shaders = .{ .direct = .{ .func = .{
             .uvs = null,
             .coord_mode = .para,
             .builtin = .constant,
@@ -290,15 +290,14 @@ fn runCase(
             },
             .bits = 8,
             .scaling = .none,
-            .normal_type = .none,
-        } },
+        } } },
     };
     var back_mesh = MeshInput{
         .mesh_type = case_spec.back_mesh_type,
         .coords = back_coords_mut,
         .connect = back_sim_data.connect,
         .disp = null,
-        .shader = .{ .func = .{
+        .shaders = .{ .direct = .{ .func = .{
             .uvs = null,
             .coord_mode = .para,
             .builtin = .constant,
@@ -308,8 +307,7 @@ fn runCase(
             },
             .bits = 8,
             .scaling = .none,
-            .normal_type = .none,
-        } },
+        } } },
     };
 
     const temp_meshes = [_]MeshInput{ front_mesh, back_mesh };

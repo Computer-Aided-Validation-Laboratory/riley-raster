@@ -13,7 +13,7 @@ const gk = @import("../riley/zig/geometrykernels.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const orch = @import("../dev_support/orchestration.zig");
-const shaderops = @import("../riley/zig/shaderops_common.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
 
 const F = buildconfig.F;
 const CameraInput = camera.CameraInput;
@@ -241,7 +241,7 @@ pub fn buildCheckerMeshInput(
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shader = .{
+        .shaders = .{ .direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
@@ -249,9 +249,8 @@ pub fn buildCheckerMeshInput(
                 .params = shader_params,
                 .bits = 8,
                 .scaling = .auto,
-                .normal_type = .none,
             },
-        },
+        } },
     };
 }
 

@@ -451,7 +451,6 @@ pub const FullStatsLog = struct {
     dom_violation_map: ?ndarray.NDArray(F) = null,
     pixel_occupancy_map: ?ndarray.NDArray(F) = null,
     depth_map: ?ndarray.NDArray(F) = null,
-    normals_map: ?ndarray.NDArray(F) = null,
     earlyout_map: ?ndarray.NDArray(F) = null,
     tile_timing_map: ?ndarray.NDArray(F) = null,
     tile_density_map: ?ndarray.NDArray(F) = null,
@@ -474,7 +473,6 @@ pub const FullStatsLog = struct {
         if (self.dom_violation_map) |*dmap| dmap.deinit(allocator);
         if (self.pixel_occupancy_map) |*pomap| pomap.deinit(allocator);
         if (self.depth_map) |*dmap| dmap.deinit(allocator);
-        if (self.normals_map) |*nmap| nmap.deinit(allocator);
         if (self.earlyout_map) |*emap| emap.deinit(allocator);
         if (self.tile_timing_map) |*tmap| tmap.deinit(allocator);
         if (self.tile_density_map) |*dmap| dmap.deinit(allocator);
@@ -887,19 +885,6 @@ pub const FullStatsLog = struct {
             );
             for (opts.formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
-            }
-        }
-
-        if (self.normals_map) |*m| {
-            const name = try std.fmt.bufPrint(
-                name_buff[0..],
-                "diag_cam{d}_frame{d}_normals",
-                .{ camera_idx, frame_idx },
-            );
-            for (opts.formats) |opt| {
-                var save_opt = opt;
-                save_opt.channels = 3;
-                try iio.saveImage(io, save_dir, name, m, 0, save_opt);
             }
         }
 
@@ -1355,14 +1340,6 @@ pub fn initFullStatsLog(
         @memset(self.depth_map.?.slice, 0);
     }
 
-    if (opts.save_normals_map) {
-        self.normals_map = try ndarray.NDArray(F).initFlat(
-            allocator,
-            &[_]usize{ 3, sub_pixels_num[0], sub_pixels_num[1] },
-        );
-        @memset(self.normals_map.?.slice, 0);
-    }
-
     if (opts.save_earlyout_map) {
         self.earlyout_map = try ndarray.NDArray(F).initFlat(allocator, &sub_pixels_num);
         @memset(self.earlyout_map.?.slice, 0);
@@ -1781,27 +1758,6 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             }
         }
 
-        pub inline fn recordNormal(
-            self: @This(),
-            global_subx: usize,
-            global_suby: usize,
-            nx: F,
-            ny: F,
-            nz: F,
-        ) void {
-            if (mode == .full_stats) {
-                if (self.log.normals_map) |*nmap| {
-                    const chan_stride = nmap.strides[0];
-                    const row_stride = nmap.strides[1];
-                    const col_idx = global_suby * row_stride + global_subx;
-
-                    nmap.slice[0 * chan_stride + col_idx] = 0.5 * nx + 0.5;
-                    nmap.slice[1 * chan_stride + col_idx] = 0.5 * ny + 0.5;
-                    nmap.slice[2 * chan_stride + col_idx] = 0.5 * nz + 0.5;
-                }
-            }
-        }
-
         pub inline fn recordEarlyOut(
             self: @This(),
             global_subx: usize,
@@ -1871,39 +1827,6 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             }
         }
     };
-}
-
-pub inline fn recordNormalSIMD(
-    comptime nodes_num: usize,
-    comptime lane_num: usize,
-    ctx_report: anytype,
-    ctx_shade: anytype,
-    shader_buf: anytype,
-    v_mask_active: @Vector(lane_num, bool),
-    v_weights: [nodes_num]@Vector(lane_num, F),
-) void {
-    const lane_mask: [lane_num]bool = v_mask_active;
-    inline for (0..lane_num) |ll| {
-        if (lane_mask[ll]) {
-            var normal = [3]F{ 0.0, 0.0, 0.0 };
-            inline for (0..nodes_num) |nn| {
-                normal[0] += v_weights[nn][ll] *
-                    shader_buf.normals[0 * nodes_num + nn];
-                normal[1] += v_weights[nn][ll] *
-                    shader_buf.normals[1 * nodes_num + nn];
-                normal[2] += v_weights[nn][ll] *
-                    shader_buf.normals[2 * nodes_num + nn];
-            }
-
-            ctx_report.recordNormal(
-                ctx_shade.global_subx + ll,
-                ctx_shade.global_suby,
-                normal[0],
-                normal[1],
-                normal[2],
-            );
-        }
-    }
 }
 
 pub fn standardReport(

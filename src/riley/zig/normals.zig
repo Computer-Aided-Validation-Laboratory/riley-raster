@@ -13,10 +13,11 @@ const tol = buildconfig.config.tol;
 const ndarray = @import("ndarray.zig");
 const meshio = @import("meshio.zig");
 const shapefun = @import("shapefun.zig");
-const shaderops = @import("shaderops.zig");
 const pce = @import("parachunkexec.zig");
 const geomkerns = @import("geometrykernels.zig");
 const MeshType = geomkerns.MeshType;
+
+pub const NormalType = enum { none, exact, avg };
 const frontend = @import("rasterfrontend.zig");
 
 // --------------------------------------------------------------------------------------
@@ -182,7 +183,7 @@ pub fn prepVisNormals(
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     vis_orig_elem_inds: []const usize,
-    normal_type: shaderops.NormalType,
+    normal_type: NormalType,
 ) !ndarray.MappedNDArray(F) {
     const N = comptime MT.getNodesNum();
     var prep_normals = try initIdentityMappedNormals(
@@ -404,7 +405,7 @@ pub fn prepVisNormalsThreaded(
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     vis_orig_elem_inds: []const usize,
-    normal_type: shaderops.NormalType,
+    normal_type: NormalType,
     chunk_exec: *pce.ParaChunkExecutor,
     elem_chunk_size: usize,
     vis_chunk_size: usize,
@@ -430,7 +431,7 @@ pub fn prepVisNormalsThreadedN(
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     vis_orig_elem_inds: []const usize,
-    normal_type: shaderops.NormalType,
+    normal_type: NormalType,
     chunk_exec: *pce.ParaChunkExecutor,
     elem_chunk_size: usize,
     vis_chunk_size: usize,

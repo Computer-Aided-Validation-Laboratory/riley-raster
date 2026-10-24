@@ -152,7 +152,7 @@ pub fn RasterEngine(
             coords: *const NDArray(F),
             hull: HullType,
             shader: *const ShaderData,
-            shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
+            shader_buf: *const ShaderKern.LocalBuff,
             subpx_scratch: *ScratchBuffs,
         ) !u64 {
             const sub_samp_u: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -220,7 +220,7 @@ pub fn RasterEngine(
             rast_bounds: RasterBounds,
             nodes_coords: Vec3Slices(F),
             shader: *const ShaderData,
-            shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
+            shader_buf: *const ShaderKern.LocalBuff,
             subpx_scratch: *ScratchBuffs,
         ) !u64 {
             if (comptime GeomKern == geomkerns.Tri3OptKernel()) {
@@ -304,7 +304,7 @@ pub fn rasterDirectScalComm(
     fields_num: u8,
     nodes_coords: frontend.Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
+    shader_buf: *const ShaderKern.LocalBuff,
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
     if (comptime GeomKern.solver_kind == .newton) {
@@ -449,7 +449,7 @@ pub fn rasterDirectScalComm(
                     .global_subx = global_subx,
                     .global_suby = global_suby,
                 },
-                shaderops.InterpData(GeomKern.nodes_num){
+                ShaderKern.Hit{
                     .weights = weights,
                     .nodes_inv_z = nodes_inv_z,
                     .sub_pixel_z = 1.0 / inv_z,
@@ -484,7 +484,7 @@ fn rasterDirectImpl(
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
+    shader_buf: *const ShaderKern.LocalBuff,
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
@@ -525,7 +525,7 @@ fn rasterNewtonImpl(
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
+    shader_buf: *const ShaderKern.LocalBuff,
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
     comptime {
@@ -803,7 +803,7 @@ fn rasterNewtonImpl(
                 .global_subx = global_subx,
                 .global_suby = global_suby,
             };
-            const interp_data = shaderops.InterpData(N){
+            const interp_data = ShaderKern.Hit{
                 .weights = weights,
                 .nodes_inv_z = nodes_inv_z,
                 .sub_pixel_z = subpx_z,
@@ -924,7 +924,7 @@ fn rasterNewtonMultiImpl(
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
+    shader_buf: *const ShaderKern.LocalBuff,
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
     const N = GeomKern.nodes_num;
@@ -1016,7 +1016,7 @@ fn rasterNewtonMultiImpl(
             var best_eta: F = 0;
             var had_candidate_child = false;
 
-            inline for (0..4) |leaf_idx| {
+            for (0..4) |leaf_idx| {
                 const bit = @as(u8, 1) << @as(u3, @intCast(leaf_idx));
                 if ((child_mask & bit) == 0) continue;
                 had_candidate_child = true;
@@ -1090,7 +1090,7 @@ fn rasterNewtonMultiImpl(
                 .global_suby = global_suby,
             };
 
-            const interp_data = shaderops.InterpData(N){
+            const interp_data = ShaderKern.Hit{
                 .weights = weights,
                 .nodes_inv_z = nodes_inv_z,
                 .sub_pixel_z = 1.0 / best_inv_z,
@@ -1127,7 +1127,7 @@ fn rasterSteppedScal(
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
+    shader_buf: *const ShaderKern.LocalBuff,
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -1206,11 +1206,10 @@ fn rasterSteppedScalFixP(
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
+    shader_buf: *const ShaderKern.LocalBuff,
     subpx_scratch: *ScratchBuffs,
     fixed: comm.Tri3FixedEdges,
 ) !u64 {
-    const N = GeomKern.nodes_num;
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
@@ -1357,7 +1356,7 @@ fn rasterSteppedScalFixP(
                         .global_suby = global_suby,
                     };
 
-                    const interp_data = shaderops.InterpData(N){
+                    const interp_data = ShaderKern.Hit{
                         .weights = weights,
                         .nodes_inv_z = nodes_inv_z,
                         .sub_pixel_z = subpx_z,
@@ -1414,10 +1413,9 @@ fn rasterSteppedScalFloat(
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(GeomKern.nodes_num),
+    shader_buf: *const ShaderKern.LocalBuff,
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
-    const N = GeomKern.nodes_num;
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
@@ -1606,7 +1604,7 @@ fn rasterSteppedScalFloat(
                         .global_subx = global_subx,
                         .global_suby = global_suby,
                     };
-                    const interp_data = shaderops.InterpData(N){
+                    const interp_data = ShaderKern.Hit{
                         .weights = weights,
                         .nodes_inv_z = nodes_inv_z,
                         .sub_pixel_z = subpx_z,

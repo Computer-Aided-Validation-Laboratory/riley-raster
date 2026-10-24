@@ -12,7 +12,7 @@ const gk = @import("riley/zig/geometrykernels.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
-const shaderops = @import("riley/zig/shaderops_common.zig");
+const shaderops = @import("riley/zig/shaderops.zig");
 const texops = @import("riley/zig/textureops.zig");
 const uvio = @import("riley/zig/uvio.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -221,7 +221,7 @@ fn makeMeshInput(
     const sim_data = try loadStaticMesh(outer_alloc, io, data_dir);
     const uvs = try loadRabbitUvMap(outer_alloc, io, data_dir);
 
-    const shader: shaderops.ShaderInput = switch (shader_mode) {
+    const shader: shaderops.ShaderDirectInput = switch (shader_mode) {
         .tex => blk: {
             const input = shaderops.TexInput(u8, C){
                 .uvs = uvs.array,
@@ -232,7 +232,6 @@ fn makeMeshInput(
                 },
                 .bits = 8,
                 .scaling = .none,
-                .normal_type = .none,
             };
             break :blk if (C == 1) .{ .tex_u8 = input } else .{ .tex_rgb_u8 = input };
         },
@@ -241,7 +240,6 @@ fn makeMeshInput(
             .bits = 8,
             .scaling = .auto,
             .scale_over = .over_frames,
-            .normal_type = .none,
         } },
         .func => blk: {
             const input = shaderops.FuncInput{
@@ -257,7 +255,6 @@ fn makeMeshInput(
                 },
                 .bits = 8,
                 .scaling = .auto,
-                .normal_type = .none,
             };
             break :blk if (C == 1) .{ .func = input } else .{ .func_rgb = input };
         },
@@ -268,7 +265,7 @@ fn makeMeshInput(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = shader,
+        .shaders = .{ .direct = shader },
     };
 }
 

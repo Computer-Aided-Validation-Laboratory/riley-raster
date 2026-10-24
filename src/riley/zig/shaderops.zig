@@ -16,7 +16,6 @@ const simd_impl = @import("shaderops_simd.zig");
 // --------------------------------------------------------------------------------------
 
 pub const ScaleOver = comm.ScaleOver;
-pub const NormalType = comm.NormalType;
 pub const FuncCoordMode = comm.FuncCoordMode;
 pub const FuncShaderBuiltin = comm.FuncShaderBuiltin;
 pub const FuncShaderParams = comm.FuncShaderParams;
@@ -28,14 +27,28 @@ pub const TexPrepared = comm.TexPrepared;
 pub const FuncInput = comm.FuncInput;
 pub const FuncPrepared = comm.FuncPrepared;
 pub const ShadeContext = comm.ShadeContext;
-pub const InterpData = comm.InterpData;
-pub const ShaderInput = comm.ShaderInput;
+pub const ShaderDirectInput = comm.ShaderDirectInput;
+pub const CameraShaderSelection = comm.CameraShaderSelection;
+pub const MeshShaderSetInput = comm.MeshShaderSetInput;
+pub const ShaderPipeInput = comm.ShaderPipeInput;
+pub const ShaderPipeStageInput = comm.ShaderPipeStageInput;
 pub const normFuncShaderParams = comm.normFuncShaderParams;
 pub const NodalStatic = comm.NodalStatic;
 pub const TexStatic = comm.TexStatic;
 pub const FuncStatic = comm.FuncStatic;
-pub const ShaderStatic = comm.ShaderStatic;
-pub const ShaderPrepared = comm.ShaderPrepared;
+pub const ShaderDirectStatic = comm.ShaderDirectStatic;
+pub const MeshShaderSetStatic = comm.MeshShaderSetStatic;
+pub const ShaderDirectPrepared = comm.ShaderDirectPrepared;
+pub const MeshShaderSetPrepared = comm.MeshShaderSetPrepared;
+pub const ShaderPipeStatic = comm.ShaderPipeStatic;
+pub const ShaderPipeStageStatic = comm.ShaderPipeStageStatic;
+pub const ShaderPipePrepared = comm.ShaderPipePrepared;
+pub const ShaderPipeStagePrepared = comm.ShaderPipeStagePrepared;
+pub const GreyToEmissivityStage = comm.GreyToEmissivityStage;
+pub const ClampStage = comm.ClampStage;
+pub const SelectedShader = comm.SelectedShader;
+pub const hasShader = comm.hasShader;
+pub const selectShader = comm.selectShader;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -54,8 +67,12 @@ pub const fillTexPersp = fillTexPerspScal;
 pub const fillFuncClip = fillFuncClipScal;
 pub const fillFuncPersp = fillFuncPerspScal;
 pub const fillNodalClipSIMD = simd_impl.fillNodalClipSIMD;
+pub const ImageSink = simd_impl.ImageSink;
+pub const VectorSink = simd_impl.VectorSink;
 pub const fillNodalPerspSIMD = simd_impl.fillNodalPerspSIMD;
 pub const fillTexClipSIMD = simd_impl.fillTexClipSIMD;
 pub const fillTexPerspSIMD = simd_impl.fillTexPerspSIMD;
 pub const fillFuncClipSIMD = simd_impl.fillFuncClipSIMD;
 pub const fillFuncPerspSIMD = simd_impl.fillFuncPerspSIMD;
+pub const evalFuncShaderGreyNormSIMD = simd_impl.evalFuncShaderGreyNormSIMD;
+pub const evalFuncShaderRGBNormSIMD = simd_impl.evalFuncShaderRGBNormSIMD;

@@ -11,7 +11,8 @@ This project follows the Computer Aided Validation Laboratory style guides for P
 ## Development Guides
 The `dev/` directory provides comprehensive architectural, mathematical, testing, and conventions documentation for Riley developers:
 
-- [**`dev/TESTING.md`**](./dev/TESTING.md): Complete testing architecture, quickstart commands, descriptions of the 4 test scenes, detailed breakdown of all 8 test suites, gold reference generation, and automated regression diagnostics.
+- [**`dev/TESTING.md`**](./dev/TESTING.md): Testing architecture, quickstart commands, scene descriptions, suite coverage, reference generation and automated regression diagnostics.
+- [**`dev/SHADERPIPE.md`**](./SHADERPIPE.md): Camera pipe families, Python and C configuration, resolver expressions, and mixed camera output layout.
 - [**`dev/THEORY.md`**](./dev/THEORY.md): Mathematical foundations and engine design details, including polynomial camera distortion formulation, distortion-aware rasterisation frontend bounds, render thread budgets, and image save mode mechanics.
 - [**`dev/ASSUMPTIONS.md`**](./dev/ASSUMPTIONS.md): Supported engineering operating envelope, mesh validity contracts, conservative numerical margins, and reasoning guidelines for review.
 - [**`dev/MESHCONVENTION.md`**](./dev/MESHCONVENTION.md): Riley standard mesh representation, surface element definitions (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`), 3D continuum elements, node ordering, and connectivity conventions.
@@ -51,7 +52,7 @@ zig build gen-gold-full -Doptimize=ReleaseSafe  # Generate Full gold (if needed)
 zig build test-full -Doptimize=ReleaseSafe
 
 # Warning-only diagnostics for invalid-Jacobian element frames
-zig build test-full-badjac
+zig build diag-badjac
 
 # Python Integration Suite
 pytest --pyargs riley.pytests -vs
@@ -68,12 +69,12 @@ zig build install-bench-buffer-psf -Doptimize=ReleaseFast -Dsimd=on
 | **Verification Suite** | `zig build test-verif` | Inverse solver recovery, silhouette area/centroid, depth ordering, and camera distortion oracles (Debug) | `gold/verif/` |
 | **Basic Suite** | `zig build test-basic` | Fast coverage across 1-element, 2-shape FE interaction, and feature zoo cases (Debug) | `gold/basic/` |
 | **Combined Core Suite** | `zig build test-verif-basic` | Primarily for CI: runs verif and basic sequentially in Debug mode | `gold/verif/`, `gold/basic/` |
-| **Full Suite** | `zig build test-full -Doptimize=ReleaseSafe` | Exhaustive sweeps over shaders, textures, PSF/distortion, SSAA, hulls, tiling, scenes, threads, and outputs in ReleaseSafe | `gold/full_*/` |
-| **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | Warning-only renders of intentionally folded one-element frames, with actual/reference/diff artifacts under `fails/*_full_badjac/` | Existing basic and full-hull gold |
+| **Full Suite** | `zig build test-full -Doptimize=ReleaseSafe` | Exhaustive sweeps over shaders, textures, camera I/O, maths SIMD, PSF/distortion, SSAA, hulls, tiling, scenes, threads, and outputs in ReleaseSafe | `gold/full_*/` |
+| **Bad-Jacobian Diagnostics** | `zig build diag-badjac` | Diagnostic utility (`dev_support/diag_badjac.zig`) for warning-only renders of intentionally folded one-element frames under `fails/*_full_badjac/` | Existing basic and full-hull gold |
 | **Python Pytests** | `.venv/bin/pytest src/riley/pytests/` | Python/Cython API, mesh pipeline, Exodus conversion, and demo parity | Integrated / `gold/` |
 
 > [!NOTE]
-> For complete documentation of all 4 test scenes, 8 sub-suites, gold generation, tolerances, and design contracts, see [**`dev/TESTING.md`**](./dev/TESTING.md).
+> For scene descriptions, suite coverage, reference generation, tolerances, and design contracts, see [**`dev/TESTING.md`**](./dev/TESTING.md).
 
 ## Precision and SIMD Build Matrix
 The `zig build` workflow supports direct control over precision, SIMD mode, Newton solver mode, and SIMD vector width:
@@ -204,11 +205,51 @@ The current experiment groups are driven directly by constants in the script:
 
 - `DEFAULT_EXPERIMENT1`
 - `DEFAULT_EXPERIMENT2`
+- `DEFAULT_EXPERIMENT3` (off by default)
+- `DEFAULT_EXPERIMENT4` (off by default)
 - `EXPERIMENT1_SUB_SAMPLES`
 - `EXPERIMENT2_SUB_SAMPLES`
 - `EXPERIMENT1_CASES_BASE`
+- `EXPERIMENT3_CASES`
 
 If you want to change the study matrix, edit those constants first.
+
+Experiment 3 is the one-stage shader-pipe baseline: six mesh types (`tri3`,
+`tri3opt`, `tri6`, `quad4`, `quad8`, `quad9`) times nodal grey, parametric
+checker, direct linear greyscale texture, and direct cubic Catmull-Rom greyscale
+texture. Its default profile is f64, SIMD width 8, SSAA=2, one thread, and
+memory output. Run only this experiment with:
+
+```shell
+python ./scripts/bench_perf_raster.py --no-experiment1 --no-experiment2 --experiment3
+```
+
+Pass `--experiment3-binary PATH` to use a preserved baseline binary after the
+normal installed benchmark binary has been rebuilt. Use `--dry-run` to inspect
+the command without rendering.
+
+Experiment 4 compares the current `direct` single-shader path (formerly
+`single_fast`) with a mono pipe containing that same shader and an identity
+resolver. It uses the same six mesh types, four shaders, and run profile as
+Experiment 3. Each repeat measures both paths; their order alternates between
+repeats. The median CSV has paired `_direct` and `_one_stage_pipe` rows. Run it
+after compiling the current benchmark binary with:
+
+```shell
+python ./scripts/bench_perf_raster.py --no-experiment1 --no-experiment2 --experiment4
+```
+
+Pass `--experiment4-binary PATH` to run the same experiment against a preserved
+baseline binary. This lets the direct and one-stage-pipe timings be compared
+between engine revisions without replacing `bin/bench_tiltraster_f64_simd`.
+
+Experiment 5 compares a direct world-reference checker with a three-source
+mono pipe using reference, deformed, and reference world coordinates. It
+exercises the shared MeshHit geometry on all six mesh types:
+
+```shell
+python ./scripts/bench_perf_raster.py --no-experiment1 --no-experiment2 --experiment5
+```
 
 ## Additional Notes
 

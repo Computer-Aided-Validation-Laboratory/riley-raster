@@ -58,7 +58,7 @@ def main() -> None:
         mesh_type=riley.MeshType.tri6,
         coords=coords,
         connect=connect,
-        shader=shader,
+        shaders=riley.MeshShaderSet(direct=shader),
     )
 
     # --------------------------------------------------------------------------

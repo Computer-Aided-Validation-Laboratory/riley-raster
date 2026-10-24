@@ -106,6 +106,10 @@ typedef struct c_camera_input {
     CPSF psf;
     uint32_t coord_sys;
     uint32_t subpixel_center_map;
+    uint32_t shader_selection;
+    uint32_t output_encoding; /* 0=native, 1=12-bit grid in u16, 2=linear u16 */
+    double encoding_min;
+    double encoding_max;
 } CCameraInput;
 
 typedef struct c_func_shader_params {
@@ -211,15 +215,83 @@ typedef struct c_shader_input {
     uint32_t func_shader_builtin;
     uint32_t func_shader_coord_mode;
     CFuncShaderParams func_shader_params;
-    uint32_t normal_type;
 } CShaderInput;
+
+typedef struct c_slot {
+    /* kind: channel=0, field=1, parameter=2, constant=3. */
+    uint32_t kind;
+    uint32_t index;
+} CSlot;
+
+typedef struct c_operation {
+    /* tag: load=0, add=1, subtract=2, multiply=3, divide=4,
+     * power4=5, clamp01=6, clamp=7, lut=8, store=9.
+     * slot.index selects the LUT or output channel for lut/store. */
+    uint32_t tag;
+    CSlot slot;
+    double lower;
+    double upper;
+} COperation;
+
+typedef struct c_lookup {
+    double first;
+    double step;
+    const double* values;
+    size_t values_len;
+} CLookup;
+
+typedef struct c_resolver {
+    /* tag: identity=0, sum=1, modulate=2, weighted_sum=3,
+     * greybody_bolometric=4, greybody_band=5, expression=6,
+     * greybody_band_apparent_c=7 (ambient is in kelvin). */
+    uint32_t tag;
+    const CSlot* slots;
+    size_t slots_len;
+    const double* weights;
+    size_t weights_len;
+    CSlot factor;
+    CSlot temperature;
+    CSlot emissivity;
+    double ambient;
+    double gain;
+    CLookup lookup;
+    const COperation* operations;
+    size_t operations_len;
+} CResolver;
+
+typedef struct c_pipe_stage {
+    /* tag: source=0, grey_to_emissivity=1, clamp=2. */
+    uint32_t tag;
+    const CShaderInput* shader;
+    CSlot source;
+    CSlot destination;
+    double lower;
+    double upper;
+    double black;
+    double white;
+} CPipeStage;
+
+typedef struct c_pipe {
+    /* shader_selection: mono=1, rgb=2, ir=3, multifield=4. */
+    uint32_t shader_selection;
+    uint32_t channels;
+    const CPipeStage* stages;
+    size_t stages_len;
+    CResolver resolver;
+    const double* constants;
+    size_t constants_len;
+} CPipe;
 
 typedef struct c_mesh_input {
     uint32_t mesh_type;
+    uint32_t normal_type;
     CArray2DF64 coords;
     CArray2DUsize connect;
     CArray3DF64 disp;
+    uint8_t has_direct;
     CShaderInput shader;
+    const CPipe* pipes;
+    size_t pipes_len;
 } CMeshInput;
 
 typedef enum {
@@ -282,7 +354,6 @@ typedef struct c_raster_config {
     uint8_t full_stats_save_depth_map;
     uint8_t full_stats_save_earlyout_map;
     uint8_t full_stats_save_pixel_occupancy_map;
-    uint8_t full_stats_save_normals_map;
     uint32_t buffer_mode;
     const char* output_name_format;
     double edge_spacing_px;

@@ -535,14 +535,13 @@ fn runUVBoundaryRasterPipelineTests(
                 .coords = prep.sphere_coords,
                 .connect = prep.sphere_connect,
                 .disp = prep.sphere_disp,
-                .shader = .{
+                .shaders = .{ .direct = .{
                     .tex_u8 = .{
                         .uvs = out_of_range_uvs,
                         .tex = tex_small,
                         .samp_cfg = samp_cfg,
-                        .normal_type = .none,
                     },
-                },
+                } },
             },
         };
 

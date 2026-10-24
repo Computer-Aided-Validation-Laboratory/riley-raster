@@ -57,12 +57,6 @@ def make_shader(
     disp: tuple[np.ndarray, np.ndarray, np.ndarray],
     texture: np.ndarray,
 ) -> riley.Shader:
-    normal_modes = (
-        riley.NormalType.none,
-        riley.NormalType.exact,
-        riley.NormalType.averaged,
-    )
-    normal_type = normal_modes[mesh_index % len(normal_modes)]
 
     if mesh_index in (0, 2):
         sample = (
@@ -82,7 +76,6 @@ def make_shader(
             sample_mode=sample_mode,
             bits=bits,
             scaling_type=riley.ScaleStrategy.auto,
-            normal_type=normal_type,
         )
 
     if mesh_index in (1, 5):
@@ -101,7 +94,6 @@ def make_shader(
                 if mesh_index == 1
                 else riley.ScaleOver.within_frames
             ),
-            normal_type=normal_type,
         )
 
     builtin = (
@@ -123,16 +115,21 @@ def make_shader(
         channels=channels,
         bits=bits,
         scaling_type=riley.ScaleStrategy.auto,
-        normal_type=normal_type,
     )
 
 
-def build_scene(channels: int, bits: int, options: DemoOptions) -> list[riley.Mesh]:
+def build_scene(
+    channels: int,
+    bits: int,
+    options: DemoOptions,
+) -> list[riley.Mesh]:
     tex_dir = riley.data.texture_dir_path()
     if (channels, bits) == (1, 8):
         texture = riley.load_texture_mono_u8(tex_dir / "speck128_mono_u8.bmp")
     elif (channels, bits) == (1, 16):
-        texture = riley.load_texture_mono_u16(tex_dir / "speck128_mono_u16.tiff")
+        texture = riley.load_texture_mono_u16(
+            tex_dir / "speck128_mono_u16.tiff"
+        )
     elif (channels, bits) == (3, 8):
         texture = riley.load_texture_rgb_u8(tex_dir / "speck128_rgb_u8.bmp")
     else:
@@ -160,9 +157,19 @@ def build_scene(channels: int, bits: int, options: DemoOptions) -> list[riley.Me
     for index, (shape, elem_norm, elem_type, mesh_type) in enumerate(
         options.mesh_shapes
     ):
-        coords, connect, uvs, temperature, disp_x, disp_y, disp_z = raw_data[index]
+        (
+            coords,
+            connect,
+            uvs,
+            temperature,
+            disp_x,
+            disp_y,
+            disp_z,
+        ) = raw_data[index]
         disp = (disp_x, disp_y, disp_z)
-        shader = make_shader(index, channels, bits, uvs, temperature, disp, texture)
+        shader = make_shader(
+            index, channels, bits, uvs, temperature, disp, texture
+        )
         convention = riley.ConnectConvention(
             elem_type,
             riley.EConnectAxis.ROW,
@@ -175,15 +182,23 @@ def build_scene(channels: int, bits: int, options: DemoOptions) -> list[riley.Me
                 mesh_type,
                 coords,
                 connect,
-                shader,
+                riley.MeshShaderSet(direct=shader),
                 disp=disp if index % 2 else None,
+                normal_type=(
+                    riley.NormalType.none,
+                    riley.NormalType.exact,
+                    riley.NormalType.averaged,
+                )[index % 3],
             )
         )
 
     return meshes
 
 
-def build_cameras(meshes: list[riley.Mesh], options: DemoOptions) -> list[riley.Camera]:
+def build_cameras(
+    meshes: list[riley.Mesh],
+    options: DemoOptions,
+) -> list[riley.Camera]:
     target = riley.roi_cent_over_meshes(meshes)
     base_camera = riley.Camera(
         pixels_num=(1024, 1024),
@@ -260,7 +275,10 @@ def render_case(channels: int, bits: int, options: DemoOptions) -> None:
         riley.ImageSaveMode.grey if channels == 1 else riley.ImageSaveMode.rgb
     )
     config.save_bits = bits
-    config.save_format = riley.ImageFormat.bmp if bits == 8 else riley.ImageFormat.tiff
+    if bits == 8:
+        config.save_format = riley.ImageFormat.bmp
+    else:
+        config.save_format = riley.ImageFormat.tiff
     config.save_scaling = riley.ScaleStrategy.none
     config.background_value = 0.5 * (2**bits - 1)
 

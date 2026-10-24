@@ -17,6 +17,10 @@ const gen_shader = @import("gengold/gen_gold_full_shader.zig");
 const gen_ssaa_pxmap = @import("gengold/gen_gold_full_ssaa_pxmap.zig");
 const gen_texture = @import("gengold/gen_gold_full_texture.zig");
 const gen_tiling = @import("gengold/gen_gold_full_tiling.zig");
+const gen_shaderpipe = @import("tests/test_full_shaderpipe.zig");
+const gen_failed_distortion = @import(
+    "gengold/gen_gold_failed_distortion.zig",
+);
 const iio = @import("riley/zig/imageio.zig");
 const policy = @import("dev_support/testpolicy.zig");
 const tcfg = @import("dev_support/testconfig.zig");
@@ -27,6 +31,17 @@ pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(init.gpa);
     defer arena.deinit();
     const aa = arena.allocator();
+
+    for (init.minimal.args.vector) |arg| {
+        if (std.mem.eql(u8, std.mem.span(arg), "--failed-distortion-only")) {
+            std.debug.print(
+                "\nRegenerating failed distortion gold cases...\n\n",
+                .{},
+            );
+            try gen_failed_distortion.generateFailedDistortion(aa, io);
+            return;
+        }
+    }
 
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
@@ -48,7 +63,7 @@ pub fn main(init: std.process.Init) !void {
 
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
-    std.debug.print("--- 1/9: Full Shader Cases ({s}) ---\n", .{shader_gold_dir});
+    std.debug.print("--- 1/10: Full Shader Cases ({s}) ---\n", .{shader_gold_dir});
     const start_shader = std.Io.Clock.Timestamp.now(io, .awake);
     try gen_shader.generateAllFullShaderCases(
         aa,
@@ -67,7 +82,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     std.debug.print(
-        "--- 2/9: Full Texture Cases ({s}) ---\n",
+        "--- 2/10: Full Texture Cases ({s}) ---\n",
         .{texture_gold_dir},
     );
     const start_texture = std.Io.Clock.Timestamp.now(io, .awake);
@@ -88,7 +103,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     std.debug.print(
-        "--- 3/9: Full Distortion + PSF Cases ({s}) ---\n",
+        "--- 3/10: Full Distortion + PSF Cases ({s}) ---\n",
         .{dist_psf_gold_dir},
     );
     const start_dist_psf = std.Io.Clock.Timestamp.now(io, .awake);
@@ -109,7 +124,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     std.debug.print(
-        "--- 4/9: Full Distortion Frontend Cases ({s}) ---\n",
+        "--- 4/10: Full Distortion Frontend Cases ({s}) ---\n",
         .{dist_frontend_gold_dir},
     );
     const start_dist_frontend = std.Io.Clock.Timestamp.now(io, .awake);
@@ -130,7 +145,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     std.debug.print(
-        "--- 5/9: Full SSAA + Pixel Map Cases ({s}) ---\n",
+        "--- 5/10: Full SSAA + Pixel Map Cases ({s}) ---\n",
         .{ssaa_pxmap_gold_dir},
     );
     const start_ssaa_pxmap = std.Io.Clock.Timestamp.now(io, .awake);
@@ -151,7 +166,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     std.debug.print(
-        "--- 6/9: Full Hull Cases ({s}) ---\n",
+        "--- 6/10: Full Hull Cases ({s}) ---\n",
         .{hull_gold_dir},
     );
     const start_hull = std.Io.Clock.Timestamp.now(io, .awake);
@@ -167,7 +182,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     std.debug.print(
-        "--- 7/9: Full Tiling Cases ({s}) ---\n",
+        "--- 7/10: Full Tiling Cases ({s}) ---\n",
         .{tiling_gold_dir},
     );
     const start_tiling = std.Io.Clock.Timestamp.now(io, .awake);
@@ -183,7 +198,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     std.debug.print(
-        "--- 8/9: Full Scene Camera Threads Cases ({s}) ---\n",
+        "--- 8/10: Full Scene Camera Threads Cases ({s}) ---\n",
         .{sct_gold_dir},
     );
     const start_sct = std.Io.Clock.Timestamp.now(io, .awake);
@@ -200,7 +215,7 @@ pub fn main(init: std.process.Init) !void {
 
     const io_gold_dir = policy.goldRoot(.full_image_output);
     std.debug.print(
-        "--- 9/9: Full Image Output Cases ({s}) ---\n",
+        "--- 9/10: Full Image Output Cases ({s}) ---\n",
         .{io_gold_dir},
     );
     const start_io = std.Io.Clock.Timestamp.now(io, .awake);
@@ -213,6 +228,22 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print(
         "Image Output gold generation took {d:.3} seconds.\n\n",
         .{io_elapsed},
+    );
+
+    std.debug.print(
+        "--- 10/10: Full Shaderpipe Cases ({s}) ---\n",
+        .{policy.goldRoot(.full_shaderpipe)},
+    );
+    const start_shaderpipe = std.Io.Clock.Timestamp.now(io, .awake);
+    try gen_shaderpipe.generateGold(aa, io);
+    const end_shaderpipe = std.Io.Clock.Timestamp.now(io, .awake);
+    const shaderpipe_elapsed = @as(
+        f64,
+        @floatFromInt(start_shaderpipe.durationTo(end_shaderpipe).raw.nanoseconds),
+    ) / 1.0e9;
+    std.debug.print(
+        "Shaderpipe gold generation took {d:.3} seconds.\n\n",
+        .{shaderpipe_elapsed},
     );
 
     const end_time = std.Io.Clock.Timestamp.now(io, .awake);

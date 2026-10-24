@@ -21,6 +21,7 @@ pub const GoldModePolicy = enum {
 pub const GoldSuite = enum {
     basic,
     full_shader,
+    full_shaderpipe,
     full_texture,
     full_dist_psf,
     full_dist_frontend,
@@ -47,6 +48,7 @@ pub fn suiteDirName(comptime suite: GoldSuite) []const u8 {
     return switch (suite) {
         .basic => "basic",
         .full_shader => "full_shader",
+        .full_shaderpipe => "full_shaderpipe",
         .full_texture => "full_texture",
         .full_dist_psf => "full_dist_psf",
         .full_dist_frontend => "full_dist_frontend",
@@ -65,6 +67,10 @@ pub fn goldRoot(comptime suite: GoldSuite) []const u8 {
             "gold/full_shader"
         else
             "gold/full_shader_f32",
+        .full_shaderpipe => if (F == f64)
+            "gold/full_shaderpipe"
+        else
+            "gold/full_shaderpipe_f32",
         .full_texture => if (F == f64)
             "gold/full_texture"
         else

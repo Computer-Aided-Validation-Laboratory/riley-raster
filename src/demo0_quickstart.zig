@@ -38,7 +38,7 @@ pub fn main(init: std.process.Init) !void {
         .coords = coords,
         .connect = connect,
         .disp = null,
-        .shader = .{ .func = .{
+        .shaders = .{ .direct = .{ .func = .{
             .coord_mode = .world_reference,
             .builtin = .checker,
             .params = .{
@@ -46,7 +46,7 @@ pub fn main(init: std.process.Init) !void {
                 .settings = .{ .checker = .{} },
             },
             .scaling = .auto,
-        } },
+        } } },
     };
 
     // -------------------------------------------------------------------------

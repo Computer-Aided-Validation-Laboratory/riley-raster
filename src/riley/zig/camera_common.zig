@@ -18,6 +18,8 @@ const cm = @import("cameramodels.zig");
 const distbounds = @import("distortbounds.zig");
 const camera_scalar = @import("camera_scalar.zig");
 const camera_simd = @import("camera_simd.zig");
+const imageio = @import("imageio.zig");
+const shaderops = @import("shaderops.zig");
 
 const cfg = buildconfig.config;
 const camera_impl = if (cfg.simd == .on) camera_simd else camera_scalar;
@@ -38,6 +40,8 @@ pub const CameraInput = struct {
     psf: cm.PointSpreadFunc = .{ .pixel_box = .{} },
     coord_sys: CameraCoordSys = .opengl,
     subpixel_center_map: SubPixelCenterMap = .per_tile,
+    shader_selection: shaderops.CameraShaderSelection = .direct,
+    output_encoding: imageio.ImageEncoding = .native,
 };
 
 pub const StereoPairInput = struct {
@@ -139,6 +143,8 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         coord_sys: CameraCoordSys,
         ideal_pixel_centers: ndarray.NDArray(F),
         subpixel_center_map: SubPixelCenterMap,
+        shader_selection: shaderops.CameraShaderSelection = .direct,
+        output_encoding: imageio.ImageEncoding = .native,
         ideal_sensor_bounds: ?distbounds.DistortBounds = null,
 
         pub fn init(
@@ -194,6 +200,8 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             };
             var self = Self{
                 .pixels_num = input.pixels_num,
+                .shader_selection = input.shader_selection,
+                .output_encoding = input.output_encoding,
                 .pixels_size = input.pixels_size,
                 .pos_world = input.pos_world,
                 .rot_world = input.rot_world,
@@ -772,9 +780,9 @@ test "camera preparation propagates polynomial inverse errors without leaking" {
     var input = CameraInput{
         .pixels_num = .{ 2, 2 },
         .pixels_size = .{ 0.001, 0.001 },
-        .pos_world = @import("vecstack.zig").Vec3F.initSlice(&.{ 0.0, 0.0, 1.0 }),
-        .rot_world = @import("rotation.zig").Rotation.init(0.0, 0.0, 0.0),
-        .roi_cent_world = @import("vecstack.zig").Vec3F.initZeros(),
+        .pos_world = vec.Vec3F.initSlice(&.{ 0.0, 0.0, 1.0 }),
+        .rot_world = rotation.Rotation.init(0.0, 0.0, 0.0),
+        .roi_cent_world = vec.Vec3F.initZeros(),
         .focal_length = 0.1,
         .sub_sample = 1,
         .subpixel_center_map = .full_in_mem,

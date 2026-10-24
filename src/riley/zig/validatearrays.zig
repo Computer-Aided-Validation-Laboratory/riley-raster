@@ -12,7 +12,7 @@ const geomkerns = @import("geometrykernels.zig");
 const matslice = @import("matslice.zig");
 const meshpipe = @import("meshpipeline.zig");
 const ndarray = @import("ndarray.zig");
-const shaderops = @import("shaderops_common.zig");
+const shaderops = @import("shaderops.zig");
 const texops = @import("textureops.zig");
 
 const F = buildconfig.F;
@@ -100,7 +100,28 @@ fn checkMeshDisplacements(mesh: meshpipe.MeshInput) InputArrayError!void {
 // --------------------------------------------------------------------------------------
 
 fn checkMeshShaderArrays(mesh: meshpipe.MeshInput) InputArrayError!void {
-    switch (mesh.shader) {
+    if (mesh.shaders.direct) |shader| {
+        try checkShaderArrays(shader);
+    }
+    inline for (.{
+        mesh.shaders.mono,
+        mesh.shaders.rgb,
+        mesh.shaders.ir,
+        mesh.shaders.multifield,
+    }) |pipe_opt| {
+        if (pipe_opt) |pipe| {
+            for (pipe.stages) |stage| {
+                switch (stage) {
+                    .source => |src| try checkShaderArrays(src.shader),
+                    else => {},
+                }
+            }
+        }
+    }
+}
+
+fn checkShaderArrays(shader: shaderops.ShaderDirectInput) InputArrayError!void {
+    switch (shader) {
         .tex_u8 => |tex_shader| {
             if (!isFiniteSlice(tex_shader.uvs.slice)) {
                 return error.NonFiniteUvs;

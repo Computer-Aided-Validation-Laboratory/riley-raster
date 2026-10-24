@@ -22,6 +22,7 @@ const verif = @import("dev_support/verif.zig");
 const vector = @import("riley/zig/vecstack.zig");
 const riley = @import("riley/zig/riley.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
+const ndarray = @import("riley/zig/ndarray.zig");
 
 const pixel_num = [_]u32{ 1024, 1024 };
 const fov_scale: F = 1.05;
@@ -85,7 +86,7 @@ fn buildFrameCoords(
 
 fn extractScalarMap(
     allocator: std.mem.Allocator,
-    image_arr: *const @import("riley/zig/ndarray.zig").NDArray(F),
+    image_arr: *const ndarray.NDArray(F),
 ) !ScalarMap {
     const rows_num = if (image_arr.dims.len == 5)
         image_arr.dims[3]
@@ -373,14 +374,13 @@ fn renderScalarMap(
         .coords = frame_coords,
         .connect = connect,
         .disp = null,
-        .shader = .{
+        .shaders = .{ .direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
                 .builtin = .constant,
-                .normal_type = .none,
             },
-        },
+        } },
     };
 
     const result = (try riley.raster(
@@ -441,14 +441,13 @@ fn buildCentroidCameraInputOverFrames(
             .coords = frame_coords,
             .connect = sim_data.connect,
             .disp = null,
-            .shader = .{
+            .shaders = .{ .direct = .{
                 .func = .{
                     .uvs = null,
                     .coord_mode = .para,
                     .builtin = .constant,
-                    .normal_type = .none,
                 },
-            },
+            } },
         };
     }
 

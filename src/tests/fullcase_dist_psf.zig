@@ -146,7 +146,7 @@ pub fn buildScene1Mesh(prep: *const common_full.Scene1Prepared) MeshInput {
         .coords = prep.coords,
         .connect = prep.connect,
         .disp = null,
-        .shader = .{
+        .shaders = .{ .direct = .{
             .func = .{
                 .uvs = prep.uvs.array,
                 .builtin = .checker,
@@ -158,8 +158,7 @@ pub fn buildScene1Mesh(prep: *const common_full.Scene1Prepared) MeshInput {
                 .coord_mode = .uv,
                 .bits = 8,
                 .scaling = .auto,
-                .normal_type = .none,
             },
-        },
+        } },
     };
 }

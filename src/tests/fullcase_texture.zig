@@ -12,7 +12,7 @@ const camera = @import("../riley/zig/camera.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
-const shaderops = @import("../riley/zig/shaderops_common.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
 const texops = @import("../riley/zig/textureops.zig");
 
 const F = buildconfig.F;
@@ -75,14 +75,13 @@ pub fn buildTexSamplingCaseMeshes(
     textures: *const common_full.FullTextures,
     case: FullTexSamplingCase,
 ) [2]MeshInput {
-    const sphere_shader: shaderops.ShaderInput = if (case.is_rgb)
+    const sphere_shader: shaderops.ShaderDirectInput = if (case.is_rgb)
         switch (case.dtype) {
             .u8 => .{
                 .tex_rgb_u8 = .{
                     .uvs = prep.sphere_uvs.array,
                     .tex = textures.tex_u8_rgb,
                     .samp_cfg = case.samp_cfg,
-                    .normal_type = .none,
                 },
             },
             .u16 => .{
@@ -90,7 +89,6 @@ pub fn buildTexSamplingCaseMeshes(
                     .uvs = prep.sphere_uvs.array,
                     .tex = textures.tex_u16_rgb,
                     .samp_cfg = case.samp_cfg,
-                    .normal_type = .none,
                 },
             },
             .f64 => .{
@@ -98,7 +96,6 @@ pub fn buildTexSamplingCaseMeshes(
                     .uvs = prep.sphere_uvs.array,
                     .tex = textures.tex_f64_rgb,
                     .samp_cfg = case.samp_cfg,
-                    .normal_type = .none,
                 },
             },
         }
@@ -108,7 +105,6 @@ pub fn buildTexSamplingCaseMeshes(
                 .uvs = prep.sphere_uvs.array,
                 .tex = textures.tex_u8_mono,
                 .samp_cfg = case.samp_cfg,
-                .normal_type = .none,
             },
         },
         .u16 => .{
@@ -116,7 +112,6 @@ pub fn buildTexSamplingCaseMeshes(
                 .uvs = prep.sphere_uvs.array,
                 .tex = textures.tex_u16_mono,
                 .samp_cfg = case.samp_cfg,
-                .normal_type = .none,
             },
         },
         .f64 => .{
@@ -124,19 +119,17 @@ pub fn buildTexSamplingCaseMeshes(
                 .uvs = prep.sphere_uvs.array,
                 .tex = textures.tex_f64_mono,
                 .samp_cfg = case.samp_cfg,
-                .normal_type = .none,
             },
         },
     };
 
-    const cyl_shader: shaderops.ShaderInput = if (case.is_rgb)
+    const cyl_shader: shaderops.ShaderDirectInput = if (case.is_rgb)
         switch (case.dtype) {
             .u8 => .{
                 .tex_rgb_u8 = .{
                     .uvs = prep.cylinder_uvs.array,
                     .tex = textures.tex_u8_rgb,
                     .samp_cfg = case.samp_cfg,
-                    .normal_type = .none,
                 },
             },
             .u16 => .{
@@ -144,7 +137,6 @@ pub fn buildTexSamplingCaseMeshes(
                     .uvs = prep.cylinder_uvs.array,
                     .tex = textures.tex_u16_rgb,
                     .samp_cfg = case.samp_cfg,
-                    .normal_type = .none,
                 },
             },
             .f64 => .{
@@ -152,7 +144,6 @@ pub fn buildTexSamplingCaseMeshes(
                     .uvs = prep.cylinder_uvs.array,
                     .tex = textures.tex_f64_rgb,
                     .samp_cfg = case.samp_cfg,
-                    .normal_type = .none,
                 },
             },
         }
@@ -162,7 +153,6 @@ pub fn buildTexSamplingCaseMeshes(
                 .uvs = prep.cylinder_uvs.array,
                 .tex = textures.tex_u8_mono,
                 .samp_cfg = case.samp_cfg,
-                .normal_type = .none,
             },
         },
         .u16 => .{
@@ -170,7 +160,6 @@ pub fn buildTexSamplingCaseMeshes(
                 .uvs = prep.cylinder_uvs.array,
                 .tex = textures.tex_u16_mono,
                 .samp_cfg = case.samp_cfg,
-                .normal_type = .none,
             },
         },
         .f64 => .{
@@ -178,7 +167,6 @@ pub fn buildTexSamplingCaseMeshes(
                 .uvs = prep.cylinder_uvs.array,
                 .tex = textures.tex_f64_mono,
                 .samp_cfg = case.samp_cfg,
-                .normal_type = .none,
             },
         },
     };
@@ -189,14 +177,14 @@ pub fn buildTexSamplingCaseMeshes(
             .coords = prep.sphere_coords,
             .connect = prep.sphere_connect,
             .disp = prep.sphere_disp,
-            .shader = sphere_shader,
+            .shaders = .{ .direct = sphere_shader },
         },
         .{
             .mesh_type = mesh_type,
             .coords = prep.cylinder_coords,
             .connect = prep.cylinder_connect,
             .disp = prep.cylinder_disp,
-            .shader = cyl_shader,
+            .shaders = .{ .direct = cyl_shader },
         },
     };
 }

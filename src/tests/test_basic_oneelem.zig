@@ -16,7 +16,7 @@ const orch = @import("../dev_support/orchestration.zig");
 const policy = @import("../dev_support/testpolicy.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const riley = @import("../riley/zig/riley.zig");
-const shaderops = @import("../riley/zig/shaderops_common.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const F = buildconfig.F;
@@ -74,7 +74,7 @@ pub fn runOneElemCaseTest(
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shader = .{
+        .shaders = .{ .direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
@@ -82,9 +82,8 @@ pub fn runOneElemCaseTest(
                 .params = shader_params,
                 .bits = 8,
                 .scaling = .auto,
-                .normal_type = .none,
             },
-        },
+        } },
     };
 
     const camera_input = CameraInput{

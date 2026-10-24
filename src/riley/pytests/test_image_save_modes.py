@@ -34,7 +34,7 @@ def make_scene(channels: int) -> tuple[riley.Mesh, riley.Camera]:
         riley.MeshType.tri3,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(direct=shader),
     )
     camera = riley.Camera(
         pixels_num=(32, 32),

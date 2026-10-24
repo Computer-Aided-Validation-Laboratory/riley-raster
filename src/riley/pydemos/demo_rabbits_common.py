@@ -19,7 +19,10 @@ from riley.python import sceneops
 def build_uv_field(uvs: np.ndarray, channels: int) -> np.ndarray:
     """Build a field with axes (nodes, one frame, channels)."""
     uv_scalar = 0.5 * (uvs[:, 0] + uvs[:, 1])
-    values = uv_scalar[:, None] if channels == 1 else np.column_stack((uvs, uv_scalar))
+    if channels == 1:
+        values = uv_scalar[:, None]
+    else:
+        values = np.column_stack((uvs, uv_scalar))
     return np.ascontiguousarray(values[:, None, :], dtype=np.float64)
 
 
@@ -89,7 +92,7 @@ def make_mesh_input(
         mesh_type,
         np.array(coords, copy=True),
         connect,
-        shader=shader,
+        shaders=riley.MeshShaderSet(direct=shader),
     )
 
 
