@@ -33,6 +33,10 @@ pub const CameraShaderSelection = enum(u8) { direct, mono, rgb, ir, multifield }
 
 pub const GreyToEmissivityStage = shaderpipe.GreyToEmissivityStage;
 pub const ClampStage = shaderpipe.ClampStage;
+pub const AffineMapStage = shaderpipe.AffineMapStage;
+pub const LUTMapStage = shaderpipe.LUTMapStage;
+pub const BlendStage = shaderpipe.BlendStage;
+pub const NormaliseStage = shaderpipe.NormaliseStage;
 
 // Re-exports of function shader types and evaluation helpers from shaderfunc.zig
 pub const FuncCoordMode = shaderfunc.FuncCoordMode;
@@ -110,6 +114,10 @@ pub const ShaderPipeStageInput = union(enum) {
     source: struct { shader: ShaderDirectInput, destination: shaderpipe.Slot },
     grey_to_emissivity: GreyToEmissivityStage,
     clamp: ClampStage,
+    affine_map: AffineMapStage,
+    lut_map: LUTMapStage,
+    blend: BlendStage,
+    normalise: NormaliseStage,
 };
 
 pub const ShaderPipeInput = struct {
@@ -184,6 +192,10 @@ pub const ShaderPipeStageStatic = union(enum) {
     },
     grey_to_emissivity: GreyToEmissivityStage,
     clamp: ClampStage,
+    affine_map: AffineMapStage,
+    lut_map: LUTMapStage,
+    blend: BlendStage,
+    normalise: NormaliseStage,
 };
 
 pub const ShaderPipeStatic = struct {
@@ -262,6 +274,10 @@ pub const ShaderPipeStagePrepared = union(enum) {
     source: struct { shader: ShaderDirectPrepared, destination: shaderpipe.Slot },
     grey_to_emissivity: GreyToEmissivityStage,
     clamp: ClampStage,
+    affine_map: AffineMapStage,
+    lut_map: LUTMapStage,
+    blend: BlendStage,
+    normalise: NormaliseStage,
 };
 
 pub const ShaderPipePrepared = struct {

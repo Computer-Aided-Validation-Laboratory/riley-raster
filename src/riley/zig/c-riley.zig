@@ -316,6 +316,14 @@ pub const CPipeStage = extern struct {
     upper: F,
     black: F,
     white: F,
+    source_b: CSlot,
+    alpha_slot: CSlot,
+    alpha: F,
+    alpha_from_slot: u32,
+    gain: F,
+    offset: F,
+    components: u32,
+    lookup: CLookup,
 };
 pub const CPipe = extern struct {
     shader_selection: u32,
@@ -1470,6 +1478,36 @@ fn buildMeshInput(
                         .destination = try pipeSlotFromC(input_stage.destination),
                         .lower = input_stage.lower,
                         .upper = input_stage.upper,
+                    } },
+                    3 => .{ .affine_map = .{
+                        .source = try pipeSlotFromC(input_stage.source),
+                        .destination = try pipeSlotFromC(input_stage.destination),
+                        .gain = input_stage.gain,
+                        .offset = input_stage.offset,
+                    } },
+                    4 => .{ .lut_map = .{
+                        .source = try pipeSlotFromC(input_stage.source),
+                        .destination = try pipeSlotFromC(input_stage.destination),
+                        .lookup = try lookupFromC(input_stage.lookup),
+                    } },
+                    5 => .{ .blend = .{
+                        .a = try pipeSlotFromC(input_stage.source),
+                        .b = try pipeSlotFromC(input_stage.source_b),
+                        .destination = try pipeSlotFromC(input_stage.destination),
+                        .alpha = if (input_stage.alpha_from_slot == 0)
+                            .{ .fixed = input_stage.alpha }
+                        else if (input_stage.alpha_from_slot == 1)
+                            .{ .slot = try pipeSlotFromC(input_stage.alpha_slot) }
+                        else
+                            return error.InvalidPipeStage,
+                    } },
+                    6 => .{ .normalise = .{
+                        .source = try pipeSlotFromC(input_stage.source),
+                        .destination = try pipeSlotFromC(input_stage.destination),
+                        .components = if (input_stage.components <= 3)
+                            @intCast(input_stage.components)
+                        else
+                            return error.InvalidPipeStage,
                     } },
                     else => return error.InvalidPipeStage,
                 };

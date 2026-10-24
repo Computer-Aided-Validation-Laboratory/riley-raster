@@ -6,6 +6,36 @@ A mesh owns one `MeshShaderSet` of optional, named alternatives: `direct`, `mono
 
 A pipe evaluates source and transform stages in order at each covered surface sample. Sources write to `channel`, `field`, or `parameter` slots; subsequent stages may read earlier slots. `constant` slots belong to the resolver expression. `GreyToEmissivity` maps a sampled grey value to a spatial emissivity parameter. `ClampStage` bounds a value. The final `ShaderResolver` produces the sample's output channels before pixel integration. Available resolvers include `identity`, `sum`, `modulate`, `weighted_sum`, `greybody_bolometric`, `greybody_band`, `greybody_band_apparent_c`, and `expression`. The expression resolver uses bounded, validated stack operations for arithmetic, fourth power, clamps, and lookups. Configuration is validated before rasterisation; there are no Python callbacks per sample.
 
+Four more dedicated transform stages are available in both Zig and Python:
+
+| Stage | Operation |
+| --- | --- |
+| `AffineMap` | `destination = gain * source + offset`; gain and offset are fixed finite values. |
+| `LUTMap` | Uniformly spaced linear lookup using `first`, positive `step`, and at least two finite `values`. Inputs outside the table range use the nearest endpoint. |
+| `Blend` | `destination = (1 - alpha) * a + alpha * b`; alpha is a fixed finite value or a previously written slot. Alpha is not clamped, so extrapolation is supported. |
+| `Normalise` | Normalise 2 or 3 contiguous scalar slots of one kind into the same number of contiguous destination slots. An exact zero vector produces zeros. |
+
+All transform reads must refer to slots written by earlier stages. Each output slot has one writer; transforms do not update their inputs in place. Stage inputs cannot read resolver `constant` slots. A pipe still contains at most eight stages. Lookups are immutable borrowed input data that must remain alive throughout rendering; the Python binding keeps its contiguous table alive for the native call.
+
+For example, a source in `field[0]` can be transformed and resolved as follows:
+
+```python
+import numpy as np
+import riley
+
+f0 = riley.Slot(riley.SlotKind.field, 0)
+f1 = riley.Slot(riley.SlotKind.field, 1)
+ch0 = riley.Slot(riley.SlotKind.channel, 0)
+pipe = riley.ShaderPipe(
+    stages=(
+        riley.ShaderSource(source_shader, f0),
+        riley.AffineMap(f0, f1, gain=2.0, offset=0.1),
+        riley.LUTMap(f1, ch0, first=0.0, step=1.0, values=np.array([0., 10., 20.])),
+    ),
+    resolver=riley.ShaderResolver(riley.ResolverKind.identity, slots=(ch0,)),
+)
+```
+
 ```python
 import riley
 

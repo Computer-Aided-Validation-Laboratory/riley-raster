@@ -91,6 +91,47 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     config.save_strategy = if (generate_gold) .both else .memory;
     config.background_value = 0;
 
+    const generic_stages = [_]shaderops.ShaderPipeStageInput{
+        .{ .source = .{ .shader = .{ .func_rgb = .{
+            .builtin = .constant,
+            .params = .{ .settings = .{ .constant = .{
+                .value_rgb = .{ 0.3, 0.4, 0 },
+            } } },
+            .bits = null,
+            .scaling = .none,
+        } }, .destination = .{ .kind = .field, .index = 0 } } },
+        .{ .normalise = .{ .source = .{ .kind = .field, .index = 0 }, .destination = .{ .kind = .channel, .index = 0 }, .components = 3 } },
+        .{ .affine_map = .{ .source = .{ .kind = .channel, .index = 0 }, .destination = .{ .kind = .field, .index = 3 }, .gain = 2, .offset = 0.1 } },
+        .{ .lut_map = .{ .source = .{ .kind = .field, .index = 3 }, .destination = .{ .kind = .field, .index = 4 }, .lookup = .{ .first = 0, .step = 1, .values = &.{ 0, 10, 20 } } } },
+        .{ .blend = .{ .a = .{ .kind = .field, .index = 4 }, .b = .{ .kind = .channel, .index = 1 }, .destination = .{ .kind = .channel, .index = 3 }, .alpha = .{ .slot = .{ .kind = .channel, .index = 0 } } } },
+    };
+    const generic_result_slot = [_]shaderpipe.Slot{.{ .kind = .channel, .index = 3 }};
+    var generic_mesh = mesh;
+    generic_mesh.shaders = .{ .mono = .{
+        .stages = &generic_stages,
+        .resolver = .{ .identity = &generic_result_slot },
+    } };
+    var generic_config = config;
+    generic_config.save_strategy = .memory;
+    const generic_result = try riley.raster(
+        aa,
+        io,
+        &.{cam_in},
+        &.{generic_mesh},
+        generic_config,
+        null,
+    );
+    const generic_image = generic_result orelse return error.NoResult;
+    defer aa.free(generic_image.slice);
+    var generic_foreground: usize = 0;
+    for (generic_image.slice) |value| {
+        if (value != 0) {
+            generic_foreground += 1;
+            try std.testing.expectApproxEqAbs(@as(F, 5.68), value, sample_tol);
+        }
+    }
+    try std.testing.expect(generic_foreground > 0);
+
     // A nodal source with fewer frames than the mesh displacement must use
     // the selected frame, then hold its final field frame just like a direct
     // nodal shader. This compares the complete scalar/SIMD raster result.

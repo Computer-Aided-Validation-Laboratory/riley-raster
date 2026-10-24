@@ -252,6 +252,14 @@ cdef extern from "riley.h":
         double upper
         double black
         double white
+        CSlot source_b
+        CSlot alpha_slot
+        double alpha
+        uint32_t alpha_from_slot
+        double gain
+        double offset
+        uint32_t components
+        CLookup lookup
 
     ctypedef struct CPipe:
         uint32_t shader_selection

@@ -210,6 +210,10 @@ pub fn PipeKernel(comptime N: usize) type {
                     );
                     outputs.set(c.destination, clamped);
                 },
+                .affine_map => |m| m.apply(&outputs),
+                .lut_map => |m| m.apply(&outputs, true),
+                .blend => |m| m.apply(&outputs),
+                .normalise => |m| m.apply(&outputs),
             };
 
             var resolved: [shaderpipe.max_channels]F = undefined;
@@ -290,6 +294,10 @@ pub fn PipeKernel(comptime N: usize) type {
                     const clamped = @min(upper, @max(lower, outputs.get(c.source)));
                     outputs.set(c.destination, clamped);
                 },
+                .affine_map => |m| m.apply(&outputs),
+                .lut_map => |m| m.apply(&outputs, v_mask_active),
+                .blend => |m| m.apply(&outputs),
+                .normalise => |m| m.apply(&outputs),
             };
 
             var resolved: [shaderpipe.max_channels]VecSF = undefined;

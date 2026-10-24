@@ -436,6 +436,10 @@ fn initShaderPipeStatic(
             } },
             .grey_to_emissivity => |m| .{ .grey_to_emissivity = m },
             .clamp => |c| .{ .clamp = c },
+            .affine_map => |m| .{ .affine_map = m },
+            .lut_map => |m| .{ .lut_map = m },
+            .blend => |m| .{ .blend = m },
+            .normalise => |m| .{ .normalise = m },
         };
     }
 
@@ -1834,6 +1838,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     },
                     .grey_to_emissivity => |m| .{ .grey_to_emissivity = m },
                     .clamp => |c| .{ .clamp = c },
+                    .affine_map => |m| .{ .affine_map = m },
+                    .lut_map => |m| .{ .lut_map = m },
+                    .blend => |m| .{ .blend = m },
+                    .normalise => |m| .{ .normalise = m },
                 };
             }
             return .{

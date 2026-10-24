@@ -260,7 +260,8 @@ typedef struct c_resolver {
 } CResolver;
 
 typedef struct c_pipe_stage {
-    /* tag: source=0, grey_to_emissivity=1, clamp=2. */
+    /* tag: source=0, grey_to_emissivity=1, clamp=2, affine_map=3,
+     * lut_map=4, blend=5, normalise=6. */
     uint32_t tag;
     const CShaderInput* shader;
     CSlot source;
@@ -269,6 +270,14 @@ typedef struct c_pipe_stage {
     double upper;
     double black;
     double white;
+    CSlot source_b;
+    CSlot alpha_slot;
+    double alpha;
+    uint32_t alpha_from_slot;
+    double gain;
+    double offset;
+    uint32_t components;
+    CLookup lookup;
 } CPipeStage;
 
 typedef struct c_pipe {

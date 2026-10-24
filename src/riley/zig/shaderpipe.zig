@@ -28,6 +28,95 @@ pub const ClampStage = struct {
     upper: F,
 };
 
+pub const AffineMapStage = struct {
+    source: Slot,
+    destination: Slot,
+    gain: F,
+    offset: F,
+
+    pub inline fn apply(self: @This(), outputs: anytype) void {
+        const T = @TypeOf(outputs.get(self.source));
+        outputs.set(self.destination, outputs.get(self.source) * splat(T, self.gain) +
+            splat(T, self.offset));
+    }
+};
+
+pub const LUTMapStage = struct {
+    source: Slot,
+    destination: Slot,
+    lookup: Lookup,
+
+    pub inline fn apply(self: @This(), outputs: anytype, active: anytype) void {
+        const T = @TypeOf(outputs.get(self.source));
+        if (T == F) {
+            outputs.set(self.destination, self.lookup.sample(outputs.get(self.source)));
+        } else {
+            const values: [buildconfig.SimdWidth]F = @bitCast(outputs.get(self.source));
+            const mask: [buildconfig.SimdWidth]bool = active;
+            var result: [buildconfig.SimdWidth]F = undefined;
+            for (&result, values, mask) |*dest, value, enabled| {
+                dest.* = self.lookup.sample(if (enabled) value else self.lookup.first);
+            }
+            outputs.set(self.destination, @bitCast(result));
+        }
+    }
+};
+
+pub const BlendAlpha = union(enum) { fixed: F, slot: Slot };
+
+pub const BlendStage = struct {
+    a: Slot,
+    b: Slot,
+    destination: Slot,
+    alpha: BlendAlpha,
+
+    pub inline fn apply(self: @This(), outputs: anytype) void {
+        const T = @TypeOf(outputs.get(self.a));
+        const alpha = switch (self.alpha) {
+            .fixed => |value| splat(T, value),
+            .slot => |slot| outputs.get(slot),
+        };
+        const a = outputs.get(self.a);
+        const b = outputs.get(self.b);
+        outputs.set(self.destination, (splat(T, 1) - alpha) * a + alpha * b);
+    }
+};
+
+pub const NormaliseStage = struct {
+    source: Slot,
+    destination: Slot,
+    components: u8,
+
+    pub inline fn apply(self: @This(), outputs: anytype) void {
+        const T = @TypeOf(outputs.get(self.source));
+        var values: [3]T = undefined;
+        var squared: T = splat(T, 0);
+        for (0..self.components) |i| {
+            var slot = self.source;
+            slot.index += @intCast(i);
+            values[i] = outputs.get(slot);
+            squared += values[i] * values[i];
+        }
+        if (T == F) {
+            const inv_norm: F = if (squared == 0) 0 else 1 / @sqrt(squared);
+            for (0..self.components) |i| {
+                var dest = self.destination;
+                dest.index += @intCast(i);
+                outputs.set(dest, values[i] * inv_norm);
+            }
+        } else {
+            const positive = squared > splat(T, 0);
+            const safe_squared = @select(F, positive, squared, splat(T, 1));
+            const inv_norm = @select(F, positive, splat(T, 1) / @sqrt(safe_squared), splat(T, 0));
+            for (0..self.components) |i| {
+                var dest = self.destination;
+                dest.index += @intCast(i);
+                outputs.set(dest, values[i] * inv_norm);
+            }
+        }
+    }
+};
+
 pub fn Outputs(comptime T: type) type {
     return struct {
         channel: [max_slots]T = undefined,
@@ -663,4 +752,107 @@ test "apparent temperature includes reflected ambient and inverts band radiance"
         .ambient_k = 290,
     } };
     try std.testing.expectError(error.InvalidResolver, invalid.validate(written, &.{}, 1));
+}
+
+test "generic pipe stages compose with fixed and slot alpha" {
+    const c0 = Slot{ .kind = .channel, .index = 0 };
+    const c1 = Slot{ .kind = .channel, .index = 1 };
+    const f0 = Slot{ .kind = .field, .index = 0 };
+    const f1 = Slot{ .kind = .field, .index = 1 };
+    const f2 = Slot{ .kind = .field, .index = 2 };
+    const p0 = Slot{ .kind = .parameter, .index = 0 };
+    var outputs: ScalarOutputs = .{};
+    outputs.set(c0, 0.25);
+    outputs.set(c1, 0.75);
+    outputs.set(p0, 0.5);
+    (AffineMapStage{ .source = c0, .destination = f0, .gain = 2, .offset = 0.1 })
+        .apply(&outputs);
+    const values = [_]F{ 0, 10 };
+    const lut = LUTMapStage{ .source = f0, .destination = f1, .lookup = .{ .first = 0, .step = 1, .values = &values } };
+    lut.apply(&outputs, true);
+    (BlendStage{ .a = f1, .b = c1, .destination = f2, .alpha = .{ .slot = p0 } })
+        .apply(&outputs);
+    try std.testing.expectApproxEqAbs(@as(F, 3.375), outputs.get(f2), 1e-6);
+    (BlendStage{ .a = c0, .b = c1, .destination = .{ .kind = .field, .index = 3 }, .alpha = .{ .fixed = -1 } }).apply(&outputs);
+    try std.testing.expectApproxEqAbs(@as(F, -0.25), outputs.field[3], 1e-6);
+    outputs.set(f0, -2);
+    lut.apply(&outputs, true);
+    try std.testing.expectEqual(@as(F, 0), outputs.get(f1));
+    outputs.set(f0, 3);
+    lut.apply(&outputs, true);
+    try std.testing.expectEqual(@as(F, 10), outputs.get(f1));
+}
+
+test "normalise handles 2D and 3D vectors including zero" {
+    var outputs: ScalarOutputs = .{};
+    outputs.field[0] = 3;
+    outputs.field[1] = 4;
+    outputs.field[2] = 0;
+    const src = Slot{ .kind = .field, .index = 0 };
+    const dst = Slot{ .kind = .channel, .index = 0 };
+    (NormaliseStage{ .source = src, .destination = dst, .components = 2 }).apply(&outputs);
+    try std.testing.expectApproxEqAbs(@as(F, 0.6), outputs.channel[0], 1e-6);
+    try std.testing.expectApproxEqAbs(@as(F, 0.8), outputs.channel[1], 1e-6);
+    (NormaliseStage{ .source = src, .destination = .{ .kind = .channel, .index = 2 }, .components = 3 }).apply(&outputs);
+    try std.testing.expectEqual(@as(F, 0), outputs.channel[4]);
+    outputs.field[0] = 0;
+    outputs.field[1] = 0;
+    outputs.field[2] = 0;
+    (NormaliseStage{ .source = src, .destination = .{ .kind = .channel, .index = 5 }, .components = 3 }).apply(&outputs);
+    try std.testing.expectEqual(@as(F, 0), outputs.channel[5]);
+    try std.testing.expectEqual(@as(F, 0), outputs.channel[6]);
+    try std.testing.expectEqual(@as(F, 0), outputs.channel[7]);
+}
+
+test "generic pipe stages match scalar values on SIMD lanes" {
+    const S = buildconfig.SimdWidth;
+    var outputs: VectorOutputs = .{};
+    var x: [S]F = undefined;
+    var y: [S]F = undefined;
+    var alpha: [S]F = undefined;
+    var active: buildconfig.VecSB = @splat(true);
+    for (0..S) |lane| {
+        x[lane] = @as(F, @floatFromInt(lane)) / @as(F, @floatFromInt(S));
+        y[lane] = 0.75;
+        alpha[lane] = 0.25;
+    }
+    active[S - 1] = false;
+    x[S - 1] = std.math.nan(F);
+    outputs.channel[0] = @bitCast(x);
+    outputs.channel[1] = @bitCast(y);
+    outputs.parameter[0] = @bitCast(alpha);
+    (AffineMapStage{ .source = .{ .kind = .channel, .index = 0 }, .destination = .{ .kind = .field, .index = 0 }, .gain = 2, .offset = 0.1 })
+        .apply(&outputs);
+    const values = [_]F{ 0, 10 };
+    (LUTMapStage{ .source = .{ .kind = .field, .index = 0 }, .destination = .{ .kind = .field, .index = 1 }, .lookup = .{ .first = 0, .step = 1, .values = &values } })
+        .apply(&outputs, active);
+    (BlendStage{ .a = .{ .kind = .field, .index = 1 }, .b = .{ .kind = .channel, .index = 1 }, .destination = .{ .kind = .field, .index = 2 }, .alpha = .{ .slot = .{ .kind = .parameter, .index = 0 } } })
+        .apply(&outputs);
+    const result: [S]F = @bitCast(outputs.field[2]);
+    for (0..S - 1) |lane| {
+        const lut_val = @min(@as(F, 10), (2 * x[lane] + 0.1) * 10);
+        const expected = 0.75 * lut_val + 0.25 * y[lane];
+        try std.testing.expectApproxEqAbs(expected, result[lane], 1e-5);
+    }
+    var vx: [S]F = undefined;
+    var vy: [S]F = undefined;
+    var vz: [S]F = undefined;
+    for (0..S) |lane| {
+        vx[lane] = if (lane == 0) 0 else 3;
+        vy[lane] = if (lane == 0) 0 else 4;
+        vz[lane] = 0;
+    }
+    outputs.field[3] = @bitCast(vx);
+    outputs.field[4] = @bitCast(vy);
+    outputs.field[5] = @bitCast(vz);
+    (NormaliseStage{ .source = .{ .kind = .field, .index = 3 }, .destination = .{ .kind = .channel, .index = 3 }, .components = 3 })
+        .apply(&outputs);
+    const nx: [S]F = @bitCast(outputs.channel[3]);
+    const ny: [S]F = @bitCast(outputs.channel[4]);
+    const nz: [S]F = @bitCast(outputs.channel[5]);
+    for (0..S) |lane| {
+        try std.testing.expectApproxEqAbs(if (lane == 0) @as(F, 0) else 0.6, nx[lane], 1e-6);
+        try std.testing.expectApproxEqAbs(if (lane == 0) @as(F, 0) else 0.8, ny[lane], 1e-6);
+        try std.testing.expectEqual(@as(F, 0), nz[lane]);
+    }
 }

@@ -522,8 +522,43 @@ class ClampStage:
 
 
 @dataclass(slots=True)
+class AffineMap:
+    source: Slot
+    destination: Slot
+    gain: float
+    offset: float
+
+
+@dataclass(slots=True)
+class LUTMap:
+    source: Slot
+    destination: Slot
+    first: float
+    step: float
+    values: np.ndarray
+
+
+@dataclass(slots=True)
+class Blend:
+    a: Slot
+    b: Slot
+    destination: Slot
+    alpha: float | Slot
+
+
+@dataclass(slots=True)
+class Normalise:
+    source: Slot
+    destination: Slot
+    components: int
+
+
+@dataclass(slots=True)
 class ShaderPipe:
-    stages: tuple[ShaderSource | GreyToEmissivity | ClampStage, ...]
+    stages: tuple[
+        ShaderSource | GreyToEmissivity | ClampStage | AffineMap | LUTMap |
+        Blend | Normalise, ...
+    ]
     resolver: ShaderResolver
     channels: int = 0
     constants: tuple[float, ...] = ()
@@ -1415,6 +1450,41 @@ def _fill_pipe_array(
                 stages[si].destination = _make_slot(stage.destination)
                 stages[si].lower = float(stage.lower)
                 stages[si].upper = float(stage.upper)
+            elif isinstance(stage, AffineMap):
+                stages[si].tag = 3
+                stages[si].source = _make_slot(stage.source)
+                stages[si].destination = _make_slot(stage.destination)
+                stages[si].gain = float(stage.gain)
+                stages[si].offset = float(stage.offset)
+            elif isinstance(stage, LUTMap):
+                stages[si].tag = 4
+                stages[si].source = _make_slot(stage.source)
+                stages[si].destination = _make_slot(stage.destination)
+                stages[si].lookup.first = float(stage.first)
+                stages[si].lookup.step = float(stage.step)
+                lookup_np = np.ascontiguousarray(stage.values, dtype=np.float64)
+                if lookup_np.ndim != 1 or lookup_np.size < 2:
+                    raise ValueError("LUTMap needs a one-dimensional table of at least two values")
+                keepalive.append(lookup_np)
+                stage_lookup_view: cython.double[::1] = lookup_np
+                stages[si].lookup.values = cython.address(stage_lookup_view[0])
+                stages[si].lookup.values_len = len(lookup_np)
+            elif isinstance(stage, Blend):
+                stages[si].tag = 5
+                stages[si].source = _make_slot(stage.a)
+                stages[si].source_b = _make_slot(stage.b)
+                stages[si].destination = _make_slot(stage.destination)
+                if isinstance(stage.alpha, Slot):
+                    stages[si].alpha_from_slot = 1
+                    stages[si].alpha_slot = _make_slot(stage.alpha)
+                else:
+                    stages[si].alpha_from_slot = 0
+                    stages[si].alpha = float(stage.alpha)
+            elif isinstance(stage, Normalise):
+                stages[si].tag = 6
+                stages[si].source = _make_slot(stage.source)
+                stages[si].destination = _make_slot(stage.destination)
+                stages[si].components = int(stage.components)
             else:
                 raise TypeError("unsupported shader-pipe stage")
 

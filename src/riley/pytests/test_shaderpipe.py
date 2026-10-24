@@ -79,6 +79,34 @@ def test_python_sum_pipe_matches_two_constant_sources() -> None:
     np.testing.assert_allclose(image[0, 0, 0, 16, 16], 0.75, atol=1e-12)
 
 
+@pytest.mark.parametrize("alpha, expected", [(0.25, 9.95), ("slot", 5.68)])
+def test_python_generic_stage_composition(alpha: float | str, expected: float) -> None:
+    mesh, camera, config = scene()
+    source = riley.FunctionShader(
+        builtin=riley.FuncShaderBuiltin.constant,
+        params=riley.FuncShaderParams(constant_value_rgb=(0.3, 0.4, 0.0)),
+        channels=3, bits=-1, scaling_type=riley.ScaleStrategy.none,
+    )
+    field = lambda index: riley.Slot(riley.SlotKind.field, index)
+    channel = lambda index: riley.Slot(riley.SlotKind.channel, index)
+    stages = (
+        riley.ShaderSource(source, field(0)),
+        riley.Normalise(field(0), channel(0), 3),
+        riley.AffineMap(channel(0), field(3), 2.0, 0.1),
+        riley.LUTMap(field(3), field(4), 0.0, 1.0,
+                     np.array((0.0, 10.0, 20.0))),
+        riley.Blend(field(4), channel(1), channel(3),
+                    channel(0) if alpha == "slot" else alpha),
+    )
+    mesh.shaders = riley.MeshShaderSet(mono=riley.ShaderPipe(
+        stages=stages,
+        resolver=riley.ShaderResolver(riley.ResolverKind.identity,
+                                      slots=(channel(3),)),
+    ))
+    image = riley.raster(mesh, camera, config)
+    np.testing.assert_allclose(image[0, 0, 0, 16, 16], expected, atol=1e-11)
+
+
 def test_python_expression_reads_field_parameter_and_constant() -> None:
     mesh, camera, config = scene()
     temp = riley.FunctionShader(
