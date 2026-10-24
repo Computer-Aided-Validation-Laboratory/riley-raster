@@ -18,6 +18,9 @@ const gen_ssaa_pxmap = @import("gengold/gen_gold_full_ssaa_pxmap.zig");
 const gen_texture = @import("gengold/gen_gold_full_texture.zig");
 const gen_tiling = @import("gengold/gen_gold_full_tiling.zig");
 const gen_shaderpipe = @import("tests/test_full_shaderpipe.zig");
+const gen_failed_distortion = @import(
+    "gengold/gen_gold_failed_distortion.zig",
+);
 const iio = @import("riley/zig/imageio.zig");
 const policy = @import("dev_support/testpolicy.zig");
 const tcfg = @import("dev_support/testconfig.zig");
@@ -28,6 +31,17 @@ pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(init.gpa);
     defer arena.deinit();
     const aa = arena.allocator();
+
+    for (init.minimal.args.vector) |arg| {
+        if (std.mem.eql(u8, std.mem.span(arg), "--failed-distortion-only")) {
+            std.debug.print(
+                "\nRegenerating failed distortion gold cases...\n\n",
+                .{},
+            );
+            try gen_failed_distortion.generateFailedDistortion(aa, io);
+            return;
+        }
+    }
 
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;

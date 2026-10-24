@@ -55,20 +55,19 @@ texture plus Lambertian modulation across five element types and compares
 tile-local, full global, and stripe buffers. Its references live only under
 `gold/basic/shaderpipe_*` and `gold/full_shaderpipe/`. Only the selected Basic
 FIMG comparison frames are committed; Full references and BMP previews remain
-local. To regenerate only these new shader-pipe references during development,
-run
-`zig run src/gen_gold_shaderpipe.zig -lc`; ordinary tests never write gold.
-The standard `gen-gold-full` command also generates the Full shader-pipe
+local. To regenerate Basic references during development, run
+`zig build gen-gold-basic`; ordinary tests never write gold.
+The standard `gen-gold-full` command generates the Full shader-pipe
 references locally, without touching the committed Basic references.
 Inspect both BMP previews and floating-point FIMG values before accepting
 new references. Existing gold directories must not be regenerated for a
 shader-pipe change.
 The generated one-element bulge/tangent fixtures include deformation frames
 whose in-plane Jacobian becomes zero or changes sign. Normal basic and full
-comparisons cover only valid frames. Run `zig build test-full-badjac` to render
-the excluded frames as warning-only diagnostics. It writes actual, reference,
-and difference BMP/CSV files under `fails/*_full_badjac/`; changes in these
-out-of-domain renders do not fail the test command.
+comparisons cover only valid frames. Run `zig build diag-badjac` to render
+the excluded frames as warning-only diagnostics (rehomed under `dev_support/diag_badjac.zig`).
+It writes actual, reference, and difference BMP/CSV files under `fails/*_full_badjac/`;
+changes in these out-of-domain renders do not fail the test command.
 After reviewing and approving distortion failures, run
 `zig build gen-gold-failed-distortion -Doptimize=ReleaseSafe` to regenerate
 only the distinct distortion/PSF and SSAA/pixel-map gold cases represented
@@ -88,8 +87,15 @@ Riley provides three core repository-packaged test suites intended for routine d
 | :--- | :--- | :--- | :--- | :--- |
 | **Verification Suite** | `zig build test-verif` | [`src/test_verif.zig`](file:///home/lloydf/riley-raster/src/test_verif.zig) | Mathematical validation against analytical Python oracles | `gold/verif/` |
 | **Basic Test Suite** | `zig build test-basic` | [`src/test_basic.zig`](file:///home/lloydf/riley-raster/src/test_basic.zig) | Fast, comprehensive coverage of core rasteriser features | `gold/basic/` |
-| **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | [`src/test_full_badjac.zig`](file:///home/lloydf/riley-raster/src/test_full_badjac.zig) | Warning-only renders and diffs for invalid one-element frames | Existing basic and full-hull gold |
+| **Combined CI Suite** | `zig build test-verif-basic` | [`src/test_verif_basic.zig`](file:///home/lloydf/riley-raster/src/test_verif_basic.zig) | CI fast-path running verif and basic in one build | `gold/verif/`, `gold/basic/` |
+| **Full Test Suite** | `zig build test-full -Doptimize=ReleaseSafe` | [`src/test_full.zig`](file:///home/lloydf/riley-raster/src/test_full.zig) | Factorial coverage of shaders, camera I/O, maths SIMD, PSFs, tiling, threads | `gold/full_*/` |
 | **Python Pytest Suite** | `.venv/bin/pytest src/riley/pytests/` | [`src/riley/pytests/`](file:///home/lloydf/riley-raster/src/riley/pytests) | Python/Cython API, mesh pipeline, Exodus conversion, demo parity | Integrated / `gold/` |
+
+### Diagnostic Tools
+
+| Diagnostic Name | Execution Command | Source Location | Primary Role | Output Artifacts |
+| :--- | :--- | :--- | :--- | :--- |
+| **Bad-Jacobian Diagnostics** | `zig build diag-badjac` | [`src/dev_support/diag_badjac.zig`](file:///home/lloydf/riley-raster/src/dev_support/diag_badjac.zig) | Warning-only diagnostic renders for intentionally invalid/folded frames | `fails/*_full_badjac/` |
 
 ### Regenerating Reference Gold for Core Suites
 
