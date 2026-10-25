@@ -266,7 +266,7 @@ fn writeStatsCsv(
     file_name: []const u8,
     distort_case: vconst.CameraDistortCase,
     stats: CentroidStats,
-    centroid_world: vector.Vec3f,
+    centroid_world: vector.Vec3F,
     scaling: cam.FOVScaling,
     pinhole_camera: *const cam.CameraPrepared,
     distorted_camera: *const cam.CameraPrepared,
@@ -331,8 +331,8 @@ fn writeStatsCsv(
 
 fn projectWorldNodeToRaster(
     camera_prepared: *const cam.CameraPrepared,
-    coord_world: vector.Vec3f,
-) vector.Vec3f {
+    coord_world: vector.Vec3F,
+) vector.Vec3F {
     var coord_raster = matrix.Mat44Ops.mulVec3(
         F,
         camera_prepared.world_to_cam_mat,
@@ -383,12 +383,9 @@ fn renderScalarMap(
         },
     };
 
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-    };
     const result = (try riley.raster(
         render_allocator,
-        &render_groups,
+        io,
         &[_]cam.CameraInput{camera_input},
         &[_]mo.MeshInput{mesh_input},
         config,
@@ -524,7 +521,7 @@ fn runDistortCase(
 
     var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .memory;
-    config.report = .off;
+    config.report = .{ .mode = .off };
 
     for (0..time_steps) |frame_idx| {
         var frame_arena = std.heap.ArenaAllocator.init(allocator);

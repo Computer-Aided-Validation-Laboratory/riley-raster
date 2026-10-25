@@ -62,16 +62,12 @@ pub fn generateCase(
         );
     }
 
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-    };
-
     var case_config = config;
     case_config.background_value = fullcase_dist_frontend.default_bg_value;
 
     const images = try riley.raster(
         allocator,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         &meshes,
         case_config,

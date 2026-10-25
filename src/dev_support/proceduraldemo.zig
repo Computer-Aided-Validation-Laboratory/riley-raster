@@ -71,16 +71,18 @@ pub fn runStaticTri6Demo(
     const local_alloc = arena.allocator();
 
     const args = (try parseDemoArgs(minimal.args.vector, spec)) orelse return;
+    const workers: u16 = 4;
     const config = rastcfg.RasterConfig{
         .save_strategy = .disk,
-        .total_threads = 4,
-        .max_raster_workers_per_job = 4,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
+        .parallel = .{ .threads = workers },
+        .output = .{
+            .image_save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            },
         },
-        .report = .bench,
+        .report = .{ .mode = .bench },
     };
-    var threaded_io = riley.getThreadedIo(local_alloc, minimal, config.total_threads);
+    var threaded_io = riley.getThreadedIo(local_alloc, minimal, workers);
     defer threaded_io.deinit();
     const io = threaded_io.io();
 
@@ -130,16 +132,17 @@ pub fn runStaticTri6Demo(
         .focal_length = focal_length,
         .sub_sample = 2,
     };
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = config.total_threads },
+    const render_groups = [_]riley.RenderGroup{
+        .{ .io = io, .workers = workers },
     };
-    const images = try riley.raster(
+    const images = try riley.rasterAdvanced(
         local_alloc,
-        &render_groups,
+        io,
         &[_]camera.CameraInput{camera_input},
         &[_]meshpipeline.MeshInput{mesh_input},
         config,
         args.out_dir,
+        .{ .render_groups = .{ .supplied = &render_groups } },
     );
     if (images) |img_const| {
         var img = img_const;

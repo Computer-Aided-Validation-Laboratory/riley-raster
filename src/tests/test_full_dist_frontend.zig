@@ -68,13 +68,9 @@ pub fn runFullDistFrontendCaseTest(
     run_config.background_value = fullcase_dist_frontend.default_bg_value;
 
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
-
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         &meshes,
         run_config,
@@ -195,10 +191,6 @@ pub fn testOffscreenDistortedOn(
     run_config.save_strategy = .memory;
     run_config.background_value = fullcase_dist_frontend.default_bg_value;
 
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
-
     const case_name = try fullcase_dist_frontend.formatOntoScreenCaseName(
         aa,
         mesh_type,
@@ -228,7 +220,7 @@ pub fn testOffscreenDistortedOn(
 
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         &[_]MeshInput{mesh_input},
         run_config,

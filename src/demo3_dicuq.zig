@@ -69,6 +69,8 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const local_alloc = arena.allocator();
 
+    const io = init.io;
+
     // -------------------------------------------------------------------------
     // 1. Setup paths, config and parameters
     // -------------------------------------------------------------------------
@@ -76,31 +78,19 @@ pub fn main(init: std.process.Init) !void {
     const texture_path = "texture/speckle_mono.bmp";
     const out_dir_root = "./out/demo3_dicuq";
 
-    const total_threads: u16 = 8;
-
     const config = RasterConfig{
         .render_mode = .offline,
-        .total_threads = total_threads,
-        .frame_batch_size_per_group = 1,
-        .max_geom_jobs_in_flight_per_group = 1,
-        .max_geom_workers_per_job = 1,
-        .geom_scheduling_mode = .spread,
-        .max_raster_workers_per_job = 1,
+        .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
-        .tile_size_min = 8,
-        .tile_size_max = 128,
         .background_value = 128.0,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .none },
+        .output = .{
+            .image_save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .none },
+            },
         },
-        .report = .bench,
+        .report = .{ .mode = .bench },
     };
 
-    var groups = try riley.ManagedRenderGroups.init(outer_alloc, init.minimal, .{
-        .thread_budget = total_threads,
-    });
-    defer groups.deinit(outer_alloc);
-    const io = groups.specs[0].io;
 
     // -------------------------------------------------------------------------
     // 2. Load simulation data, frames, and texture shader
@@ -161,7 +151,7 @@ pub fn main(init: std.process.Init) !void {
             .tex = texture,
             .samp_cfg = .{
                 .sample = .cubic_catmull_rom,
-                .mode = .lut_lerp,
+                .mode = .direct,
             },
             .bits = 8,
             .scaling = .none,
@@ -175,7 +165,7 @@ pub fn main(init: std.process.Init) !void {
     const pixels_size = [2]F{ 3.45e-6, 3.45e-6 };
     const focal_length: F = 50.0e-3;
     const fov_scale_factor: F = 0.65;
-    const sub_sample: u32 = 2;
+    const sub_sample: u32 = 4;
     const stereo_angle_deg: F = 20.0;
 
     std.debug.print("Setting up camera...\n", .{});
@@ -234,17 +224,15 @@ pub fn main(init: std.process.Init) !void {
     // 4. Configure raster engine and render
     // -------------------------------------------------------------------------
     std.debug.print("Rendering simulation to {s}/...\n", .{out_dir_root});
-    const meshes = [_]MeshInput{mesh_input};
-    const cams_in = [_]CameraInput{ cam0_in, cam1_in };
 
     var out_dir = try demo_common.resetOutputDir(io, out_dir_root);
     defer out_dir.close(io);
 
     const images = try riley.raster(
         outer_alloc,
-        groups.specs,
-        &cams_in,
-        &meshes,
+        io,
+        &.{cam0_in, cam1_in},
+        &.{mesh_input},
         config,
         out_dir_root,
     );

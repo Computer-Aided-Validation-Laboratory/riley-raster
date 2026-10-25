@@ -120,7 +120,7 @@ const Options = struct {
         return .{ .sample = self.texture_filter, .mode = if (self.texture_filter == .cubic_catmull_rom) .lut_lerp else .direct };
     }
     fn rasterConfig(self: Options) riley.RasterConfig {
-        return .{ .total_threads = self.threads, .max_geom_workers_per_job = self.threads, .max_raster_workers_per_job = self.threads, .save_strategy = if (self.mode == .evaluation) .none else .memory, .report = .off };
+        return .{ .parallel = .{ .threads = self.threads }, .save_strategy = if (self.mode == .evaluation) .none else .memory, .report = .{ .mode = .off } };
     }
 };
 
@@ -162,8 +162,8 @@ pub fn main(init: std.process.Init) !void {
     if (opts.mode == .evaluation) {
         const config = opts.rasterConfig();
         const cam = try camera.CameraPrepared.init(alloc, cameraInput(scene.sim, opts));
-        const geometry = try bench.Geometry.prepare(alloc, io, &cam, scene.sim.coords, scene.sim.connect, scene.uvs.array, config);
-        var evaluation = try bench.Evaluation.init(alloc, io, &cam, &geometry, config);
+        const geometry = try bench.Geometry.prepare(alloc, io, &cam, scene.sim.coords, scene.sim.connect, scene.uvs.array, config, opts.threads);
+        var evaluation = try bench.Evaluation.init(alloc, io, &cam, &geometry, config, opts.threads);
         const resource_start = std.Io.Timestamp.now(io, .awake);
         var resources = if (texture == null) try speckle.generateResources(init.gpa, params) else speckle.Resources{};
         defer resources.deinit(init.gpa);
@@ -182,7 +182,7 @@ pub fn main(init: std.process.Init) !void {
         timing.active = &capture;
         defer timing.active = null;
         const start = std.Io.Timestamp.now(io, .awake);
-        const output = (try riley.rasterReport(alloc, &.{.{ .io = io, .workers = opts.threads }}, &.{cam_input}, &.{mesh}, opts.rasterConfig(), null, null)).?;
+        const output = (try riley.rasterAdvanced(alloc, io, &.{cam_input}, &.{mesh}, opts.rasterConfig(), null, .{ .render_groups = .{ .supplied = &.{.{ .io = io, .workers = opts.threads }} } })).?;
         combined_ns = start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
         resource_ns = capture.resource_ns;
         render_ns = combined_ns - resource_ns;
@@ -195,7 +195,7 @@ pub fn main(init: std.process.Init) !void {
     const resolved = try policy.resolve(build.enable_all_evaluators, if (opts.texture_material) .disk else opts.pattern, if (opts.texture_material) null else opts.evaluator, if (opts.texture_material) null else opts.neighbors, !opts.texture_material and opts.softness > 0);
     const record = .{
         .mode = @tagName(opts.mode),
-        .workload_mode = if (opts.mode == .evaluation) bench.workload_mode else "production-raster-report-memory-v1",
+        .workload_mode = if (opts.mode == .evaluation) bench.workload_mode else "production-raster-advanced-memory-v2",
         .evaluator = if (opts.texture_material) "texture" else policy.evaluatorName(resolved.evaluator),
         .scene = if (opts.plate) "plate" else "sphere",
         .pattern = if (opts.pattern == .disk) (if (opts.softness > 0) "soft" else "hard") else @tagName(opts.pattern),
@@ -299,12 +299,12 @@ const TestFixture = struct {
         const scene = try loadScene(alloc, std.testing.io, opts);
         const cam = try camera.CameraPrepared.init(alloc, cameraInput(scene.sim, opts));
         var config = opts.rasterConfig();
-        config.tile_size_override = tile_size;
-        return .{ .cam = cam, .geometry = try bench.Geometry.prepare(alloc, std.testing.io, &cam, scene.sim.coords, scene.sim.connect, scene.uvs.array, config) };
+        config.advanced.raster.tile_size_override = tile_size;
+        return .{ .cam = cam, .geometry = try bench.Geometry.prepare(alloc, std.testing.io, &cam, scene.sim.coords, scene.sim.connect, scene.uvs.array, config, opts.threads) };
     }
 
     fn evaluation(self: *const TestFixture, alloc: std.mem.Allocator, threads: u16) !bench.Evaluation {
-        return bench.Evaluation.init(alloc, std.testing.io, &self.cam, &self.geometry, .{ .total_threads = threads });
+        return bench.Evaluation.init(alloc, std.testing.io, &self.cam, &self.geometry, .{ .parallel = .{ .threads = threads } }, threads);
     }
 };
 
@@ -329,10 +329,13 @@ test "speckle benchmark rejects occluded samples but keeps closer depth updates"
         @memcpy(fixture.geometry.uvs.slice[ee * 2 * n ..][0 .. 2 * n], source.uvs.slice[overlap.elem_idx * 2 * n ..][0 .. 2 * n]);
         @memcpy(fixture.geometry.raster_hulls.slice[ee * 2 * nh ..][0 .. 2 * nh], source.raster_hulls.slice[overlap.elem_idx * 2 * nh ..][0 .. 2 * nh]);
     }
-    var tiles = [_]@import("riley/zig/rasterops.zig").ActiveTile{source.tiling.active_tiles[0]};
+    var tiles = [_]@import("riley/zig/elemtilebinning.zig").ActiveTile{source.tiling.active_tiles[0]};
     tiles[0].overlap_start = 0;
     tiles[0].overlap_count = 1;
-    var overlaps = [_]@import("riley/zig/rasterops.zig").OverlapBBox{ overlap, overlap };
+    tiles[0].bins = @splat(.{});
+    const one_root_bin = @intFromEnum(@import("riley/zig/elemtilebinning.zig").ElemBin.tri6_one_root);
+    tiles[0].bins[one_root_bin] = .{ .start = 0, .count = 1 };
+    var overlaps = [_]@import("riley/zig/elemtilebinning.zig").OverlapBBox{ overlap, overlap };
     overlaps[0].elem_idx = 0;
     overlaps[1].elem_idx = 1;
     fixture.geometry.tiling = .{ .active_tiles = &tiles, .overlaps = &overlaps };
@@ -343,6 +346,7 @@ test "speckle benchmark rejects occluded samples but keeps closer depth updates"
     const front_only = evaluation.result();
     try std.testing.expect(front_only.shaded_samples > 0);
     tiles[0].overlap_count = 2;
+    tiles[0].bins[one_root_bin].count = 2;
     try evaluation.evaluate(smoke.params(), resources, 1);
     try std.testing.expectEqualDeep(front_only, evaluation.result()); // Near first rejects far.
     std.mem.swap(@TypeOf(overlaps[0]), &overlaps[0], &overlaps[1]);
@@ -350,6 +354,38 @@ test "speckle benchmark rejects occluded samples but keeps closer depth updates"
     var both = front_only;
     both.merge(front_only);
     try std.testing.expectEqualDeep(both, evaluation.result()); // Far first shades both.
+}
+
+test "speckle benchmark root bins preserve production facing and multi-root slots" {
+    const frontend = @import("riley/zig/rasterfrontend.zig");
+    const bins = @import("riley/zig/elemtilebinning.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var opts = smoke;
+    opts.plate = false;
+    const fixture = try TestFixture.init(arena.allocator(), opts, 8);
+    for (fixture.geometry.tiling.active_tiles) |tile| {
+        inline for (.{ bins.ElemBin.tri6_one_root, bins.ElemBin.tri6_multi_root }) |bin| {
+            const range = tile.bins[@intFromEnum(bin)];
+            for (fixture.geometry.tiling.overlaps[range.start .. range.start + range.count]) |overlap| {
+                const nodes = try frontend.loadElemVec3Slices(6, F, &fixture.geometry.coords, overlap.elem_idx);
+                var projected: frontend.RasterCoords2D(6) = undefined;
+                const offsets = fixture.cam.calcRasterOffsets();
+                for (0..6) |nn| {
+                    projected.x[nn] = nodes.x[nn] / nodes.z[nn] + offsets.x_off;
+                    projected.y[nn] = nodes.y[nn] / nodes.z[nn] + offsets.y_off;
+                }
+                const facing = frontend.classifyHighOrdFacing(6, projected);
+                try std.testing.expectEqual(bins.binRootClass(bin), facing orelse .one_root);
+                if (comptime bin == .tri6_multi_root) {
+                    const hulls = fixture.geometry.multiroot_hulls orelse return error.MissingMultiRootData;
+                    const slot = hulls.slot_by_visible_elem.get(overlap.elem_idx);
+                    try std.testing.expect(slot != std.math.maxInt(u32));
+                    try std.testing.expect(@as(usize, slot) * 4 + 4 <= hulls.leaves_pre_calc.len);
+                }
+            }
+        }
+    }
 }
 
 test "speckle benchmark workers depth resets and texture filters" {
@@ -417,8 +453,9 @@ test "speckle benchmark production full render memory output" {
         var capture: timing.Capture = .{ .io = std.testing.io };
         timing.active = &capture;
         defer timing.active = null;
-        const output = (try riley.rasterReport(alloc, &.{.{ .io = std.testing.io, .workers = 1 }}, &.{cameraInput(scene.sim, opts)}, &.{mesh}, opts.rasterConfig(), null, null)).?;
+        const output = (try riley.rasterAdvanced(alloc, std.testing.io, &.{cameraInput(scene.sim, opts)}, &.{mesh}, opts.rasterConfig(), null, .{ .render_groups = .{ .supplied = &.{.{ .io = std.testing.io, .workers = 1 }} } })).?;
         try std.testing.expectEqual(@as(usize, 32 * 24 * 2), output.slice.len);
+        try std.testing.expect(capture.resource_ns > 0);
         for (output.slice) |value| try std.testing.expect(std.math.isFinite(value));
     }
 }

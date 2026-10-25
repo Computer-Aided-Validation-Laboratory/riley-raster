@@ -71,17 +71,13 @@ pub fn runFullDistPsfCaseTest(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.buffer_mode = buf_case.mode;
+    run_config.advanced.raster.buffer_mode = buf_case.mode;
     run_config.background_value = common_full.grey_background_scene1;
 
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
-
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         &meshes,
         run_config,
@@ -314,15 +310,11 @@ fn runAdditionalDistPsfTests(
 
         var config_tile = config;
         config_tile.save_strategy = .memory;
-        config_tile.buffer_mode = .tile_local;
+        config_tile.advanced.raster.buffer_mode = .tile_local;
         config_tile.background_value = common_full.grey_background_scene1;
 
         var config_global = config_tile;
-        config_global.buffer_mode = .global_subpx_full;
-
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = 1 },
-        };
+        config_global.advanced.raster.buffer_mode = .global_subpx_full;
 
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
@@ -330,7 +322,7 @@ fn runAdditionalDistPsfTests(
 
         const result_tile = try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_tile},
             &meshes,
             config_tile,
@@ -340,7 +332,7 @@ fn runAdditionalDistPsfTests(
 
         const result_global = try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_tile},
             &meshes,
             config_global,
@@ -370,15 +362,11 @@ fn runAdditionalDistPsfTests(
 
         var config_tile = config;
         config_tile.save_strategy = .memory;
-        config_tile.buffer_mode = .tile_local;
+        config_tile.advanced.raster.buffer_mode = .tile_local;
         config_tile.background_value = common_full.grey_background_scene1;
 
         var config_global = config_tile;
-        config_global.buffer_mode = .global_subpx_full;
-
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = 1 },
-        };
+        config_global.advanced.raster.buffer_mode = .global_subpx_full;
 
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
@@ -386,7 +374,7 @@ fn runAdditionalDistPsfTests(
 
         const result_tile = try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_tile},
             &meshes,
             config_tile,
@@ -396,7 +384,7 @@ fn runAdditionalDistPsfTests(
 
         const result_global = try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_tile},
             &meshes,
             config_global,
@@ -434,18 +422,15 @@ fn runBrownConPolyEquivalenceRender(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.buffer_mode = .global_subpx_full;
+    run_config.advanced.raster.buffer_mode = .global_subpx_full;
     run_config.background_value = common_full.grey_background_scene1;
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = 1 },
-    };
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const aa = arena.allocator();
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{ brown_camera, poly_camera },
         &meshes,
         run_config,

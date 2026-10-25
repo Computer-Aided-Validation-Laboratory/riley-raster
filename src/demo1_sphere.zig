@@ -28,6 +28,7 @@ const F = buildconfig.F;
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
+    const io = init.io;
 
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -40,12 +41,6 @@ pub fn main(init: std.process.Init) !void {
     const out_dir_root = "./out/demo1_sphere";
 
     const total_threads: u16 = 4;
-    var groups = try riley.ManagedRenderGroups.init(outer_alloc, init.minimal, .{
-        .thread_budget = total_threads,
-        .max_groups = 1,
-    });
-    defer groups.deinit(outer_alloc);
-    const io = groups.specs[0].io;
 
     // -------------------------------------------------------------------------
     // 2. Load mesh data and texture shader
@@ -87,7 +82,7 @@ pub fn main(init: std.process.Init) !void {
             .tex = texture,
             .samp_cfg = .{
                 .sample = .cubic_catmull_rom,
-                .mode = .lut_lerp,
+                .mode = .direct,
             },
             .bits = 8,
             .scaling = .none,
@@ -125,7 +120,7 @@ pub fn main(init: std.process.Init) !void {
         .rot_world = rot,
         .roi_cent_world = roi_pos,
         .focal_length = focal_leng,
-        .sub_sample = 2,
+        .sub_sample = 4,
     };
 
     // -------------------------------------------------------------------------
@@ -133,12 +128,13 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const config = RasterConfig{
         .save_strategy = .disk,
-        .total_threads = total_threads,
-        .max_raster_workers_per_job = total_threads,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
+        .parallel = .{ .threads = total_threads },
+        .output = .{
+            .image_save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            },
         },
-        .report = .bench,
+        .report = .{ .mode = .bench },
     };
 
     // -------------------------------------------------------------------------
@@ -148,7 +144,7 @@ pub fn main(init: std.process.Init) !void {
 
     const images = try riley.raster(
         outer_alloc,
-        groups.specs,
+        io,
         &.{camera_input},
         &.{mesh_input},
         config,

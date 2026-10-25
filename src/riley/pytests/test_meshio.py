@@ -289,11 +289,20 @@ def test_create_mesh_builds_and_renders_for_all_supported_surface_types(
         focal_length=focal_length,
         sub_sample=2,
     )
-    config = riley.create_raster_config(
-        1,
+    config = riley.RasterConfig(
+        parallel=1,
         save_strategy=riley.SaveStrategy.memory,
     )
-    riley.raster(mesh, camera, config)
+    serial_image = riley.raster(mesh, camera, config)
+    assert serial_image is not None
+    for parallel in (None, 4):
+        config.parallel = parallel
+        image = riley.raster(mesh, camera, config)
+        np.testing.assert_array_equal(image, serial_image)
+
+    config.parallel = 0
+    with pytest.raises(ValueError, match="parallel"):
+        riley.raster(mesh, camera, config)
 
 
 def test_create_mesh_converts_volume_hex8_to_quad4() -> None:
@@ -531,3 +540,11 @@ def test_create_mesh_from_prepared_creates_mesh() -> None:
     assert mesh.mesh_type == riley.MeshType.tri3
     assert mesh.coords.shape == (3, 3)
     assert mesh.connect.shape == (1, 3)
+
+
+def test_texture_shader_defaults_to_direct_mode() -> None:
+    uvs = np.zeros((3, 2), dtype=np.float64)
+    texture = np.zeros((1, 8, 8), dtype=np.uint8)
+    shader = riley.TextureShader(uvs=uvs, texture=texture)
+    assert shader.sample_mode is riley.TextureSampleMode.direct
+

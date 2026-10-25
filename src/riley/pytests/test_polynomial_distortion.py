@@ -232,8 +232,9 @@ def test_flat_plate_bc_poly_render_equivalence(
     poly_camera = replace(
         camera, distort_model=3, distort_poly=riley.PolyMap(7, mode, coeffs)
     )
-    config = riley.create_raster_config(
-        num_frames=1, total_threads=threads, save_strategy=riley.SaveStrategy.memory
+    config = riley.RasterConfig(
+        parallel=threads,
+        save_strategy=riley.SaveStrategy.memory,
     )
     config.report = riley.ReportMode.off
     config.background_value = 0

@@ -178,17 +178,13 @@ fn renderCase(
         distort_case.model,
         psf_case.psf,
     );
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = threaded_io_io, .workers = RENDER_THREADS },
-    };
-
     std.debug.print(
         "Rendering {s} {s} {s} -> {s}\n",
         .{ mesh_name, distort_case.name, psf_case.name, out_dir },
     );
     const images = try riley.raster(
         allocator,
-        &render_groups,
+        threaded_io_io,
         &[_]CameraInput{camera_input},
         &[_]MeshInput{mesh_input},
         config,
@@ -210,16 +206,14 @@ pub fn main(init: std.process.Init) !void {
 
     const config = rastcfg.RasterConfig{
         .save_strategy = .disk,
-        .image_save_mode = .grey,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 1 },
+        .parallel = .{ .threads = RENDER_THREADS },
+        .output = .{
+            .image_save_mode = .grey,
+            .image_save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 1 },
+            },
         },
-        .report = .off,
-        .total_threads = RENDER_THREADS,
-        .frame_batch_size_per_group = 1,
-        .max_geom_jobs_in_flight_per_group = 1,
-        .max_geom_workers_per_job = RENDER_THREADS,
-        .max_raster_workers_per_job = RENDER_THREADS,
+        .report = .{ .mode = .off },
     };
 
     try ensureDir(io, OUT_DIR_ROOT);

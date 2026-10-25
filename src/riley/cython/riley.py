@@ -10,6 +10,7 @@ import cython
 import warnings
 from dataclasses import dataclass, field
 from enum import IntEnum
+from numbers import Integral
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +36,8 @@ class PolyMap:
         Coordinate output or identity-plus-displacement interpretation.
     coeffs
         Shape (term_count, 2), ordered by total degree, descending x exponent.
-        Bindings take an owned contiguous float64 snapshot for each native call.
+        Bindings take an owned contiguous float64 snapshot for each native
+        call.
     """
 
     degree: int
@@ -251,20 +253,30 @@ class FuncShaderParams:
     speckle: Speckle2DParams = field(default_factory=Speckle2DParams)
 
 
+class RenderMode(IntEnum):
+    in_order = 0
+    offline = 1
+
+
 @dataclass(slots=True)
 class RasterConfig:
-    render_mode: int = 0
-    total_threads: int = 1
-    frame_batch_size_per_group: int = 1
-    max_geom_jobs_in_flight_per_group: int = 1
-    max_geom_workers_per_job: int = 1
-    geom_scheduling_mode: int = 2
-    max_raster_workers_per_job: int = 1
+    """Raster settings; ``parallel=None`` delegates thread planning to Zig.
+
+    Use 1 for serial rendering or a positive integer for an explicit thread
+    budget. The count includes group caller threads, not disk-save workers.
+    """
+
+    render_mode: int = RenderMode.offline
+    # Keep this untyped at the Cython boundary until strict validation runs.
+    parallel: Any = None
     save_strategy: int = 1
     image_save_mode: int = 2
-    hull_mode: int = 1
-    newton_seed_mode: int = 0
-    newton_seed_reuse: int = 0
+    oneroot_hull_mode: int = 1
+    oneroot_newton_seed_mode: int = 0
+    oneroot_newton_seed_reuse: int = 0
+    oneroot_edge_fun_mode: int = 0
+    multiroot_mode: int = 0
+    multiroot_edge_fun_mode: int = 1
     validate_input: int = 1
     report: int = 1
     tile_size_min: int = 1
@@ -278,6 +290,7 @@ class RasterConfig:
     global_subpx_stripe_size_min: int = 256
     global_subpx_stripe_size_max: int = 4096
     global_subpx_stripe_size_override: int = 0
+    raster_halo_px_override: int = 0
     save_frame_buffer_count: int = 3
     save_format: int = 3
     save_bits: int = 8
@@ -300,6 +313,18 @@ class RasterConfig:
     buffer_mode: int = 0
     output_name_format: str = "cam{camera}_frame{frame}_field{field}"
     edge_spacing_px: float = 1.0
+
+    def __post_init__(self) -> None:
+        _check_parallel(self.parallel)
+
+
+def _check_parallel(parallel: Any) -> None:
+    if parallel is None:
+        return
+    if isinstance(parallel, bool) or not isinstance(parallel, Integral):
+        raise TypeError("parallel must be an integer thread budget or None.")
+    if parallel < 1 or parallel > 65535:
+        raise ValueError("parallel must be between 1 and 65535.")
 
 
 class MeshType(IntEnum):
@@ -326,17 +351,6 @@ class TextureStorage(IntEnum):
     floating = 2
 
 
-class RenderMode(IntEnum):
-    in_order = 0
-    offline = 1
-
-
-class GeometrySchedulingMode(IntEnum):
-    spread = 0
-    pack = 1
-    auto = 2
-
-
 class SaveStrategy(IntEnum):
     disk = 0
     memory = 1
@@ -348,6 +362,8 @@ class ImageSaveMode(IntEnum):
     grey = 0
     rgb = 1
     multifield = 2
+    rgb_to_grey = 3
+    grey_to_rgb = 4
 
 
 class ReportMode(IntEnum):
@@ -423,7 +439,6 @@ class NormalType(IntEnum):
 
 
 class HullMode(IntEnum):
-    off = 0
     on_no_fallback = 1
     on_convex_fallback = 2
 
@@ -436,6 +451,16 @@ class NewtonSeedMode(IntEnum):
 class NewtonSeedReuse(IntEnum):
     off = 0
     last_converged = 1
+
+
+class MultirootSolverMode(IntEnum):
+    fast = 0
+    robust = 1
+
+
+class EdgeFunMode(IntEnum):
+    on_the_fly = 0
+    pre_calc = 1
 
 
 class ValidateInput(IntEnum):
@@ -462,7 +487,7 @@ class TextureShader:
     uvs: np.ndarray
     texture: np.ndarray
     sample: TextureSample = TextureSample.cubic_catmull_rom
-    sample_mode: TextureSampleMode = TextureSampleMode.lut_lerp
+    sample_mode: TextureSampleMode = TextureSampleMode.direct
     bits: int = 8
     scaling_type: ScaleStrategy = ScaleStrategy.none
     scaling_min: float = 0.0
@@ -590,10 +615,14 @@ def _make_camera_input(camera: Any, keepalive: list[Any]) -> cr.CCameraInput:
         count = (poly.degree + 1) * (poly.degree + 2) // 2
         values = np.asarray(poly.coeffs)
         if values.shape != (count, 2):
-            raise ValueError("polynomial coefficients require shape (term_count, 2)")
+            raise ValueError(
+                "polynomial coefficients require shape (term_count, 2)"
+            )
         if np.iscomplexobj(values):
             raise ValueError("polynomial coefficients must be real")
-        snapshot = np.array(values, dtype=np.float64, order="C", copy=True).reshape(-1)
+        snapshot = np.array(
+            values, dtype=np.float64, order="C", copy=True
+        ).reshape(-1)
         if not np.isfinite(snapshot).all():
             raise ValueError("polynomial coefficients must be finite")
         keepalive.append(snapshot)
@@ -699,23 +728,26 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
 def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
     config_out: cr.CRasterConfig
     config_out.render_mode = int(config.render_mode)
-    config_out.total_threads = int(config.total_threads)
-    config_out.frame_batch_size_per_group = int(
-        config.frame_batch_size_per_group,
-    )
-    config_out.max_geom_jobs_in_flight_per_group = int(
-        config.max_geom_jobs_in_flight_per_group,
-    )
-    config_out.max_geom_workers_per_job = int(config.max_geom_workers_per_job)
-    config_out.geom_scheduling_mode = int(config.geom_scheduling_mode)
-    config_out.max_raster_workers_per_job = int(
-        config.max_raster_workers_per_job,
-    )
+    _check_parallel(config.parallel)
+    if config.parallel is None:
+        config_out.parallel_mode = 0
+        config_out.thread_count = 0
+    elif config.parallel == 1:
+        config_out.parallel_mode = 1
+        config_out.thread_count = 1
+    else:
+        config_out.parallel_mode = 2
+        config_out.thread_count = int(config.parallel)
     config_out.save_strategy = int(config.save_strategy)
     config_out.image_save_mode = int(config.image_save_mode)
-    config_out.hull_mode = int(config.hull_mode)
-    config_out.newton_seed_mode = int(config.newton_seed_mode)
-    config_out.newton_seed_reuse = int(config.newton_seed_reuse)
+    config_out.oneroot_hull_mode = int(config.oneroot_hull_mode)
+    config_out.oneroot_newton_seed_mode = int(config.oneroot_newton_seed_mode)
+    config_out.oneroot_newton_seed_reuse = int(
+        config.oneroot_newton_seed_reuse,
+    )
+    config_out.oneroot_edge_fun_mode = int(config.oneroot_edge_fun_mode)
+    config_out.multiroot_mode = int(config.multiroot_mode)
+    config_out.multiroot_edge_fun_mode = int(config.multiroot_edge_fun_mode)
     config_out.validate_input = int(config.validate_input)
     config_out.report = int(config.report)
     config_out.tile_size_min = int(config.tile_size_min)
@@ -723,8 +755,12 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
     config_out.background_value = float(config.background_value)
     config_out.disk_save_overlap = 1 if config.disk_save_overlap else 0
     config_out.tile_size_override = int(config.tile_size_override)
-    config_out.global_subpx_tile_size_min = int(config.global_subpx_tile_size_min)
-    config_out.global_subpx_tile_size_max = int(config.global_subpx_tile_size_max)
+    config_out.global_subpx_tile_size_min = int(
+        config.global_subpx_tile_size_min
+    )
+    config_out.global_subpx_tile_size_max = int(
+        config.global_subpx_tile_size_max
+    )
     config_out.global_subpx_tile_size_override = int(
         config.global_subpx_tile_size_override,
     )
@@ -737,6 +773,7 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
     config_out.global_subpx_stripe_size_override = int(
         config.global_subpx_stripe_size_override,
     )
+    config_out.raster_halo_px_override = int(config.raster_halo_px_override)
     config_out.save_frame_buff_count = int(config.save_frame_buffer_count)
     config_out.save_format = int(config.save_format)
     config_out.save_bits = int(config.save_bits)
@@ -1332,13 +1369,15 @@ def _fill_mesh_array(
                 texture_storage = int(TextureStorage.floating)
         elif isinstance(shader, NodalShader):
             field_channels = int(shader.field.shape[2])
+            is_rgb = (field_channels == 3)
             shader_tag = int(
-                ShaderType.nodal_rgb if field_channels == 3 else ShaderType.nodal
+                ShaderType.nodal_rgb if is_rgb else ShaderType.nodal
             )
             texture_storage = int(TextureStorage.u8)
         elif isinstance(shader, FunctionShader):
+            is_rgb = (shader.channels == 3)
             shader_tag = int(
-                ShaderType.func_rgb if shader.channels == 3 else ShaderType.func
+                ShaderType.func_rgb if is_rgb else ShaderType.func
             )
             texture_storage = int(TextureStorage.u8)
         else:
@@ -1347,7 +1386,9 @@ def _fill_mesh_array(
         mesh_array[nn].shader.shader_tag = shader_tag
         mesh_array[nn].shader.texture_storage = texture_storage
         mesh_array[nn].shader.sample = int(getattr(shader, "sample", 0))
-        mesh_array[nn].shader.sample_mode = int(getattr(shader, "sample_mode", 0))
+        mesh_array[nn].shader.sample_mode = int(
+            getattr(shader, "sample_mode", 0)
+        )
         mesh_array[nn].shader.bits = int(getattr(shader, "bits", 8))
         mesh_array[nn].shader.scaling_tag = int(shader.scaling_type)
         mesh_array[nn].shader.scaling_min = float(shader.scaling_min)
@@ -1690,7 +1731,8 @@ def save_camera(
 
 
 def load_camera(dir_path: str, file_name: str) -> Camera:
-    """Load a camera into Python-owned storage through the caller-buffer C API."""
+    """Load a camera into Python-owned storage through the caller-buffer
+    C API."""
     dir_bytes = dir_path.encode("utf-8")
     file_bytes = file_name.encode("utf-8")
     camera_c: cr.CCameraInput
@@ -1705,7 +1747,8 @@ def load_camera(dir_path: str, file_name: str) -> Camera:
         != 0
     ):
         _raise_last_error()
-    # Maximum supported capacity also handles file changes between query and load.
+    # Maximum supported capacity also handles file changes between query
+    # and load.
     storage = np.empty(72, dtype=np.float64)
     coeffs: cython.double[::1] = storage
     if (
@@ -1862,10 +1905,11 @@ __all__ = [
     "HullMode",
     "Mesh",
     "MeshType",
+    "MultirootSolverMode",
+    "EdgeFunMode",
     "NewtonSeedMode",
     "NewtonSeedReuse",
     "NormalType",
-    "GeometrySchedulingMode",
     "ImageSaveMode",
     "RasterConfig",
     "RenderMode",

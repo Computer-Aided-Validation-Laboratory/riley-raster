@@ -16,7 +16,7 @@ const cam = @import("../riley/zig/camera.zig");
 const csvio = @import("../riley/zig/csvio.zig");
 const fullfixtures = @import("../dev_support/fullfixtures.zig");
 const cm = @import("../riley/zig/cameramodels.zig");
-const Mat22f = @import("../riley/zig/matstack.zig").Mat22f;
+const Mat22F = @import("../riley/zig/matstack.zig").Mat22F;
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const cases_path = "gold/verif/distortion_oracle_cases.csv";
@@ -247,7 +247,7 @@ fn checkSIMDPoints(cases: anytype, points: anytype) !void {
     }
 }
 
-fn modelJacobian(model: cam.DistortModel, x: F, y: F) ?Mat22f {
+fn modelJacobian(model: cam.DistortModel, x: F, y: F) ?Mat22F {
     return switch (model) {
         .brown_con => |brown| cam.BrownCon.fordWithJac(brown, x, y).jac,
         .brown_con_ext => |brown| cam.BrownConExt.fordWithJac(brown, x, y).jac,

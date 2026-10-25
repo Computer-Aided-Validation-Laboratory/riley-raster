@@ -131,7 +131,7 @@ pub fn TexInput(comptime T: type, comptime C: usize) type {
         tex: texops.Tex(T, C),
         samp_cfg: texops.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
-            .mode = .lut_lerp,
+            .mode = .direct,
         },
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
@@ -277,7 +277,7 @@ pub fn TexStatic(comptime T: type, comptime C: usize) type {
         tex: texops.Tex(T, C),
         samp_cfg: texops.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
-            .mode = .lut_lerp,
+            .mode = .direct,
         },
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
@@ -329,7 +329,7 @@ pub fn TexPrepared(comptime T: type, comptime C: usize) type {
         tex: texops.Tex(T, C),
         samp_cfg: texops.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
-            .mode = .lut_lerp,
+            .mode = .direct,
         },
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
@@ -444,4 +444,24 @@ pub fn validateSpeckleInput(
 
     const params = normFuncShaderParams(.speckle, input.params);
     try params.settings.speckle.validate();
+}
+
+test "texture input defaults to direct evaluation mode" {
+    const ti_cfg = (TexInput(u8, 1){
+        .uvs = undefined,
+        .tex = undefined,
+    }).samp_cfg;
+    try std.testing.expectEqual(texops.TexSampMode.direct, ti_cfg.mode);
+
+    const ts_cfg = (TexStatic(u8, 1){
+        .elem_uvs = undefined,
+        .tex = undefined,
+    }).samp_cfg;
+    try std.testing.expectEqual(texops.TexSampMode.direct, ts_cfg.mode);
+
+    const tp_cfg = (TexPrepared(u8, 1){
+        .elem_uvs = undefined,
+        .tex = undefined,
+    }).samp_cfg;
+    try std.testing.expectEqual(texops.TexSampMode.direct, tp_cfg.mode);
 }

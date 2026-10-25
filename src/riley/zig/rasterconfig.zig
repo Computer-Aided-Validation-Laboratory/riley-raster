@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const std = @import("std");
 const iio = @import("imageio.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -14,74 +15,132 @@ const F = buildconfig.F;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-// Parallelism convention:
-// Let each render group g have W_g work-capable threads, including the caller.
-// The configured global active-thread budget is:
-//   T_total_max = sum_g W_g
-// The configured raster active-thread budget is:
-//   T_raster_max = sum_g min(W_g, max_raster_workers_per_job)
-// The configured geometry active-thread budget depends on scheduling mode:
-//   spread: T_geom_max = sum_g min(
-//       W_g,
-//       max_geom_jobs_in_flight_per_group * max_geom_workers_per_job,
-//   )
-//   pack:   T_geom_max = sum_g min(W_g, max_geom_workers_per_job)
-// For `.auto`, the mode resolves at runtime from the scene size in
-// `scalingpolicy.resolveGeometrySchedulingMode(...)`.
-// Compatibility note:
-// - `total_threads` below is the convenience-wrapper render-thread budget
-// - render-group topology itself lives outside RasterConfig
-// - managed/C/Python wrappers distribute it so sum_g W_g = total_threads
-// - explicit render groups are not resized by changing RasterConfig.total_threads
-
 pub const RasterConfig = struct {
     pub const default_output_name_format =
         "cam{camera}_frame{frame}_field{field}";
-    // Outer scheduling mode for frame-camera jobs.
+
+    // Core rendering behaviour.
     render_mode: RenderMode = .offline,
-    // Convenience-wrapper render-thread budget. User-facing thread counts
-    // always include the caller thread.
-    total_threads: u16 = 1,
-    // Maximum number of frame-camera jobs assigned to one render group batch.
-    frame_batch_size_per_group: u16 = 1,
-    // Maximum number of geometry jobs a render group may have active at once.
-    max_geom_jobs_in_flight_per_group: u16 = 1,
-    // Maximum number of workers a single geometry job may use internally.
-    max_geom_workers_per_job: u16 = 1,
-    // Policy for distributing render-group workers across geometry jobs.
-    geom_scheduling_mode: GeometrySchedulingMode = .auto,
-    // Maximum number of workers the single active raster job in a render group
-    // may use.
-    max_raster_workers_per_job: u16 = 1,
+    background_value: F = 0.0,
+
+    // Common parallel resource control.
+    parallel: ParallelConfig = .auto,
+
+    // Common output behaviour.
     save_strategy: SaveStrategy = .memory,
-    disk_save_overlap: bool = false,
+    output_name_format: []const u8 = default_output_name_format,
+
+    // Sub-configuration groups.
+    output: OutputConfig = .{},
+    report: ReportConfig = .{},
+    validation: ValidateInput = .fast,
+
+    // Deep implementation tuning.
+    advanced: AdvancedConfig = .{},
+};
+
+pub const ParallelConfig = union(enum) {
+    auto,
+    serial,
+    threads: u16,
+};
+
+pub const OutputConfig = struct {
     image_save_mode: ImageSaveMode = .multifield,
     image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
-    /// Basename template for rendered images. The image format supplies the
-    /// extension. See imageio.formatFrameFieldBaseName for supported fields.
-    output_name_format: []const u8 = default_output_name_format,
+    disk_save_overlap: bool = false,
+    save_frame_buff_count: usize = buildconfig.SaveFrameBuffCount,
+};
+
+pub const ReportConfig = struct {
+    mode: ReportMode = .bench,
+    full_stats_opts: FullStatsOpts = .{},
+};
+
+pub const AdvancedConfig = struct {
+    raster: RasterTuning = .{},
+    distortion: DistortionTuning = .{},
+    solver: SolverTuning = .{},
+};
+
+pub const RasterTuning = struct {
     tile_size_override: ?u16 = null,
     tile_size_min: u16 = 1,
     tile_size_max: u16 = 256,
     buffer_mode: BufferMode = .tile_local,
-    /// Maximum spacing along ideal-raster rectangle edges before distortion.
-    edge_spacing_px: F = 1.0,
     global_subpx_tile_size_override: ?u16 = null,
     global_subpx_tile_size_min: u16 = 64,
     global_subpx_tile_size_max: u16 = 1024,
     global_subpx_stripe_size_override: ?u16 = null,
     global_subpx_stripe_size_min: u16 = 256,
     global_subpx_stripe_size_max: u16 = 4096,
-    background_value: F = 0.0,
+    raster_halo_px_override: ?u16 = null,
+};
+
+pub const DistortionTuning = struct {
+    edge_spacing_px: F = 1.0,
+};
+
+pub const SolverTuning = struct {
+    oneroot: SolverTuningOneRoot = .{},
+    multiroot: SolverTuningMultiroot = .{},
+};
+
+pub const SolverTuningOneRoot = struct {
     hull_mode: HullMode = .on_no_fallback,
+    edge_fun_mode: EdgeFunMode = .on_the_fly,
     newton_seed_mode: NewtonSeedMode = .centroid,
     newton_seed_reuse: NewtonSeedReuse = .off,
-    validate_input: ValidateInput = .fast,
-    report: ReportMode = .bench,
-    full_stats_opts: FullStatsOpts = .{},
-    save_frame_buff_count: usize = buildconfig.SaveFrameBuffCount,
+};
+
+pub const SolverTuningMultiroot = struct {
+    mode: MultirootSolverMode = .fast,
+    edge_fun_mode: EdgeFunMode = .pre_calc,
+};
+
+pub const EdgeFunMode = enum {
+    on_the_fly,
+    pre_calc,
+};
+
+/// Controls the solver used for elements classified as potentially multi-root
+/// under camera projection.
+///
+/// Both modes use the same fixed four-child Bézier patch hierarchy:
+///
+/// 1. test the whole-element conservative projected hull;
+/// 2. test the four conservative projected child-patch hulls;
+/// 3. for each candidate child, start Newton from that child's parent-space
+///    centre;
+/// 4. retain the nearest accepted front-facing root.
+///
+/// `.fast`
+///     Uses only the fixed4 child-centre solves.
+///
+///     This is the default and preferred engineering mode. It provides the
+///     best measured throughput/accuracy tradeoff for Riley's supported
+///     geometry while keeping work bounded and simple. Some difficult
+///     saddle/multi-root rays may be missed when the child-centre seed lies
+///     outside the desired Newton basin.
+///
+/// `.robust`
+///     Runs the same fixed4 child-centre path first. If no candidate child
+///     yields an accepted front-facing root, Riley performs one additional
+///     bounded fallback using the front-facing, camera-depth-ordered seed bank
+///     with depth 3.
+///
+///     This improves recovery on difficult multi-root/saddle cases at higher
+///     computational cost. The fallback is sample-wide and runs only after
+///     all fixed4 child-centre attempts fail.
+///
+/// Neither mode attempts exhaustive global root finding. Riley intentionally
+/// uses bounded engineering strategies rather than unbounded or full-bank
+/// searches.
+pub const MultirootSolverMode = enum {
+    fast,
+    robust,
 };
 
 pub const ValidateInput = enum(u32) {
@@ -97,25 +156,13 @@ pub const BufferMode = enum {
 };
 
 pub const RenderMode = enum {
-    // Preserve timestep order. Geometry/raster work may run in parallel across
-    // cameras, but later timesteps do not advance until the current timestep
-    // has fully completed.
     in_order,
-    // Permit batches of frame-camera jobs to be scheduled without timestep
-    // ordering constraints. This is the throughput-oriented mode used by the
-    // grouped outer scheduler.
     offline,
 };
 
 pub const GeometrySchedulingMode = enum {
-    // Prefer many geometry jobs in flight, spreading the render-group workers
-    // across jobs before increasing per-job worker count.
     spread,
-    // Prefer fewer geometry jobs in flight, packing workers into one job
-    // before starting additional geometry jobs.
     pack,
-    // Resolve at runtime from the scene size in scalingpolicy.zig:
-    // smaller scenes def to spread, larger scenes def to pack.
     auto,
 };
 
@@ -130,6 +177,8 @@ pub const ImageSaveMode = enum {
     grey,
     rgb,
     multifield,
+    rgb_to_grey,
+    grey_to_rgb,
 };
 
 pub const ReportMode = enum {
@@ -138,10 +187,9 @@ pub const ReportMode = enum {
     full_stats,
 };
 
-pub const HullMode = enum {
-    off,
-    on_no_fallback,
-    on_convex_fallback,
+pub const HullMode = enum(u32) {
+    on_no_fallback = 1,
+    on_convex_fallback = 2,
 };
 
 pub const NewtonSeedMode = enum {

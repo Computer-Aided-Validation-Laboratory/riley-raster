@@ -167,16 +167,13 @@ fn renderSingle(
 
     var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .memory;
-    config.image_save_opts = &[_]iio.ImageSaveOpts{
+    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-    };
     const result = (try riley.raster(
         local_alloc,
-        &render_groups,
+        io,
         &[_]cammod.CameraInput{camera_input},
         mesh_copies,
         config,

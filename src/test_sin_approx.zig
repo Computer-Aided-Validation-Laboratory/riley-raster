@@ -155,14 +155,11 @@ fn renderSinImage(
 
     var config = tcfg.getRasterConfig(.testing);
     config.save_strategy = .memory;
-    config.image_save_opts = &[_]iio.ImageSaveOpts{};
+    config.output.image_save_opts = &[_]iio.ImageSaveOpts{};
 
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-    };
     const result = (try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         &[_]mo.MeshInput{mesh_input},
         config,

@@ -371,7 +371,7 @@ pub const LoadedStereoPair = struct {
     }
 };
 
-fn calculateStereoBaseline(stereo_pair: cam.StereoPairInput) vec.Vec3f {
+fn calculateStereoBaseline(stereo_pair: cam.StereoPairInput) vec.Vec3F {
     const cam0 = stereo_pair.cameras[0];
     const cam1 = stereo_pair.cameras[1];
     return cam1.pos_world.sub(cam0.pos_world);
@@ -758,7 +758,7 @@ fn initTestCamera(
     };
 }
 
-fn expectVecApproxEqual(expected: vec.Vec3f, actual: vec.Vec3f) !void {
+fn expectVecApproxEqual(expected: vec.Vec3F, actual: vec.Vec3F) !void {
     const tol: F = if (F == f32) 1.0e-5 else 1.0e-11;
     try testing.expectApproxEqAbs(expected.get(0), actual.get(0), tol);
     try testing.expectApproxEqAbs(expected.get(1), actual.get(1), tol);
@@ -766,7 +766,7 @@ fn expectVecApproxEqual(expected: vec.Vec3f, actual: vec.Vec3f) !void {
 }
 
 const StereoBaselineSummary = struct {
-    baseline: vec.Vec3f,
+    baseline: vec.Vec3F,
     length: F,
 };
 

@@ -156,17 +156,12 @@ const DicuqE2EStatsRow = struct {
 pub fn getBaseRasterConfig() riley.RasterConfig {
     var base_raster_config = tcfg.getRasterConfig(.bench);
     // Thread counts include the caller thread.
-    base_raster_config.total_threads = 1;
-    base_raster_config.frame_batch_size_per_group = 1;
-    base_raster_config.max_geom_jobs_in_flight_per_group = 1;
-    base_raster_config.max_geom_workers_per_job = 1;
-    base_raster_config.max_raster_workers_per_job = 1;
-    base_raster_config.geom_scheduling_mode = .auto;
+    base_raster_config.parallel = .{ .threads = 1 };
     base_raster_config.save_strategy = .disk;
-    base_raster_config.tile_size_min = 8;
-    base_raster_config.tile_size_max = 128;
+    base_raster_config.advanced.raster.tile_size_min = 8;
+    base_raster_config.advanced.raster.tile_size_max = 128;
     base_raster_config.background_value = 128.0;
-    base_raster_config.image_save_opts = &[_]iio.ImageSaveOpts{
+    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
     return base_raster_config;
@@ -177,7 +172,7 @@ pub fn makeSampleConfig(
 ) !texops.TextureSampleConfig {
     const samp_cfg = texops.TextureSampleConfig{
         .sample = bench_args.sample orelse .cubic_catmull_rom,
-        .mode = bench_args.sample_mode orelse .lut_lerp,
+        .mode = bench_args.sample_mode orelse .direct,
     };
     if (!samp_cfg.isValid()) {
         return error.InvalidTextureSampleConfig;
@@ -338,7 +333,7 @@ pub fn calcCaseName(
 pub fn runBenchmark(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    render_groups: []const riley.RenderGroupSpec,
+    render_groups: []const riley.RenderGroup,
     camera_inputs: []const CameraInput,
     mesh_input: MeshInput,
     config: riley.RasterConfig,
@@ -355,14 +350,17 @@ pub fn runBenchmark(
     defer outer_alloc.free(bench_capture);
 
     const start = std.Io.Clock.Timestamp.now(io, .awake);
-    const image_arr = try riley.rasterReport(
+    const image_arr = try riley.rasterAdvanced(
         outer_alloc,
-        render_groups,
+        io,
         camera_inputs,
         &[_]MeshInput{mesh_input},
         config,
         out_dir_path,
-        bench_capture,
+        .{
+            .render_groups = .{ .supplied = render_groups },
+            .bench_capture = bench_capture,
+        },
     );
     const end = std.Io.Clock.Timestamp.now(io, .awake);
 

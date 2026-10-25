@@ -13,7 +13,8 @@ const S = buildconfig.SimdWidth;
 const newton = @import("newton.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 const rastcfg = @import("rasterconfig.zig");
-const rops = @import("rasterops.zig");
+const frontend = @import("rasterfrontend.zig");
+const elemtilebin = @import("elemtilebinning.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -37,8 +38,8 @@ pub inline fn beginTile(io: std.Io) TileScope {
 
 pub inline fn finishTile(
     ctx_report: anytype,
-    ctx_rast: rops.RasterContext,
-    tile: rops.ActiveTile,
+    ctx_rast: frontend.RasterContext,
+    tile: elemtilebin.ActiveTile,
     tile_duration_ns: u64,
     shaded_px: u64,
     elem_count: usize,
@@ -46,18 +47,13 @@ pub inline fn finishTile(
     elem_duration_ns: u64,
     resolve_duration_ns: u64,
 ) void {
-    const screen_px_x = @as(
-        u16,
-        @intCast(ctx_rast.camera.pixels_num[0]),
-    );
-
-    const tiles_x =
-        (screen_px_x + ctx_rast.tile_size - 1) /
-        ctx_rast.tile_size;
+    const screen_px_x: usize = ctx_rast.camera.pixels_num[0];
+    const tile_size: usize = ctx_rast.tile_size;
+    const tiles_x = (screen_px_x + tile_size - 1) / tile_size;
 
     const spatial_idx =
-        (tile.y_px_min / ctx_rast.tile_size) * tiles_x +
-        (tile.x_px_min / ctx_rast.tile_size);
+        (@as(usize, @intCast(tile.core_px.y_min)) / tile_size) * tiles_x +
+        (@as(usize, @intCast(tile.core_px.x_min)) / tile_size);
 
     ctx_report.recordTile(
         spatial_idx,
@@ -97,7 +93,7 @@ pub inline fn recordPixelConvStats(
 
 pub inline fn recordTri3SIMDConvStats(
     ctx_report: anytype,
-    tile: rops.ActiveTile,
+    tile: elemtilebin.ActiveTile,
     sub_samp: usize,
     scratch_x_u: usize,
     scratch_y_u: usize,
@@ -120,12 +116,12 @@ pub inline fn recordTri3SIMDConvStats(
         if (!lane_x_mask[ll]) continue;
 
         const global_subx =
-            @as(usize, @intCast(tile.scratch_x_px_min)) *
+            @as(usize, @intCast(tile.scratch_px.x_min)) *
             sub_samp +
             scratch_x_u +
             ll;
         const global_suby =
-            @as(usize, @intCast(tile.scratch_y_px_min)) *
+            @as(usize, @intCast(tile.scratch_px.y_min)) *
             sub_samp +
             scratch_y_u;
 
@@ -171,7 +167,7 @@ pub inline fn recordTri3SIMDConvStats(
 
 pub inline fn recordTri3SteppedSIMDConvStats(
     ctx_report: anytype,
-    tile: rops.ActiveTile,
+    tile: elemtilebin.ActiveTile,
     sub_samp: usize,
     scratch_x_u: usize,
     global_suby: usize,
@@ -195,7 +191,7 @@ pub inline fn recordTri3SteppedSIMDConvStats(
         if (!lane_x_mask[ll]) continue;
 
         const global_subx =
-            @as(usize, @intCast(tile.scratch_x_px_min)) *
+            @as(usize, @intCast(tile.scratch_px.x_min)) *
             sub_samp +
             scratch_x_u +
             ll;
@@ -245,7 +241,7 @@ pub inline fn recordNewtonSIMDChunkStats(
     comptime NodesNum: comptime_int,
     comptime DomViolation: anytype,
     ctx_report: anytype,
-    tile: rops.ActiveTile,
+    tile: elemtilebin.ActiveTile,
     sub_samp: usize,
     subpx_simd_chunk: anytype,
     v_chunk_mask: @Vector(S, bool),
@@ -274,10 +270,10 @@ pub inline fn recordNewtonSIMDChunkStats(
 
         const global_subx =
             @as(usize, subpx_simd_chunk.scratch_x_u[jj]) +
-            @as(usize, @intCast(tile.scratch_x_px_min)) * sub_samp;
+            @as(usize, @intCast(tile.scratch_px.x_min)) * sub_samp;
         const global_suby =
             @as(usize, subpx_simd_chunk.scratch_y_u[jj]) +
-            @as(usize, @intCast(tile.scratch_y_px_min)) * sub_samp;
+            @as(usize, @intCast(tile.scratch_px.y_min)) * sub_samp;
         const solve_state = newton.evaluateSolveState(
             NodesNum,
             subpx_simd_chunk.px_f[jj] - subpx_x_off,

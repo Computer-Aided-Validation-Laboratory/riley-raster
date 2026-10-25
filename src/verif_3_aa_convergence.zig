@@ -225,19 +225,16 @@ pub fn main(init: std.process.Init) !void {
                         .focal_length = camera.focal_length,
                         .sub_sample = camera.sub_sample,
                         .distort = camera.distort,
+                        .subpixel_center_map = .per_tile,
                     };
                     const config = rastcfg.RasterConfig{
                         .save_strategy = .memory,
-                        .report = .off,
-                        .subpixel_center_map = .per_tile,
+                        .report = .{ .mode = .off },
                     };
 
-                    const render_groups = [_]riley.RenderGroupSpec{
-                        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-                    };
                     const images = try riley.raster(
                         ra,
-                        &render_groups,
+                        io,
                         &[_]@TypeOf(camera_input){camera_input},
                         mesh_inputs,
                         config,

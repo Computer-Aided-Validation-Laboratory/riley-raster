@@ -103,9 +103,8 @@ def render_check(
             connect,
             shader,
         )
-        config = riley.create_raster_config(
-            num_frames=1,
-            total_threads=4,
+        config = riley.RasterConfig(
+            parallel=4,
             save_strategy=riley.SaveStrategy.disk,
         )
         config.image_save_mode = riley.ImageSaveMode.grey

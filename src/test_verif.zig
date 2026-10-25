@@ -15,6 +15,7 @@ const silhouette = @import("tests/test_verif_silhouette.zig");
 const depth = @import("tests/test_verif_depth.zig");
 const distort_roundtrip = @import("tests/test_verif_distortion_roundtrip.zig");
 const distort_oracle = @import("tests/test_verif_distortion_oracle.zig");
+const multiroot = @import("tests/test_verif_multiroot.zig");
 
 comptime {
     if (buildconfig.F != f64 or buildconfig.config.simd != .on) {
@@ -31,6 +32,7 @@ test "focused analytic verification suite" {
     try testsuites.printStatus(io, "\nRunning verification tests.\n\n", .{});
     try testsuites.runCase("solver", allocator, io, solver.run);
     try testsuites.runCase("silhouette", allocator, io, silhouette.run);
+    try testsuites.runCase("multi-root curved element", allocator, io, multiroot.run);
     try testsuites.runCase("depth buffer", allocator, io, depth.run);
     try testsuites.runCase(
         "distortion roundtrip",

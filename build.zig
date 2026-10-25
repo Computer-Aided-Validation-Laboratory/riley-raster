@@ -13,7 +13,7 @@ const speckleconfig = @import("src/riley/zig/speckleconfig.zig");
 const riley_version = std.SemanticVersion{
     .major = 2026,
     .minor = 10,
-    .patch = 0,
+    .patch = 2,
 };
 
 const RunEntry = struct {
@@ -121,6 +121,11 @@ pub fn build(b: *std.Build) void {
             .step_name = "test-full",
             .description = "Run the FULL test suite",
             .source_path = "src/test_full.zig",
+        },
+        .{
+            .step_name = "test-full-badjac",
+            .description = "Save warning-only invalid-Jacobian render diagnostics",
+            .source_path = "src/test_full_badjac.zig",
         },
         .{
             .step_name = "test-verif",
@@ -338,11 +343,6 @@ pub fn build(b: *std.Build) void {
             .source_path = "src/bench_speckle_evaluators.zig",
         },
         .{
-            .step_name = "bench-poly",
-            .description = "Benchmark polynomial forward, Jacobian and inverse kernels",
-            .source_path = "src/benchpoly.zig",
-        },
-        .{
             .step_name = "bench-dicuq",
             .description = "Run the DIC UQ benchmark",
             .source_path = "src/bench_dicuq.zig",
@@ -381,6 +381,16 @@ pub fn build(b: *std.Build) void {
             .step_name = "bench-dist-psf",
             .description = "Run the distortion and PSF benchmark",
             .source_path = "src/bench_dist_psf.zig",
+        },
+        .{
+            .step_name = "bench-multiroot",
+            .description = "Benchmark multi-root hierarchy policies",
+            .source_path = "src/bench_multiroot.zig",
+        },
+        .{
+            .step_name = "bench-buffer-psf",
+            .description = "Benchmark buffer modes against PSFs and scene densities",
+            .source_path = "src/bench_buffer_psf.zig",
         },
     };
 

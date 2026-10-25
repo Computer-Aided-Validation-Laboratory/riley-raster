@@ -14,7 +14,6 @@ from riley.python import (
     meshconst,
     meshconv,
     meshio,
-    rileyconfig,
     sceneops,
     textureio,
     uvtools,
@@ -65,7 +64,6 @@ from riley.python.meshio import (
     load_csv,
     remap_nodal_data,
 )
-from riley.python.rileyconfig import create_raster_config
 from riley.python.sceneops import (
     ESceneOverlapDirect,
     SceneBounds3D,
@@ -137,7 +135,6 @@ __all__ = [
     "create_mesh",
     "create_mesh_from_conversion",
     "create_mesh_from_prepared",
-    "create_raster_config",
     "exodusio",
     "extract_surface",
     "frameops",
@@ -156,7 +153,6 @@ __all__ = [
     "project_uvs_planar_centered",
     "reduce_mesh_order",
     "remap_nodal_data",
-    "rileyconfig",
     "scene_arrange_mesh_groups_grid",
     "scene_calc_bounds_for_coords",
     "scene_calc_bounds_for_coords_list",

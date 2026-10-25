@@ -46,7 +46,6 @@ test "distorted tri3 interior reaches scalar or SIMD raster in both map modes" {
             .scaling = .none,
         } },
     };
-    const groups = [_]riley.RenderGroupSpec{.{ .io = io, .workers = 1 }};
     const modes = [_]cam.SubPixelCenterMap{ .full_in_mem, .per_tile };
     const buffers = [_]riley.BufferMode{ .tile_local, .global_subpx_full };
     const samples = [_]u32{ 1, 2, 4 };
@@ -57,24 +56,26 @@ test "distorted tri3 interior reaches scalar or SIMD raster in both map modes" {
                 const camera_input = cam.CameraInput{
                     .pixels_num = .{ 200, 200 },
                     .pixels_size = .{ 0.01, 0.01 },
-                    .pos_world = vecstack.Vec3f.initSlice(&.{ 0.0, 0.0, 1.0 }),
+                    .pos_world = vecstack.Vec3F.initSlice(&.{ 0.0, 0.0, 1.0 }),
                     .rot_world = rotation.Rotation.init(0.0, 0.0, 0.0),
-                    .roi_cent_world = vecstack.Vec3f.initZeros(),
+                    .roi_cent_world = vecstack.Vec3F.initZeros(),
                     .focal_length = 1.0,
                     .sub_sample = sub_sample,
                     .subpixel_center_map = mode,
                     .distort = .{ .brown_con = .{ .k1 = 1.0 } },
                 };
-                var config = riley.RasterConfig{
+                const config = riley.RasterConfig{
                     .save_strategy = .memory,
-                    .report = .off,
+                    .report = .{ .mode = .off },
                     .background_value = 0.0,
-                    .buffer_mode = buffer_mode,
+                    .advanced = .{
+                        .raster = .{ .buffer_mode = buffer_mode },
+                        .distortion = .{ .edge_spacing_px = 1.0 },
+                    },
                 };
-                config.edge_spacing_px = 1.0;
                 const result = try riley.raster(
                     outer_alloc,
-                    &groups,
+                    io,
                     &.{camera_input},
                     &.{mesh},
                     config,

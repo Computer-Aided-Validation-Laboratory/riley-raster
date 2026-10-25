@@ -57,13 +57,9 @@ pub fn generateFullTexCase(
         case,
     );
 
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-    };
-
     const images = try riley.raster(
         allocator,
-        &render_groups,
+        io,
         &[_]CameraInput{prep.camera_input},
         &meshes,
         config,
@@ -133,7 +129,7 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.image_save_opts = &[_]iio.ImageSaveOpts{
+    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .fimg, .bits = null, .scaling = .none },
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };

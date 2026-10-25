@@ -40,22 +40,23 @@ pub fn main(init: std.process.Init) !void {
 
     const args = (try pdemo.parseDemoArgs(init.minimal.args.vector, demo_spec)) orelse return;
 
+    const workers: u16 = 4;
     const config = rastcfg.RasterConfig{
-        .total_threads = 4,
-        .max_geom_workers_per_job = 4,
-        .max_raster_workers_per_job = 4,
+        .parallel = .{ .threads = workers },
         .save_strategy = .disk,
-        .image_save_mode = .grey,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .none },
+        .output = .{
+            .image_save_mode = .grey,
+            .image_save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .none },
+            },
         },
         .background_value = 255.0,
-        .report = .off,
+        .report = .{ .mode = .off },
     };
     var threaded_io = riley.getThreadedIo(
         allocator,
         init.minimal,
-        config.total_threads,
+        workers,
     );
     defer threaded_io.deinit();
     const io = threaded_io.io();
@@ -107,18 +108,19 @@ pub fn main(init: std.process.Init) !void {
         .sub_sample = 2,
         .distort = camera_prep.distort.paramsFromModel(),
     };
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = config.total_threads },
+    const render_groups = [_]riley.RenderGroup{
+        .{ .io = io, .workers = workers },
     };
 
     std.debug.print("Rendering reference, stretch, and twist frames...\n", .{});
-    const images = try riley.raster(
+    const images = try riley.rasterAdvanced(
         allocator,
-        &render_groups,
+        io,
         &[_]camera.CameraInput{camera_input},
         &[_]meshpipeline.MeshInput{mesh_input},
         config,
         args.out_dir,
+        .{ .render_groups = .{ .supplied = &render_groups } },
     );
     if (images) |img_const| {
         var img = img_const;

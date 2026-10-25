@@ -22,8 +22,11 @@ const VecSum = @Vector(S, u64);
 const camera = @import("camera.zig");
 const meshio = @import("meshio.zig");
 const ndarray = @import("ndarray.zig");
-const rops = @import("rasterops.zig");
-const hull = @import("hull.zig");
+const frontend = @import("rasterfrontend.zig");
+const elemtilebin = @import("elemtilebinning.zig");
+const meshpipe = @import("meshpipeline.zig");
+const HullAdaptive = @import("hulladaptive.zig").HullAdaptive;
+const HullMultiRoot = @import("hullmultiroot.zig").HullMultiRoot;
 const geom = @import("geometrykernels.zig");
 const shaderops = @import("shaderops.zig");
 const speckle = @import("speckleops.zig");
@@ -37,7 +40,7 @@ const GK = geom.Tri6Kernel();
 const N = GK.nodes_num;
 const NH = geom.MeshType.tri6.getNumHullPoints();
 
-pub const workload_mode = "static-geometry-depth-accumulator-v1";
+pub const workload_mode = "static-geometry-depth-accumulator-v2";
 
 pub const Result = struct {
     checksum: u64 = 0,
@@ -83,7 +86,7 @@ pub const Accumulator = struct {
     }
 };
 
-/// RasterEngineFor only needs row metadata and a shade target. The target here
+/// RasterEngine only needs row metadata and a shade target. The target here
 /// is an accumulator, not an image. All geometry/depth scratch matches production.
 const Scratch = struct {
     pub const exclusive_subpx_target = false;
@@ -91,6 +94,8 @@ const Scratch = struct {
     inv_z: []align(64) F,
     image: Accumulator = .{},
     simd_chunks: []simd.SubpxSimdChunk,
+    multi_root_candidate_indices: []u32,
+    multi_root_child_masks: []u8,
     mask: []align(64) bool,
     xi: []align(64) F,
     eta: []align(64) F,
@@ -98,7 +103,7 @@ const Scratch = struct {
     touched_max_x: []usize,
     ideal_pix_cent: []align(64) F,
 
-    pub inline fn imageIndex(_: *const Scratch, local_idx: usize) usize {
+    pub inline fn resolveImageIdx(_: *const Scratch, _: usize, _: usize, local_idx: usize) usize {
         return local_idx;
     }
 
@@ -108,6 +113,8 @@ const Scratch = struct {
             .stride_subpx = stride,
             .inv_z = try alloc.alignedAlloc(F, .@"64", count),
             .simd_chunks = try alloc.alloc(simd.SubpxSimdChunk, @divFloor(count + S - 1, S)),
+            .multi_root_candidate_indices = try alloc.alloc(u32, count),
+            .multi_root_child_masks = try alloc.alloc(u8, count),
             .mask = try alloc.alignedAlloc(bool, .@"64", count),
             .xi = try alloc.alignedAlloc(F, .@"64", count),
             .eta = try alloc.alignedAlloc(F, .@"64", count),
@@ -179,7 +186,8 @@ pub const Geometry = struct {
     coords: ndarray.NDArray(F),
     uvs: ndarray.NDArray(F),
     raster_hulls: ndarray.NDArray(F),
-    tiling: rops.TilingOverlaps,
+    tiling: elemtilebin.TileElemOverlaps,
+    multiroot_hulls: ?meshpipe.MultiRootHulls,
     tile_size: u16,
 
     /// Fixed pinhole tri6 scenes only. Keep back-facing elements in the static
@@ -193,21 +201,28 @@ pub const Geometry = struct {
         connect: meshio.Connect,
         uvs_nodes: ndarray.NDArray(F),
         raster_config: config.RasterConfig,
+        requested_workers: u16,
     ) !Geometry {
         if (cam.sub_sample != 1 or cam.prep_psf.halo_px != 0 or cam.distort != .none) return error.UnsupportedBenchmarkCamera;
         if (connect.getNodesPerElem() != N) return error.BenchmarkRequiresTri6;
         var coords_nodes = try meshio.Coords.initAlloc(alloc, coords_world.mat.rows_num);
         @memcpy(coords_nodes.mat.slice, coords_world.mat.slice);
-        rops.nodesToClipPxLengRangeInPlace(cam, &coords_nodes, 0, coords_nodes.mat.rows_num);
+        frontend.nodesToClipPxLengRangeInPlace(cam, &coords_nodes, 0, coords_nodes.mat.rows_num);
         const elems = connect.getElemsNum();
         var coords = try ndarray.NDArray(F).initFlat(alloc, &.{ elems, 3, N });
         const uvs = try @import("meshpipeline.zig").prepUVs(alloc, &uvs_nodes, &connect);
         var raster_hulls = try ndarray.NDArray(F).initFlat(alloc, &.{ elems, 2, NH });
-        const bboxes = try alloc.alloc(rops.ElemBBox, elems);
+        const bboxes = try alloc.alloc(frontend.ElemBBox, elems);
+        const root_classes = try alloc.alloc(frontend.ElemRootClass, elems);
+        var has_multiroot = false;
         var on_screen: usize = 0;
         for (0..elems) |ee| {
-            const nodes = rops.gatherElemNodeCoords(N, &coords_nodes, &connect, ee);
-            const points = hull.buildAdaptiveHullPointsFromClip(N, cam, nodes, raster_config.hull_mode);
+            const nodes = frontend.gatherElemNodeCoords(N, &coords_nodes, &connect, ee);
+            const facing = frontend.classifyElemFacing(.tri6, cam, &coords_nodes, &connect, ee);
+            // Backfaces stay in the one-root bin for timed rejection.
+            root_classes[ee] = facing orelse .one_root;
+            has_multiroot = has_multiroot or facing == .multi_root;
+            const points = HullAdaptive.buildPointsFromClip(N, cam, nodes, raster_config.advanced.solver.oneroot.hull_mode);
             for (points.x, points.y, 0..) |x, y, nn| {
                 raster_hulls.set(&.{ ee, 0, nn }, x);
                 raster_hulls.set(&.{ ee, 1, nn }, y);
@@ -217,24 +232,31 @@ pub const Geometry = struct {
                 coords.set(&.{ ee, 1, nn }, nodes.y[nn]);
                 coords.set(&.{ ee, 2, nn }, nodes.z[nn]);
             }
-            const bbox: rops.ElemBBox = .{
+            const multi_points = if (facing == .multi_root)
+                HullMultiRoot.buildPointsFromClip(N, cam, nodes)
+            else
+                null;
+            const hull_x = if (multi_points) |*points_multi| points_multi.x[0..points_multi.count] else &points.x;
+            const hull_y = if (multi_points) |*points_multi| points_multi.y[0..points_multi.count] else &points.y;
+            if (hull_x.len < 3) continue;
+            const bbox: frontend.ElemBBox = .{
                 .elem_idx = ee,
-                .x_min = @min(@as(i32, @intCast(cam.pixels_num[0])), rops.boundIndMin(i32, std.mem.min(F, &points.x))),
-                .x_max = rops.boundIndMax(i32, std.mem.max(F, &points.x), @intCast(cam.pixels_num[0])),
-                .y_min = @min(@as(i32, @intCast(cam.pixels_num[1])), rops.boundIndMin(i32, std.mem.min(F, &points.y))),
-                .y_max = rops.boundIndMax(i32, std.mem.max(F, &points.y), @intCast(cam.pixels_num[1])),
+                .x_min = @min(@as(i32, @intCast(cam.pixels_num[0])), frontend.boundIndMin(i32, std.mem.min(F, hull_x))),
+                .x_max = frontend.boundIndMax(i32, std.mem.max(F, hull_x), @intCast(cam.pixels_num[0])),
+                .y_min = @min(@as(i32, @intCast(cam.pixels_num[1])), frontend.boundIndMin(i32, std.mem.min(F, hull_y))),
+                .y_max = frontend.boundIndMax(i32, std.mem.max(F, hull_y), @intCast(cam.pixels_num[1])),
             };
             if (bbox.x_min < bbox.x_max and bbox.y_min < bbox.y_max) {
                 bboxes[on_screen] = bbox;
                 on_screen += 1;
             }
         }
-        const tile_size = policy.tileSize(raster_config.tile_size_override, raster_config.tile_size_min, raster_config.tile_size_max, cam.pixels_num, 1, 0);
-        var exec = pce.ParaChunkExecutor.init(io, raster_config.total_threads);
-        const tiling = try rops.sceneTileElemOverlap(
+        const tile_size = policy.tileSize(raster_config.advanced.raster.tile_size_override, raster_config.advanced.raster.tile_size_min, raster_config.advanced.raster.tile_size_max, cam.pixels_num, 1, 0);
+        var exec = pce.ParaChunkExecutor.init(io, requested_workers);
+        const tiling = try elemtilebin.binElemsInSceneTileLoc(
             alloc,
             &exec,
-            raster_config.total_threads,
+            requested_workers,
             tile_size,
             try std.math.divCeil(usize, cam.pixels_num[0], tile_size),
             try std.math.divCeil(usize, cam.pixels_num[1], tile_size),
@@ -244,18 +266,47 @@ pub const Geometry = struct {
             &.{on_screen},
             &.{bboxes[0..on_screen]},
             &.{null},
+            &.{.tri6},
+            &.{root_classes},
         );
         // Parallel binning uses atomic slots, so insertion order is not stable.
         // Fix element order outside the timers: depth updates (and therefore
         // which evaluated values reach the sink) must be reproducible across runs.
         for (tiling.active_tiles) |tile| {
-            std.mem.sort(rops.OverlapBBox, tiling.overlaps[tile.overlap_start .. tile.overlap_start + tile.overlap_count], {}, struct {
-                fn less(_: void, a: rops.OverlapBBox, b: rops.OverlapBBox) bool {
-                    return a.elem_idx < b.elem_idx;
-                }
-            }.less);
+            for (tile.bins) |range| {
+                std.mem.sort(elemtilebin.OverlapBBox, tiling.overlaps[range.start .. range.start + range.count], {}, struct {
+                    fn less(_: void, a: elemtilebin.OverlapBBox, b: elemtilebin.OverlapBBox) bool {
+                        return a.elem_idx < b.elem_idx;
+                    }
+                }.less);
+            }
         }
-        return .{ .coords = coords, .uvs = uvs, .raster_hulls = raster_hulls, .tiling = tiling, .tile_size = tile_size };
+
+        // Reuse production multi-root preparation, including robust seed ordering.
+        // Keep our unculled coordinates/overlaps so backface work remains timed.
+        var multiroot_hulls: ?meshpipe.MultiRootHulls = null;
+        if (has_multiroot) {
+            const mesh_static: meshpipe.MeshStatic = .{
+                .mesh_type = .tri6,
+                .coords_orig = coords_world,
+                .connect = connect,
+                .disp = null,
+                .shader = .{ .func = .{ .elem_uvs = null, .builtin = .constant, .bits = null } },
+            };
+            var times: meshpipe.GeomTimes = .{};
+            const frame = try meshpipe.prepMeshFrame(alloc, &exec, requested_workers, cam, raster_config, &mesh_static, 0, null, &times);
+            if (frame.hull_multiroot) |prepared| {
+                var remapped = prepared;
+                const slots = try alloc.alloc(u32, elems);
+                @memset(slots, std.math.maxInt(u32));
+                for (frame.frame_workspace.vis_orig_elem_inds, 0..) |original_idx, visible_idx| {
+                    slots[original_idx] = prepared.slot_by_visible_elem.get(visible_idx);
+                }
+                remapped.slot_by_visible_elem = @import("vecslice.zig").VecSlice(u32).init(slots);
+                multiroot_hulls = remapped;
+            }
+        }
+        return .{ .coords = coords, .uvs = uvs, .raster_hulls = raster_hulls, .multiroot_hulls = multiroot_hulls, .tiling = tiling, .tile_size = tile_size };
     }
 };
 
@@ -272,8 +323,8 @@ pub const Evaluation = struct {
     exec: pce.ParaChunkExecutor,
 
     /// Worker allocations and setup are outside both measured intervals.
-    pub fn init(alloc: std.mem.Allocator, io: std.Io, cam: *const camera.CameraPrepared, geometry: *const Geometry, raster_config: config.RasterConfig) !Evaluation {
-        const workers_num = policy.rasterWorkers(raster_config.total_threads, geometry.tiling.active_tiles.len);
+    pub fn init(alloc: std.mem.Allocator, io: std.Io, cam: *const camera.CameraPrepared, geometry: *const Geometry, raster_config: config.RasterConfig, requested_workers: u16) !Evaluation {
+        const workers_num = policy.rasterWorkers(requested_workers, geometry.tiling.active_tiles.len);
         const workers = try alloc.alloc(Worker, workers_num);
         for (workers) |*worker| worker.* = .{ .scratch = try Scratch.init(alloc, geometry.tile_size) };
         return .{ .cam = cam, .geometry = geometry, .raster_config = raster_config, .workers = workers, .exec = pce.ParaChunkExecutor.init(io, @intCast(workers_num)) };
@@ -315,29 +366,37 @@ pub const Evaluation = struct {
                 const worker = &eval.workers[worker_idx];
                 var log: report.LogType(.off) = .{};
                 const ctx_report: report.ReportContext(.off) = .{ .log = &log };
-                const ctx_rast: rops.RasterContext = .{ .camera = eval.cam, .config = eval.raster_config, .frame_idx = ctx.frame_idx, .tile_size = geometry.tile_size };
+                const ctx_rast: frontend.RasterContext = .{ .camera = eval.cam, .config = eval.raster_config, .frame_idx = ctx.frame_idx, .tile_size = geometry.tile_size };
                 for (start..end) |tile_idx| {
                     const tile = geometry.tiling.active_tiles[tile_idx];
                     // Tile-local ownership is unchanged: reset depth before all
                     // overlaps, never between elements. Repeated for every frame.
                     worker.scratch.resetDepth();
-                    try eval.cam.fillTileIdealCentersPerTile(tile.scratch_x_px_min, tile.scratch_x_px_max, tile.scratch_y_px_min, tile.scratch_y_px_max, geometry.tile_size, worker.scratch.ideal_pix_cent);
-                    const overlaps = geometry.tiling.overlaps[tile.overlap_start .. tile.overlap_start + tile.overlap_count];
-                    for (overlaps) |overlap| {
-                        const nodes = try rops.loadElemVec3Slices(N, F, &geometry.coords, overlap.elem_idx);
-                        var raster_nodes: rops.RasterCoords2D(N) = undefined;
-                        const offsets = eval.cam.calcRasterOffsets();
-                        for (0..N) |nn| {
-                            raster_nodes.x[nn] = nodes.x[nn] / nodes.z[nn] + offsets.x_off;
-                            raster_nodes.y[nn] = nodes.y[nn] / nodes.z[nn] + offsets.y_off;
+                    try eval.cam.fillTileIdealCentersPerTile(tile.scratch_px.x_min, tile.scratch_px.x_max, tile.scratch_px.y_min, tile.scratch_px.y_max, geometry.tile_size, worker.scratch.ideal_pix_cent);
+                    inline for (.{ elemtilebin.ElemBin.tri6_one_root, elemtilebin.ElemBin.tri6_multi_root }) |bin| {
+                        const root_class = comptime elemtilebin.binRootClass(bin);
+                        const range = tile.bins[@intFromEnum(bin)];
+                        const overlaps = geometry.tiling.overlaps[range.start .. range.start + range.count];
+                        for (overlaps) |overlap| {
+                            const nodes = try frontend.loadElemVec3Slices(N, F, &geometry.coords, overlap.elem_idx);
+                            var raster_nodes: frontend.RasterCoords2D(N) = undefined;
+                            const offsets = eval.cam.calcRasterOffsets();
+                            for (0..N) |nn| {
+                                raster_nodes.x[nn] = nodes.x[nn] / nodes.z[nn] + offsets.x_off;
+                                raster_nodes.y[nn] = nodes.y[nn] / nodes.z[nn] + offsets.y_off;
+                            }
+                            if (frontend.isHighOrdBackface(N, raster_nodes)) {
+                                worker.backface_rejections += 1;
+                                continue;
+                            }
+                            var buf: shaderops.LocalShaderBuff(N) = .{};
+                            buf.loadFuncCoords(geometry.uvs, overlap.elem_idx * 2 * N, 2);
+                            const hulls = if (comptime root_class == .multi_root)
+                                if (geometry.multiroot_hulls) |*prepared| prepared else return error.MissingMultiRootData
+                            else
+                                &geometry.raster_hulls;
+                            _ = try backend.RasterEngine(Scratch, GK, SinkKernel(index, filter), @TypeOf(ctx.shader), root_class).rasterElemInTile(.off, ctx_rast, ctx_report, tile, overlap, &geometry.coords, hulls, &ctx.shader, &buf, &worker.scratch);
                         }
-                        if (rops.isHighOrdBackface(N, raster_nodes)) {
-                            worker.backface_rejections += 1;
-                            continue;
-                        }
-                        var buf: shaderops.LocalShaderBuff(N) = .{};
-                        buf.loadFuncCoords(geometry.uvs, overlap.elem_idx * 2 * N, 2);
-                        _ = try backend.RasterEngineFor(Scratch, GK, SinkKernel(index, filter), @TypeOf(ctx.shader)).render(.off, ctx_rast, ctx_report, tile, overlap, &geometry.coords, &geometry.raster_hulls, &ctx.shader, &buf, &worker.scratch);
                     }
                 }
             }

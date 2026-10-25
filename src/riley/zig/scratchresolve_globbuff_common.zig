@@ -11,7 +11,7 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cam = @import("camera.zig");
 const ndarray = @import("ndarray.zig");
-const subpxframe = @import("subpxframe.zig");
+const subpxframe = @import("subpxframe_globbuff.zig");
 const pce = @import("parachunkexec.zig");
 
 const S = buildconfig.SimdWidth;
@@ -21,13 +21,13 @@ const VecSF = buildconfig.VecSF;
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub fn resolve(
+pub fn resolveGlobBuff(
     target: *const subpxframe.SubpxTarget,
     camera: *const cam.CameraPrepared,
     background_value: F,
     image_out_arr: *ndarray.NDArray(F),
 ) void {
-    resolveRows(
+    resolveRowsGlobBuff(
         target,
         camera,
         background_value,
@@ -37,7 +37,7 @@ pub fn resolve(
     );
 }
 
-pub fn resolveRows(
+pub fn resolveRowsGlobBuff(
     target: *const subpxframe.SubpxTarget,
     camera: *const cam.CameraPrepared,
     background_value: F,
@@ -64,7 +64,7 @@ pub fn resolveRows(
                     for (0..sub_samp) |ssx| {
                         const global_subx: i32 = @intCast(global_subx_start + ssx);
                         const global_suby: i32 = @intCast(global_suby_start + ssy);
-                        sum += sampleFiltered(
+                        sum += sampleFilteredGlobBuff(
                             target,
                             prep_psf,
                             background_value,
@@ -87,7 +87,7 @@ pub fn resolveRows(
 /// PSFs.  Separable PSFs use a compact horizontal intermediate at pixel x
 /// resolution, then a vertical pass; this fuses the SSAA box sum into each
 /// one-dimensional pass and avoids the former SSAA^2 x Kx x Ky stencil.
-pub fn resolveParallel(
+pub fn resolveParallelGlobBuff(
     comptime use_simd: bool,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -101,7 +101,7 @@ pub fn resolveParallel(
 ) !usize {
     if (image_y_min == image_y_max) return 0;
     return switch (camera.prep_psf.mode) {
-        .separable => resolveSeparableParallel(
+        .separable => resolveSeparableParallelGlobBuff(
             use_simd,
             outer_alloc,
             io,
@@ -112,7 +112,7 @@ pub fn resolveParallel(
             image_y_max,
             requested_workers,
         ),
-        .identity_fast, .nonseparable => resolveDirectParallel(
+        .identity_fast, .nonseparable => resolveDirectParallelGlobBuff(
             io,
             target,
             camera,
@@ -125,14 +125,14 @@ pub fn resolveParallel(
     };
 }
 
-fn workersForRows(requested_workers: u16, rows: usize) usize {
+fn workersForRowsGlobBuff(requested_workers: u16, rows: usize) usize {
     return @min(
         @max(@as(usize, 1), @as(usize, requested_workers)),
         @max(@as(usize, 1), rows),
     );
 }
 
-fn resolveDirectParallel(
+fn resolveDirectParallelGlobBuff(
     io: std.Io,
     target: *const subpxframe.SubpxTarget,
     camera: *const cam.CameraPrepared,
@@ -142,7 +142,7 @@ fn resolveDirectParallel(
     image_y_max: usize,
     requested_workers: u16,
 ) !usize {
-    const workers_num = workersForRows(requested_workers, image_y_max - image_y_min);
+    const workers_num = workersForRowsGlobBuff(requested_workers, image_y_max - image_y_min);
     const Ctx = struct {
         target: *const subpxframe.SubpxTarget,
         camera: *const cam.CameraPrepared,
@@ -155,7 +155,7 @@ fn resolveDirectParallel(
             const ctx: *Ctx = @ptrCast(@alignCast(ctx_ptr));
             // This is intentionally the unchanged direct scalar oracle.  Each
             // task owns complete output rows, so no accumulation is shared.
-            resolveRows(
+            resolveRowsGlobBuff(
                 ctx.target,
                 ctx.camera,
                 ctx.background_value,
@@ -177,7 +177,7 @@ fn resolveDirectParallel(
     return workers_num;
 }
 
-fn resolveSeparableParallel(
+fn resolveSeparableParallelGlobBuff(
     comptime use_simd: bool,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -206,11 +206,11 @@ fn resolveSeparableParallel(
     const HorizontalAdapter = struct {
         fn run(ctx_ptr: *anyopaque, _: usize, range_start: usize, range_end: usize) void {
             const ctx: *HorizontalCtx = @ptrCast(@alignCast(ctx_ptr));
-            horizontalRows(use_simd, ctx.*, range_start, range_end);
+            horizontalRowsGlobBuff(use_simd, ctx.*, range_start, range_end);
         }
     };
 
-    const horizontal_workers = workersForRows(requested_workers, storage_h);
+    const horizontal_workers = workersForRowsGlobBuff(requested_workers, storage_h);
     var horizontal_exec = pce.ParaChunkExecutor.init(io, @intCast(horizontal_workers));
     var horizontal_ctx = HorizontalCtx{
         .target = target,
@@ -233,7 +233,7 @@ fn resolveSeparableParallel(
     const VerticalAdapter = struct {
         fn run(ctx_ptr: *anyopaque, _: usize, range_start: usize, range_end: usize) void {
             const ctx: *VerticalCtx = @ptrCast(@alignCast(ctx_ptr));
-            verticalRows(
+            verticalRowsGlobBuff(
                 use_simd,
                 ctx.*,
                 ctx.image_y_min + range_start,
@@ -242,7 +242,7 @@ fn resolveSeparableParallel(
         }
     };
 
-    const vertical_workers = workersForRows(requested_workers, image_y_max - image_y_min);
+    const vertical_workers = workersForRowsGlobBuff(requested_workers, image_y_max - image_y_min);
     var vertical_exec = pce.ParaChunkExecutor.init(io, @intCast(vertical_workers));
     var vertical_ctx = VerticalCtx{
         .target = target,
@@ -262,7 +262,7 @@ fn resolveSeparableParallel(
     return @min(horizontal_workers, vertical_workers);
 }
 
-fn horizontalRows(
+fn horizontalRowsGlobBuff(
     comptime use_simd: bool,
     ctx: anytype,
     local_y_start: usize,
@@ -313,7 +313,7 @@ fn horizontalRows(
     }
 }
 
-fn verticalRows(
+fn verticalRowsGlobBuff(
     comptime use_simd: bool,
     ctx: anytype,
     image_y_start: usize,
@@ -367,7 +367,7 @@ fn verticalRows(
 // Private Func
 // --------------------------------------------------------------------------------------
 
-fn sampleFiltered(
+fn sampleFilteredGlobBuff(
     target: *const subpxframe.SubpxTarget,
     prep_psf: cam.PreparedPSF,
     background_value: F,
@@ -376,14 +376,14 @@ fn sampleFiltered(
     field_idx: usize,
 ) F {
     return switch (prep_psf.mode) {
-        .identity_fast => sampleTarget(
+        .identity_fast => sampleTargetGlobBuff(
             target,
             background_value,
             global_subx,
             global_suby,
             field_idx,
         ),
-        .separable => sampleSeparable(
+        .separable => sampleSeparableGlobBuff(
             target,
             prep_psf,
             background_value,
@@ -391,7 +391,7 @@ fn sampleFiltered(
             global_suby,
             field_idx,
         ),
-        .nonseparable => sampleNonSeparable(
+        .nonseparable => sampleNonSeparableGlobBuff(
             target,
             prep_psf,
             background_value,
@@ -402,7 +402,7 @@ fn sampleFiltered(
     };
 }
 
-fn sampleSeparable(
+fn sampleSeparableGlobBuff(
     target: *const subpxframe.SubpxTarget,
     prep_psf: cam.PreparedPSF,
     background_value: F,
@@ -417,7 +417,7 @@ fn sampleSeparable(
             const x_off: i32 = @intCast(xx);
             const radius_x: i32 = @intCast(prep_psf.radius_x_subpx);
             const radius_y: i32 = @intCast(prep_psf.radius_y_subpx);
-            sum += weight_x * weight_y * sampleTarget(
+            sum += weight_x * weight_y * sampleTargetGlobBuff(
                 target,
                 background_value,
                 global_subx + x_off - radius_x,
@@ -429,7 +429,7 @@ fn sampleSeparable(
     return sum;
 }
 
-fn sampleNonSeparable(
+fn sampleNonSeparableGlobBuff(
     target: *const subpxframe.SubpxTarget,
     prep_psf: cam.PreparedPSF,
     background_value: F,
@@ -446,7 +446,7 @@ fn sampleNonSeparable(
         const y_off: i32 = @intCast(kernel_y);
         const radius_x: i32 = @intCast(prep_psf.radius_x_subpx);
         const radius_y: i32 = @intCast(prep_psf.radius_y_subpx);
-        sum += weight * sampleTarget(
+        sum += weight * sampleTargetGlobBuff(
             target,
             background_value,
             global_subx + x_off - radius_x,
@@ -457,7 +457,7 @@ fn sampleNonSeparable(
     return sum;
 }
 
-fn sampleTarget(
+fn sampleTargetGlobBuff(
     target: *const subpxframe.SubpxTarget,
     background_value: F,
     global_subx: i32,
@@ -494,6 +494,6 @@ test "sampleTarget uses the target global origin" {
     defer target.deinit(std.testing.allocator);
 
     target.image.slice[target.image.rowBase(0) + target.flatIndex(0, 1)] = 7.0;
-    try std.testing.expectEqual(@as(F, 7.0), sampleTarget(&target, -1.0, 0, 1, 0));
-    try std.testing.expectEqual(@as(F, -1.0), sampleTarget(&target, -1.0, 3, 1, 0));
+    try std.testing.expectEqual(@as(F, 7.0), sampleTargetGlobBuff(&target, -1.0, 0, 1, 0));
+    try std.testing.expectEqual(@as(F, -1.0), sampleTargetGlobBuff(&target, -1.0, 3, 1, 0));
 }

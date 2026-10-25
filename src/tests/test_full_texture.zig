@@ -60,13 +60,10 @@ pub fn runFullTexCaseTest(
     run_config.save_strategy = .memory;
 
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
 
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{prep.camera_input},
         &meshes,
         run_config,
@@ -552,13 +549,9 @@ fn runUVBoundaryRasterPipelineTests(
         var run_config = tcfg.getRasterConfig(.testing);
         run_config.save_strategy = .memory;
 
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = 1 },
-        };
-
         const result = try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{prep.camera_input},
             &meshes,
             run_config,
