@@ -315,12 +315,14 @@ fn resolveRenderParallelPlan(
 ) RenderParallelPlan {
     const num_time = meshpipe.countFrames(meshes, cam_inps);
     const total_elems = meshpipe.countMeshInputElems(meshes);
+
     const workload = ParallelWorkload{
         .camera_count = cam_inps.len,
         .frame_count = num_time,
         .element_count = total_elems,
         .render_mode = config.render_mode,
     };
+
     return scalingpolicy.resolveRenderParallelPlan(
         workload,
         config.parallel,
@@ -341,6 +343,7 @@ fn rasterIntoValidated(
     valid_summary: valinp.ValidSummary,
     time_start_render: Timestamp,
 ) !void {
+
     var out_dir: ?std.Io.Dir = null;
     if (out_dir_path) |path| {
         const cwd = std.Io.Dir.cwd();

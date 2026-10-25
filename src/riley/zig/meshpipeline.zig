@@ -1812,6 +1812,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 shaderops.ShaderPipeStagePrepared,
                 pipe.stages.len,
             );
+            
             for (pipe.stages, 0..) |stage, si| {
                 stages[si] = switch (stage) {
                     .source => |src| blk: {
@@ -1844,6 +1845,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .normalise => |m| .{ .normalise = m },
                 };
             }
+            
             return .{
                 .stages = stages,
                 .resolver = pipe.resolver,
