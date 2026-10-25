@@ -60,7 +60,7 @@ test "runtime speckle patterns prepare their production resources" {
         .{ .pattern = .disk, .evaluator = .classified_indexed },
         .{ .pattern = .disk, .softness = 0.03, .evaluator = .list_indexed },
         .{ .pattern = .gaussian, .evaluator = .list_indexed },
-        .{ .pattern = .perlin, .evaluator = .mask_u8 },
+        .{ .pattern = .perlin, .evaluator = .gradient_lattice },
     };
     for (automatic) |case| {
         var params = fixture_params;
@@ -116,6 +116,7 @@ fn expectPreparedResources(
         speckleconfig.canonicalizeSampleConfig(expected),
         speckleops.kernel_configs[resources.kernel_index.?],
     );
+    try std.testing.expectEqual(evaluator == .gradient_lattice, resources.perlin != null);
     try std.testing.expectEqual(evaluator == .list_naive, resources.list != null);
     try std.testing.expectEqual(evaluator == .list_indexed, resources.strip_list != null);
     try std.testing.expectEqual(evaluator == .classified_indexed, resources.classified != null);

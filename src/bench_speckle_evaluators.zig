@@ -44,6 +44,8 @@ const Options = struct {
     cells_v: ?F = null,
     radius: F = 0.35,
     softness: F = 0,
+    perlin_threshold: F = 0,
+    perlin_transition: F = 0.12,
     seed: u32 = 0xa511e9b3,
     texture: []const u8 = "texture/speckle_mono.bmp",
     texture_filter: texops.TexSamp = .linear,
@@ -94,6 +96,10 @@ const Options = struct {
                 out.occupancy = try std.fmt.parseFloat(F, value);
             } else if (std.mem.eql(u8, key, "--radius")) {
                 out.radius = try std.fmt.parseFloat(F, value);
+            } else if (std.mem.eql(u8, key, "--perlin-threshold")) {
+                out.perlin_threshold = try std.fmt.parseFloat(F, value);
+            } else if (std.mem.eql(u8, key, "--perlin-transition")) {
+                out.perlin_transition = try std.fmt.parseFloat(F, value);
             } else if (std.mem.eql(u8, key, "--softness")) {
                 out.softness = try std.fmt.parseFloat(F, value);
             } else return error.UnknownBenchmarkFlag;
@@ -108,7 +114,7 @@ const Options = struct {
         return .{ self.width, self.height };
     }
     fn params(self: Options) speckle.Speckle2DParams {
-        return .{ .evaluator = self.evaluator, .pattern = self.pattern, .edge_softness = self.softness, .radius_mean = self.radius, .radius_jitter = self.jitter, .occupancy = self.occupancy, .neighbor_count = self.neighbors, .cells_per_uv = .{ self.cells_u orelse (if (self.plate) @as(F, 320) else 256), self.cells_v orelse (if (self.plate) @as(F, 192) else 160) }, .seed = self.seed };
+        return .{ .evaluator = self.evaluator, .pattern = self.pattern, .edge_softness = self.softness, .perlin_coverage_threshold = self.perlin_threshold, .perlin_coverage_transition_width = self.perlin_transition, .radius_mean = self.radius, .radius_jitter = self.jitter, .occupancy = self.occupancy, .neighbor_count = self.neighbors, .cells_per_uv = .{ self.cells_u orelse (if (self.plate) @as(F, 320) else 256), self.cells_v orelse (if (self.plate) @as(F, 192) else 160) }, .seed = self.seed };
     }
     fn rasterConfig(self: Options) riley.RasterConfig {
         return .{ .total_threads = self.threads, .max_geom_workers_per_job = self.threads, .max_raster_workers_per_job = self.threads, .save_strategy = if (self.mode == .evaluation) .none else .memory, .report = .off };
@@ -196,6 +202,8 @@ pub fn main(init: std.process.Init) !void {
         .height = opts.height,
         .cells_u = params.cells_per_uv[0],
         .cells_v = params.cells_per_uv[1],
+        .perlin_threshold = opts.perlin_threshold,
+        .perlin_transition = opts.perlin_transition,
         .radius = opts.radius,
         .jitter = opts.jitter,
         .occupancy = opts.occupancy,
@@ -344,12 +352,21 @@ test "speckle benchmark workers depth resets and texture filters" {
         const fixture = try TestFixture.init(alloc, opts, 8);
         var single = try fixture.evaluation(alloc, 1);
         var parallel = try fixture.evaluation(alloc, 4);
-        const Variant = enum { hard, soft, gaussian, nearest, linear };
+        const Variant = enum { hard, soft, gaussian, perlin, perlin_mask, nearest, linear };
         for (std.enums.values(Variant)) |variant| {
+            if (variant == .perlin_mask and !build.enable_all_evaluators) continue;
             var params = opts.params();
-            params.pattern = if (variant == .gaussian) .gaussian else .disk;
+            params.pattern = switch (variant) {
+                .gaussian => .gaussian,
+                .perlin, .perlin_mask => .perlin,
+                else => .disk,
+            };
             params.edge_softness = if (variant == .soft) 0.1 else 0;
-            if (comptime build.enable_all_evaluators) params.evaluator = .cell_hash;
+            if (comptime build.enable_all_evaluators) params.evaluator = switch (variant) {
+                .perlin => .gradient_lattice,
+                .perlin_mask => .mask_u8,
+                else => .cell_hash,
+            };
             const texture_variant = variant == .nearest or variant == .linear;
             var resources = if (texture_variant) speckle.Resources{} else try speckle.generateResources(alloc, params);
             defer resources.deinit(alloc);

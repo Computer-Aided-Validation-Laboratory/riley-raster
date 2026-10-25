@@ -141,7 +141,14 @@ def test_mixed_speckle_patterns_remain_fixed_across_frames(
     np.testing.assert_allclose(mixed, expected, rtol=0.0, atol=1e-12)
 
 
-def test_speckle_odd_width_buffer_modes_match(speckle_mesh: riley.Mesh) -> None:
+@pytest.mark.parametrize("pattern", list(riley.SpecklePattern))
+def test_speckle_odd_width_buffer_modes_match(
+    speckle_mesh: riley.Mesh,
+    pattern: riley.SpecklePattern,
+) -> None:
+    shader = speckle_mesh.shader
+    assert isinstance(shader, riley.FunctionShader)
+    shader.params.speckle.pattern = pattern
     images: list[np.ndarray] = []
     for buffer_mode in (
         riley.BufferMode.tile_local,

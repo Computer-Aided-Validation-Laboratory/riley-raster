@@ -147,7 +147,9 @@ class Speckle2DParams:
 
     The Python/C binding uses the native defaults-only build. Hard disks use
     ``classified-indexed``; soft disks and Gaussian blobs use ``list-indexed``;
-    Perlin uses ``mask-u8``. Evaluator and neighbor overrides are not exposed.
+    Perlin uses ``gradient-lattice``. These defaults evaluate the analytic
+    patterns without texture sampling or coverage quantization.
+    Evaluator and neighbor overrides are not exposed.
     Resources are prepared once per mesh and reused for every frame.
 
     The Python binding uses f64. On each axis, the padded procedural interval

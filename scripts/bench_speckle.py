@@ -46,6 +46,9 @@ def design(args):
     require(math.isfinite(args.radius) and args.radius > 0, 'radius must be positive and finite')
     require(math.isfinite(args.softness) and args.softness > 0, 'soft-case softness must be positive and finite')
     require(0 <= args.seed < 2**32, 'seed must be uint32')
+    require(args.perlin_threshold is None or math.isfinite(args.perlin_threshold), 'Perlin threshold must be finite')
+    require(args.perlin_transition is None or (math.isfinite(args.perlin_transition) and args.perlin_transition >= 0),
+            'Perlin transition must be finite and nonnegative')
     workers = sorted(set(available_cpus() if x == 'available-cpus' else int(x)
                          for x in (args.workers or ['1', 'available-cpus'])))
     require(all(x > 0 for x in workers), 'workers must be positive')
@@ -67,6 +70,8 @@ def design(args):
             if (not tuning and args.occupancy is None and not args.include_full_occupancy_single_neighbor
                     and case['neighbors'] == 1 and case['occupancy'] == 1):
                 continue
+            if case['pattern'] == 'perlin':
+                case['neighbors'] = None
             case['softness'] = args.softness if case['pattern'] == 'soft' else 0.
             if case not in cases:
                 cases.append(case)
@@ -79,7 +84,8 @@ def design(args):
                 inference='two-sided blocked sum contrast; exact <=200000 subsets/block, otherwise Monte Carlo plus-one; joint Holm',
                 require_equal_output=args.require_equal_output, skip_output_checks=args.skip_output_checks,
                 config=dict(width=args.width, height=args.height, frames=args.frames, radius=args.radius,
-                            seed=args.seed, texture=None, texture_filter=args.texture_filter),
+                            seed=args.seed, texture=None, texture_filter=args.texture_filter,
+                            perlin_threshold=args.perlin_threshold, perlin_transition=args.perlin_transition),
                 cells=dict(plate=args.cells_plate, sphere=args.cells_sphere), variants={})
 
 
@@ -204,7 +210,7 @@ def parser():
     for v in 'ab':
         p.add_argument('--binary-' + v, type=Path, help='override common binary for ' + v.upper())
     p.add_argument('--workers', nargs='+', help='integers or available-cpus; default 1 and affinity CPU count, deduplicated')
-    for name, choices in (('scenes', ('plate', 'sphere')), ('patterns', ('hard', 'soft', 'gaussian'))):
+    for name, choices in (('scenes', ('plate', 'sphere')), ('patterns', ('hard', 'soft', 'gaussian', 'perlin'))):
         p.add_argument('--' + name, nargs='+', choices=choices, help='replace profile factor')
     p.add_argument('--neighbors', nargs='+', type=int, choices=(1, 4, 9), help='replace profile factor')
     for name in ('jitter', 'occupancy'):
@@ -215,6 +221,8 @@ def parser():
     p.add_argument('--cells-plate', nargs=2, type=int, default=[320, 192], help='plate UV cell counts')
     p.add_argument('--cells-sphere', nargs=2, type=int, default=[256, 160], help='sphere UV cell counts')
     p.add_argument('--seed', type=lambda x: int(x, 0), default=0xa511e9b3, help='native uint32 seed (decimal or hex)')
+    p.add_argument('--perlin-threshold', type=float, help='override Perlin coverage threshold')
+    p.add_argument('--perlin-transition', type=float, help='override Perlin transition width; 0 selects hard threshold')
     p.add_argument('--radius', type=float, default=.35, help='procedural radius')
     p.add_argument('--softness', type=float, default=.04, help='soft cases only; hard/Gaussian always use 0')
     p.add_argument('--texture', type=Path, help='BMP asset required for texture mapping; copied before execution')

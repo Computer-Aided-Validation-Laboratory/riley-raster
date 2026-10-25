@@ -75,9 +75,18 @@ Browse the complete [Zig demo directory](https://github.com/Computer-Aided-Valid
 
 ### Procedural speckles
 
-UV-based grayscale `disk`, `gaussian`, and `perlin` patterns are selected per mesh and
-stay fixed across its frames. [Speckle2DParams](./src/riley/cython/riley.py) documents
-the parameters; Python uses `SpecklePattern` and `to_func_shader_params()`.
+UV-based grayscale patterns are selected per mesh and stay fixed across its frames:
+
+| Pattern | Appearance | Main controls |
+| --- | --- | --- |
+| `disk` | Circular speckles with hard or softened boundaries | Radius, jitter, occupancy, softness |
+| `gaussian` | Graded blobs with finite support | Radius, jitter, occupancy |
+| `perlin` | Thresholded gradient noise | Coverage threshold and transition width |
+
+All patterns share seed, cell density, and foreground/background controls.
+[Speckle2DParams](./src/riley/cython/riley.py) documents the parameters; Python uses
+`SpecklePattern` and `to_func_shader_params()`. Evaluators are selected automatically;
+see the [developer notes](./dev/README.md#procedural-generation-options) for native experiments.
 
 ```shell
 zig build demo-procedural-sphere200 -Doptimize=ReleaseFast -- --pattern gaussian

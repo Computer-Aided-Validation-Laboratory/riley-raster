@@ -19,6 +19,7 @@ const speckle_mask_samples_per_cell: F =
     @floatFromInt(buildconfig.speckle_mask_samples_per_cell);
 const max_speckle_cells = 10_000_000;
 const max_speckle_mask_bytes = 256 * 1024 * 1024;
+const max_perlin_lattice_bytes = 256 * 1024 * 1024;
 const max_speckle_classification_bytes = 256 * 1024 * 1024;
 const max_direct_fixed_speckle_bytes = 256 * 1024 * 1024;
 
@@ -212,6 +213,13 @@ pub const DirectFixedSpeckle2D = struct {
     radius2: F,
 };
 
+/// Exact gradient IDs, shared by adjacent cells; an empty lattice hashes on demand.
+pub const PerlinLattice2D = struct {
+    params: Speckle2DParams,
+    gradients: []const u8,
+    dims: [2]usize,
+};
+
 pub const SpeckleMask2D = struct {
     bits: []const u8,
     dims: [2]usize,
@@ -232,6 +240,7 @@ pub const Resources = struct {
     classified: ?ClassifiedIndexedSpeckle2D = null,
     direct_fixed: ?DirectFixedSpeckle2D = null,
     mask: ?SpeckleMask2D = null,
+    perlin: ?PerlinLattice2D = null,
 
     pub fn deinit(self: *Resources, allocator: std.mem.Allocator) void {
         if (self.list) |speckles| {
@@ -247,6 +256,7 @@ pub const Resources = struct {
         }
         if (self.direct_fixed) |direct| allocator.free(direct.cells);
         if (self.mask) |mask| allocator.free(mask.bits);
+        if (self.perlin) |perlin| allocator.free(perlin.gradients);
         self.* = .{};
     }
 };
@@ -335,9 +345,9 @@ pub fn sampleScal(u: F, v: F, params: Speckle2DParams, resources: *const Resourc
     unreachable;
 }
 
-/// Classified/direct/mask kernels background inactive lanes. Procedural/list kernels
-/// retain the existing finite-lane behavior. Except for mock's raw arithmetic,
-/// every SIMD kernel backgrounds nonfinite lanes.
+/// Prepared Perlin and classified/direct/mask kernels background inactive lanes.
+/// Other procedural/list kernels retain the existing finite-lane behavior.
+/// Except for mock's raw arithmetic, every SIMD kernel backgrounds nonfinite lanes.
 pub fn sampleSIMD(
     u: VecSF,
     v: VecSF,
@@ -445,6 +455,267 @@ test "direct procedural microcells exhaust f32 faces and inverse subcells and pr
     }
 }
 
+fn generatePerlinLattice(allocator: std.mem.Allocator, params: Speckle2DParams) !PerlinLattice2D {
+    var lattice = PerlinLattice2D{ .params = params, .gradients = &.{}, .dims = .{ 0, 0 } };
+    var dims: [2]usize = undefined;
+    for (params.cells_per_uv, 0..) |cells, axis| {
+        const owners = std.math.cast(usize, @as(u64, @intFromFloat(@floor(cells)))) orelse return lattice;
+        dims[axis] = std.math.add(usize, owners, 2) catch return lattice;
+    }
+    const count = std.math.mul(usize, dims[0], dims[1]) catch return lattice;
+    if (count > max_perlin_lattice_bytes) return lattice;
+    const gradients = try allocator.alloc(u8, count);
+    for (0..dims[1]) |y| {
+        for (0..dims[0]) |x| {
+            gradients[y * dims[0] + x] = @as(u8, @truncate(hashSpeckleCell(@intCast(x), @intCast(y), params.seed))) & 7;
+        }
+    }
+    lattice.gradients = gradients;
+    lattice.dims = dims;
+    return lattice;
+}
+
+fn perlinCornerIDs(lattice: PerlinLattice2D, x: i64, y: i64) [4]u8 {
+    if (lattice.gradients.len == 0) {
+        return .{
+            @truncate(hashSpeckleCell(x, y, lattice.params.seed)),
+            @truncate(hashSpeckleCell(x + 1, y, lattice.params.seed)),
+            @truncate(hashSpeckleCell(x, y + 1, lattice.params.seed)),
+            @truncate(hashSpeckleCell(x + 1, y + 1, lattice.params.seed)),
+        };
+    }
+    // Only cached owners are bounded by allocated, pointer-sized dimensions.
+    const i = @as(usize, @intCast(y)) * lattice.dims[0] + @as(usize, @intCast(x));
+    return .{ lattice.gradients[i], lattice.gradients[i + 1], lattice.gradients[i + lattice.dims[0]], lattice.gradients[i + lattice.dims[0] + 1] };
+}
+
+fn perlinSplat(comptime T: type, value: F) T {
+    return if (T == F) value else @splat(value);
+}
+
+fn perlinSelect(comptime T: type, condition: anytype, yes: T, no: T) T {
+    return if (T == F) (if (condition) yes else no) else @select(F, condition, yes, no);
+}
+
+// Select complete expressions, not gradient coefficients: rearranging diagonal
+// products changes rounding, cancellation and signed zero relative to the oracle.
+fn perlinDot(comptime T: type, id: anytype, x: T, y: T) T {
+    const d = perlinSplat(T, @sqrt(@as(F, 0.5)));
+    const g = id & perlinIDConstant(@TypeOf(id), 7);
+    var result = d * (x - y);
+    inline for (0..7) |i| {
+        const value = switch (i) {
+            0 => x,
+            1 => d * (x + y),
+            2 => y,
+            3 => d * (-x + y),
+            4 => -x,
+            5 => -d * (x + y),
+            6 => -y,
+            else => unreachable,
+        };
+        result = perlinSelect(T, g == perlinIDConstant(@TypeOf(id), i), value, result);
+    }
+    return result;
+}
+
+fn perlinIDConstant(comptime T: type, comptime value: u8) T {
+    return if (T == u8) value else @splat(value);
+}
+
+fn perlinAnalytic(comptime T: type, x: T, y: T, ids: anytype, params: Speckle2DParams) T {
+    const one = perlinSplat(T, 1);
+    const fx = x * x * x * (x * (x * perlinSplat(T, 6) - perlinSplat(T, 15)) + perlinSplat(T, 10));
+    const fy = y * y * y * (y * (y * perlinSplat(T, 6) - perlinSplat(T, 15)) + perlinSplat(T, 10));
+    const n00 = perlinDot(T, ids[0], x, y);
+    const n10 = perlinDot(T, ids[1], x - one, y);
+    const n01 = perlinDot(T, ids[2], x, y - one);
+    const n11 = perlinDot(T, ids[3], x - one, y - one);
+    const nx0 = n00 + fx * (n10 - n00);
+    const nx1 = n01 + fx * (n11 - n01);
+    const noise = nx0 + fy * (nx1 - nx0);
+    const threshold = perlinSplat(T, params.perlin_coverage_threshold);
+    const coverage = if (params.perlin_coverage_transition_width == 0)
+        perlinSelect(T, noise >= threshold, one, perlinSplat(T, 0))
+    else blk: {
+        const t = @max(perlinSplat(T, 0), @min(one, (noise - threshold) / perlinSplat(T, params.perlin_coverage_transition_width) + perlinSplat(T, 0.5)));
+        break :blk t * t * (perlinSplat(T, 3) - perlinSplat(T, 2) * t);
+    };
+    return perlinSplat(T, params.background) + coverage * perlinSplat(T, params.foreground - params.background);
+}
+
+fn samplePerlinScal(u: F, v: F, lattice: PerlinLattice2D) F {
+    if (!std.math.isFinite(u) or !std.math.isFinite(v)) return lattice.params.background;
+    const x = @max(0.0, @min(1.0, u)) * lattice.params.cells_per_uv[0];
+    const y = @max(0.0, @min(1.0, v)) * lattice.params.cells_per_uv[1];
+    return perlinAnalytic(F, x - @floor(x), y - @floor(y), perlinCornerIDs(lattice, @intFromFloat(@floor(x)), @intFromFloat(@floor(y))), lattice.params);
+}
+
+fn samplePerlinSIMD(u: VecSF, v: VecSF, active: VecSB, lattice: PerlinLattice2D) VecSF {
+    const valid = active & (@abs(u) <= @as(VecSF, @splat(std.math.floatMax(F)))) & (@abs(v) <= @as(VecSF, @splat(std.math.floatMax(F))));
+    const zero: VecSF = @splat(0);
+    const one: VecSF = @splat(1);
+    const x = @max(zero, @min(one, @select(F, valid, u, zero))) * @as(VecSF, @splat(lattice.params.cells_per_uv[0]));
+    const y = @max(zero, @min(one, @select(F, valid, v, zero))) * @as(VecSF, @splat(lattice.params.cells_per_uv[1]));
+    const cx = @floor(x);
+    const cy = @floor(y);
+    var ids: [4]@Vector(S, u8) = .{ @splat(0), @splat(0), @splat(0), @splat(0) };
+    inline for (0..S) |lane| {
+        if (valid[lane]) {
+            const corners = perlinCornerIDs(lattice, @intFromFloat(cx[lane]), @intFromFloat(cy[lane]));
+            inline for (0..4) |i| ids[i][lane] = corners[i];
+        }
+    }
+    const value = perlinAnalytic(VecSF, x - cx, y - cy, ids, lattice.params);
+    return @select(F, valid, value, @as(VecSF, @splat(lattice.params.background)));
+}
+
+const PerlinReference = Implementation(.{ .pattern = .perlin, .evaluator = .cell_hash, .neighbor_count = 9, .soft_edges = false });
+
+fn expectPerlinBits(expected: F, actual: F) !void {
+    const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
+    try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(actual)));
+}
+
+test "exact Perlin gradients preserve all signed expressions scalar and SIMD" {
+    const values = [_]F{ 0, -0.0, 0.25, -0.25, 1, -1, std.math.nextAfter(F, 0, 1) };
+    for (0..8) |id| {
+        for (values) |x| {
+            for (values) |y| {
+                const expected = PerlinReference.perlinGradientDot(@intCast(id), x, y);
+                try expectPerlinBits(expected, perlinDot(F, @as(u8, @intCast(id)), x, y));
+                const actual: [S]F = perlinDot(VecSF, @as(@Vector(S, u8), @splat(@intCast(id))), @as(VecSF, @splat(x)), @as(VecSF, @splat(y)));
+                for (actual) |value| try expectPerlinBits(expected, value);
+            }
+        }
+    }
+}
+
+test "exact Perlin all 4096 corner combinations preserve analytic arithmetic" {
+    var params = Speckle2DParams{ .pattern = .perlin, .foreground = 0.17, .background = 0.83 };
+    for (0..4096) |code| {
+        const ids = [4]u8{ @intCast(code & 7), @intCast((code >> 3) & 7), @intCast((code >> 6) & 7), @intCast((code >> 9) & 7) };
+        for ([_][2]F{ .{ 0, 0 }, .{ 0.25, 0.75 }, .{ 0.5, 0.5 }, .{ std.math.nextAfter(F, 1, 0), 0.37 } }) |p| {
+            const a = PerlinReference.perlinGradientDot(ids[0], p[0], p[1]);
+            const b = PerlinReference.perlinGradientDot(ids[1], p[0] - 1, p[1]);
+            const c = PerlinReference.perlinGradientDot(ids[2], p[0], p[1] - 1);
+            const d = PerlinReference.perlinGradientDot(ids[3], p[0] - 1, p[1] - 1);
+            const fx = PerlinReference.quinticPerlinFade(p[0]);
+            const fy = PerlinReference.quinticPerlinFade(p[1]);
+            const lo = a + fx * (b - a);
+            const hi = c + fx * (d - c);
+            const noise = lo + fy * (hi - lo);
+            for ([_]F{ noise, std.math.nextAfter(F, noise, -std.math.inf(F)), std.math.nextAfter(F, noise, std.math.inf(F)) }) |threshold| {
+                for ([_]F{ 0, std.math.nextAfter(F, 0, 1), 0.12 }) |width| {
+                    params.perlin_coverage_threshold = threshold;
+                    params.perlin_coverage_transition_width = width;
+                    const coverage = PerlinReference.perlinCoverage(noise, params);
+                    const expected = params.background + coverage * (params.foreground - params.background);
+                    try expectPerlinBits(expected, perlinAnalytic(F, p[0], p[1], ids, params));
+                    const vector_ids = [4]@Vector(S, u8){ @splat(ids[0]), @splat(ids[1]), @splat(ids[2]), @splat(ids[3]) };
+                    const actual: [S]F = perlinAnalytic(VecSF, @splat(p[0]), @splat(p[1]), vector_ids, params);
+                    for (actual) |value| try expectPerlinBits(expected, value);
+                }
+            }
+        }
+    }
+}
+
+test "exact Perlin cache agrees bitwise with independent hashes across parameters and mixed lanes" {
+    const tiny = std.math.nextAfter(F, 0, 1);
+    const scales = [_][2]F{ .{ 7.25, 5.5 }, .{ 2, 1 }, .{ 0.031, 1.17 }, .{ tiny, tiny }, .{ 192, 160 } };
+    for (scales) |scale| {
+        for ([_]u32{ 0, 0xa511e9b3, 0xffffffff }) |seed| {
+            var lattice = try generatePerlinLattice(std.testing.allocator, .{ .pattern = .perlin, .seed = seed, .cells_per_uv = scale, .occupancy = std.math.nan(F), .radius_mean = -1 });
+            defer std.testing.allocator.free(lattice.gradients);
+            // Each cached corner is checked against the independently addressed hash.
+            for (0..@as(usize, @intFromFloat(@floor(scale[1]))) + 1) |y| {
+                for (0..@as(usize, @intFromFloat(@floor(scale[0]))) + 1) |x| {
+                    const got = perlinCornerIDs(lattice, @intCast(x), @intCast(y));
+                    var direct = lattice;
+                    direct.gradients = &.{};
+                    const expected = perlinCornerIDs(direct, @intCast(x), @intCast(y));
+                    for (got, expected) |a, b| try std.testing.expectEqual(b & 7, a & 7);
+                }
+            }
+            for ([_]F{ 0, -0.0, tiny, std.math.floatMin(F), 0.12, 2, std.math.floatMax(F) }) |width| {
+                for ([_]F{ -std.math.floatMax(F), -0.2, -tiny, -0.0, 0, tiny, 0.2, std.math.floatMax(F) }) |threshold| {
+                    for ([_][2]F{ .{ 1, 0 }, .{ 0, 1 }, .{ 0.23, 0.23 }, .{ -0.0, 0 }, .{ 0, -0.0 }, .{ -0.0, -0.0 } }) |colours| {
+                        lattice.params.perlin_coverage_transition_width = width;
+                        lattice.params.perlin_coverage_threshold = threshold;
+                        lattice.params.background = colours[0];
+                        lattice.params.foreground = colours[1];
+                        var i: usize = 0;
+                        while (i < 96) : (i += S) {
+                            var us: VecSF = undefined;
+                            var vs: VecSF = undefined;
+                            var active: VecSB = undefined;
+                            inline for (0..S) |lane| {
+                                const k = i + lane;
+                                const boundary = @min(@as(F, 2), @as(F, @floatFromInt(k % 8)) / scale[0]);
+                                us[lane] = switch (k % 12) {
+                                    0 => 0,
+                                    1 => 1,
+                                    2 => -2,
+                                    3 => 2,
+                                    4 => boundary,
+                                    5 => std.math.nextAfter(F, boundary, 0),
+                                    6 => std.math.nextAfter(F, boundary, std.math.inf(F)),
+                                    else => @as(F, @floatFromInt((k * 3571) % 65521)) / 65521,
+                                };
+                                vs[lane] = @as(F, @floatFromInt((k * 7919) % 65521)) / 65521;
+                                active[lane] = k % 7 != 0;
+                                const expected = PerlinReference.evalPerlinSpeckle2D(.{ us[lane], vs[lane] }, lattice.params);
+                                try expectPerlinBits(expected, samplePerlinScal(us[lane], vs[lane], lattice));
+                            }
+                            const actual: [S]F = samplePerlinSIMD(us, vs, active, lattice);
+                            inline for (0..S) |lane| {
+                                const expected = if (active[lane]) PerlinReference.evalPerlinSpeckle2D(.{ us[lane], vs[lane] }, lattice.params) else lattice.params.background;
+                                try expectPerlinBits(expected, actual[lane]);
+                            }
+                        }
+                    }
+                }
+            }
+            for ([_]F{ std.math.nan(F), std.math.inf(F), -std.math.inf(F) }) |invalid| {
+                try expectPerlinBits(lattice.params.background, samplePerlinScal(invalid, 0.5, lattice));
+                const actual: [S]F = samplePerlinSIMD(@splat(invalid), @splat(0.5), @splat(true), lattice);
+                for (actual) |value| try expectPerlinBits(lattice.params.background, value);
+            }
+        }
+    }
+}
+
+test "exact Perlin budget fallback owns parameters without narrowing coordinates" {
+    const scales: []const [2]F = if (F == f64)
+        &.{ .{ 4_294_967_296, 1.17 }, .{ 1.17, 4_294_967_296 }, .{ 35_184_372_088_831, 1.17 }, .{ 1.17, 35_184_372_088_831 }, .{ 35_184_372_088_831, 35_184_372_088_831 } }
+    else
+        &.{.{ 65_535, 65_535 }};
+    for (scales) |scale| {
+        var resources = try generateResources(std.testing.failing_allocator, .{ .pattern = .perlin, .cells_per_uv = scale });
+        defer resources.deinit(std.testing.failing_allocator);
+        try std.testing.expectEqual(@as(usize, 0), resources.perlin.?.gradients.len);
+        const params = resources.perlin.?.params;
+        for ([_][2]F{ .{ 0, 0 }, .{ 1, 1 }, .{ 1, 0.61 }, .{ 0.37, 1 }, .{ std.math.nextAfter(F, 1, 0), 0.37 }, .{ 0.37, std.math.nextAfter(F, 1, 0) } }) |uv| {
+            const expected = PerlinReference.evalPerlinSpeckle2D(uv, params);
+            try expectPerlinBits(expected, sampleScal(uv[0], uv[1], .{}, &resources));
+            const actual: [S]F = sampleSIMD(@splat(uv[0]), @splat(uv[1]), @splat(true), .{}, &resources);
+            for (actual) |value| try expectPerlinBits(expected, value);
+        }
+    }
+}
+
+test "exact Perlin propagates allocation failure and releases owned storage" {
+    try std.testing.expectError(error.OutOfMemory, generateResources(std.testing.failing_allocator, .{ .pattern = .perlin }));
+    const Allocation = struct {
+        fn run(allocator: std.mem.Allocator) !void {
+            var owned = try generateResources(allocator, .{ .pattern = .perlin, .cells_per_uv = .{ 2.17, 1.31 } });
+            defer owned.deinit(allocator);
+        }
+    };
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, Allocation.run, .{});
+}
+
 fn Implementation(comptime config: speckleconfig.Config) type {
     return struct {
         const speckle_shape = config.pattern;
@@ -462,6 +733,10 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 .cell_hash, .mock => blk: {
                     try params.validateResolved(config);
                     break :blk .{};
+                },
+                .gradient_lattice => blk: {
+                    try params.validateResolved(config);
+                    break :blk .{ .perlin = try generatePerlinLattice(outer_alloc, params) };
                 },
                 .list_naive => .{ .list = try generateSpeckleList2D(outer_alloc, params) },
                 .list_indexed => .{ .strip_list = try generateStripSpeckleList2D(outer_alloc, params) },
@@ -487,6 +762,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             resources: *const Resources,
         ) F {
             return switch (comptime config.evaluator) {
+                .gradient_lattice => samplePerlinScal(u, v, resources.perlin.?),
                 .mock => 0.5 * (u + v),
                 .cell_hash => evalSpeckle2DImpl(soft_edges, u, v, params),
                 .list_naive => evalSpeckleList2DNaiveImpl(soft_edges, u, v, resources.list.?),
@@ -506,8 +782,15 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             resources: *const Resources,
         ) VecSF {
             return switch (comptime config.evaluator) {
+                .gradient_lattice => samplePerlinSIMD(u, v, active, resources.perlin.?),
                 .mock => @as(VecSF, @splat(0.5)) * (u + v),
-                .cell_hash => evalSpeckleSIMDImpl(soft_edges, evalSpeckle2DImpl, u, v, params, params.background),
+                .cell_hash => blk: {
+                    const values = evalSpeckleSIMDImpl(soft_edges, evalSpeckle2DImpl, u, v, params, params.background);
+                    break :blk if (comptime speckle_shape == .perlin)
+                        @select(F, active, values, @as(VecSF, @splat(params.background)))
+                    else
+                        values;
+                },
                 .list_naive => evalSpeckleSIMDImpl(
                     soft_edges,
                     evalSpeckleList2DNaiveImpl,
@@ -1585,6 +1868,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         fn evalPerlinSpeckle2D(uv: [2]F, params: Speckle2DParams) F {
+            if (!std.math.isFinite(uv[0]) or !std.math.isFinite(uv[1])) return params.background;
             const proc_x = @max(0.0, @min(1.0, uv[0])) * params.cells_per_uv[0];
             const proc_y = @max(0.0, @min(1.0, uv[1])) * params.cells_per_uv[1];
             const cell_x = @as(i64, @intFromFloat(@floor(proc_x)));
@@ -1618,84 +1902,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             const noise = noise_x0 + fade_y * (noise_x1 - noise_x0);
             const coverage = perlinCoverage(noise, params);
             return params.background + coverage * (params.foreground - params.background);
-        }
-
-        fn rasterizePerlinSpeckleMask(
-            allocator: std.mem.Allocator,
-            bits: []u8,
-            dims: [2]usize,
-            row_stride: usize,
-            uv_to_texel: [2]F,
-            cell_bounds: SpeckleCellBounds,
-            params: Speckle2DParams,
-        ) !void {
-            const gradient_count = std.math.mul(
-                usize,
-                cell_bounds.dims[0],
-                cell_bounds.dims[1],
-            ) catch return error.SpeckleMaskTooLarge;
-            const gradient_indices = try allocator.alloc(u8, gradient_count);
-            defer allocator.free(gradient_indices);
-
-            for (0..cell_bounds.dims[1]) |yy| {
-                const cell_y = cell_bounds.min[1] + @as(i64, @intCast(yy));
-                for (0..cell_bounds.dims[0]) |xx| {
-                    const cell_x = cell_bounds.min[0] + @as(i64, @intCast(xx));
-                    gradient_indices[yy * cell_bounds.dims[0] + xx] =
-                        @as(u8, @truncate(hashSpeckleCell(cell_x, cell_y, params.seed))) & 7;
-                }
-            }
-
-            for (0..dims[1]) |yy| {
-                const uv_y = @as(F, @floatFromInt(yy)) / uv_to_texel[1];
-                const proc_y = uv_y * params.cells_per_uv[1];
-                const cell_y = @as(i64, @intFromFloat(@floor(proc_y)));
-                const rel_y = std.math.cast(usize, cell_y - cell_bounds.min[1]) orelse
-                    return error.SpeckleMaskTooLarge;
-                if (rel_y + 1 >= cell_bounds.dims[1]) return error.SpeckleMaskTooLarge;
-                const frac_y = proc_y - @as(F, @floatFromInt(cell_y));
-                const fade_y = quinticPerlinFade(frac_y);
-
-                for (0..dims[0]) |xx| {
-                    const uv_x = @as(F, @floatFromInt(xx)) / uv_to_texel[0];
-                    const proc_x = uv_x * params.cells_per_uv[0];
-                    const cell_x = @as(i64, @intFromFloat(@floor(proc_x)));
-                    const rel_x = std.math.cast(usize, cell_x - cell_bounds.min[0]) orelse
-                        return error.SpeckleMaskTooLarge;
-                    if (rel_x + 1 >= cell_bounds.dims[0]) return error.SpeckleMaskTooLarge;
-                    const frac_x = proc_x - @as(F, @floatFromInt(cell_x));
-                    const fade_x = quinticPerlinFade(frac_x);
-                    const gradient_row_0 = rel_y * cell_bounds.dims[0];
-                    const gradient_row_1 = (rel_y + 1) * cell_bounds.dims[0];
-
-                    const noise_00 = perlinGradientDot(
-                        gradient_indices[gradient_row_0 + rel_x],
-                        frac_x,
-                        frac_y,
-                    );
-                    const noise_10 = perlinGradientDot(
-                        gradient_indices[gradient_row_0 + rel_x + 1],
-                        frac_x - 1.0,
-                        frac_y,
-                    );
-                    const noise_01 = perlinGradientDot(
-                        gradient_indices[gradient_row_1 + rel_x],
-                        frac_x,
-                        frac_y - 1.0,
-                    );
-                    const noise_11 = perlinGradientDot(
-                        gradient_indices[gradient_row_1 + rel_x + 1],
-                        frac_x - 1.0,
-                        frac_y - 1.0,
-                    );
-                    const noise_x0 = noise_00 + fade_x * (noise_10 - noise_00);
-                    const noise_x1 = noise_01 + fade_x * (noise_11 - noise_01);
-                    const noise = noise_x0 + fade_y * (noise_x1 - noise_x0);
-                    bits[yy * row_stride + xx] = quantizeSpeckleCoverage(
-                        perlinCoverage(noise, params),
-                    );
-                }
-            }
         }
 
         inline fn rasterizeSpeckleMaskDisk(
@@ -1792,34 +1998,36 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 @floatFromInt(intervals[0]),
                 @floatFromInt(intervals[1]),
             };
-            var mask_params = params;
-            if (comptime speckle_shape == .perlin) mask_params.occupancy = 1.0;
-            const empty_pattern = if (comptime speckle_shape == .perlin)
-                false
-            else
-                params.occupancy == 0.0;
+
+            const empty_pattern = speckle_shape != .perlin and params.occupancy == 0.0;
             if (empty_pattern or params.foreground == params.background) {
                 return .{
                     .bits = try allocator.alloc(u8, 0),
                     .dims = dims,
                     .row_stride = row_stride,
                     .uv_to_texel = uv_to_texel,
-                    .params = mask_params,
+                    .params = params,
                 };
             }
 
             const bits = try allocator.alloc(u8, byte_count);
             errdefer allocator.free(bits);
             if (comptime speckle_shape == .perlin) {
-                try rasterizePerlinSpeckleMask(
-                    allocator,
-                    bits,
-                    dims,
-                    row_stride,
-                    uv_to_texel,
-                    cell_bounds,
-                    params,
-                );
+                // Store coverage, not intensity; the mask sampler applies the original colors.
+                var coverage_params = params;
+                coverage_params.background = 0;
+                coverage_params.foreground = 1;
+                const lattice = try generatePerlinLattice(allocator, coverage_params);
+                defer allocator.free(lattice.gradients);
+                for (0..dims[1]) |y| {
+                    for (0..dims[0]) |x| {
+                        bits[y * row_stride + x] = quantizeSpeckleCoverage(samplePerlinScal(
+                            @as(F, @floatFromInt(x)) / uv_to_texel[0],
+                            @as(F, @floatFromInt(y)) / uv_to_texel[1],
+                            lattice,
+                        ));
+                    }
+                }
             } else {
                 @memset(bits, 0);
                 var cell_y = cell_bounds.min[1];
@@ -1849,13 +2057,14 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 .dims = dims,
                 .row_stride = row_stride,
                 .uv_to_texel = uv_to_texel,
-                .params = mask_params,
+                .params = params,
             };
         }
 
         inline fn evalSpeckleMask2D(uv: [2]F, mask: SpeckleMask2D) F {
             const params = mask.params;
-            if (params.occupancy == 0.0 or params.foreground == params.background or
+            // Generation encodes empty patterns in the payload; Perlin ignores occupancy.
+            if (mask.bits.len == 0 or params.foreground == params.background or
                 !std.math.isFinite(uv[0]) or !std.math.isFinite(uv[1]))
             {
                 return params.background;
@@ -2249,7 +2458,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         ) VecSF {
             const params = mask.params;
             const v_background: VecSF = @splat(params.background);
-            if (params.occupancy == 0.0 or params.foreground == params.background) {
+            if (mask.bits.len == 0 or params.foreground == params.background) {
                 return v_background;
             }
 
@@ -2430,6 +2639,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 return;
             }
             switch (comptime config.evaluator) {
+                .gradient_lattice => unreachable,
                 .classified_indexed, .direct_fixed, .mask_1bit => {
                     try testing.expectError(
                         error.SpeckleEvaluatorRequiresHardEdges,
@@ -3029,60 +3239,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             };
         }
 
-        test "Perlin mask is varied seed-sensitive bounded and balanced" {
-            if (comptime config.evaluator == .mock or speckle_shape != .perlin) return;
-
-            var params = Speckle2DParams{
-                .seed = 0x85ebca6b,
-                .cells_per_uv = .{ 7.25, 5.5 },
-                .occupancy = -1.0,
-                .radius_mean = -1.0,
-                .radius_jitter = -1.0,
-                .foreground = 0.15,
-                .background = 0.85,
-            };
-
-            const first = try generateSpeckleMask2D(testing.allocator, params);
-            defer deinitTestResources(.{ .mask = first });
-
-            params.seed +%= 1;
-            const changed = try generateSpeckleMask2D(testing.allocator, params);
-            defer deinitTestResources(.{ .mask = changed });
-            try testing.expect(!std.mem.eql(u8, first.bits, changed.bits));
-
-            var min_value: u8 = std.math.maxInt(u8);
-            var max_value: u8 = 0;
-            var has_intermediate = false;
-            var sum: u64 = 0;
-            for (first.bits) |value| {
-                min_value = @min(min_value, value);
-                max_value = @max(max_value, value);
-                has_intermediate = has_intermediate or (value > 0 and value < 255);
-                sum += value;
-            }
-            const mean_coverage = @as(F, @floatFromInt(sum)) /
-                (@as(F, @floatFromInt(first.bits.len)) * 255.0);
-            try testing.expect(min_value < 32 and max_value > 223);
-            try testing.expect(has_intermediate);
-            try testing.expect(mean_coverage > 0.3 and mean_coverage < 0.7);
-
-            for ([_][2]F{ .{ 0.0, 0.0 }, .{ 0.37, 0.61 }, .{ 1.0, 1.0 } }) |uv| {
-                const value = evalSpeckleMask2D(uv, first);
-                try testing.expect(value >= @min(params.foreground, params.background));
-                try testing.expect(value <= @max(params.foreground, params.background));
-            }
-            try testing.expectEqual(
-                evalSpeckleMask2D(.{ 0.0, 1.0 }, first),
-                evalSpeckleMask2D(.{ -2.0, 3.0 }, first),
-            );
-
-            var endpoint_params = params;
-            endpoint_params.cells_per_uv = .{ 1.0 - std.math.floatEps(F), 1.0 };
-            const endpoint = try generateSpeckleMask2D(testing.allocator, endpoint_params);
-            defer deinitTestResources(.{ .mask = endpoint });
-            try testing.expect(std.math.isFinite(evalSpeckleMask2D(.{ 1.0, 1.0 }, endpoint)));
-        }
-
         test "direct 1-bit speckle mask preserves list-derived bytes and lattice values" {
             if (comptime config.evaluator != .mask_1bit) return;
 
@@ -3140,14 +3296,17 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 config.evaluator != .mask_u8) return;
 
             for ([_]bool{ false, true }) |equal_colour| {
-                if (!equal_colour and speckle_shape == .perlin) continue;
                 var params = speckleMaskTestParams();
                 params.occupancy = if (equal_colour) 1.0 else 0.0;
                 if (equal_colour) params.foreground = params.background;
                 const mask = try generateSpeckleMask2D(testing.allocator, params);
                 defer deinitTestResources(.{ .mask = mask });
-                try testing.expectEqual(@as(usize, 0), mask.bits.len);
-                try testing.expectEqual(params.background, evalSpeckleMask2D(.{ 0.37, 0.61 }, mask));
+                if (speckle_shape == .perlin and !equal_colour) {
+                    try testing.expect(mask.bits.len > 0);
+                } else {
+                    try testing.expectEqual(@as(usize, 0), mask.bits.len);
+                    try testing.expectEqual(params.background, evalSpeckleMask2D(.{ 0.37, 0.61 }, mask));
+                }
             }
 
             var params = speckleMaskTestParams();
@@ -3186,8 +3345,71 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             );
         }
 
+        test "Perlin u8 mask quantizes analytic lattice coverage and samples nearest texels" {
+            if (comptime speckle_shape != .perlin or config.evaluator != .mask_u8) return;
+
+            var found_spatial_difference = false;
+            for ([_][2]F{ .{ 3.25, 2.5 }, .{ 0.25, 0.75 }, .{ 2, 1 } }) |cells| {
+                for ([_]F{ 0.0, 0.12 }) |width| {
+                    var params: Speckle2DParams = .{
+                        .pattern = .perlin,
+                        .cells_per_uv = cells,
+                        .perlin_coverage_threshold = 0.03,
+                        .perlin_coverage_transition_width = width,
+                        .foreground = 1,
+                        .background = 0,
+                        .occupancy = 0,
+                        .radius_mean = 0.9,
+                        .radius_jitter = 0.8,
+                    };
+                    std.mem.doNotOptimizeAway(&params);
+                    var mask = try generateSpeckleMask2D(testing.allocator, params);
+                    std.mem.doNotOptimizeAway(&mask);
+                    defer deinitTestResources(.{ .mask = mask });
+                    try testing.expectEqual(mask.dims[0], mask.row_stride);
+                    try testing.expectEqual(mask.dims[0] * mask.dims[1], mask.bits.len);
+                    try testing.expectEqualDeep(params, mask.params);
+                    const resources: Resources = .{ .mask = mask };
+                    const K = Kernel(kernelIndex(config));
+                    const expected = evalSpeckleMask2D(.{ 0.37, 0.61 }, mask);
+                    try testing.expectApproxEqAbs(expected, K.sampleScal(0.37, 0.61, params, &resources), unit_tol);
+                    const lanes: [S]F = K.sampleSIMD(@splat(0.37), @splat(0.61), @splat(true), params, &resources);
+                    for (lanes) |value| try testing.expectApproxEqAbs(expected, value, unit_tol);
+                    var found_intermediate = false;
+                    for (0..mask.dims[1]) |yy| {
+                        for (0..mask.dims[0]) |xx| {
+                            const uv = [2]F{
+                                @as(F, @floatFromInt(xx)) / mask.uv_to_texel[0],
+                                @as(F, @floatFromInt(yy)) / mask.uv_to_texel[1],
+                            };
+                            const analytic = PerlinReference.evalPerlinSpeckle2D(uv, params);
+                            const byte = mask.bits[yy * mask.row_stride + xx];
+                            testing.expectEqual(quantizeSpeckleCoverage(analytic), byte) catch |err| {
+                                std.debug.print("Perlin mask byte mismatch cells={any} width={d} texel=({d},{d}) analytic={d} byte={d}\n", .{ cells, width, xx, yy, analytic, byte });
+                                return err;
+                            };
+                            const sampled = evalSpeckleMask2D(uv, mask);
+                            try testing.expectApproxEqAbs(analytic, sampled, 0.5 / 255.0 + unit_tol);
+                            found_intermediate = found_intermediate or (byte != 0 and byte != 255);
+                            if (xx + 1 < mask.dims[0]) {
+                                const nearby = [2]F{ uv[0] + 0.24 / mask.uv_to_texel[0], uv[1] };
+                                try testing.expectApproxEqAbs(sampled, evalSpeckleMask2D(nearby, mask), unit_tol);
+                                found_spatial_difference = found_spatial_difference or
+                                    @abs(sampled - PerlinReference.evalPerlinSpeckle2D(nearby, params)) > 1.0 / 255.0;
+                            }
+                        }
+                    }
+                    testing.expectEqual(width > 0, found_intermediate) catch |err| {
+                        std.debug.print("Perlin mask intermediate coverage cells={any} width={d} found={}\n", .{ cells, width, found_intermediate });
+                        return err;
+                    };
+                }
+            }
+            try testing.expect(found_spatial_difference);
+        }
+
         test "u8 speckle mask agrees with quantized indexed lattice evaluation" {
-            if (comptime config.evaluator != .mask_u8) return;
+            if (comptime config.evaluator != .mask_u8 or speckle_shape == .perlin) return;
 
             const params = speckleMaskTestParams();
             const speckles = try generateSpeckleList2D(testing.allocator, params);
@@ -3211,9 +3433,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                         @as(F, @floatFromInt(xx)) / mask.uv_to_texel[0],
                         @as(F, @floatFromInt(yy)) / mask.uv_to_texel[1],
                     };
-                    const analytic = if (comptime speckle_shape == .perlin)
-                        evalPerlinSpeckle2D(uv, params)
-                    else if (speckleSoftness(params) > 0.0)
+                    const analytic = if (speckleSoftness(params) > 0.0)
                         evalSpeckleList2DNaiveImpl(true, uv[0], uv[1], speckles)
                     else
                         evalSpeckleList2DNaiveImpl(false, uv[0], uv[1], speckles);
@@ -3425,9 +3645,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             };
             var resources = try generateConfiguredResources(testing.allocator, params);
             defer resources.deinit(testing.allocator);
-            if (comptime speckle_shape == .perlin) {
-                try testing.expectEqual(@as(F, 1.0), resources.mask.?.params.occupancy);
-            }
             var fallback_params = params;
             if (comptime config.evaluator != .cell_hash) {
                 fallback_params.foreground = 0.95;
@@ -3446,7 +3663,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     params.background
                 else switch (comptime config.evaluator) {
                     .mock => unreachable,
-                    .cell_hash => evalSpeckle2D(uv, params),
+                    .cell_hash, .gradient_lattice => evalSpeckle2D(uv, params),
                     .list_naive => evalSpeckleList2DNaiveImpl(config.soft_edges, uv[0], uv[1], resources.list.?),
                     .list_indexed => evalStripSpeckleList2DImpl(config.soft_edges, uv[0], uv[1], resources.strip_list.?),
                     .classified_indexed => evalClassifiedIndexedSpeckle2D(
@@ -3469,7 +3686,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             }
             resources.deinit(testing.allocator);
             try testing.expect(resources.list == null and resources.strip_list == null and resources.classified == null and
-                resources.direct_fixed == null and resources.mask == null);
+                resources.direct_fixed == null and resources.mask == null and resources.perlin == null);
         }
     };
 }
@@ -3502,7 +3719,7 @@ test "runtime override policy and invalid settings fail before allocation" {
         const cases = [_]struct { params: Speckle2DParams, err: anyerror }{
             .{ .params = .{ .neighbor_count = 2 }, .err = error.InvalidSpeckleNeighborCount },
             .{ .params = .{ .pattern = .perlin, .neighbor_count = 9 }, .err = error.SpecklePerlinDoesNotUseNeighbors },
-            .{ .params = .{ .pattern = .perlin, .evaluator = .cell_hash }, .err = error.PerlinRequiresMaskU8 },
+            .{ .params = .{ .pattern = .perlin, .evaluator = .list_indexed }, .err = error.PerlinRequiresSupportedEvaluator },
             .{ .params = .{ .pattern = .gaussian, .evaluator = .mask_1bit }, .err = error.Mask1BitRequiresDisk },
             .{ .params = .{ .evaluator = .classified_indexed, .neighbor_count = 4 }, .err = error.ClassifiedIndexedRequiresDiskAndNineNeighbors },
             .{ .params = .{ .evaluator = .classified_indexed, .pattern = .gaussian }, .err = error.ClassifiedIndexedRequiresDiskAndNineNeighbors },
@@ -3605,7 +3822,7 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
         try std.testing.expectEqual(@as(?u8, index), resources.kernel_index);
         const allocated = @as(usize, @intFromBool(resources.list != null)) +
             @intFromBool(resources.classified != null) + @intFromBool(resources.direct_fixed != null) +
-            @intFromBool(resources.mask != null) + @intFromBool(resources.strip_list != null);
+            @intFromBool(resources.mask != null) + @intFromBool(resources.strip_list != null) + @intFromBool(resources.perlin != null);
         try std.testing.expectEqual(@as(usize, if (config.evaluator == .cell_hash or config.evaluator == .mock) 0 else 1), allocated);
         try std.testing.expectEqual(config.evaluator == .list_naive, resources.list != null);
         try std.testing.expectEqual(config.evaluator == .list_indexed, resources.strip_list != null);
@@ -3615,7 +3832,7 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
             const Impl = Implementation(config);
             const reference = switch (comptime config.evaluator) {
                 .mock => 0.5 * (uv[0] + uv[1]),
-                .cell_hash, .list_indexed => Impl.evalSpeckle2D(uv, params),
+                .cell_hash, .gradient_lattice, .list_indexed => Impl.evalSpeckle2D(uv, params),
                 // Direct-fixed returns stored endpoints, not the hash reference's arithmetic mapping.
                 .direct_fixed => if (Impl.evalSpeckle2D(uv, params) == params.background)
                     params.background
@@ -3641,7 +3858,8 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
                 &resources,
             );
             const inactive_expected = switch (config.evaluator) {
-                .cell_hash, .list_naive, .list_indexed, .mock => reference,
+                .cell_hash => if (config.pattern == .perlin) params.background else reference,
+                .list_naive, .list_indexed, .mock => reference,
                 else => params.background,
             };
             for (inactive) |value| try std.testing.expectEqual(inactive_expected, value);
@@ -3655,7 +3873,7 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
         resources.deinit(std.testing.allocator);
         try std.testing.expectEqual(@as(?u8, null), resources.kernel_index);
         try std.testing.expect(resources.list == null and resources.strip_list == null and resources.classified == null and
-            resources.direct_fixed == null and resources.mask == null);
+            resources.direct_fixed == null and resources.mask == null and resources.perlin == null);
     }
 }
 

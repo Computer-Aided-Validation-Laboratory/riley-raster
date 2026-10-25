@@ -34,7 +34,8 @@ class BenchmarkTests(unittest.TestCase):
         for options, count in ((['--occupancy', '1'], 24), (['--include-full-occupancy-single-neighbor'], 48)):
             self.assertEqual(len(bench.design(self.args('--profile', 'full', '--workers', '1', *options))['configurations']), count)
         for options in (('--repeats', '3'), ('--alpha', 'nan'), ('--frames', '0'), ('--occupancy', '2'),
-                        ('--radius', 'inf'), ('--permutations', '0'), ('--softness', '0'), ('--a', 'texture')):
+                        ('--radius', 'inf'), ('--permutations', '0'), ('--softness', '0'), ('--a', 'texture'),
+                        ('--perlin-threshold', 'nan'), ('--perlin-transition', '-.1')):
             with self.assertRaises(ValueError):
                 bench.design(self.args(*options))
 
@@ -46,6 +47,17 @@ class BenchmarkTests(unittest.TestCase):
         for case in d['configurations']:
             self.assertEqual(case['softness'], .03 if case['pattern'] == 'soft' else 0.)
         self.assertEqual(self.args().binary, bench.ROOT / 'zig-out/bin/bench_speckle_evaluators_f64_simd')
+
+    def test_perlin_has_no_neighborhood_override(self):
+        d = bench.design(self.args('--profile', 'full', '--patterns', 'perlin',
+                                   '--workers', '1', '--scenes', 'plate',
+                                   '--jitter', '.08', '--occupancy', '.7',
+                                   '--perlin-threshold', '.1', '--perlin-transition', '0'))
+        self.assertEqual(len(d['configurations']), 1)
+        self.assertIsNone(d['configurations'][0]['neighbors'])
+        self.assertEqual(d['configurations'][0]['softness'], 0.)
+        self.assertEqual(d['config']['perlin_threshold'], .1)
+        self.assertEqual(d['config']['perlin_transition'], 0.)
 
     def test_schedules(self):
         for repeats in range(2, 42, 2):

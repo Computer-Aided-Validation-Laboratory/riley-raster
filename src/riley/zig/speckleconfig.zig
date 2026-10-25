@@ -12,6 +12,7 @@ const std = @import("std");
 pub const Pattern = enum(u8) { disk = 0, gaussian = 1, perlin = 2 };
 pub const Evaluator = enum(u8) {
     cell_hash,
+    gradient_lattice,
     list_naive,
     list_indexed,
     classified_indexed, // Owner-aligned classification with exact masked hard-disk fallback.
@@ -35,7 +36,8 @@ pub const default_mask_samples_per_cell: u8 = 12;
 
 pub const CompatibilityError = error{
     InvalidSpeckleNeighborCount,
-    PerlinRequiresMaskU8,
+    PerlinRequiresSupportedEvaluator,
+    GradientLatticeRequiresPerlin,
     Mask1BitRequiresDisk,
     ClassifiedIndexedRequiresDiskAndNineNeighbors,
     DirectFixedRequiresDiskAndOneNeighbor,
@@ -62,6 +64,7 @@ pub fn parseEvaluator(name: []const u8) ?Evaluator {
 pub fn evaluatorName(evaluator: Evaluator) []const u8 {
     return switch (evaluator) {
         .cell_hash => "cell-hash",
+        .gradient_lattice => "gradient-lattice",
         .list_naive => "list-naive",
         .list_indexed => "list-indexed",
         .classified_indexed => "classified-indexed",
@@ -83,17 +86,18 @@ pub fn isValidMaskSamplesPerCell(samples: anytype) bool {
 pub fn supportsSoftEdges(config: Config) bool {
     return config.pattern == .disk and switch (config.evaluator) {
         .cell_hash, .list_naive, .list_indexed, .mask_u8, .mock => true,
-        .classified_indexed, .direct_fixed, .mask_1bit => false,
+        .classified_indexed, .direct_fixed, .mask_1bit, .gradient_lattice => false,
     };
 }
 
 /// Numerical parameter ranges are checked by Speckle2DParams after policy resolution.
 pub fn validateCompatibility(config: Config) CompatibilityError!void {
     if (!isValidNeighborCount(config.neighbor_count)) return error.InvalidSpeckleNeighborCount;
-    if (config.pattern == .perlin and config.evaluator != .mask_u8 and config.evaluator != .mock) {
-        return error.PerlinRequiresMaskU8;
+    if (config.pattern == .perlin and config.evaluator != .gradient_lattice and config.evaluator != .cell_hash and config.evaluator != .mask_u8 and config.evaluator != .mock) {
+        return error.PerlinRequiresSupportedEvaluator;
     }
     switch (config.evaluator) {
+        .gradient_lattice => if (config.pattern != .perlin) return error.GradientLatticeRequiresPerlin,
         .mask_1bit => if (config.pattern != .disk) return error.Mask1BitRequiresDisk,
         .classified_indexed => if (config.pattern != .disk or config.neighbor_count != 9)
             return error.ClassifiedIndexedRequiresDiskAndNineNeighbors,
@@ -130,7 +134,7 @@ pub fn resolve(
         else
             Evaluator.list_indexed,
         .gaussian => Evaluator.list_indexed,
-        .perlin => Evaluator.mask_u8,
+        .perlin => Evaluator.gradient_lattice,
     };
     const config: Config = .{
         .pattern = pattern,
@@ -162,7 +166,7 @@ const default_configs = [_]Config{
     .{ .pattern = .disk, .evaluator = .classified_indexed, .neighbor_count = 9, .soft_edges = false },
     .{ .pattern = .disk, .evaluator = .list_indexed, .neighbor_count = 9, .soft_edges = true },
     .{ .pattern = .gaussian, .evaluator = .list_indexed, .neighbor_count = 9, .soft_edges = false },
-    .{ .pattern = .perlin, .evaluator = .mask_u8, .neighbor_count = 9, .soft_edges = false },
+    .{ .pattern = .perlin, .evaluator = .gradient_lattice, .neighbor_count = 9, .soft_edges = false },
 };
 
 const Catalogue = struct {
@@ -256,7 +260,10 @@ test "experimental resolution selects defaults and rejects incompatible override
     }{
         .{ .neighbors = 0, .err = error.InvalidSpeckleNeighborCount },
         .{ .pattern = .perlin, .neighbors = 9, .err = error.SpecklePerlinDoesNotUseNeighbors },
-        .{ .pattern = .perlin, .evaluator = .cell_hash, .err = error.PerlinRequiresMaskU8 },
+        .{ .pattern = .perlin, .evaluator = .list_indexed, .err = error.PerlinRequiresSupportedEvaluator },
+        .{ .pattern = .perlin, .evaluator = .mask_u8, .neighbors = 9, .err = error.SpecklePerlinDoesNotUseNeighbors },
+        .{ .pattern = .perlin, .evaluator = .mask_u8, .soft = true, .err = error.SpeckleEdgeSoftnessRequiresDisk },
+        .{ .pattern = .disk, .evaluator = .gradient_lattice, .err = error.GradientLatticeRequiresPerlin },
         .{ .pattern = .gaussian, .evaluator = .mask_1bit, .err = error.Mask1BitRequiresDisk },
         .{ .evaluator = .classified_indexed, .neighbors = 4, .err = error.ClassifiedIndexedRequiresDiskAndNineNeighbors },
         .{ .evaluator = .direct_fixed, .neighbors = 9, .err = error.DirectFixedRequiresDiskAndOneNeighbor },
@@ -268,10 +275,23 @@ test "experimental resolution selects defaults and rejects incompatible override
     for (cases) |case| try std.testing.expectError(case.err, resolve(true, case.pattern, case.evaluator, case.neighbors, case.soft));
 }
 
+test "Perlin mask is explicit experimental approximation and shares the disk mask sampler" {
+    inline for (.{ false, true }) |experimental| {
+        try std.testing.expectEqual(Evaluator.gradient_lattice, (try resolve(experimental, .perlin, null, null, false)).evaluator);
+    }
+    try std.testing.expectError(error.SpeckleOverridesDisabled, resolve(false, .perlin, .mask_u8, null, false));
+    const mask = try resolve(true, .perlin, .mask_u8, null, false);
+    try std.testing.expectEqual(Evaluator.mask_u8, mask.evaluator);
+    try std.testing.expectEqualDeep(Config{ .pattern = .disk, .evaluator = .mask_u8, .neighbor_count = 9, .soft_edges = false }, canonicalizeSampleConfig(mask));
+    for (generationConfigs(false)) |config| {
+        if (config.pattern == .perlin) try std.testing.expectEqual(Evaluator.gradient_lattice, config.evaluator);
+    }
+}
+
 test "specialization catalogues are unique and cover every resolved generation config" {
-    try std.testing.expectEqual(8, std.enums.values(Evaluator).len);
-    try std.testing.expectEqual(54, generationConfigs(true).len);
-    try std.testing.expectEqual(26, sampleConfigs(true).len);
+    try std.testing.expectEqual(9, std.enums.values(Evaluator).len);
+    try std.testing.expectEqual(56, generationConfigs(true).len);
+    try std.testing.expectEqual(28, sampleConfigs(true).len);
     try std.testing.expectEqual(@as(usize, 4), generationConfigs(false).len);
     try std.testing.expectEqual(@as(usize, 4), sampleConfigs(false).len);
     inline for (.{ false, true }) |enable_all| {

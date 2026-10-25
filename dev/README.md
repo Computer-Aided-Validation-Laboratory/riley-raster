@@ -102,17 +102,47 @@ zig build test-basic -Dprecision=f32 -Dsimd=off
 `-Denable-all-evaluators=true` enables native-Zig `Speckle2DParams.evaluator` and
 `neighbor_count` overrides. Default builds reject every explicit override, even one
 matching a default. Counts are 1/4/9; omitted counts use 9, or 1 for explicit
-`direct-fixed`. Perlin rejects neighborhood overrides. Defaults and compatibility
-rules are defined in [speckleconfig.zig](../src/riley/zig/speckleconfig.zig).
-`classified-indexed` is the sole classified evaluator (the consolidated `-8`
-incumbent): hard nine-neighbor disks use owner-aligned microcells, 16-bit candidate
-states, and an exact masked fallback. Numbered classified selectors are removed.
-The benchmark runner reads the native catalogue; use `--a classified-indexed`
-or `--b classified-indexed`, not a historical numbered name.
+`direct-fixed`. Non-mock Perlin rejects explicit neighborhood counts.
+
+| Pattern | Default evaluator | Native alternatives |
+| --- | --- | --- |
+| Hard disk | `classified-indexed` (9 neighbors) | Hash/list evaluators, `direct-fixed`, masks |
+| Soft disk | `list-indexed` | `cell-hash`, `list-naive`, `mask-u8` |
+| Gaussian | `list-indexed` | `cell-hash`, `list-naive`, `mask-u8` |
+| Perlin | `gradient-lattice` | `cell-hash`, `mask-u8` |
+
+All defaults preserve analytic coverage. Masks use nearest-grid sampling;
+`mask-u8` additionally quantizes coverage to bytes. `mock` is a raw arithmetic
+ablation for every pattern. Python/C expose only the defaults.
+Compatibility rules are defined in [speckleconfig.zig](../src/riley/zig/speckleconfig.zig).
 
 `-Dspeckle-mask-samples-per-cell=8|12|16` selects mask/classification resolution
-(default 12). Precision also affects pattern generation: the same seed does not
-guarantee identical results between f32 and f64.
+(default 12). It affects all explicit masks, including Perlin, but not analytic
+field fidelity. Precision affects generation: a fixed seed does not guarantee
+identical f32/f64 results.
+
+The benchmark runner reads the native catalogue; use `--a classified-indexed`
+or `--b classified-indexed`, not historical numbered selectors. It supports
+`--patterns hard soft gaussian perlin`; `--perlin-threshold` and
+`--perlin-transition` select hard/smooth Perlin cases without a neighborhood override.
+
+#### Implementation constraints
+
+Generation and sampling live in [speckleops.zig](../src/riley/zig/speckleops.zig).
+Prepared resources are immutable and own their parameters; frames and workers
+borrow them. Finite UVs clamp to `[0,1]` before procedural scaling.
+
+- `classified-indexed` stores nine candidate bits and a foreground flag per
+  procedural-aligned microcell. Its 256 MiB state limit returns
+  `SpeckleClassificationTooLarge` on excess or checked size overflow.
+- `gradient-lattice` stores shared byte gradient IDs, including outer corners at
+  UV 1. Above its 256 MiB budget, or on checked size overflow, it uses exact
+  on-demand hashing. In-budget allocation failures propagate. Perlin mask setup
+  reuses this evaluator with unit colors before quantizing coverage.
+- Exactness is bitwise agreement with the independent reference at the same
+  precision/build, under strict round-to-nearest with gradual underflow. Preserve
+  gradient expressions, interpolation order, transition division, and color
+  arithmetic; algebraically equivalent rewrites can change rounding or signed zero.
 
 ## Focused Verification Suite
 
