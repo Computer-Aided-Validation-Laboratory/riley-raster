@@ -16,6 +16,12 @@ pub const Evaluator = enum(u8) {
     list_indexed,
     classified_indexed, // Owner-strip stamping with nine-neighbor SIMD hard-disk fallback.
     classified_indexed_2,
+    classified_indexed_3,
+    classified_indexed_4,
+    classified_indexed_5,
+    classified_indexed_6,
+    classified_indexed_7,
+    classified_indexed_8,
     direct_fixed,
     mask_1bit,
     mask_u8,
@@ -67,6 +73,12 @@ pub fn evaluatorName(evaluator: Evaluator) []const u8 {
         .list_indexed => "list-indexed",
         .classified_indexed => "classified-indexed",
         .classified_indexed_2 => "classified-indexed-2",
+        .classified_indexed_3 => "classified-indexed-3",
+        .classified_indexed_4 => "classified-indexed-4",
+        .classified_indexed_5 => "classified-indexed-5",
+        .classified_indexed_6 => "classified-indexed-6",
+        .classified_indexed_7 => "classified-indexed-7",
+        .classified_indexed_8 => "classified-indexed-8",
         .direct_fixed => "direct-fixed",
         .mask_1bit => "mask-1bit",
         .mask_u8 => "mask-u8",
@@ -85,7 +97,7 @@ pub fn isValidMaskSamplesPerCell(samples: anytype) bool {
 pub fn supportsSoftEdges(config: Config) bool {
     return config.pattern == .disk and switch (config.evaluator) {
         .cell_hash, .list_naive, .list_indexed, .mask_u8, .mock => true,
-        .classified_indexed, .classified_indexed_2, .direct_fixed, .mask_1bit => false,
+        .classified_indexed, .classified_indexed_2, .classified_indexed_3, .classified_indexed_4, .classified_indexed_5, .classified_indexed_6, .classified_indexed_7, .classified_indexed_8, .direct_fixed, .mask_1bit => false,
     };
 }
 
@@ -97,7 +109,7 @@ pub fn validateCompatibility(config: Config) CompatibilityError!void {
     }
     switch (config.evaluator) {
         .mask_1bit => if (config.pattern != .disk) return error.Mask1BitRequiresDisk,
-        .classified_indexed, .classified_indexed_2 => if (config.pattern != .disk or config.neighbor_count != 9)
+        .classified_indexed, .classified_indexed_2, .classified_indexed_3, .classified_indexed_4, .classified_indexed_5, .classified_indexed_6, .classified_indexed_7, .classified_indexed_8 => if (config.pattern != .disk or config.neighbor_count != 9)
             return error.ClassifiedIndexedRequiresDiskAndNineNeighbors,
         .direct_fixed => if (config.pattern != .disk or config.neighbor_count != 1)
             return error.DirectFixedRequiresDiskAndOneNeighbor,
@@ -234,7 +246,7 @@ test "runtime evaluator names round trip and reject invalid spellings" {
         try std.testing.expectEqual(evaluator, parseEvaluator(evaluatorName(evaluator)).?);
         if (evaluator != .mock) try std.testing.expectEqual(null, parseEvaluator(@tagName(evaluator)));
     }
-    for ([_][]const u8{ "", "Cell-hash", " mask-u8", "mask", "MASK-U8", "list-indexed-2", "list-indexed-3", "list_indexed_2", "list_indexed_3", "classified-indexed-3", "classified-indexed-4", "classified-indexed-5", "classified-indexed-6" }) |name| {
+    for ([_][]const u8{ "", "Cell-hash", " mask-u8", "mask", "MASK-U8", "list-indexed-2", "list-indexed-3", "list_indexed_2", "list_indexed_3", "classified-indexed-99" }) |name| {
         try std.testing.expectEqual(null, parseEvaluator(name));
     }
 }
@@ -270,10 +282,34 @@ test "experimental resolution selects defaults and rejects incompatible override
     for (cases) |case| try std.testing.expectError(case.err, resolve(true, case.pattern, case.evaluator, case.neighbors, case.soft));
 }
 
+test "aligned classified evaluator is opt-in and restricted to hard nine-neighbor disks" {
+    const selected = try resolve(true, .disk, .classified_indexed_3, null, false);
+    try std.testing.expectEqual(Evaluator.classified_indexed_3, selected.evaluator);
+    try std.testing.expectEqualDeep(selected, canonicalizeSampleConfig(selected));
+    try std.testing.expectError(error.SpeckleOverridesDisabled, resolve(false, .disk, .classified_indexed_3, null, false));
+    for ([_]u8{ 1, 4 }) |neighbors| try std.testing.expectError(error.ClassifiedIndexedRequiresDiskAndNineNeighbors, resolve(true, .disk, .classified_indexed_3, neighbors, false));
+    try std.testing.expectError(error.ClassifiedIndexedRequiresDiskAndNineNeighbors, resolve(true, .gaussian, .classified_indexed_3, null, false));
+    try std.testing.expectError(error.PerlinRequiresMaskU8, resolve(true, .perlin, .classified_indexed_3, null, false));
+    try std.testing.expectError(error.SpeckleEvaluatorRequiresHardEdges, resolve(true, .disk, .classified_indexed_3, null, true));
+}
+
+test "unconditional classified loads remain an opt-in hard-nine evaluator" {
+    inline for (.{ Evaluator.classified_indexed_4, Evaluator.classified_indexed_5, Evaluator.classified_indexed_6, Evaluator.classified_indexed_7, Evaluator.classified_indexed_8 }) |evaluator| {
+        const selected = try resolve(true, .disk, evaluator, null, false);
+        try std.testing.expectEqual(evaluator, selected.evaluator);
+        try std.testing.expectEqualDeep(selected, canonicalizeSampleConfig(selected));
+        try std.testing.expectError(error.SpeckleOverridesDisabled, resolve(false, .disk, evaluator, null, false));
+        for ([_]u8{ 1, 4 }) |neighbors| try std.testing.expectError(error.ClassifiedIndexedRequiresDiskAndNineNeighbors, resolve(true, .disk, evaluator, neighbors, false));
+        try std.testing.expectError(error.ClassifiedIndexedRequiresDiskAndNineNeighbors, resolve(true, .gaussian, evaluator, null, false));
+        try std.testing.expectError(error.PerlinRequiresMaskU8, resolve(true, .perlin, evaluator, null, false));
+        try std.testing.expectError(error.SpeckleEvaluatorRequiresHardEdges, resolve(true, .disk, evaluator, null, true));
+    }
+}
+
 test "specialization catalogues are unique and cover every resolved generation config" {
-    try std.testing.expectEqual(9, std.enums.values(Evaluator).len);
-    try std.testing.expectEqual(55, generationConfigs(true).len);
-    try std.testing.expectEqual(27, sampleConfigs(true).len);
+    try std.testing.expectEqual(15, std.enums.values(Evaluator).len);
+    try std.testing.expectEqual(61, generationConfigs(true).len);
+    try std.testing.expectEqual(33, sampleConfigs(true).len);
     try std.testing.expectEqual(@as(usize, 4), generationConfigs(false).len);
     try std.testing.expectEqual(@as(usize, 4), sampleConfigs(false).len);
     inline for (.{ false, true }) |enable_all| {
