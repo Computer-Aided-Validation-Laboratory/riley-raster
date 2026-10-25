@@ -178,7 +178,8 @@ def report(out, metadata, groups, outputs):
              'Render: static evaluation loop, or real full-render pipeline minus resource time. Combined = setup + render, not wall time; untested metrics descriptive.',
              f"Exact blocked permutations (ties included) up to 200000 subsets/block; otherwise {metadata['permutations']} seeded draws, (tail+1)/(draws+1). "
              'Deterministic schedules assume within-block exchangeability; drift/serial dependence may invalidate inference. Tuning exploratory; non-significance is not equivalence.',
-             'Texture uses one frozen asset: procedural factors are requested control labels, not texture synthesis or matching imagery. '
+             f"Texture filter: {metadata['config']['texture_filter']} (Catmull–Rom uses lut_lerp; nearest/linear use direct). "
+             'Interpolation LUTs are compile-time constants. Texture uses one frozen asset: procedural factors are requested control labels, not texture synthesis or matching imagery. '
              f"Output mismatch cases: {sum(outputs[i, 'A'] != outputs[i, 'B'] for i in range(n))}.", '',
              '| Case | Factors (workers, scene, pattern, jitter, occupancy, neighbors, softness) | Metric | A ns | B ns | B/A | p | Holm p | Detected |',
              '|---|---|---|---:|---:|---:|---:|---:|---|']
@@ -226,7 +227,8 @@ def parser():
     p.add_argument('--radius', type=float, default=.35, help='procedural radius')
     p.add_argument('--softness', type=float, default=.04, help='soft cases only; hard/Gaussian always use 0')
     p.add_argument('--texture', type=Path, help='BMP asset required for texture mapping; copied before execution')
-    p.add_argument('--texture-filter', choices=('nearest', 'linear'), default='linear', help='texture sampling')
+    p.add_argument('--texture-filter', choices=('nearest', 'linear', 'cubic_catmull_rom'), default='cubic_catmull_rom',
+                   help='texture sampling: Catmull–Rom uses lut_lerp; nearest/linear use direct')
     p.add_argument('--alpha', type=float, help='override profile family-wise alpha')
     p.add_argument('--repeats', type=int, help='override even TOTAL runs per variant >=2; never capped')
     p.add_argument('--metrics', nargs='+', choices=('setup', 'render', 'combined'), help='override jointly tested metrics')

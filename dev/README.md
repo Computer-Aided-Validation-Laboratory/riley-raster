@@ -289,6 +289,27 @@ The current experiment groups are driven directly by constants in the script:
 
 If you want to change the study matrix, edit those constants first.
 
+### Texture versus procedural speckles
+
+`scripts/bench_speckle.py` compares native evaluators with an 8-bit monochrome
+BMP texture. The texture default matches the production shader:
+`--texture-filter cubic_catmull_rom` with `lut_lerp` weights. `nearest` and
+`linear` remain available and use direct sampling. Interpolation LUTs are
+compile-time constants; setup timing includes texture UV preparation or
+procedural resource generation, not image loading/decoding.
+
+Using the experimental benchmark binary (`-Denable-all-evaluators=true`):
+
+```shell
+python3 scripts/bench_speckle.py --out out/texture_vs_disk --profile full-render --a texture --b classified-indexed --texture texture/speckle_mono.bmp --patterns hard --neighbors 9
+python3 scripts/bench_speckle.py --out out/texture_vs_gaussian --profile full-render --a texture --b list-indexed --texture texture/speckle_mono.bmp --patterns gaussian --neighbors 9
+```
+
+Use `--profile full` for static-geometry evaluation instead of production rendering.
+Each comparison needs a fresh output directory. The texture is frozen, not regenerated
+to match procedural factors, so cross-variant output differences are expected;
+do not use `--require-equal-output` for these comparisons.
+
 ## Python Parity Check
 The packaged Python tests live in `src/riley/pytests/`.
 

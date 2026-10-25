@@ -48,7 +48,7 @@ const Options = struct {
     perlin_transition: F = 0.12,
     seed: u32 = 0xa511e9b3,
     texture: []const u8 = "texture/speckle_mono.bmp",
-    texture_filter: texops.TexSamp = .linear,
+    texture_filter: texops.TexSamp = .cubic_catmull_rom,
 
     fn parse(args: []const []const u8) !Options {
         var out: Options = .{};
@@ -73,7 +73,7 @@ const Options = struct {
                 out.texture = value;
             } else if (std.mem.eql(u8, key, "--texture-filter")) {
                 out.texture_filter = std.meta.stringToEnum(texops.TexSamp, value) orelse return error.InvalidTextureFilter;
-                if (out.texture_filter != .nearest and out.texture_filter != .linear) return error.InvalidTextureFilter;
+                if (out.texture_filter != .nearest and out.texture_filter != .linear and out.texture_filter != .cubic_catmull_rom) return error.InvalidTextureFilter;
             } else if (std.mem.eql(u8, key, "--threads")) {
                 out.threads = try std.fmt.parseInt(u16, value, 10);
             } else if (std.mem.eql(u8, key, "--frames")) {
@@ -115,6 +115,9 @@ const Options = struct {
     }
     fn params(self: Options) speckle.Speckle2DParams {
         return .{ .evaluator = self.evaluator, .pattern = self.pattern, .edge_softness = self.softness, .perlin_coverage_threshold = self.perlin_threshold, .perlin_coverage_transition_width = self.perlin_transition, .radius_mean = self.radius, .radius_jitter = self.jitter, .occupancy = self.occupancy, .neighbor_count = self.neighbors, .cells_per_uv = .{ self.cells_u orelse (if (self.plate) @as(F, 320) else 256), self.cells_v orelse (if (self.plate) @as(F, 192) else 160) }, .seed = self.seed };
+    }
+    fn textureConfig(self: Options) texops.TexSampConfig {
+        return .{ .sample = self.texture_filter, .mode = if (self.texture_filter == .cubic_catmull_rom) .lut_lerp else .direct };
     }
     fn rasterConfig(self: Options) riley.RasterConfig {
         return .{ .total_threads = self.threads, .max_geom_workers_per_job = self.threads, .max_raster_workers_per_job = self.threads, .save_strategy = if (self.mode == .evaluation) .none else .memory, .report = .off };
@@ -164,8 +167,8 @@ pub fn main(init: std.process.Init) !void {
         const resource_start = std.Io.Timestamp.now(io, .awake);
         var resources = if (texture == null) try speckle.generateResources(init.gpa, params) else speckle.Resources{};
         defer resources.deinit(init.gpa);
-        // Texture resource preparation is production UV gathering; nearest/linear need no LUT.
-        const prepared: ?shaderops.TexPrepared(u8, 1) = if (texture) |tex| .{ .elem_uvs = try mo.prepUVs(alloc, &scene.uvs.array, &scene.sim.connect), .tex = tex, .samp_cfg = .{ .sample = opts.texture_filter }, .bits = null } else null;
+        // Production UV gathering; interpolation LUTs are compile-time constants.
+        const prepared: ?shaderops.TexPrepared(u8, 1) = if (texture) |tex| .{ .elem_uvs = try mo.prepUVs(alloc, &scene.uvs.array, &scene.sim.connect), .tex = tex, .samp_cfg = opts.textureConfig(), .bits = null } else null;
         resource_ns = resource_start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
         const eval_start = std.Io.Timestamp.now(io, .awake);
         if (prepared) |shader| try evaluation.evaluateTexture(shader, opts.frames) else try evaluation.evaluate(params, resources, opts.frames);
@@ -212,6 +215,7 @@ pub fn main(init: std.process.Init) !void {
         .seed = opts.seed,
         .texture = opts.texture,
         .texture_filter = @tagName(opts.texture_filter),
+        .texture_mode = @tagName(opts.textureConfig().mode),
         .resource_ns = resource_ns,
         .render_ns = render_ns,
         .combined_ns = combined_ns,
@@ -236,6 +240,13 @@ fn cameraInput(sim: meshio.SimData, opts: Options) camera.CameraInput {
 test "speckle benchmark named options and default gate" {
     const defaults = try Options.parse(&.{"bench"});
     try std.testing.expectEqual([2]u32{ 3840, 2160 }, defaults.pixels());
+    try std.testing.expectEqualDeep(texops.TexSampConfig{ .sample = .cubic_catmull_rom, .mode = .lut_lerp }, defaults.textureConfig());
+    for ([_][]const u8{ "nearest", "linear", "cubic_catmull_rom" }) |filter| {
+        const opts = try Options.parse(&.{ "bench", "--evaluator", "texture", "--texture-filter", filter });
+        try std.testing.expectEqualStrings(filter, @tagName(opts.textureConfig().sample));
+        try std.testing.expect(opts.textureConfig().isValid());
+    }
+    try std.testing.expectError(error.InvalidTextureFilter, Options.parse(&.{ "bench", "--texture-filter", "lanczos3" }));
     try std.testing.expectError(error.InvalidPattern, Options.parse(&.{ "bench", "--pattern", "unknown" }));
     try std.testing.expectError(error.InvalidBenchmarkDimensions, Options.parse(&.{ "bench", "--frames", "0" }));
     const args = &.{ "bench", "--evaluator", "cell-hash", "--pattern", "soft", "--height", "32" };
@@ -257,7 +268,7 @@ const Scene = struct {
     uvs: uvio.UVMap,
 
     fn mesh(self: Scene, alloc: std.mem.Allocator, opts: Options, texture: ?texops.Tex(u8, 1)) !mo.MeshInput {
-        const shader: shaderops.ShaderInput = if (texture) |tex| .{ .tex_u8 = .{ .uvs = self.uvs.array, .tex = tex, .samp_cfg = .{ .sample = opts.texture_filter }, .bits = null } } else .{ .func = .{ .uvs = self.uvs.array, .coord_mode = .uv, .builtin = .speckle, .params = .{ .settings = .{ .speckle = opts.params() } }, .bits = null } };
+        const shader: shaderops.ShaderInput = if (texture) |tex| .{ .tex_u8 = .{ .uvs = self.uvs.array, .tex = tex, .samp_cfg = opts.textureConfig(), .bits = null } } else .{ .func = .{ .uvs = self.uvs.array, .coord_mode = .uv, .builtin = .speckle, .params = .{ .settings = .{ .speckle = opts.params() } }, .bits = null } };
         // Zero displacement preserves production per-frame geometry preparation.
         return .{ .mesh_type = .tri6, .coords = self.sim.coords, .connect = self.sim.connect, .disp = try meshio.Field.initAlloc(alloc, opts.frames, self.sim.coords.mat.rows_num, 3), .shader = shader };
     }
@@ -352,7 +363,7 @@ test "speckle benchmark workers depth resets and texture filters" {
         const fixture = try TestFixture.init(alloc, opts, 8);
         var single = try fixture.evaluation(alloc, 1);
         var parallel = try fixture.evaluation(alloc, 4);
-        const Variant = enum { hard, soft, gaussian, perlin, perlin_mask, nearest, linear };
+        const Variant = enum { hard, soft, gaussian, perlin, perlin_mask, nearest, linear, cubic_catmull_rom };
         for (std.enums.values(Variant)) |variant| {
             if (variant == .perlin_mask and !build.enable_all_evaluators) continue;
             var params = opts.params();
@@ -367,13 +378,14 @@ test "speckle benchmark workers depth resets and texture filters" {
                 .perlin_mask => .mask_u8,
                 else => .cell_hash,
             };
-            const texture_variant = variant == .nearest or variant == .linear;
+            const texture_variant = variant == .nearest or variant == .linear or variant == .cubic_catmull_rom;
+            opts.texture_filter = if (texture_variant) std.meta.stringToEnum(texops.TexSamp, @tagName(variant)).? else .linear;
             var resources = if (texture_variant) speckle.Resources{} else try speckle.generateResources(alloc, params);
             defer resources.deinit(alloc);
             var once: bench.Result = undefined;
             for ([_]usize{ 1, 2 }) |frames| {
                 if (texture_variant) {
-                    const shader: shaderops.TexPrepared(u8, 1) = .{ .elem_uvs = fixture.geometry.uvs, .tex = tex, .samp_cfg = .{ .sample = if (variant == .nearest) .nearest else .linear }, .bits = null };
+                    const shader: shaderops.TexPrepared(u8, 1) = .{ .elem_uvs = fixture.geometry.uvs, .tex = tex, .samp_cfg = opts.textureConfig(), .bits = null };
                     try single.evaluateTexture(shader, frames);
                     try parallel.evaluateTexture(shader, frames);
                 } else {

@@ -59,6 +59,12 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(d['config']['perlin_threshold'], .1)
         self.assertEqual(d['config']['perlin_transition'], 0.)
 
+    def test_texture_filters(self):
+        self.assertEqual(bench.design(self.args())['config']['texture_filter'], 'cubic_catmull_rom')
+        for filter in ('nearest', 'linear', 'cubic_catmull_rom'):
+            self.assertEqual(bench.design(self.args('--texture-filter', filter))['config']['texture_filter'], filter)
+
+
     def test_schedules(self):
         for repeats in range(2, 42, 2):
             first, second = bench.schedules(repeats)
@@ -97,7 +103,7 @@ class BenchmarkTests(unittest.TestCase):
     def test_native_contract(self):
         for mode in ('evaluation', 'full-render'):
             config = dict(mode=mode, evaluator='texture', width=32, height=24, frames=2,
-                          texture='/custom.bmp', texture_filter='nearest', neighbors=4)
+                          texture='/custom.bmp', texture_filter='cubic_catmull_rom', neighbors=4)
             native = self.native(config)
             bench.validate_native(native, config)
             bad = [('mode', 'old'), ('texture', '/wrong.bmp'), ('texture_filter', 'linear'), ('neighbors', 1),
@@ -135,6 +141,7 @@ class BenchmarkTests(unittest.TestCase):
                     calls.append(config['evaluator'])
                     self.assertEqual(Path(command[0]).read_bytes(), b'original A' if config['evaluator'] == 'texture' else b'original B')
                     self.assertEqual(Path(config['texture']).read_bytes(), b'original texture')
+                    self.assertEqual(config['texture_filter'], 'cubic_catmull_rom')
                     binary.write_bytes(b'rebuilt A')
                     other.write_bytes(b'rebuilt B')
                     texture.write_bytes(b'changed texture')
@@ -170,6 +177,7 @@ class BenchmarkTests(unittest.TestCase):
                         metadata = json.loads((out / 'metadata.json').read_text())
                         self.assertEqual(len(metadata['variants']['A']['sha256']), 64)
                         self.assertEqual(metadata['skip_output_checks'], failure == 'skip')
+                        self.assertIn('cubic_catmull_rom', (out / 'comparison.md').read_text())
                         if failure == 'skip':
                             samples = [json.loads(line) for line in (out / 'samples.jsonl').read_text().splitlines()]
                             for variant in 'AB':
