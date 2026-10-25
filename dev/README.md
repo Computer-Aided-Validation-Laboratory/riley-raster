@@ -104,6 +104,11 @@ zig build test-basic -Dprecision=f32 -Dsimd=off
 matching a default. Counts are 1/4/9; omitted counts use 9, or 1 for explicit
 `direct-fixed`. Perlin rejects neighborhood overrides. Defaults and compatibility
 rules are defined in [speckleconfig.zig](../src/riley/zig/speckleconfig.zig).
+`classified-indexed` is the sole classified evaluator (the consolidated `-8`
+incumbent): hard nine-neighbor disks use owner-aligned microcells, 16-bit candidate
+states, and an exact masked fallback. Numbered classified selectors are removed.
+The benchmark runner reads the native catalogue; use `--a classified-indexed`
+or `--b classified-indexed`, not a historical numbered name.
 
 `-Dspeckle-mask-samples-per-cell=8|12|16` selects mask/classification resolution
 (default 12). Precision also affects pattern generation: the same seed does not

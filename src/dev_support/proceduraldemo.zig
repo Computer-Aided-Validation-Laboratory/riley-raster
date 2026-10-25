@@ -282,10 +282,10 @@ pub fn printProceduralConfig(
     if (resolved.evaluator == .classified_indexed) {
         const samples: F = @floatFromInt(buildconfig.speckle_mask_samples_per_cell);
         const classification_dims = [2]F{
-            @ceil(params.cells_per_uv[0] * samples),
-            @ceil(params.cells_per_uv[1] * samples),
+            @floor(params.cells_per_uv[0] * samples) + 1.0,
+            @floor(params.cells_per_uv[1] * samples) + 1.0,
         };
-        std.debug.print("  classifier: precomputed static 2-bit classification\n", .{});
+        std.debug.print("  classifier: precomputed 16-bit neighbor-mask classification\n", .{});
         std.debug.print(
             "  classification resolution: {d} x {d} microcells ({d} samples/cell)\n",
             .{
@@ -358,8 +358,7 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\
         \\Experimental native overrides (require -Denable-all-evaluators=true):
         \\  --evaluator <name>    cell-hash, list-naive, list-indexed,
-        \\                        classified-indexed, classified-indexed-2, classified-indexed-3, classified-indexed-4, classified-indexed-5, classified-indexed-6, classified-indexed-7, classified-indexed-8,
-        \\                        direct-fixed, mask-1bit, mask-u8, or mock
+        \\                        classified-indexed, direct-fixed, mask-1bit, mask-u8, or mock
         \\  --neighbors <count>   1, 4, or 9 (Perlin: mock only)
         \\  Omit both overrides for automatic selection; default builds reject either.
         \\  An omitted neighbor count is 9, or 1 for an explicit direct-fixed evaluator.
