@@ -10,6 +10,8 @@ const std = @import("std");
 
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const expected_config = @import("expected_speckle_config.zig");
+const imageio = @import("../riley/zig/imageio.zig");
+const matslice = @import("../riley/zig/matslice.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const meshpipeline = @import("../riley/zig/meshpipeline.zig");
 const speckleconfig = @import("../riley/zig/speckleconfig.zig");
@@ -34,6 +36,49 @@ test "speckle catalogues contain distinct generation and sampling variants" {
         for (speckleconfig.generationConfigs(true)[0..index]) |previous| {
             try std.testing.expect(!std.meta.eql(previous, config));
         }
+    }
+}
+
+test "speckle BMP matches an independently calculated mock gradient" {
+    if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const params: Params = .{ .evaluator = .mock };
+    var resources = try speckleops.Resources.init(std.testing.allocator, params);
+    defer resources.deinit(std.testing.allocator);
+    const rows = 7;
+    const cols = 13;
+    var pixels: [rows * cols]F = undefined;
+    const image = matslice.MatSlice(F).init(&pixels, rows, cols);
+    speckleops.fillImage(image, params, &resources);
+    try imageio.saveMatAsImage(std.testing.io, tmp.dir, "mock", &image, .{
+        .format = .bmp,
+        .bits = 8,
+        .scaling = .{ .fixed = .{ 0, 1 } },
+    });
+
+    const stride = (cols * 3 + 3) & ~@as(usize, 3);
+    const file_size = 54 + rows * stride;
+    var buffer: [file_size + 1]u8 = undefined;
+    const bmp = try tmp.dir.readFile(std.testing.io, "mock.bmp", &buffer);
+    try std.testing.expectEqual(file_size, bmp.len);
+    try std.testing.expectEqualStrings("BM", bmp[0..2]);
+    try std.testing.expectEqual(file_size, std.mem.readInt(u32, bmp[2..6], .little));
+    try std.testing.expectEqual(54, std.mem.readInt(u32, bmp[10..14], .little));
+    try std.testing.expectEqual(cols, std.mem.readInt(i32, bmp[18..22], .little));
+    try std.testing.expectEqual(rows, std.mem.readInt(i32, bmp[22..26], .little));
+    try std.testing.expectEqual(24, std.mem.readInt(u16, bmp[28..30], .little));
+    for (0..rows) |rr| {
+        // Positive BMP heights store the bottom row first.
+        const row = bmp[54 + (rows - 1 - rr) * stride ..][0..stride];
+        for (0..cols) |cc| {
+            const u = (@as(f64, @floatFromInt(cc)) + 0.5) / cols;
+            const v = (@as(f64, @floatFromInt(rr)) + 0.5) / rows;
+            const expected: u8 = @intFromFloat(@round(255.0 * 0.5 * (u + v)));
+            try std.testing.expectEqualSlices(u8, &.{ expected, expected, expected }, row[cc * 3 ..][0..3]);
+        }
+        for (row[cols * 3 ..]) |byte| try std.testing.expectEqual(@as(u8, 0), byte);
     }
 }
 

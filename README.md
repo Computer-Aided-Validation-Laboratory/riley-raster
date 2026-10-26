@@ -110,6 +110,30 @@ shader = riley.SpeckleShader(
 Evaluators are selected automatically; see the
 [developer notes](./dev/README.md#procedural-generation-options) for native experiments.
 
+For a standalone image of the whole field, without mesh data, UV files, a camera, or
+supersampling, run the direct pattern demo:
+
+```shell
+zig build demo-procedural-pattern -Doptimize=ReleaseFast -- --pattern disk --seed 42
+```
+
+It writes `<pattern>.bmp` into the `--output` directory (default
+`out/procedural_pattern/`), replacing any earlier file of that name. The image is a
+grayscale-valued 24-bit BGR BMP, 1024 × 1024 by default (`--width`, `--height`),
+over a 64 × 64 procedural grid. Set `--cells-u` / `--cells-v` proportional to the
+width / height to keep disks round. Intensities map directly to 0–255 without
+contrast stretching, so the default foreground 0 is black and background 1 is white.
+Use a separate output directory per variant, for example:
+
+```shell
+zig build demo-procedural-pattern -- --pattern disk --occupancy 0.2 --seed 42 --output out/disk_sparse
+zig build demo-procedural-pattern -- --pattern disk --occupancy 0.9 --seed 42 --output out/disk_dense
+zig build demo-procedural-pattern -- --pattern gaussian --seed 42 --output out/gaussian
+zig build demo-procedural-pattern -- --pattern perlin --seed 42 --output out/perlin
+```
+
+Render the same patterns on a UV-mapped sphere with:
+
 ```shell
 zig build demo-procedural-sphere200 -Doptimize=ReleaseFast -- --pattern gaussian
 ```

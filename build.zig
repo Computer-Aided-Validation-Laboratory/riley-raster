@@ -255,6 +255,11 @@ pub fn build(b: *std.Build) void {
             .description = "Run the procedural speckle prototype demo",
             .source_path = "src/demoproceduralspeckles.zig",
         },
+        .{
+            .step_name = "demo-procedural-pattern",
+            .description = "Generate a grayscale procedural pattern image directly",
+            .source_path = "src/demoproceduralpattern.zig",
+        },
     };
 
     const demos_step = b.step("demos", "Run all demo entrypoints");

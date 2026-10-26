@@ -71,7 +71,7 @@ zig build install-bench-buffer-psf -Doptimize=ReleaseFast -Dsimd=on
 | **Full Suite** | `zig build test-full -Doptimize=ReleaseSafe` | Exhaustive sweeps over shaders, textures, PSF/distortion, SSAA, hulls, tiling, scenes, threads, and outputs in ReleaseSafe | `gold/full_*/` |
 | **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | Warning-only renders of intentionally folded one-element frames, with actual/reference/diff artifacts under `fails/*_full_badjac/` | Existing basic and full-hull gold |
 | **Python Pytests** | `.venv/bin/pytest src/riley/pytests/` | Python/Cython API, mesh pipeline, Exodus conversion, and demo parity | Integrated / `gold/` |
-| **Procedural Speckles** | `zig build test-speckle-configs` | Default/experimental evaluator policy, generation, sampling, and mesh preparation | In-memory references |
+| **Procedural Speckles** | `zig build test-speckle-configs` | Default/experimental evaluator policy, generation, sampling, direct image fill, and mesh preparation | In-memory references |
 
 > [!NOTE]
 > For complete documentation of all 4 test scenes, 8 sub-suites, gold generation, tolerances, and design contracts, see [**`dev/TESTING.md`**](./dev/TESTING.md).
@@ -168,6 +168,12 @@ or `--b classified-indexed`, not historical numbered selectors. It supports
 #### Implementation constraints
 
 Generation and sampling live in [speckleops.zig](../src/riley/zig/speckleops.zig).
+`fillImage(image, params, resources)` samples the whole field once per pixel center,
+row zero at the top, with no supersampling or output scaling; SIMD builds use the
+bitwise-identical prepared SIMD kernels for whole lane groups. The
+[direct pattern demo](../README.md#procedural-speckles) writes it to a BMP and accepts
+the native evaluator overrides described above.
+
 `Resources.init(allocator, params)` replaces `generateResources`; its `.data`
 tagged union has exactly one active backing variant: `none`, `list`,
 `strip_list`, `classified`, `direct_fixed`, `mask`, or `perlin`. `deinit(allocator)`

@@ -28,6 +28,7 @@ pub const DemoSpec = struct {
     command_name: []const u8,
     output_default: []const u8,
     pixels_num_default: [2]u32,
+    params_default: speckleops.Speckle2DParams = .{},
     dimensions: Dimensions = .exposed_and_reported,
     comparison: ?Comparison = null,
     mask_report_label: []const u8,
@@ -44,7 +45,7 @@ pub const DemoSpec = struct {
 };
 
 pub const DemoArgs = struct {
-    params: speckleops.Speckle2DParams = .{},
+    params: speckleops.Speckle2DParams,
     out_dir: []const u8,
     pixels_num: [2]u32,
 };
@@ -152,6 +153,7 @@ pub fn runStaticTri6Demo(
 /// Parse and validate runtime settings before callers load meshes or prepare resources.
 pub fn parseDemoArgs(raw_args: anytype, comptime spec: DemoSpec) !?DemoArgs {
     var args = DemoArgs{
+        .params = spec.params_default,
         .out_dir = spec.output_default,
         .pixels_num = spec.pixels_num_default,
     };
@@ -321,7 +323,7 @@ fn parsePositiveU32(value: []const u8) !u32 {
 
 fn printUsage(comptime spec: DemoSpec) void {
     std.debug.print(
-        "Usage:\n  zig build {s} -Dsimd=off -- [options]\n\n",
+        "Usage:\n  zig build {s} -- [options]\n\n",
         .{spec.command_name},
     );
     if (spec.comparison) |comparison| {
@@ -330,20 +332,32 @@ fn printUsage(comptime spec: DemoSpec) void {
             .{ comparison.texture_command, comparison.procedural_command },
         );
     }
+    const params = spec.params_default;
     std.debug.print(
         \\Options:
-        \\  --pattern <name>      disk, gaussian, or perlin (default: disk)
-        \\  --size <value>        Mean radius in cell units (Gaussian: 3-sigma support)
-        \\  --occupancy <value>   Active-cell probability (disk/Gaussian)
-        \\  --cells-u <value>     Procedural cell count across U
-        \\  --cells-v <value>     Procedural cell count across V
-        \\  --jitter <value>      Radius half-range in cell units (disk/Gaussian)
-        \\  --softness <value>    Boundary half-width in cell units (disk only; default: 0)
-        \\  --threshold <value>   Coverage threshold (Perlin only)
-        \\  --transition <value>  Coverage transition width (Perlin only)
-        \\  --seed <integer>      Deterministic unsigned 32-bit seed
+        \\  --pattern <name>      disk, gaussian, or perlin (default: {s})
+        \\  --size <value>        Mean radius in cell units (Gaussian: 3-sigma support; default: {d})
+        \\  --occupancy <value>   Active-cell probability (disk/Gaussian; default: {d})
+        \\  --cells-u <value>     Procedural cell count across U (default: {d})
+        \\  --cells-v <value>     Procedural cell count across V (default: {d})
+        \\  --jitter <value>      Radius half-range in cell units (disk/Gaussian; default: {d})
+        \\  --softness <value>    Boundary half-width in cell units (disk only; default: {d})
+        \\  --threshold <value>   Coverage threshold (Perlin only; default: {d})
+        \\  --transition <value>  Coverage transition width (Perlin only; default: {d})
+        \\  --seed <integer>      Deterministic unsigned 32-bit seed (default: 0x{x})
         \\
-    , .{});
+    , .{
+        @tagName(params.pattern),
+        params.radius_mean,
+        params.occupancy,
+        params.cells_per_uv[0],
+        params.cells_per_uv[1],
+        params.radius_jitter,
+        params.edge_softness,
+        params.perlin_coverage_threshold,
+        params.perlin_coverage_transition_width,
+        params.seed,
+    });
     if (spec.dimensions == .exposed_and_reported) {
         std.debug.print(
             "  --width <integer>     Image width in pixels (default: {d})\n" ++
@@ -352,7 +366,7 @@ fn printUsage(comptime spec: DemoSpec) void {
         );
     }
     std.debug.print(
-        \\  --output <path>       Output directory
+        \\  --output <path>       Output directory (default: {s})
         \\  --help                Show this help
         \\
         \\Experimental native overrides (require -Denable-all-evaluators=true):
@@ -380,7 +394,7 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\  Transition 0 selects a hard threshold. Perlin ignores size, jitter and occupancy.
         \\  Mock returns raw 0.5 * (u + v), ignoring shape-specific fields and their constraints.
         \\
-    , .{});
+    , .{spec.output_default});
 }
 
 const test_spec: DemoSpec = .{
@@ -403,6 +417,24 @@ test "demo arguments select runtime patterns without experimental overrides" {
         try std.testing.expect(parsed.params.evaluator == null);
         try std.testing.expect(parsed.params.neighbor_count == null);
     }
+}
+
+test "demo arguments start from spec defaults and apply overrides" {
+    const spec = comptime blk: {
+        var custom = test_spec;
+        custom.params_default = .{ .cells_per_uv = .{ 64, 64 } };
+        break :blk custom;
+    };
+    const defaults = (try parseDemoArgs(&[_][*:0]const u8{"demo"}, spec)).?;
+    try std.testing.expectEqual([2]F{ 64, 64 }, defaults.params.cells_per_uv);
+    try std.testing.expectEqual([2]u32{ 32, 32 }, defaults.pixels_num);
+
+    const args = (try parseDemoArgs(&[_][*:0]const u8{
+        "demo", "--cells-u", "32", "--occupancy", "0", "--width", "13", "--height", "7",
+    }, spec)).?;
+    try std.testing.expectEqual([2]F{ 32, 64 }, args.params.cells_per_uv);
+    try std.testing.expectEqual(@as(F, 0), args.params.occupancy);
+    try std.testing.expectEqual([2]u32{ 13, 7 }, args.pixels_num);
 }
 
 test "demo arguments reject malformed and invalid runtime settings" {

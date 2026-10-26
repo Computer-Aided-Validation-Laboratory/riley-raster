@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const matslice = @import("matslice.zig");
 const speckleconfig = @import("speckleconfig.zig");
 
 const F = buildconfig.F;
@@ -385,6 +386,45 @@ pub fn sampleSIMD(
                 params,
                 params.background,
             );
+        }
+    }
+    unreachable;
+}
+
+/// Fill a borrowed row-major image with final speckle intensities at pixel centers.
+/// Row zero is the top row; u increases rightward and v downward over [0, 1]².
+/// Cell counts control aspect independently of image dimensions: equal counts on a
+/// square image preserve round disks; rectangular images need proportional counts.
+/// Resources must be prepared from exactly params and remain immutable while borrowed.
+/// SIMD builds fill whole lane groups with the bitwise-identical prepared SIMD kernel.
+/// Performs no allocation, I/O, supersampling, or additional intensity mapping.
+pub fn fillImage(image: matslice.MatSlice(F), params: Speckle2DParams, resources: *const Resources) void {
+    std.debug.assert(image.slice.len == image.rows_num * image.cols_num);
+    const index = resources.kernel_index.?;
+    const rows: F = @floatFromInt(image.rows_num);
+    const cols: F = @floatFromInt(image.cols_num);
+    inline for (kernel_configs, 0..) |_, ii| {
+        if (index == ii) {
+            const K = Kernel(ii);
+            for (0..image.rows_num) |rr| {
+                const v = (@as(F, @floatFromInt(rr)) + 0.5) / rows;
+                const row = image.slice[rr * image.cols_num ..][0..image.cols_num];
+                var cc: usize = 0;
+                if (comptime buildconfig.config.simd == .on) {
+                    // Convert integer columns exactly as the scalar tail does.
+                    const lane_cols = std.simd.iota(usize, S);
+                    while (cc + S <= row.len) : (cc += S) {
+                        const col: VecSF = @floatFromInt(@as(@Vector(S, usize), @splat(cc)) + lane_cols);
+                        const u = (col + @as(VecSF, @splat(0.5))) / @as(VecSF, @splat(cols));
+                        row[cc..][0..S].* = K.sampleSIMD(u, @splat(v), @splat(true), params, resources);
+                    }
+                }
+                for (row[cc..], cc..) |*value, col| {
+                    const u = (@as(F, @floatFromInt(col)) + 0.5) / cols;
+                    value.* = K.sampleScal(u, v, params, resources);
+                }
+            }
+            return;
         }
     }
     unreachable;
@@ -3756,7 +3796,7 @@ test "runtime override policy and invalid settings fail before allocation" {
 }
 
 test "mock erases ignored settings but retains raw common and softness validation" {
-    if (comptime !buildconfig.enable_all_evaluators) return;
+    if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
     for (std.enums.values(speckleconfig.Pattern)) |pattern| {
         for (std.enums.values(speckleconfig.Neighborhood)) |neighbors| {
             var params: Speckle2DParams = .{
@@ -3954,7 +3994,7 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
 
 test "strip indexed records and samples match exhaustive lists bitwise across occupancy and neighborhoods" {
     @setEvalBranchQuota(10_000);
-    if (comptime !buildconfig.enable_all_evaluators) return;
+    if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
     inline for (generation_configs) |config| {
         const evaluator = comptime std.meta.activeTag(config);
         const speckle_shape = comptime config.pattern() orelse .disk;
@@ -4176,4 +4216,57 @@ test "strip indexed zero radius soft disk coverage and default gate" {
     try std.testing.expectEqual(expected, sampleScal(disk.center[0], disk.center[1], params, &strip));
     const lanes: [S]F = sampleSIMD(@splat(disk.center[0]), @splat(disk.center[1]), @splat(true), params, &strip);
     for (lanes) |value| try std.testing.expectEqual(expected, value);
+}
+
+test "speckle image fill matches scalar pixel-center samples for every generation config" {
+    const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
+    inline for (generation_configs) |config| {
+        var params: Speckle2DParams = .{
+            .pattern = config.pattern() orelse .disk,
+            .cells_per_uv = .{ 2.17, 1.31 },
+            .radius_mean = 0.35,
+            .edge_softness = if (config.edges() == .soft) 0.035 else 0,
+            .foreground = 0.83,
+            .background = 0.17,
+        };
+        if (comptime buildconfig.enable_all_evaluators) {
+            params.evaluator = comptime std.meta.activeTag(config);
+            params.neighbor_count = config.neighborhood();
+        }
+        var resources = try Resources.init(std.testing.allocator, params);
+        defer resources.deinit(std.testing.allocator);
+        // Widths cover scalar-only rows, whole SIMD lane groups, and scalar tails.
+        for ([_]usize{ 1, S - 1, S, S + 1, 2 * S + 3 }) |cols| {
+            var pixels: [3 * (2 * S + 3)]F = undefined;
+            fillImage(matslice.MatSlice(F).init(pixels[0 .. 3 * cols], 3, cols), params, &resources);
+            for (0..3) |rr| {
+                for (0..cols) |cc| {
+                    const u = (@as(F, @floatFromInt(cc)) + 0.5) / @as(F, @floatFromInt(cols));
+                    const v = (@as(F, @floatFromInt(rr)) + 0.5) / 3;
+                    const want = sampleScal(u, v, params, &resources);
+                    try std.testing.expectEqual(@as(Bits, @bitCast(want)), @as(Bits, @bitCast(pixels[rr * cols + cc])));
+                }
+            }
+        }
+    }
+}
+
+test "speckle image fill gives independent empty and equal color intensities" {
+    const cases = [_]struct { params: Speckle2DParams, expected: F }{
+        .{ .params = .{ .occupancy = 0, .background = 0.83 }, .expected = 0.83 },
+        .{ .params = .{ .occupancy = 0, .edge_softness = 0.035, .background = 0.17 }, .expected = 0.17 },
+        .{ .params = .{ .pattern = .gaussian, .occupancy = 0, .background = 0.37 }, .expected = 0.37 },
+        .{ .params = .{ .foreground = 0.17, .background = 0.17 }, .expected = 0.17 },
+        .{ .params = .{ .pattern = .gaussian, .foreground = 0.83, .background = 0.83 }, .expected = 0.83 },
+        .{ .params = .{ .pattern = .perlin, .foreground = 0.37, .background = 0.37 }, .expected = 0.37 },
+    };
+    for (cases) |case| {
+        var params = case.params;
+        params.cells_per_uv = .{ 3.25, 2.5 };
+        var resources = try Resources.init(std.testing.allocator, params);
+        defer resources.deinit(std.testing.allocator);
+        var pixels: [15]F = undefined;
+        fillImage(matslice.MatSlice(F).init(&pixels, 3, 5), params, &resources);
+        for (pixels) |value| try std.testing.expectEqual(case.expected, value);
+    }
 }
