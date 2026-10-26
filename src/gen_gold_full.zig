@@ -45,10 +45,6 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     const shader_gold_dir = policy.goldRoot(.full_shader);
     const texture_gold_dir = policy.goldRoot(.full_texture);

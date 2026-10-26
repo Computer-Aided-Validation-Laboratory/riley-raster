@@ -122,8 +122,6 @@ pub const EggboxParams = struct {
 pub const FuncShaderParams = struct {
     coord_scale: [2]F = .{ 1.0, 1.0 },
     coord_offset: [2]F = .{ 0.0, 0.0 },
-    output_scale: F = 1.0,
-    output_offset: F = 0.0,
     settings: union(FuncShaderBuiltin) {
         constant: ConstantParams,
         linear: LinearParams,
@@ -240,18 +238,6 @@ pub inline fn applyFuncShaderCoordParamsSIMD(
     return out;
 }
 
-pub inline fn applyFuncShaderOutputParams(value: F, params: FuncShaderParams) F {
-    return value * params.output_scale + params.output_offset;
-}
-
-pub inline fn applyFuncShaderOutputParamsSIMD(
-    v_value: VecSF,
-    params: FuncShaderParams,
-) VecSF {
-    return v_value * @as(VecSF, @splat(params.output_scale)) +
-        @as(VecSF, @splat(params.output_offset));
-}
-
 pub inline fn sinApproxScalar(val: F) F {
     const vals: [1]F = maths_simd.sinApproxSIMD(1, F, .{val});
     return vals[0];
@@ -341,7 +327,7 @@ pub inline fn evalFuncShaderBuiltinGreyNorm(
                 p.contrast;
         },
     };
-    return applyFuncShaderOutputParams(value, params);
+    return value;
 }
 
 pub inline fn evalFuncShaderBuiltinRGBNorm(
@@ -447,11 +433,7 @@ pub inline fn evalFuncShaderBuiltinRGBNorm(
             break :blk .{ value, value, value };
         },
     };
-    return .{
-        applyFuncShaderOutputParams(vals[0], params),
-        applyFuncShaderOutputParams(vals[1], params),
-        applyFuncShaderOutputParams(vals[2], params),
-    };
+    return vals;
 }
 
 // --------------------------------------------------------------------------------------
@@ -477,7 +459,7 @@ test "FuncShaderParams defaults preserve constant shader" {
     try testing.expectApproxEqAbs(@as(F, 0.5), value, unit_tol);
 }
 
-test "FuncShaderParams control sinusoidal frequency and output scaling" {
+test "FuncShaderParams control sinusoidal frequency" {
     const coord = FuncCoord{
         .coord_0 = 0.25,
         .coord_1 = 0.0,
@@ -495,12 +477,10 @@ test "FuncShaderParams control sinusoidal frequency and output scaling" {
         coord,
         normFuncShaderParams(.sinusoidal, .{
             .coord_scale = .{ 2.0, 1.0 },
-            .output_scale = 2.0,
-            .output_offset = -0.25,
         }),
     );
     const expected_base = 0.5 + 0.25 * @sin(6.0 * 0.25) + 0.2 * @cos(0.0);
-    const expected_shifted = (0.5 + 0.25 * @sin(6.0 * 0.5) + 0.2 * @cos(0.0)) * 2.0 - 0.25;
+    const expected_shifted = 0.5 + 0.25 * @sin(6.0 * 0.5) + 0.2 * @cos(0.0);
     try testing.expectApproxEqAbs(expected_base, base, unit_tol);
     try testing.expectApproxEqAbs(expected_shifted, shifted, unit_tol);
 }
@@ -659,8 +639,6 @@ test "SIMD func builtin matches scalar builtin per lane" {
     const params = FuncShaderParams{
         .coord_scale = .{ 2.5, -1.5 },
         .coord_offset = .{ 0.25, 0.5 },
-        .output_scale = 1.75,
-        .output_offset = -0.2,
     };
 
     for (scalar_builtins) |builtin| {

@@ -215,6 +215,7 @@ pub fn RasterEngine(
     comptime ShaderData: type,
     comptime root_class: frontend.ElemRootClass,
 ) type {
+    @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
     return struct {
         pub const HullType = if (root_class == .multi_root)
             *const meshpipe.MultiRootHulls
@@ -233,6 +234,7 @@ pub fn RasterEngine(
             shader_buf: *const ShaderKern.LocalBuff,
             subpx_scratch: *ScratchBuffs,
         ) !u64 {
+            @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
             const sub_samp_u: usize = @intCast(ctx_rast.camera.sub_sample);
             const sub_samp_f: F = @as(F, @floatFromInt(ctx_rast.camera.sub_sample));
 

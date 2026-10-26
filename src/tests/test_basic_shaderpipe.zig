@@ -11,6 +11,8 @@ const meshio = @import("../riley/zig/meshio.zig");
 const policy = @import("../dev_support/testpolicy.zig");
 const common = @import("../dev_support/tests.zig");
 const imageio = @import("../riley/zig/imageio.zig");
+const texops = @import("../riley/zig/textureops.zig");
+const ndarray = @import("../riley/zig/ndarray.zig");
 
 pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     try runCase(allocator, io, false);
@@ -52,13 +54,13 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .{ .source = .{ .shader = .{ .func = .{
             .builtin = .checker,
             .params = .{ .coord_scale = .{ 4, 4 }, .settings = .{ .checker = .{} } },
-            .bits = null,
+
             .scaling = .none,
         } }, .destination = .{ .kind = .channel, .index = 0 } } },
         .{ .source = .{ .shader = .{ .func = .{
             .builtin = .constant,
             .params = .{ .settings = .{ .constant = .{ .value = 0.25 } } },
-            .bits = null,
+
             .scaling = .none,
         } }, .destination = .{ .kind = .channel, .index = 1 } } },
     };
@@ -75,7 +77,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shaders = .{ .mono = pipes[0] },
+        .shaders = .{ .mono = .{ .pipe = pipes[0] } },
     };
     const cam_in = camera.CameraInput{
         .pixels_num = prepared.camera.pixels_num,
@@ -85,7 +87,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .roi_cent_world = prepared.camera.roi_cent_world,
         .focal_length = prepared.camera.focal_length,
         .sub_sample = 1,
-        .shader_selection = .mono,
+        .render_format = .mono,
     };
     var config = tcfg.getRasterConfig(.testing);
     config.save_strategy = if (generate_gold) .both else .memory;
@@ -97,7 +99,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             .params = .{ .settings = .{ .constant = .{
                 .value_rgb = .{ 0.3, 0.4, 0 },
             } } },
-            .bits = null,
+
             .scaling = .none,
         } }, .destination = .{ .kind = .field, .index = 0 } } },
         .{ .normalise = .{ .source = .{ .kind = .field, .index = 0 }, .destination = .{ .kind = .channel, .index = 0 }, .components = 3 } },
@@ -107,10 +109,10 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     };
     const generic_result_slot = [_]shaderpipe.Slot{.{ .kind = .channel, .index = 3 }};
     var generic_mesh = mesh;
-    generic_mesh.shaders = .{ .mono = .{
+    generic_mesh.shaders = .{ .mono = .{ .pipe = .{
         .stages = &generic_stages,
         .resolver = .{ .identity = &generic_result_slot },
-    } };
+    } } };
     var generic_config = config;
     generic_config.save_strategy = .memory;
     const generic_result = try riley.raster(
@@ -158,14 +160,14 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     @memset(zero_disp.array.slice, 0);
     const nodal_shader: shaderops.ShaderDirectInput = .{ .nodal = .{
         .field = timed_field,
-        .bits = null,
+
         .scaling = .none,
     } };
     var direct_mesh = mesh;
     direct_mesh.disp = zero_disp;
-    direct_mesh.shaders = .{ .direct = nodal_shader };
+    direct_mesh.shaders = .{ .mono = .{ .direct = nodal_shader } };
     var direct_cam = cam_in;
-    direct_cam.shader_selection = .direct;
+    direct_cam.render_format = .mono;
     var parity_config = config;
     parity_config.save_strategy = .memory;
     const direct_result = try riley.raster(
@@ -188,7 +190,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .resolver = .{ .identity = &parity_slots },
     }};
     var pipe_mesh = direct_mesh;
-    pipe_mesh.shaders = .{ .mono = parity_pipe[0] };
+    pipe_mesh.shaders = .{ .mono = .{ .pipe = parity_pipe[0] } };
     const pipe_result = try riley.raster(
         aa,
         io,
@@ -217,12 +219,199 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     try std.testing.expectApproxEqAbs(frame_max[0] * 3, frame_max[2], sample_tol);
     try std.testing.expectApproxEqAbs(frame_max[2], frame_max[3], sample_tol);
 
+    const function_channels = [_]shaderops.FuncChannel{
+        .{ .builtin = .constant, .params = .{ .settings = .{ .constant = .{ .value = 0.2 } } } },
+        .{ .builtin = .constant, .params = .{ .settings = .{ .constant = .{ .value = 0.3 } } }, .output_gain = 2, .output_offset = 0.1 },
+        .{ .builtin = .linear, .params = .{ .settings = .{ .linear = .{ .coeffs = .{ 0.4, 0, 0 } } } } },
+        .{ .builtin = .eggbox, .params = .{ .settings = .{ .eggbox = .{ .mean = 0.5, .contrast = 0 } } } },
+    };
+    const function_shader: shaderops.ShaderDirectInput = .{ .func_multi = .{
+        .channels = &function_channels,
+    } };
+    var multifield_cam = cam_in;
+    multifield_cam.render_format = .{ .multifield = 4 };
+    var function_mesh = direct_mesh;
+    function_mesh.shaders = .{ .multifield = .{ .direct = function_shader } };
+    const function_result = (try riley.raster(
+        aa,
+        io,
+        &.{multifield_cam},
+        &.{function_mesh},
+        parity_config,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(function_result.slice);
+    const function_stages = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
+        .shader = function_shader,
+        .destination = .{ .kind = .channel, .index = 0 },
+    } }};
+    const function_slots = [_]shaderpipe.Slot{
+        .{ .kind = .channel, .index = 0 },
+        .{ .kind = .channel, .index = 1 },
+        .{ .kind = .channel, .index = 2 },
+        .{ .kind = .channel, .index = 3 },
+    };
+    var function_pipe_mesh = function_mesh;
+    function_pipe_mesh.shaders = .{ .multifield = .{ .pipe = .{
+        .stages = &function_stages,
+        .resolver = .{ .identity = &function_slots },
+    } } };
+    const function_pipe_result = (try riley.raster(
+        aa,
+        io,
+        &.{multifield_cam},
+        &.{function_pipe_mesh},
+        parity_config,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(function_pipe_result.slice);
+    for (function_result.slice, function_pipe_result.slice) |direct_value, pipe_value| {
+        try std.testing.expectApproxEqAbs(direct_value, pipe_value, sample_tol);
+    }
+    try std.testing.expectEqual(@as(usize, 4), function_result.dims[2]);
+    var function_foreground: usize = 0;
+    for (0..function_result.dims[3]) |yy| {
+        for (0..function_result.dims[4]) |xx| {
+            const first = function_result.get(&.{ 0, 0, 0, yy, xx });
+            if (first > 0.199) {
+                function_foreground += 1;
+                try std.testing.expectApproxEqAbs(@as(F, 0.2), first, sample_tol);
+                try std.testing.expectApproxEqAbs(@as(F, 0.7), function_result.get(&.{ 0, 0, 1, yy, xx }), sample_tol);
+                try std.testing.expectApproxEqAbs(@as(F, 0.4), function_result.get(&.{ 0, 0, 2, yy, xx }), sample_tol);
+                try std.testing.expectApproxEqAbs(@as(F, 0.5), function_result.get(&.{ 0, 0, 3, yy, xx }), sample_tol);
+            }
+        }
+    }
+    try std.testing.expect(function_foreground > 0);
+
+    var multifield_tex = try texops.Tex(F, 4).init(aa, 2, 2);
+    for (0..4) |ch| {
+        for (0..2) |row| {
+            for (0..2) |col| {
+                multifield_tex.setVal(ch, row, col, @as(F, @floatFromInt(ch + 1)) * 0.1);
+            }
+        }
+    }
+    const texture_uvs = try ndarray.NDArray(F).initFlat(
+        aa,
+        &.{ prepared.sim_data.coords.mat.rows_num, 2 },
+    );
+    @memset(texture_uvs.slice, 0.5);
+    const texture_shader: shaderops.ShaderDirectInput = .{ .texture = .{
+        .uvs = texture_uvs,
+        .tex = shaderops.TextureStorageInput.fromTex(F, 4, multifield_tex),
+        .samp_cfg = .{ .sample = .nearest },
+        .output_gain = 2,
+        .output_offset = 0.05,
+    } };
+    var texture_mesh = direct_mesh;
+    texture_mesh.shaders = .{ .multifield = .{ .direct = texture_shader } };
+    const texture_result = (try riley.raster(
+        aa,
+        io,
+        &.{multifield_cam},
+        &.{texture_mesh},
+        parity_config,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(texture_result.slice);
+    var texture_foreground: usize = 0;
+    for (0..texture_result.dims[3]) |yy| {
+        for (0..texture_result.dims[4]) |xx| {
+            const first = texture_result.get(&.{ 0, 0, 0, yy, xx });
+            if (first > 0.249) {
+                texture_foreground += 1;
+                for (0..4) |ch| {
+                    const expected = @as(F, @floatFromInt(ch + 1)) * 0.2 + 0.05;
+                    try std.testing.expectApproxEqAbs(
+                        expected,
+                        texture_result.get(&.{ 0, 0, ch, yy, xx }),
+                        sample_tol,
+                    );
+                }
+            }
+        }
+    }
+    try std.testing.expect(texture_foreground > 0);
+
+    // The public texture input accepts the channel cap and integer storage.
+    // Integer texels are converted during static preparation for this path.
+    var eight_tex = try texops.Tex(u8, 8).init(aa, 2, 2);
+    for (0..8) |ch| {
+        for (0..2) |row| {
+            for (0..2) |col| eight_tex.setVal(ch, row, col, @intCast(ch + 1));
+        }
+    }
+    var eight_camera = cam_in;
+    eight_camera.render_format = .{ .multifield = 8 };
+    var eight_mesh = direct_mesh;
+    eight_mesh.shaders = .{ .multifield = .{ .direct = .{ .texture = .{
+        .uvs = texture_uvs,
+        .tex = shaderops.TextureStorageInput.fromTex(u8, 8, eight_tex),
+        .samp_cfg = .{ .sample = .nearest },
+    } } } };
+    const eight_result = (try riley.raster(
+        aa,
+        io,
+        &.{eight_camera},
+        &.{eight_mesh},
+        parity_config,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(eight_result.slice);
+    try std.testing.expectEqual(@as(usize, 8), eight_result.dims[2]);
+    var eight_foreground: usize = 0;
+    for (0..eight_result.dims[3]) |yy| {
+        for (0..eight_result.dims[4]) |xx| {
+            if (eight_result.get(&.{ 0, 0, 0, yy, xx }) > 0.5) {
+                eight_foreground += 1;
+                for (0..8) |ch| {
+                    try std.testing.expectApproxEqAbs(
+                        @as(F, @floatFromInt(ch + 1)),
+                        eight_result.get(&.{ 0, 0, ch, yy, xx }),
+                        sample_tol,
+                    );
+                }
+            }
+        }
+    }
+    try std.testing.expect(eight_foreground > 0);
+
+    var format_mesh = direct_mesh;
+    format_mesh.shaders = .{
+        .mono = .{ .direct = nodal_shader },
+        .multifield = .{ .direct = function_shader },
+    };
+    const format_result = (try riley.raster(
+        aa,
+        io,
+        &.{ cam_in, multifield_cam },
+        &.{format_mesh},
+        parity_config,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(format_result.slice);
+    try std.testing.expectEqual(@as(usize, 2), format_result.dims[0]);
+    try std.testing.expectEqual(@as(usize, 4), format_result.dims[2]);
+    for (1..4) |ch| {
+        for (0..format_result.dims[3]) |yy| {
+            for (0..format_result.dims[4]) |xx| {
+                const padding = format_result.get(&.{ 0, 0, ch, yy, xx });
+                if (padding != 0) {
+                    std.debug.print("mono padding channel {d} at {d},{d}: {e}\n", .{ ch, yy, xx, padding });
+                    return error.InvalidCameraPadding;
+                }
+            }
+        }
+    }
+    try std.testing.expectApproxEqAbs(
+        function_result.get(&.{ 0, 0, 1, 24, 24 }),
+        format_result.get(&.{ 1, 0, 1, 24, 24 }),
+        sample_tol,
+    );
+
     try runSharedWorldGeometryCase(aa, io, mesh, cam_in, parity_config, sample_tol);
 
-    if (generate_gold) config.output.image_save_opts = &.{
-        imageio.ImageSaveOpts{ .format = .fimg, .bits = null, .scaling = .none },
-        imageio.ImageSaveOpts{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
     const sum_gold_dir = try std.fmt.allocPrint(
         aa,
         "{s}/shaderpipe_sum_quad4",
@@ -295,14 +484,14 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     const ir_stages = [_]shaderops.ShaderPipeStageInput{
         .{ .source = .{ .shader = .{ .nodal = .{
             .field = temperature,
-            .bits = null,
+
             .scaling = .none,
         } }, .destination = .{ .kind = .field, .index = 0 } } },
         .{ .source = .{ .shader = .{ .tex_u8 = .{
             .uvs = prepared.uvs.array,
             .tex = speckle,
             .samp_cfg = .{ .sample = .linear, .mode = .direct },
-            .bits = null,
+
             .scaling = .{ .fixed = .{ 0, 255 } },
         } }, .destination = .{ .kind = .channel, .index = 0 } } },
         .{ .grey_to_emissivity = .{
@@ -321,9 +510,9 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         } },
     }};
     var ir_mesh = mesh;
-    ir_mesh.shaders = .{ .ir = ir_pipe[0] };
+    ir_mesh.shaders = .{ .ir = .{ .pipe = ir_pipe[0] } };
     var ir_cam = cam_in;
-    ir_cam.shader_selection = .ir;
+    ir_cam.render_format = .ir;
     const ir_result = try riley.raster(
         aa,
         io,
@@ -363,7 +552,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     }
 
     var invalid_camera = cam_in;
-    invalid_camera.shader_selection = .rgb;
+    invalid_camera.render_format = .rgb;
     var memory_config = config;
     memory_config.save_strategy = .memory;
     try std.testing.expectError(
@@ -376,7 +565,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .resolver = .{ .identity = &missing_slots },
     }};
     var invalid_mesh = mesh;
-    invalid_mesh.shaders = .{ .mono = invalid_pipe[0] };
+    invalid_mesh.shaders = .{ .mono = .{ .pipe = invalid_pipe[0] } };
     try std.testing.expectError(
         error.InvalidShaderPipe,
         riley.raster(aa, io, &.{cam_in}, &.{invalid_mesh}, memory_config, null),
@@ -402,7 +591,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .resolver = .{ .identity = &last_slot },
     }};
     var max_mesh = direct_mesh;
-    max_mesh.shaders = .{ .mono = max_pipe[0] };
+    max_mesh.shaders = .{ .mono = .{ .pipe = max_pipe[0] } };
     const max_result = try riley.raster(
         aa,
         io,
@@ -428,7 +617,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .stages = &too_many_stages,
         .resolver = .{ .identity = &last_slot },
     }};
-    max_mesh.shaders = .{ .mono = overflow_pipe[0] };
+    max_mesh.shaders = .{ .mono = .{ .pipe = overflow_pipe[0] } };
     try std.testing.expectError(
         error.InvalidShaderPipe,
         riley.raster(aa, io, &.{cam_in}, &.{max_mesh}, parity_config, null),
@@ -453,13 +642,13 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .shader = .{ .func_rgb = .{
             .builtin = .constant,
             .params = .{ .settings = .{ .constant = .{ .value_rgb = .{ 0.2, 0.5, 0.8 } } } },
-            .bits = null,
+
             .scaling = .none,
         } },
         .destination = .{ .kind = .channel, .index = 0 },
     } }};
     const multi_stages = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
-        .shader = .{ .nodal = .{ .field = channels, .bits = null, .scaling = .none } },
+        .shader = .{ .nodal = .{ .field = channels, .scaling = .none } },
         .destination = .{ .kind = .channel, .index = 0 },
     } }};
     const rgb_slots = [_]shaderpipe.Slot{
@@ -475,9 +664,9 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .resolver = .{ .identity = &rgb_slots },
     }};
     var invalid_rgb_mesh = mesh;
-    invalid_rgb_mesh.shaders = .{ .rgb = invalid_rgb_pipe[0] };
+    invalid_rgb_mesh.shaders = .{ .rgb = .{ .pipe = invalid_rgb_pipe[0] } };
     var invalid_rgb_cam = cam_in;
-    invalid_rgb_cam.shader_selection = .rgb;
+    invalid_rgb_cam.render_format = .rgb;
     try std.testing.expectError(
         error.InvalidShaderPipe,
         riley.raster(
@@ -495,15 +684,15 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     };
     const mixed_pipes = [_]shaderops.ShaderPipeInput{
         .{ .stages = &rgb_stages, .resolver = .{ .identity = &rgb_slots } },
-        .{ .channels = 4, .stages = &multi_stages, .resolver = .{ .identity = &multi_slots } },
+        .{ .stages = &multi_stages, .resolver = .{ .identity = &multi_slots } },
     };
     var mixed_mesh = mesh;
     mixed_mesh.disp = null;
-    mixed_mesh.shaders = .{ .rgb = mixed_pipes[0], .multifield = mixed_pipes[1] };
+    mixed_mesh.shaders = .{ .rgb = .{ .pipe = mixed_pipes[0] }, .multifield = .{ .pipe = mixed_pipes[1] } };
     var rgb_cam = cam_in;
-    rgb_cam.shader_selection = .rgb;
+    rgb_cam.render_format = .rgb;
     var multi_cam = cam_in;
-    multi_cam.shader_selection = .multifield;
+    multi_cam.render_format = .{ .multifield = 4 };
     const mixed_result = try riley.raster(
         aa,
         io,
@@ -558,15 +747,14 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     );
     @memset(unused_field.array.slice, 0.1);
     const unused_stages = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
-        .shader = .{ .nodal = .{ .field = unused_field, .bits = null, .scaling = .none } },
+        .shader = .{ .nodal = .{ .field = unused_field, .scaling = .none } },
         .destination = .{ .kind = .channel, .index = 0 },
     } }};
     var direct_with_unused = direct_mesh;
-    direct_with_unused.shaders.multifield = .{
-        .channels = 4,
+    direct_with_unused.shaders.multifield = .{ .pipe = .{
         .stages = &unused_stages,
         .resolver = .{ .identity = &multi_slots },
-    };
+    } };
     const direct_only = (try riley.raster(
         aa,
         io,
@@ -579,17 +767,15 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     try std.testing.expectEqual(@as(usize, 4), direct_only.dims[1]);
     try std.testing.expectEqual(@as(usize, 1), direct_only.dims[2]);
 
-    var too_many_channels = mixed_pipes[1];
-    too_many_channels.channels = 9;
-    var invalid_multi_mesh = mixed_mesh;
-    invalid_multi_mesh.shaders = .{ .multifield = too_many_channels };
+    var invalid_multi_cam = multi_cam;
+    invalid_multi_cam.render_format = .{ .multifield = 9 };
     try std.testing.expectError(
-        error.InvalidShaderPipe,
+        error.InvalidRenderFormatChannels,
         riley.raster(
             aa,
             io,
-            &.{multi_cam},
-            &.{invalid_multi_mesh},
+            &.{invalid_multi_cam},
+            &.{mixed_mesh},
             memory_config,
             null,
         ),
@@ -598,7 +784,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     // One geometry and one displacement history can serve direct stereo and
     // an independent IR pipe in a single camera batch.
     var multimodal_mesh = direct_mesh;
-    multimodal_mesh.shaders.ir = parity_pipe[0];
+    multimodal_mesh.shaders.ir = .{ .pipe = parity_pipe[0] };
     const multimodal = (try riley.raster(
         aa,
         io,
@@ -639,7 +825,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                 .params = .{ .settings = .{ .constant = .{
                     .value_rgb = .{ 0.1, 0.2, 0.3 },
                 } } },
-                .bits = null,
+
                 .scaling = .none,
             } },
             .destination = .{ .kind = .parameter, .index = 0 },
@@ -648,7 +834,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             .shader = .{ .func = .{
                 .builtin = .constant,
                 .params = .{ .settings = .{ .constant = .{ .value = 2 } } },
-                .bits = null,
+
                 .scaling = .none,
             } },
             .destination = .{ .kind = .field, .index = 0 },
@@ -680,7 +866,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         } },
     }};
     var expr_mesh = mixed_mesh;
-    expr_mesh.shaders = .{ .mono = expression_pipe[0] };
+    expr_mesh.shaders = .{ .mono = .{ .pipe = expression_pipe[0] } };
     const expr_result = try riley.raster(
         aa,
         io,
@@ -715,7 +901,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     const front_rgb_pipe = [_]shaderops.ShaderPipeInput{mixed_pipes[0]};
     var front_rgb_mesh = mixed_mesh;
     front_rgb_mesh.coords = front_coords;
-    front_rgb_mesh.shaders = .{ .rgb = front_rgb_pipe[0] };
+    front_rgb_mesh.shaders = .{ .rgb = .{ .pipe = front_rgb_pipe[0] } };
     var rear_mono_mesh = mesh;
     rear_mono_mesh.disp = null;
     const mixed_scene = [_]meshpipe.MeshInput{ front_rgb_mesh, rear_mono_mesh };
@@ -767,11 +953,11 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     // A selected mesh at scene index 1 must retain its own global nodal
     // scaling after the incompatible mesh at index 0 is filtered out.
     var scaled_direct_mesh = direct_mesh;
-    scaled_direct_mesh.shaders = .{ .direct = .{ .nodal = .{
+    scaled_direct_mesh.shaders = .{ .mono = .{ .direct = .{ .nodal = .{
         .field = timed_field,
-        .bits = null,
+
         .scaling = .{ .fixed = .{ 0, 0.8 } },
-    } } };
+    } } } };
     const scaled_only_result = try riley.raster(
         aa,
         io,
@@ -825,20 +1011,20 @@ fn runSharedWorldGeometryCase(
         .coord_mode = .world_reference,
         .builtin = .linear,
         .params = .{ .settings = .{ .linear = .{ .coeffs = .{ 0.5, 20, -10 } } } },
-        .bits = null,
+
         .scaling = .none,
     } };
     const def_shader: shaderops.ShaderDirectInput = .{ .func = .{
         .coord_mode = .world_deformed,
         .builtin = .linear,
         .params = .{ .settings = .{ .linear = .{ .coeffs = .{ 0.25, -10, 20 } } } },
-        .bits = null,
+
         .scaling = .none,
     } };
     var direct_camera = camera_mono;
-    direct_camera.shader_selection = .direct;
+    direct_camera.render_format = .mono;
     var direct_mesh = mesh;
-    direct_mesh.shaders = .{ .direct = ref_shader };
+    direct_mesh.shaders = .{ .mono = .{ .direct = ref_shader } };
     const ref_result = try riley.raster(
         allocator,
         io,
@@ -849,7 +1035,7 @@ fn runSharedWorldGeometryCase(
     );
     const ref_image = ref_result orelse return error.NoResult;
     defer allocator.free(ref_image.slice);
-    direct_mesh.shaders = .{ .direct = def_shader };
+    direct_mesh.shaders = .{ .mono = .{ .direct = def_shader } };
     const def_result = try riley.raster(
         allocator,
         io,
@@ -872,10 +1058,10 @@ fn runSharedWorldGeometryCase(
         .{ .kind = .channel, .index = 2 },
     };
     var pipe_mesh = mesh;
-    pipe_mesh.shaders = .{ .mono = .{
+    pipe_mesh.shaders = .{ .mono = .{ .pipe = .{
         .stages = &stages,
         .resolver = .{ .sum = &slots },
-    } };
+    } } };
     const pipe_result = try riley.raster(
         allocator,
         io,

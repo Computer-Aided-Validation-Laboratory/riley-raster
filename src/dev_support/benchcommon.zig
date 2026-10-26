@@ -744,7 +744,7 @@ pub fn loadBenchmarkMeshInput(
                 },
                 .builtin = tex_case.builtin,
                 .params = calcTexFuncParams(tex_case),
-                .bits = 8,
+
                 .scaling = .none,
             } };
         },
@@ -769,7 +769,7 @@ pub fn loadBenchmarkMeshInput(
                 },
                 .builtin = tex_case.builtin,
                 .params = calcTexFuncParams(tex_case),
-                .bits = 8,
+
                 .scaling = .none,
             } };
         },
@@ -780,7 +780,10 @@ pub fn loadBenchmarkMeshInput(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shaders = .{ .direct = shader },
+        .shaders = if (calcOutputChannels(shader_type) == 3)
+            .{ .rgb = .{ .direct = shader } }
+        else
+            .{ .mono = .{ .direct = shader } },
     };
 }
 
@@ -953,22 +956,25 @@ fn runBenchmarkInternal(
         texture_grey,
         texture_rgb,
     );
-    _ = calcOutputChannels(shader_type);
+    const base_shader = if (calcOutputChannels(shader_type) == 3)
+        mesh_input.shaders.rgb.?.direct
+    else
+        mesh_input.shaders.mono.?.direct;
 
     const output_slot: shaderpipe.Slot = .{ .kind = .channel, .index = 0 };
     const pipe_stages = [_]so.ShaderPipeStageInput{.{ .source = .{
-        .shader = mesh_input.shaders.direct.?,
+        .shader = base_shader,
         .destination = output_slot,
     } }};
     const pipe_slots = [_]shaderpipe.Slot{output_slot};
-    var deformed_shader = mesh_input.shaders.direct.?;
+    var deformed_shader = base_shader;
     if (render_defaults.shader_path == .multi_source_pipe) {
         std.debug.assert(deformed_shader == .func);
         deformed_shader.func.coord_mode = .world_deformed;
     }
     const multi_stages = [_]so.ShaderPipeStageInput{
         .{ .source = .{
-            .shader = mesh_input.shaders.direct.?,
+            .shader = base_shader,
             .destination = .{ .kind = .channel, .index = 0 },
         } },
         .{ .source = .{
@@ -976,7 +982,7 @@ fn runBenchmarkInternal(
             .destination = .{ .kind = .channel, .index = 1 },
         } },
         .{ .source = .{
-            .shader = mesh_input.shaders.direct.?,
+            .shader = base_shader,
             .destination = .{ .kind = .channel, .index = 2 },
         } },
     };
@@ -987,16 +993,16 @@ fn runBenchmarkInternal(
     };
     if (render_defaults.shader_path == .one_stage_pipe) {
         std.debug.assert(calcOutputChannels(shader_type) == 1);
-        mesh_input.shaders = .{ .mono = .{
+        mesh_input.shaders = .{ .mono = .{ .pipe = .{
             .stages = &pipe_stages,
             .resolver = .{ .identity = &pipe_slots },
-        } };
+        } } };
     } else if (render_defaults.shader_path == .multi_source_pipe) {
         std.debug.assert(calcOutputChannels(shader_type) == 1);
-        mesh_input.shaders = .{ .mono = .{
+        mesh_input.shaders = .{ .mono = .{ .pipe = .{
             .stages = &multi_stages,
             .resolver = .{ .sum = &multi_slots },
-        } };
+        } } };
     }
 
     const roi_pos = sceneops.boundsCenter(&mesh_input.coords);
@@ -1030,10 +1036,7 @@ fn runBenchmarkInternal(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .shader_selection = if (render_defaults.shader_path != .direct)
-            .mono
-        else
-            .direct,
+        .render_format = if (calcOutputChannels(shader_type) == 3) .rgb else .mono,
     };
 
     var config_run = config;

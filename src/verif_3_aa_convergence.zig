@@ -164,25 +164,25 @@ pub fn main(init: std.process.Init) !void {
                     };
 
                     if (std.mem.eql(u8, shader_name, "funcconst")) {
-                        mesh_input.shaders = .{ .direct = .{ .func = .{
+                        mesh_input.shaders = .{ .mono = .{ .direct = .{ .func = .{
                             .uvs = uv_map.array,
                             .coord_mode = .uv,
                             .builtin = .constant,
                             .params = .{},
-                            .bits = 8,
+                            .output_gain = 255.0,
                             .scaling = .auto,
-                        } } };
+                        } } } };
                     } else {
-                        mesh_input.shaders = .{ .direct = .{ .tex_u8 = .{
+                        mesh_input.shaders = .{ .mono = .{ .direct = .{ .tex_u8 = .{
                             .uvs = uv_map.array,
                             .tex = texture,
                             .samp_cfg = .{
                                 .sample = .cubic_catmull_rom,
                                 .mode = .lut_lerp,
                             },
-                            .bits = 8,
+
                             .scaling = .none,
-                        } } };
+                        } } } };
                     }
 
                     const mesh_inputs = &[_]MeshInput{mesh_input};

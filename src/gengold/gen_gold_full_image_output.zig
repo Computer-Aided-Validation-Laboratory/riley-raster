@@ -64,12 +64,7 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
         );
         const cam_inp = fullfixtures.createScene2ImageOutputCamera(&meshes);
 
-        var run_config = config;
-        run_config.output.image_save_mode = if (bc.is_rgb) .rgb else .grey;
-        run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .fimg, .bits = null, .scaling = .none },
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
-        };
+        const run_config = config;
 
         const gold_dir = try std.fmt.allocPrint(
             aa,

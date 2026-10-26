@@ -41,9 +41,6 @@ pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
     var base_raster_config = tcfg.getRasterConfig(.bench);
-    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
     var default_bench_args = benchargs.defaultBenchArgs(
         DEFAULT_OUT_DIR,
         base_raster_config,

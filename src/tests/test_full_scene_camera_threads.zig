@@ -196,12 +196,7 @@ fn assertImagesDiffer(
 pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     var config = tcfg.getRasterConfig(.testing);
     config.save_strategy = .memory;
-    config.output.image_save_mode = .grey;
     config.background_value = 32767.5;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     const gold_dir_root = policy.goldRoot(.full_scene_camera_threads);
 

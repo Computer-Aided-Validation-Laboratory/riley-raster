@@ -74,16 +74,16 @@ pub fn runOneElemCaseTest(
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shaders = .{ .direct = .{
+        .shaders = .{ .mono = .{ .direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
                 .builtin = .checker,
                 .params = shader_params,
-                .bits = 8,
+                .output_gain = 255.0,
                 .scaling = .auto,
             },
-        } },
+        } } },
     };
 
     const camera_input = CameraInput{

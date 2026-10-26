@@ -29,7 +29,20 @@ pub const shaderfunc = @import("shaderfunc.zig");
 // --------------------------------------------------------------------------------------
 
 pub const ScaleOver = enum { within_frames, over_frames };
-pub const CameraShaderSelection = enum(u8) { direct, mono, rgb, ir, multifield };
+pub const RenderFormat = union(enum) {
+    mono,
+    rgb,
+    ir,
+    multifield: u8,
+
+    pub fn channels(self: @This()) u8 {
+        return switch (self) {
+            .mono, .ir => 1,
+            .rgb => 3,
+            .multifield => |count| count,
+        };
+    }
+};
 
 pub const GreyToEmissivityStage = shaderpipe.GreyToEmissivityStage;
 pub const ClampStage = shaderpipe.ClampStage;
@@ -55,8 +68,6 @@ pub const FuncShaderParams = shaderfunc.FuncShaderParams;
 pub const normFuncShaderParams = shaderfunc.normFuncShaderParams;
 pub const applyFuncShaderCoordParams = shaderfunc.applyFuncShaderCoordParams;
 pub const applyFuncShaderCoordParamsSIMD = shaderfunc.applyFuncShaderCoordParamsSIMD;
-pub const applyFuncShaderOutputParams = shaderfunc.applyFuncShaderOutputParams;
-pub const applyFuncShaderOutputParamsSIMD = shaderfunc.applyFuncShaderOutputParamsSIMD;
 pub const cubicSmoothStep = shaderfunc.cubicSmoothStep;
 pub const cubicSmoothStepSIMD = shaderfunc.cubicSmoothStepSIMD;
 pub const evalFuncShaderBuiltinGreyNorm = shaderfunc.evalFuncShaderBuiltinGreyNorm;
@@ -71,7 +82,8 @@ pub const evalFuncShaderBuiltinRGBNorm = shaderfunc.evalFuncShaderBuiltinRGBNorm
 
 pub const NodalInput = struct {
     field: meshio.Field,
-    bits: ?u8 = 8,
+    output_gain: F = 1.0,
+    output_offset: F = 0.0,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
 };
@@ -84,18 +96,64 @@ pub fn TexInput(comptime T: type, comptime C: usize) type {
             .sample = .cubic_catmull_rom,
             .mode = .direct,
         },
-        bits: ?u8 = 8,
+        output_gain: F = 1.0,
+        output_offset: F = 0.0,
         scaling: imageops.ScaleStrategy = .none,
     };
 }
+
+pub const TextureStorageInput = union(enum) {
+    u8: texops.Tex(u8, 0),
+    u16: texops.Tex(u16, 0),
+    float: texops.Tex(F, 0),
+
+    pub fn fromTex(comptime T: type, comptime C: usize, tex: texops.Tex(T, C)) @This() {
+        const dynamic: texops.Tex(T, 0) = .{
+            .array = tex.array,
+            .rows_num = tex.rows_num,
+            .cols_num = tex.cols_num,
+        };
+        if (T == u8) return .{ .u8 = dynamic };
+        if (T == u16) return .{ .u16 = dynamic };
+        if (T == F) return .{ .float = dynamic };
+        @compileError("Unsupported texture storage type");
+    }
+};
+
+pub const TextureInput = struct {
+    uvs: ndarray.NDArray(F),
+    tex: TextureStorageInput,
+    samp_cfg: texops.TexSampConfig = .{
+        .sample = .cubic_catmull_rom,
+        .mode = .direct,
+    },
+    output_gain: F = 1.0,
+    output_offset: F = 0.0,
+    scaling: imageops.ScaleStrategy = .none,
+};
 
 pub const FuncInput = struct {
     uvs: ?ndarray.NDArray(F) = null,
     coord_mode: FuncCoordMode = .para,
     builtin: FuncShaderBuiltin,
     params: FuncShaderParams = .{},
-    bits: ?u8 = 8,
+    output_gain: F = 1.0,
+    output_offset: F = 0.0,
     scaling: imageops.ScaleStrategy = .none,
+};
+
+pub const FuncChannel = struct {
+    builtin: FuncShaderBuiltin,
+    params: FuncShaderParams = .{},
+    scaling: imageops.ScaleStrategy = .none,
+    output_gain: F = 1.0,
+    output_offset: F = 0.0,
+};
+
+pub const FuncMultiInput = struct {
+    uvs: ?ndarray.NDArray(F) = null,
+    coord_mode: FuncCoordMode = .para,
+    channels: []const FuncChannel,
 };
 
 pub const ShaderDirectInput = union(enum) {
@@ -106,8 +164,10 @@ pub const ShaderDirectInput = union(enum) {
     tex_rgb_u8: TexInput(u8, 3),
     tex_rgb_u16: TexInput(u16, 3),
     tex_rgb_f: TexInput(F, 3),
+    texture: TextureInput,
     func: FuncInput,
     func_rgb: FuncInput,
+    func_multi: FuncMultiInput,
 };
 
 pub const ShaderPipeStageInput = union(enum) {
@@ -124,15 +184,18 @@ pub const ShaderPipeInput = struct {
     stages: []const ShaderPipeStageInput,
     resolver: shaderpipe.Resolver,
     constants: []const F = &.{},
-    channels: u8 = 0,
+};
+
+pub const ShaderExecutionInput = union(enum) {
+    direct: ShaderDirectInput,
+    pipe: ShaderPipeInput,
 };
 
 pub const MeshShaderSetInput = struct {
-    direct: ?ShaderDirectInput = null,
-    mono: ?ShaderPipeInput = null,
-    rgb: ?ShaderPipeInput = null,
-    ir: ?ShaderPipeInput = null,
-    multifield: ?ShaderPipeInput = null,
+    mono: ?ShaderExecutionInput = null,
+    rgb: ?ShaderExecutionInput = null,
+    ir: ?ShaderExecutionInput = null,
+    multifield: ?ShaderExecutionInput = null,
 };
 
 // --------------------------------------------------------------------------------------
@@ -144,9 +207,11 @@ pub const MeshShaderSetInput = struct {
 
 pub const NodalStatic = struct {
     field: meshio.Field,
-    bits: ?u8 = 8,
+    output_gain: F = 1.0,
+    output_offset: F = 0.0,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
+    global_scaling: ?imageops.ScalingParams = null,
 };
 
 pub fn TexStatic(comptime T: type, comptime C: usize) type {
@@ -157,7 +222,8 @@ pub fn TexStatic(comptime T: type, comptime C: usize) type {
             .sample = .cubic_catmull_rom,
             .mode = .direct,
         },
-        bits: ?u8 = 8,
+        output_gain: F = 1.0,
+        output_offset: F = 0.0,
         scaling: imageops.ScaleStrategy = .none,
     };
 }
@@ -165,11 +231,13 @@ pub fn TexStatic(comptime T: type, comptime C: usize) type {
 pub const FuncStatic = struct {
     elem_uvs: ?ndarray.NDArray(F),
     coord_mode: FuncCoordMode = .para,
-    builtin: FuncShaderBuiltin,
+    builtin: FuncShaderBuiltin = .constant,
     params: FuncShaderParams = .{},
-    bits: ?u8 = 8,
+    output_gain: F = 1.0,
+    output_offset: F = 0.0,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
+    channels: []const FuncChannel = &.{},
 };
 
 pub const ShaderDirectStatic = union(enum) {
@@ -180,8 +248,10 @@ pub const ShaderDirectStatic = union(enum) {
     tex_rgb_u8: TexStatic(u8, 3),
     tex_rgb_u16: TexStatic(u16, 3),
     tex_rgb_f: TexStatic(F, 3),
+    tex_multi_f: TexStatic(F, 0),
     func: FuncStatic,
     func_rgb: FuncStatic,
+    func_multi: FuncStatic,
 };
 
 pub const ShaderPipeStageStatic = union(enum) {
@@ -202,15 +272,18 @@ pub const ShaderPipeStatic = struct {
     stages: []const ShaderPipeStageStatic,
     resolver: shaderpipe.Resolver,
     constants: []const F,
-    channels: u8,
+};
+
+pub const ShaderExecutionStatic = union(enum) {
+    direct: ShaderDirectStatic,
+    pipe: ShaderPipeStatic,
 };
 
 pub const MeshShaderSetStatic = struct {
-    direct: ?ShaderDirectStatic = null,
-    mono: ?ShaderPipeStatic = null,
-    rgb: ?ShaderPipeStatic = null,
-    ir: ?ShaderPipeStatic = null,
-    multifield: ?ShaderPipeStatic = null,
+    mono: ?ShaderExecutionStatic = null,
+    rgb: ?ShaderExecutionStatic = null,
+    ir: ?ShaderExecutionStatic = null,
+    multifield: ?ShaderExecutionStatic = null,
 };
 
 // --------------------------------------------------------------------------------------
@@ -223,7 +296,8 @@ pub const MeshShaderSetStatic = struct {
 
 pub const NodalPrepared = struct {
     elem_field: ndarray.NDArray(F),
-    bits: ?u8 = 8,
+    output_gain: F = 1.0,
+    output_offset: F = 0.0,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
     scale_mul: F = 1.0,
@@ -238,10 +312,32 @@ pub fn TexPrepared(comptime T: type, comptime C: usize) type {
             .sample = .cubic_catmull_rom,
             .mode = .direct,
         },
-        bits: ?u8 = 8,
+        output_gain: F = 1.0,
+        output_offset: F = 0.0,
         scaling: imageops.ScaleStrategy = .none,
         scale_mul: F = 1.0,
         scale_add: F = 0.0,
+    };
+}
+
+pub fn concreteTexture(
+    comptime T: type,
+    comptime C: usize,
+    dynamic: *const TexPrepared(T, 0),
+) TexPrepared(T, C) {
+    return .{
+        .elem_uvs = dynamic.elem_uvs,
+        .tex = .{
+            .array = dynamic.tex.array,
+            .rows_num = dynamic.tex.rows_num,
+            .cols_num = dynamic.tex.cols_num,
+        },
+        .samp_cfg = dynamic.samp_cfg,
+        .output_gain = dynamic.output_gain,
+        .output_offset = dynamic.output_offset,
+        .scaling = dynamic.scaling,
+        .scale_mul = dynamic.scale_mul,
+        .scale_add = dynamic.scale_add,
     };
 }
 
@@ -249,13 +345,22 @@ pub const FuncPrepared = struct {
     elem_uvs: ?ndarray.NDArray(F),
     hit_geometry: meshhit.MeshHitGeomPrepared = .{},
     coord_mode: FuncCoordMode = .para,
-    builtin: FuncShaderBuiltin,
+    builtin: FuncShaderBuiltin = .constant,
     params: FuncShaderParams = .{},
-    bits: ?u8 = 8,
+    output_gain: F = 1.0,
+    output_offset: F = 0.0,
     scaling: imageops.ScaleStrategy = .none,
     scale_mul: F = 1.0,
     scale_add: F = 0.0,
     needs_normal: bool = false,
+    channels: []const FuncChannelPrepared = &.{},
+};
+
+pub const FuncChannelPrepared = struct {
+    builtin: FuncShaderBuiltin,
+    params: FuncShaderParams,
+    scale_mul: F,
+    scale_add: F,
 };
 
 pub const ShaderDirectPrepared = union(enum) {
@@ -266,8 +371,10 @@ pub const ShaderDirectPrepared = union(enum) {
     tex_rgb_u8: TexPrepared(u8, 3),
     tex_rgb_u16: TexPrepared(u16, 3),
     tex_rgb_f: TexPrepared(F, 3),
+    tex_multi_f: TexPrepared(F, 0),
     func: FuncPrepared,
     func_rgb: FuncPrepared,
+    func_multi: FuncPrepared,
 };
 
 pub const ShaderPipeStagePrepared = union(enum) {
@@ -288,12 +395,16 @@ pub const ShaderPipePrepared = struct {
     hit_geometry: meshhit.MeshHitGeomPrepared = .{},
 };
 
+pub const ShaderExecutionPrepared = union(enum) {
+    direct: ShaderDirectPrepared,
+    pipe: ShaderPipePrepared,
+};
+
 pub const MeshShaderSetPrepared = struct {
-    direct: ?ShaderDirectPrepared = null,
-    mono: ?ShaderPipePrepared = null,
-    rgb: ?ShaderPipePrepared = null,
-    ir: ?ShaderPipePrepared = null,
-    multifield: ?ShaderPipePrepared = null,
+    mono: ?ShaderExecutionPrepared = null,
+    rgb: ?ShaderExecutionPrepared = null,
+    ir: ?ShaderExecutionPrepared = null,
+    multifield: ?ShaderExecutionPrepared = null,
 };
 
 // --------------------------------------------------------------------------------------
@@ -307,9 +418,8 @@ pub fn SelectedShader(comptime Direct: type, comptime Pipe: type) type {
     };
 }
 
-pub fn hasShader(shaders: anytype, selection: CameraShaderSelection) bool {
-    return switch (selection) {
-        .direct => shaders.direct != null,
+pub fn hasShader(shaders: anytype, format: RenderFormat) bool {
+    return switch (format) {
         .mono => shaders.mono != null,
         .rgb => shaders.rgb != null,
         .ir => shaders.ir != null,
@@ -321,14 +431,18 @@ pub fn selectShader(
     comptime Direct: type,
     comptime Pipe: type,
     shaders: anytype,
-    selection: CameraShaderSelection,
+    format: RenderFormat,
 ) ?SelectedShader(Direct, Pipe) {
-    return switch (selection) {
-        .direct => if (shaders.direct) |*shader| .{ .direct = shader } else null,
-        .mono => if (shaders.mono) |*pipe| .{ .pipe = pipe } else null,
-        .rgb => if (shaders.rgb) |*pipe| .{ .pipe = pipe } else null,
-        .ir => if (shaders.ir) |*pipe| .{ .pipe = pipe } else null,
-        .multifield => if (shaders.multifield) |*pipe| .{ .pipe = pipe } else null,
+    const execution = switch (format) {
+        .mono => &shaders.mono,
+        .rgb => &shaders.rgb,
+        .ir => &shaders.ir,
+        .multifield => &shaders.multifield,
+    };
+    const selected = if (execution.*) |*value| value else return null;
+    return switch (selected.*) {
+        .direct => |*shader| .{ .direct = shader },
+        .pipe => |*pipe| .{ .pipe = pipe },
     };
 }
 

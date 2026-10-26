@@ -100,23 +100,21 @@ fn checkMeshDisplacements(mesh: meshpipe.MeshInput) InputArrayError!void {
 // --------------------------------------------------------------------------------------
 
 fn checkMeshShaderArrays(mesh: meshpipe.MeshInput) InputArrayError!void {
-    if (mesh.shaders.direct) |shader| {
-        try checkShaderArrays(shader);
-    }
     inline for (.{
         mesh.shaders.mono,
         mesh.shaders.rgb,
         mesh.shaders.ir,
         mesh.shaders.multifield,
-    }) |pipe_opt| {
-        if (pipe_opt) |pipe| {
-            for (pipe.stages) |stage| {
+    }) |execution_opt| {
+        if (execution_opt) |execution| switch (execution) {
+            .direct => |shader| try checkShaderArrays(shader),
+            .pipe => |pipe| for (pipe.stages) |stage| {
                 switch (stage) {
                     .source => |src| try checkShaderArrays(src.shader),
                     else => {},
                 }
-            }
-        }
+            },
+        };
     }
 }
 
@@ -158,6 +156,14 @@ fn checkShaderArrays(shader: shaderops.ShaderDirectInput) InputArrayError!void {
                 return error.NonFiniteTexels;
             }
         },
+        .texture => |tex_shader| {
+            if (!isFiniteSlice(tex_shader.uvs.slice)) return error.NonFiniteUvs;
+            switch (tex_shader.tex) {
+                .float => |tex| if (!isFiniteSlice(tex.array.slice))
+                    return error.NonFiniteTexels,
+                else => {},
+            }
+        },
         .nodal => |nodal_shader| {
             if (!isFiniteSlice(nodal_shader.field.array_mem)) {
                 return error.NonFiniteNodalFields;
@@ -171,6 +177,13 @@ fn checkShaderArrays(shader: shaderops.ShaderDirectInput) InputArrayError!void {
             }
         },
         .func_rgb => |func_shader| {
+            if (func_shader.uvs) |uvs| {
+                if (!isFiniteSlice(uvs.slice)) {
+                    return error.NonFiniteUvs;
+                }
+            }
+        },
+        .func_multi => |func_shader| {
             if (func_shader.uvs) |uvs| {
                 if (!isFiniteSlice(uvs.slice)) {
                     return error.NonFiniteUvs;

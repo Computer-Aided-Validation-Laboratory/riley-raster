@@ -59,7 +59,6 @@ pub const SolverTuningOneRoot = rastcfg.SolverTuningOneRoot;
 pub const SolverTuningMultiroot = rastcfg.SolverTuningMultiroot;
 pub const MultirootSolverMode = rastcfg.MultirootSolverMode;
 pub const BufferMode = rastcfg.BufferMode;
-pub const ImageSaveMode = rastcfg.ImageSaveMode;
 pub const SaveStrategy = rastcfg.SaveStrategy;
 pub const RenderMode = rastcfg.RenderMode;
 pub const ReportMode = rastcfg.ReportMode;
@@ -275,7 +274,7 @@ pub fn calcAllFramesImageDims(
     for (cam_inps) |camera| {
         var compatible = false;
         for (meshes) |mesh| {
-            if (shaderops.hasShader(mesh.shaders, camera.shader_selection)) {
+            if (shaderops.hasShader(mesh.shaders, camera.render_format)) {
                 compatible = true;
             }
         }
@@ -284,10 +283,8 @@ pub fn calcAllFramesImageDims(
 
     const num_time = meshpipe.countFrames(meshes, cam_inps);
     const raw_num_fields = meshpipe.countOutputFields(meshes, cam_inps);
-    const num_fields = try valinp.calcOutFieldsForImgSaveMode(
-        config.output.image_save_mode,
-        raw_num_fields,
-    );
+    const num_fields = raw_num_fields;
+    _ = config;
 
     var max_pix_num = cam_inps[0].pixels_num;
     for (cam_inps[1..]) |cam_inp| {
@@ -343,7 +340,6 @@ fn rasterIntoValidated(
     valid_summary: valinp.ValidSummary,
     time_start_render: Timestamp,
 ) !void {
-
     var out_dir: ?std.Io.Dir = null;
     if (out_dir_path) |path| {
         const cwd = std.Io.Dir.cwd();
@@ -858,9 +854,16 @@ fn prepareJobBatch(
 ) ![]PreparedFrameJob {
     const jobs = try group_alloc.alloc(PreparedFrameJob, job_indices.len);
 
+    var all_cameras_share_channels = true;
+    for (cameras) |camera| {
+        if (camera.render_format.channels() != num_fields) {
+            all_cameras_share_channels = false;
+            break;
+        }
+    }
     const can_write_result_direct = images_arr != null and
         cam.allCamerasSharePixels(cameras) and
-        !needsOutputTransform(config.output.image_save_mode);
+        all_cameras_share_channels;
 
     for (job_indices, 0..) |job_idx, ii| {
         const frame_idx = @divFloor(job_idx, cameras.len);
@@ -872,7 +875,7 @@ fn prepareJobBatch(
                 .camera = &cameras[camera_idx],
                 .camera_idx = camera_idx,
                 .frame_idx = frame_idx,
-                .num_fields = num_fields,
+                .num_fields = cameras[camera_idx].render_format.channels(),
                 .config = config,
                 .out_dir = out_dir,
                 .out_dir_path = out_dir_path,
@@ -1366,18 +1369,21 @@ fn initNodalGlobalScaling(
 
     for (meshes, 0..) |mesh, ii| {
         nodal_global_scaling[ii] = null;
-        if (mesh.shaders.direct) |shader| switch (shader) {
-            .nodal => |s| {
-                if (s.scale_over == .over_frames) {
-                    nodal_global_scaling[ii] = imageops.getScalingParamsNDArray(
-                        &s.field.array,
-                        null,
-                        s.scaling,
-                    );
-                }
-            },
-            else => {},
-        };
+        inline for (.{ mesh.shaders.mono, mesh.shaders.rgb, mesh.shaders.ir, mesh.shaders.multifield }) |execution_opt| {
+            if (execution_opt) |execution| switch (execution) {
+                .direct => |shader| switch (shader) {
+                    .nodal => |s| if (s.scale_over == .over_frames) {
+                        nodal_global_scaling[ii] = imageops.getScalingParamsNDArray(
+                            &s.field.array,
+                            null,
+                            s.scaling,
+                        );
+                    },
+                    else => {},
+                },
+                .pipe => {},
+            };
+        }
     }
 
     return nodal_global_scaling;
@@ -1409,14 +1415,14 @@ fn initCameraMeshSelections(
 
     for (cameras, 0..) |*camera, cc| {
         for (cameras[0..cc], 0..) |*previous, pp| {
-            if (previous.shader_selection == camera.shader_selection) {
+            if (std.meta.eql(previous.render_format, camera.render_format)) {
                 camera_meshes[cc] = camera_meshes[pp];
                 break;
             }
         } else {
             var count: usize = 0;
             for (mesh_static) |*mesh| {
-                if (shaderops.hasShader(mesh.shaders, camera.shader_selection)) {
+                if (shaderops.hasShader(mesh.shaders, camera.render_format)) {
                     count += 1;
                 }
             }
@@ -1430,7 +1436,7 @@ fn initCameraMeshSelections(
             const selected = try allocator.alloc(meshpipe.MeshStatic, count);
             var nn: usize = 0;
             for (mesh_static) |*mesh| {
-                if (!shaderops.hasShader(mesh.shaders, camera.shader_selection)) {
+                if (!shaderops.hasShader(mesh.shaders, camera.render_format)) {
                     continue;
                 }
                 selected[nn] = mesh.*;
@@ -1470,15 +1476,6 @@ fn calcAllFramesDimsFromPixels(
         @as(usize, num_fields),
         max_pixels_num[1],
         max_pixels_num[0],
-    };
-}
-
-fn needsOutputTransform(
-    image_save_mode: ImageSaveMode,
-) bool {
-    return switch (image_save_mode) {
-        .multifield, .grey, .rgb => false,
-        .rgb_to_grey, .grey_to_rgb => true,
     };
 }
 
@@ -1628,7 +1625,11 @@ fn prepareFrameBuff(
         ctx.frame_arr = save_slot.frame_arr;
         std.debug.assert(ctx.frame_arr.dims.len == dims.len);
         for (dims, 0..) |dim, ii| {
-            std.debug.assert(ctx.frame_arr.dims[ii] == dim);
+            if (ii == 0) {
+                std.debug.assert(ctx.frame_arr.dims[ii] >= dim);
+            } else {
+                std.debug.assert(ctx.frame_arr.dims[ii] == dim);
+            }
         }
         @memset(ctx.frame_arr.slice, input.config.background_value);
         return;
@@ -1665,7 +1666,7 @@ fn copyFrameToImageBatch(
 ) void {
     std.debug.assert(images_arr.dims.len == 5);
     std.debug.assert(frame_arr.dims.len == 3);
-    std.debug.assert(frame_arr.dims[0] == images_arr.dims[2]);
+    std.debug.assert(frame_arr.dims[0] <= images_arr.dims[2]);
     std.debug.assert(frame_arr.dims[1] <= images_arr.dims[3]);
     std.debug.assert(frame_arr.dims[2] <= images_arr.dims[4]);
 
@@ -1699,6 +1700,10 @@ fn copyFrameToImageBatch(
                 frame_arr.slice[src_row_base .. src_row_base + src_cols],
             );
         }
+    }
+    for (frame_arr.dims[0]..images_arr.dims[2]) |ff| {
+        const dst_field_base = dst_base + ff * dst_field_stride;
+        @memset(images_arr.slice[dst_field_base .. dst_field_base + dst_field_stride], background_val);
     }
 }
 
@@ -2067,23 +2072,18 @@ fn saveFrame(
     input: *const FrameJobDesc,
     ctx: *FrameContext,
 ) !void {
-    const output_frame_arr = try saveoverlap.buildOutputFrameView(
-        outer_alloc,
-        input.config,
-        &ctx.frame_arr,
-    );
+    _ = outer_alloc;
     if (input.config.save_strategy == .disk or input.config.save_strategy == .both) {
-        std.debug.assert(output_frame_arr.dims[0] <= std.math.maxInt(u8));
         try iio.saveImages(
             io,
             input.out_dir,
             input.camera_idx,
             input.frame_idx,
-            @intCast(output_frame_arr.dims[0]),
+            input.camera.render_format.channels(),
             input.camera.pixels_num,
-            &output_frame_arr,
-            saveoverlap.imageSaveChannelsOverride(input.config.output.image_save_mode),
-            input.config.output.image_save_opts,
+            &ctx.frame_arr,
+            if (input.camera.render_format == .rgb) 3 else 1,
+            input.camera.output_files,
             input.camera.output_encoding,
             input.config.output_name_format,
         );
@@ -2098,7 +2098,7 @@ fn saveFrame(
             images_arr,
             input.camera_idx,
             input.frame_idx,
-            &output_frame_arr,
+            &ctx.frame_arr,
         );
     }
 }

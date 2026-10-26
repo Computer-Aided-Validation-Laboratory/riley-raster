@@ -40,7 +40,10 @@ pub const CameraInput = struct {
     psf: cm.PointSpreadFunc = .{ .pixel_box = .{} },
     coord_sys: CameraCoordSys = .opengl,
     subpixel_center_map: SubPixelCenterMap = .per_tile,
-    shader_selection: shaderops.CameraShaderSelection = .direct,
+    render_format: shaderops.RenderFormat = .mono,
+    output_files: []const imageio.ImageSaveOpts = &.{
+        .{ .format = .bmp, .bits = 8, .scaling = .none },
+    },
     output_encoding: imageio.ImageEncoding = .native,
 };
 
@@ -143,7 +146,10 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         coord_sys: CameraCoordSys,
         ideal_pixel_centers: ndarray.NDArray(F),
         subpixel_center_map: SubPixelCenterMap,
-        shader_selection: shaderops.CameraShaderSelection = .direct,
+        render_format: shaderops.RenderFormat = .mono,
+        output_files: []const imageio.ImageSaveOpts = &.{
+            .{ .format = .bmp, .bits = 8, .scaling = .none },
+        },
         output_encoding: imageio.ImageEncoding = .native,
         ideal_sensor_bounds: ?distbounds.DistortBounds = null,
 
@@ -200,7 +206,8 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             };
             var self = Self{
                 .pixels_num = input.pixels_num,
-                .shader_selection = input.shader_selection,
+                .render_format = input.render_format,
+                .output_files = input.output_files,
                 .output_encoding = input.output_encoding,
                 .pixels_size = input.pixels_size,
                 .pos_world = input.pos_world,

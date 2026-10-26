@@ -404,9 +404,6 @@ pub fn main(init: std.process.Init) !void {
     base_raster_config.parallel = .{ .threads = bench_args.total_threads };
     base_raster_config.advanced.solver.oneroot.hull_mode = bench_args.hull_mode;
     base_raster_config.save_strategy = bench_args.save_strategy;
-    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     var groups = try riley.ManagedRenderGroups.init(
         outer_alloc,
@@ -583,7 +580,7 @@ pub fn main(init: std.process.Init) !void {
                                     },
                                 },
                             },
-                            .bits = 8,
+
                             .scaling = .none,
                         },
                     };
@@ -604,7 +601,7 @@ pub fn main(init: std.process.Init) !void {
                         .coords = sim_data.coords,
                         .connect = sim_data.connect,
                         .disp = disp_field,
-                        .shaders = .{ .direct = shader_input },
+                        .shaders = .{ .mono = .{ .direct = shader_input } },
                     };
 
                     const needs_images_arr = base_raster_config.save_strategy == .memory or

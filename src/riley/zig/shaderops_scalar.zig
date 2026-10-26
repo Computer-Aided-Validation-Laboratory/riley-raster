@@ -246,7 +246,17 @@ pub inline fn fillFuncClipScal(
     setCoordValues(&coord, coords.coord_0, coords.coord_1);
     const params = shader.params;
 
-    if (comptime C == 1) {
+    if (comptime C == 0) {
+        for (shader.channels, 0..) |channel, ch| {
+            const value = comm.evalFuncShaderBuiltinGreyNorm(
+                channel.builtin,
+                coord,
+                channel.params,
+            );
+            const idx = ch * spx_img_scratch.cols_num + ctx_shade.scratch_idx;
+            spx_img_scratch.slice[idx] = value * channel.scale_mul + channel.scale_add;
+        }
+    } else if (comptime C == 1) {
         const value = comm.evalFuncShaderBuiltinGreyNorm(
             shader.builtin,
             coord,
@@ -283,7 +293,17 @@ pub inline fn fillFuncPerspScal(
     setCoordValues(&coord, coords.coord_0, coords.coord_1);
     const params = shader.params;
 
-    if (comptime C == 1) {
+    if (comptime C == 0) {
+        for (shader.channels, 0..) |channel, ch| {
+            const value = comm.evalFuncShaderBuiltinGreyNorm(
+                channel.builtin,
+                coord,
+                channel.params,
+            );
+            const idx = ch * spx_img_scratch.cols_num + ctx_shade.scratch_idx;
+            spx_img_scratch.slice[idx] = value * channel.scale_mul + channel.scale_add;
+        }
+    } else if (comptime C == 1) {
         const value = comm.evalFuncShaderBuiltinGreyNorm(
             shader.builtin,
             coord,

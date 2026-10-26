@@ -126,6 +126,7 @@ fn makeCameraInput(
         FOV_SCALE,
     );
     return .{
+        .output_files = &.{.{ .format = .bmp, .bits = 8, .scaling = .auto }},
         .pixels_num = PIXELS_NUM,
         .pixels_size = PIXELS_SIZE,
         .pos_world = cam_pos,
@@ -163,14 +164,14 @@ fn renderCase(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shaders = .{ .direct = .{ .func = .{
+        .shaders = .{ .mono = .{ .direct = .{ .func = .{
             .uvs = uvs.array,
             .coord_mode = .uv,
             .builtin = SHADER_BUILTIN,
             .params = SHADER_PARAMS,
-            .bits = 8,
+
             .scaling = .none,
-        } } },
+        } } } },
     };
     const camera_input = makeCameraInput(
         &sim_data.coords,
@@ -206,12 +207,6 @@ pub fn main(init: std.process.Init) !void {
     const config = rastcfg.RasterConfig{
         .save_strategy = .disk,
         .parallel = .{ .threads = RENDER_THREADS },
-        .output = .{
-            .image_save_mode = .grey,
-            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 1 },
-            },
-        },
         .report = .{ .mode = .off },
     };
 

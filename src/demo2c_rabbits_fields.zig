@@ -52,6 +52,7 @@ pub fn main(init: std.process.Init) !void {
         .checker_squares_per_axis = checker_squares_per_axis,
         .gap = .{ 0.18, 0.28, 0.0 },
         .max_divs = .{ 3, 2, 1 },
+        .render_as_multifield = true,
     });
 
     // -------------------------------------------------------------------------
@@ -74,6 +75,7 @@ pub fn main(init: std.process.Init) !void {
         fov_scale,
     );
     const camera_input = cam.CameraInput{
+        .render_format = .{ .multifield = 3 },
         .pixels_num = pixel_num,
         .pixels_size = default_pixel_size,
         .pos_world = cam_pos,
@@ -92,12 +94,6 @@ pub fn main(init: std.process.Init) !void {
         .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
         .background_value = background_value,
-        .output = .{
-            .image_save_mode = .multifield,
-            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .none },
-            },
-        },
     };
 
     // -------------------------------------------------------------------------

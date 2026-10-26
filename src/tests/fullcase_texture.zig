@@ -177,14 +177,14 @@ pub fn buildTexSamplingCaseMeshes(
             .coords = prep.sphere_coords,
             .connect = prep.sphere_connect,
             .disp = prep.sphere_disp,
-            .shaders = .{ .direct = sphere_shader },
+            .shaders = if (case.is_rgb) .{ .rgb = .{ .direct = sphere_shader } } else .{ .mono = .{ .direct = sphere_shader } },
         },
         .{
             .mesh_type = mesh_type,
             .coords = prep.cylinder_coords,
             .connect = prep.cylinder_connect,
             .disp = prep.cylinder_disp,
-            .shaders = .{ .direct = cyl_shader },
+            .shaders = if (case.is_rgb) .{ .rgb = .{ .direct = cyl_shader } } else .{ .mono = .{ .direct = cyl_shader } },
         },
     };
 }

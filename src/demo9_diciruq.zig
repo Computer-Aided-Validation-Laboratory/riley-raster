@@ -112,7 +112,7 @@ pub fn main(init: std.process.Init) !void {
                 .sample = .cubic_catmull_rom,
                 .mode = .direct,
             },
-            .bits = 8,
+
             .scaling = .none,
         },
     };
@@ -143,7 +143,7 @@ pub fn main(init: std.process.Init) !void {
                 .shader = .{
                     .nodal = .{
                         .field = temperature,
-                        .bits = null,
+
                         .scaling = .none,
                     },
                 },
@@ -175,8 +175,8 @@ pub fn main(init: std.process.Init) !void {
         .connect = sim_data.connect,
         .disp = selected_disp,
         .shaders = .{
-            .direct = speckle,
-            .ir = .{
+            .mono = .{ .direct = speckle },
+            .ir = .{ .pipe = .{
                 .stages = &stages,
                 .resolver = .{
                     .greybody_band_apparent_c = .{
@@ -186,7 +186,7 @@ pub fn main(init: std.process.Init) !void {
                         .ambient_k = 293.15,
                     },
                 },
-            },
+            } },
         },
     };
 
@@ -231,6 +231,7 @@ pub fn main(init: std.process.Init) !void {
         0.65,
     );
     const left = camera.CameraInput{
+        .output_files = &.{.{ .format = .tiff, .bits = 16, .scaling = .none }},
         .pixels_num = dic_pixels,
         .pixels_size = dic_pitch,
         .pos_world = left_pos,
@@ -252,6 +253,7 @@ pub fn main(init: std.process.Init) !void {
         0.65,
     );
     const ir = camera.CameraInput{
+        .output_files = &.{.{ .format = .tiff, .bits = 16, .scaling = .none }},
         .pixels_num = ir_pixels,
         .pixels_size = ir_pitch,
         .pos_world = ir_pos,
@@ -259,7 +261,7 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = target,
         .focal_length = 0.035,
         .sub_sample = 4,
-        .shader_selection = .ir,
+        .render_format = .ir,
         .output_encoding = .{ .linear_u16 = .{ 0.0, 250.0 } },
     };
 
@@ -283,14 +285,6 @@ pub fn main(init: std.process.Init) !void {
         .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
         .background_value = 0.0,
-        .output = .{
-            .image_save_mode = .grey,
-            .image_save_opts = &.{.{
-                .format = .tiff,
-                .bits = 16,
-                .scaling = .none,
-            }},
-        },
     };
 
     var out_dir = try demo_common.resetOutputDir(io, out_path);

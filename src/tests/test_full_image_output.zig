@@ -37,14 +37,6 @@ const save_strategies = [_]rastcfg.SaveStrategy{
     .none,
 };
 
-const image_save_modes = [_]rastcfg.ImageSaveMode{
-    .grey,
-    .rgb,
-    .multifield,
-    .rgb_to_grey,
-    .grey_to_rgb,
-};
-
 const test_formats = [_]iio.ImageFormat{
     .fimg,
     .csv,
@@ -93,11 +85,6 @@ fn runBaseComparison(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.output.image_save_mode = if (bc.is_rgb) .rgb else .grey;
-    run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     const start_time = Timestamp.now(io, .awake);
     const result = try riley.raster(
@@ -215,10 +202,6 @@ fn runFactorialSaveStrategy(
 
         var run_config = config;
         run_config.save_strategy = strat;
-        run_config.output.image_save_mode = .grey;
-        run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .none },
-        };
 
         const result = try riley.raster(
             aa,
@@ -271,48 +254,43 @@ fn runFactorialFormatsAndModes(
         true,
         false,
     );
-    const cam_inp = common_full.createScene2ImageOutputCamera(&meshes_mono);
 
-    for (image_save_modes) |mode| {
+    for ([_]bool{ false, true }) |is_rgb| {
         for (test_formats) |fmt| {
+            if (is_rgb and fmt == .tiff) continue;
             var arena = std.heap.ArenaAllocator.init(allocator);
             defer arena.deinit();
             const aa = arena.allocator();
-
             const out_subdir = try std.fmt.allocPrint(
                 aa,
                 "{s}/{s}_{s}",
-                .{ temp_dir_base, @tagName(mode), @tagName(fmt) },
+                .{ temp_dir_base, if (is_rgb) @as([]const u8, "rgb") else "mono", @tagName(fmt) },
             );
             var sub_dir = try orch.openDirEnsured(io, out_subdir);
             sub_dir.close(io);
 
             var run_config = config;
             run_config.save_strategy = .both;
-            run_config.output.image_save_mode = mode;
             const bits: ?u8 = switch (fmt) {
-                .bmp, .tiff => 8,
+                .bmp, .tiff, .ppm => 8,
                 .fimg, .csv => null,
-                .ppm => 8,
             };
-            run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = fmt, .bits = bits, .scaling = .none },
-            };
-
-            const meshes = if (mode == .rgb or mode == .rgb_to_grey)
-                &meshes_rgb
-            else
-                &meshes_mono;
-
+            const meshes = if (is_rgb) &meshes_rgb else &meshes_mono;
+            var selected_camera = common_full.createScene2ImageOutputCamera(meshes);
+            const file_options = [_]iio.ImageSaveOpts{.{
+                .format = fmt,
+                .bits = bits,
+                .scaling = .none,
+            }};
+            selected_camera.output_files = &file_options;
             const result = try riley.raster(
                 aa,
                 io,
-                &[_]CameraInput{cam_inp},
+                &.{selected_camera},
                 meshes,
                 run_config,
                 out_subdir,
             );
-
             try std.testing.expect(result != null);
             if (result) |arr| aa.free(arr.slice);
         }
@@ -342,7 +320,6 @@ fn runFactorialScalingAndReports(
 
             var run_config = config;
             run_config.save_strategy = .memory;
-            run_config.output.image_save_mode = .grey;
             run_config.report = .{ .mode = rep_mode };
             const scaling: imageops.ScaleStrategy = switch (scale_strat) {
                 .none => .none,
@@ -350,14 +327,13 @@ fn runFactorialScalingAndReports(
                 .fixed => .{ .fixed = .{ 0.0, 255.0 } },
                 .frac => .{ .frac = .{ 0.05, 0.95 } },
             };
-            run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = scaling },
-            };
 
+            var camera_with_scaling = cam_inp;
+            camera_with_scaling.output_files = &.{.{ .format = .bmp, .scaling = scaling }};
             const result = try riley.raster(
                 aa,
                 io,
-                &[_]CameraInput{cam_inp},
+                &[_]CameraInput{camera_with_scaling},
                 &meshes,
                 run_config,
                 null,
@@ -391,7 +367,6 @@ fn runEntryPointEquivalence(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.output.image_save_mode = .grey;
 
     // 1. raster (allocates output array)
     const result_raster = try riley.raster(
@@ -529,6 +504,116 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     try runFactorialScalingAndReports(allocator, io, &prep, &textures, config);
     try runEntryPointEquivalence(allocator, io, &prep, &textures, config);
     try runAdditionalImageOutputTests(allocator, io, &prep, &textures, config);
+    try runMixedCameraOutput(allocator, io, &prep, &textures, config);
+}
+
+fn runMixedCameraOutput(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    prep: *const common_full.Scene2Prepared,
+    textures: *const common_full.FullTextures,
+    base_config: rastcfg.RasterConfig,
+) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+    const mono_meshes = common_full.buildScene2ImageOutputMeshes(prep, textures, false, false);
+    const rgb_meshes = common_full.buildScene2ImageOutputMeshes(prep, textures, true, false);
+    const meshes = [_]MeshInput{
+        mono_meshes[0], mono_meshes[1], rgb_meshes[0], rgb_meshes[1],
+    };
+    var mono_camera = common_full.createScene2ImageOutputCamera(&mono_meshes);
+    mono_camera.output_files = &.{.{ .format = .bmp, .bits = 8 }};
+    var rgb_camera = common_full.createScene2ImageOutputCamera(&rgb_meshes);
+    rgb_camera.output_files = &.{.{ .format = .fimg, .bits = null }};
+    const cameras = [_]CameraInput{ mono_camera, rgb_camera };
+    const out_dir = "temp-tests/image_output_mixed_cameras";
+    var config = base_config;
+    config.save_strategy = .both;
+    const saved = (try riley.raster(
+        aa,
+        io,
+        &cameras,
+        &meshes,
+        config,
+        out_dir,
+    )) orelse return error.NoResult;
+    try std.testing.expectEqual(@as(usize, 2), saved.dims[0]);
+    try std.testing.expectEqual(@as(usize, 3), saved.dims[2]);
+    for (1..3) |ch| {
+        for (0..saved.dims[3]) |row| {
+            for (0..saved.dims[4]) |col| {
+                try std.testing.expectEqual(
+                    base_config.background_value,
+                    saved.get(&.{ 0, 0, ch, row, col }),
+                );
+            }
+        }
+    }
+    var bmp = try std.Io.Dir.cwd().openFile(
+        io,
+        out_dir ++ "/cam0_frame0_field0.bmp",
+        .{},
+    );
+    bmp.close(io);
+    var rgb_file = try std.Io.Dir.cwd().openFile(
+        io,
+        out_dir ++ "/cam1_frame0_field0.fimg",
+        .{},
+    );
+    rgb_file.close(io);
+
+    var memory_config = config;
+    memory_config.save_strategy = .memory;
+    const unsaved = (try riley.raster(
+        aa,
+        io,
+        &cameras,
+        &meshes,
+        memory_config,
+        null,
+    )) orelse return error.NoResult;
+    try std.testing.expectEqualSlices(F, unsaved.slice, saved.slice);
+
+    var ir_meshes = mono_meshes;
+    for (&ir_meshes, 0..) |*mesh, ii| {
+        mesh.shaders = .{ .ir = mono_meshes[ii].shaders.mono };
+    }
+    var ir_camera = mono_camera;
+    ir_camera.render_format = .ir;
+    ir_camera.output_files = &.{.{ .format = .tiff, .bits = 16 }};
+    ir_camera.output_encoding = .{ .linear_u16 = .{ 0, 255 } };
+    const ir_dir = "temp-tests/image_output_ir_camera";
+    const ir_saved = (try riley.raster(
+        aa,
+        io,
+        &.{ir_camera},
+        &ir_meshes,
+        config,
+        ir_dir,
+    )) orelse return error.NoResult;
+    const ir_raw = (try riley.raster(
+        aa,
+        io,
+        &.{ir_camera},
+        &ir_meshes,
+        memory_config,
+        null,
+    )) orelse return error.NoResult;
+    try std.testing.expectEqualSlices(F, ir_raw.slice, ir_saved.slice);
+    var ir_file = try std.Io.Dir.cwd().openFile(
+        io,
+        ir_dir ++ "/cam0_frame0_field0.tiff",
+        .{},
+    );
+    ir_file.close(io);
+
+    var invalid_camera = mono_camera;
+    invalid_camera.output_files = &.{ .{ .format = .bmp }, .{ .format = .bmp } };
+    try std.testing.expectError(
+        error.InvalidImageSaveOpts,
+        riley.raster(aa, io, &.{invalid_camera}, &mono_meshes, config, out_dir),
+    );
 }
 
 fn runAdditionalImageOutputTests(
@@ -546,12 +631,6 @@ fn runAdditionalImageOutputTests(
         prep,
         textures,
         false,
-        false,
-    );
-    const meshes_rgb = common_full.buildScene2ImageOutputMeshes(
-        prep,
-        textures,
-        true,
         false,
     );
     const cam_inp = common_full.createScene2ImageOutputCamera(&meshes_mono);
@@ -572,15 +651,13 @@ fn runAdditionalImageOutputTests(
 
         var run_config = config;
         run_config.save_strategy = .both;
-        run_config.output.image_save_mode = .grey;
-        run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .fimg, .bits = null, .scaling = .none },
-        };
 
+        var fimg_camera = cam_inp;
+        fimg_camera.output_files = &.{.{ .format = .fimg, .bits = null }};
         const result = try riley.raster(
             aa,
             io,
-            &[_]CameraInput{cam_inp},
+            &[_]CameraInput{fimg_camera},
             &meshes_mono,
             run_config,
             out_subdir,
@@ -632,39 +709,6 @@ fn runAdditionalImageOutputTests(
         try std.testing.expect(img.slice.len > 0);
     }
 
-    // 3. Field conversions: 1-field expanded RGB, 3-field reduced grey
-    {
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        defer arena.deinit();
-        const aa = arena.allocator();
+    // Source channel conversion is tested through shader pipes in test_basic_shaderpipe.
 
-        var run_config = config;
-        run_config.save_strategy = .memory;
-        run_config.output.image_save_mode = .grey_to_rgb;
-
-        // 1-field mono mesh -> rgb output
-        const res_expanded = try riley.raster(
-            aa,
-            io,
-            &[_]CameraInput{cam_inp},
-            &meshes_mono,
-            run_config,
-            null,
-        );
-        const img_expanded = res_expanded orelse return error.NoResult;
-        try std.testing.expectEqual(@as(usize, 3), img_expanded.dims[2]);
-
-        // 3-field rgb mesh -> grey output
-        run_config.output.image_save_mode = .rgb_to_grey;
-        const res_reduced = try riley.raster(
-            aa,
-            io,
-            &[_]CameraInput{cam_inp},
-            &meshes_rgb,
-            run_config,
-            null,
-        );
-        const img_reduced = res_reduced orelse return error.NoResult;
-        try std.testing.expectEqual(@as(usize, 1), img_reduced.dims[2]);
-    }
 }

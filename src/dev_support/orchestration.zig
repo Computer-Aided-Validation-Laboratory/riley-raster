@@ -139,13 +139,13 @@ fn initCameraForSimDataAllFrames(
             .coords = frame_coords,
             .connect = sim_data.connect,
             .disp = null,
-            .shaders = .{ .direct = .{
+            .shaders = .{ .mono = .{ .direct = .{
                 .func = .{
                     .uvs = null,
                     .coord_mode = .para,
                     .builtin = .constant,
                 },
-            } },
+            } } },
         };
     }
 
@@ -416,12 +416,12 @@ pub fn buildMixedMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shaders = .{ .direct = .{ .nodal = .{
+            .shaders = .{ .mono = .{ .direct = .{ .nodal = .{
                 .field = sim_datas[ii].field.?,
-                .bits = 8,
+                .output_gain = 255.0,
                 .scaling = .auto,
                 .scale_over = .within_frames,
-            } } },
+            } } } },
         };
     }
 
@@ -438,16 +438,16 @@ pub fn buildMixedMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shaders = .{ .direct = .{ .tex_u8 = .{
+            .shaders = .{ .mono = .{ .direct = .{ .tex_u8 = .{
                 .uvs = uvs.array,
                 .tex = texture,
                 .samp_cfg = .{
                     .sample = .cubic_catmull_rom,
                     .mode = .lut_lerp,
                 },
-                .bits = 8,
+
                 .scaling = .none,
-            } } },
+            } } } },
         };
     }
 
@@ -480,16 +480,16 @@ pub fn buildMixedRgbMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shaders = .{ .direct = .{ .tex_rgb_u8 = .{
+            .shaders = .{ .rgb = .{ .direct = .{ .tex_rgb_u8 = .{
                 .uvs = uvs.array,
                 .tex = texture,
                 .samp_cfg = .{
                     .sample = .cubic_catmull_rom,
                     .mode = .lut_lerp,
                 },
-                .bits = 8,
+
                 .scaling = .none,
-            } } },
+            } } } },
         };
     }
 
@@ -505,12 +505,12 @@ pub fn buildMixedRgbMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shaders = .{ .direct = .{ .nodal = .{
+            .shaders = .{ .rgb = .{ .direct = .{ .nodal = .{
                 .field = rgb_field,
-                .bits = 8,
+                .output_gain = 255.0,
                 .scaling = .auto,
                 .scale_over = .within_frames,
-            } } },
+            } } } },
         };
     }
 

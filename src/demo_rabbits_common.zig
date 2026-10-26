@@ -28,6 +28,7 @@ pub const SceneOptions = struct {
     checker_squares_per_axis: F,
     gap: [3]F,
     max_divs: [3]usize,
+    render_as_multifield: bool = false,
 };
 
 /// Build arena-owned mesh inputs sharing the caller's texture. Keep the arena and
@@ -60,6 +61,7 @@ pub fn buildRabbitPairScene(
             front_mode,
             texture,
             options.checker_squares_per_axis,
+            options.render_as_multifield,
         ));
         try mesh_list.append(outer_alloc, try makeMeshInput(
             C,
@@ -70,6 +72,7 @@ pub fn buildRabbitPairScene(
             back_mode,
             texture,
             options.checker_squares_per_axis,
+            options.render_as_multifield,
         ));
 
         const front_group = sceneops.meshGroupSingle(pair_start);
@@ -215,6 +218,7 @@ fn makeMeshInput(
     shader_mode: ShaderMode,
     texture: texops.Tex(u8, C),
     checker_squares_per_axis: F,
+    render_as_multifield: bool,
 ) !MeshInput {
     const data_dir = try buildRabbitDir(outer_alloc, rabbit_name, mesh_type);
     defer outer_alloc.free(data_dir);
@@ -230,14 +234,14 @@ fn makeMeshInput(
                     .sample = .cubic_catmull_rom,
                     .mode = .direct,
                 },
-                .bits = 8,
+
                 .scaling = .none,
             };
             break :blk if (C == 1) .{ .tex_u8 = input } else .{ .tex_rgb_u8 = input };
         },
         .nodal => .{ .nodal = .{
             .field = try buildUvField(C, outer_alloc, uvs),
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
             .scale_over = .over_frames,
         } },
@@ -253,7 +257,7 @@ fn makeMeshInput(
                     },
                     .settings = .{ .checker = .{} },
                 },
-                .bits = 8,
+                .output_gain = 255.0,
                 .scaling = .auto,
             };
             break :blk if (C == 1) .{ .func = input } else .{ .func_rgb = input };
@@ -265,7 +269,12 @@ fn makeMeshInput(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shaders = .{ .direct = shader },
+        .shaders = if (C == 1)
+            .{ .mono = .{ .direct = shader } }
+        else if (render_as_multifield)
+            .{ .multifield = .{ .direct = shader } }
+        else
+            .{ .rgb = .{ .direct = shader } },
     };
 }
 

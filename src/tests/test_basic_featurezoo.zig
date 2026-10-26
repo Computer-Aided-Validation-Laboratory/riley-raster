@@ -139,6 +139,7 @@ pub fn runZooCase(
         .mono => &all_cameras,
         .rgb => blk: {
             rgb_cams_buf = [_]CameraInput{ all_cameras[0], all_cameras[1] };
+            for (&rgb_cams_buf) |*camera_input| camera_input.render_format = .rgb;
             break :blk &rgb_cams_buf;
         },
     };

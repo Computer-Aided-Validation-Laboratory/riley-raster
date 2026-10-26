@@ -90,6 +90,7 @@ pub fn runTwoShapesCaseTest(
     );
 
     const camera_input = CameraInput{
+        .render_format = if (shader_kind.isRgb()) .rgb else .mono,
         .pixels_num = pixel_num_twoshapes,
         .pixels_size = pixel_size_twoshapes,
         .pos_world = pos,

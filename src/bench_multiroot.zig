@@ -288,7 +288,7 @@ fn makeMesh(
             N,
         ),
         .disp = null,
-        .shaders = .{ .direct = .{ .func = .{
+        .shaders = .{ .mono = .{ .direct = .{ .func = .{
             .coord_mode = .world_reference,
             .builtin = .checker,
             .params = .{
@@ -296,7 +296,7 @@ fn makeMesh(
                 .settings = .{ .checker = .{} },
             },
             .scaling = .auto,
-        } } },
+        } } } },
     };
 }
 

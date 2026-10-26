@@ -74,7 +74,7 @@ pub fn main(init: std.process.Init) !void {
                 .sample = .cubic_catmull_rom,
                 .mode = .direct,
             },
-            .bits = 8,
+
             .scaling = .none,
         },
     };
@@ -89,7 +89,7 @@ pub fn main(init: std.process.Init) !void {
                     },
                 },
             },
-            .bits = null,
+
             .scaling = .none,
         },
     };
@@ -144,6 +144,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     var camera_input = camera.CameraInput{
+        .output_files = &.{.{ .format = .bmp, .bits = 8, .scaling = .auto }},
         .pixels_num = pixels_num,
         .pixels_size = pixels_size,
         .pos_world = cam_pos,
@@ -151,7 +152,7 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = roi_pos,
         .focal_length = focal_leng,
         .sub_sample = 4,
-        .shader_selection = .direct,
+        .render_format = .mono,
     };
 
     // -------------------------------------------------------------------------
@@ -160,11 +161,6 @@ pub fn main(init: std.process.Init) !void {
     var config = riley.RasterConfig{
         .save_strategy = .disk,
         .parallel = .{ .threads = 4 },
-        .output = .{
-            .image_save_opts = &[_]imageio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .auto },
-            },
-        },
     };
 
     // -------------------------------------------------------------------------
@@ -177,12 +173,12 @@ pub fn main(init: std.process.Init) !void {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shaders = .{ .direct = speckle_shader },
+        .shaders = .{ .mono = .{ .direct = speckle_shader } },
     };
 
     // 1) Direct speckle shader (like the normal sphere demo)
     std.debug.print("1/3: Rendering direct speckle sphere...\n", .{});
-    camera_input.shader_selection = .direct;
+    camera_input.render_format = .mono;
     config.output_name_format = "demo10_1_direct_speckle";
     var images = try riley.raster(
         outer_alloc,
@@ -199,8 +195,8 @@ pub fn main(init: std.process.Init) !void {
 
     // 2) Direct lambertian function shader
     std.debug.print("2/3: Rendering direct lambertian sphere...\n", .{});
-    mesh.shaders = .{ .direct = lambertian_shader };
-    camera_input.shader_selection = .direct;
+    mesh.shaders = .{ .mono = .{ .direct = lambertian_shader } };
+    camera_input.render_format = .mono;
     config.output_name_format = "demo10_2_direct_lambertian";
     images = try riley.raster(
         outer_alloc,
@@ -218,12 +214,12 @@ pub fn main(init: std.process.Init) !void {
     // 3) Combined speckle texture and lambertian shader via shader pipe
     std.debug.print("3/3: Rendering combined lit speckle sphere...\n", .{});
     mesh.shaders = .{
-        .mono = .{
+        .mono = .{ .pipe = .{
             .stages = &lit_stages,
             .resolver = lit_resolver,
-        },
+        } },
     };
-    camera_input.shader_selection = .mono;
+    camera_input.render_format = .mono;
     config.output_name_format = "demo10_3_combined_lit";
     images = try riley.raster(
         outer_alloc,

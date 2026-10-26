@@ -38,7 +38,7 @@ pub fn main(init: std.process.Init) !void {
         .coords = coords,
         .connect = connect,
         .disp = null,
-        .shaders = .{ .direct = .{ .func = .{
+        .shaders = .{ .mono = .{ .direct = .{ .func = .{
             .coord_mode = .world_reference,
             .builtin = .checker,
             .params = .{
@@ -46,7 +46,7 @@ pub fn main(init: std.process.Init) !void {
                 .settings = .{ .checker = .{} },
             },
             .scaling = .auto,
-        } } },
+        } } } },
     };
 
     // -------------------------------------------------------------------------
@@ -84,12 +84,6 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const config = riley.RasterConfig{
         .save_strategy = .disk,
-        .output = .{
-            .image_save_mode = .grey,
-            .image_save_opts = &.{
-                .{ .format = iio.ImageFormat.bmp, .bits = 8, .scaling = .none },
-            },
-        },
     };
 
     // -------------------------------------------------------------------------

@@ -7,6 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const imageops = @import("../riley/zig/imageops.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const camera = @import("../riley/zig/camera.zig");
 const cameraops = @import("../riley/zig/cameraops.zig");
@@ -421,14 +422,14 @@ pub fn prepareScene0(
         .coords = sphere_coords,
         .connect = sphere_connect,
         .disp = sphere_disp,
-        .shaders = .{ .direct = .{ .nodal = .{ .field = sphere_temp } } },
+        .shaders = .{ .mono = .{ .direct = .{ .nodal = .{ .field = sphere_temp } } } },
     };
     const dummy_cylinder = MeshInput{
         .mesh_type = mesh_type,
         .coords = cylinder_coords,
         .connect = cylinder_connect,
         .disp = cylinder_disp,
-        .shaders = .{ .direct = .{ .nodal = .{ .field = cylinder_temp } } },
+        .shaders = .{ .mono = .{ .direct = .{ .nodal = .{ .field = cylinder_temp } } } },
     };
     const dummy_meshes = [_]MeshInput{ dummy_sphere, dummy_cylinder };
     const camera_input = createScene0Camera(&dummy_meshes);
@@ -571,7 +572,7 @@ pub fn prepareScene1(
         .coords = coords,
         .connect = connect,
         .disp = null,
-        .shaders = .{ .direct = .{
+        .shaders = .{ .mono = .{ .direct = .{
             .func = .{
                 .uvs = uvs.array,
                 .builtin = .checker,
@@ -581,10 +582,10 @@ pub fn prepareScene1(
                     .settings = .{ .checker = .{} },
                 },
                 .coord_mode = .uv,
-                .bits = 8,
+                .output_gain = 255.0,
                 .scaling = .auto,
             },
-        } },
+        } } },
     };
     const dummy_meshes = [_]MeshInput{dummy_mesh};
     const camera_input = createScene1Camera(&dummy_meshes);
@@ -659,7 +660,7 @@ pub fn buildScene2Meshes(
                 .settings = .{ .checker = .{} },
             },
             .coord_mode = .uv,
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
         },
     };
@@ -672,7 +673,7 @@ pub fn buildScene2Meshes(
                 .sample = .cubic_catmull_rom,
                 .mode = .direct,
             },
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
         },
     };
@@ -683,14 +684,14 @@ pub fn buildScene2Meshes(
             .coords = prep.sphere1_coords,
             .connect = prep.sphere1_connect,
             .disp = null,
-            .shaders = .{ .direct = sphere1_shader },
+            .shaders = .{ .mono = .{ .direct = sphere1_shader } },
         },
         .{
             .mesh_type = prep.mesh_type,
             .coords = prep.sphere2_coords,
             .connect = prep.sphere2_connect,
             .disp = null,
-            .shaders = .{ .direct = sphere2_shader },
+            .shaders = .{ .mono = .{ .direct = sphere2_shader } },
         },
     };
 }
@@ -1089,7 +1090,7 @@ pub fn buildScene3Meshes(
                 .nodal = .{
                     .field = prep.meshes[ii].field.?,
                     .scale_over = .within_frames,
-                    .bits = 16,
+                    .output_gain = 65535.0,
                     .scaling = .auto,
                 },
             },
@@ -1103,7 +1104,7 @@ pub fn buildScene3Meshes(
                         .settings = .{ .checker = .{} },
                     },
                     .coord_mode = .uv,
-                    .bits = 16,
+                    .output_gain = 65535.0,
                     .scaling = .auto,
                 },
             },
@@ -1115,7 +1116,7 @@ pub fn buildScene3Meshes(
                         .sample = .cubic_catmull_rom,
                         .mode = .direct,
                     },
-                    .bits = 16,
+                    .output_gain = 65535.0,
                     .scaling = .auto,
                 },
             },
@@ -1129,7 +1130,7 @@ pub fn buildScene3Meshes(
                         .settings = .{ .eggbox = .{} },
                     },
                     .coord_mode = .uv,
-                    .bits = 16,
+                    .output_gain = 65535.0,
                     .scaling = .auto,
                 },
             },
@@ -1137,7 +1138,7 @@ pub fn buildScene3Meshes(
                 .nodal = .{
                     .field = prep.meshes[ii].field.?,
                     .scale_over = .over_frames,
-                    .bits = 16,
+                    .output_gain = 65535.0,
                     .scaling = .auto,
                 },
             },
@@ -1149,7 +1150,7 @@ pub fn buildScene3Meshes(
                         .sample = .linear,
                         .mode = .direct,
                     },
-                    .bits = 16,
+                    .output_gain = 65535.0,
                     .scaling = .auto,
                 },
             },
@@ -1163,7 +1164,7 @@ pub fn buildScene3Meshes(
                         .settings = .{ .checker_smooth = .{} },
                     },
                     .coord_mode = .uv,
-                    .bits = 16,
+                    .output_gain = 65535.0,
                     .scaling = .auto,
                 },
             },
@@ -1175,7 +1176,7 @@ pub fn buildScene3Meshes(
                         .sample = .cubic_catmull_rom,
                         .mode = .lut_lerp,
                     },
-                    .bits = 16,
+                    .output_gain = 65535.0,
                     .scaling = .auto,
                 },
             },
@@ -1187,7 +1188,7 @@ pub fn buildScene3Meshes(
             .coords = prep.meshes[ii].coords,
             .connect = prep.meshes[ii].connect,
             .disp = prep.meshes[ii].disp,
-            .shaders = .{ .direct = shader },
+            .shaders = .{ .mono = .{ .direct = shader } },
         };
     }
 
@@ -1357,6 +1358,7 @@ pub fn createScene2ImageOutputCamera(meshes: []const MeshInput) CameraInput {
         .focal_length = focal_length_scene0,
         .sub_sample = 2,
         .distort = .none,
+        .render_format = if (meshes[0].shaders.rgb != null) .rgb else .mono,
     };
 }
 
@@ -1383,7 +1385,7 @@ pub fn buildScene2ImageOutputMeshes(
                     } },
                 },
                 .coord_mode = .uv,
-                .bits = bits,
+                .output_gain = imageops.getScaleMax(bits),
                 .scaling = .auto,
             },
         }
@@ -1398,7 +1400,7 @@ pub fn buildScene2ImageOutputMeshes(
                     .settings = .{ .checker = .{} },
                 },
                 .coord_mode = .uv,
-                .bits = bits,
+                .output_gain = imageops.getScaleMax(bits),
                 .scaling = .auto,
             },
         };
@@ -1413,7 +1415,7 @@ pub fn buildScene2ImageOutputMeshes(
                         .sample = .cubic_catmull_rom,
                         .mode = .direct,
                     },
-                    .bits = 16,
+                    .output_gain = 65535.0,
                     .scaling = .auto,
                 },
             }
@@ -1426,7 +1428,7 @@ pub fn buildScene2ImageOutputMeshes(
                         .sample = .cubic_catmull_rom,
                         .mode = .direct,
                     },
-                    .bits = 8,
+                    .output_gain = 255.0,
                     .scaling = .auto,
                 },
             })
@@ -1440,7 +1442,7 @@ pub fn buildScene2ImageOutputMeshes(
                         .sample = .cubic_catmull_rom,
                         .mode = .direct,
                     },
-                    .bits = 16,
+                    .output_gain = 65535.0,
                     .scaling = .auto,
                 },
             }
@@ -1453,7 +1455,7 @@ pub fn buildScene2ImageOutputMeshes(
                         .sample = .cubic_catmull_rom,
                         .mode = .direct,
                     },
-                    .bits = 8,
+                    .output_gain = 255.0,
                     .scaling = .auto,
                 },
             });
@@ -1464,14 +1466,20 @@ pub fn buildScene2ImageOutputMeshes(
             .coords = prep.sphere1_coords,
             .connect = prep.sphere1_connect,
             .disp = null,
-            .shaders = .{ .direct = sphere1_shader },
+            .shaders = if (is_rgb)
+                .{ .rgb = .{ .direct = sphere1_shader } }
+            else
+                .{ .mono = .{ .direct = sphere1_shader } },
         },
         .{
             .mesh_type = prep.mesh_type,
             .coords = prep.sphere2_coords,
             .connect = prep.sphere2_connect,
             .disp = null,
-            .shaders = .{ .direct = sphere2_shader },
+            .shaders = if (is_rgb)
+                .{ .rgb = .{ .direct = sphere2_shader } }
+            else
+                .{ .mono = .{ .direct = sphere2_shader } },
         },
     };
 }

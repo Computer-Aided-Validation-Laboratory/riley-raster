@@ -46,10 +46,6 @@ pub const ParallelConfig = union(enum) {
 };
 
 pub const OutputConfig = struct {
-    image_save_mode: ImageSaveMode = .multifield,
-    image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .none },
-    },
     disk_save_overlap: bool = false,
     save_frame_buff_count: usize = buildconfig.SaveFrameBuffCount,
 };
@@ -63,6 +59,10 @@ pub const AdvancedConfig = struct {
     raster: RasterTuning = .{},
     distortion: DistortionTuning = .{},
     solver: SolverTuning = .{},
+    diagnostic_image_formats: []const iio.ImageSaveOpts = &.{
+        .{ .format = .bmp, .bits = 8, .scaling = .auto },
+        .{ .format = .csv, .bits = null, .scaling = .none },
+    },
 };
 
 pub const RasterTuning = struct {
@@ -173,14 +173,6 @@ pub const SaveStrategy = enum {
     none,
 };
 
-pub const ImageSaveMode = enum {
-    grey,
-    rgb,
-    multifield,
-    rgb_to_grey,
-    grey_to_rgb,
-};
-
 pub const ReportMode = enum {
     off,
     bench,
@@ -203,10 +195,6 @@ pub const NewtonSeedReuse = enum {
 };
 
 pub const FullStatsOpts = struct {
-    formats: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-        .{ .format = .csv, .bits = null, .scaling = .none },
-    },
     save_solver_csv: bool = false,
     save_iter_map: bool = true,
     save_xi_map: bool = true,

@@ -7,6 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const imageops = @import("../riley/zig/imageops.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const camera = @import("../riley/zig/camera.zig");
 const cameraops = @import("../riley/zig/cameraops.zig");
@@ -123,7 +124,7 @@ fn textureShader(
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = samp_cfg,
-        .bits = bits,
+        .output_gain = imageops.getScaleMax(bits),
         .scaling = .auto,
     };
     if (C == 1 and T == u8) return .{ .tex_u8 = input };
@@ -195,7 +196,7 @@ fn loadZooMesh(
                 try buildRgbFieldTwoFrames(allocator, temp, disp);
             break :blk .{ .nodal = .{
                 .field = field,
-                .bits = bits,
+                .output_gain = imageops.getScaleMax(bits),
                 .scaling = .auto,
                 .scale_over = if (case_index == 1)
                     .over_frames
@@ -223,7 +224,7 @@ fn loadZooMesh(
                     .world_deformed,
                 .builtin = if (case_index == 3) .checker else .eggbox,
                 .params = params,
-                .bits = bits,
+                .output_gain = imageops.getScaleMax(bits),
                 .scaling = .auto,
             };
             break :blk if (C == 1)
@@ -240,7 +241,10 @@ fn loadZooMesh(
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = if (case_index % 2 == 1) disp else null,
-        .shaders = .{ .direct = shader },
+        .shaders = if (C == 3)
+            .{ .rgb = .{ .direct = shader } }
+        else
+            .{ .mono = .{ .direct = shader } },
     };
 }
 
@@ -436,7 +440,8 @@ pub fn generateZooRgbGold(
 
     const meshes = try buildZooScene(u8, 3, 8, aa, io, texture_rgb);
     const all_cameras = buildAllZooCameras(meshes);
-    const rgb_cameras = [_]CameraInput{ all_cameras[0], all_cameras[1] };
+    var rgb_cameras = [_]CameraInput{ all_cameras[0], all_cameras[1] };
+    for (&rgb_cameras) |*camera_input| camera_input.render_format = .rgb;
 
     const gold_dir = try std.fmt.allocPrint(
         aa,
@@ -450,18 +455,6 @@ pub fn generateZooRgbGold(
     var run_config = config;
     run_config.save_strategy = .disk;
     run_config.background_value = 127.5;
-
-    const rgb_save_opts = try aa.alloc(
-        iio.ImageSaveOpts,
-        config.output.image_save_opts.len,
-    );
-    for (config.output.image_save_opts, 0..) |opt, ii| {
-        rgb_save_opts[ii] = opt;
-        if (opt.format == .bmp or opt.format == .ppm) {
-            rgb_save_opts[ii].channels = 3;
-        }
-    }
-    run_config.output.image_save_opts = rgb_save_opts;
 
     const result = try riley.raster(
         aa,
@@ -516,10 +509,6 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     std.debug.print("Generating Basic Suite: featurezoo cases...\n", .{});
     try generateAllFeatureZooCases(

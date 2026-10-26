@@ -96,16 +96,16 @@ fn loadFuncMeshInput(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shaders = .{ .direct = .{
+        .shaders = .{ .mono = .{ .direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
                 .builtin = builtin,
                 .params = sinusoidalParams(builtin),
-                .bits = 8,
+
                 .scaling = .none,
             },
-        } },
+        } } },
     };
 }
 
@@ -141,7 +141,6 @@ fn renderSinImage(
 
     var config = tcfg.getRasterConfig(.testing);
     config.save_strategy = .memory;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{};
 
     const result = (try riley.raster(
         aa,
@@ -215,8 +214,9 @@ fn saveGreyBMP(
             .format = .bmp,
             .bits = 8,
             .scaling = .auto,
-            .channels = 1,
         },
+        1,
+        .native,
     );
 }
 

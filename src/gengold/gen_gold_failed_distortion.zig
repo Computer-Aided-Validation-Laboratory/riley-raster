@@ -34,10 +34,6 @@ pub fn generateFailedDistortion(allocator: std.mem.Allocator, io: std.Io) !void 
     const simd = if (buildconfig.config.simd == .on) "simdon" else "simdoff";
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.output.image_save_opts = &.{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     var prep = try fullfixtures.prepareScene1(arena_alloc, io);
     defer prep.deinit(arena_alloc);

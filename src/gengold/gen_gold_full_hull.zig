@@ -102,16 +102,16 @@ fn runOneElemHullCase(
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shaders = .{ .direct = .{
+        .shaders = .{ .mono = .{ .direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
                 .builtin = .checker,
                 .params = shader_params,
-                .bits = 8,
+                .output_gain = 255.0,
                 .scaling = .auto,
             },
-        } },
+        } } },
     };
 
     const case_dir_name = try formatCaseDirName(
@@ -204,12 +204,7 @@ fn runScene2HullCase(
 pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.output.image_save_mode = .grey;
     config.background_value = 127.5;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .none },
-    };
 
     const gold_dir_root = policy.goldRoot(.full_hull);
     const data_dir_root = "data/edge";

@@ -55,6 +55,8 @@ pub fn runFullTexCaseTest(
         textures,
         case,
     );
+    var selected_camera = prep.camera_input;
+    selected_camera.render_format = if (case.is_rgb) .rgb else .mono;
 
     var run_config = config;
     run_config.save_strategy = .memory;
@@ -64,7 +66,7 @@ pub fn runFullTexCaseTest(
     const result = try riley.raster(
         aa,
         io,
-        &[_]CameraInput{prep.camera_input},
+        &[_]CameraInput{selected_camera},
         &meshes,
         run_config,
         null,
@@ -535,13 +537,13 @@ fn runUVBoundaryRasterPipelineTests(
                 .coords = prep.sphere_coords,
                 .connect = prep.sphere_connect,
                 .disp = prep.sphere_disp,
-                .shaders = .{ .direct = .{
+                .shaders = .{ .mono = .{ .direct = .{
                     .tex_u8 = .{
                         .uvs = out_of_range_uvs,
                         .tex = tex_small,
                         .samp_cfg = samp_cfg,
                     },
-                } },
+                } } },
             },
         };
 

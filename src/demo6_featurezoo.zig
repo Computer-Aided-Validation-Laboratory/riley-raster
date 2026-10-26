@@ -7,6 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const imageops = @import("riley/zig/imageops.zig");
 const demo_common = @import("demo_common.zig");
 
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -75,7 +76,7 @@ fn textureShader(
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = samp_cfg,
-        .bits = bits,
+        .output_gain = imageops.getScaleMax(bits),
         .scaling = .auto,
     };
     if (C == 1 and T == u8) return .{ .tex_u8 = input };
@@ -149,7 +150,7 @@ fn loadMesh(
                 try buildRgbField(allocator, temp, disp);
             break :blk .{ .nodal = .{
                 .field = field,
-                .bits = bits,
+                .output_gain = imageops.getScaleMax(bits),
                 .scaling = .auto,
                 .scale_over = if (mesh_index == 1)
                     .over_frames
@@ -177,7 +178,7 @@ fn loadMesh(
                     .world_deformed,
                 .builtin = if (mesh_index == 3) .checker else .eggbox,
                 .params = params,
-                .bits = bits,
+                .output_gain = imageops.getScaleMax(bits),
                 .scaling = .auto,
             };
             break :blk if (C == 1)
@@ -193,7 +194,10 @@ fn loadMesh(
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = if (mesh_index % 2 == 1) disp else null,
-        .shaders = .{ .direct = shader },
+        .shaders = if (C == 1)
+            .{ .mono = .{ .direct = shader } }
+        else
+            .{ .rgb = .{ .direct = shader } },
     };
 }
 
@@ -382,7 +386,15 @@ fn renderCase(
 
     const meshes = try buildScene(T, C, bits, local_alloc, io, texture, options);
 
-    const cameras = buildCameras(meshes, options);
+    var cameras = buildCameras(meshes, options);
+    for (&cameras) |*camera_input| {
+        camera_input.render_format = if (C == 1) .mono else .rgb;
+        camera_input.output_files = &.{.{
+            .format = if (bits == 8) .bmp else if (C == 1) .tiff else .ppm,
+            .bits = bits,
+            .scaling = .none,
+        }};
+    }
 
     // -------------------------------------------------------------------------
     // 2. Configure raster settings and output directory
@@ -397,16 +409,6 @@ fn renderCase(
         .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
         .background_value = 0.5 * (@as(F, @floatFromInt((@as(u32, 1) << bits) - 1))),
-        .output = .{
-            .image_save_mode = if (C == 1) .grey else .rgb,
-            .image_save_opts = &.{
-                .{
-                    .format = if (bits == 8) .bmp else .tiff,
-                    .bits = bits,
-                    .scaling = .none,
-                },
-            },
-        },
     };
 
     // -------------------------------------------------------------------------

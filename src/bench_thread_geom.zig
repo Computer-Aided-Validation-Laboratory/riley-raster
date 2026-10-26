@@ -125,7 +125,7 @@ fn duplicateMeshInput(
     }
 
     var new_shader: shaderops.ShaderDirectInput = undefined;
-    switch (base_mesh.shaders.direct.?) {
+    switch (base_mesh.shaders.mono.?.direct) {
         .func => |base_func| {
             var new_uvs: ?NDArray(F) = null;
             if (base_func.uvs) |base_uvs| {
@@ -153,7 +153,7 @@ fn duplicateMeshInput(
                     .coord_mode = base_func.coord_mode,
                     .builtin = base_func.builtin,
                     .params = base_func.params,
-                    .bits = base_func.bits,
+                    .output_gain = base_func.output_gain,
                     .scaling = base_func.scaling,
                 },
             };
@@ -168,7 +168,7 @@ fn duplicateMeshInput(
         .coords = new_coords,
         .connect = new_connect,
         .disp = null,
-        .shaders = .{ .direct = new_shader },
+        .shaders = .{ .mono = .{ .direct = new_shader } },
     };
 }
 
@@ -275,9 +275,6 @@ pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
     var base_raster_config = tcfg.getRasterConfig(.bench);
-    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
     var filtered_args: std.ArrayList([*:0]const u8) = .empty;
     defer filtered_args.deinit(outer_alloc);
     try filtered_args.append(outer_alloc, init.minimal.args.vector[0]);

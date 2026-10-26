@@ -92,12 +92,6 @@ pub fn main(init: std.process.Init) !void {
         .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
         .background_value = background_value,
-        .output = .{
-            .image_save_mode = .grey,
-            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .none },
-            },
-        },
     };
 
     // -------------------------------------------------------------------------

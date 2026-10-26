@@ -161,9 +161,6 @@ pub fn getBaseRasterConfig() riley.RasterConfig {
     base_raster_config.advanced.raster.tile_size_min = 8;
     base_raster_config.advanced.raster.tile_size_max = 128;
     base_raster_config.background_value = 128.0;
-    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
     return base_raster_config;
 }
 
@@ -246,13 +243,13 @@ pub fn prepareBenchmark(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = sim_data.disp,
-        .shaders = .{ .direct = .{ .tex_u8 = .{
+        .shaders = .{ .mono = .{ .direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = samp_cfg,
-            .bits = 8,
+
             .scaling = .none,
-        } } },
+        } } } },
     };
 
     const pixel_size = defaults.pixels_size;

@@ -48,12 +48,12 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
         .coords = coords,
         .connect = connect,
         .disp = null,
-        .shaders = .{ .direct = .{ .func = .{
+        .shaders = .{ .mono = .{ .direct = .{ .func = .{
             .builtin = .constant,
             .params = .{ .settings = .{ .constant = .{ .value = 1.0 } } },
-            .bits = 8,
+
             .scaling = .none,
-        } } },
+        } } } },
     };
     const modes = [_]camera.SubPixelCenterMap{ .full_in_mem, .per_tile };
     const buffers = [_]riley.BufferMode{ .tile_local, .global_subpx_full };

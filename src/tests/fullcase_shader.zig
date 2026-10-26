@@ -143,7 +143,7 @@ pub fn buildShaderCaseMeshes(
             const sphere_shader = shaderops.ShaderDirectInput{
                 .nodal = .{
                     .field = sphere_field,
-                    .bits = 8,
+                    .output_gain = if (n.scaling == .none) 1.0 else 255.0,
                     .scaling = n.scaling,
                     .scale_over = n.scale_over,
                 },
@@ -151,7 +151,7 @@ pub fn buildShaderCaseMeshes(
             const cyl_shader = shaderops.ShaderDirectInput{
                 .nodal = .{
                     .field = cyl_field,
-                    .bits = 8,
+                    .output_gain = if (n.scaling == .none) 1.0 else 255.0,
                     .scaling = n.scaling,
                     .scale_over = n.scale_over,
                 },
@@ -164,7 +164,7 @@ pub fn buildShaderCaseMeshes(
                     .coords = prep.sphere_coords,
                     .connect = prep.sphere_connect,
                     .disp = prep.sphere_disp,
-                    .shaders = .{ .direct = sphere_shader },
+                    .shaders = if (n.is_rgb) .{ .rgb = .{ .direct = sphere_shader } } else .{ .mono = .{ .direct = sphere_shader } },
                 },
                 .{
                     .mesh_type = mesh_type,
@@ -172,7 +172,7 @@ pub fn buildShaderCaseMeshes(
                     .coords = prep.cylinder_coords,
                     .connect = prep.cylinder_connect,
                     .disp = prep.cylinder_disp,
-                    .shaders = .{ .direct = cyl_shader },
+                    .shaders = if (n.is_rgb) .{ .rgb = .{ .direct = cyl_shader } } else .{ .mono = .{ .direct = cyl_shader } },
                 },
             };
         },
@@ -285,7 +285,7 @@ pub fn buildShaderCaseMeshes(
                     .coords = prep.sphere_coords,
                     .connect = prep.sphere_connect,
                     .disp = prep.sphere_disp,
-                    .shaders = .{ .direct = sphere_shader },
+                    .shaders = if (t.is_rgb) .{ .rgb = .{ .direct = sphere_shader } } else .{ .mono = .{ .direct = sphere_shader } },
                 },
                 .{
                     .mesh_type = mesh_type,
@@ -293,7 +293,7 @@ pub fn buildShaderCaseMeshes(
                     .coords = prep.cylinder_coords,
                     .connect = prep.cylinder_connect,
                     .disp = prep.cylinder_disp,
-                    .shaders = .{ .direct = cyl_shader },
+                    .shaders = if (t.is_rgb) .{ .rgb = .{ .direct = cyl_shader } } else .{ .mono = .{ .direct = cyl_shader } },
                 },
             };
         },
@@ -349,7 +349,7 @@ pub fn buildShaderCaseMeshes(
                     .coords = prep.sphere_coords,
                     .connect = prep.sphere_connect,
                     .disp = prep.sphere_disp,
-                    .shaders = .{ .direct = sphere_shader },
+                    .shaders = if (f.is_rgb) .{ .rgb = .{ .direct = sphere_shader } } else .{ .mono = .{ .direct = sphere_shader } },
                 },
                 .{
                     .mesh_type = mesh_type,
@@ -357,7 +357,7 @@ pub fn buildShaderCaseMeshes(
                     .coords = prep.cylinder_coords,
                     .connect = prep.cylinder_connect,
                     .disp = prep.cylinder_disp,
-                    .shaders = .{ .direct = cyl_shader },
+                    .shaders = if (f.is_rgb) .{ .rgb = .{ .direct = cyl_shader } } else .{ .mono = .{ .direct = cyl_shader } },
                 },
             };
         },

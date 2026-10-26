@@ -23,7 +23,6 @@ const report = @import("report.zig");
 // --------------------------------------------------------------------------------------
 
 pub const RasterConfig = rastcfg.RasterConfig;
-pub const ImageSaveMode = rastcfg.ImageSaveMode;
 pub const FrameReportStorage = report.FrameReportStorage;
 
 pub const SaveSlotState = enum {
@@ -287,115 +286,6 @@ pub const RenderedFrameMeta = struct {
     time_start_frame: ?Timestamp,
 };
 
-inline fn needsOutputTransform(
-    image_save_mode: ImageSaveMode,
-) bool {
-    return switch (image_save_mode) {
-        .multifield, .grey, .rgb => false,
-        .rgb_to_grey, .grey_to_rgb => true,
-    };
-}
-
-inline fn outputFieldsForImageSaveMode(
-    image_save_mode: ImageSaveMode,
-    raw_num_fields: u8,
-) !u8 {
-    return switch (image_save_mode) {
-        .multifield => raw_num_fields,
-        .grey => switch (raw_num_fields) {
-            1 => 1,
-            else => error.UnsuppedImageModeFieldCount,
-        },
-        .rgb => switch (raw_num_fields) {
-            3 => 3,
-            else => error.UnsuppedImageModeFieldCount,
-        },
-        .rgb_to_grey => switch (raw_num_fields) {
-            3 => 1,
-            else => error.UnsuppedImageModeFieldCount,
-        },
-        .grey_to_rgb => switch (raw_num_fields) {
-            1 => 3,
-            else => error.UnsuppedImageModeFieldCount,
-        },
-    };
-}
-
-// --------------------------------------------------------------------------------------
-// Public Entry-Point Func
-// --------------------------------------------------------------------------------------
-
-pub fn imageSaveChannelsOverride(image_save_mode: ImageSaveMode) ?usize {
-    return switch (image_save_mode) {
-        .grey, .rgb_to_grey => 1,
-        .rgb, .grey_to_rgb => 3,
-        .multifield => null,
-    };
-}
-
-fn rgbFieldsToGrey(
-    red_val: F,
-    green_val: F,
-    blue_val: F,
-) F {
-    return 0.299 * red_val + 0.587 * green_val + 0.114 * blue_val;
-}
-
-pub fn buildOutputFrameView(
-    allocator: std.mem.Allocator,
-    config: RasterConfig,
-    raw_frame_arr: *const ndarray.NDArray(F),
-) !ndarray.NDArray(F) {
-    std.debug.assert(raw_frame_arr.dims.len == 3);
-    const raw_num_fields: u8 = @intCast(raw_frame_arr.dims[0]);
-    if (!needsOutputTransform(config.output.image_save_mode)) {
-        return raw_frame_arr.*;
-    }
-
-    const out_num_fields = try outputFieldsForImageSaveMode(
-        config.output.image_save_mode,
-        raw_num_fields,
-    );
-    var output_frame_arr = try ndarray.NDArray(F).initFlat(
-        allocator,
-        &[_]usize{
-            @as(usize, out_num_fields),
-            raw_frame_arr.dims[1],
-            raw_frame_arr.dims[2],
-        },
-    );
-
-    switch (config.output.image_save_mode) {
-        .multifield, .grey, .rgb => unreachable,
-        .rgb_to_grey => {
-            std.debug.assert(raw_num_fields == 3);
-            for (0..raw_frame_arr.dims[1]) |rr| {
-                for (0..raw_frame_arr.dims[2]) |cc| {
-                    const grey_val = rgbFieldsToGrey(
-                        raw_frame_arr.get(&[_]usize{ 0, rr, cc }),
-                        raw_frame_arr.get(&[_]usize{ 1, rr, cc }),
-                        raw_frame_arr.get(&[_]usize{ 2, rr, cc }),
-                    );
-                    output_frame_arr.set(&[_]usize{ 0, rr, cc }, grey_val);
-                }
-            }
-        },
-        .grey_to_rgb => {
-            std.debug.assert(raw_num_fields == 1);
-            for (0..raw_frame_arr.dims[1]) |rr| {
-                for (0..raw_frame_arr.dims[2]) |cc| {
-                    const grey_val = raw_frame_arr.get(&[_]usize{ 0, rr, cc });
-                    for (0..3) |ff| {
-                        output_frame_arr.set(&[_]usize{ ff, rr, cc }, grey_val);
-                    }
-                }
-            }
-        },
-    }
-
-    return output_frame_arr;
-}
-
 pub fn initSaveSlots(
     save_alloc: std.mem.Allocator,
     cameras: []const cam.CameraPrepared,
@@ -463,7 +353,7 @@ pub fn publishRenderedSlot(
     slot.camera_idx = meta.camera_idx;
     slot.frame_idx = meta.frame_idx;
     slot.cameras_num = meta.cameras_num;
-    slot.num_fields = @intCast(slot.frame_arr.dims[0]);
+    slot.num_fields = meta.camera.render_format.channels();
     slot.pixels_num = meta.pixels_num;
     slot.out_dir = meta.out_dir;
     slot.out_dir_path = meta.out_dir_path;
@@ -496,23 +386,16 @@ pub fn completeSaveSlot(
     std.debug.assert(slot.camera != null);
     std.debug.assert(slot.pixels_num[0] > 0);
     std.debug.assert(slot.pixels_num[1] > 0);
-    var save_arena = std.heap.ArenaAllocator.init(outer_alloc);
-    defer save_arena.deinit();
-    const output_frame_arr = try buildOutputFrameView(
-        save_arena.allocator(),
-        config,
-        &slot.frame_arr,
-    );
     try iio.saveImages(
         save_io,
         slot.out_dir,
         slot.camera_idx,
         slot.frame_idx,
-        @intCast(output_frame_arr.dims[0]),
+        slot.num_fields,
         slot.pixels_num,
-        &output_frame_arr,
-        imageSaveChannelsOverride(config.output.image_save_mode),
-        config.output.image_save_opts,
+        &slot.frame_arr,
+        if (slot.camera.?.render_format == .rgb) 3 else 1,
+        slot.camera.?.output_files,
         slot.camera.?.output_encoding,
         config.output_name_format,
     );

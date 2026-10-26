@@ -726,19 +726,16 @@ fn saveImageArtifacts(
     defer allocator.free(csv_name);
     try saveImageCSV(io, dir, csv_name, image);
 
-    const bmp_name = try std.fmt.allocPrint(allocator, "{s}.bmp", .{base_name});
-    defer allocator.free(bmp_name);
     var bmp_image = try makeBMPImageArray(allocator, image);
     defer {
         allocator.free(bmp_image.slice);
         bmp_image.deinit(allocator);
     }
-    try iio.saveBMP(io, dir, bmp_name, &bmp_image, 0, .{
+    try iio.saveImage(io, dir, base_name, &bmp_image, 0, .{
         .format = .bmp,
         .bits = 8,
         .scaling = .auto,
-        .channels = bmp_image.dims[0],
-    });
+    }, bmp_image.dims[0], .native);
 }
 
 pub fn saveComparisonArtifactsFromResult(
@@ -910,20 +907,16 @@ pub fn runSingleMeshSuiteDriver(
                 .coords = prepared.sim_data.coords,
                 .connect = prepared.sim_data.connect,
                 .disp = if (add_disp) prepared.sim_data.field else null,
-                .shaders = .{ .direct = .{
+                .shaders = .{ .mono = .{ .direct = .{
                     .nodal = .{
                         .field = prepared.sim_data.field.?,
-                        .bits = 8,
                     },
-                } },
+                } } },
             };
 
             var run_config = config;
             if (mode == .test_gold) {
                 run_config.save_strategy = .memory;
-                run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-                    .{ .format = .csv, .bits = null, .scaling = .none },
-                };
                 run_config.report = .{ .mode = if (report_perf) .full_stats else .off };
             } else {
                 var out_dir = try orch.openDirEnsured(io, nodal_dir);
@@ -1058,21 +1051,18 @@ pub fn runSingleMeshSuiteDriver(
                     .coords = prepared.sim_data.coords,
                     .connect = prepared.sim_data.connect,
                     .disp = if (add_disp) prepared.sim_data.field else null,
-                    .shaders = .{ .direct = .{
+                    .shaders = .{ .mono = .{ .direct = .{
                         .tex_u8 = .{
                             .uvs = prepared.uvs.array,
                             .tex = texture,
                             .samp_cfg = sc,
                         },
-                    } },
+                    } } },
                 };
 
                 var run_config = config;
                 if (mode == .test_gold) {
                     run_config.save_strategy = .memory;
-                    run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-                        .{ .format = .csv, .bits = null, .scaling = .none },
-                    };
                     run_config.report = .{ .mode = if (report_perf) .full_stats else .off };
                 } else {
                     var out_dir = try orch.openDirEnsured(io, tex_dir);
@@ -1314,9 +1304,6 @@ pub fn runMultimeshTestExt(
         var config = tcfg.getRasterConfig(.testing);
         config.advanced.raster.buffer_mode = buffer_mode;
         config.save_strategy = .memory;
-        config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none },
-        };
 
         const camera_input = CameraInput{
             .pixels_num = camera.pixels_num,
@@ -1471,9 +1458,6 @@ pub fn runMultimeshMixedTestExt(
     var config = tcfg.getRasterConfig(.testing);
     config.advanced.raster.buffer_mode = buffer_mode;
     config.save_strategy = .memory;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .csv, .bits = null, .scaling = .none },
-    };
     const camera_input = CameraInput{
         .pixels_num = camera.pixels_num,
         .pixels_size = camera.pixels_size,
@@ -1606,9 +1590,6 @@ pub fn runMultimeshMixedRGBTestExt(
     var config_rgb = tcfg.getRasterConfig(.testing);
     config_rgb.advanced.raster.buffer_mode = buffer_mode;
     config_rgb.save_strategy = .memory;
-    config_rgb.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
-    };
 
     const camera_input = CameraInput{
         .pixels_num = camera.pixels_num,
@@ -1746,13 +1727,13 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shaders = .{ .direct = .{
+        .shaders = .{ .mono = .{ .direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
                 .builtin = .constant,
             },
-        } },
+        } } },
     };
 
     var run_config = config;
@@ -1761,9 +1742,6 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
     }
     if (mode == .test_gold) {
         run_config.save_strategy = .memory;
-        run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none },
-        };
     } else {
         var out_dir = try orch.openDirEnsured(io, gold_dir);
         out_dir.close(io);

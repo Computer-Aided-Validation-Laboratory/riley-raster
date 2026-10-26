@@ -56,11 +56,13 @@ pub fn generateFullTexCase(
         textures,
         case,
     );
+    var selected_camera = prep.camera_input;
+    selected_camera.render_format = if (case.is_rgb) .rgb else .mono;
 
     const images = try riley.raster(
         allocator,
         io,
-        &[_]CameraInput{prep.camera_input},
+        &[_]CameraInput{selected_camera},
         &meshes,
         config,
         out_dir_path,
@@ -129,10 +131,6 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     const gold_dir_root = policy.goldRoot(.full_texture);
     std.debug.print(

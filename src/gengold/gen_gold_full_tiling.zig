@@ -44,12 +44,7 @@ pub fn formatTilingGoldDirName(
 pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.output.image_save_mode = .grey;
     config.background_value = 127.5;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .none },
-    };
 
     const gold_dir_root = policy.goldRoot(.full_tiling);
 

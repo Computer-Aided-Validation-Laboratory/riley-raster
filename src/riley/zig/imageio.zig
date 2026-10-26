@@ -39,22 +39,14 @@ pub const ImageSaveOpts = struct {
     format: ImageFormat,
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
-    channels: usize = 1,
-    encoding: ImageEncoding = .native,
+};
 
-    pub fn init(
-        format: ImageFormat,
-        bits: ?u8,
-        scaling: imageops.ScaleStrategy,
-        channels: usize,
-    ) ImageSaveOpts {
-        return .{
-            .format = format,
-            .bits = bits,
-            .scaling = scaling,
-            .channels = channels,
-        };
-    }
+const ImageWriteOpts = struct {
+    format: ImageFormat,
+    bits: ?u8,
+    scaling: imageops.ScaleStrategy,
+    channels: usize,
+    encoding: ImageEncoding,
 };
 
 pub const ImageEncoding = union(enum) {
@@ -99,7 +91,16 @@ pub fn saveImage(
     image_arr: *const ndarray.NDArray(F),
     start_field: usize,
     opts: ImageSaveOpts,
+    channels: usize,
+    encoding: ImageEncoding,
 ) !void {
+    const write_opts = ImageWriteOpts{
+        .format = opts.format,
+        .bits = opts.bits,
+        .scaling = opts.scaling,
+        .channels = channels,
+        .encoding = encoding,
+    };
     var name_buff: [1024]u8 = undefined;
     const ext = switch (opts.format) {
         .csv => ".csv",
@@ -115,11 +116,11 @@ pub fn saveImage(
     );
 
     switch (opts.format) {
-        .csv => try saveCSV(io, out_dir, file_name, image_arr, start_field, opts),
-        .fimg => try saveFIMG(io, out_dir, file_name, image_arr, start_field, opts),
-        .ppm => try savePPM(io, out_dir, file_name, image_arr, start_field, opts),
-        .bmp => try saveBMP(io, out_dir, file_name, image_arr, start_field, opts),
-        .tiff => try saveTIFF(io, out_dir, file_name, image_arr, start_field, opts),
+        .csv => try saveCSV(io, out_dir, file_name, image_arr, start_field, write_opts),
+        .fimg => try saveFIMG(io, out_dir, file_name, image_arr, start_field, write_opts),
+        .ppm => try savePPM(io, out_dir, file_name, image_arr, start_field, write_opts),
+        .bmp => try saveBMP(io, out_dir, file_name, image_arr, start_field, write_opts),
+        .tiff => try saveTIFF(io, out_dir, file_name, image_arr, start_field, write_opts),
     }
 }
 
@@ -130,6 +131,17 @@ pub fn saveMatAsImage(
     image: *const matslice.MatSlice(F),
     opts: ImageSaveOpts,
 ) !void {
+    try saveMatAsImageEncoded(io, out_dir, file_name_no_ext, image, opts, .native);
+}
+
+pub fn saveMatAsImageEncoded(
+    io: std.Io,
+    out_dir: std.Io.Dir,
+    file_name_no_ext: []const u8,
+    image: *const matslice.MatSlice(F),
+    opts: ImageSaveOpts,
+    encoding: ImageEncoding,
+) !void {
     var dims = [_]usize{ 1, image.rows_num, image.cols_num };
     var strides = [_]usize{ image.rows_num * image.cols_num, image.cols_num, 1 };
     const arr = ndarray.NDArray(F){
@@ -137,7 +149,7 @@ pub fn saveMatAsImage(
         .dims = &dims,
         .strides = &strides,
     };
-    try saveImage(io, out_dir, file_name_no_ext, &arr, 0, opts);
+    try saveImage(io, out_dir, file_name_no_ext, &arr, 0, opts, 1, encoding);
 }
 
 pub fn saveImages(
@@ -148,9 +160,9 @@ pub fn saveImages(
     num_fields: u8,
     pixels_num: [2]u32,
     frame_arr: *const ndarray.NDArray(F),
-    channels_override: ?usize,
+    channels: usize,
     opts_slice: []const ImageSaveOpts,
-    encoding_override: ?ImageEncoding,
+    encoding: ImageEncoding,
     output_name_format: []const u8,
 ) !void {
     const save_dir = out_dir orelse return;
@@ -158,17 +170,8 @@ pub fn saveImages(
     _ = pixels_num;
 
     for (opts_slice) |opts| {
-        const channels = channels_override orelse opts.channels;
-        var save_opts = opts;
-        save_opts.channels = channels;
-        if (encoding_override) |encoding| {
-            save_opts.encoding = encoding;
-        }
-        if (save_opts.encoding != .native and
-            (save_opts.format != .tiff or save_opts.bits != 16))
-        {
+        if (encoding != .native and (opts.format != .tiff or opts.bits != 16))
             return error.InvalidImageEncoding;
-        }
         var ff: usize = 0;
         while (ff + channels <= @as(usize, num_fields)) {
             const file_name = try formatFrameFieldBaseName(
@@ -179,7 +182,7 @@ pub fn saveImages(
                 output_name_format,
             );
 
-            try saveImage(io, save_dir, file_name, frame_arr, ff, save_opts);
+            try saveImage(io, save_dir, file_name, frame_arr, ff, opts, channels, encoding);
             ff += channels;
         }
     }
@@ -325,7 +328,7 @@ pub fn savePPM(
     file_name: []const u8,
     image_arr: *const ndarray.NDArray(F),
     start_field: usize,
-    opts: ImageSaveOpts,
+    opts: ImageWriteOpts,
 ) !void {
     const ppm_file: std.Io.File = try out_dir.createFile(io, file_name, .{});
     defer ppm_file.close(io);
@@ -378,13 +381,13 @@ pub fn savePPM(
     try writer.flush();
 }
 
-pub fn saveCSV(
+fn saveCSV(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
     image_arr: *const ndarray.NDArray(F),
     start_field: usize,
-    opts: ImageSaveOpts,
+    opts: ImageWriteOpts,
 ) !void {
     const rows = image_arr.dims[1];
     const cols = image_arr.dims[2];
@@ -403,7 +406,7 @@ pub fn saveCSV(
     const SaveCtx = struct {
         image_arr: *const ndarray.NDArray(F),
         start_field: usize,
-        opts: ImageSaveOpts,
+        opts: ImageWriteOpts,
         params_array: [buildconfig.config.max_image_channels]imageops.ScalingParams,
 
         fn getVal(ctx: @This(), row: usize, col: usize, ch: usize) F {
@@ -441,13 +444,13 @@ pub fn saveCSV(
     );
 }
 
-pub fn saveFIMG(
+fn saveFIMG(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
     image_arr: *const ndarray.NDArray(F),
     start_field: usize,
-    opts: ImageSaveOpts,
+    opts: ImageWriteOpts,
 ) !void {
     const rows = image_arr.dims[1];
     const cols = image_arr.dims[2];
@@ -479,13 +482,13 @@ pub fn saveFIMG(
     try writer.flush();
 }
 
-pub fn saveBMP(
+fn saveBMP(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
     image_arr: *const ndarray.NDArray(F),
     start_field: usize,
-    opts: ImageSaveOpts,
+    opts: ImageWriteOpts,
 ) !void {
     const file = try out_dir.createFile(io, file_name, .{});
     defer file.close(io);
@@ -569,13 +572,13 @@ pub fn saveBMP(
     }
     try writer.flush();
 }
-pub fn saveTIFF(
+fn saveTIFF(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
     image_arr: *const ndarray.NDArray(F),
     start_field: usize,
-    opts: ImageSaveOpts,
+    opts: ImageWriteOpts,
 ) !void {
     const rows = image_arr.dims[1];
     const cols = image_arr.dims[2];
@@ -1433,11 +1436,10 @@ test "camera TIFF encodings quantise DIC and apparent temperature independently"
     defer deleteTempTestDir(io);
     const samples = [_]F{ 0, 63.75, 127.5, 191.25, 255, 300 };
     const mat = matslice.MatSlice(F).init(@constCast(&samples), 2, 3);
-    try saveMatAsImage(io, std.Io.Dir.cwd(), temp_test_dir ++ "/dic_grid", &mat, .{
+    try saveMatAsImageEncoded(io, std.Io.Dir.cwd(), temp_test_dir ++ "/dic_grid", &mat, .{
         .format = .tiff,
         .bits = 16,
-        .encoding = .{ .grid12_to_u16 = .{ 0, 255 } },
-    });
+    }, .{ .grid12_to_u16 = .{ 0, 255 } });
     var dic = try loadImage(u16, 1, allocator, io, temp_test_dir ++ "/dic_grid.tiff", .tiff);
     defer dic.deinit(allocator);
     const expected_dic = [_]u16{ 0, 16384, 32768, 49136, 65520, 65520 };
@@ -1450,11 +1452,10 @@ test "camera TIFF encodings quantise DIC and apparent temperature independently"
 
     const temperatures = [_]F{ 0, 25, 50, 100, 200, 250 };
     const thermal = matslice.MatSlice(F).init(@constCast(&temperatures), 2, 3);
-    try saveMatAsImage(io, std.Io.Dir.cwd(), temp_test_dir ++ "/ir_linear", &thermal, .{
+    try saveMatAsImageEncoded(io, std.Io.Dir.cwd(), temp_test_dir ++ "/ir_linear", &thermal, .{
         .format = .tiff,
         .bits = 16,
-        .encoding = .{ .linear_u16 = .{ 0, 250 } },
-    });
+    }, .{ .linear_u16 = .{ 0, 250 } });
     var ir = try loadImage(u16, 1, allocator, io, temp_test_dir ++ "/ir_linear.tiff", .tiff);
     defer ir.deinit(allocator);
     for (ir.array.slice, temperatures) |code, celsius| {
@@ -1582,10 +1583,9 @@ test "FIMG Save and Load Roundtrip" {
 
     const opts = ImageSaveOpts{
         .format = .fimg,
-        .channels = channels,
     };
 
-    try saveImage(io, cwd, file_base, &arr, 0, opts);
+    try saveImage(io, cwd, file_base, &arr, 0, opts, channels, .native);
 
     var loaded = try loadImage(F, channels, allocator, io, file_full, .fimg);
     defer loaded.deinit(allocator);

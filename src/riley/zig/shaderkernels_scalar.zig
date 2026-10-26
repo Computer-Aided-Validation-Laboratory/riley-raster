@@ -84,6 +84,40 @@ pub fn TexKernel(
     };
 }
 
+pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
+    return struct {
+        pub const LocalBuff = shaderops.LocalShaderBuff(N);
+        pub const Hit = meshhit.RasterHit(N);
+
+        pub inline fn shade(
+            comptime coord_space: CoordSpace,
+            ctx_shade: shaderops.ShadeContext,
+            interp: meshhit.RasterHit(N),
+            shader_buf: *const shaderops.LocalShaderBuff(N),
+            shader: *const shaderops.TexPrepared(T, 0),
+            ctx_report: anytype,
+            spx_image_scratch: *MatSlice(F),
+        ) void {
+            inline for (1..9) |C| {
+                if (shader.tex.array.dims[0] == C) {
+                    const concrete = shaderops.concreteTexture(T, C, shader);
+                    TexKernel(N, T, C).shade(
+                        coord_space,
+                        ctx_shade,
+                        interp,
+                        shader_buf,
+                        &concrete,
+                        ctx_report,
+                        spx_image_scratch,
+                    );
+                    return;
+                }
+            }
+            unreachable;
+        }
+    };
+}
+
 // --------------------------------------------------------------------------------------
 // Function Shader
 // --------------------------------------------------------------------------------------

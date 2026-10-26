@@ -378,7 +378,7 @@ pub inline fn evalFuncShaderGreyNormSIMD(
                 (v_one + @cos(v_phase_y)) - v_contrast;
         },
     };
-    return comm.applyFuncShaderOutputParamsSIMD(v_value, params);
+    return v_value;
 }
 
 pub inline fn evalFuncShaderRGBNormSIMD(
@@ -562,11 +562,7 @@ pub inline fn evalFuncShaderRGBNormSIMD(
             break :blk .{ v_value, v_value, v_value };
         },
     };
-    return .{
-        comm.applyFuncShaderOutputParamsSIMD(v_vals[0], params),
-        comm.applyFuncShaderOutputParamsSIMD(v_vals[1], params),
-        comm.applyFuncShaderOutputParamsSIMD(v_vals[2], params),
-    };
+    return v_vals;
 }
 
 fn calcNormalLaneVecs(
@@ -654,7 +650,19 @@ pub inline fn fillFuncClipSIMD(
     };
     const params = shader.params;
 
-    if (comptime C == 1) {
+    if (comptime C == 0) {
+        for (shader.channels, 0..) |channel, ch| {
+            const v_eval = evalFuncShaderGreyNormSIMD(
+                channel.builtin,
+                coord,
+                channel.params,
+            );
+            const v_final = v_eval * @as(VecSF, @splat(channel.scale_mul)) +
+                @as(VecSF, @splat(channel.scale_add));
+            sink.store(ch, v_mask_active, v_final);
+        }
+        return;
+    } else if (comptime C == 1) {
         const v_eval = evalFuncShaderGreyNormSIMD(shader.builtin, coord, params);
         const v_mul = @as(VecSF, @splat(shader.scale_mul));
         const v_add = @as(VecSF, @splat(shader.scale_add));
@@ -744,7 +752,19 @@ pub inline fn fillFuncPerspSIMD(
     };
     const params = shader.params;
 
-    if (comptime C == 1) {
+    if (comptime C == 0) {
+        for (shader.channels, 0..) |channel, ch| {
+            const v_eval = evalFuncShaderGreyNormSIMD(
+                channel.builtin,
+                coord,
+                channel.params,
+            );
+            const v_final = v_eval * @as(VecSF, @splat(channel.scale_mul)) +
+                @as(VecSF, @splat(channel.scale_add));
+            sink.store(ch, v_mask_active, v_final);
+        }
+        return;
+    } else if (comptime C == 1) {
         const v_eval = evalFuncShaderGreyNormSIMD(shader.builtin, coord, params);
         const v_mul = @as(VecSF, @splat(shader.scale_mul));
         const v_add = @as(VecSF, @splat(shader.scale_add));

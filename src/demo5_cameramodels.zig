@@ -37,11 +37,6 @@ pub fn main(init: std.process.Init) !void {
     const config_base = riley.RasterConfig{
         .save_strategy = .disk,
         .parallel = .{ .threads = 4 },
-        .output = .{
-            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .auto },
-            },
-        },
         .report = .{ .mode = .bench },
     };
 
@@ -80,16 +75,16 @@ pub fn main(init: std.process.Init) !void {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shaders = .{ .direct = .{ .tex_u8 = .{
+        .shaders = .{ .mono = .{ .direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = .{
                 .sample = .cubic_catmull_rom,
                 .mode = .direct,
             },
-            .bits = 8,
+
             .scaling = .none,
-        } } },
+        } } } },
     };
 
     // -------------------------------------------------------------------------
@@ -111,6 +106,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     const camera_input = camera.CameraInput{
+        .output_files = &.{.{ .format = .bmp, .bits = 8, .scaling = .auto }},
         .pixels_num = pixels_num,
         .pixels_size = pixel_size,
         .pos_world = pos_world,

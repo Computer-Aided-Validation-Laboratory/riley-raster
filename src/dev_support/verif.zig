@@ -699,8 +699,9 @@ pub fn writeScalarMapBmp(
             .format = .bmp,
             .bits = 8,
             .scaling = .auto,
-            .channels = 1,
         },
+        1,
+        .native,
     );
 }
 
@@ -738,8 +739,9 @@ pub fn writeBinaryMaskBmp(
             .format = .bmp,
             .bits = 8,
             .scaling = .{ .fixed = .{ 0.0, 1.0 } },
-            .channels = 1,
         },
+        1,
+        .native,
     );
 }
 

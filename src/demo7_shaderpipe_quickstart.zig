@@ -67,7 +67,7 @@ pub fn main(init: std.process.Init) !void {
                                 .linear = .{ .coeffs = .{ 0.625, 0.375, 0.0 } },
                             },
                         },
-                        .bits = null,
+
                         .scaling = .none,
                     },
                 },
@@ -83,8 +83,8 @@ pub fn main(init: std.process.Init) !void {
         .connect = connect,
         .disp = null,
         .shaders = .{
-            .direct = checker,
-            .mono = .{
+            .mono = .{ .direct = checker },
+            .mono = .{ .pipe = .{
                 .stages = &stages,
                 .resolver = .{
                     .modulate = .{
@@ -92,7 +92,7 @@ pub fn main(init: std.process.Init) !void {
                         .factor = parameter,
                     },
                 },
-            },
+            } },
         },
     };
 
@@ -121,11 +121,11 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = target,
         .focal_length = 1.0,
         .sub_sample = 4,
-        .shader_selection = .direct,
+        .render_format = .mono,
     };
 
     var lit_camera = direct_camera;
-    lit_camera.shader_selection = .mono;
+    lit_camera.render_format = .mono;
 
     // -------------------------------------------------------------------------
     // 3. Configure the raster engine and output path
@@ -133,14 +133,6 @@ pub fn main(init: std.process.Init) !void {
     const config = riley.RasterConfig{
         .save_strategy = .disk,
         .output_name_format = "demo7_cam{camera}_frame{frame}_field{field}",
-        .output = .{
-            .image_save_mode = .grey,
-            .image_save_opts = &.{.{
-                .format = .bmp,
-                .bits = 8,
-                .scaling = .none,
-            }},
-        },
     };
 
     // -------------------------------------------------------------------------
@@ -154,7 +146,7 @@ pub fn main(init: std.process.Init) !void {
         config,
         "./out/demo7_shaderpipe_quickstart",
     );
-    
+
     if (images) |image| {
         init.gpa.free(image.slice);
         image.deinit(init.gpa);

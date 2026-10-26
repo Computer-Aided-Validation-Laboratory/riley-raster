@@ -30,7 +30,7 @@ fn linear(x: F, y: F) shaderops.ShaderDirectInput {
                     .linear = .{ .coeffs = .{ 0.5, x, y } },
                 },
             },
-            .bits = null,
+
             .scaling = .none,
         },
     };
@@ -41,21 +41,14 @@ fn render(
     io: std.Io,
     mesh: meshpipe.MeshInput,
     base_camera: camera.CameraInput,
-    role: shaderops.CameraShaderSelection,
+    role: shaderops.RenderFormat,
     path: []const u8,
 ) !void {
     var selected_camera = base_camera;
-    selected_camera.shader_selection = role;
+    selected_camera.render_format = role;
+    selected_camera.output_files = &.{.{ .format = .tiff, .bits = 16, .scaling = .{ .fixed = .{ 0.0, 1.0 } } }};
     const config = riley.RasterConfig{
         .save_strategy = .disk,
-        .output = .{
-            .image_save_mode = .multifield,
-            .image_save_opts = &.{.{
-                .format = .tiff,
-                .bits = 16,
-                .scaling = .{ .fixed = .{ 0.0, 1.0 } },
-            }},
-        },
     };
     const result = try riley.raster(
         allocator,
@@ -131,7 +124,7 @@ pub fn main(init: std.process.Init) !void {
                 .coord_scale = .{ 4.0, 4.0 },
                 .settings = .{ .checker = .{} },
             },
-            .bits = null,
+
             .scaling = .none,
         },
     };
@@ -157,7 +150,7 @@ pub fn main(init: std.process.Init) !void {
                                 .linear = .{ .coeffs = .{ 0.625, 0.375, 0.0 } },
                             },
                         },
-                        .bits = null,
+
                         .scaling = .none,
                     },
                 },
@@ -167,7 +160,7 @@ pub fn main(init: std.process.Init) !void {
     };
     const mod_sources = [_]shaderpipe.Slot{ch0};
     mesh.shaders = .{
-        .mono = .{
+        .mono = .{ .pipe = .{
             .stages = &mod_stages,
             .resolver = .{
                 .modulate = .{
@@ -175,7 +168,7 @@ pub fn main(init: std.process.Init) !void {
                     .factor = param0,
                 },
             },
-        },
+        } },
     };
     try render(
         init.gpa,
@@ -211,10 +204,10 @@ pub fn main(init: std.process.Init) !void {
     };
     const rgb_slots = [_]shaderpipe.Slot{ ch0, ch1, ch2 };
     mesh.shaders = .{
-        .rgb = .{
+        .rgb = .{ .pipe = .{
             .stages = &rgb_stages,
             .resolver = .{ .identity = &rgb_slots },
-        },
+        } },
     };
     try render(
         init.gpa,
@@ -254,7 +247,7 @@ pub fn main(init: std.process.Init) !void {
         .{ .store = 0 },
     };
     mesh.shaders = .{
-        .mono = .{
+        .mono = .{ .pipe = .{
             .stages = &expr_stages,
             .resolver = .{
                 .expression = .{
@@ -262,7 +255,7 @@ pub fn main(init: std.process.Init) !void {
                     .constants = &.{ 0.65, 0.35 },
                 },
             },
-        },
+        } },
     };
     try render(
         init.gpa,
@@ -302,7 +295,7 @@ pub fn main(init: std.process.Init) !void {
         .{ .store = 0 },
     };
     mesh.shaders = .{
-        .mono = .{
+        .mono = .{ .pipe = .{
             .stages = &emissivity_stages,
             .resolver = .{
                 .expression = .{
@@ -310,7 +303,7 @@ pub fn main(init: std.process.Init) !void {
                     .constants = &.{ 0.90, 1.0 / 0.06 },
                 },
             },
-        },
+        } },
     };
     try render(
         init.gpa,

@@ -83,11 +83,6 @@ pub fn main(init: std.process.Init) !void {
         .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
         .background_value = 128.0,
-        .output = .{
-            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .none },
-            },
-        },
         .report = .{ .mode = .bench },
     };
 
@@ -145,16 +140,16 @@ pub fn main(init: std.process.Init) !void {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = selected_disp,
-        .shaders = .{ .direct = .{ .tex_u8 = .{
+        .shaders = .{ .mono = .{ .direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = .{
                 .sample = .cubic_catmull_rom,
                 .mode = .direct,
             },
-            .bits = 8,
+
             .scaling = .none,
-        } } },
+        } } } },
     };
 
     // -------------------------------------------------------------------------

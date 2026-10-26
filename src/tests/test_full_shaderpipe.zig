@@ -37,7 +37,6 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                 .uvs = scene.sphere_uvs.array,
                 .tex = textures.tex_u8_mono,
                 .samp_cfg = .{ .sample = .linear, .mode = .direct },
-                .bits = null,
             } }, .destination = .{ .kind = .channel, .index = 0 } } },
             .{ .source = .{ .shader = .{ .func = .{
                 .builtin = .lambertian_normal_z,
@@ -48,7 +47,6 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                         },
                     },
                 },
-                .bits = null,
             } }, .destination = .{ .kind = .parameter, .index = 0 } } },
         };
         const cylinder_stages = [_]shaderops.ShaderPipeStageInput{
@@ -56,7 +54,6 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                 .uvs = scene.cylinder_uvs.array,
                 .tex = textures.tex_u8_mono,
                 .samp_cfg = .{ .sample = .linear, .mode = .direct },
-                .bits = null,
             } }, .destination = .{ .kind = .channel, .index = 0 } } },
             .{ .source = .{ .shader = .{ .func = .{
                 .builtin = .lambertian_normal_z,
@@ -67,7 +64,6 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                         },
                     },
                 },
-                .bits = null,
             } }, .destination = .{ .kind = .parameter, .index = 0 } } },
         };
         const channel_slots = [_]shaderpipe.Slot{.{ .kind = .channel, .index = 0 }};
@@ -89,24 +85,20 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                 .coords = scene.sphere_coords,
                 .connect = scene.sphere_connect,
                 .disp = scene.sphere_disp,
-                .shaders = .{ .mono = sphere_pipes[0] },
+                .shaders = .{ .mono = .{ .pipe = sphere_pipes[0] } },
             },
             .{
                 .mesh_type = mesh_type,
                 .coords = scene.cylinder_coords,
                 .connect = scene.cylinder_connect,
                 .disp = scene.cylinder_disp,
-                .shaders = .{ .mono = cylinder_pipes[0] },
+                .shaders = .{ .mono = .{ .pipe = cylinder_pipes[0] } },
             },
         };
         var camera = scene.camera_input;
-        camera.shader_selection = .mono;
+        camera.render_format = .mono;
         var config = tcfg.getRasterConfig(.testing);
         config.save_strategy = if (generate_gold) .both else .memory;
-        if (generate_gold) config.output.image_save_opts = &.{
-            imageio.ImageSaveOpts{ .format = .fimg, .bits = null, .scaling = .none },
-            imageio.ImageSaveOpts{ .format = .bmp, .bits = 8, .scaling = .auto },
-        };
         const gold_dir = try std.fmt.allocPrint(
             aa,
             "{s}/scene0_modulate_{s}",
@@ -198,8 +190,8 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                 .resolver = expression_resolver,
             }};
             var expression_meshes = meshes;
-            expression_meshes[0].shaders = .{ .mono = sphere_expr[0] };
-            expression_meshes[1].shaders = .{ .mono = cylinder_expr[0] };
+            expression_meshes[0].shaders = .{ .mono = .{ .pipe = sphere_expr[0] } };
+            expression_meshes[1].shaders = .{ .mono = .{ .pipe = cylinder_expr[0] } };
             config.advanced.raster.buffer_mode = .tile_local;
             const expression_result = try riley.raster(
                 aa,

@@ -67,10 +67,11 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                         .tex_rgb_u8,
                         .tex_rgb_u16,
                         .tex_rgb_f,
+                        .tex_multi_f,
                         => |shader| {
                             buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
                         },
-                        .func, .func_rgb => |shader| {
+                        .func, .func_rgb, .func_multi => |shader| {
                             switch (shader.coord_mode) {
                                 .uv => buf.loadFuncCoords(
                                     shader.elem_uvs.?,
@@ -330,6 +331,8 @@ fn sourceChannels(source: shaderops.ShaderDirectPrepared) u8 {
         else
             @intCast(n.elem_field.dims[2]),
         .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f, .func_rgb => 3,
+        .tex_multi_f => |multi| @intCast(multi.tex.array.dims[0]),
+        .func_multi => |multi| @intCast(multi.channels.len),
         else => 1,
     };
 }
@@ -347,6 +350,17 @@ fn shadeSource(
     switch (source.*) {
         .nodal => |*s| {
             shadekerns.NodalKernel(N).shade(
+                coord_space,
+                ctx,
+                interp.core(),
+                buf,
+                s,
+                ctx_report,
+                scratch,
+            );
+        },
+        .tex_multi_f => |*s| {
+            shadekerns.TexMultiKernel(N, F).shade(
                 coord_space,
                 ctx,
                 interp.core(),
@@ -433,6 +447,17 @@ fn shadeSource(
                 scratch,
             );
         },
+        .func_multi => |*s| {
+            shadekerns.FuncKernel(N, 0).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                ctx_report,
+                scratch,
+            );
+        },
         .func_rgb => |*s| {
             shadekerns.FuncKernel(N, 3).shade(
                 coord_space,
@@ -466,6 +491,22 @@ fn shadeSourceSIMD(
     switch (source.*) {
         .nodal => |*s| {
             shadekerns.NodalKernel(N).shadeSIMDTo(
+                coord_space,
+                ctx,
+                ctx_report,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .tex_multi_f => |*s| {
+            shadekerns.TexMultiKernel(N, F).shadeSIMDTo(
                 coord_space,
                 ctx,
                 ctx_report,
@@ -578,6 +619,23 @@ fn shadeSourceSIMD(
         },
         .func => |*s| {
             shadekerns.FuncKernel(N, 1).shadeSIMDToHit(
+                coord_space,
+                ctx,
+                ctx_report,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                hit,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .func_multi => |*s| {
+            shadekerns.FuncKernel(N, 0).shadeSIMDToHit(
                 coord_space,
                 ctx,
                 ctx_report,

@@ -405,6 +405,7 @@ pub fn publishFrameResultsWithNodesPerElem(
                 camera,
                 actual_tile_size,
                 config.report.full_stats_opts,
+                config.advanced.diagnostic_image_formats,
                 nodes_per_elem,
             );
         },
@@ -487,7 +488,7 @@ pub const FullStatsLog = struct {
         tile_size: u16,
         tile_data: []const F,
         name_prefix: []const u8,
-        opts: rastcfg.FullStatsOpts,
+        formats: []const iio.ImageSaveOpts,
     ) !void {
         const px_x = camera.pixels_num[0];
         const px_y = camera.pixels_num[1];
@@ -509,7 +510,7 @@ pub const FullStatsLog = struct {
         }
 
         const mat = matslice.MatSlice(F).init(expanded.slice, px_y, px_x);
-        for (opts.formats) |opt| {
+        for (formats) |opt| {
             try iio.saveMatAsImage(io, save_dir, name_prefix, &mat, opt);
         }
     }
@@ -640,6 +641,7 @@ pub const FullStatsLog = struct {
         camera: *const cam.CameraPrepared,
         tile_size: u16,
         opts: rastcfg.FullStatsOpts,
+        formats: []const iio.ImageSaveOpts,
         nodes_per_elem: F,
     ) !void {
         const save_dir = out_dir orelse return;
@@ -680,7 +682,7 @@ pub const FullStatsLog = struct {
                 "diag_cam{d}_frame{d}_iters",
                 .{ camera_idx, frame_idx },
             );
-            for (opts.formats) |opt| {
+            for (formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
@@ -697,7 +699,7 @@ pub const FullStatsLog = struct {
                 "diag_cam{d}_frame{d}_xi",
                 .{ camera_idx, frame_idx },
             );
-            for (opts.formats) |opt| {
+            for (formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
@@ -714,7 +716,7 @@ pub const FullStatsLog = struct {
                 "diag_cam{d}_frame{d}_eta",
                 .{ camera_idx, frame_idx },
             );
-            for (opts.formats) |opt| {
+            for (formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
@@ -731,7 +733,7 @@ pub const FullStatsLog = struct {
                 "diag_cam{d}_frame{d}_conv",
                 .{ camera_idx, frame_idx },
             );
-            for (opts.formats) |opt| {
+            for (formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
@@ -748,7 +750,7 @@ pub const FullStatsLog = struct {
                 "diag_cam{d}_frame{d}_pre_dom_conv",
                 .{ camera_idx, frame_idx },
             );
-            for (opts.formats) |opt| {
+            for (formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
@@ -765,7 +767,7 @@ pub const FullStatsLog = struct {
                 "diag_cam{d}_frame{d}_hit_iter_lim",
                 .{ camera_idx, frame_idx },
             );
-            for (opts.formats) |opt| {
+            for (formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
@@ -782,7 +784,7 @@ pub const FullStatsLog = struct {
                 "diag_cam{d}_frame{d}_Jdet",
                 .{ camera_idx, frame_idx },
             );
-            for (opts.formats) |opt| {
+            for (formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
@@ -799,7 +801,7 @@ pub const FullStatsLog = struct {
                 "diag_cam{d}_frame{d}_resid_mag",
                 .{ camera_idx, frame_idx },
             );
-            for (opts.formats) |opt| {
+            for (formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
@@ -816,7 +818,7 @@ pub const FullStatsLog = struct {
                 "diag_cam{d}_frame{d}_W",
                 .{ camera_idx, frame_idx },
             );
-            for (opts.formats) |opt| {
+            for (formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
@@ -833,7 +835,7 @@ pub const FullStatsLog = struct {
                 "diag_cam{d}_frame{d}_norm_resid_mag",
                 .{ camera_idx, frame_idx },
             );
-            for (opts.formats) |opt| {
+            for (formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
@@ -850,7 +852,7 @@ pub const FullStatsLog = struct {
                 "diag_cam{d}_frame{d}_dom_violation",
                 .{ camera_idx, frame_idx },
             );
-            for (opts.formats) |opt| {
+            for (formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
@@ -866,7 +868,7 @@ pub const FullStatsLog = struct {
                 "diag_cam{d}_frame{d}_occupancy",
                 .{ camera_idx, frame_idx },
             );
-            for (opts.formats) |opt| {
+            for (formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
@@ -883,7 +885,7 @@ pub const FullStatsLog = struct {
                 "diag_cam{d}_frame{d}_depth",
                 .{ camera_idx, frame_idx },
             );
-            for (opts.formats) |opt| {
+            for (formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
@@ -900,7 +902,7 @@ pub const FullStatsLog = struct {
                 "diag_cam{d}_frame{d}_earlyout",
                 .{ camera_idx, frame_idx },
             );
-            for (opts.formats) |opt| {
+            for (formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
@@ -919,7 +921,7 @@ pub const FullStatsLog = struct {
                 tile_size,
                 m.slice,
                 name,
-                opts,
+                formats,
             );
         }
 
@@ -937,7 +939,7 @@ pub const FullStatsLog = struct {
                 tile_size,
                 m.slice,
                 name,
-                opts,
+                formats,
             );
         }
 
@@ -955,7 +957,7 @@ pub const FullStatsLog = struct {
                 tile_size,
                 m.slice,
                 name,
-                opts,
+                formats,
             );
         }
     }
@@ -1433,6 +1435,7 @@ fn getMedian(sorted_data: []const F) F {
 }
 
 pub fn ReportContext(comptime mode: ReportMode) type {
+    @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
     return struct {
         log: *LogType(mode),
 

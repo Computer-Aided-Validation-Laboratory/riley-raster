@@ -152,13 +152,13 @@ fn loadShapeMesh(
     const shader: shaderops.ShaderDirectInput = switch (shader_kind) {
         .nodal_grey => .{ .nodal = .{
             .field = temp,
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
             .scale_over = .over_frames,
         } },
         .nodal_rgb => .{ .nodal = .{
             .field = try buildRgbField(allocator, temp, disp),
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
             .scale_over = .over_frames,
         } },
@@ -166,42 +166,42 @@ fn loadShapeMesh(
             .uvs = uvs.array,
             .tex = texture_u8_grey,
             .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
         } },
         .tex_u8_mono_catmull_lutlerp => .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture_u8_grey,
             .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
         } },
         .tex_u8_mono_linear_direct => .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture_u8_grey,
             .samp_cfg = .{ .sample = .linear, .mode = .direct },
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
         } },
         .tex_u16_mono_catmull_direct => .{ .tex_u16 = .{
             .uvs = uvs.array,
             .tex = texture_u16_grey,
             .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
-            .bits = 16,
+            .output_gain = 65535.0,
             .scaling = .auto,
         } },
         .tex_f64_mono_catmull_direct => .{ .tex_f = .{
             .uvs = uvs.array,
             .tex = texture_f64_grey,
             .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
         } },
         .tex_u8_rgb_catmull_direct => .{ .tex_rgb_u8 = .{
             .uvs = uvs.array,
             .tex = texture_u8_rgb,
             .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
         } },
         .func_checker_uvs => .{ .func = .{
@@ -212,7 +212,7 @@ fn loadShapeMesh(
                 .coord_scale = .{ 20.0, 20.0 },
                 .settings = .{ .checker = .{} },
             },
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
         } },
         .func_eggbox_worldc => .{ .func = .{
@@ -222,7 +222,7 @@ fn loadShapeMesh(
                 .coord_scale = .{ 1.0, 1.0 },
                 .settings = .{ .eggbox = .{ .pitch = .{ 0.005, 0.005 } } },
             },
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
         } },
         .func_lambertian_normavg => .{ .func = .{
@@ -231,7 +231,7 @@ fn loadShapeMesh(
             .params = .{
                 .settings = .{ .lambertian_normal_z = .{} },
             },
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
         } },
         .func_lambertian_normexact => .{ .func = .{
@@ -240,7 +240,7 @@ fn loadShapeMesh(
             .params = .{
                 .settings = .{ .lambertian_normal_z = .{} },
             },
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
         } },
         .func_rgb_checker_uvs => .{ .func_rgb = .{
@@ -251,7 +251,7 @@ fn loadShapeMesh(
                 .coord_scale = .{ 20.0, 20.0 },
                 .settings = .{ .checker = .{} },
             },
-            .bits = 8,
+            .output_gain = 255.0,
             .scaling = .auto,
         } },
     };
@@ -266,7 +266,10 @@ fn loadShapeMesh(
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = disp,
-        .shaders = .{ .direct = shader },
+        .shaders = if (shader_kind.isRgb())
+            .{ .rgb = .{ .direct = shader } }
+        else
+            .{ .mono = .{ .direct = shader } },
     };
 }
 
@@ -382,6 +385,7 @@ pub fn generateTwoShapesCase(
     );
 
     const camera_input = CameraInput{
+        .render_format = if (shader_kind.isRgb()) .rgb else .mono,
         .pixels_num = pixel_num_twoshapes,
         .pixels_size = pixel_size_twoshapes,
         .pos_world = pos,
@@ -395,20 +399,6 @@ pub fn generateTwoShapesCase(
     var run_config = config;
     run_config.save_strategy = .disk;
     run_config.background_value = 127.5;
-
-    if (shader_kind.isRgb()) {
-        const rgb_save_opts = try aa.alloc(
-            iio.ImageSaveOpts,
-            config.output.image_save_opts.len,
-        );
-        for (config.output.image_save_opts, 0..) |opt, ii| {
-            rgb_save_opts[ii] = opt;
-            if (opt.format == .bmp or opt.format == .ppm) {
-                rgb_save_opts[ii].channels = 3;
-            }
-        }
-        run_config.output.image_save_opts = rgb_save_opts;
-    }
 
     const result = try riley.raster(
         aa,
@@ -497,10 +487,6 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     std.debug.print("Generating Basic Suite: twoshapes cases...\n", .{});
     try generateAllTwoShapesCases(

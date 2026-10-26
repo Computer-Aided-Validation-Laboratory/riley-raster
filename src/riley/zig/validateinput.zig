@@ -49,6 +49,7 @@ pub const InputValidationError = error{
     InvalidCameraRotation,
     InvalidCameraDistort,
     InvalidCameraPsf,
+    InvalidRenderFormatChannels,
     DistortNotSuppedWithTri3Opt,
     NoMeshes,
     ZeroCoordinateCount,
@@ -60,7 +61,7 @@ pub const InputValidationError = error{
     InvalidUvDimensions,
     InvalidTextureDimensions,
     InvalidTexSampleConfig,
-    InvalidShaderBitDepth,
+    InvalidShaderOutputMap,
     InvalidScalingBounds,
     InvalidFuncShaderParams,
     MissingNodalField,
@@ -137,6 +138,20 @@ pub fn checkRenderInps(
     if (num_time == 0) {
         return error.NoMeshFrames;
     }
+    if (config.save_strategy == .disk or config.save_strategy == .both) {
+        if (cam_inps.len > 1 and
+            std.mem.indexOf(u8, config.output_name_format, "{camera") == null)
+            return error.InvalidOutputNameFormat;
+        if (num_time > 1 and
+            std.mem.indexOf(u8, config.output_name_format, "{frame") == null)
+            return error.InvalidOutputNameFormat;
+        for (cam_inps) |camera_input| {
+            if (camera_input.render_format == .multifield and
+                camera_input.render_format.multifield > 1 and
+                std.mem.indexOf(u8, config.output_name_format, "{field") == null)
+                return error.InvalidOutputNameFormat;
+        }
+    }
 
     const raw_num_fields = meshpipe.countOutputFields(meshes, cam_inps);
     if (raw_num_fields == 0) {
@@ -149,10 +164,7 @@ pub fn checkRenderInps(
         }
     }
 
-    const out_num_fields = try calcOutFieldsForImgSaveMode(
-        config.output.image_save_mode,
-        raw_num_fields,
-    );
+    const out_num_fields = raw_num_fields;
     const img_dims = calcAllFramesImgDims(
         cam_inps,
         num_time,
@@ -180,8 +192,22 @@ fn checkPipeCompatibility(
     for (cameras) |camera| {
         var compatible = false;
         for (meshes) |mesh| {
-            if (shaderops.hasShader(mesh.shaders, camera.shader_selection)) {
-                compatible = true;
+            const selected = shaderops.selectShader(
+                shaderops.ShaderDirectInput,
+                shaderops.ShaderPipeInput,
+                &mesh.shaders,
+                camera.render_format,
+            ) orelse continue;
+            compatible = true;
+            const expected = camera.render_format.channels();
+            switch (selected) {
+                .direct => |shader| if (directChannels(shader.*) != expected)
+                    return error.UnsuppedImageModeFieldCount,
+                .pipe => |pipe| try checkPipeMetadata(
+                    pipe.*,
+                    mesh.coords.mat.rows_num,
+                    expected,
+                ),
             }
         }
         if (!compatible) {
@@ -201,10 +227,8 @@ pub fn summariseRenderInpsAssumeValid(
         meshpipe.countOutputFields(meshes, cam_inps)
     else
         1;
-    const out_num_fields = calcOutFieldsForImgSaveMode(
-        config.output.image_save_mode,
-        raw_num_fields,
-    ) catch raw_num_fields;
+    const out_num_fields = raw_num_fields;
+    _ = config;
     const img_dims = if (cam_inps.len > 0)
         calcAllFramesImgDims(cam_inps, num_time, out_num_fields)
     else
@@ -307,13 +331,8 @@ fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
     if (config.output.save_frame_buff_count == 0) {
         return error.InvalidSaveFrameBuffCount;
     }
-    if ((config.save_strategy == .disk or config.save_strategy == .both) and
-        config.output.image_save_opts.len == 0)
-    {
-        return error.InvalidImageSaveOpts;
-    }
     if (config.report.mode == .full_stats and
-        config.report.full_stats_opts.formats.len == 0)
+        config.advanced.diagnostic_image_formats.len == 0)
     {
         return error.InvalidFullStatsFormats;
     }
@@ -375,33 +394,56 @@ fn checkMeshesMetadata(
         }
 
         const shaders = mesh.shaders;
-        if (shaders.direct == null and
-            shaders.mono == null and
+        if (shaders.mono == null and
             shaders.rgb == null and
             shaders.ir == null and
             shaders.multifield == null)
         {
             return error.InvalidShaderPipe;
         }
-        if (shaders.direct) |shader| {
-            try checkShaderMetadata(shader, mesh.coords.mat.rows_num);
+        if (shaders.mono) |execution|
+            try checkExecutionMetadata(execution, mesh.coords.mat.rows_num, 1);
+        if (shaders.rgb) |execution|
+            try checkExecutionMetadata(execution, mesh.coords.mat.rows_num, 3);
+        if (shaders.ir) |execution|
+            try checkExecutionMetadata(execution, mesh.coords.mat.rows_num, 1);
+        if (shaders.multifield) |execution| {
+            switch (execution) {
+                .direct => |shader| try checkExecutionMetadata(
+                    execution,
+                    mesh.coords.mat.rows_num,
+                    directChannels(shader),
+                ),
+                .pipe => {}, // output arity is supplied by a selecting camera
+            }
         }
-        if (shaders.mono) |pipe| {
-            try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 1);
-        }
-        if (shaders.rgb) |pipe| {
-            try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 3);
-        }
-        if (shaders.ir) |pipe| {
-            try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 1);
-        }
-        if (shaders.multifield) |pipe| {
-            try checkPipeMetadata(
-                pipe,
-                mesh.coords.mat.rows_num,
-                pipe.channels,
-            );
-        }
+    }
+}
+
+fn directChannels(shader: shaderops.ShaderDirectInput) u8 {
+    return switch (shader) {
+        .nodal => |s| s.field.getFieldsN(),
+        .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f, .func_rgb => 3,
+        .func_multi => |multi| @intCast(multi.channels.len),
+        .texture => |t| switch (t.tex) {
+            inline else => |tex| @intCast(tex.array.dims[0]),
+        },
+        else => 1,
+    };
+}
+
+fn checkExecutionMetadata(
+    execution: shaderops.ShaderExecutionInput,
+    coords_num: usize,
+    channels: u8,
+) InputValidationError!void {
+    if (channels == 0 or channels > shaderpipe.max_channels) return error.InvalidShaderPipe;
+    switch (execution) {
+        .direct => |shader| {
+            try checkShaderMetadata(shader, coords_num);
+            if (directChannels(shader) != channels) return error.UnsuppedImageModeFieldCount;
+        },
+        .pipe => |pipe| try checkPipeMetadata(pipe, coords_num, channels),
     }
 }
 
@@ -418,18 +460,29 @@ fn checkCameras(
     }
     for (cam_inps) |cam_inp| {
         try checkCamInp(cam_inp);
+        if ((config.save_strategy == .disk or config.save_strategy == .both) and
+            cam_inp.output_files.len == 0) return error.InvalidImageSaveOpts;
+        for (cam_inp.output_files, 0..) |opts, ii| {
+            try checkScaling(opts.scaling);
+            if (cam_inp.render_format == .rgb and opts.format == .tiff)
+                return error.InvalidImageSaveOpts;
+            if (opts.format == .bmp or opts.format == .ppm or opts.format == .tiff) {
+                if (opts.bits != 8 and opts.bits != 16)
+                    return error.InvalidImageSaveOpts;
+            }
+            for (cam_inp.output_files[0..ii]) |previous| {
+                if (previous.format == opts.format) return error.InvalidImageSaveOpts;
+            }
+        }
         switch (cam_inp.output_encoding) {
             .native => {},
             .grid12_to_u16, .linear_u16 => |range| {
                 if (!isFiniteSlice(&range) or range[1] <= range[0]) {
                     return error.InvalidImageSaveOpts;
                 }
-                if (config.save_strategy == .disk or config.save_strategy == .both) {
-                    for (config.output.image_save_opts) |opts| {
-                        if (opts.format != .tiff or opts.bits != 16) {
-                            return error.InvalidImageSaveOpts;
-                        }
-                    }
+                for (cam_inp.output_files) |opts| {
+                    if (opts.format != .tiff or opts.bits != 16)
+                        return error.InvalidImageSaveOpts;
                 }
             },
         }
@@ -438,6 +491,12 @@ fn checkCameras(
 }
 
 fn checkCamInp(cam_inp: cam.CameraInput) InputValidationError!void {
+    if (cam_inp.render_format == .multifield and
+        (cam_inp.render_format.multifield == 0 or
+            cam_inp.render_format.multifield > 8))
+    {
+        return error.InvalidRenderFormatChannels;
+    }
     if (cam_inp.pixels_num[0] == 0 or cam_inp.pixels_num[1] == 0) {
         return error.InvalidCameraPixels;
     }
@@ -558,7 +617,6 @@ fn checkPipeMetadata(
     channels: u8,
 ) InputValidationError!void {
     if (channels == 0 or channels > shaderpipe.max_channels or
-        (pipe.channels != 0 and pipe.channels != channels) or
         pipe.stages.len == 0 or pipe.stages.len > 8) return error.InvalidShaderPipe;
     var written: shaderpipe.Written = .{};
     for (pipe.stages) |stage| switch (stage) {
@@ -567,6 +625,10 @@ fn checkPipeMetadata(
             const count: u8 = switch (src.shader) {
                 .nodal => |n| n.field.getFieldsN(),
                 .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f, .func_rgb => 3,
+                .func_multi => |multi| @intCast(multi.channels.len),
+                .texture => |t| switch (t.tex) {
+                    inline else => |tex| @intCast(tex.array.dims[0]),
+                },
                 else => 1,
             };
             for (0..count) |offset| {
@@ -651,46 +713,68 @@ fn checkShaderMetadata(
     coords_num: usize,
 ) InputValidationError!void {
     switch (shader) {
+        .texture => |texture| {
+            try checkTexUvMetadata(texture.uvs, coords_num);
+            try checkSampCfg(texture.samp_cfg);
+            if (!std.math.isFinite(texture.output_gain) or
+                !std.math.isFinite(texture.output_offset)) return error.InvalidShaderOutputMap;
+            try checkScaling(texture.scaling);
+            switch (texture.tex) {
+                inline else => |tex| {
+                    if (tex.array.dims.len != 3 or tex.array.dims[0] == 0 or
+                        tex.array.dims[0] > 8 or tex.array.dims[1] == 0 or
+                        tex.array.dims[2] == 0 or
+                        tex.rows_num != tex.array.dims[1] or
+                        tex.cols_num != tex.array.dims[2]) return error.InvalidTextureDimensions;
+                },
+            }
+        },
         .tex_u8 => |tex_shader| {
             try checkTexMetadata(tex_shader.tex, 1);
             try checkTexUvMetadata(tex_shader.uvs, coords_num);
             try checkSampCfg(tex_shader.samp_cfg);
-            try checkBits(tex_shader.bits);
+            if (!std.math.isFinite(tex_shader.output_gain) or
+                !std.math.isFinite(tex_shader.output_offset)) return error.InvalidShaderOutputMap;
             try checkScaling(tex_shader.scaling);
         },
         .tex_u16 => |tex_shader| {
             try checkTexMetadata(tex_shader.tex, 1);
             try checkTexUvMetadata(tex_shader.uvs, coords_num);
             try checkSampCfg(tex_shader.samp_cfg);
-            try checkBits(tex_shader.bits);
+            if (!std.math.isFinite(tex_shader.output_gain) or
+                !std.math.isFinite(tex_shader.output_offset)) return error.InvalidShaderOutputMap;
             try checkScaling(tex_shader.scaling);
         },
         .tex_f => |tex_shader| {
             try checkTexMetadata(tex_shader.tex, 1);
             try checkTexUvMetadata(tex_shader.uvs, coords_num);
             try checkSampCfg(tex_shader.samp_cfg);
-            try checkBits(tex_shader.bits);
+            if (!std.math.isFinite(tex_shader.output_gain) or
+                !std.math.isFinite(tex_shader.output_offset)) return error.InvalidShaderOutputMap;
             try checkScaling(tex_shader.scaling);
         },
         .tex_rgb_u8 => |tex_shader| {
             try checkTexMetadata(tex_shader.tex, 3);
             try checkTexUvMetadata(tex_shader.uvs, coords_num);
             try checkSampCfg(tex_shader.samp_cfg);
-            try checkBits(tex_shader.bits);
+            if (!std.math.isFinite(tex_shader.output_gain) or
+                !std.math.isFinite(tex_shader.output_offset)) return error.InvalidShaderOutputMap;
             try checkScaling(tex_shader.scaling);
         },
         .tex_rgb_u16 => |tex_shader| {
             try checkTexMetadata(tex_shader.tex, 3);
             try checkTexUvMetadata(tex_shader.uvs, coords_num);
             try checkSampCfg(tex_shader.samp_cfg);
-            try checkBits(tex_shader.bits);
+            if (!std.math.isFinite(tex_shader.output_gain) or
+                !std.math.isFinite(tex_shader.output_offset)) return error.InvalidShaderOutputMap;
             try checkScaling(tex_shader.scaling);
         },
         .tex_rgb_f => |tex_shader| {
             try checkTexMetadata(tex_shader.tex, 3);
             try checkTexUvMetadata(tex_shader.uvs, coords_num);
             try checkSampCfg(tex_shader.samp_cfg);
-            try checkBits(tex_shader.bits);
+            if (!std.math.isFinite(tex_shader.output_gain) or
+                !std.math.isFinite(tex_shader.output_offset)) return error.InvalidShaderOutputMap;
             try checkScaling(tex_shader.scaling);
         },
         .nodal => |nodal_shader| {
@@ -703,20 +787,34 @@ fn checkShaderMetadata(
             {
                 return error.InvalidNodalFieldDimensions;
             }
-            try checkBits(nodal_shader.bits);
+            if (!std.math.isFinite(nodal_shader.output_gain) or
+                !std.math.isFinite(nodal_shader.output_offset)) return error.InvalidShaderOutputMap;
             try checkScaling(nodal_shader.scaling);
         },
         .func => |func_shader| {
             const require_uvs = func_shader.coord_mode == .uv;
             try checkOptionalUvMetadata(func_shader.uvs, coords_num, require_uvs);
-            try checkBits(func_shader.bits);
+            if (!std.math.isFinite(func_shader.output_gain) or
+                !std.math.isFinite(func_shader.output_offset)) return error.InvalidShaderOutputMap;
             try checkScaling(func_shader.scaling);
             try checkFuncParams(func_shader.builtin, func_shader.params);
+        },
+        .func_multi => |multi| {
+            if (multi.channels.len == 0 or multi.channels.len > 8)
+                return error.UnsuppedImageModeFieldCount;
+            try checkOptionalUvMetadata(multi.uvs, coords_num, multi.coord_mode == .uv);
+            for (multi.channels) |ch| {
+                if (!std.math.isFinite(ch.output_gain) or
+                    !std.math.isFinite(ch.output_offset)) return error.InvalidShaderOutputMap;
+                try checkScaling(ch.scaling);
+                try checkFuncParams(ch.builtin, ch.params);
+            }
         },
         .func_rgb => |func_shader| {
             const require_uvs = func_shader.coord_mode == .uv;
             try checkOptionalUvMetadata(func_shader.uvs, coords_num, require_uvs);
-            try checkBits(func_shader.bits);
+            if (!std.math.isFinite(func_shader.output_gain) or
+                !std.math.isFinite(func_shader.output_offset)) return error.InvalidShaderOutputMap;
             try checkScaling(func_shader.scaling);
             try checkFuncParams(func_shader.builtin, func_shader.params);
         },
@@ -771,16 +869,6 @@ fn checkSampCfg(samp_cfg: texops.TexSampConfig) InputValidationError!void {
     }
 }
 
-fn checkBits(bits_opt: ?u8) InputValidationError!void {
-    if (bits_opt) |bits| {
-        if (bits != 8 and bits != 10 and bits != 12 and
-            bits != 14 and bits != 16)
-        {
-            return error.InvalidShaderBitDepth;
-        }
-    }
-}
-
 fn checkScaling(scaling: imageops.ScaleStrategy) InputValidationError!void {
     switch (scaling) {
         .none, .auto => {},
@@ -808,9 +896,7 @@ fn checkFuncParams(
     if (!isFiniteSlice(&params.coord_scale) or
         params.coord_scale[0] == 0.0 or
         params.coord_scale[1] == 0.0 or
-        !isFiniteSlice(&params.coord_offset) or
-        !std.math.isFinite(params.output_scale) or
-        !std.math.isFinite(params.output_offset))
+        !isFiniteSlice(&params.coord_offset))
     {
         return error.InvalidFuncShaderParams;
     }
@@ -878,31 +964,6 @@ fn checkFuncParams(
 // --------------------------------------------------------------------------------------
 // Output & Save Checks
 // --------------------------------------------------------------------------------------
-
-pub fn calcOutFieldsForImgSaveMode(
-    img_save_mode: rastcfg.ImageSaveMode,
-    raw_num_fields: u8,
-) InputValidationError!u8 {
-    return switch (img_save_mode) {
-        .multifield => raw_num_fields,
-        .grey => switch (raw_num_fields) {
-            1 => 1,
-            else => error.UnsuppedImageModeFieldCount,
-        },
-        .rgb => switch (raw_num_fields) {
-            3 => 3,
-            else => error.UnsuppedImageModeFieldCount,
-        },
-        .rgb_to_grey => switch (raw_num_fields) {
-            3 => 1,
-            else => error.UnsuppedImageModeFieldCount,
-        },
-        .grey_to_rgb => switch (raw_num_fields) {
-            1 => 3,
-            else => error.UnsuppedImageModeFieldCount,
-        },
-    };
-}
 
 fn calcAllFramesImgDims(
     cam_inps: []const cam.CameraInput,
