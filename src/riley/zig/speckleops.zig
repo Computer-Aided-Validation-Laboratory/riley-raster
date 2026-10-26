@@ -1585,7 +1585,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                         .background = 0.23,
                     };
                     _ = try expectClassifiedExact(params);
-                    var resources = try generateConfiguredResources(testing.allocator, params);
+                    var resources = try generateResources(testing.allocator, params);
                     defer resources.deinit(testing.allocator);
                     const masked = resources.classified.?;
                     const axes = speckleClassificationAxes(masked.dims, params);
@@ -1731,7 +1731,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 
         test "unconditional classified loads keep inactive and nonfinite lanes backgrounded" {
             if (comptime config.evaluator != .classified_indexed) return;
-            var resources = try generateConfiguredResources(testing.allocator, .{ .cells_per_uv = .{ 0.031, 1.17 }, .foreground = -0.0, .background = 0.23 });
+            var resources = try generateResources(testing.allocator, .{ .cells_per_uv = .{ 0.031, 1.17 }, .foreground = -0.0, .background = 0.23 });
             defer resources.deinit(testing.allocator);
             const params = resources.classified.?.speckles.params;
             const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
@@ -1783,7 +1783,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 try testing.expectEqual(@as(usize, @intFromFloat(cells * speckle_mask_samples_per_cell)) + 1, dims[0]);
                 if (cells > 2) continue; // Mathematical ceiling probes need no huge allocation.
                 for ([_]F{ 0, 0.08 }) |jitter| {
-                    var resources = try generateConfiguredResources(testing.allocator, .{ .cells_per_uv = params.cells_per_uv, .radius_jitter = jitter, .foreground = -0.0, .background = 0.23 });
+                    var resources = try generateResources(testing.allocator, .{ .cells_per_uv = params.cells_per_uv, .radius_jitter = jitter, .foreground = -0.0, .background = 0.23 });
                     defer resources.deinit(testing.allocator);
                     try expectNeighborMaskCandidates(resources.classified.?);
                     for ([_][2]F{ .{ 0, 0 }, .{ -0.0, 1 }, .{ 1, 1 }, .{ 0.5, 0.5 }, .{ -1, 2 } }) |uv| try expectClassifiedSample(&resources, uv);
@@ -1796,7 +1796,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             const tiny = @sqrt(std.math.floatMin(F)) * 0.25;
             for ([_]F{ tiny, 0.35 }) |radius| {
                 for ([_][2]F{ .{ 0.23, -0.0 }, .{ -0.0, 0.0 }, .{ 0.0, -0.0 }, .{ 1.0, 0.0 } }) |colours| {
-                    var resources = try generateConfiguredResources(testing.allocator, .{ .cells_per_uv = .{ 2.17, 1.31 }, .radius_mean = radius, .radius_jitter = 0, .occupancy = 1, .background = colours[0], .foreground = colours[1] });
+                    var resources = try generateResources(testing.allocator, .{ .cells_per_uv = .{ 2.17, 1.31 }, .radius_mean = radius, .radius_jitter = 0, .occupancy = 1, .background = colours[0], .foreground = colours[1] });
                     defer resources.deinit(testing.allocator);
                     for ([_][2]F{ .{ 0, 0 }, .{ 1, 1 }, .{ -2, 3 }, .{ 0.5, 0.5 }, .{ std.math.nan(F), 0 }, .{ 0, -std.math.inf(F) } }) |uv| try expectClassifiedSample(&resources, uv);
                     const strip = resources.classified.?.speckles;
@@ -3025,8 +3025,9 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 
         fn expectClassifiedExact(params: Speckle2DParams) !bool {
             const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
-            var resources = try generateConfiguredResources(testing.allocator, params);
+            var resources = try generateResources(testing.allocator, params);
             defer resources.deinit(testing.allocator);
+            try testing.expectEqual(@as(?u8, kernelIndex(config)), resources.kernel_index);
             const classified = resources.classified.?;
             const strip = classified.speckles;
             try expectNeighborMaskCandidates(classified);
@@ -3369,7 +3370,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     try testing.expectEqual(mask.dims[0], mask.row_stride);
                     try testing.expectEqual(mask.dims[0] * mask.dims[1], mask.bits.len);
                     try testing.expectEqualDeep(params, mask.params);
-                    const resources: Resources = .{ .mask = mask };
+                    const resources: Resources = .{ .kernel_index = comptime kernelIndex(config), .mask = mask };
                     const K = Kernel(kernelIndex(config));
                     const expected = evalSpeckleMask2D(.{ 0.37, 0.61 }, mask);
                     try testing.expectApproxEqAbs(expected, K.sampleScal(0.37, 0.61, params, &resources), unit_tol);
