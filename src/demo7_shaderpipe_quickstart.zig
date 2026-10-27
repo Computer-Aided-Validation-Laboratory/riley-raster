@@ -33,15 +33,17 @@ pub fn main(init: std.process.Init) !void {
     const coords = meshio.Coords.init(&coord_values, 3);
     const connect = meshio.Connect.init(&connect_values, 1, 3);
 
-    const checker: shaderops.ShaderDirectInput = .{
+    const checker: shaderops.PipeSourceInput = .{
         .func = .{
-            .coord_mode = .world_reference,
-            .builtin = .checker,
-            .params = .{
-                .coord_scale = .{ 4.0, 4.0 },
-                .settings = .{ .checker = .{} },
+            .mono = .{
+                .coord_mode = .world_reference,
+                .builtin = .checker,
+                .params = .{
+                    .coord_scale = .{ 4.0, 4.0 },
+                    .settings = .{ .checker = .{} },
+                },
+                .scaling = .auto,
             },
-            .scaling = .auto,
         },
     };
 
@@ -59,16 +61,18 @@ pub fn main(init: std.process.Init) !void {
             .source = .{
                 .shader = .{
                     .func = .{
-                        .coord_mode = .world_reference,
-                        .builtin = .linear,
-                        // x in [-1,1]: illumination rises from 0.25 to 1.0.
-                        .params = .{
-                            .settings = .{
-                                .linear = .{ .coeffs = .{ 0.625, 0.375, 0.0 } },
+                        .mono = .{
+                            .coord_mode = .world_reference,
+                            .builtin = .linear,
+                            // x in [-1,1]: illumination rises from 0.25 to 1.0.
+                            .params = .{
+                                .settings = .{
+                                    .linear = .{ .coeffs = .{ 0.625, 0.375, 0.0 } },
+                                },
                             },
-                        },
 
-                        .scaling = .none,
+                            .scaling = .none,
+                        },
                     },
                 },
                 .destination = parameter,

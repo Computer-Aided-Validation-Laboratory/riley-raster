@@ -21,18 +21,20 @@ const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 
-fn linear(x: F, y: F) shaderops.ShaderDirectInput {
+fn linear(x: F, y: F) shaderops.PipeSourceInput {
     return .{
         .func = .{
-            .builtin = .linear,
-            .coord_mode = .world_reference,
-            .params = .{
-                .settings = .{
-                    .linear = .{ .coeffs = .{ 0.5, x, y } },
+            .mono = .{
+                .builtin = .linear,
+                .coord_mode = .world_reference,
+                .params = .{
+                    .settings = .{
+                        .linear = .{ .coeffs = .{ 0.5, x, y } },
+                    },
                 },
-            },
 
-            .scaling = .none,
+                .scaling = .none,
+            },
         },
     };
 }
@@ -129,16 +131,18 @@ pub fn main(init: std.process.Init) !void {
     const field0 = shaderpipe.Slot{ .kind = .field, .index = 0 };
     const field1 = shaderpipe.Slot{ .kind = .field, .index = 1 };
 
-    const checker: shaderops.ShaderDirectInput = .{
+    const checker: shaderops.PipeSourceInput = .{
         .func = .{
-            .builtin = .checker,
-            .coord_mode = .world_reference,
-            .params = .{
-                .coord_scale = .{ 4.0, 4.0 },
-                .settings = .{ .checker = .{} },
-            },
+            .mono = .{
+                .builtin = .checker,
+                .coord_mode = .world_reference,
+                .params = .{
+                    .coord_scale = .{ 4.0, 4.0 },
+                    .settings = .{ .checker = .{} },
+                },
 
-            .scaling = .none,
+                .scaling = .none,
+            },
         },
     };
 

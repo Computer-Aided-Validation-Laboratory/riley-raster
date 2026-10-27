@@ -51,18 +51,18 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     );
 
     const stages = [_]shaderops.ShaderPipeStageInput{
-        .{ .source = .{ .shader = .{ .func = .{
+        .{ .source = .{ .shader = .{ .func = .{ .mono = .{
             .builtin = .checker,
             .params = .{ .coord_scale = .{ 4, 4 }, .settings = .{ .checker = .{} } },
 
             .scaling = .none,
-        } }, .destination = .{ .kind = .channel, .index = 0 } } },
-        .{ .source = .{ .shader = .{ .func = .{
+        } } }, .destination = .{ .kind = .channel, .index = 0 } } },
+        .{ .source = .{ .shader = .{ .func = .{ .mono = .{
             .builtin = .constant,
             .params = .{ .settings = .{ .constant = .{ .value = 0.25 } } },
 
             .scaling = .none,
-        } }, .destination = .{ .kind = .channel, .index = 1 } } },
+        } } }, .destination = .{ .kind = .channel, .index = 1 } } },
     };
     const sum_slots = [_]shaderpipe.Slot{
         .{ .kind = .channel, .index = 0 },
@@ -94,14 +94,14 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     config.background_value = 0;
 
     const generic_stages = [_]shaderops.ShaderPipeStageInput{
-        .{ .source = .{ .shader = .{ .func_rgb = .{
+        .{ .source = .{ .shader = .{ .func = .{ .rgb = .{
             .builtin = .constant,
             .params = .{ .settings = .{ .constant = .{
                 .value_rgb = .{ 0.3, 0.4, 0 },
             } } },
 
             .scaling = .none,
-        } }, .destination = .{ .kind = .field, .index = 0 } } },
+        } } }, .destination = .{ .kind = .field, .index = 0 } } },
         .{ .normalise = .{ .source = .{ .kind = .field, .index = 0 }, .destination = .{ .kind = .channel, .index = 0 }, .components = 3 } },
         .{ .affine_map = .{ .source = .{ .kind = .channel, .index = 0 }, .destination = .{ .kind = .field, .index = 3 }, .gain = 2, .offset = 0.1 } },
         .{ .lut_map = .{ .source = .{ .kind = .field, .index = 3 }, .destination = .{ .kind = .field, .index = 4 }, .lookup = .{ .first = 0, .step = 1, .values = &.{ 0, 10, 20 } } } },
@@ -158,14 +158,19 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         3,
     );
     @memset(zero_disp.array.slice, 0);
-    const nodal_shader: shaderops.ShaderDirectInput = .{ .nodal = .{
+    const nodal_mono: shaderops.ShaderMonoInput = .{ .nodal = .{
+        .field = timed_field,
+
+        .scaling = .none,
+    } };
+    const nodal_source: shaderops.PipeSourceInput = .{ .nodal = .{
         .field = timed_field,
 
         .scaling = .none,
     } };
     var direct_mesh = mesh;
     direct_mesh.disp = zero_disp;
-    direct_mesh.shaders = .{ .mono = .{ .direct = nodal_shader } };
+    direct_mesh.shaders = .{ .mono = .{ .direct = nodal_mono } };
     var direct_cam = cam_in;
     direct_cam.render_format = .mono;
     var parity_config = config;
@@ -181,7 +186,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     const direct_image = direct_result orelse return error.NoResult;
     defer aa.free(direct_image.slice);
     const parity_stage = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
-        .shader = nodal_shader,
+        .shader = nodal_source,
         .destination = .{ .kind = .channel, .index = 0 },
     } }};
     const parity_slots = [_]shaderpipe.Slot{.{ .kind = .channel, .index = 0 }};
@@ -225,13 +230,26 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .{ .builtin = .linear, .params = .{ .settings = .{ .linear = .{ .coeffs = .{ 0.4, 0, 0 } } } } },
         .{ .builtin = .eggbox, .params = .{ .settings = .{ .eggbox = .{ .mean = 0.5, .contrast = 0 } } } },
     };
-    const function_shader: shaderops.ShaderDirectInput = .{ .func_multi = .{
+    const function_source: shaderops.PipeSourceInput = .{ .func = .{ .multi = .{
         .channels = &function_channels,
-    } };
+    } } };
     var multifield_cam = cam_in;
     multifield_cam.render_format = .{ .multifield = 4 };
+    const function_stages = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
+        .shader = function_source,
+        .destination = .{ .kind = .channel, .index = 0 },
+    } }};
+    const function_slots = [_]shaderpipe.Slot{
+        .{ .kind = .channel, .index = 0 },
+        .{ .kind = .channel, .index = 1 },
+        .{ .kind = .channel, .index = 2 },
+        .{ .kind = .channel, .index = 3 },
+    };
     var function_mesh = direct_mesh;
-    function_mesh.shaders = .{ .multifield = .{ .direct = function_shader } };
+    function_mesh.shaders = .{ .multifield = .{
+        .stages = &function_stages,
+        .resolver = .{ .identity = &function_slots },
+    } };
     const function_result = (try riley.raster(
         aa,
         io,
@@ -241,33 +259,6 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         null,
     )) orelse return error.NoResult;
     defer aa.free(function_result.slice);
-    const function_stages = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
-        .shader = function_shader,
-        .destination = .{ .kind = .channel, .index = 0 },
-    } }};
-    const function_slots = [_]shaderpipe.Slot{
-        .{ .kind = .channel, .index = 0 },
-        .{ .kind = .channel, .index = 1 },
-        .{ .kind = .channel, .index = 2 },
-        .{ .kind = .channel, .index = 3 },
-    };
-    var function_pipe_mesh = function_mesh;
-    function_pipe_mesh.shaders = .{ .multifield = .{ .pipe = .{
-        .stages = &function_stages,
-        .resolver = .{ .identity = &function_slots },
-    } } };
-    const function_pipe_result = (try riley.raster(
-        aa,
-        io,
-        &.{multifield_cam},
-        &.{function_pipe_mesh},
-        parity_config,
-        null,
-    )) orelse return error.NoResult;
-    defer aa.free(function_pipe_result.slice);
-    for (function_result.slice, function_pipe_result.slice) |direct_value, pipe_value| {
-        try std.testing.expectApproxEqAbs(direct_value, pipe_value, sample_tol);
-    }
     try std.testing.expectEqual(@as(usize, 4), function_result.dims[2]);
     var function_foreground: usize = 0;
     for (0..function_result.dims[3]) |yy| {
@@ -297,15 +288,22 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         &.{ prepared.sim_data.coords.mat.rows_num, 2 },
     );
     @memset(texture_uvs.slice, 0.5);
-    const texture_shader: shaderops.ShaderDirectInput = .{ .tex_multi_f = .{
+    const texture_source: shaderops.PipeSourceInput = .{ .tex_multi_f = .{
         .uvs = texture_uvs,
         .tex = multifield_tex,
         .samp_cfg = .{ .sample = .nearest },
         .output_gain = 2,
         .output_offset = 0.05,
     } };
+    const texture_stages = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
+        .shader = texture_source,
+        .destination = .{ .kind = .channel, .index = 0 },
+    } }};
     var texture_mesh = direct_mesh;
-    texture_mesh.shaders = .{ .multifield = .{ .direct = texture_shader } };
+    texture_mesh.shaders = .{ .multifield = .{
+        .stages = &texture_stages,
+        .resolver = .{ .identity = &function_slots },
+    } };
     const texture_result = (try riley.raster(
         aa,
         io,
@@ -344,12 +342,21 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     }
     var eight_camera = cam_in;
     eight_camera.render_format = .{ .multifield = 8 };
+    var eight_stages = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
+        .shader = .{ .tex_multi_u8 = .{
+            .uvs = texture_uvs,
+            .tex = eight_tex,
+            .samp_cfg = .{ .sample = .nearest },
+        } },
+        .destination = .{ .kind = .channel, .index = 0 },
+    } }};
+    var eight_slots: [8]shaderpipe.Slot = undefined;
+    for (0..8) |ii| eight_slots[ii] = .{ .kind = .channel, .index = @intCast(ii) };
     var eight_mesh = direct_mesh;
-    eight_mesh.shaders = .{ .multifield = .{ .direct = .{ .tex_multi_u8 = .{
-        .uvs = texture_uvs,
-        .tex = eight_tex,
-        .samp_cfg = .{ .sample = .nearest },
-    } } } };
+    eight_mesh.shaders = .{ .multifield = .{
+        .stages = &eight_stages,
+        .resolver = .{ .identity = &eight_slots },
+    } };
     const eight_result = (try riley.raster(
         aa,
         io,
@@ -379,8 +386,11 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
 
     var format_mesh = direct_mesh;
     format_mesh.shaders = .{
-        .mono = .{ .direct = nodal_shader },
-        .multifield = .{ .direct = function_shader },
+        .mono = .{ .direct = nodal_mono },
+        .multifield = .{
+            .stages = &function_stages,
+            .resolver = .{ .identity = &function_slots },
+        },
     };
     const format_result = (try riley.raster(
         aa,
@@ -582,7 +592,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .upper = 1,
     } };
     max_stages[7] = .{ .source = .{
-        .shader = nodal_shader,
+        .shader = nodal_source,
         .destination = .{ .kind = .channel, .index = 7 },
     } };
     const last_slot = [_]shaderpipe.Slot{.{ .kind = .channel, .index = 7 }};
@@ -639,12 +649,12 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         }
     }
     const rgb_stages = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
-        .shader = .{ .func_rgb = .{
+        .shader = .{ .func = .{ .rgb = .{
             .builtin = .constant,
             .params = .{ .settings = .{ .constant = .{ .value_rgb = .{ 0.2, 0.5, 0.8 } } } },
 
             .scaling = .none,
-        } },
+        } } },
         .destination = .{ .kind = .channel, .index = 0 },
     } }};
     const multi_stages = [_]shaderops.ShaderPipeStageInput{.{ .source = .{
@@ -664,7 +674,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .resolver = .{ .identity = &rgb_slots },
     }};
     var invalid_rgb_mesh = mesh;
-    invalid_rgb_mesh.shaders = .{ .rgb = .{ .pipe = invalid_rgb_pipe[0] } };
+    invalid_rgb_mesh.shaders = .{ .rgb = invalid_rgb_pipe[0] };
     var invalid_rgb_cam = cam_in;
     invalid_rgb_cam.render_format = .rgb;
     try std.testing.expectError(
@@ -688,7 +698,10 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     };
     var mixed_mesh = mesh;
     mixed_mesh.disp = null;
-    mixed_mesh.shaders = .{ .rgb = .{ .pipe = mixed_pipes[0] }, .multifield = .{ .pipe = mixed_pipes[1] } };
+    mixed_mesh.shaders = .{
+        .rgb = mixed_pipes[0],
+        .multifield = mixed_pipes[1],
+    };
     var rgb_cam = cam_in;
     rgb_cam.render_format = .rgb;
     var multi_cam = cam_in;
@@ -751,10 +764,10 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .destination = .{ .kind = .channel, .index = 0 },
     } }};
     var direct_with_unused = direct_mesh;
-    direct_with_unused.shaders.multifield = .{ .pipe = .{
+    direct_with_unused.shaders.multifield = .{
         .stages = &unused_stages,
         .resolver = .{ .identity = &multi_slots },
-    } };
+    };
     const direct_only = (try riley.raster(
         aa,
         io,
@@ -820,23 +833,23 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     const expr_stages = [_]shaderops.ShaderPipeStageInput{
         rgb_stages[0],
         .{ .source = .{
-            .shader = .{ .func_rgb = .{
+            .shader = .{ .func = .{ .rgb = .{
                 .builtin = .constant,
                 .params = .{ .settings = .{ .constant = .{
                     .value_rgb = .{ 0.1, 0.2, 0.3 },
                 } } },
 
                 .scaling = .none,
-            } },
+            } } },
             .destination = .{ .kind = .parameter, .index = 0 },
         } },
         .{ .source = .{
-            .shader = .{ .func = .{
+            .shader = .{ .func = .{ .mono = .{
                 .builtin = .constant,
                 .params = .{ .settings = .{ .constant = .{ .value = 2 } } },
 
                 .scaling = .none,
-            } },
+            } } },
             .destination = .{ .kind = .field, .index = 0 },
         } },
     };
@@ -901,7 +914,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     const front_rgb_pipe = [_]shaderops.ShaderPipeInput{mixed_pipes[0]};
     var front_rgb_mesh = mixed_mesh;
     front_rgb_mesh.coords = front_coords;
-    front_rgb_mesh.shaders = .{ .rgb = .{ .pipe = front_rgb_pipe[0] } };
+    front_rgb_mesh.shaders = .{ .rgb = front_rgb_pipe[0] };
     var rear_mono_mesh = mesh;
     rear_mono_mesh.disp = null;
     const mixed_scene = [_]meshpipe.MeshInput{ front_rgb_mesh, rear_mono_mesh };
@@ -1007,20 +1020,22 @@ fn runSharedWorldGeometryCase(
     config: riley.RasterConfig,
     tolerance: F,
 ) !void {
-    const ref_shader: shaderops.ShaderDirectInput = .{ .func = .{
+    const ref_shader: shaderops.ShaderMonoInput = .{ .func = .{
         .coord_mode = .world_reference,
         .builtin = .linear,
         .params = .{ .settings = .{ .linear = .{ .coeffs = .{ 0.5, 20, -10 } } } },
 
         .scaling = .none,
     } };
-    const def_shader: shaderops.ShaderDirectInput = .{ .func = .{
+    const def_shader: shaderops.ShaderMonoInput = .{ .func = .{
         .coord_mode = .world_deformed,
         .builtin = .linear,
         .params = .{ .settings = .{ .linear = .{ .coeffs = .{ 0.25, -10, 20 } } } },
 
         .scaling = .none,
     } };
+    const ref_source: shaderops.PipeSourceInput = .{ .func = .{ .mono = ref_shader.func } };
+    const def_source: shaderops.PipeSourceInput = .{ .func = .{ .mono = def_shader.func } };
     var direct_camera = camera_mono;
     direct_camera.render_format = .mono;
     var direct_mesh = mesh;
@@ -1048,9 +1063,18 @@ fn runSharedWorldGeometryCase(
     defer allocator.free(def_image.slice);
 
     const stages = [_]shaderops.ShaderPipeStageInput{
-        .{ .source = .{ .shader = ref_shader, .destination = .{ .kind = .channel, .index = 0 } } },
-        .{ .source = .{ .shader = ref_shader, .destination = .{ .kind = .channel, .index = 1 } } },
-        .{ .source = .{ .shader = def_shader, .destination = .{ .kind = .channel, .index = 2 } } },
+        .{ .source = .{
+            .shader = ref_source,
+            .destination = .{ .kind = .channel, .index = 0 },
+        } },
+        .{ .source = .{
+            .shader = ref_source,
+            .destination = .{ .kind = .channel, .index = 1 },
+        } },
+        .{ .source = .{
+            .shader = def_source,
+            .destination = .{ .kind = .channel, .index = 2 },
+        } },
     };
     const slots = [_]shaderpipe.Slot{
         .{ .kind = .channel, .index = 0 },

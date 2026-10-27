@@ -21,6 +21,7 @@ const riley = @import("../riley/zig/riley.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const sceneops = @import("../riley/zig/sceneops.zig");
 const shaderops = @import("../riley/zig/shaderops.zig");
+const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 const texops = @import("../riley/zig/textureops.zig");
 const uvio = @import("../riley/zig/uvio.zig");
@@ -149,111 +150,127 @@ fn loadShapeMesh(
     const temp = try sliceFieldToSingleFrame(allocator, raw_temp);
     const disp = try sliceFieldToSingleFrame(allocator, raw_disp);
 
-    const shader: shaderops.ShaderDirectInput = switch (shader_kind) {
-        .nodal_grey => .{ .nodal = .{
-            .field = temp,
-            .output_gain = 255.0,
-            .scaling = .auto,
-            .scale_over = .over_frames,
-        } },
-        .nodal_rgb => .{ .nodal = .{
-            .field = try buildRgbField(allocator, temp, disp),
-            .output_gain = 255.0,
-            .scaling = .auto,
-            .scale_over = .over_frames,
-        } },
-        .tex_u8_mono_catmull_direct => .{ .tex_u8 = .{
-            .uvs = uvs.array,
-            .tex = texture_u8_grey,
-            .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
-            .output_gain = 255.0,
-            .scaling = .auto,
-        } },
-        .tex_u8_mono_catmull_lutlerp => .{ .tex_u8 = .{
-            .uvs = uvs.array,
-            .tex = texture_u8_grey,
-            .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
-            .output_gain = 255.0,
-            .scaling = .auto,
-        } },
-        .tex_u8_mono_linear_direct => .{ .tex_u8 = .{
-            .uvs = uvs.array,
-            .tex = texture_u8_grey,
-            .samp_cfg = .{ .sample = .linear, .mode = .direct },
-            .output_gain = 255.0,
-            .scaling = .auto,
-        } },
-        .tex_u16_mono_catmull_direct => .{ .tex_u16 = .{
-            .uvs = uvs.array,
-            .tex = texture_u16_grey,
-            .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
-            .output_gain = 65535.0,
-            .scaling = .auto,
-        } },
-        .tex_f64_mono_catmull_direct => .{ .tex_f = .{
-            .uvs = uvs.array,
-            .tex = texture_f64_grey,
-            .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
-            .output_gain = 255.0,
-            .scaling = .auto,
-        } },
-        .tex_u8_rgb_catmull_direct => .{ .tex_rgb_u8 = .{
-            .uvs = uvs.array,
-            .tex = texture_u8_rgb,
-            .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
-            .output_gain = 255.0,
-            .scaling = .auto,
-        } },
-        .func_checker_uvs => .{ .func = .{
-            .uvs = uvs.array,
-            .coord_mode = .uv,
-            .builtin = .checker,
-            .params = .{
-                .coord_scale = .{ 20.0, 20.0 },
-                .settings = .{ .checker = .{} },
+    const shaders: shaderops.MeshShaderSetInput = if (shader_kind.isRgb()) blk: {
+        const pipe_source: shaderops.PipeSourceInput = switch (shader_kind) {
+            .nodal_rgb => .{ .nodal = .{
+                .field = try buildRgbField(allocator, temp, disp),
+                .output_gain = 255.0,
+                .scaling = .auto,
+                .scale_over = .over_frames,
+            } },
+            .tex_u8_rgb_catmull_direct => .{ .tex_rgb_u8 = .{
+                .uvs = uvs.array,
+                .tex = texture_u8_rgb,
+                .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .func_rgb_checker_uvs => .{ .func = .{ .rgb = .{
+                .uvs = uvs.array,
+                .coord_mode = .uv,
+                .builtin = .checker,
+                .params = .{
+                    .coord_scale = .{ 20.0, 20.0 },
+                    .settings = .{ .checker = .{} },
+                },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } } },
+            else => unreachable,
+        };
+        const stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        stages[0] = shaderops.stageSource(pipe_source);
+        break :blk .{
+            .rgb = .{
+                .stages = stages,
+                .resolver = .{ .identity = shaderpipe.identity_channels_3[0..3] },
             },
-            .output_gain = 255.0,
-            .scaling = .auto,
-        } },
-        .func_eggbox_worldc => .{ .func = .{
-            .coord_mode = .world_reference,
-            .builtin = .eggbox,
-            .params = .{
-                .coord_scale = .{ 1.0, 1.0 },
-                .settings = .{ .eggbox = .{ .pitch = .{ 0.005, 0.005 } } },
-            },
-            .output_gain = 255.0,
-            .scaling = .auto,
-        } },
-        .func_lambertian_normavg => .{ .func = .{
-            .coord_mode = .para,
-            .builtin = .lambertian_normal_z,
-            .params = .{
-                .settings = .{ .lambertian_normal_z = .{} },
-            },
-            .output_gain = 255.0,
-            .scaling = .auto,
-        } },
-        .func_lambertian_normexact => .{ .func = .{
-            .coord_mode = .para,
-            .builtin = .lambertian_normal_z,
-            .params = .{
-                .settings = .{ .lambertian_normal_z = .{} },
-            },
-            .output_gain = 255.0,
-            .scaling = .auto,
-        } },
-        .func_rgb_checker_uvs => .{ .func_rgb = .{
-            .uvs = uvs.array,
-            .coord_mode = .uv,
-            .builtin = .checker,
-            .params = .{
-                .coord_scale = .{ 20.0, 20.0 },
-                .settings = .{ .checker = .{} },
-            },
-            .output_gain = 255.0,
-            .scaling = .auto,
-        } },
+        };
+    } else blk: {
+        const mono_shader: shaderops.ShaderMonoInput = switch (shader_kind) {
+            .nodal_grey => .{ .nodal = .{
+                .field = temp,
+                .output_gain = 255.0,
+                .scaling = .auto,
+                .scale_over = .over_frames,
+            } },
+            .tex_u8_mono_catmull_direct => .{ .tex_u8 = .{
+                .uvs = uvs.array,
+                .tex = texture_u8_grey,
+                .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .tex_u8_mono_catmull_lutlerp => .{ .tex_u8 = .{
+                .uvs = uvs.array,
+                .tex = texture_u8_grey,
+                .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .tex_u8_mono_linear_direct => .{ .tex_u8 = .{
+                .uvs = uvs.array,
+                .tex = texture_u8_grey,
+                .samp_cfg = .{ .sample = .linear, .mode = .direct },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .tex_u16_mono_catmull_direct => .{ .tex_u16 = .{
+                .uvs = uvs.array,
+                .tex = texture_u16_grey,
+                .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
+                .output_gain = 65535.0,
+                .scaling = .auto,
+            } },
+            .tex_f64_mono_catmull_direct => .{ .tex_f = .{
+                .uvs = uvs.array,
+                .tex = texture_f64_grey,
+                .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .func_checker_uvs => .{ .func = .{
+                .uvs = uvs.array,
+                .coord_mode = .uv,
+                .builtin = .checker,
+                .params = .{
+                    .coord_scale = .{ 20.0, 20.0 },
+                    .settings = .{ .checker = .{} },
+                },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .func_eggbox_worldc => .{ .func = .{
+                .coord_mode = .world_reference,
+                .builtin = .eggbox,
+                .params = .{
+                    .coord_scale = .{ 1.0, 1.0 },
+                    .settings = .{ .eggbox = .{ .pitch = .{ 0.005, 0.005 } } },
+                },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .func_lambertian_normavg => .{ .func = .{
+                .coord_mode = .para,
+                .builtin = .lambertian_normal_z,
+                .params = .{
+                    .settings = .{ .lambertian_normal_z = .{} },
+                },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .func_lambertian_normexact => .{ .func = .{
+                .coord_mode = .para,
+                .builtin = .lambertian_normal_z,
+                .params = .{
+                    .settings = .{ .lambertian_normal_z = .{} },
+                },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            else => unreachable,
+        };
+        break :blk .{ .mono = .{ .direct = mono_shader } };
     };
 
     return .{
@@ -266,10 +283,7 @@ fn loadShapeMesh(
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = disp,
-        .shaders = if (shader_kind.isRgb())
-            .{ .rgb = .{ .direct = shader } }
-        else
-            .{ .mono = .{ .direct = shader } },
+        .shaders = shaders,
     };
 }
 

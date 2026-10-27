@@ -342,7 +342,7 @@ pub fn rasterTileCore(
             const mesh_ptr = &meshes[mesh_idx];
             std.debug.assert(mesh_ptr.mesh_type == geom_tag);
             const selected = shaderops.selectShader(
-                shaderops.ShaderDirectPrepared,
+                shaderops.ShaderMonoPrepared,
                 shaderops.ShaderPipePrepared,
                 &mesh_ptr.shaders,
                 ctx_rast.camera.render_format,
@@ -401,12 +401,7 @@ pub fn rasterTileCore(
                             @intCast(s.elem_field.dims[1])
                         else
                             @intCast(s.elem_field.dims[2]),
-                        .tex_u8, .tex_u16, .tex_f => 1,
-                        .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
-                        .tex_multi_f => |shader| @intCast(shader.tex.array.dims[0]),
-                        .func => 1,
-                        .func_rgb => 3,
-                        .func_multi => |shader| @intCast(shader.channels.len),
+                        .tex_u8, .tex_u16, .tex_f, .func => 1,
                     },
                 };
 
@@ -461,33 +456,6 @@ pub fn rasterTileCore(
                                 GK,
                                 SK,
                                 NodalPrepared,
-                                root_class,
-                            ).rasterElemInTile(
-                                report_mode,
-                                ctx_rast,
-                                ctx_report,
-                                tile,
-                                ov,
-                                coords,
-                                hull,
-                                shader,
-                                &local_shader_buf,
-                                subpx_scratch,
-                            );
-                        },
-                        .tex_multi_f => |*shader| {
-                            const SK = shadekerns.TexMultiKernel(N, F);
-                            var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
-                            local_shader_buf.load(
-                                shader.elem_uvs,
-                                ov.elem_idx * 2 * N,
-                                2,
-                            );
-
-                            shaded_px += try RasterBackend.RasterEngine(
-                                GK,
-                                SK,
-                                shaderops.TexMultiPrepared(F),
                                 root_class,
                             ).rasterElemInTile(
                                 report_mode,
@@ -578,186 +546,8 @@ pub fn rasterTileCore(
                                 subpx_scratch,
                             );
                         },
-                        .tex_rgb_u8 => |*shader| {
-                            const SK = shadekerns.TexKernel(N, u8, 3);
-                            var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
-                            local_shader_buf.load(
-                                shader.elem_uvs,
-                                ov.elem_idx * 2 * N,
-                                2,
-                            );
-
-                            shaded_px += try RasterBackend.RasterEngine(
-                                GK,
-                                SK,
-                                TexPrepared(u8, 3),
-                                root_class,
-                            ).rasterElemInTile(
-                                report_mode,
-                                ctx_rast,
-                                ctx_report,
-                                tile,
-                                ov,
-                                coords,
-                                hull,
-                                shader,
-                                &local_shader_buf,
-                                subpx_scratch,
-                            );
-                        },
-                        .tex_rgb_u16 => |*shader| {
-                            const SK = shadekerns.TexKernel(N, u16, 3);
-                            var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
-                            local_shader_buf.load(
-                                shader.elem_uvs,
-                                ov.elem_idx * 2 * N,
-                                2,
-                            );
-
-                            shaded_px += try RasterBackend.RasterEngine(
-                                GK,
-                                SK,
-                                TexPrepared(u16, 3),
-                                root_class,
-                            ).rasterElemInTile(
-                                report_mode,
-                                ctx_rast,
-                                ctx_report,
-                                tile,
-                                ov,
-                                coords,
-                                hull,
-                                shader,
-                                &local_shader_buf,
-                                subpx_scratch,
-                            );
-                        },
-                        .tex_rgb_f => |*shader| {
-                            const SK = shadekerns.TexKernel(N, F, 3);
-                            var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
-                            local_shader_buf.load(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
-                            shaded_px += try RasterBackend.RasterEngine(
-                                GK,
-                                SK,
-                                TexPrepared(F, 3),
-                                root_class,
-                            ).rasterElemInTile(
-                                report_mode,
-                                ctx_rast,
-                                ctx_report,
-                                tile,
-                                ov,
-                                coords,
-                                hull,
-                                shader,
-                                &local_shader_buf,
-                                subpx_scratch,
-                            );
-                        },
                         .func => |*shader| {
                             const SK = shadekerns.FuncKernel(N, 1);
-                            var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
-                            switch (shader.coord_mode) {
-                                .uv => {
-                                    local_shader_buf.loadFuncCoords(
-                                        shader.elem_uvs.?,
-                                        ov.elem_idx * 2 * N,
-                                        2,
-                                    );
-                                },
-                                .world_reference => {
-                                    local_shader_buf.loadFuncCoords(
-                                        shader.hit_geometry.coords_ref.?,
-                                        ov.elem_idx * 3 * N,
-                                        3,
-                                    );
-                                },
-                                .world_deformed => {
-                                    local_shader_buf.loadFuncCoords(
-                                        shader.hit_geometry.coords_def.?,
-                                        ov.elem_idx * 3 * N,
-                                        3,
-                                    );
-                                },
-                                .para => {},
-                            }
-                            if (shader.needs_normal) {
-                                const en = shader.hit_geometry.surf_norm.?;
-                                const prep_idx = en.map[ov.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
-
-                            shaded_px += try RasterBackend.RasterEngine(
-                                GK,
-                                SK,
-                                FuncPrepared,
-                                root_class,
-                            ).rasterElemInTile(
-                                report_mode,
-                                ctx_rast,
-                                ctx_report,
-                                tile,
-                                ov,
-                                coords,
-                                hull,
-                                shader,
-                                &local_shader_buf,
-                                subpx_scratch,
-                            );
-                        },
-                        .func_multi => |*shader| {
-                            const SK = shadekerns.FuncKernel(N, 0);
-                            var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
-                            switch (shader.coord_mode) {
-                                .uv => {
-                                    local_shader_buf.loadFuncCoords(
-                                        shader.elem_uvs.?,
-                                        ov.elem_idx * 2 * N,
-                                        2,
-                                    );
-                                },
-                                .world_reference => {
-                                    local_shader_buf.loadFuncCoords(
-                                        shader.hit_geometry.coords_ref.?,
-                                        ov.elem_idx * 3 * N,
-                                        3,
-                                    );
-                                },
-                                .world_deformed => {
-                                    local_shader_buf.loadFuncCoords(
-                                        shader.hit_geometry.coords_def.?,
-                                        ov.elem_idx * 3 * N,
-                                        3,
-                                    );
-                                },
-                                .para => {},
-                            }
-                            if (shader.needs_normal) {
-                                const en = shader.hit_geometry.surf_norm.?;
-                                const prep_idx = en.map[ov.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
-
-                            shaded_px += try RasterBackend.RasterEngine(
-                                GK,
-                                SK,
-                                FuncPrepared,
-                                root_class,
-                            ).rasterElemInTile(
-                                report_mode,
-                                ctx_rast,
-                                ctx_report,
-                                tile,
-                                ov,
-                                coords,
-                                hull,
-                                shader,
-                                &local_shader_buf,
-                                subpx_scratch,
-                            );
-                        },
-                        .func_rgb => |*shader| {
-                            const SK = shadekerns.FuncKernel(N, 3);
                             var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
                             switch (shader.coord_mode) {
                                 .uv => {

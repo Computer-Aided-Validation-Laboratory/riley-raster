@@ -404,7 +404,7 @@ pub const CRasterConfig = extern struct {
 };
 
 const ShaderDirectBuilt = struct {
-    shader: shaderops.ShaderDirectInput,
+    shader: shaderops.PipeSourceInput,
     uvs_array: ?ndarray.NDArray(F) = null,
     tex_array_u8: ?ndarray.NDArray(u8) = null,
     tex_array_u16: ?ndarray.NDArray(u16) = null,
@@ -1611,7 +1611,7 @@ fn buildShaderDirectInput(
             const builtin = try funcShaderBuiltinFromC(
                 in_shader.func_shader_builtin,
             );
-            built.shader = .{ .func = .{
+            built.shader = .{ .func = .{ .mono = .{
                 .uvs = uvs_array_opt,
                 .coord_mode = try funcCoordModeFromC(
                     in_shader.func_shader_coord_mode,
@@ -1624,7 +1624,7 @@ fn buildShaderDirectInput(
                 .output_gain = in_shader.output_gain,
                 .output_offset = in_shader.output_offset,
                 .scaling = scaling,
-            } };
+            } } };
             built.uvs_array = uvs_array_opt;
         },
         4 => {
@@ -1643,7 +1643,7 @@ fn buildShaderDirectInput(
             const builtin = try funcShaderBuiltinFromC(
                 in_shader.func_shader_builtin,
             );
-            built.shader = .{ .func_rgb = .{
+            built.shader = .{ .func = .{ .rgb = .{
                 .uvs = uvs_array_opt,
                 .coord_mode = try funcCoordModeFromC(
                     in_shader.func_shader_coord_mode,
@@ -1656,13 +1656,136 @@ fn buildShaderDirectInput(
                 .output_gain = in_shader.output_gain,
                 .output_offset = in_shader.output_offset,
                 .scaling = scaling,
-            } };
+            } } };
             built.uvs_array = uvs_array_opt;
         },
         else => return error.InvalidShaderTag,
     }
 
     return built;
+}
+
+fn pipeSourceToMono(source: shaderops.PipeSourceInput) !shaderops.ShaderMonoInput {
+    return switch (source) {
+        .tex_u8 => |tex_shader| .{ .tex_u8 = tex_shader },
+        .tex_u16 => |tex_shader| .{ .tex_u16 = tex_shader },
+        .tex_f => |tex_shader| .{ .tex_f = tex_shader },
+        .nodal => |nodal_shader| blk: {
+            if (nodal_shader.field.getFieldsN() != 1) return error.UnsuppedImageModeFieldCount;
+            break :blk .{ .nodal = nodal_shader };
+        },
+        .func => |func_source| switch (func_source) {
+            .mono => |func_shader| .{ .func = func_shader },
+            else => return error.UnsuppedImageModeFieldCount,
+        },
+        else => return error.UnsuppedImageModeFieldCount,
+    };
+}
+
+fn pipeSourceChannels(source: shaderops.PipeSourceInput) u8 {
+    return switch (source) {
+        .nodal => |s| s.field.getFieldsN(),
+        .tex_u8, .tex_u16, .tex_f => 1,
+        .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
+        .tex_multi_f => |t| @intCast(t.tex.array.dims[0]),
+        .func => |f| switch (f) {
+            .mono => 1,
+            .rgb => 3,
+            .multi => |multi| @intCast(multi.channels.len),
+        },
+    };
+}
+
+fn buildPipeInput(
+    allocator: std.mem.Allocator,
+    pipe: *const CPipeInput,
+    pipe_sources: []ShaderDirectBuilt,
+    pipe_stages: [][]shaderops.ShaderPipeStageInput,
+    pipe_inputs: []shaderops.ShaderPipeInput,
+    source_idx: *usize,
+    pipe_idx: *usize,
+) !shaderops.ShaderPipeInput {
+    const input_stages = try cConstSlice(
+        CPipeStage,
+        pipe.stages,
+        pipe.stages_len,
+    );
+    const stages = try allocator.alloc(
+        shaderops.ShaderPipeStageInput,
+        input_stages.len,
+    );
+    pipe_stages[pipe_idx.*] = stages;
+    for (input_stages, stages) |input_stage, *stage| {
+        stage.* = switch (input_stage.tag) {
+            0 => sblk: {
+                if (input_stage.shader == null) return error.NullPointer;
+                pipe_sources[source_idx.*] = try buildShaderDirectInput(
+                    allocator,
+                    input_stage.shader,
+                );
+                const src_shader = pipe_sources[source_idx.*].shader;
+                source_idx.* += 1;
+                break :sblk .{ .source = .{
+                    .shader = src_shader,
+                    .destination = try pipeSlotFromC(input_stage.destination),
+                } };
+            },
+            1 => .{ .grey_to_emissivity = .{
+                .source = try pipeSlotFromC(input_stage.source),
+                .destination = try pipeSlotFromC(input_stage.destination),
+                .black = input_stage.black,
+                .white = input_stage.white,
+                .grey_black = input_stage.lower,
+                .grey_white = input_stage.upper,
+            } },
+            2 => .{ .clamp = .{
+                .source = try pipeSlotFromC(input_stage.source),
+                .destination = try pipeSlotFromC(input_stage.destination),
+                .lower = input_stage.lower,
+                .upper = input_stage.upper,
+            } },
+            3 => .{ .affine_map = .{
+                .source = try pipeSlotFromC(input_stage.source),
+                .destination = try pipeSlotFromC(input_stage.destination),
+                .gain = input_stage.gain,
+                .offset = input_stage.offset,
+            } },
+            4 => .{ .lut_map = .{
+                .source = try pipeSlotFromC(input_stage.source),
+                .destination = try pipeSlotFromC(input_stage.destination),
+                .lookup = try lookupFromC(input_stage.lookup),
+            } },
+            5 => .{ .blend = .{
+                .a = try pipeSlotFromC(input_stage.source),
+                .b = try pipeSlotFromC(input_stage.source_b),
+                .destination = try pipeSlotFromC(input_stage.destination),
+                .alpha = if (input_stage.alpha_from_slot == 0)
+                    .{ .fixed = input_stage.alpha }
+                else if (input_stage.alpha_from_slot == 1)
+                    .{ .slot = try pipeSlotFromC(input_stage.alpha_slot) }
+                else
+                    return error.InvalidPipeStage,
+            } },
+            6 => .{ .normalise = .{
+                .source = try pipeSlotFromC(input_stage.source),
+                .destination = try pipeSlotFromC(input_stage.destination),
+                .components = if (input_stage.components <= 3)
+                    @intCast(input_stage.components)
+                else
+                    return error.InvalidPipeStage,
+            } },
+            else => return error.InvalidPipeStage,
+        };
+    }
+    const constants = try cConstSlice(F, pipe.constants, pipe.constants_len);
+    pipe_inputs[pipe_idx.*] = .{
+        .stages = stages,
+        .resolver = try resolverFromC(allocator, pipe.resolver, constants),
+        .constants = constants,
+    };
+    const result = pipe_inputs[pipe_idx.*];
+    pipe_idx.* += 1;
+    return result;
 }
 
 fn buildMeshInput(
@@ -1710,13 +1833,22 @@ fn buildMeshInput(
         in_mesh.shaders_len,
     );
 
-    var direct_count: usize = 0;
+    var direct_mono_count: usize = 0;
     var pipe_count: usize = 0;
     var pipe_source_count: usize = 0;
 
     for (in_entries) |entry| {
         switch (entry.execution_tag) {
-            0 => direct_count += 1,
+            0 => {
+                if (entry.format_tag == 0 or entry.format_tag == 2) {
+                    direct_mono_count += 1;
+                } else if (entry.format_tag == 1 or entry.format_tag == 3) {
+                    pipe_count += 1;
+                    pipe_source_count += 1;
+                } else {
+                    return error.InvalidRenderFormatTag;
+                }
+            },
             1 => {
                 pipe_count += 1;
                 if (entry.pipe.stages_len == 0 or entry.pipe.stages_len > 8) {
@@ -1735,7 +1867,7 @@ fn buildMeshInput(
         }
     }
 
-    built.direct_shaders = try allocator.alloc(ShaderDirectBuilt, direct_count);
+    built.direct_shaders = try allocator.alloc(ShaderDirectBuilt, direct_mono_count);
     built.pipe_sources = try allocator.alloc(ShaderDirectBuilt, pipe_source_count);
     built.pipe_stages = try allocator.alloc(
         []shaderops.ShaderPipeStageInput,
@@ -1751,121 +1883,147 @@ fn buildMeshInput(
     var source_idx: usize = 0;
 
     for (in_entries) |entry| {
-        const execution: shaderops.ShaderExecutionInput = switch (entry.execution_tag) {
-            0 => blk: {
-                built.direct_shaders[direct_idx] = try buildShaderDirectInput(
-                    allocator,
-                    &entry.direct_shader,
-                );
-                const shader = built.direct_shaders[direct_idx].shader;
-                direct_idx += 1;
-                break :blk .{ .direct = shader };
-            },
-            1 => blk: {
-                const pipe = entry.pipe;
-                const input_stages = try cConstSlice(
-                    CPipeStage,
-                    pipe.stages,
-                    pipe.stages_len,
-                );
-                const stages = try allocator.alloc(
-                    shaderops.ShaderPipeStageInput,
-                    input_stages.len,
-                );
-                built.pipe_stages[pipe_idx] = stages;
-                for (input_stages, stages) |input_stage, *stage| {
-                    stage.* = switch (input_stage.tag) {
-                        0 => sblk: {
-                            if (input_stage.shader == null) return error.NullPointer;
-                            built.pipe_sources[source_idx] = try buildShaderDirectInput(
-                                allocator,
-                                input_stage.shader,
-                            );
-                            const src_shader = built.pipe_sources[source_idx].shader;
-                            source_idx += 1;
-                            break :sblk .{ .source = .{
-                                .shader = src_shader,
-                                .destination = try pipeSlotFromC(input_stage.destination),
-                            } };
-                        },
-                        1 => .{ .grey_to_emissivity = .{
-                            .source = try pipeSlotFromC(input_stage.source),
-                            .destination = try pipeSlotFromC(input_stage.destination),
-                            .black = input_stage.black,
-                            .white = input_stage.white,
-                            .grey_black = input_stage.lower,
-                            .grey_white = input_stage.upper,
-                        } },
-                        2 => .{ .clamp = .{
-                            .source = try pipeSlotFromC(input_stage.source),
-                            .destination = try pipeSlotFromC(input_stage.destination),
-                            .lower = input_stage.lower,
-                            .upper = input_stage.upper,
-                        } },
-                        3 => .{ .affine_map = .{
-                            .source = try pipeSlotFromC(input_stage.source),
-                            .destination = try pipeSlotFromC(input_stage.destination),
-                            .gain = input_stage.gain,
-                            .offset = input_stage.offset,
-                        } },
-                        4 => .{ .lut_map = .{
-                            .source = try pipeSlotFromC(input_stage.source),
-                            .destination = try pipeSlotFromC(input_stage.destination),
-                            .lookup = try lookupFromC(input_stage.lookup),
-                        } },
-                        5 => .{ .blend = .{
-                            .a = try pipeSlotFromC(input_stage.source),
-                            .b = try pipeSlotFromC(input_stage.source_b),
-                            .destination = try pipeSlotFromC(input_stage.destination),
-                            .alpha = if (input_stage.alpha_from_slot == 0)
-                                .{ .fixed = input_stage.alpha }
-                            else if (input_stage.alpha_from_slot == 1)
-                                .{ .slot = try pipeSlotFromC(input_stage.alpha_slot) }
-                            else
-                                return error.InvalidPipeStage,
-                        } },
-                        6 => .{ .normalise = .{
-                            .source = try pipeSlotFromC(input_stage.source),
-                            .destination = try pipeSlotFromC(input_stage.destination),
-                            .components = if (input_stage.components <= 3)
-                                @intCast(input_stage.components)
-                            else
-                                return error.InvalidPipeStage,
-                        } },
-                        else => return error.InvalidPipeStage,
-                    };
-                }
-                const constants = try cConstSlice(F, pipe.constants, pipe.constants_len);
-                built.pipe_inputs[pipe_idx] = .{
-                    .stages = stages,
-                    .resolver = try resolverFromC(allocator, pipe.resolver, constants),
-                    .constants = constants,
-                };
-                const pipe_in = built.pipe_inputs[pipe_idx];
-                pipe_idx += 1;
-                break :blk .{ .pipe = pipe_in };
-            },
-            else => return error.InvalidExecutionTag,
-        };
-
         switch (entry.format_tag) {
             0 => {
                 if (built.mesh_input.shaders.mono != null) return error.DuplicateRole;
-                built.mesh_input.shaders.mono = execution;
+                switch (entry.execution_tag) {
+                    0 => {
+                        built.direct_shaders[direct_idx] = try buildShaderDirectInput(
+                            allocator,
+                            &entry.direct_shader,
+                        );
+                        const shader = try pipeSourceToMono(
+                            built.direct_shaders[direct_idx].shader,
+                        );
+                        direct_idx += 1;
+                        built.mesh_input.shaders.mono = .{ .direct = shader };
+                    },
+                    1 => {
+                        const pipe_in = try buildPipeInput(
+                            allocator,
+                            &entry.pipe,
+                            built.pipe_sources,
+                            built.pipe_stages,
+                            built.pipe_inputs,
+                            &source_idx,
+                            &pipe_idx,
+                        );
+                        built.mesh_input.shaders.mono = .{ .pipe = pipe_in };
+                    },
+                    else => return error.InvalidExecutionTag,
+                }
             },
             1 => {
                 if (built.mesh_input.shaders.rgb != null) return error.DuplicateRole;
-                built.mesh_input.shaders.rgb = execution;
+                switch (entry.execution_tag) {
+                    0 => {
+                        built.pipe_sources[source_idx] = try buildShaderDirectInput(
+                            allocator,
+                            &entry.direct_shader,
+                        );
+                        const src_shader = built.pipe_sources[source_idx].shader;
+                        source_idx += 1;
+                        const stages = try allocator.alloc(
+                            shaderops.ShaderPipeStageInput,
+                            1,
+                        );
+                        built.pipe_stages[pipe_idx] = stages;
+                        stages[0] = shaderops.stageSource(src_shader);
+                        built.pipe_inputs[pipe_idx] = .{
+                            .stages = stages,
+                            .resolver = .{
+                                .identity = shaderpipe.identity_channels_3[0..3],
+                            },
+                        };
+                        built.mesh_input.shaders.rgb = built.pipe_inputs[pipe_idx];
+                        pipe_idx += 1;
+                    },
+                    1 => {
+                        const pipe_in = try buildPipeInput(
+                            allocator,
+                            &entry.pipe,
+                            built.pipe_sources,
+                            built.pipe_stages,
+                            built.pipe_inputs,
+                            &source_idx,
+                            &pipe_idx,
+                        );
+                        built.mesh_input.shaders.rgb = pipe_in;
+                    },
+                    else => return error.InvalidExecutionTag,
+                }
             },
             2 => {
                 if (built.mesh_input.shaders.ir != null) return error.DuplicateRole;
-                built.mesh_input.shaders.ir = execution;
+                switch (entry.execution_tag) {
+                    0 => {
+                        built.direct_shaders[direct_idx] = try buildShaderDirectInput(
+                            allocator,
+                            &entry.direct_shader,
+                        );
+                        const shader = try pipeSourceToMono(
+                            built.direct_shaders[direct_idx].shader,
+                        );
+                        direct_idx += 1;
+                        built.mesh_input.shaders.ir = .{ .direct = shader };
+                    },
+                    1 => {
+                        const pipe_in = try buildPipeInput(
+                            allocator,
+                            &entry.pipe,
+                            built.pipe_sources,
+                            built.pipe_stages,
+                            built.pipe_inputs,
+                            &source_idx,
+                            &pipe_idx,
+                        );
+                        built.mesh_input.shaders.ir = .{ .pipe = pipe_in };
+                    },
+                    else => return error.InvalidExecutionTag,
+                }
             },
             3 => {
                 if (built.mesh_input.shaders.multifield != null) {
                     return error.DuplicateRole;
                 }
-                built.mesh_input.shaders.multifield = execution;
+                switch (entry.execution_tag) {
+                    0 => {
+                        built.pipe_sources[source_idx] = try buildShaderDirectInput(
+                            allocator,
+                            &entry.direct_shader,
+                        );
+                        const src_shader = built.pipe_sources[source_idx].shader;
+                        source_idx += 1;
+                        const count = pipeSourceChannels(src_shader);
+                        const stages = try allocator.alloc(
+                            shaderops.ShaderPipeStageInput,
+                            1,
+                        );
+                        built.pipe_stages[pipe_idx] = stages;
+                        stages[0] = shaderops.stageSource(src_shader);
+                        built.pipe_inputs[pipe_idx] = .{
+                            .stages = stages,
+                            .resolver = .{
+                                .identity = shaderpipe.identity_channels_8[0..count],
+                            },
+                        };
+                        built.mesh_input.shaders.multifield = built.pipe_inputs[pipe_idx];
+                        pipe_idx += 1;
+                    },
+                    1 => {
+                        const pipe_in = try buildPipeInput(
+                            allocator,
+                            &entry.pipe,
+                            built.pipe_sources,
+                            built.pipe_stages,
+                            built.pipe_inputs,
+                            &source_idx,
+                            &pipe_idx,
+                        );
+                        built.mesh_input.shaders.multifield = pipe_in;
+                    },
+                    else => return error.InvalidExecutionTag,
+                }
             },
             else => return error.InvalidRenderFormatTag,
         }

@@ -18,6 +18,7 @@ const mo = @import("../riley/zig/meshpipeline.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const sceneops = @import("../riley/zig/sceneops.zig");
 const shaderops = @import("../riley/zig/shaderops.zig");
+const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const texops = @import("../riley/zig/textureops.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 const vec = @import("../riley/zig/vecstack.zig");
@@ -650,7 +651,7 @@ pub fn buildScene2Meshes(
     prep: *const Scene2Prepared,
     textures: *const FullTextures,
 ) [2]MeshInput {
-    const sphere1_shader = shaderops.ShaderDirectInput{
+    const sphere1_shader = shaderops.ShaderMonoInput{
         .func = .{
             .uvs = prep.sphere1_uvs.array,
             .builtin = .checker,
@@ -665,7 +666,7 @@ pub fn buildScene2Meshes(
         },
     };
 
-    const sphere2_shader = shaderops.ShaderDirectInput{
+    const sphere2_shader = shaderops.ShaderMonoInput{
         .tex_u8 = .{
             .uvs = prep.sphere2_uvs.array,
             .tex = textures.tex_u8_mono,
@@ -1085,8 +1086,8 @@ pub fn buildScene3Meshes(
 
     for (0..16) |ii| {
         const shader_idx = ii % 8;
-        const shader = switch (shader_idx) {
-            0 => shaderops.ShaderDirectInput{
+        const shader: shaderops.ShaderMonoInput = switch (shader_idx) {
+            0 => .{
                 .nodal = .{
                     .field = prep.meshes[ii].field.?,
                     .scale_over = .within_frames,
@@ -1094,7 +1095,7 @@ pub fn buildScene3Meshes(
                     .scaling = .auto,
                 },
             },
-            1 => shaderops.ShaderDirectInput{
+            1 => .{
                 .func = .{
                     .uvs = prep.meshes[ii].uvs.array,
                     .builtin = .checker,
@@ -1108,7 +1109,7 @@ pub fn buildScene3Meshes(
                     .scaling = .auto,
                 },
             },
-            2 => shaderops.ShaderDirectInput{
+            2 => .{
                 .tex_u8 = .{
                     .uvs = prep.meshes[ii].uvs.array,
                     .tex = textures.tex_u8_mono,
@@ -1120,7 +1121,7 @@ pub fn buildScene3Meshes(
                     .scaling = .auto,
                 },
             },
-            3 => shaderops.ShaderDirectInput{
+            3 => .{
                 .func = .{
                     .uvs = prep.meshes[ii].uvs.array,
                     .builtin = .eggbox,
@@ -1134,7 +1135,7 @@ pub fn buildScene3Meshes(
                     .scaling = .auto,
                 },
             },
-            4 => shaderops.ShaderDirectInput{
+            4 => .{
                 .nodal = .{
                     .field = prep.meshes[ii].field.?,
                     .scale_over = .over_frames,
@@ -1142,7 +1143,7 @@ pub fn buildScene3Meshes(
                     .scaling = .auto,
                 },
             },
-            5 => shaderops.ShaderDirectInput{
+            5 => .{
                 .tex_u16 = .{
                     .uvs = prep.meshes[ii].uvs.array,
                     .tex = textures.tex_u16_mono,
@@ -1154,7 +1155,7 @@ pub fn buildScene3Meshes(
                     .scaling = .auto,
                 },
             },
-            6 => shaderops.ShaderDirectInput{
+            6 => .{
                 .func = .{
                     .uvs = prep.meshes[ii].uvs.array,
                     .builtin = .checker_smooth,
@@ -1168,7 +1169,7 @@ pub fn buildScene3Meshes(
                     .scaling = .auto,
                 },
             },
-            7 => shaderops.ShaderDirectInput{
+            7 => .{
                 .tex_f = .{
                     .uvs = prep.meshes[ii].uvs.array,
                     .tex = textures.tex_f64_mono,
@@ -1363,50 +1364,36 @@ pub fn createScene2ImageOutputCamera(meshes: []const MeshInput) CameraInput {
 }
 
 pub fn buildScene2ImageOutputMeshes(
+    allocator: std.mem.Allocator,
     prep: *const Scene2Prepared,
     textures: *const FullTextures,
     is_rgb: bool,
     is_u16: bool,
-) [2]MeshInput {
+) ! [2]MeshInput {
     const bits: ?u8 = if (is_u16) 16 else 8;
-    const sphere1_shader: shaderops.ShaderDirectInput = if (is_rgb)
-        .{
-            .func_rgb = .{
-                .uvs = prep.sphere1_uvs.array,
-                .builtin = .checker,
-                .params = .{
-                    .coord_scale = .{ 10.0, 10.0 },
-                    .coord_offset = .{ 0.0, 0.0 },
-                    .settings = .{ .checker = .{
-                        .levels_rgb = .{
-                            .{ 0.0, 0.0, 1.0 },
-                            .{ 0.0, 1.0, 0.0 },
-                        },
-                    } },
-                },
-                .coord_mode = .uv,
-                .output_gain = imageops.getScaleMax(bits),
-                .scaling = .auto,
-            },
-        }
-    else
-        .{
+    if (is_rgb) {
+        const sphere1_source: shaderops.PipeSourceInput = .{
             .func = .{
-                .uvs = prep.sphere1_uvs.array,
-                .builtin = .checker,
-                .params = .{
-                    .coord_scale = .{ 10.0, 10.0 },
-                    .coord_offset = .{ 0.0, 0.0 },
-                    .settings = .{ .checker = .{} },
+                .rgb = .{
+                    .uvs = prep.sphere1_uvs.array,
+                    .builtin = .checker,
+                    .params = .{
+                        .coord_scale = .{ 10.0, 10.0 },
+                        .coord_offset = .{ 0.0, 0.0 },
+                        .settings = .{ .checker = .{
+                            .levels_rgb = .{
+                                .{ 0.0, 0.0, 1.0 },
+                                .{ 0.0, 1.0, 0.0 },
+                            },
+                        } },
+                    },
+                    .coord_mode = .uv,
+                    .output_gain = imageops.getScaleMax(bits),
+                    .scaling = .auto,
                 },
-                .coord_mode = .uv,
-                .output_gain = imageops.getScaleMax(bits),
-                .scaling = .auto,
             },
         };
-
-    const sphere2_shader: shaderops.ShaderDirectInput = if (is_rgb)
-        (if (is_u16)
+        const sphere2_source: shaderops.PipeSourceInput = if (is_u16)
             .{
                 .tex_rgb_u16 = .{
                     .uvs = prep.sphere2_uvs.array,
@@ -1431,9 +1418,55 @@ pub fn buildScene2ImageOutputMeshes(
                     .output_gain = 255.0,
                     .scaling = .auto,
                 },
-            })
-    else
-        (if (is_u16)
+            };
+
+        const s1_stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        s1_stages[0] = shaderops.stageSource(sphere1_source);
+        const s2_stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        s2_stages[0] = shaderops.stageSource(sphere2_source);
+
+        return [_]MeshInput{
+            .{
+                .mesh_type = prep.mesh_type,
+                .coords = prep.sphere1_coords,
+                .connect = prep.sphere1_connect,
+                .disp = null,
+                .shaders = .{
+                    .rgb = .{
+                        .stages = s1_stages,
+                        .resolver = .{ .identity = shaderpipe.identity_channels_3[0..3] },
+                    },
+                },
+            },
+            .{
+                .mesh_type = prep.mesh_type,
+                .coords = prep.sphere2_coords,
+                .connect = prep.sphere2_connect,
+                .disp = null,
+                .shaders = .{
+                    .rgb = .{
+                        .stages = s2_stages,
+                        .resolver = .{ .identity = shaderpipe.identity_channels_3[0..3] },
+                    },
+                },
+            },
+        };
+    } else {
+        const sphere1_mono: shaderops.ShaderMonoInput = .{
+            .func = .{
+                .uvs = prep.sphere1_uvs.array,
+                .builtin = .checker,
+                .params = .{
+                    .coord_scale = .{ 10.0, 10.0 },
+                    .coord_offset = .{ 0.0, 0.0 },
+                    .settings = .{ .checker = .{} },
+                },
+                .coord_mode = .uv,
+                .output_gain = imageops.getScaleMax(bits),
+                .scaling = .auto,
+            },
+        };
+        const sphere2_mono: shaderops.ShaderMonoInput = if (is_u16)
             .{
                 .tex_u16 = .{
                     .uvs = prep.sphere2_uvs.array,
@@ -1458,28 +1491,23 @@ pub fn buildScene2ImageOutputMeshes(
                     .output_gain = 255.0,
                     .scaling = .auto,
                 },
-            });
+            };
 
-    return [_]MeshInput{
-        .{
-            .mesh_type = prep.mesh_type,
-            .coords = prep.sphere1_coords,
-            .connect = prep.sphere1_connect,
-            .disp = null,
-            .shaders = if (is_rgb)
-                .{ .rgb = .{ .direct = sphere1_shader } }
-            else
-                .{ .mono = .{ .direct = sphere1_shader } },
-        },
-        .{
-            .mesh_type = prep.mesh_type,
-            .coords = prep.sphere2_coords,
-            .connect = prep.sphere2_connect,
-            .disp = null,
-            .shaders = if (is_rgb)
-                .{ .rgb = .{ .direct = sphere2_shader } }
-            else
-                .{ .mono = .{ .direct = sphere2_shader } },
-        },
-    };
+        return [_]MeshInput{
+            .{
+                .mesh_type = prep.mesh_type,
+                .coords = prep.sphere1_coords,
+                .connect = prep.sphere1_connect,
+                .disp = null,
+                .shaders = .{ .mono = .{ .direct = sphere1_mono } },
+            },
+            .{
+                .mesh_type = prep.mesh_type,
+                .coords = prep.sphere2_coords,
+                .connect = prep.sphere2_connect,
+                .disp = null,
+                .shaders = .{ .mono = .{ .direct = sphere2_mono } },
+            },
+        };
+    }
 }

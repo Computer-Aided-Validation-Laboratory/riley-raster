@@ -662,128 +662,156 @@ pub fn loadBenchmarkMeshInput(
         null,
         null,
     );
-    var shader: so.ShaderDirectInput = undefined;
-    switch (shader_type) {
-        .nodal_grey, .nodal_rgb => {
-            const field_raw = try loadNDArrayFromCSV(
-                allocator,
-                io,
-                field_path,
-                calcOutputChannels(shader_type),
-                true,
-            );
-            shader = .{ .nodal = .{
-                .field = .{ .array = field_raw, .array_mem = field_raw.slice },
-                .scaling = .none,
-            } };
-        },
-        .tex8_grey => {
-            const uvs_raw = try loadNDArrayFromCSV(
-                allocator,
-                io,
-                uv_path,
-                2,
-                false,
-            );
-            shader = if (T == u8)
-                .{ .tex_u8 = .{
-                    .uvs = uvs_raw,
-                    .tex = texture_grey,
-                    .samp_cfg = samp_cfg.?,
-                } }
-            else if (T == u16)
-                .{ .tex_u16 = .{
-                    .uvs = uvs_raw,
-                    .tex = texture_grey,
-                    .samp_cfg = samp_cfg.?,
-                } }
-            else
-                @compileError("Unsupported texture storage type.");
-        },
-        .tex8_rgb => {
-            const uvs_raw = try loadNDArrayFromCSV(
-                allocator,
-                io,
-                uv_path,
-                2,
-                false,
-            );
-            shader = if (T == u8)
-                .{ .tex_rgb_u8 = .{
-                    .uvs = uvs_raw,
-                    .tex = texture_rgb,
-                    .samp_cfg = samp_cfg.?,
-                } }
-            else if (T == u16)
-                .{ .tex_rgb_u16 = .{
-                    .uvs = uvs_raw,
-                    .tex = texture_rgb,
-                    .samp_cfg = samp_cfg.?,
-                } }
-            else
-                @compileError("Unsupported texture storage type.");
-        },
-        .func => {
-            const tex_case = tex_func_case.?;
-            const tex_func_uvs = if (tex_case.coord_mode == .uv)
-                try loadNDArrayFromCSV(
+    const is_rgb = (calcOutputChannels(shader_type) == 3);
+    const shaders: so.MeshShaderSetInput = if (is_rgb) blk: {
+        const pipe_source: so.PipeSourceInput = switch (shader_type) {
+            .nodal_rgb => blk_n: {
+                const field_raw = try loadNDArrayFromCSV(
+                    allocator,
+                    io,
+                    field_path,
+                    3,
+                    true,
+                );
+                break :blk_n .{ .nodal = .{
+                    .field = .{ .array = field_raw, .array_mem = field_raw.slice },
+                    .scaling = .none,
+                } };
+            },
+            .tex8_rgb => blk_t: {
+                const uvs_raw = try loadNDArrayFromCSV(
                     allocator,
                     io,
                     uv_path,
                     2,
                     false,
-                )
-            else
-                null;
-            shader = .{ .func = .{
-                .uvs = tex_func_uvs,
-                .coord_mode = switch (tex_case.coord_mode) {
-                    .uv => .uv,
-                    .param => .para,
-                    .world_reference => .world_reference,
-                },
-                .builtin = tex_case.builtin,
-                .params = calcTexFuncParams(tex_case),
-
-                .scaling = .none,
-            } };
-        },
-        .func_rgb => {
-            const tex_case = tex_func_case.?;
-            const tex_func_uvs = if (tex_case.coord_mode == .uv)
-                try loadNDArrayFromCSV(
+                );
+                if (T == u8) {
+                    break :blk_t .{ .tex_rgb_u8 = .{
+                        .uvs = uvs_raw,
+                        .tex = texture_rgb,
+                        .samp_cfg = samp_cfg.?,
+                    } };
+                } else if (T == u16) {
+                    break :blk_t .{ .tex_rgb_u16 = .{
+                        .uvs = uvs_raw,
+                        .tex = texture_rgb,
+                        .samp_cfg = samp_cfg.?,
+                    } };
+                } else {
+                    @compileError("Unsupported texture storage type.");
+                }
+            },
+            .func_rgb => blk_f: {
+                const tex_case = tex_func_case.?;
+                const tex_func_uvs = if (tex_case.coord_mode == .uv)
+                    try loadNDArrayFromCSV(
+                        allocator,
+                        io,
+                        uv_path,
+                        2,
+                        false,
+                    )
+                else
+                    null;
+                break :blk_f .{ .func = .{ .rgb = .{
+                    .uvs = tex_func_uvs,
+                    .coord_mode = switch (tex_case.coord_mode) {
+                        .uv => .uv,
+                        .param => .para,
+                        .world_reference => .world_reference,
+                    },
+                    .builtin = tex_case.builtin,
+                    .params = calcTexFuncParams(tex_case),
+                    .scaling = .none,
+                } } };
+            },
+            else => unreachable,
+        };
+        const stages = try allocator.alloc(so.ShaderPipeStageInput, 1);
+        stages[0] = so.stageSource(pipe_source);
+        break :blk .{
+            .rgb = .{
+                .stages = stages,
+                .resolver = .{ .identity = shaderpipe.identity_channels_3 },
+            },
+        };
+    } else blk: {
+        const mono_shader: so.ShaderMonoInput = switch (shader_type) {
+            .nodal_grey => blk_n: {
+                const field_raw = try loadNDArrayFromCSV(
+                    allocator,
+                    io,
+                    field_path,
+                    1,
+                    true,
+                );
+                break :blk_n .{ .nodal = .{
+                    .field = .{ .array = field_raw, .array_mem = field_raw.slice },
+                    .scaling = .none,
+                } };
+            },
+            .tex8_grey => blk_t: {
+                const uvs_raw = try loadNDArrayFromCSV(
                     allocator,
                     io,
                     uv_path,
                     2,
                     false,
-                )
-            else
-                null;
-            shader = .{ .func_rgb = .{
-                .uvs = tex_func_uvs,
-                .coord_mode = switch (tex_case.coord_mode) {
-                    .uv => .uv,
-                    .param => .para,
-                    .world_reference => .world_reference,
-                },
-                .builtin = tex_case.builtin,
-                .params = calcTexFuncParams(tex_case),
-
-                .scaling = .none,
-            } };
-        },
-    }
+                );
+                if (T == u8) {
+                    break :blk_t .{ .tex_u8 = .{
+                        .uvs = uvs_raw,
+                        .tex = texture_grey,
+                        .samp_cfg = samp_cfg.?,
+                    } };
+                } else if (T == u16) {
+                    break :blk_t .{ .tex_u16 = .{
+                        .uvs = uvs_raw,
+                        .tex = texture_grey,
+                        .samp_cfg = samp_cfg.?,
+                    } };
+                } else {
+                    @compileError("Unsupported texture storage type.");
+                }
+            },
+            .func => blk_f: {
+                const tex_case = tex_func_case.?;
+                const tex_func_uvs = if (tex_case.coord_mode == .uv)
+                    try loadNDArrayFromCSV(
+                        allocator,
+                        io,
+                        uv_path,
+                        2,
+                        false,
+                    )
+                else
+                    null;
+                break :blk_f .{ .func = .{
+                    .uvs = tex_func_uvs,
+                    .coord_mode = switch (tex_case.coord_mode) {
+                        .uv => .uv,
+                        .param => .para,
+                        .world_reference => .world_reference,
+                    },
+                    .builtin = tex_case.builtin,
+                    .params = calcTexFuncParams(tex_case),
+                    .scaling = .none,
+                } };
+            },
+            else => unreachable,
+        };
+        break :blk .{
+            .mono = .{ .direct = mono_shader },
+        };
+    };
 
     return .{
         .mesh_type = etype,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shaders = if (calcOutputChannels(shader_type) == 3)
-            .{ .rgb = .{ .direct = shader } }
-        else
-            .{ .mono = .{ .direct = shader } },
+        .shaders = shaders,
     };
 }
 
@@ -956,33 +984,33 @@ fn runBenchmarkInternal(
         texture_grey,
         texture_rgb,
     );
-    const base_shader = if (calcOutputChannels(shader_type) == 3)
-        mesh_input.shaders.rgb.?.direct
+    const base_source: so.PipeSourceInput = if (calcOutputChannels(shader_type) == 3)
+        mesh_input.shaders.rgb.?.stages[0].source.shader
     else
-        mesh_input.shaders.mono.?.direct;
+        so.monoToPipeSource(mesh_input.shaders.mono.?.direct);
 
     const output_slot: shaderpipe.Slot = .{ .kind = .channel, .index = 0 };
     const pipe_stages = [_]so.ShaderPipeStageInput{.{ .source = .{
-        .shader = base_shader,
+        .shader = base_source,
         .destination = output_slot,
     } }};
     const pipe_slots = [_]shaderpipe.Slot{output_slot};
-    var deformed_shader = base_shader;
+    var deformed_source = base_source;
     if (render_defaults.shader_path == .multi_source_pipe) {
-        std.debug.assert(deformed_shader == .func);
-        deformed_shader.func.coord_mode = .world_deformed;
+        std.debug.assert(deformed_source == .func and deformed_source.func == .mono);
+        deformed_source.func.mono.coord_mode = .world_deformed;
     }
     const multi_stages = [_]so.ShaderPipeStageInput{
         .{ .source = .{
-            .shader = base_shader,
+            .shader = base_source,
             .destination = .{ .kind = .channel, .index = 0 },
         } },
         .{ .source = .{
-            .shader = deformed_shader,
+            .shader = deformed_source,
             .destination = .{ .kind = .channel, .index = 1 },
         } },
         .{ .source = .{
-            .shader = base_shader,
+            .shader = base_source,
             .destination = .{ .kind = .channel, .index = 2 },
         } },
     };

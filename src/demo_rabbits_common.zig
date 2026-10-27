@@ -13,6 +13,7 @@ const meshio = @import("riley/zig/meshio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
+const shaderpipe = @import("riley/zig/shaderpipe.zig");
 const texops = @import("riley/zig/textureops.zig");
 const uvio = @import("riley/zig/uvio.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -225,43 +226,96 @@ fn makeMeshInput(
     const sim_data = try loadStaticMesh(outer_alloc, io, data_dir);
     const uvs = try loadRabbitUvMap(outer_alloc, io, data_dir);
 
-    const shader: shaderops.ShaderDirectInput = switch (shader_mode) {
-        .tex => blk: {
-            const input = shaderops.TexInput(@TypeOf(texture)){
-                .uvs = uvs.array,
-                .tex = texture,
-                .samp_cfg = .{
-                    .sample = .cubic_catmull_rom,
-                    .mode = .direct,
-                },
-
-                .scaling = .none,
-            };
-            break :blk if (C == 1) .{ .tex_u8 = input } else .{ .tex_rgb_u8 = input };
-        },
-        .nodal => .{ .nodal = .{
-            .field = try buildUvField(C, outer_alloc, uvs),
-            .output_gain = 255.0,
-            .scaling = .auto,
-            .scale_over = .over_frames,
-        } },
-        .func => blk: {
-            const input = shaderops.FuncInput{
-                .uvs = uvs.array,
-                .coord_mode = .uv,
-                .builtin = FuncShaderBuiltin.checker,
-                .params = FuncShaderParams{
-                    .coord_scale = .{
-                        checker_squares_per_axis,
-                        checker_squares_per_axis,
+    const shaders: shaderops.MeshShaderSetInput = if (C == 1) blk: {
+        const mono_shader: shaderops.ShaderMonoInput = switch (shader_mode) {
+            .tex => .{
+                .tex_u8 = .{
+                    .uvs = uvs.array,
+                    .tex = texture,
+                    .samp_cfg = .{
+                        .sample = .cubic_catmull_rom,
+                        .mode = .direct,
                     },
-                    .settings = .{ .checker = .{} },
+                    .scaling = .none,
                 },
-                .output_gain = 255.0,
-                .scaling = .auto,
-            };
-            break :blk if (C == 1) .{ .func = input } else .{ .func_rgb = input };
-        },
+            },
+            .nodal => .{
+                .nodal = .{
+                    .field = try buildUvField(C, outer_alloc, uvs),
+                    .output_gain = 255.0,
+                    .scaling = .auto,
+                    .scale_over = .over_frames,
+                },
+            },
+            .func => .{
+                .func = .{
+                    .uvs = uvs.array,
+                    .coord_mode = .uv,
+                    .builtin = FuncShaderBuiltin.checker,
+                    .params = FuncShaderParams{
+                        .coord_scale = .{
+                            checker_squares_per_axis,
+                            checker_squares_per_axis,
+                        },
+                        .settings = .{ .checker = .{} },
+                    },
+                    .output_gain = 255.0,
+                    .scaling = .auto,
+                },
+            },
+        };
+        break :blk .{ .mono = .{ .direct = mono_shader } };
+    } else blk: {
+        const pipe_source: shaderops.PipeSourceInput = switch (shader_mode) {
+            .tex => .{
+                .tex_rgb_u8 = .{
+                    .uvs = uvs.array,
+                    .tex = texture,
+                    .samp_cfg = .{
+                        .sample = .cubic_catmull_rom,
+                        .mode = .direct,
+                    },
+                    .scaling = .none,
+                },
+            },
+            .nodal => .{
+                .nodal = .{
+                    .field = try buildUvField(C, outer_alloc, uvs),
+                    .output_gain = 255.0,
+                    .scaling = .auto,
+                    .scale_over = .over_frames,
+                },
+            },
+            .func => .{
+                .func = .{
+                    .rgb = .{
+                        .uvs = uvs.array,
+                        .coord_mode = .uv,
+                        .builtin = FuncShaderBuiltin.checker,
+                        .params = FuncShaderParams{
+                            .coord_scale = .{
+                                checker_squares_per_axis,
+                                checker_squares_per_axis,
+                            },
+                            .settings = .{ .checker = .{} },
+                        },
+                        .output_gain = 255.0,
+                        .scaling = .auto,
+                    },
+                },
+            },
+        };
+        const stages = try outer_alloc.alloc(shaderops.ShaderPipeStageInput, 1);
+        stages[0] = shaderops.stageSource(pipe_source);
+        const pipe: shaderops.ShaderPipeInput = .{
+            .stages = stages,
+            .resolver = .{ .identity = shaderpipe.identity_channels_3 },
+        };
+        if (render_as_multifield) {
+            break :blk .{ .multifield = pipe };
+        } else {
+            break :blk .{ .rgb = pipe };
+        }
     };
 
     return .{
@@ -269,12 +323,7 @@ fn makeMeshInput(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shaders = if (C == 1)
-            .{ .mono = .{ .direct = shader } }
-        else if (render_as_multifield)
-            .{ .multifield = .{ .direct = shader } }
-        else
-            .{ .rgb = .{ .direct = shader } },
+        .shaders = shaders,
     };
 }
 

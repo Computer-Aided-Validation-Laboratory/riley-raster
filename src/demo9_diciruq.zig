@@ -104,18 +104,18 @@ pub fn main(init: std.process.Init) !void {
         "texture/speckle_mono.bmp",
         .bmp,
     );
-    const speckle: shaderops.ShaderDirectInput = .{
-        .tex_u8 = .{
-            .uvs = uvs.array,
-            .tex = texture,
-            .samp_cfg = .{
-                .sample = .cubic_catmull_rom,
-                .mode = .direct,
-            },
-
-            .scaling = .none,
+    const speckle_tex = shaderops.TexInput(texops.TexDataFix(u8, 1)){
+        .uvs = uvs.array,
+        .tex = texture,
+        .samp_cfg = .{
+            .sample = .cubic_catmull_rom,
+            .mode = .direct,
         },
+
+        .scaling = .none,
     };
+    const speckle_source: shaderops.PipeSourceInput = .{ .tex_u8 = speckle_tex };
+    const speckle_mono: shaderops.ShaderMonoInput = .{ .tex_u8 = speckle_tex };
 
     const channel = shaderpipe.Slot{ .kind = .channel, .index = 0 };
     const field = shaderpipe.Slot{ .kind = .field, .index = 0 };
@@ -124,7 +124,7 @@ pub fn main(init: std.process.Init) !void {
     const stages = [_]shaderops.ShaderPipeStageInput{
         .{
             .source = .{
-                .shader = speckle,
+                .shader = speckle_source,
                 .destination = channel,
             },
         },
@@ -175,7 +175,7 @@ pub fn main(init: std.process.Init) !void {
         .connect = sim_data.connect,
         .disp = selected_disp,
         .shaders = .{
-            .mono = .{ .direct = speckle },
+            .mono = .{ .direct = speckle_mono },
             .ir = .{ .pipe = .{
                 .stages = &stages,
                 .resolver = .{

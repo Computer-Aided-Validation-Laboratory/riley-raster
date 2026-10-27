@@ -52,7 +52,8 @@ pub fn runFullShaderCaseTest(
         .{ gold_dir_root, case_dir_name },
     );
 
-    const meshes = fullcase_shader.buildShaderCaseMeshes(
+    const meshes = try fullcase_shader.buildShaderCaseMeshes(
+        aa,
         mesh_type,
         prep,
         textures,
@@ -376,7 +377,8 @@ fn runNodalScalingTests(
             defer arena.deinit();
             const aa = arena.allocator();
 
-            const meshes = fullcase_shader.buildShaderCaseMeshes(
+            const meshes = try fullcase_shader.buildShaderCaseMeshes(
+                aa,
                 .tri3,
                 &prep,
                 &textures,

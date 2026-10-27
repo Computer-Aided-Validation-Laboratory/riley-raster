@@ -21,6 +21,7 @@ const riley = @import("riley/zig/riley.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
+const shaderpipe = @import("riley/zig/shaderpipe.zig");
 const normals = @import("riley/zig/normals.zig");
 const texops = @import("riley/zig/textureops.zig");
 const uvio = @import("riley/zig/uvio.zig");
@@ -60,14 +61,13 @@ fn buildRgbField(
     return field;
 }
 
-fn textureShader(
+fn textureShaderMono(
     comptime T: type,
-    comptime C: usize,
-    texture: texops.TexDataFix(T, C),
+    texture: texops.TexDataFix(T, 1),
     uvs: uvio.UVMap,
     comptime bits: u8,
     linear: bool,
-) shaderops.ShaderDirectInput {
+) shaderops.ShaderMonoInput {
     const samp_cfg = texops.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
@@ -79,10 +79,31 @@ fn textureShader(
         .output_gain = imageops.getScaleMax(bits),
         .scaling = .auto,
     };
-    if (C == 1 and T == u8) return .{ .tex_u8 = input };
-    if (C == 1 and T == u16) return .{ .tex_u16 = input };
-    if (C == 3 and T == u8) return .{ .tex_rgb_u8 = input };
-    if (C == 3 and T == u16) return .{ .tex_rgb_u16 = input };
+    if (T == u8) return .{ .tex_u8 = input };
+    if (T == u16) return .{ .tex_u16 = input };
+    unreachable;
+}
+
+fn textureShaderRGB(
+    comptime T: type,
+    texture: texops.TexDataFix(T, 3),
+    uvs: uvio.UVMap,
+    comptime bits: u8,
+    linear: bool,
+) shaderops.PipeSourceInput {
+    const samp_cfg = texops.TexSampConfig{
+        .sample = if (linear) .linear else .cubic_catmull_rom,
+        .mode = if (linear) .direct else .lut_lerp,
+    };
+    const input = shaderops.TexInput(@TypeOf(texture)){
+        .uvs = uvs.array,
+        .tex = texture,
+        .samp_cfg = samp_cfg,
+        .output_gain = imageops.getScaleMax(bits),
+        .scaling = .auto,
+    };
+    if (T == u8) return .{ .tex_rgb_u8 = input };
+    if (T == u16) return .{ .tex_rgb_u16 = input };
     unreachable;
 }
 
@@ -134,70 +155,116 @@ fn loadMesh(
         else => .avg,
     };
 
-    const shader: shaderops.ShaderDirectInput = switch (mesh_index) {
-        0, 2 => textureShader(
-            T,
-            C,
-            texture,
-            uvs,
-            bits,
-            mesh_index != 0,
-        ),
-        1, 5 => blk: {
-            const field = if (C == 1)
-                temp
-            else
-                try buildRgbField(allocator, temp, disp);
-            break :blk .{ .nodal = .{
-                .field = field,
+    const shaders: shaderops.MeshShaderSetInput = if (C == 3) blk: {
+        const pipe_source: shaderops.PipeSourceInput = switch (mesh_index) {
+            0, 2 => textureShaderRGB(
+                T,
+                texture,
+                uvs,
+                bits,
+                mesh_index != 0,
+            ),
+            1, 5 => .{ .nodal = .{
+                .field = try buildRgbField(allocator, temp, disp),
                 .output_gain = imageops.getScaleMax(bits),
                 .scaling = .auto,
                 .scale_over = if (mesh_index == 1)
                     .over_frames
                 else
                     .within_frames,
-            } };
-        },
-        3, 4 => blk: {
-            const params = if (mesh_index == 3)
-                shaderops.FuncShaderParams{
-                    .coord_scale = .{ 1000.0, 1000.0 },
-                    .settings = .{ .checker = .{} },
-                }
-            else
-                shaderops.FuncShaderParams{
-                    .coord_scale = .{ 1.0, 1.0 },
-                    .settings = .{ .eggbox = .{
-                        .pitch = .{ 0.005, 0.005 },
-                    } },
-                };
-            const input = shaderops.FuncInput{
-                .coord_mode = if (mesh_index == 3)
-                    .world_reference
+            } },
+            3, 4 => blk_fn: {
+                const params = if (mesh_index == 3)
+                    shaderops.FuncShaderParams{
+                        .coord_scale = .{ 1000.0, 1000.0 },
+                        .settings = .{ .checker = .{} },
+                    }
                 else
-                    .world_deformed,
-                .builtin = if (mesh_index == 3) .checker else .eggbox,
-                .params = params,
+                    shaderops.FuncShaderParams{
+                        .coord_scale = .{ 1.0, 1.0 },
+                        .settings = .{ .eggbox = .{
+                            .pitch = .{ 0.005, 0.005 },
+                        } },
+                    };
+                const input = shaderops.FuncInput{
+                    .coord_mode = if (mesh_index == 3)
+                        .world_reference
+                    else
+                        .world_deformed,
+                    .builtin = if (mesh_index == 3) .checker else .eggbox,
+                    .params = params,
+                    .output_gain = imageops.getScaleMax(bits),
+                    .scaling = .auto,
+                };
+                break :blk_fn .{ .func = .{ .rgb = input } };
+            },
+            else => unreachable,
+        };
+        const stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        stages[0] = shaderops.stageSource(pipe_source);
+        break :blk .{
+            .rgb = .{
+                .stages = stages,
+                .resolver = .{ .identity = shaderpipe.identity_channels_3 },
+            },
+        };
+    } else blk: {
+        const mono_shader: shaderops.ShaderMonoInput = switch (mesh_index) {
+            0, 2 => textureShaderMono(
+                T,
+                texture,
+                uvs,
+                bits,
+                mesh_index != 0,
+            ),
+            1, 5 => .{ .nodal = .{
+                .field = temp,
                 .output_gain = imageops.getScaleMax(bits),
                 .scaling = .auto,
-            };
-            break :blk if (C == 1)
-                .{ .func = input }
-            else
-                .{ .func_rgb = input };
-        },
-        else => unreachable,
+                .scale_over = if (mesh_index == 1)
+                    .over_frames
+                else
+                    .within_frames,
+            } },
+            3, 4 => blk_fn: {
+                const params = if (mesh_index == 3)
+                    shaderops.FuncShaderParams{
+                        .coord_scale = .{ 1000.0, 1000.0 },
+                        .settings = .{ .checker = .{} },
+                    }
+                else
+                    shaderops.FuncShaderParams{
+                        .coord_scale = .{ 1.0, 1.0 },
+                        .settings = .{ .eggbox = .{
+                            .pitch = .{ 0.005, 0.005 },
+                        } },
+                    };
+                const input = shaderops.FuncInput{
+                    .coord_mode = if (mesh_index == 3)
+                        .world_reference
+                    else
+                        .world_deformed,
+                    .builtin = if (mesh_index == 3) .checker else .eggbox,
+                    .params = params,
+                    .output_gain = imageops.getScaleMax(bits),
+                    .scaling = .auto,
+                };
+                break :blk_fn .{ .func = input };
+            },
+            else => unreachable,
+        };
+        break :blk .{
+            .mono = .{ .direct = mono_shader },
+        };
     };
+
     return .{
         .mesh_type = mesh_shape.mesh_type,
         .normal_type = normal_type,
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = if (mesh_index % 2 == 1) disp else null,
-        .shaders = if (C == 1)
-            .{ .mono = .{ .direct = shader } }
-        else
-            .{ .rgb = .{ .direct = shader } },
+        .shaders = shaders,
     };
 }
 

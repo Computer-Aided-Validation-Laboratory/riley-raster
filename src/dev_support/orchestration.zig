@@ -18,6 +18,8 @@ const sceneops = @import("../riley/zig/sceneops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const texops = @import("../riley/zig/textureops.zig");
 const uvio = @import("../riley/zig/uvio.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
+const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
 const cameraops = @import("../riley/zig/cameraops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
@@ -475,21 +477,26 @@ pub fn buildMixedRgbMeshInputs(
         );
         const uvs = try uvio.loadUVMap(allocator, io, uv_path);
 
+        const stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        stages[0] = shaderops.stageSource(.{ .tex_rgb_u8 = .{
+            .uvs = uvs.array,
+            .tex = texture,
+            .samp_cfg = .{
+                .sample = .cubic_catmull_rom,
+                .mode = .lut_lerp,
+            },
+            .scaling = .none,
+        } });
+
         mesh_inputs[ii] = .{
             .mesh_type = default_multimesh_mesh_types[ii],
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shaders = .{ .rgb = .{ .direct = .{ .tex_rgb_u8 = .{
-                .uvs = uvs.array,
-                .tex = texture,
-                .samp_cfg = .{
-                    .sample = .cubic_catmull_rom,
-                    .mode = .lut_lerp,
-                },
-
-                .scaling = .none,
-            } } } },
+            .shaders = .{ .rgb = .{
+                .stages = stages,
+                .resolver = .{ .identity = shaderpipe.identity_channels_3 },
+            } },
         };
     }
 
@@ -500,17 +507,23 @@ pub fn buildMixedRgbMeshInputs(
             sim_datas[ii].field.?,
         );
 
+        const stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        stages[0] = shaderops.stageSource(.{ .nodal = .{
+            .field = rgb_field,
+            .output_gain = 255.0,
+            .scaling = .auto,
+            .scale_over = .within_frames,
+        } });
+
         mesh_inputs[ii + default_multimesh_mesh_types.len] = .{
             .mesh_type = default_multimesh_mesh_types[ii],
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shaders = .{ .rgb = .{ .direct = .{ .nodal = .{
-                .field = rgb_field,
-                .output_gain = 255.0,
-                .scaling = .auto,
-                .scale_over = .within_frames,
-            } } } },
+            .shaders = .{ .rgb = .{
+                .stages = stages,
+                .resolver = .{ .identity = shaderpipe.identity_channels_3 },
+            } },
         };
     }
 

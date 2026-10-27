@@ -56,7 +56,8 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
         defer arena.deinit();
         const aa = arena.allocator();
 
-        const meshes = fullfixtures.buildScene2ImageOutputMeshes(
+        const meshes = try fullfixtures.buildScene2ImageOutputMeshes(
+            aa,
             &prep,
             &textures,
             bc.is_rgb,

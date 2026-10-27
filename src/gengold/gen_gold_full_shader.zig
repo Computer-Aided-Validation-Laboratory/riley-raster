@@ -54,12 +54,17 @@ pub fn generateFullShaderCase(
     var out_dir = try orch.openDirEnsured(io, out_dir_path);
     out_dir.close(io);
 
-    const meshes = fullcase_shader.buildShaderCaseMeshes(
+    const meshes = try fullcase_shader.buildShaderCaseMeshes(
+        allocator,
         mesh_type,
         prep,
         textures,
         case,
     );
+    defer if (case.isRgb()) {
+        allocator.free(meshes[0].shaders.rgb.?.stages);
+        allocator.free(meshes[1].shaders.rgb.?.stages);
+    };
     var selected_camera = prep.camera_input;
     selected_camera.render_format = if (case.isRgb()) .rgb else .mono;
 

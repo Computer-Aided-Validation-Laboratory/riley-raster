@@ -154,7 +154,7 @@ pub fn countFrames(meshes: []const MeshInput, cameras: []const cam.CameraInput) 
 
         for (cameras) |camera| {
             const selected_shader = shaderops.selectShader(
-                shaderops.ShaderDirectInput,
+                shaderops.ShaderMonoInput,
                 shaderops.ShaderPipeInput,
                 &mesh.shaders,
                 camera.render_format,
@@ -198,7 +198,7 @@ pub fn countOutputFields(meshes: []const MeshInput, cameras: []const cam.CameraI
     for (meshes) |mesh| {
         for (cameras) |camera| {
             const selected_shader = shaderops.selectShader(
-                shaderops.ShaderDirectInput,
+                shaderops.ShaderMonoInput,
                 shaderops.ShaderPipeInput,
                 &mesh.shaders,
                 camera.render_format,
@@ -352,13 +352,29 @@ pub fn initMeshStatic(
 
     var shaders: shaderops.MeshShaderSetStatic = .{};
     if (mesh_input.shaders.mono) |execution|
-        shaders.mono = try createExecutionStatic(allocator, execution, &mesh_input.connect);
-    if (mesh_input.shaders.rgb) |execution|
-        shaders.rgb = try createExecutionStatic(allocator, execution, &mesh_input.connect);
+        shaders.mono = try createShaderMonoExecutionStatic(
+            allocator,
+            execution,
+            &mesh_input.connect,
+        );
+    if (mesh_input.shaders.rgb) |pipe|
+        shaders.rgb = try createShaderPipeStatic(
+            allocator,
+            pipe,
+            &mesh_input.connect,
+        );
     if (mesh_input.shaders.ir) |execution|
-        shaders.ir = try createExecutionStatic(allocator, execution, &mesh_input.connect);
-    if (mesh_input.shaders.multifield) |execution|
-        shaders.multifield = try createExecutionStatic(allocator, execution, &mesh_input.connect);
+        shaders.ir = try createShaderMonoExecutionStatic(
+            allocator,
+            execution,
+            &mesh_input.connect,
+        );
+    if (mesh_input.shaders.multifield) |pipe|
+        shaders.multifield = try createShaderPipeStatic(
+            allocator,
+            pipe,
+            &mesh_input.connect,
+        );
 
     return .{
         .mesh_type = mesh_input.mesh_type,
@@ -370,14 +386,18 @@ pub fn initMeshStatic(
     };
 }
 
-fn createExecutionStatic(
+fn createShaderMonoExecutionStatic(
     allocator: std.mem.Allocator,
-    execution: shaderops.ShaderExecutionInput,
+    execution: shaderops.ShaderMonoExecutionInput,
     connect: *const meshio.Connect,
-) !shaderops.ShaderExecutionStatic {
+) !shaderops.ShaderMonoExecutionStatic {
     return switch (execution) {
-        .direct => |shader| .{ .direct = try createShaderDirectStatic(allocator, shader, connect) },
-        .pipe => |pipe| .{ .pipe = try createShaderPipeStatic(allocator, pipe, connect) },
+        .direct => |shader| .{
+            .direct = try createShaderMonoStatic(allocator, shader, connect),
+        },
+        .pipe => |pipe| .{
+            .pipe = try createShaderPipeStatic(allocator, pipe, connect),
+        },
     };
 }
 
@@ -386,12 +406,15 @@ fn createShaderPipeStatic(
     pipe: shaderops.ShaderPipeInput,
     connect: *const meshio.Connect,
 ) !shaderops.ShaderPipeStatic {
-    const stages = try allocator.alloc(shaderops.ShaderPipeStageStatic, pipe.stages.len);
+    const stages = try allocator.alloc(
+        shaderops.ShaderPipeStageStatic,
+        pipe.stages.len,
+    );
 
     for (pipe.stages, 0..) |stage, si| {
         stages[si] = switch (stage) {
             .source => |src| .{ .source = .{
-                .shader = try createShaderDirectStatic(allocator, src.shader, connect),
+                .shader = try createPipeSourceStatic(allocator, src.shader, connect),
                 .destination = src.destination,
                 .global_scaling = switch (src.shader) {
                     .nodal => |n| if (n.scale_over == .over_frames)
@@ -417,136 +440,65 @@ fn createShaderPipeStatic(
     };
 }
 
-fn createShaderDirectStatic(
+fn createShaderMonoStatic(
     allocator: std.mem.Allocator,
-    shader_in: shaderops.ShaderDirectInput,
+    shader_in: shaderops.ShaderMonoInput,
     connect: *const meshio.Connect,
-) !shaderops.ShaderDirectStatic {
-    var shader_static: shaderops.ShaderDirectStatic = undefined;
-    switch (shader_in) {
-        .nodal => |nodal_in| {
-            shader_static = .{ .nodal = .{
+) !shaderops.ShaderMonoStatic {
+    return switch (shader_in) {
+        .nodal => |nodal_in| .{
+            .nodal = .{
                 .field = nodal_in.field,
                 .output_gain = nodal_in.output_gain,
                 .output_offset = nodal_in.output_offset,
                 .scaling = nodal_in.scaling,
                 .scale_over = nodal_in.scale_over,
                 .global_scaling = if (nodal_in.scale_over == .over_frames)
-                    imageops.getScalingParamsNDArray(&nodal_in.field.array, null, nodal_in.scaling)
+                    imageops.getScalingParamsNDArray(
+                        &nodal_in.field.array,
+                        null,
+                        nodal_in.scaling,
+                    )
                 else
                     null,
-            } };
+            },
         },
-        .tex_multi_u8 => |tex_in| {
-            shader_static = try createTextureMultiStatic(u8, allocator, tex_in, connect);
-        },
-        .tex_multi_u16 => |tex_in| {
-            shader_static = try createTextureMultiStatic(u16, allocator, tex_in, connect);
-        },
-        .tex_multi_f => |tex_in| {
-            shader_static = try createTextureMultiStatic(F, allocator, tex_in, connect);
-        },
-        .tex_u8 => |tex_in| {
-            const elem_uvs = try prepUVs(
-                allocator,
-                &tex_in.uvs,
-                connect,
-            );
-            shader_static = .{ .tex_u8 = .{
-                .elem_uvs = elem_uvs,
+        .tex_u8 => |tex_in| .{
+            .tex_u8 = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
                 .tex = tex_in.tex,
                 .samp_cfg = tex_in.samp_cfg,
                 .output_gain = tex_in.output_gain,
                 .output_offset = tex_in.output_offset,
                 .scaling = tex_in.scaling,
-            } };
+            },
         },
-        .tex_u16 => |tex_in| {
-            const elem_uvs = try prepUVs(
-                allocator,
-                &tex_in.uvs,
-                connect,
-            );
-            shader_static = .{ .tex_u16 = .{
-                .elem_uvs = elem_uvs,
+        .tex_u16 => |tex_in| .{
+            .tex_u16 = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
                 .tex = tex_in.tex,
                 .samp_cfg = tex_in.samp_cfg,
                 .output_gain = tex_in.output_gain,
                 .output_offset = tex_in.output_offset,
                 .scaling = tex_in.scaling,
-            } };
+            },
         },
-        .tex_f => |tex_in| {
-            const elem_uvs = try prepUVs(
-                allocator,
-                &tex_in.uvs,
-                connect,
-            );
-            shader_static = .{ .tex_f = .{
-                .elem_uvs = elem_uvs,
+        .tex_f => |tex_in| .{
+            .tex_f = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
                 .tex = tex_in.tex,
                 .samp_cfg = tex_in.samp_cfg,
                 .output_gain = tex_in.output_gain,
                 .output_offset = tex_in.output_offset,
                 .scaling = tex_in.scaling,
-            } };
+            },
         },
-        .tex_rgb_u8 => |tex_in| {
-            const elem_uvs = try prepUVs(
-                allocator,
-                &tex_in.uvs,
-                connect,
-            );
-            shader_static = .{ .tex_rgb_u8 = .{
-                .elem_uvs = elem_uvs,
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .output_gain = tex_in.output_gain,
-                .output_offset = tex_in.output_offset,
-                .scaling = tex_in.scaling,
-            } };
-        },
-        .tex_rgb_u16 => |tex_in| {
-            const elem_uvs = try prepUVs(
-                allocator,
-                &tex_in.uvs,
-                connect,
-            );
-            shader_static = .{ .tex_rgb_u16 = .{
-                .elem_uvs = elem_uvs,
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .output_gain = tex_in.output_gain,
-                .output_offset = tex_in.output_offset,
-                .scaling = tex_in.scaling,
-            } };
-        },
-        .tex_rgb_f => |tex_in| {
-            const elem_uvs = try prepUVs(
-                allocator,
-                &tex_in.uvs,
-                connect,
-            );
-            shader_static = .{ .tex_rgb_f = .{
-                .elem_uvs = elem_uvs,
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .output_gain = tex_in.output_gain,
-                .output_offset = tex_in.output_offset,
-                .scaling = tex_in.scaling,
-            } };
-        },
-        .func => |tex_func_in| {
-            const elem_uvs = if (tex_func_in.uvs) |uvs|
-                try prepUVs(
-                    allocator,
-                    &uvs,
-                    connect,
-                )
-            else
-                null;
-            shader_static = .{ .func = .{
-                .elem_uvs = elem_uvs,
+        .func => |tex_func_in| .{
+            .func = .{
+                .elem_uvs = if (tex_func_in.uvs) |uvs|
+                    try prepUVs(allocator, &uvs, connect)
+                else
+                    null,
                 .coord_mode = tex_func_in.coord_mode,
                 .builtin = tex_func_in.builtin,
                 .params = shaderops.normFuncShaderParams(
@@ -556,44 +508,150 @@ fn createShaderDirectStatic(
                 .output_gain = tex_func_in.output_gain,
                 .output_offset = tex_func_in.output_offset,
                 .scaling = tex_func_in.scaling,
-            } };
+            },
         },
-        .func_multi => |multi_in| {
-            const elem_uvs = if (multi_in.uvs) |uvs|
-                try prepUVs(allocator, &uvs, connect)
-            else
-                null;
-            shader_static = .{ .func_multi = .{
-                .elem_uvs = elem_uvs,
-                .coord_mode = multi_in.coord_mode,
-                .channels = multi_in.channels,
-            } };
-        },
-        .func_rgb => |tex_func_in| {
-            const elem_uvs = if (tex_func_in.uvs) |uvs|
-                try prepUVs(
-                    allocator,
-                    &uvs,
-                    connect,
-                )
-            else
-                null;
-            shader_static = .{ .func_rgb = .{
-                .elem_uvs = elem_uvs,
-                .coord_mode = tex_func_in.coord_mode,
-                .builtin = tex_func_in.builtin,
-                .params = shaderops.normFuncShaderParams(
-                    tex_func_in.builtin,
-                    tex_func_in.params,
-                ),
-                .output_gain = tex_func_in.output_gain,
-                .output_offset = tex_func_in.output_offset,
-                .scaling = tex_func_in.scaling,
-            } };
-        },
-    }
+    };
+}
 
-    return shader_static;
+fn createPipeSourceStatic(
+    allocator: std.mem.Allocator,
+    source_in: shaderops.PipeSourceInput,
+    connect: *const meshio.Connect,
+) !shaderops.PipeSourceStatic {
+    return switch (source_in) {
+        .nodal => |nodal_in| .{
+            .nodal = .{
+                .field = nodal_in.field,
+                .output_gain = nodal_in.output_gain,
+                .output_offset = nodal_in.output_offset,
+                .scaling = nodal_in.scaling,
+                .scale_over = nodal_in.scale_over,
+                .global_scaling = if (nodal_in.scale_over == .over_frames)
+                    imageops.getScalingParamsNDArray(
+                        &nodal_in.field.array,
+                        null,
+                        nodal_in.scaling,
+                    )
+                else
+                    null,
+            },
+        },
+        .tex_multi_u8 => |tex_in| .{
+            .tex_multi_f = try createTextureMultiStatic(u8, allocator, tex_in, connect),
+        },
+        .tex_multi_u16 => |tex_in| .{
+            .tex_multi_f = try createTextureMultiStatic(u16, allocator, tex_in, connect),
+        },
+        .tex_multi_f => |tex_in| .{
+            .tex_multi_f = try createTextureMultiStatic(F, allocator, tex_in, connect),
+        },
+        .tex_u8 => |tex_in| .{
+            .tex_u8 = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .tex_u16 => |tex_in| .{
+            .tex_u16 = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .tex_f => |tex_in| .{
+            .tex_f = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .tex_rgb_u8 => |tex_in| .{
+            .tex_rgb_u8 = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .tex_rgb_u16 => |tex_in| .{
+            .tex_rgb_u16 = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .tex_rgb_f => |tex_in| .{
+            .tex_rgb_f = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .func => |func_in| switch (func_in) {
+            .mono => |tex_func_in| .{
+                .func = .{ .mono = .{
+                    .elem_uvs = if (tex_func_in.uvs) |uvs|
+                        try prepUVs(allocator, &uvs, connect)
+                    else
+                        null,
+                    .coord_mode = tex_func_in.coord_mode,
+                    .builtin = tex_func_in.builtin,
+                    .params = shaderops.normFuncShaderParams(
+                        tex_func_in.builtin,
+                        tex_func_in.params,
+                    ),
+                    .output_gain = tex_func_in.output_gain,
+                    .output_offset = tex_func_in.output_offset,
+                    .scaling = tex_func_in.scaling,
+                } },
+            },
+            .rgb => |tex_func_in| .{
+                .func = .{ .rgb = .{
+                    .elem_uvs = if (tex_func_in.uvs) |uvs|
+                        try prepUVs(allocator, &uvs, connect)
+                    else
+                        null,
+                    .coord_mode = tex_func_in.coord_mode,
+                    .builtin = tex_func_in.builtin,
+                    .params = shaderops.normFuncShaderParams(
+                        tex_func_in.builtin,
+                        tex_func_in.params,
+                    ),
+                    .output_gain = tex_func_in.output_gain,
+                    .output_offset = tex_func_in.output_offset,
+                    .scaling = tex_func_in.scaling,
+                } },
+            },
+            .multi => |multi_in| .{
+                .func = .{ .multi = .{
+                    .elem_uvs = if (multi_in.uvs) |uvs|
+                        try prepUVs(allocator, &uvs, connect)
+                    else
+                        null,
+                    .coord_mode = multi_in.coord_mode,
+                    .channels = multi_in.channels,
+                } },
+            },
+        },
+    };
 }
 
 fn createTextureMultiStatic(
@@ -601,7 +659,7 @@ fn createTextureMultiStatic(
     allocator: std.mem.Allocator,
     input: shaderops.TexInput(texops.TexDataDyn(T)),
     connect: *const meshio.Connect,
-) !shaderops.ShaderDirectStatic {
+) !shaderops.TexMultiStatic(F) {
     const elem_uvs = try prepUVs(allocator, &input.uvs, connect);
     const float_tex: texops.TexDataDyn(F) = if (comptime T == F) input.tex else blk: {
         const values = try ndarray.NDArray(F).initFlat(allocator, input.tex.array.dims);
@@ -614,14 +672,14 @@ fn createTextureMultiStatic(
             .cols_num = input.tex.cols_num,
         };
     };
-    return .{ .tex_multi_f = .{
+    return .{
         .elem_uvs = elem_uvs,
         .tex = float_tex,
         .samp_cfg = input.samp_cfg,
         .output_gain = input.output_gain,
         .output_offset = input.output_offset,
         .scaling = input.scaling,
-    } };
+    };
 }
 
 pub const GeomTimes = struct {
@@ -658,7 +716,7 @@ pub fn prepMeshFrames(
         // directly render float fields unscaled.
         var nodal_frame_scaling: ?imageops.ScalingParams = null;
         const selected = shaderops.selectShader(
-            shaderops.ShaderDirectStatic,
+            shaderops.ShaderMonoStatic,
             shaderops.ShaderPipeStatic,
             &mesh_static.shaders,
             camera.render_format,
@@ -794,21 +852,59 @@ fn initMeshFrameWorkspace(
     };
 }
 
-fn shaderNeedsDeformedWorld(shader: shaderops.ShaderDirectStatic) bool {
+fn shaderMonoNeedsDeformedWorld(shader: shaderops.ShaderMonoStatic) bool {
     return switch (shader) {
         .func => |func_static| func_static.coord_mode == .world_deformed,
-        .func_rgb, .func_multi => |func_static| func_static.coord_mode == .world_deformed,
         else => false,
     };
 }
 
-fn shaderHitSelection(
-    shader: shaderops.ShaderDirectStatic,
+fn pipeSourceNeedsDeformedWorld(source: shaderops.PipeSourceStatic) bool {
+    return switch (source) {
+        .func => |func_src| switch (func_src) {
+            .mono, .rgb, .multi => |f| f.coord_mode == .world_deformed,
+        },
+        else => false,
+    };
+}
+
+fn shaderMonoHitSelection(
+    shader: shaderops.ShaderMonoStatic,
     normal_type: normals.NormalType,
 ) meshhit.MeshHitSelection {
     var selection = meshhit.MeshHitSelection.initEmpty();
     switch (shader) {
-        .func, .func_rgb, .func_multi => |s| {
+        .func => |s| {
+            switch (s.coord_mode) {
+                .world_reference => selection.insert(.coords_ref),
+                .world_deformed => selection.insert(.coords_def),
+                else => {},
+            }
+            if ((s.builtin == .lambertian_normal_z or
+                for (s.channels) |ch| {
+                    if (ch.builtin == .lambertian_normal_z) break true;
+                } else false) and normal_type != .none)
+            {
+                selection.insert(.surf_norm);
+            }
+        },
+        else => {},
+    }
+    return selection;
+}
+
+fn pipeSourceHitSelection(
+    source: shaderops.PipeSourceStatic,
+    normal_type: normals.NormalType,
+) meshhit.MeshHitSelection {
+    var selection = meshhit.MeshHitSelection.initEmpty();
+    switch (source) {
+        .func => |func_src| {
+            const s = switch (func_src) {
+                .mono => |f| f,
+                .rgb => |f| f,
+                .multi => |f| f,
+            };
             switch (s.coord_mode) {
                 .world_reference => selection.insert(.coords_ref),
                 .world_deformed => selection.insert(.coords_def),
@@ -834,16 +930,18 @@ fn shaderSetHitSelection(
 ) meshhit.MeshHitSelection {
     var selection = meshhit.MeshHitSelection.initEmpty();
     const selected = shaderops.selectShader(
-        shaderops.ShaderDirectStatic,
+        shaderops.ShaderMonoStatic,
         shaderops.ShaderPipeStatic,
         &shaders,
         role,
     ) orelse return selection;
     switch (selected) {
-        .direct => |shader| return shaderHitSelection(shader.*, normal_type),
+        .direct => |shader| return shaderMonoHitSelection(shader.*, normal_type),
         .pipe => |pipe| {
             for (pipe.stages) |stage| switch (stage) {
-                .source => |src| selection.setUnion(shaderHitSelection(src.shader, normal_type)),
+                .source => |src| selection.setUnion(
+                    pipeSourceHitSelection(src.shader, normal_type),
+                ),
                 else => {},
             };
         },
@@ -854,19 +952,19 @@ fn shaderSetHitSelection(
 test "MeshHit requirements follow the selected camera role" {
     const stages = [_]shaderops.ShaderPipeStageStatic{
         .{ .source = .{
-            .shader = .{ .func = .{
+            .shader = .{ .func = .{ .mono = .{
                 .elem_uvs = null,
                 .coord_mode = .world_reference,
                 .builtin = .linear,
-            } },
+            } } },
             .destination = .{ .kind = .channel, .index = 0 },
         } },
         .{ .source = .{
-            .shader = .{ .func = .{
+            .shader = .{ .func = .{ .mono = .{
                 .elem_uvs = null,
                 .coord_mode = .world_deformed,
                 .builtin = .lambertian_normal_z,
-            } },
+            } } },
             .destination = .{ .kind = .channel, .index = 0 },
         } },
     };
@@ -897,16 +995,16 @@ fn shaderSetNeedsDeformedWorld(
     selection: shaderops.RenderFormat,
 ) bool {
     const selected = shaderops.selectShader(
-        shaderops.ShaderDirectStatic,
+        shaderops.ShaderMonoStatic,
         shaderops.ShaderPipeStatic,
         &shaders,
         selection,
     ) orelse return false;
     switch (selected) {
-        .direct => |shader| return shaderNeedsDeformedWorld(shader.*),
+        .direct => |shader| return shaderMonoNeedsDeformedWorld(shader.*),
         .pipe => |pipe| {
             for (pipe.stages) |stage| switch (stage) {
-                .source => |src| if (shaderNeedsDeformedWorld(src.shader)) return true,
+                .source => |src| if (pipeSourceNeedsDeformedWorld(src.shader)) return true,
                 else => {},
             };
             return false;
@@ -1821,29 +1919,53 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             mesh_prep: *MeshPrepared,
         ) !void {
             const format = self.camera.render_format;
-            const execution = switch (format) {
-                .mono => self.mesh_static.shaders.mono,
-                .rgb => self.mesh_static.shaders.rgb,
-                .ir => self.mesh_static.shaders.ir,
-                .multifield => self.mesh_static.shaders.multifield,
-            } orelse return;
-            const prepared: shaderops.ShaderExecutionPrepared = switch (execution) {
-                .direct => |shader| .{ .direct = try self.prepareShaderDirect(
-                    outer_alloc,
-                    shader,
-                    self.scaling_params,
-                ) },
-                .pipe => |pipe| .{ .pipe = try self.prepareShaderPipe(
-                    outer_alloc,
-                    pipe,
-                    format.channels(),
-                ) },
-            };
             switch (format) {
-                .mono => mesh_prep.shaders.mono = prepared,
-                .rgb => mesh_prep.shaders.rgb = prepared,
-                .ir => mesh_prep.shaders.ir = prepared,
-                .multifield => mesh_prep.shaders.multifield = prepared,
+                .mono => {
+                    const exec = self.mesh_static.shaders.mono orelse return;
+                    mesh_prep.shaders.mono = switch (exec) {
+                        .direct => |s| .{
+                            .direct = try self.prepareShaderMono(
+                                outer_alloc,
+                                s,
+                                self.scaling_params,
+                            ),
+                        },
+                        .pipe => |p| .{
+                            .pipe = try self.prepareShaderPipe(outer_alloc, p, 1),
+                        },
+                    };
+                },
+                .ir => {
+                    const exec = self.mesh_static.shaders.ir orelse return;
+                    mesh_prep.shaders.ir = switch (exec) {
+                        .direct => |s| .{
+                            .direct = try self.prepareShaderMono(
+                                outer_alloc,
+                                s,
+                                self.scaling_params,
+                            ),
+                        },
+                        .pipe => |p| .{
+                            .pipe = try self.prepareShaderPipe(outer_alloc, p, 1),
+                        },
+                    };
+                },
+                .rgb => {
+                    const pipe = self.mesh_static.shaders.rgb orelse return;
+                    mesh_prep.shaders.rgb = try self.prepareShaderPipe(
+                        outer_alloc,
+                        pipe,
+                        3,
+                    );
+                },
+                .multifield => {
+                    const pipe = self.mesh_static.shaders.multifield orelse return;
+                    mesh_prep.shaders.multifield = try self.prepareShaderPipe(
+                        outer_alloc,
+                        pipe,
+                        format.channels(),
+                    );
+                },
             }
         }
 
@@ -1861,7 +1983,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             for (pipe.stages, 0..) |stage, si| {
                 stages[si] = switch (stage) {
                     .source => |src| blk: {
-                        var prepared_shader = try self.prepareShaderDirect(
+                        var prepared_source = try self.preparePipeSource(
                             outer_alloc,
                             src.shader,
                             if (src.shader == .nodal and src.global_scaling == null)
@@ -1873,12 +1995,14 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                             else
                                 src.global_scaling,
                         );
-                        switch (prepared_shader) {
-                            .func, .func_rgb, .func_multi => |*shader| shader.hit_geometry = .{},
+                        switch (prepared_source) {
+                            .func => |*func_src| switch (func_src.*) {
+                                .mono, .rgb, .multi => |*shader| shader.hit_geometry = .{},
+                            },
                             else => {},
                         }
                         break :blk .{ .source = .{
-                            .shader = prepared_shader,
+                            .shader = prepared_source,
                             .destination = src.destination,
                         } };
                     },
@@ -1900,104 +2024,86 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             };
         }
 
-        fn prepareShaderDirect(
+        fn prepareShaderMono(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
-            shader_static: shaderops.ShaderDirectStatic,
+            shader_static: shaderops.ShaderMonoStatic,
             scaling: ?imageops.ScalingParams,
-        ) !shaderops.ShaderDirectPrepared {
+        ) !shaderops.ShaderMonoPrepared {
             const previous_scaling = self.scaling_params;
             self.scaling_params = scaling;
             defer self.scaling_params = previous_scaling;
-            switch (shader_static) {
-                .nodal => |nodal_static| {
-                    return try self.prepareNodalShader(
-                        outer_alloc,
-                        nodal_static,
-                    );
+            return switch (shader_static) {
+                .nodal => |s| .{
+                    .nodal = try self.prepareNodalShaderRaw(outer_alloc, s),
                 },
-                .tex_multi_f => |tex_static| {
-                    return try prepareTexShader(F, null, outer_alloc, self, tex_static);
+                .tex_u8 => |s| .{
+                    .tex_u8 = try prepareTexShaderRaw(u8, 1, outer_alloc, self, s),
                 },
-                .tex_u8 => |tex_static| {
-                    return try prepareTexShader(
-                        u8,
-                        1,
-                        outer_alloc,
-                        self,
-                        tex_static,
-                    );
+                .tex_u16 => |s| .{
+                    .tex_u16 = try prepareTexShaderRaw(u16, 1, outer_alloc, self, s),
                 },
-                .tex_u16 => |tex_static| {
-                    return try prepareTexShader(
-                        u16,
-                        1,
-                        outer_alloc,
-                        self,
-                        tex_static,
-                    );
+                .tex_f => |s| .{
+                    .tex_f = try prepareTexShaderRaw(F, 1, outer_alloc, self, s),
                 },
-                .tex_f => |tex_static| {
-                    return try prepareTexShader(
-                        F,
-                        1,
-                        outer_alloc,
-                        self,
-                        tex_static,
-                    );
+                .func => |s| .{
+                    .func = try prepareFuncShaderRaw(1, outer_alloc, self, s),
                 },
-                .tex_rgb_u8 => |tex_static| {
-                    return try prepareTexShader(
-                        u8,
-                        3,
-                        outer_alloc,
-                        self,
-                        tex_static,
-                    );
+            };
+        }
+
+        fn preparePipeSource(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+            source_static: shaderops.PipeSourceStatic,
+            scaling: ?imageops.ScalingParams,
+        ) !shaderops.PipeSourcePrepared {
+            const previous_scaling = self.scaling_params;
+            self.scaling_params = scaling;
+            defer self.scaling_params = previous_scaling;
+            return switch (source_static) {
+                .nodal => |s| .{
+                    .nodal = try self.prepareNodalShaderRaw(outer_alloc, s),
                 },
-                .tex_rgb_u16 => |tex_static| {
-                    return try prepareTexShader(
-                        u16,
-                        3,
-                        outer_alloc,
-                        self,
-                        tex_static,
-                    );
+                .tex_u8 => |s| .{
+                    .tex_u8 = try prepareTexShaderRaw(u8, 1, outer_alloc, self, s),
                 },
-                .tex_rgb_f => |tex_static| {
-                    return try prepareTexShader(
-                        F,
-                        3,
-                        outer_alloc,
-                        self,
-                        tex_static,
-                    );
+                .tex_u16 => |s| .{
+                    .tex_u16 = try prepareTexShaderRaw(u16, 1, outer_alloc, self, s),
                 },
-                .func => |func_static| {
-                    return try prepareFuncShader(
-                        1,
-                        outer_alloc,
-                        self,
-                        func_static,
-                    );
+                .tex_f => |s| .{
+                    .tex_f = try prepareTexShaderRaw(F, 1, outer_alloc, self, s),
                 },
-                .func_multi => |func_static| {
-                    return try prepareFuncShader(
-                        0,
-                        outer_alloc,
-                        self,
-                        func_static,
-                    );
+                .tex_rgb_u8 => |s| .{
+                    .tex_rgb_u8 = try prepareTexShaderRaw(u8, 3, outer_alloc, self, s),
                 },
-                .func_rgb => |func_static| {
-                    return try prepareFuncShader(
-                        3,
-                        outer_alloc,
-                        self,
-                        func_static,
-                    );
+                .tex_rgb_u16 => |s| .{
+                    .tex_rgb_u16 = try prepareTexShaderRaw(u16, 3, outer_alloc, self, s),
                 },
-            }
+                .tex_rgb_f => |s| .{
+                    .tex_rgb_f = try prepareTexShaderRaw(F, 3, outer_alloc, self, s),
+                },
+                .tex_multi_f => |s| .{
+                    .tex_multi_f = try prepareTexShaderRaw(F, null, outer_alloc, self, s),
+                },
+                .func => |func_src| switch (func_src) {
+                    .mono => |s| .{
+                        .func = .{
+                            .mono = try prepareFuncShaderRaw(1, outer_alloc, self, s),
+                        },
+                    },
+                    .rgb => |s| .{
+                        .func = .{
+                            .rgb = try prepareFuncShaderRaw(3, outer_alloc, self, s),
+                        },
+                    },
+                    .multi => |s| .{
+                        .func = .{
+                            .multi = try prepareFuncShaderRaw(0, outer_alloc, self, s),
+                        },
+                    },
+                },
+            };
         }
 
         const GatherVisibleFieldStage = struct {
@@ -2034,11 +2140,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
 
-        fn prepareNodalShader(
+        fn prepareNodalShaderRaw(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
             nodal_static: shaderops.NodalStatic,
-        ) !shaderops.ShaderDirectPrepared {
+        ) !shaderops.NodalPrepared {
             const N = comptime MT.getNodesNum();
             var elem_field = try ndarray.NDArray(F).initFlat(
                 outer_alloc,
@@ -2070,7 +2176,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             else
                 imageops.ScaleFactors{ .mul = 1.0, .add = 0.0 };
 
-            return .{ .nodal = .{
+            return .{
                 .elem_field = elem_field,
                 .output_gain = nodal_static.output_gain,
                 .output_offset = nodal_static.output_offset,
@@ -2078,7 +2184,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .scale_over = nodal_static.scale_over,
                 .scale_mul = factors.mul * nodal_static.output_gain,
                 .scale_add = factors.add * nodal_static.output_gain + nodal_static.output_offset,
-            } };
+            };
         }
 
         const GatherVisibleUVStage = struct {
@@ -2108,13 +2214,19 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
 
-        fn prepareTexShader(
+        fn prepareTexShaderRaw(
             comptime T: type,
             comptime C: ?usize,
             outer_alloc: std.mem.Allocator,
             self: *FrameMeshPipelineType,
-            tex_static: if (C) |channels| shaderops.TexStatic(T, channels) else shaderops.TexMultiStatic(T),
-        ) !shaderops.ShaderDirectPrepared {
+            tex_static: if (C) |channels|
+                shaderops.TexStatic(T, channels)
+            else
+                shaderops.TexMultiStatic(T),
+        ) !if (C) |channels|
+            shaderops.TexPrepared(T, channels)
+        else
+            shaderops.TexMultiPrepared(T) {
             const params = imageops.getScalingParamsTex(
                 T,
                 C,
@@ -2150,93 +2262,24 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 self.vis_chunk_size,
             );
 
-            if (comptime C == null) {
-                const prepared: shaderops.TexMultiPrepared(T) = .{
-                    .elem_uvs = elem_uvs,
-                    .tex = tex_static.tex,
-                    .samp_cfg = tex_static.samp_cfg,
-                    .output_gain = tex_static.output_gain,
-                    .output_offset = tex_static.output_offset,
-                    .scaling = tex_static.scaling,
-                    .scale_mul = factors.mul * tex_static.output_gain,
-                    .scale_add = factors.add * tex_static.output_gain + tex_static.output_offset,
-                };
-                return .{ .tex_multi_f = prepared };
-            } else if (comptime T == u8 and C == 1) {
-                return .{ .tex_u8 = .{
-                    .elem_uvs = elem_uvs,
-                    .tex = tex_static.tex,
-                    .samp_cfg = tex_static.samp_cfg,
-                    .output_gain = tex_static.output_gain,
-                    .output_offset = tex_static.output_offset,
-                    .scaling = tex_static.scaling,
-                    .scale_mul = factors.mul * tex_static.output_gain,
-                    .scale_add = factors.add * tex_static.output_gain + tex_static.output_offset,
-                } };
-            } else if (comptime T == u16 and C == 1) {
-                return .{ .tex_u16 = .{
-                    .elem_uvs = elem_uvs,
-                    .tex = tex_static.tex,
-                    .samp_cfg = tex_static.samp_cfg,
-                    .output_gain = tex_static.output_gain,
-                    .output_offset = tex_static.output_offset,
-                    .scaling = tex_static.scaling,
-                    .scale_mul = factors.mul * tex_static.output_gain,
-                    .scale_add = factors.add * tex_static.output_gain + tex_static.output_offset,
-                } };
-            } else if (comptime T == F and C == 1) {
-                return .{ .tex_f = .{
-                    .elem_uvs = elem_uvs,
-                    .tex = tex_static.tex,
-                    .samp_cfg = tex_static.samp_cfg,
-                    .output_gain = tex_static.output_gain,
-                    .output_offset = tex_static.output_offset,
-                    .scaling = tex_static.scaling,
-                    .scale_mul = factors.mul * tex_static.output_gain,
-                    .scale_add = factors.add * tex_static.output_gain + tex_static.output_offset,
-                } };
-            } else if (comptime T == u8 and C == 3) {
-                return .{ .tex_rgb_u8 = .{
-                    .elem_uvs = elem_uvs,
-                    .tex = tex_static.tex,
-                    .samp_cfg = tex_static.samp_cfg,
-                    .output_gain = tex_static.output_gain,
-                    .output_offset = tex_static.output_offset,
-                    .scaling = tex_static.scaling,
-                    .scale_mul = factors.mul * tex_static.output_gain,
-                    .scale_add = factors.add * tex_static.output_gain + tex_static.output_offset,
-                } };
-            } else if (comptime T == u16 and C == 3) {
-                return .{ .tex_rgb_u16 = .{
-                    .elem_uvs = elem_uvs,
-                    .tex = tex_static.tex,
-                    .samp_cfg = tex_static.samp_cfg,
-                    .output_gain = tex_static.output_gain,
-                    .output_offset = tex_static.output_offset,
-                    .scaling = tex_static.scaling,
-                    .scale_mul = factors.mul * tex_static.output_gain,
-                    .scale_add = factors.add * tex_static.output_gain + tex_static.output_offset,
-                } };
-            } else {
-                return .{ .tex_rgb_f = .{
-                    .elem_uvs = elem_uvs,
-                    .tex = tex_static.tex,
-                    .samp_cfg = tex_static.samp_cfg,
-                    .output_gain = tex_static.output_gain,
-                    .output_offset = tex_static.output_offset,
-                    .scaling = tex_static.scaling,
-                    .scale_mul = factors.mul * tex_static.output_gain,
-                    .scale_add = factors.add * tex_static.output_gain + tex_static.output_offset,
-                } };
-            }
+            return .{
+                .elem_uvs = elem_uvs,
+                .tex = tex_static.tex,
+                .samp_cfg = tex_static.samp_cfg,
+                .output_gain = tex_static.output_gain,
+                .output_offset = tex_static.output_offset,
+                .scaling = tex_static.scaling,
+                .scale_mul = factors.mul * tex_static.output_gain,
+                .scale_add = factors.add * tex_static.output_gain + tex_static.output_offset,
+            };
         }
 
-        fn prepareFuncShader(
+        fn prepareFuncShaderRaw(
             comptime C: usize,
             outer_alloc: std.mem.Allocator,
             self: *FrameMeshPipelineType,
             func_static: shaderops.FuncStatic,
-        ) !shaderops.ShaderDirectPrepared {
+        ) !shaderops.FuncPrepared {
             const factors = imageops.getScaleFactors(
                 func_static.scaling,
                 null,
@@ -2285,39 +2328,25 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
                     prepared.* = .{
                         .builtin = channel.builtin,
-                        .params = shaderops.normFuncShaderParams(channel.builtin, channel.params),
+                        .params = shaderops.normFuncShaderParams(
+                            channel.builtin,
+                            channel.params,
+                        ),
                         .scale_mul = channel_factors.mul * channel.output_gain,
-                        .scale_add = channel_factors.add * channel.output_gain + channel.output_offset,
+                        .scale_add = channel_factors.add * channel.output_gain +
+                            channel.output_offset,
                     };
                     needs_normal = needs_normal or channel.builtin == .lambertian_normal_z;
                 }
-                return .{ .func_multi = .{
+                return .{
                     .elem_uvs = elem_uvs,
                     .hit_geometry = self.hit_geometry,
                     .coord_mode = func_static.coord_mode,
                     .channels = channels,
                     .needs_normal = needs_normal and self.mesh_static.normal_type != .none,
-                } };
-            } else if (comptime C == 1) {
-                return .{ .func = .{
-                    .elem_uvs = elem_uvs,
-                    .hit_geometry = self.hit_geometry,
-                    .coord_mode = func_static.coord_mode,
-                    .builtin = func_static.builtin,
-                    .params = shaderops.normFuncShaderParams(
-                        func_static.builtin,
-                        func_static.params,
-                    ),
-                    .output_gain = func_static.output_gain,
-                    .output_offset = func_static.output_offset,
-                    .scaling = func_static.scaling,
-                    .scale_mul = factors.mul * func_static.output_gain,
-                    .scale_add = factors.add * func_static.output_gain + func_static.output_offset,
-                    .needs_normal = func_static.builtin == .lambertian_normal_z and
-                        self.mesh_static.normal_type != .none,
-                } };
+                };
             } else {
-                return .{ .func_rgb = .{
+                return .{
                     .elem_uvs = elem_uvs,
                     .hit_geometry = self.hit_geometry,
                     .coord_mode = func_static.coord_mode,
@@ -2330,10 +2359,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .output_offset = func_static.output_offset,
                     .scaling = func_static.scaling,
                     .scale_mul = factors.mul * func_static.output_gain,
-                    .scale_add = factors.add * func_static.output_gain + func_static.output_offset,
+                    .scale_add = factors.add * func_static.output_gain +
+                        func_static.output_offset,
                     .needs_normal = func_static.builtin == .lambertian_normal_z and
                         self.mesh_static.normal_type != .none,
-                } };
+                };
             }
         }
 

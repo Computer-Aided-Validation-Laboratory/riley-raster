@@ -66,7 +66,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 2. Define shaders: direct speckle, direct lambertian, and shader pipe
     // -------------------------------------------------------------------------
-    const speckle_shader: shaderops.ShaderDirectInput = .{
+    const speckle_shader: shaderops.ShaderMonoInput = .{
         .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
@@ -79,7 +79,7 @@ pub fn main(init: std.process.Init) !void {
         },
     };
 
-    const lambertian_shader: shaderops.ShaderDirectInput = .{
+    const lambertian_shader: shaderops.ShaderMonoInput = .{
         .func = .{
             .builtin = .lambertian_normal_z,
             .params = .{

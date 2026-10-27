@@ -1355,7 +1355,7 @@ fn initNodalGlobalScaling(
 
     for (meshes, 0..) |mesh, ii| {
         nodal_global_scaling[ii] = null;
-        inline for (.{ mesh.shaders.mono, mesh.shaders.rgb, mesh.shaders.ir, mesh.shaders.multifield }) |execution_opt| {
+        inline for (.{ mesh.shaders.mono, mesh.shaders.ir }) |execution_opt| {
             if (execution_opt) |execution| switch (execution) {
                 .direct => |shader| switch (shader) {
                     .nodal => |s| if (s.scale_over == .over_frames) {

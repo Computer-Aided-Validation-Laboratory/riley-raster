@@ -12,6 +12,29 @@ pub const max_channels = buildconfig.config.max_image_channels;
 pub const SlotKind = enum { channel, field, parameter, constant };
 pub const Slot = struct { kind: SlotKind, index: u8 };
 
+pub const identity_channels_8 = [_]Slot{
+    .{ .kind = .channel, .index = 0 },
+    .{ .kind = .channel, .index = 1 },
+    .{ .kind = .channel, .index = 2 },
+    .{ .kind = .channel, .index = 3 },
+    .{ .kind = .channel, .index = 4 },
+    .{ .kind = .channel, .index = 5 },
+    .{ .kind = .channel, .index = 6 },
+    .{ .kind = .channel, .index = 7 },
+};
+
+pub const identity_channels_1: []const Slot = identity_channels_8[0..1];
+pub const identity_channels_3: []const Slot = identity_channels_8[0..3];
+
+pub fn identitySlots(channels: u8) []const Slot {
+    std.debug.assert(channels <= max_channels);
+    return identity_channels_8[0..channels];
+}
+
+pub fn resolverIdentity(channels: u8) Resolver {
+    return .{ .identity = identitySlots(channels) };
+}
+
 pub const GreyToEmissivityStage = struct {
     source: Slot,
     destination: Slot,

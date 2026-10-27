@@ -74,7 +74,8 @@ fn runBaseComparison(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const meshes = common_full.buildScene2ImageOutputMeshes(
+    const meshes = try common_full.buildScene2ImageOutputMeshes(
+        aa,
         prep,
         textures,
         bc.is_rgb,
@@ -178,7 +179,8 @@ fn runFactorialSaveStrategy(
     var dir = try orch.openDirEnsured(io, temp_dir_base);
     dir.close(io);
 
-    const meshes = common_full.buildScene2ImageOutputMeshes(
+    const meshes = try common_full.buildScene2ImageOutputMeshes(
+        allocator,
         prep,
         textures,
         false,
@@ -241,18 +243,24 @@ fn runFactorialFormatsAndModes(
     var dir = try orch.openDirEnsured(io, temp_dir_base);
     dir.close(io);
 
-    const meshes_mono = common_full.buildScene2ImageOutputMeshes(
+    const meshes_mono = try common_full.buildScene2ImageOutputMeshes(
+        allocator,
         prep,
         textures,
         false,
         false,
     );
-    const meshes_rgb = common_full.buildScene2ImageOutputMeshes(
+    const meshes_rgb = try common_full.buildScene2ImageOutputMeshes(
+        allocator,
         prep,
         textures,
         true,
         false,
     );
+    defer {
+        allocator.free(meshes_rgb[0].shaders.rgb.?.stages);
+        allocator.free(meshes_rgb[1].shaders.rgb.?.stages);
+    }
 
     for ([_]bool{ false, true }) |is_rgb| {
         for (test_formats) |fmt| {
@@ -303,7 +311,8 @@ fn runFactorialScalingAndReports(
     textures: *const common_full.FullTextures,
     config: rastcfg.RasterConfig,
 ) !void {
-    const meshes = common_full.buildScene2ImageOutputMeshes(
+    const meshes = try common_full.buildScene2ImageOutputMeshes(
+        allocator,
         prep,
         textures,
         false,
@@ -355,7 +364,8 @@ fn runEntryPointEquivalence(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const meshes = common_full.buildScene2ImageOutputMeshes(
+    const meshes = try common_full.buildScene2ImageOutputMeshes(
+        allocator,
         prep,
         textures,
         false,
@@ -540,8 +550,20 @@ fn runMixedCameraOutput(
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const aa = arena.allocator();
-    const mono_meshes = common_full.buildScene2ImageOutputMeshes(prep, textures, false, false);
-    const rgb_meshes = common_full.buildScene2ImageOutputMeshes(prep, textures, true, false);
+    const mono_meshes = try common_full.buildScene2ImageOutputMeshes(
+        aa,
+        prep,
+        textures,
+        false,
+        false,
+    );
+    const rgb_meshes = try common_full.buildScene2ImageOutputMeshes(
+        aa,
+        prep,
+        textures,
+        true,
+        false,
+    );
     const meshes = [_]MeshInput{
         mono_meshes[0], mono_meshes[1], rgb_meshes[0], rgb_meshes[1],
     };
@@ -650,7 +672,8 @@ fn runAdditionalImageOutputTests(
     var dir = try orch.openDirEnsured(io, temp_dir_base);
     dir.close(io);
 
-    const meshes_mono = common_full.buildScene2ImageOutputMeshes(
+    const meshes_mono = try common_full.buildScene2ImageOutputMeshes(
+        allocator,
         prep,
         textures,
         false,

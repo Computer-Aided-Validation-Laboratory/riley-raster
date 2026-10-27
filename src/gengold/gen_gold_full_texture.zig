@@ -50,12 +50,17 @@ pub fn generateFullTexCase(
     var out_dir = try orch.openDirEnsured(io, out_dir_path);
     out_dir.close(io);
 
-    const meshes = fullcase_tex.buildTexSamplingCaseMeshes(
+    const meshes = try fullcase_tex.buildTexSamplingCaseMeshes(
+        allocator,
         mesh_type,
         prep,
         textures,
         case,
     );
+    defer if (case.is_rgb) {
+        allocator.free(meshes[0].shaders.rgb.?.stages);
+        allocator.free(meshes[1].shaders.rgb.?.stages);
+    };
     var selected_camera = prep.camera_input;
     selected_camera.render_format = if (case.is_rgb) .rgb else .mono;
 

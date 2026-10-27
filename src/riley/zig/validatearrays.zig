@@ -100,97 +100,80 @@ fn checkMeshDisplacements(mesh: meshpipe.MeshInput) InputArrayError!void {
 // --------------------------------------------------------------------------------------
 
 fn checkMeshShaderArrays(mesh: meshpipe.MeshInput) InputArrayError!void {
-    inline for (.{
-        mesh.shaders.mono,
-        mesh.shaders.rgb,
-        mesh.shaders.ir,
-        mesh.shaders.multifield,
-    }) |execution_opt| {
-        if (execution_opt) |execution| switch (execution) {
-            .direct => |shader| try checkShaderArrays(shader),
-            .pipe => |pipe| for (pipe.stages) |stage| {
-                switch (stage) {
-                    .source => |src| try checkShaderArrays(src.shader),
-                    else => {},
-                }
-            },
-        };
+    if (mesh.shaders.mono) |execution| try checkMonoExecutionArrays(execution);
+    if (mesh.shaders.ir) |execution| try checkMonoExecutionArrays(execution);
+    if (mesh.shaders.rgb) |pipe| try checkPipeArrays(pipe);
+    if (mesh.shaders.multifield) |pipe| try checkPipeArrays(pipe);
+}
+
+fn checkMonoExecutionArrays(
+    execution: shaderops.ShaderMonoExecutionInput,
+) InputArrayError!void {
+    switch (execution) {
+        .direct => |shader| try checkShaderMonoArrays(shader),
+        .pipe => |pipe| try checkPipeArrays(pipe),
     }
 }
 
-fn checkShaderArrays(shader: shaderops.ShaderDirectInput) InputArrayError!void {
+fn checkPipeArrays(pipe: shaderops.ShaderPipeInput) InputArrayError!void {
+    for (pipe.stages) |stage| {
+        switch (stage) {
+            .source => |src| try checkPipeSourceArrays(src.shader),
+            else => {},
+        }
+    }
+}
+
+fn checkTexUvArrays(slice: []const f64) InputArrayError!void {
+    for (slice) |val| {
+        if (!std.math.isFinite(val)) return error.NonFiniteUvs;
+    }
+}
+
+fn checkShaderMonoArrays(shader: shaderops.ShaderMonoInput) InputArrayError!void {
     switch (shader) {
-        .tex_u8 => |tex_shader| {
-            if (!isFiniteSlice(tex_shader.uvs.slice)) {
-                return error.NonFiniteUvs;
-            }
+        .tex_u8 => |t| try checkTexUvArrays(t.uvs.slice),
+        .tex_u16 => |t| try checkTexUvArrays(t.uvs.slice),
+        .tex_f => |t| {
+            try checkTexUvArrays(t.uvs.slice);
+            if (!isFiniteSlice(t.tex.array.slice)) return error.NonFiniteTexels;
         },
-        .tex_u16 => |tex_shader| {
-            if (!isFiniteSlice(tex_shader.uvs.slice)) {
-                return error.NonFiniteUvs;
-            }
+        .nodal => |n| {
+            if (!isFiniteSlice(n.field.array_mem)) return error.NonFiniteNodalFields;
         },
-        .tex_f => |tex_shader| {
-            if (!isFiniteSlice(tex_shader.uvs.slice)) {
-                return error.NonFiniteUvs;
-            }
-            if (!isFiniteSlice(tex_shader.tex.array.slice)) {
-                return error.NonFiniteTexels;
-            }
+        .func => |f| {
+            if (f.uvs) |uvs| try checkTexUvArrays(uvs.slice);
         },
-        .tex_rgb_u8 => |tex_shader| {
-            if (!isFiniteSlice(tex_shader.uvs.slice)) {
-                return error.NonFiniteUvs;
-            }
+    }
+}
+
+fn checkPipeSourceArrays(source: shaderops.PipeSourceInput) InputArrayError!void {
+    switch (source) {
+        .tex_u8 => |t| try checkTexUvArrays(t.uvs.slice),
+        .tex_u16 => |t| try checkTexUvArrays(t.uvs.slice),
+        .tex_f => |t| {
+            try checkTexUvArrays(t.uvs.slice);
+            if (!isFiniteSlice(t.tex.array.slice)) return error.NonFiniteTexels;
         },
-        .tex_rgb_u16 => |tex_shader| {
-            if (!isFiniteSlice(tex_shader.uvs.slice)) {
-                return error.NonFiniteUvs;
-            }
+        .tex_rgb_u8 => |t| try checkTexUvArrays(t.uvs.slice),
+        .tex_rgb_u16 => |t| try checkTexUvArrays(t.uvs.slice),
+        .tex_rgb_f => |t| {
+            try checkTexUvArrays(t.uvs.slice);
+            if (!isFiniteSlice(t.tex.array.slice)) return error.NonFiniteTexels;
         },
-        .tex_rgb_f => |tex_shader| {
-            if (!isFiniteSlice(tex_shader.uvs.slice)) {
-                return error.NonFiniteUvs;
-            }
-            if (!isFiniteSlice(tex_shader.tex.array.slice)) {
-                return error.NonFiniteTexels;
-            }
+        .tex_multi_u8 => |t| try checkTexUvArrays(t.uvs.slice),
+        .tex_multi_u16 => |t| try checkTexUvArrays(t.uvs.slice),
+        .tex_multi_f => |t| {
+            try checkTexUvArrays(t.uvs.slice);
+            if (!isFiniteSlice(t.tex.array.slice)) return error.NonFiniteTexels;
         },
-        .tex_multi_u8 => |tex_shader| {
-            if (!isFiniteSlice(tex_shader.uvs.slice)) return error.NonFiniteUvs;
+        .nodal => |n| {
+            if (!isFiniteSlice(n.field.array_mem)) return error.NonFiniteNodalFields;
         },
-        .tex_multi_u16 => |tex_shader| {
-            if (!isFiniteSlice(tex_shader.uvs.slice)) return error.NonFiniteUvs;
-        },
-        .tex_multi_f => |tex_shader| {
-            if (!isFiniteSlice(tex_shader.uvs.slice)) return error.NonFiniteUvs;
-            if (!isFiniteSlice(tex_shader.tex.array.slice)) return error.NonFiniteTexels;
-        },
-        .nodal => |nodal_shader| {
-            if (!isFiniteSlice(nodal_shader.field.array_mem)) {
-                return error.NonFiniteNodalFields;
-            }
-        },
-        .func => |func_shader| {
-            if (func_shader.uvs) |uvs| {
-                if (!isFiniteSlice(uvs.slice)) {
-                    return error.NonFiniteUvs;
-                }
-            }
-        },
-        .func_rgb => |func_shader| {
-            if (func_shader.uvs) |uvs| {
-                if (!isFiniteSlice(uvs.slice)) {
-                    return error.NonFiniteUvs;
-                }
-            }
-        },
-        .func_multi => |func_shader| {
-            if (func_shader.uvs) |uvs| {
-                if (!isFiniteSlice(uvs.slice)) {
-                    return error.NonFiniteUvs;
-                }
-            }
+        .func => |f| switch (f) {
+            .mono => |m| if (m.uvs) |uvs| try checkTexUvArrays(uvs.slice),
+            .rgb => |r| if (r.uvs) |uvs| try checkTexUvArrays(uvs.slice),
+            .multi => |m| if (m.uvs) |uvs| try checkTexUvArrays(uvs.slice),
         },
     }
 }

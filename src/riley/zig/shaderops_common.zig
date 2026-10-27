@@ -126,7 +126,21 @@ pub const FuncMultiInput = struct {
     channels: []const FuncChannel,
 };
 
-pub const ShaderDirectInput = union(enum) {
+pub const ShaderMonoInput = union(enum) {
+    nodal: NodalInput,
+    tex_u8: TexInput(texops.TexDataFix(u8, 1)),
+    tex_u16: TexInput(texops.TexDataFix(u16, 1)),
+    tex_f: TexInput(texops.TexDataFix(F, 1)),
+    func: FuncInput,
+};
+
+pub const FuncSourceInput = union(enum) {
+    mono: FuncInput,
+    rgb: FuncInput,
+    multi: FuncMultiInput,
+};
+
+pub const PipeSourceInput = union(enum) {
     nodal: NodalInput,
     tex_u8: TexInput(texops.TexDataFix(u8, 1)),
     tex_u16: TexInput(texops.TexDataFix(u16, 1)),
@@ -137,13 +151,11 @@ pub const ShaderDirectInput = union(enum) {
     tex_multi_u8: TexInput(texops.TexDataDyn(u8)),
     tex_multi_u16: TexInput(texops.TexDataDyn(u16)),
     tex_multi_f: TexInput(texops.TexDataDyn(F)),
-    func: FuncInput,
-    func_rgb: FuncInput,
-    func_multi: FuncMultiInput,
+    func: FuncSourceInput,
 };
 
 pub const ShaderPipeStageInput = union(enum) {
-    source: struct { shader: ShaderDirectInput, destination: shaderpipe.Slot },
+    source: struct { shader: PipeSourceInput, destination: shaderpipe.Slot },
     grey_to_emissivity: GreyToEmissivityStage,
     clamp: ClampStage,
     affine_map: AffineMapStage,
@@ -158,17 +170,75 @@ pub const ShaderPipeInput = struct {
     constants: []const F = &.{},
 };
 
-pub const ShaderExecutionInput = union(enum) {
-    direct: ShaderDirectInput,
+pub const ShaderMonoExecutionInput = union(enum) {
+    direct: ShaderMonoInput,
     pipe: ShaderPipeInput,
 };
 
+pub const ShaderExecutionInput = ShaderMonoExecutionInput;
+
 pub const MeshShaderSetInput = struct {
-    mono: ?ShaderExecutionInput = null,
-    rgb: ?ShaderExecutionInput = null,
-    ir: ?ShaderExecutionInput = null,
-    multifield: ?ShaderExecutionInput = null,
+    mono: ?ShaderMonoExecutionInput = null,
+    ir: ?ShaderMonoExecutionInput = null,
+    rgb: ?ShaderPipeInput = null,
+    multifield: ?ShaderPipeInput = null,
 };
+
+pub fn stageSource(source: PipeSourceInput) ShaderPipeStageInput {
+    return .{
+        .source = .{
+            .shader = source,
+            .destination = .{ .kind = .channel, .index = 0 },
+        },
+    };
+}
+
+pub fn identityRGB(
+    source: PipeSourceInput,
+    stage_buf: *[1]ShaderPipeStageInput,
+) ShaderPipeInput {
+    stage_buf[0] = stageSource(source);
+    return .{
+        .stages = stage_buf,
+        .resolver = .{ .identity = shaderpipe.identity_channels_3 },
+    };
+}
+
+pub fn identityMulti(
+    channels: u8,
+    source: PipeSourceInput,
+    stage_buf: *[1]ShaderPipeStageInput,
+) ShaderPipeInput {
+    stage_buf[0] = stageSource(source);
+    return .{
+        .stages = stage_buf,
+        .resolver = .{ .identity = shaderpipe.identitySlots(channels) },
+    };
+}
+
+pub fn monoToPipeSource(mono: ShaderMonoInput) PipeSourceInput {
+    return switch (mono) {
+        .tex_u8 => |t| .{ .tex_u8 = t },
+        .tex_u16 => |t| .{ .tex_u16 = t },
+        .tex_f => |t| .{ .tex_f = t },
+        .nodal => |n| .{ .nodal = n },
+        .func => |f| .{ .func = .{ .mono = f } },
+    };
+}
+
+pub fn pipeSourceToMono(source: PipeSourceInput) !ShaderMonoInput {
+    return switch (source) {
+        .tex_u8 => |t| .{ .tex_u8 = t },
+        .tex_u16 => |t| .{ .tex_u16 = t },
+        .tex_f => |t| .{ .tex_f = t },
+        .nodal => |n| .{ .nodal = n },
+        .func => |f| switch (f) {
+            .mono => |m| .{ .func = m },
+            .rgb => error.DirectMonoFuncRequiresMono,
+        },
+        else => error.DirectMonoShaderExpectedMono,
+    };
+}
 
 // --------------------------------------------------------------------------------------
 // Stage 2: Static
@@ -220,7 +290,21 @@ pub const FuncStatic = struct {
     channels: []const FuncChannel = &.{},
 };
 
-pub const ShaderDirectStatic = union(enum) {
+pub const ShaderMonoStatic = union(enum) {
+    nodal: NodalStatic,
+    tex_u8: TexStatic(u8, 1),
+    tex_u16: TexStatic(u16, 1),
+    tex_f: TexStatic(F, 1),
+    func: FuncStatic,
+};
+
+pub const FuncSourceStatic = union(enum) {
+    mono: FuncStatic,
+    rgb: FuncStatic,
+    multi: FuncStatic,
+};
+
+pub const PipeSourceStatic = union(enum) {
     nodal: NodalStatic,
     tex_u8: TexStatic(u8, 1),
     tex_u16: TexStatic(u16, 1),
@@ -229,14 +313,12 @@ pub const ShaderDirectStatic = union(enum) {
     tex_rgb_u16: TexStatic(u16, 3),
     tex_rgb_f: TexStatic(F, 3),
     tex_multi_f: TexMultiStatic(F),
-    func: FuncStatic,
-    func_rgb: FuncStatic,
-    func_multi: FuncStatic,
+    func: FuncSourceStatic,
 };
 
 pub const ShaderPipeStageStatic = union(enum) {
     source: struct {
-        shader: ShaderDirectStatic,
+        shader: PipeSourceStatic,
         destination: shaderpipe.Slot,
         global_scaling: ?imageops.ScalingParams = null,
     },
@@ -254,16 +336,18 @@ pub const ShaderPipeStatic = struct {
     constants: []const F,
 };
 
-pub const ShaderExecutionStatic = union(enum) {
-    direct: ShaderDirectStatic,
+pub const ShaderMonoExecutionStatic = union(enum) {
+    direct: ShaderMonoStatic,
     pipe: ShaderPipeStatic,
 };
 
+pub const ShaderExecutionStatic = ShaderMonoExecutionStatic;
+
 pub const MeshShaderSetStatic = struct {
-    mono: ?ShaderExecutionStatic = null,
-    rgb: ?ShaderExecutionStatic = null,
-    ir: ?ShaderExecutionStatic = null,
-    multifield: ?ShaderExecutionStatic = null,
+    mono: ?ShaderMonoExecutionStatic = null,
+    ir: ?ShaderMonoExecutionStatic = null,
+    rgb: ?ShaderPipeStatic = null,
+    multifield: ?ShaderPipeStatic = null,
 };
 
 // --------------------------------------------------------------------------------------
@@ -351,7 +435,21 @@ pub const FuncChannelPrepared = struct {
     scale_add: F,
 };
 
-pub const ShaderDirectPrepared = union(enum) {
+pub const ShaderMonoPrepared = union(enum) {
+    nodal: NodalPrepared,
+    tex_u8: TexPrepared(u8, 1),
+    tex_u16: TexPrepared(u16, 1),
+    tex_f: TexPrepared(F, 1),
+    func: FuncPrepared,
+};
+
+pub const FuncSourcePrepared = union(enum) {
+    mono: FuncPrepared,
+    rgb: FuncPrepared,
+    multi: FuncPrepared,
+};
+
+pub const PipeSourcePrepared = union(enum) {
     nodal: NodalPrepared,
     tex_u8: TexPrepared(u8, 1),
     tex_u16: TexPrepared(u16, 1),
@@ -360,13 +458,11 @@ pub const ShaderDirectPrepared = union(enum) {
     tex_rgb_u16: TexPrepared(u16, 3),
     tex_rgb_f: TexPrepared(F, 3),
     tex_multi_f: TexMultiPrepared(F),
-    func: FuncPrepared,
-    func_rgb: FuncPrepared,
-    func_multi: FuncPrepared,
+    func: FuncSourcePrepared,
 };
 
 pub const ShaderPipeStagePrepared = union(enum) {
-    source: struct { shader: ShaderDirectPrepared, destination: shaderpipe.Slot },
+    source: struct { shader: PipeSourcePrepared, destination: shaderpipe.Slot },
     grey_to_emissivity: GreyToEmissivityStage,
     clamp: ClampStage,
     affine_map: AffineMapStage,
@@ -383,16 +479,18 @@ pub const ShaderPipePrepared = struct {
     hit_geometry: meshhit.MeshHitGeomPrepared = .{},
 };
 
-pub const ShaderExecutionPrepared = union(enum) {
-    direct: ShaderDirectPrepared,
+pub const ShaderMonoExecutionPrepared = union(enum) {
+    direct: ShaderMonoPrepared,
     pipe: ShaderPipePrepared,
 };
 
+pub const ShaderExecutionPrepared = ShaderMonoExecutionPrepared;
+
 pub const MeshShaderSetPrepared = struct {
-    mono: ?ShaderExecutionPrepared = null,
-    rgb: ?ShaderExecutionPrepared = null,
-    ir: ?ShaderExecutionPrepared = null,
-    multifield: ?ShaderExecutionPrepared = null,
+    mono: ?ShaderMonoExecutionPrepared = null,
+    ir: ?ShaderMonoExecutionPrepared = null,
+    rgb: ?ShaderPipePrepared = null,
+    multifield: ?ShaderPipePrepared = null,
 };
 
 // --------------------------------------------------------------------------------------
@@ -409,8 +507,8 @@ pub fn SelectedShader(comptime Direct: type, comptime Pipe: type) type {
 pub fn hasShader(shaders: anytype, format: RenderFormat) bool {
     return switch (format) {
         .mono => shaders.mono != null,
-        .rgb => shaders.rgb != null,
         .ir => shaders.ir != null,
+        .rgb => shaders.rgb != null,
         .multifield => shaders.multifield != null,
     };
 }
@@ -421,16 +519,23 @@ pub fn selectShader(
     shaders: anytype,
     format: RenderFormat,
 ) ?SelectedShader(Direct, Pipe) {
-    const execution = switch (format) {
-        .mono => &shaders.mono,
-        .rgb => &shaders.rgb,
-        .ir => &shaders.ir,
-        .multifield => &shaders.multifield,
-    };
-    const selected = if (execution.*) |*value| value else return null;
-    return switch (selected.*) {
-        .direct => |*shader| .{ .direct = shader },
-        .pipe => |*pipe| .{ .pipe = pipe },
+    return switch (format) {
+        .mono => if (shaders.mono) |*exec| switch (exec.*) {
+            .direct => |*shader| .{ .direct = shader },
+            .pipe => |*pipe| .{ .pipe = pipe },
+        } else null,
+        .ir => if (shaders.ir) |*exec| switch (exec.*) {
+            .direct => |*shader| .{ .direct = shader },
+            .pipe => |*pipe| .{ .pipe = pipe },
+        } else null,
+        .rgb => if (shaders.rgb) |*pipe|
+            .{ .pipe = pipe }
+        else
+            null,
+        .multifield => if (shaders.multifield) |*pipe|
+            .{ .pipe = pipe }
+        else
+            null,
     };
 }
 

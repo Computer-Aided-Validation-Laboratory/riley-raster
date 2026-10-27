@@ -13,6 +13,7 @@ const common_full = @import("../dev_support/fullfixtures.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const shaderops = @import("../riley/zig/shaderops.zig");
+const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const texops = @import("../riley/zig/textureops.zig");
 
 const F = buildconfig.F;
@@ -70,13 +71,14 @@ pub const all_tex_samp_configs = [_]texops.TexSampConfig{
 };
 
 pub fn buildTexSamplingCaseMeshes(
+    allocator: std.mem.Allocator,
     mesh_type: gk.MeshType,
     prep: *const common_full.Scene0Prepared,
     textures: *const common_full.FullTextures,
     case: FullTexSamplingCase,
-) [2]MeshInput {
-    const sphere_shader: shaderops.ShaderDirectInput = if (case.is_rgb)
-        switch (case.dtype) {
+) ! [2]MeshInput {
+    if (case.is_rgb) {
+        const sphere_source: shaderops.PipeSourceInput = switch (case.dtype) {
             .u8 => .{
                 .tex_rgb_u8 = .{
                     .uvs = prep.sphere_uvs.array,
@@ -98,33 +100,9 @@ pub fn buildTexSamplingCaseMeshes(
                     .samp_cfg = case.samp_cfg,
                 },
             },
-        }
-    else switch (case.dtype) {
-        .u8 => .{
-            .tex_u8 = .{
-                .uvs = prep.sphere_uvs.array,
-                .tex = textures.tex_u8_mono,
-                .samp_cfg = case.samp_cfg,
-            },
-        },
-        .u16 => .{
-            .tex_u16 = .{
-                .uvs = prep.sphere_uvs.array,
-                .tex = textures.tex_u16_mono,
-                .samp_cfg = case.samp_cfg,
-            },
-        },
-        .f64 => .{
-            .tex_f = .{
-                .uvs = prep.sphere_uvs.array,
-                .tex = textures.tex_f64_mono,
-                .samp_cfg = case.samp_cfg,
-            },
-        },
-    };
+        };
 
-    const cyl_shader: shaderops.ShaderDirectInput = if (case.is_rgb)
-        switch (case.dtype) {
+        const cyl_source: shaderops.PipeSourceInput = switch (case.dtype) {
             .u8 => .{
                 .tex_rgb_u8 = .{
                     .uvs = prep.cylinder_uvs.array,
@@ -146,45 +124,103 @@ pub fn buildTexSamplingCaseMeshes(
                     .samp_cfg = case.samp_cfg,
                 },
             },
-        }
-    else switch (case.dtype) {
-        .u8 => .{
-            .tex_u8 = .{
-                .uvs = prep.cylinder_uvs.array,
-                .tex = textures.tex_u8_mono,
-                .samp_cfg = case.samp_cfg,
-            },
-        },
-        .u16 => .{
-            .tex_u16 = .{
-                .uvs = prep.cylinder_uvs.array,
-                .tex = textures.tex_u16_mono,
-                .samp_cfg = case.samp_cfg,
-            },
-        },
-        .f64 => .{
-            .tex_f = .{
-                .uvs = prep.cylinder_uvs.array,
-                .tex = textures.tex_f64_mono,
-                .samp_cfg = case.samp_cfg,
-            },
-        },
-    };
+        };
 
-    return [_]MeshInput{
-        .{
-            .mesh_type = mesh_type,
-            .coords = prep.sphere_coords,
-            .connect = prep.sphere_connect,
-            .disp = prep.sphere_disp,
-            .shaders = if (case.is_rgb) .{ .rgb = .{ .direct = sphere_shader } } else .{ .mono = .{ .direct = sphere_shader } },
-        },
-        .{
-            .mesh_type = mesh_type,
-            .coords = prep.cylinder_coords,
-            .connect = prep.cylinder_connect,
-            .disp = prep.cylinder_disp,
-            .shaders = if (case.is_rgb) .{ .rgb = .{ .direct = cyl_shader } } else .{ .mono = .{ .direct = cyl_shader } },
-        },
-    };
+        const s1_stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        s1_stages[0] = shaderops.stageSource(sphere_source);
+        const s2_stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        s2_stages[0] = shaderops.stageSource(cyl_source);
+
+        return [_]MeshInput{
+            .{
+                .mesh_type = mesh_type,
+                .coords = prep.sphere_coords,
+                .connect = prep.sphere_connect,
+                .disp = prep.sphere_disp,
+                .shaders = .{
+                    .rgb = .{
+                        .stages = s1_stages,
+                        .resolver = .{ .identity = shaderpipe.identity_channels_3 },
+                    },
+                },
+            },
+            .{
+                .mesh_type = mesh_type,
+                .coords = prep.cylinder_coords,
+                .connect = prep.cylinder_connect,
+                .disp = prep.cylinder_disp,
+                .shaders = .{
+                    .rgb = .{
+                        .stages = s2_stages,
+                        .resolver = .{ .identity = shaderpipe.identity_channels_3 },
+                    },
+                },
+            },
+        };
+    } else {
+        const sphere_mono: shaderops.ShaderMonoInput = switch (case.dtype) {
+            .u8 => .{
+                .tex_u8 = .{
+                    .uvs = prep.sphere_uvs.array,
+                    .tex = textures.tex_u8_mono,
+                    .samp_cfg = case.samp_cfg,
+                },
+            },
+            .u16 => .{
+                .tex_u16 = .{
+                    .uvs = prep.sphere_uvs.array,
+                    .tex = textures.tex_u16_mono,
+                    .samp_cfg = case.samp_cfg,
+                },
+            },
+            .f64 => .{
+                .tex_f = .{
+                    .uvs = prep.sphere_uvs.array,
+                    .tex = textures.tex_f64_mono,
+                    .samp_cfg = case.samp_cfg,
+                },
+            },
+        };
+
+        const cyl_mono: shaderops.ShaderMonoInput = switch (case.dtype) {
+            .u8 => .{
+                .tex_u8 = .{
+                    .uvs = prep.cylinder_uvs.array,
+                    .tex = textures.tex_u8_mono,
+                    .samp_cfg = case.samp_cfg,
+                },
+            },
+            .u16 => .{
+                .tex_u16 = .{
+                    .uvs = prep.cylinder_uvs.array,
+                    .tex = textures.tex_u16_mono,
+                    .samp_cfg = case.samp_cfg,
+                },
+            },
+            .f64 => .{
+                .tex_f = .{
+                    .uvs = prep.cylinder_uvs.array,
+                    .tex = textures.tex_f64_mono,
+                    .samp_cfg = case.samp_cfg,
+                },
+            },
+        };
+
+        return [_]MeshInput{
+            .{
+                .mesh_type = mesh_type,
+                .coords = prep.sphere_coords,
+                .connect = prep.sphere_connect,
+                .disp = prep.sphere_disp,
+                .shaders = .{ .mono = .{ .direct = sphere_mono } },
+            },
+            .{
+                .mesh_type = mesh_type,
+                .coords = prep.cylinder_coords,
+                .connect = prep.cylinder_connect,
+                .disp = prep.cylinder_disp,
+                .shaders = .{ .mono = .{ .direct = cyl_mono } },
+            },
+        };
+    }
 }

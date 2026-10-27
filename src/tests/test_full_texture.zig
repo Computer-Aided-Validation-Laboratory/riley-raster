@@ -49,7 +49,8 @@ pub fn runFullTexCaseTest(
         .{ gold_dir_root, case_dir_name },
     );
 
-    const meshes = fullcase_tex.buildTexSamplingCaseMeshes(
+    const meshes = try fullcase_tex.buildTexSamplingCaseMeshes(
+        aa,
         mesh_type,
         prep,
         textures,
