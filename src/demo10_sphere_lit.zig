@@ -101,13 +101,13 @@ pub fn main(init: std.process.Init) !void {
     const lit_stages = [_]shaderops.ShaderPipeStageInput{
         .{
             .source = .{
-                .shader = speckle_shader,
+                .shader = shaderops.monoToPipeSource(speckle_shader),
                 .destination = channel_slot,
             },
         },
         .{
             .source = .{
-                .shader = lambertian_shader,
+                .shader = shaderops.monoToPipeSource(lambertian_shader),
                 .destination = param_slot,
             },
         },

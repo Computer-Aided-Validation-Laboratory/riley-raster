@@ -592,9 +592,8 @@ fn saveStrategyFromC(save_strategy: u32) !riley.SaveStrategy {
 
 fn reportModeFromC(report_mode: u32) !riley.ReportMode {
     return switch (report_mode) {
-        @intFromEnum(riley.ReportMode.off) => .off,
-        @intFromEnum(riley.ReportMode.bench) => .bench,
-        @intFromEnum(riley.ReportMode.full_stats) => .full_stats,
+        0 => .off,
+        1, 2 => .bench,
         else => error.InvalidReportMode,
     };
 }
@@ -1445,7 +1444,7 @@ fn buildShaderDirectInput(
                 errdefer tex_array.deinit(allocator);
                 built.shader = .{ .tex_u16 = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(u16, 1){
+                    .tex = texops.TexDataFix(u16, 1){
                         .array = tex_array,
                         .rows_num = in_shader.tex_u16.dim1,
                         .cols_num = in_shader.tex_u16.dim2,
@@ -1461,7 +1460,7 @@ fn buildShaderDirectInput(
                 errdefer tex_array.deinit(allocator);
                 built.shader = .{ .tex_f = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(F, 1){
+                    .tex = texops.TexDataFix(F, 1){
                         .array = tex_array,
                         .rows_num = in_shader.tex.dim1,
                         .cols_num = in_shader.tex.dim2,
@@ -1482,7 +1481,7 @@ fn buildShaderDirectInput(
                 errdefer tex_array.deinit(allocator);
                 built.shader = .{ .tex_u8 = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(u8, 1){
+                    .tex = texops.TexDataFix(u8, 1){
                         .array = tex_array,
                         .rows_num = in_shader.tex_u8.dim1,
                         .cols_num = in_shader.tex_u8.dim2,
@@ -1525,7 +1524,7 @@ fn buildShaderDirectInput(
                 errdefer tex_array.deinit(allocator);
                 built.shader = .{ .tex_rgb_u16 = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(u16, 3){
+                    .tex = texops.TexDataFix(u16, 3){
                         .array = tex_array,
                         .rows_num = in_shader.tex_u16.dim1,
                         .cols_num = in_shader.tex_u16.dim2,
@@ -1541,7 +1540,7 @@ fn buildShaderDirectInput(
                 errdefer tex_array.deinit(allocator);
                 built.shader = .{ .tex_rgb_f = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(F, 3){
+                    .tex = texops.TexDataFix(F, 3){
                         .array = tex_array,
                         .rows_num = in_shader.tex.dim1,
                         .cols_num = in_shader.tex.dim2,
@@ -1562,7 +1561,7 @@ fn buildShaderDirectInput(
                 errdefer tex_array.deinit(allocator);
                 built.shader = .{ .tex_rgb_u8 = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(u8, 3){
+                    .tex = texops.TexDataFix(u8, 3){
                         .array = tex_array,
                         .rows_num = in_shader.tex_u8.dim1,
                         .cols_num = in_shader.tex_u8.dim2,
@@ -1687,6 +1686,8 @@ fn pipeSourceChannels(source: shaderops.PipeSourceInput) u8 {
         .nodal => |s| s.field.getFieldsN(),
         .tex_u8, .tex_u16, .tex_f => 1,
         .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
+        .tex_multi_u8 => |t| @intCast(t.tex.array.dims[0]),
+        .tex_multi_u16 => |t| @intCast(t.tex.array.dims[0]),
         .tex_multi_f => |t| @intCast(t.tex.array.dims[0]),
         .func => |f| switch (f) {
             .mono => 1,
@@ -1698,7 +1699,7 @@ fn pipeSourceChannels(source: shaderops.PipeSourceInput) u8 {
 
 fn buildPipeInput(
     allocator: std.mem.Allocator,
-    pipe: *const CPipeInput,
+    pipe: *const CPipe,
     pipe_sources: []ShaderDirectBuilt,
     pipe_stages: [][]shaderops.ShaderPipeStageInput,
     pipe_inputs: []shaderops.ShaderPipeInput,
@@ -2130,7 +2131,9 @@ fn buildRasterConfig(
     config.validation = try validateInputFromC(
         in_config.validate_input,
     );
-    config.report.mode = try reportModeFromC(in_config.report);
+    const rep_mode = try reportModeFromC(in_config.report);
+    config.report_perf = rep_mode;
+    config.report_console = (rep_mode != .off);
     config.advanced.raster.buffer_mode = try bufferModeFromC(in_config.buffer_mode);
     config.advanced.distortion.edge_spacing_px = in_config.edge_spacing_px;
     config.advanced.raster.tile_size_min = if (in_config.tile_size_min == 0)
@@ -2189,20 +2192,7 @@ fn buildRasterConfig(
     if (in_config.output_name_format) |format| {
         config.output_name_format = std.mem.span(format);
     }
-    config.report.full_stats_opts = .{
-        .save_solver_csv = in_config.full_stats_save_solver_csv != 0,
-        .save_iter_map = in_config.full_stats_save_iter_map != 0,
-        .save_xi_map = in_config.full_stats_save_xi_map != 0,
-        .save_eta_map = in_config.full_stats_save_eta_map != 0,
-        .save_conv_map = in_config.full_stats_save_conv_map != 0,
-        .save_jac_det_map = in_config.full_stats_save_jac_det_map != 0,
-        .save_tile_timing_map = in_config.full_stats_save_tile_timing_map != 0,
-        .save_tile_density_map = in_config.full_stats_save_tile_density_map != 0,
-        .save_tile_occupancy_map = in_config.full_stats_save_tile_occupancy_map != 0,
-        .save_depth_map = in_config.full_stats_save_depth_map != 0,
-        .save_earlyout_map = in_config.full_stats_save_earlyout_map != 0,
-        .save_pixel_occupancy_map = in_config.full_stats_save_pixel_occupancy_map != 0,
-    };
+
 
     return config;
 }

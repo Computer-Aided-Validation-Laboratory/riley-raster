@@ -160,15 +160,17 @@ pub fn main(init: std.process.Init) !void {
             .source = .{
                 .shader = .{
                     .func = .{
-                        .builtin = .linear,
-                        .coord_mode = .world_reference,
-                        .params = .{
-                            .settings = .{
-                                .linear = .{ .coeffs = .{ 0.625, 0.375, 0.0 } },
+                        .mono = .{
+                            .builtin = .linear,
+                            .coord_mode = .world_reference,
+                            .params = .{
+                                .settings = .{
+                                    .linear = .{ .coeffs = .{ 0.625, 0.375, 0.0 } },
+                                },
                             },
-                        },
 
-                        .scaling = .none,
+                            .scaling = .none,
+                        },
                     },
                 },
                 .destination = param0,
@@ -221,10 +223,10 @@ pub fn main(init: std.process.Init) !void {
     };
     const rgb_slots = [_]shaderpipe.Slot{ ch0, ch1, ch2 };
     mesh.shaders = .{
-        .rgb = .{ .pipe = .{
+        .rgb = .{
             .stages = &rgb_stages,
             .resolver = .{ .identity = &rgb_slots },
-        } },
+        },
     };
     try render(
         init.gpa,

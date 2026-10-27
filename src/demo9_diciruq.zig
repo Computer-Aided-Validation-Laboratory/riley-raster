@@ -16,6 +16,7 @@ const imageio = @import("riley/zig/imageio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
 const shaderpipe = @import("riley/zig/shaderpipe.zig");
+const texops = @import("riley/zig/textureops.zig");
 const camera = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
 const cameraio = @import("riley/zig/cameraio.zig");

@@ -274,7 +274,7 @@ fn runAndRecord(
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
-    var base_raster_config = tcfg.getRasterConfig(.bench);
+    const base_raster_config = tcfg.getRasterConfig(.bench);
     var filtered_args: std.ArrayList([*:0]const u8) = .empty;
     defer filtered_args.deinit(outer_alloc);
     try filtered_args.append(outer_alloc, init.minimal.args.vector[0]);
