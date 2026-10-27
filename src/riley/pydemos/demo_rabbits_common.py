@@ -53,6 +53,7 @@ def make_mesh_input(
     texture: np.ndarray,
     channels: int,
     checker_squares_per_axis: float,
+    render_as_multifield: bool = False,
 ) -> riley.Mesh:
     shader_idx = mesh_idx % 3
     elem_type = {
@@ -87,12 +88,19 @@ def make_mesh_input(
             uvs=uvs,
             scaling_type=riley.ScaleStrategy.auto,
         )
+    if channels == 1:
+        shaders = riley.MeshShaderSet(mono=shader)
+    elif render_as_multifield:
+        shaders = riley.MeshShaderSet(multifield=shader)
+    else:
+        shaders = riley.MeshShaderSet(rgb=shader)
+
     return riley.create_mesh(
         convention,
         mesh_type,
         np.array(coords, copy=True),
         connect,
-        shaders=riley.MeshShaderSet(direct=shader),
+        shaders=shaders,
     )
 
 
@@ -104,6 +112,7 @@ def build_scene(
     checker_squares_per_axis: float,
     gap: tuple[float, float, float],
     max_divs: tuple[int, int, int],
+    render_as_multifield: bool = False,
 ) -> list[riley.Mesh]:
     mesh_inputs: list[riley.Mesh] = []
     group_list: list[sceneops.SceneMeshGroup] = []
@@ -128,6 +137,7 @@ def build_scene(
                 texture,
                 channels,
                 checker_squares_per_axis,
+                render_as_multifield=render_as_multifield,
             ),
         )
         mesh_inputs.append(
@@ -140,6 +150,7 @@ def build_scene(
                 texture,
                 channels,
                 checker_squares_per_axis,
+                render_as_multifield=render_as_multifield,
             ),
         )
 

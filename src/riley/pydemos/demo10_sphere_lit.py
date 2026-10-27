@@ -97,7 +97,14 @@ def main() -> None:
         focal_length=focal_length,
         sub_sample=4,
         coord_sys=riley.CameraCoordSys.opengl,
-        shader_selection=riley.CameraShaderSelection.direct,
+        render_format=riley.RenderFormat.mono,
+        output_files=[
+            riley.ImageSaveOpts(
+                format=riley.ImageFormat.bmp,
+                bits=8,
+                scaling=riley.ScaleStrategy.auto,
+            )
+        ],
     )
 
     # --------------------------------------------------------------------------
@@ -106,10 +113,7 @@ def main() -> None:
     config = riley.RasterConfig(
         parallel=total_threads,
         save_strategy=riley.SaveStrategy.disk,
-        save_scaling=riley.ScaleStrategy.auto,
     )
-    config.save_format = riley.ImageFormat.bmp
-    config.save_bits = 8
 
     # --------------------------------------------------------------------------
     # 5. Render the three sphere images
@@ -132,11 +136,8 @@ def main() -> None:
 
     # 3) Combined speckle texture and lambertian shader via shader pipe
     mesh.shaders = riley.MeshShaderSet(mono=lit_pipe)
-    lit_camera = replace(
-        camera, shader_selection=riley.CameraShaderSelection.mono
-    )
     config.output_name_format = "demo10_3_combined_lit"
-    riley.raster(mesh, lit_camera, config, out_dir=str(out_dir))
+    riley.raster(mesh, camera, config, out_dir=str(out_dir))
 
 
 if __name__ == "__main__":

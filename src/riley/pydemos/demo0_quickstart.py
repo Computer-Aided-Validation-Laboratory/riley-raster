@@ -74,6 +74,14 @@ def main() -> None:
         roi_cent_world=target,
         focal_length=focal_length,
         sub_sample=4,
+        render_format=riley.RenderFormat.mono,
+        output_files=[
+            riley.ImageSaveOpts(
+                format=riley.ImageFormat.bmp,
+                bits=8,
+                scaling=riley.ScaleStrategy.auto,
+            )
+        ],
     )
 
     # --------------------------------------------------------------------------
@@ -82,9 +90,7 @@ def main() -> None:
     config = riley.RasterConfig(
         parallel=1,
         save_strategy=riley.SaveStrategy.disk,
-        image_save_mode=riley.ImageSaveMode.grey,
     )
-    config.save_scaling = riley.ScaleStrategy.none
 
     out_dir = Path.cwd() / "out_riley_py" / "demo0_quickstart"
     shutil.rmtree(out_dir, ignore_errors=True)

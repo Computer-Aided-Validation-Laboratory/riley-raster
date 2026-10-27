@@ -94,6 +94,14 @@ typedef struct c_psf {
     uint32_t psf_separable;
 } CPSF;
 
+typedef struct c_image_save_opts {
+    uint32_t format;
+    int bits;
+    uint32_t scaling_tag;
+    double scaling_min;
+    double scaling_max;
+} CImageSaveOpts;
+
 typedef struct c_camera_input {
     CVec2U32 pixels_num;
     CVec2F64 pixels_size;
@@ -106,10 +114,13 @@ typedef struct c_camera_input {
     CPSF psf;
     uint32_t coord_sys;
     uint32_t subpixel_center_map;
-    uint32_t shader_selection;
+    uint32_t render_format_tag;
+    uint32_t render_channels;
     uint32_t output_encoding; /* 0=native, 1=12-bit grid in u16, 2=linear u16 */
     double encoding_min;
     double encoding_max;
+    const CImageSaveOpts* output_files;
+    size_t output_files_len;
 } CCameraInput;
 
 typedef struct c_func_shader_params {
@@ -117,8 +128,6 @@ typedef struct c_func_shader_params {
     double coord_scale_1;
     double coord_offset_0;
     double coord_offset_1;
-    double output_scale;
-    double output_offset;
     double constant_value;
     double constant_value_rgb_0;
     double constant_value_rgb_1;
@@ -206,7 +215,8 @@ typedef struct c_shader_input {
     uint32_t texture_storage;
     uint32_t sample;
     uint32_t sample_mode;
-    int bits;
+    double output_gain;
+    double output_offset;
     uint32_t scaling_tag;
     double scaling_min;
     double scaling_max;
@@ -281,9 +291,6 @@ typedef struct c_pipe_stage {
 } CPipeStage;
 
 typedef struct c_pipe {
-    /* shader_selection: mono=1, rgb=2, ir=3, multifield=4. */
-    uint32_t shader_selection;
-    uint32_t channels;
     const CPipeStage* stages;
     size_t stages_len;
     CResolver resolver;
@@ -291,16 +298,21 @@ typedef struct c_pipe {
     size_t constants_len;
 } CPipe;
 
+typedef struct c_shader_entry {
+    uint32_t format_tag;    /* 0=mono, 1=rgb, 2=ir, 3=multifield */
+    uint32_t execution_tag; /* 0=direct, 1=pipe */
+    CShaderInput direct_shader;
+    CPipe pipe;
+} CShaderEntry;
+
 typedef struct c_mesh_input {
     uint32_t mesh_type;
     uint32_t normal_type;
     CArray2DF64 coords;
     CArray2DUsize connect;
     CArray3DF64 disp;
-    uint8_t has_direct;
-    CShaderInput shader;
-    const CPipe* pipes;
-    size_t pipes_len;
+    const CShaderEntry* shaders;
+    size_t shaders_len;
 } CMeshInput;
 
 typedef enum {
@@ -324,7 +336,6 @@ typedef struct c_raster_config {
     uint32_t parallel_mode; /* 0=auto, 1=serial, 2=thread_count */
     uint16_t thread_count;
     uint32_t save_strategy;
-    uint32_t image_save_mode;
     uint32_t oneroot_hull_mode;
     uint32_t oneroot_newton_seed_mode;
     uint32_t oneroot_newton_seed_reuse;
@@ -346,11 +357,6 @@ typedef struct c_raster_config {
     uint16_t global_subpx_stripe_size_override;
     uint16_t raster_halo_px_override;
     size_t save_frame_buff_count;
-    uint32_t save_format;
-    uint32_t save_bits;
-    uint32_t save_scaling;
-    double save_scaling_min;
-    double save_scaling_max;
     uint8_t full_stats_save_solver_csv;
     uint8_t full_stats_save_iter_map;
     uint8_t full_stats_save_xi_map;

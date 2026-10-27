@@ -80,6 +80,13 @@ def main() -> None:
         focal_length=focal_length,
         sub_sample=4,
         coord_sys=riley.CameraCoordSys.opengl,
+        output_files=[
+            riley.ImageSaveOpts(
+                format=riley.ImageFormat.bmp,
+                bits=8,
+                scaling=riley.ScaleStrategy.auto,
+            )
+        ],
     )
 
     # --------------------------------------------------------------------------
@@ -180,7 +187,6 @@ def main() -> None:
     config = riley.RasterConfig(
         parallel=raster_threads,
         save_strategy=riley.SaveStrategy.disk,
-        save_scaling=riley.ScaleStrategy.auto,
     )
 
     for distort_name, distort in distorts:

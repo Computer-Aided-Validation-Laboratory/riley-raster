@@ -80,7 +80,9 @@ def test_python_sum_pipe_matches_two_constant_sources() -> None:
 
 
 @pytest.mark.parametrize("alpha, expected", [(0.25, 9.95), ("slot", 5.68)])
-def test_python_generic_stage_composition(alpha: float | str, expected: float) -> None:
+def test_python_generic_stage_composition(
+    alpha: float | str, expected: float,
+) -> None:
     mesh, camera, config = scene()
     source = riley.FunctionShader(
         builtin=riley.FuncShaderBuiltin.constant,
@@ -240,11 +242,10 @@ def test_invalid_python_pipe_fails_during_preparation() -> None:
 
 def test_shader_set_three_cameras_share_mesh_and_select_roles() -> None:
     mesh, mono, config = scene()
-    direct = replace(mono, shader_selection=riley.CameraShaderSelection.direct)
-    source = mesh.shaders.direct
+    source = mesh.shaders.mono
     ch0 = riley.Slot(riley.SlotKind.channel, 0)
     mesh.shaders = riley.MeshShaderSet(
-        direct=source,
+        mono=source,
         ir=riley.ShaderPipe(
             stages=(riley.ShaderSource(source, ch0),),
             resolver=riley.ShaderResolver(
@@ -252,15 +253,16 @@ def test_shader_set_three_cameras_share_mesh_and_select_roles() -> None:
             ),
         ),
     )
-    ir = replace(mono, shader_selection=riley.CameraShaderSelection.ir)
-    images = riley.raster(mesh, (direct, ir, direct), config)
+    ir = replace(mono, render_format=riley.RenderFormat.ir)
+    images = riley.raster(mesh, (mono, ir, mono), config)
     assert images.shape == (3, 1, 1, 32, 32)
     np.testing.assert_array_equal(images[0], images[2])
     np.testing.assert_allclose(images[0], images[1], atol=1e-12)
     assert 0 < np.count_nonzero(images[0]) < images[0].size
 
+    rgb_cam = replace(mono, render_format=riley.RenderFormat.rgb)
     with pytest.raises(RuntimeError, match="NoCompatibleShader"):
-        riley.raster(mesh, mono, config)
+        riley.raster(mesh, rgb_cam, config)
 
 
 def test_unselected_pipe_does_not_add_frames_or_channels() -> None:
@@ -331,12 +333,19 @@ def test_python_sphere_lit_modulates_speckle_and_lambertian() -> None:
             factor=param,
         ),
     )
-    mesh = riley.create_mesh(
+    mesh_direct = riley.create_mesh(
         convention,
         riley.MeshType.tri6,
         coords,
         connect,
-        riley.MeshShaderSet(direct=speckle, mono=pipe),
+        riley.MeshShaderSet(mono=speckle),
+    )
+    mesh_lit = riley.create_mesh(
+        convention,
+        riley.MeshType.tri6,
+        coords,
+        connect,
+        riley.MeshShaderSet(mono=pipe),
     )
     pixels_num = (64, 64)
     pixels_size = (5.3e-6, 5.3e-6)
@@ -353,26 +362,22 @@ def test_python_sphere_lit_modulates_speckle_and_lambertian() -> None:
         roi_cent_world=riley.roi_cent_from_coords(coords),
         focal_length=focal_length,
         sub_sample=1,
-        shader_selection=riley.CameraShaderSelection.direct,
+        render_format=riley.RenderFormat.mono,
     )
     config = riley.RasterConfig(
         parallel=1,
         save_strategy=riley.SaveStrategy.memory,
-        save_scaling=riley.ScaleStrategy.none,
         report=riley.ReportMode.off,
     )
-    img_direct = riley.raster(mesh, camera, config)
-    camera_mono = replace(
-        camera, shader_selection=riley.CameraShaderSelection.mono
-    )
-    img_lit = riley.raster(mesh, camera_mono, config)
+    img_direct = riley.raster(mesh_direct, camera, config)
+    img_lit = riley.raster(mesh_lit, camera, config)
     assert img_direct.shape == (1, 1, 1, 64, 64)
     assert img_lit.shape == (1, 1, 1, 64, 64)
     fg = img_direct > 0
     assert fg.any()
     assert (img_lit[fg] <= img_direct[fg] + 1e-6).all()
-    assert mesh.normal_type == riley.NormalType.exact
-    mesh.normal_type = riley.NormalType.none
-    img_no_normals = riley.raster(mesh, camera_mono, config)
+    assert mesh_lit.normal_type == riley.NormalType.exact
+    mesh_lit.normal_type = riley.NormalType.none
+    img_no_normals = riley.raster(mesh_lit, camera, config)
     np.testing.assert_allclose(img_no_normals, img_direct, atol=1e-9)
 

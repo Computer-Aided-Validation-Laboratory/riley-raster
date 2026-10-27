@@ -92,6 +92,13 @@ cdef extern from "riley.h":
         double psf_supp_rad
         uint32_t psf_separable
 
+    ctypedef struct CImageSaveOpts:
+        uint32_t format
+        int bits
+        uint32_t scaling_tag
+        double scaling_min
+        double scaling_max
+
     ctypedef struct CCameraInput:
         CVec2U32 pixels_num
         CVec2F64 pixels_size
@@ -104,18 +111,19 @@ cdef extern from "riley.h":
         CPSF psf
         uint32_t coord_sys
         uint32_t subpixel_center_map
-        uint32_t shader_selection
+        uint32_t render_format_tag
+        uint32_t render_channels
         uint32_t output_encoding
         double encoding_min
         double encoding_max
+        const CImageSaveOpts* output_files
+        size_t output_files_len
 
     ctypedef struct CFuncShaderParams:
         double coord_scale_0
         double coord_scale_1
         double coord_offset_0
         double coord_offset_1
-        double output_scale
-        double output_offset
         double constant_value
         double constant_value_rgb_0
         double constant_value_rgb_1
@@ -202,7 +210,8 @@ cdef extern from "riley.h":
         uint32_t texture_storage
         uint32_t sample
         uint32_t sample_mode
-        int bits
+        double output_gain
+        double output_offset
         uint32_t scaling_tag
         double scaling_min
         double scaling_max
@@ -262,13 +271,17 @@ cdef extern from "riley.h":
         CLookup lookup
 
     ctypedef struct CPipe:
-        uint32_t shader_selection
-        uint32_t channels
         const CPipeStage* stages
         size_t stages_len
         CResolver resolver
         const double* constants
         size_t constants_len
+
+    ctypedef struct CShaderEntry:
+        uint32_t format_tag
+        uint32_t execution_tag
+        CShaderInput direct_shader
+        CPipe pipe
 
     ctypedef struct CMeshInput:
         uint32_t mesh_type
@@ -276,17 +289,14 @@ cdef extern from "riley.h":
         CArray2DF64 coords
         CArray2DUsize connect
         CArray3DF64 disp
-        uint8_t has_direct
-        CShaderInput shader
-        const CPipe* pipes
-        size_t pipes_len
+        const CShaderEntry* shaders
+        size_t shaders_len
 
     ctypedef struct CRasterConfig:
         uint32_t render_mode
         uint32_t parallel_mode
         uint16_t thread_count
         uint32_t save_strategy
-        uint32_t image_save_mode
         uint32_t oneroot_hull_mode
         uint32_t oneroot_newton_seed_mode
         uint32_t oneroot_newton_seed_reuse
@@ -308,11 +318,6 @@ cdef extern from "riley.h":
         uint16_t global_subpx_stripe_size_override
         uint16_t raster_halo_px_override
         size_t save_frame_buff_count
-        uint32_t save_format
-        uint32_t save_bits
-        uint32_t save_scaling
-        double save_scaling_min
-        double save_scaling_max
         uint8_t full_stats_save_solver_csv
         uint8_t full_stats_save_iter_map
         uint8_t full_stats_save_xi_map

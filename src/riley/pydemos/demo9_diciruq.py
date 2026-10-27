@@ -162,6 +162,13 @@ def main() -> None:
         output_encoding=riley.OutputEncoding.grid12_to_u16,
         encoding_min=0.0,
         encoding_max=255.0,
+        output_files=[
+            riley.ImageSaveOpts(
+                format=riley.ImageFormat.tiff,
+                bits=16,
+                scaling=riley.ScaleStrategy.none,
+            )
+        ],
     )
 
     right_pos = riley.pos_frame_coords(
@@ -196,10 +203,17 @@ def main() -> None:
         roi_cent_world=target,
         focal_length=ir_focal,
         sub_sample=4,
-        shader_selection=riley.CameraShaderSelection.ir,
+        render_format=riley.RenderFormat.ir,
         output_encoding=riley.OutputEncoding.linear_u16,
         encoding_min=0.0,
         encoding_max=250.0,
+        output_files=[
+            riley.ImageSaveOpts(
+                format=riley.ImageFormat.tiff,
+                bits=16,
+                scaling=riley.ScaleStrategy.none,
+            )
+        ],
     )
 
     # --------------------------------------------------------------------------
@@ -208,11 +222,7 @@ def main() -> None:
     config = riley.RasterConfig(
         parallel=4,
         save_strategy=riley.SaveStrategy.disk,
-        image_save_mode=riley.ImageSaveMode.grey,
     )
-    config.save_format = riley.ImageFormat.tiff
-    config.save_bits = 16
-    config.save_scaling = riley.ScaleStrategy.none
 
     riley.raster(mesh, (left, ir, right), config, out_dir=str(out_dir))
 

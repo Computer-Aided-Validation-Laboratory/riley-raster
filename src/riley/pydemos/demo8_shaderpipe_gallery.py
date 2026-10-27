@@ -77,13 +77,7 @@ def main() -> None:
     config = riley.RasterConfig(
         parallel=1,
         save_strategy=riley.SaveStrategy.disk,
-        image_save_mode=riley.ImageSaveMode.multifield,
     )
-    config.save_format = riley.ImageFormat.tiff
-    config.save_bits = 16
-    config.save_scaling = riley.ScaleStrategy.fixed
-    config.save_scaling_min = 0.0
-    config.save_scaling_max = 1.0
 
     ch = tuple(riley.Slot(riley.SlotKind.channel, ii) for ii in range(3))
     fields = tuple(riley.Slot(riley.SlotKind.field, ii) for ii in range(2))
@@ -103,7 +97,7 @@ def main() -> None:
     def render(
         name: str,
         shaders: riley.MeshShaderSet,
-        role: riley.CameraShaderSelection,
+        role: riley.RenderFormat = riley.RenderFormat.mono,
     ) -> None:
         mesh = riley.create_mesh(
             convention,
@@ -112,7 +106,27 @@ def main() -> None:
             connect,
             shaders,
         )
-        camera.shader_selection = role
+        camera.render_format = role
+        if role == riley.RenderFormat.rgb:
+            camera.output_files = [
+                riley.ImageSaveOpts(
+                    format=riley.ImageFormat.bmp,
+                    bits=8,
+                    scaling=riley.ScaleStrategy.fixed,
+                    scaling_min=0.0,
+                    scaling_max=1.0,
+                )
+            ]
+        else:
+            camera.output_files = [
+                riley.ImageSaveOpts(
+                    format=riley.ImageFormat.tiff,
+                    bits=16,
+                    scaling=riley.ScaleStrategy.fixed,
+                    scaling_min=0.0,
+                    scaling_max=1.0,
+                )
+            ]
         out_dir = str(
             Path.cwd() / "out_riley_py" / "demo8_shaderpipe_gallery" / name
         )
@@ -136,7 +150,7 @@ def main() -> None:
                 ),
             ),
         ),
-        riley.CameraShaderSelection.mono,
+        riley.RenderFormat.mono,
     )
 
     # --------------------------------------------------------------------------
@@ -163,7 +177,7 @@ def main() -> None:
                 ),
             ),
         ),
-        riley.CameraShaderSelection.rgb,
+        riley.RenderFormat.rgb,
     )
 
     # --------------------------------------------------------------------------
@@ -195,7 +209,7 @@ def main() -> None:
                 constants=(0.65, 0.35),
             ),
         ),
-        riley.CameraShaderSelection.mono,
+        riley.RenderFormat.mono,
     )
 
     # --------------------------------------------------------------------------
@@ -230,7 +244,7 @@ def main() -> None:
                 constants=(0.90, 1.0 / 0.06),
             ),
         ),
-        riley.CameraShaderSelection.mono,
+        riley.RenderFormat.mono,
     )
 
 

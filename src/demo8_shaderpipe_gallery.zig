@@ -15,6 +15,7 @@ const shaderops = @import("riley/zig/shaderops.zig");
 const shaderpipe = @import("riley/zig/shaderpipe.zig");
 const camera = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
+const iio = @import("riley/zig/imageio.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -46,7 +47,19 @@ fn render(
 ) !void {
     var selected_camera = base_camera;
     selected_camera.render_format = role;
-    selected_camera.output_files = &.{.{ .format = .tiff, .bits = 16, .scaling = .{ .fixed = .{ 0.0, 1.0 } } }};
+    const save_opts = if (role == .rgb)
+        iio.ImageSaveOpts{
+            .format = .bmp,
+            .bits = 8,
+            .scaling = .{ .fixed = .{ 0.0, 1.0 } },
+        }
+    else
+        iio.ImageSaveOpts{
+            .format = .tiff,
+            .bits = 16,
+            .scaling = .{ .fixed = .{ 0.0, 1.0 } },
+        };
+    selected_camera.output_files = &.{save_opts};
     const config = riley.RasterConfig{
         .save_strategy = .disk,
     };

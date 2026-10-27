@@ -267,19 +267,33 @@ def render_case(channels: int, bits: int, options: DemoOptions) -> None:
     out_dir = options.out_dir / case_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    save_fmt = (
+        riley.ImageFormat.bmp
+        if bits == 8
+        else (
+            riley.ImageFormat.tiff
+            if channels == 1
+            else riley.ImageFormat.ppm
+        )
+    )
+    for cam in cameras:
+        cam.render_format = (
+            riley.RenderFormat.mono
+            if channels == 1
+            else riley.RenderFormat.rgb
+        )
+        cam.output_files = [
+            riley.ImageSaveOpts(
+                format=save_fmt,
+                bits=bits,
+                scaling=riley.ScaleStrategy.none,
+            )
+        ]
+
     config = riley.RasterConfig(
         parallel=4,
         save_strategy=riley.SaveStrategy.disk,
     )
-    config.image_save_mode = (
-        riley.ImageSaveMode.grey if channels == 1 else riley.ImageSaveMode.rgb
-    )
-    config.save_bits = bits
-    if bits == 8:
-        config.save_format = riley.ImageFormat.bmp
-    else:
-        config.save_format = riley.ImageFormat.tiff
-    config.save_scaling = riley.ScaleStrategy.none
     config.background_value = 0.5 * (2**bits - 1)
 
     # --------------------------------------------------------------------------

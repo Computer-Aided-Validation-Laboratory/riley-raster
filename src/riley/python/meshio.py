@@ -312,9 +312,16 @@ def _prepare_shader(
             uvs = _prepare_uvs(shader.uvs, nodes_num, source_node_idxs)
 
             return TextureShader(
-                uvs, np.ascontiguousarray(texture), shader.sample,
-                shader.sample_mode, shader.bits, shader.scaling_type,
-                shader.scaling_min, shader.scaling_max,
+                uvs=uvs,
+                texture=np.ascontiguousarray(texture),
+                sample=shader.sample,
+                sample_mode=shader.sample_mode,
+                bits=shader.bits,
+                output_gain=shader.output_gain,
+                output_offset=shader.output_offset,
+                scaling_type=shader.scaling_type,
+                scaling_min=shader.scaling_min,
+                scaling_max=shader.scaling_max,
             )
 
         case NodalShader():
@@ -474,23 +481,27 @@ def _prepare_shader_set(
     nodes_num: int,
     source_node_idxs: np.ndarray,
 ) -> MeshShaderSet:
-    def prepare_pipe(pipe: ShaderPipe | None) -> ShaderPipe | None:
-        if pipe is None:
+    def prepare_entry(entry: Any) -> Any:
+        if entry is None:
             return None
-        return ShaderPipe(
-            stages=tuple(
-                ShaderSource(
-                    _prepare_shader(stage.shader, nodes_num, source_node_idxs),
-                    stage.destination,
-                )
-                if isinstance(stage, ShaderSource)
-                else stage
-                for stage in pipe.stages
-            ),
-            resolver=pipe.resolver,
-            channels=pipe.channels,
-            constants=pipe.constants,
-        )
+        if isinstance(entry, ShaderPipe):
+            return ShaderPipe(
+                stages=tuple(
+                    ShaderSource(
+                        _prepare_shader(
+                            stage.shader, nodes_num, source_node_idxs
+                        ),
+                        stage.destination,
+                    )
+                    if isinstance(stage, ShaderSource)
+                    else stage
+                    for stage in entry.stages
+                ),
+                resolver=entry.resolver,
+                channels=entry.channels,
+                constants=entry.constants,
+            )
+        return _prepare_shader(entry, nodes_num, source_node_idxs)
 
     return MeshShaderSet(
         direct=(
@@ -498,10 +509,10 @@ def _prepare_shader_set(
             if shaders.direct is not None
             else None
         ),
-        mono=prepare_pipe(shaders.mono),
-        rgb=prepare_pipe(shaders.rgb),
-        ir=prepare_pipe(shaders.ir),
-        multifield=prepare_pipe(shaders.multifield),
+        mono=prepare_entry(shaders.mono),
+        rgb=prepare_entry(shaders.rgb),
+        ir=prepare_entry(shaders.ir),
+        multifield=prepare_entry(shaders.multifield),
     )
 
 

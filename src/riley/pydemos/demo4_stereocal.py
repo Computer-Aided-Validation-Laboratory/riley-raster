@@ -133,10 +133,18 @@ def main() -> None:
         ),
     )
 
+    for cam in (camera_0, camera_1):
+        cam.output_files = [
+            riley.ImageSaveOpts(
+                format=riley.ImageFormat.bmp,
+                bits=8,
+                scaling=riley.ScaleStrategy.auto,
+            )
+        ]
+
     config = riley.RasterConfig(
         parallel=total_threads,
         save_strategy=riley.SaveStrategy.disk,
-        save_scaling=riley.ScaleStrategy.auto,
     )
     config.background_value = 128.0
 

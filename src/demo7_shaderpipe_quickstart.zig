@@ -83,7 +83,6 @@ pub fn main(init: std.process.Init) !void {
         .connect = connect,
         .disp = null,
         .shaders = .{
-            .mono = .{ .direct = checker },
             .mono = .{ .pipe = .{
                 .stages = &stages,
                 .resolver = .{

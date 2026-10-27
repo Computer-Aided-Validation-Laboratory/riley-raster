@@ -67,7 +67,6 @@ def main() -> None:
         factor=parameter,
     )
     shaders = riley.MeshShaderSet(
-        direct=checker,
         mono=riley.ShaderPipe(stages=stages, resolver=resolver),
     )
 
@@ -104,6 +103,7 @@ def main() -> None:
         roi_cent_world=target,
         focal_length=focal_length,
         sub_sample=4,
+        render_format=riley.RenderFormat.mono,
     )
     lit = riley.Camera(
         pixels_num=pixels_num,
@@ -113,7 +113,7 @@ def main() -> None:
         roi_cent_world=target,
         focal_length=focal_length,
         sub_sample=4,
-        shader_selection=riley.CameraShaderSelection.mono,
+        render_format=riley.RenderFormat.mono,
     )
 
     # --------------------------------------------------------------------------
@@ -122,11 +122,7 @@ def main() -> None:
     config = riley.RasterConfig(
         parallel=1,
         save_strategy=riley.SaveStrategy.disk,
-        image_save_mode=riley.ImageSaveMode.grey,
     )
-    config.save_format = riley.ImageFormat.bmp
-    config.save_bits = 8
-    config.save_scaling = riley.ScaleStrategy.none
     config.output_name_format = "demo7_cam{camera}_frame{frame}_field{field}"
 
     riley.raster(mesh, (direct, lit), config, out_dir=str(out_dir))
