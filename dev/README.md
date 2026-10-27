@@ -181,19 +181,27 @@ releases the active allocation and resets the value. Resources own no allocator;
 the static shader owns the resource value, and `Prepared.resources: *const Resources`
 is borrowed from that stable static shader for frame/worker use. Frames do not
 deinitialize it. Speckle parameters remain in the shader input/static shader,
-not in `Resources`. Finite UVs clamp to `[0,1]` before procedural scaling.
+not in `Resources`. UVs clamp to `[0,1]` before procedural scaling.
 
 Input validation happens before render allocations: fast validation checks
 metadata, shapes, and parameters; full validation additionally scans array
 payloads, including UV finiteness and connectivity indices. Resource initialization
-is itself a checked preparation boundary for direct low-level callers.
+is itself a checked preparation boundary for direct low-level callers, and the only
+one inside `speckleops`: generators and samplers rely on its validated parameters.
+Samplers do not recheck UV finiteness. The clamp keeps any UV, including NaN
+(which clamps to 1) and infinities, inside the prepared grids, so out-of-contract
+UVs stay memory-safe without per-sample checks.
+
+Validated cell counts bound every grid axis below 2^50, so preparation sizes each
+grid exactly in `u64` and compares each axis, then the product, against its budget
+before allocating (`gridCount`). Over-budget grids fail or fall back as below;
+no other overflow checks are needed.
 
 - `classified-indexed` stores nine candidate bits and a foreground flag per
   procedural-aligned microcell. Its 256 MiB state limit returns
-  `SpeckleClassificationTooLarge` on excess or checked size overflow.
+  `SpeckleClassificationTooLarge` before any owner records are generated.
 - `gradient-lattice` stores shared byte gradient IDs, including outer corners at
-  UV 1. Above its 256 MiB budget, or on checked size overflow, it uses exact
-  on-demand hashing. In-budget allocation failures propagate. Perlin mask setup
+  UV 1. Above its 256 MiB budget it uses exact on-demand hashing. In-budget allocation failures propagate. Perlin mask setup
   reuses this evaluator with unit colors before quantizing coverage.
 - Exactness is bitwise agreement with the independent reference at the same
   precision/build, under strict round-to-nearest with gradual underflow. Preserve

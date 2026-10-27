@@ -835,7 +835,7 @@ test "SIMD func builtin matches scalar builtin per lane" {
     }
 }
 
-test "direct fixed scalar handles active inactive nonfinite and scaling" {
+test "direct fixed scalar handles active inactive cells and scaling" {
     inline for (speckle.kernel_configs, 0..) |config, kernel_index| {
         if (comptime std.meta.activeTag(config) != .direct_fixed) continue;
 
@@ -883,8 +883,6 @@ test "direct fixed scalar handles active inactive nonfinite and scaling" {
             .{ 0.25, 0.5 },
             .{ 0.1, 0.5 },
             .{ 0.75, 0.5 },
-            .{ std.math.nan(F), 0.5 },
-            .{ 0.25, std.math.inf(F) },
         };
         for (coords, 0..) |uv, index| {
             const actual = evalSpecklePreparedScal(kernel_index, &shader, uv[0], uv[1]);
@@ -893,7 +891,7 @@ test "direct fixed scalar handles active inactive nonfinite and scaling" {
     }
 }
 
-test "u8 speckle mask scalar sampling handles scaling and nonfinite UVs" {
+test "u8 speckle mask scalar sampling applies coverage and scaling" {
     inline for (speckle.kernel_configs, 0..) |config, kernel_index| {
         if (comptime std.meta.activeTag(config) != .mask_u8) continue;
 
@@ -926,17 +924,6 @@ test "u8 speckle mask scalar sampling handles scaling and nonfinite UVs" {
         const expected = (mask_params.background +
             coverage * (mask_params.foreground - mask_params.background)) *
             shader.output_scale + shader.output_offset;
-        const expected_background = mask_params.background * shader.output_scale +
-            shader.output_offset;
-        const coords = [_][2]F{
-            .{ 1.0, 0.0 },
-            .{ std.math.nan(F), 0.0 },
-            .{ 0.0, std.math.inf(F) },
-        };
-        const expected_values = [_]F{ expected, expected_background, expected_background };
-        for (coords, expected_values) |uv, expected_value| {
-            const actual = evalSpecklePreparedScal(kernel_index, &shader, uv[0], uv[1]);
-            try testing.expectEqual(expected_value, actual);
-        }
+        try testing.expectEqual(expected, evalSpecklePreparedScal(kernel_index, &shader, 1.0, 0.0));
     }
 }
