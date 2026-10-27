@@ -917,7 +917,7 @@ pub fn runSingleMeshSuiteDriver(
             var run_config = config;
             if (mode == .test_gold) {
                 run_config.save_strategy = .memory;
-                run_config.report = .{ .mode = if (report_perf) .full_stats else .off };
+                run_config.report_perf = if (report_perf) .bench else .off;
             } else {
                 var out_dir = try orch.openDirEnsured(io, nodal_dir);
                 out_dir.close(io);
@@ -1063,7 +1063,7 @@ pub fn runSingleMeshSuiteDriver(
                 var run_config = config;
                 if (mode == .test_gold) {
                     run_config.save_strategy = .memory;
-                    run_config.report = .{ .mode = if (report_perf) .full_stats else .off };
+                    run_config.report_perf = if (report_perf) .bench else .off;
                 } else {
                     var out_dir = try orch.openDirEnsured(io, tex_dir);
                     out_dir.close(io);

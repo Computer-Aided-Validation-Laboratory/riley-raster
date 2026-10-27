@@ -130,7 +130,8 @@ pub fn main(init: std.process.Init) !void {
     const config = RasterConfig{
         .save_strategy = .disk,
         .parallel = .{ .threads = total_threads },
-        .report = .{ .mode = .bench },
+        .report_perf = .bench,
+        .report_console = true,
     };
 
     // -------------------------------------------------------------------------

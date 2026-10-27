@@ -37,7 +37,8 @@ pub fn main(init: std.process.Init) !void {
     const config_base = riley.RasterConfig{
         .save_strategy = .disk,
         .parallel = .{ .threads = 4 },
-        .report = .{ .mode = .bench },
+        .report_perf = .bench,
+        .report_console = true,
     };
 
     const data_dir = "data/min/tri6_sphere200/";

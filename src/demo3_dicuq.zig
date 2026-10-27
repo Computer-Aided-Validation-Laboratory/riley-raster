@@ -83,7 +83,8 @@ pub fn main(init: std.process.Init) !void {
         .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
         .background_value = 128.0,
-        .report = .{ .mode = .bench },
+        .report_perf = .bench,
+        .report_console = true,
     };
 
     // -------------------------------------------------------------------------

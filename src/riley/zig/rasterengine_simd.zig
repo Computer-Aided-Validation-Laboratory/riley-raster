@@ -37,7 +37,6 @@ const Vec3Slices = frontend.Vec3Slices;
 const report = @import("report.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 const comm = @import("rasterengine_common.zig");
-const rasterreport = @import("rasterreport.zig");
 const simdops = @import("simdops.zig");
 
 const spec = @import("riley.zig");
@@ -493,27 +492,6 @@ fn rasterDirectSIMDImpl(
                 v_inv_area,
             );
             const v_mask_active = v_x_mask & res.v_mask;
-
-            if (comptime report_mode == .full_stats) {
-                const v_inv_z_stats = GeomKern.calcInvZSIMD(
-                    v_nodes_inv_z,
-                    res.v_weights,
-                );
-                rasterreport.recordTri3SIMDConvStats(
-                    ctx_report,
-                    tile,
-                    sub_samp,
-                    scratch_x_u,
-                    scratch_y_u,
-                    v_x_mask,
-                    v_mask_active,
-                    res.v_weights,
-                    v_inv_z_stats,
-                    nodes_inv_z,
-                    nodes_coords.x,
-                    nodes_coords.y,
-                );
-            }
 
             if (!@reduce(.Or, v_mask_active)) continue;
 
@@ -1354,29 +1332,6 @@ fn rasterNewtonSIMDImpl(
             ctx_report.recordSolverDivergedCount(@intCast(@reduce(.Add, v_fail_count)));
         }
 
-        if (comptime report_mode == .full_stats) {
-            rasterreport.recordNewtonSIMDChunkStats(
-                N,
-                GeomKern.domViolation,
-                ctx_report,
-                tile,
-                sub_samp,
-                subpx_simd_chunk,
-                v_chunk_mask,
-                result.v_mask,
-                result.v_iters,
-                result.v_status,
-                result.v_pre_dom_conv,
-                result.v_xi_final,
-                result.v_eta_final,
-                subpx_dom.x_off,
-                subpx_dom.y_off,
-                nodes_coords.x,
-                nodes_coords.y,
-                nodes_coords.z,
-            );
-        }
-
         const v_conv_mask = v_chunk_mask & result.v_mask;
         if (!@reduce(.Or, v_conv_mask)) continue;
 
@@ -1632,9 +1587,6 @@ fn rasterSteppedSIMDFixP(
         z[nn] = nodes_coords.z[nn];
         inv_z_node[nn] = 1.0 / z[nn];
     }
-    const dx: [2]F = .{ x[2] - x[0], x[1] - x[0] };
-    const dy: [2]F = .{ y[1] - y[0], y[2] - y[0] };
-    const area = @mulAdd(F, dx[0], dy[0], -(dy[1] * dx[1]));
 
     const is_const_depth = z[0] == z[1] and z[1] == z[2];
     const v_nodes_inv_z = GeomKern.getSIMDInvZ(nodes_coords);
@@ -1657,11 +1609,6 @@ fn rasterSteppedSIMDFixP(
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
         const row_offset = scratch_y_u * subpx_dom.tile_size;
-        const global_suby = comm.globalSubpxForReport(
-            tile.scratch_px.y_min,
-            sub_samp,
-            scratch_y_u,
-        );
         const y_steps: buildconfig.Tri3FixedEdge = @intCast(
             scratch_y_u - rast_bounds.start_y_u,
         );
@@ -1702,54 +1649,9 @@ fn rasterSteppedSIMDFixP(
             var v_w2: VecSF = undefined;
             var v_inv_z: VecSF = undefined;
 
-            if (comptime report_mode == .full_stats) {
-                if (@reduce(.Or, v_mask_active)) {
-                    v_w1 = @as(VecSF, @floatFromInt(v_edge[1])) * v_fixed_inv_area;
-                    v_w2 = @as(VecSF, @floatFromInt(v_edge[2])) * v_fixed_inv_area;
-                    v_w0 = @as(VecSF, @splat(1.0)) - v_w1 - v_w2;
-                    const v_inv_z_tail = @mulAdd(
-                        VecSF,
-                        v_w1,
-                        @as(VecSF, @splat(inv_z_node[1])),
-                        v_w2 * @as(VecSF, @splat(inv_z_node[2])),
-                    );
-                    v_inv_z = if (is_const_depth)
-                        @as(VecSF, @splat(inv_z_node[0]))
-                    else
-                        @mulAdd(
-                            VecSF,
-                            v_w0,
-                            @as(VecSF, @splat(inv_z_node[0])),
-                            v_inv_z_tail,
-                        );
-                }
-
-                const v_zero: VecSF = @splat(0.0);
-                const v_stats_w0 = if (@reduce(.Or, v_mask_active)) v_w0 else v_zero;
-                const v_stats_w1 = if (@reduce(.Or, v_mask_active)) v_w1 else v_zero;
-                const v_stats_w2 = if (@reduce(.Or, v_mask_active)) v_w2 else v_zero;
-                const v_stats_inv_z = if (@reduce(.Or, v_mask_active)) v_inv_z else v_zero;
-
-                rasterreport.recordTri3SteppedSIMDConvStats(
-                    ctx_report,
-                    tile,
-                    sub_samp,
-                    scratch_x_u,
-                    global_suby,
-                    v_x_mask,
-                    v_in_tri,
-                    .{ v_stats_w0, v_stats_w1, v_stats_w2 },
-                    v_stats_inv_z,
-                    is_const_depth,
-                    inv_z_node[1],
-                    inv_z_node[2],
-                    area,
-                );
-            }
-
             if (!@reduce(.Or, v_mask_active)) continue;
 
-            if (comptime report_mode != .full_stats) {
+            {
                 v_w1 = @as(VecSF, @floatFromInt(v_edge[1])) * v_fixed_inv_area;
                 v_w2 = @as(VecSF, @floatFromInt(v_edge[2])) * v_fixed_inv_area;
                 v_w0 = @as(VecSF, @splat(1.0)) - v_w1 - v_w2;
@@ -1962,11 +1864,6 @@ fn rasterSteppedSIMDFloat(
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
         const row_offset = scratch_y_u * subpx_dom.tile_size;
-        const global_suby = comm.globalSubpxForReport(
-            tile.scratch_px.y_min,
-            sub_samp,
-            scratch_y_u,
-        );
         const y_steps = @as(F, @floatFromInt(scratch_y_u - rast_bounds.start_y_u));
 
         var w_row: [3]F = undefined;
@@ -2023,24 +1920,6 @@ fn rasterSteppedSIMDFloat(
                     @as(VecSF, @splat(inv_z_node[0])),
                     v_inv_z_tail,
                 );
-
-            if (comptime report_mode == .full_stats) {
-                rasterreport.recordTri3SteppedSIMDConvStats(
-                    ctx_report,
-                    tile,
-                    sub_samp,
-                    scratch_x_u,
-                    global_suby,
-                    v_x_mask,
-                    v_in_tri,
-                    v_w,
-                    v_inv_z,
-                    is_const_depth,
-                    inv_z_node[1],
-                    inv_z_node[2],
-                    area,
-                );
-            }
 
             if (!@reduce(.Or, v_mask_active)) continue;
 

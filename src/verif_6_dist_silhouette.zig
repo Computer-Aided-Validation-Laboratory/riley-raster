@@ -520,7 +520,7 @@ fn runDistortCase(
 
     var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .memory;
-    config.report = .{ .mode = .off };
+    config.report_perf = .off;
 
     for (0..time_steps) |frame_idx| {
         var frame_arena = std.heap.ArenaAllocator.init(allocator);

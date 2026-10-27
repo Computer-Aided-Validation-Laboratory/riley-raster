@@ -47,7 +47,6 @@ const test_formats = [_]iio.ImageFormat{
 const report_modes = [_]rastcfg.ReportMode{
     .off,
     .bench,
-    .full_stats,
 };
 
 const scale_strategies = [_]enum {
@@ -320,7 +319,7 @@ fn runFactorialScalingAndReports(
 
             var run_config = config;
             run_config.save_strategy = .memory;
-            run_config.report = .{ .mode = rep_mode };
+            run_config.report_perf = rep_mode;
             const scaling: imageops.ScaleStrategy = switch (scale_strat) {
                 .none => .none,
                 .auto => .auto,
@@ -367,6 +366,7 @@ fn runEntryPointEquivalence(
 
     var run_config = config;
     run_config.save_strategy = .memory;
+    run_config.report_console = true;
 
     // 1. raster (allocates output array)
     const result_raster = try riley.raster(
@@ -378,6 +378,27 @@ fn runEntryPointEquivalence(
         null,
     );
     const img_raster = result_raster orelse return error.NoResult;
+
+    run_config.report_console = false;
+
+    // Capture requires timing, even when console output is disabled.
+    var off_capture = [_]report.FrameBenchCapture{
+        std.mem.zeroes(report.FrameBenchCapture),
+    };
+    try std.testing.expectError(
+        error.InvalidBenchCaptureBuff,
+        riley.rasterAdvanced(
+            aa,
+            io,
+            &cam_inps,
+            &meshes,
+            run_config,
+            null,
+            .{ .bench_capture = off_capture[0..] },
+        ),
+    );
+    run_config.report_perf = .bench;
+    run_config.report_console = false;
 
     // 2. rasterAdvanced (allocates output array, captures bench)
     var bench_capt = [_]report.FrameBenchCapture{
@@ -410,6 +431,8 @@ fn runEntryPointEquivalence(
         null,
         &img_into,
     );
+
+    run_config.report_console = true;
 
     // 4. rasterAdvancedInto (renders into pre-allocated array, captures bench)
     var bench_capt_into = [_]report.FrameBenchCapture{

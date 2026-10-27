@@ -207,7 +207,7 @@ pub fn main(init: std.process.Init) !void {
     const config = rastcfg.RasterConfig{
         .save_strategy = .disk,
         .parallel = .{ .threads = RENDER_THREADS },
-        .report = .{ .mode = .off },
+        .report_perf = .off,
     };
 
     try ensureDir(io, OUT_DIR_ROOT);

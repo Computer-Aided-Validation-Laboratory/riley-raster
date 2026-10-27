@@ -19,7 +19,6 @@ const ReportMode = rastcfg.ReportMode;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const report = @import("report.zig");
-const rasterreport = @import("rasterreport.zig");
 const frontend = @import("rasterfrontend.zig");
 const elemtilebin = @import("elemtilebinning.zig");
 const edgeops = @import("hulledge.zig");

@@ -75,7 +75,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
                 };
                 const config = riley.RasterConfig{
                     .save_strategy = .memory,
-                    .report = .{ .mode = .off },
+                    .report_perf = .off,
                     .background_value = 0.0,
                     .advanced = .{
                         .raster = .{ .buffer_mode = buffer_mode },

@@ -39,7 +39,6 @@ const MIN_CAMERA_ROI_DIST: F = 1.0e-6;
 pub const InputValidationError = error{
     NoRenderGroups,
     InvalidRenderGroupWorkers,
-    FullStatsRequiresSingleRasterWorker,
     NoCameras,
     InvalidCameraPixels,
     InvalidCameraPixelSize,
@@ -91,7 +90,6 @@ pub const InputValidationError = error{
     InvalidSaveFrameBuffCount,
     InvalidImageSaveOpts,
     InvalidOutputNameFormat,
-    InvalidFullStatsFormats,
     InvalidBenchCaptureBuff,
     InvalidRasterHaloPxOverride,
     UnsuppedImageModeFieldCount,
@@ -159,7 +157,7 @@ pub fn checkRenderInps(
     }
 
     if (bench_capt) |capt| {
-        if (capt.len != cam_inps.len * num_time) {
+        if (config.report_perf != .bench or capt.len != cam_inps.len * num_time) {
             return error.InvalidBenchCaptureBuff;
         }
     }
@@ -250,15 +248,13 @@ fn checkTopLevelAndRenderGroups(
     render_groups: anytype,
     config: rastcfg.RasterConfig,
 ) InputValidationError!void {
+    _ = config;
     if (render_groups.len == 0) {
         return error.NoRenderGroups;
     }
     for (render_groups) |render_group| {
         if (render_group.workers == 0) {
             return error.InvalidRenderGroupWorkers;
-        }
-        if (config.report.mode == .full_stats and render_group.workers > 1) {
-            return error.FullStatsRequiresSingleRasterWorker;
         }
     }
 }
@@ -330,11 +326,6 @@ fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
     }
     if (config.output.save_frame_buff_count == 0) {
         return error.InvalidSaveFrameBuffCount;
-    }
-    if (config.report.mode == .full_stats and
-        config.advanced.diagnostic_image_formats.len == 0)
-    {
-        return error.InvalidFullStatsFormats;
     }
 }
 

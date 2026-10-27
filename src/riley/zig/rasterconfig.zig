@@ -7,7 +7,6 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const std = @import("std");
-const iio = @import("imageio.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
@@ -32,7 +31,8 @@ pub const RasterConfig = struct {
 
     // Sub-configuration groups.
     output: OutputConfig = .{},
-    report: ReportConfig = .{},
+    report_perf: ReportMode = .off,
+    report_console: bool = false,
     validation: ValidateInput = .fast,
 
     // Deep implementation tuning.
@@ -50,19 +50,10 @@ pub const OutputConfig = struct {
     save_frame_buff_count: usize = buildconfig.SaveFrameBuffCount,
 };
 
-pub const ReportConfig = struct {
-    mode: ReportMode = .bench,
-    full_stats_opts: FullStatsOpts = .{},
-};
-
 pub const AdvancedConfig = struct {
     raster: RasterTuning = .{},
     distortion: DistortionTuning = .{},
     solver: SolverTuning = .{},
-    diagnostic_image_formats: []const iio.ImageSaveOpts = &.{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-        .{ .format = .csv, .bits = null, .scaling = .none },
-    },
 };
 
 pub const RasterTuning = struct {
@@ -176,7 +167,6 @@ pub const SaveStrategy = enum {
 pub const ReportMode = enum {
     off,
     bench,
-    full_stats,
 };
 
 pub const HullMode = enum(u32) {
@@ -192,19 +182,4 @@ pub const NewtonSeedMode = enum {
 pub const NewtonSeedReuse = enum {
     off,
     last_conv,
-};
-
-pub const FullStatsOpts = struct {
-    save_solver_csv: bool = false,
-    save_iter_map: bool = true,
-    save_xi_map: bool = true,
-    save_eta_map: bool = true,
-    save_conv_map: bool = true,
-    save_jac_det_map: bool = true,
-    save_tile_timing_map: bool = true,
-    save_tile_density_map: bool = true,
-    save_tile_occupancy_map: bool = true,
-    save_depth_map: bool = true,
-    save_earlyout_map: bool = true,
-    save_pixel_occupancy_map: bool = true,
 };

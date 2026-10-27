@@ -327,7 +327,7 @@ change the production Newton solver tolerances.
   - **Output Modes (3)**: `.grey` (1 channel luminance/monochrome), `.rgb` (3 channel RGB), `.multifield` (raw pass-through).
   - **File Formats (4)**: `.fimg` (raw floating point), `.csv` (comma-delimited numerical matrices), `.bmp` (8-bit and 16-bit bitmaps), `.tiff` (8-bit and 16-bit tagged images).
   - **Dynamic Range Scaling**: `.none`, `.auto`, explicit fixed ranges (`.fixed = .{ 0.0, 255.0 }`), and fractional percentile boundaries (`.frac = .{ 0.05, 0.95 }`).
-  - **Diagnostic Reporting Modes**: `.off`, `.bench` (timing breakdown metrics), `.full_stats` (per-stage hardware and pipeline statistics).
+  - **Reporting Controls**: `report_perf = .off` or `.bench` (timing and counter capture), independently of `report_console = false` or `true` (routine console output). The suite checks capture validation when timing is off.
   - **Output Verification**: Asserts bit-level equivalence between memory buffer captures, reference gold data, and reloaded on-disk export images.
 
 ### Automated Failure Diagnostics

@@ -1040,7 +1040,7 @@ fn runBenchmarkInternal(
     };
 
     var config_run = config;
-    config_run.report = .{ .mode = report_mode };
+    config_run.report_perf = report_mode;
 
     if (stats_out_dir_base.len > 0) {
         var out_dir = try orch.openDirEnsured(io, stats_out_dir_base);

@@ -75,64 +75,6 @@ fn imageFormatExt(format: iio.ImageFormat) []const u8 {
     };
 }
 
-fn renameFullStatsOutputs(
-    io: std.Io,
-    out_dir: std.Io.Dir,
-    frame_idx: usize,
-    full_stats_opts: rastcfg.FullStatsOpts,
-) !void {
-    const diag_names = [_][]const u8{
-        "iters",
-        "xi",
-        "eta",
-        "converged",
-        "Jdet",
-        "occupancy",
-        "depth",
-        "earlyout",
-        "tile_timing",
-        "tile_density",
-        "tile_occupancy",
-        "normals",
-    };
-
-    var old_name_buf: [256]u8 = undefined;
-    var new_name_buf: [256]u8 = undefined;
-
-    const old_stats_name = try std.fmt.bufPrint(
-        &old_name_buf,
-        "report_stats_cam0_frame0.txt",
-        .{},
-    );
-    const new_stats_name = try std.fmt.bufPrint(
-        &new_name_buf,
-        "report_stats_cam0_frame{d}.txt",
-        .{frame_idx},
-    );
-    out_dir.rename(old_stats_name, out_dir, new_stats_name, io) catch |err| {
-        if (err != error.FileNotFound) return err;
-    };
-
-    for (diag_names) |diag_name| {
-        for (full_stats_opts.formats) |save_opt| {
-            const ext = imageFormatExt(save_opt.format);
-            const old_diag_name = try std.fmt.bufPrint(
-                &old_name_buf,
-                "diag_cam0_frame0_{s}{s}",
-                .{ diag_name, ext },
-            );
-            const new_diag_name = try std.fmt.bufPrint(
-                &new_name_buf,
-                "diag_cam0_frame{d}_{s}{s}",
-                .{ frame_idx, diag_name, ext },
-            );
-            out_dir.rename(old_diag_name, out_dir, new_diag_name, io) catch |err| {
-                if (err != error.FileNotFound) return err;
-            };
-        }
-    }
-}
-
 fn buildFrameCoords(
     allocator: std.mem.Allocator,
     sim_data: *const meshio.SimData,
@@ -488,7 +430,7 @@ fn runDistortCase(
 
     var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .memory;
-    config.report = .off;
+    config.report_perf = .off;
 
     for (0..time_steps) |frame_idx| {
         var frame_arena = std.heap.ArenaAllocator.init(allocator);
@@ -605,7 +547,7 @@ fn renderFocusedCase(
     const frame_coords = try buildFrameCoords(local_alloc, &sim_data, focused_case.frame_idx);
     var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .memory;
-    config.report = .{ .mode = .off };
+    config.report_perf = .off;
     const scalar_map = try renderScalarMap(
         local_alloc,
         allocator,

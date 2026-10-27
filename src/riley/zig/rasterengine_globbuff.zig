@@ -98,10 +98,7 @@ fn rasterSceneGlobBuffImpl(
             const tile_rng_ctx: *GlobalTileRangeCtx = @ptrCast(@alignCast(ctx_ptr));
             const worker_state = &tile_rng_ctx.worker_states[worker_idx];
             const ctx_report_task = report.ReportContext(report_mode){
-                .log = if (comptime report_mode == .full_stats)
-                    tile_rng_ctx.shared_log
-                else
-                    &worker_state.log,
+                .log = &worker_state.log,
             };
 
             const sub_samp: i32 = @intCast(tile_rng_ctx.ctx_rast.camera.sub_sample);
@@ -113,11 +110,6 @@ fn rasterSceneGlobBuffImpl(
                     sub_samp,
                     &worker_state.subpx_scratch,
                 );
-                const tile_scope: ?rasterreport.TileScope =
-                    if (comptime report_mode == .full_stats)
-                        rasterreport.beginTile(tile_rng_ctx.io)
-                    else
-                        null;
                 RasterBackend.resetSubpxScratch(
                     &worker_state.subpx_scratch,
                     tile_rng_ctx.subpx_tile_size,
@@ -136,17 +128,8 @@ fn rasterSceneGlobBuffImpl(
                     &worker_state.subpx_scratch,
                     tile_rng_ctx.subpx_tile_size,
                 );
-                const tile_duration_ns: u64 = if (comptime report_mode == .full_stats)
-                    @intCast(tile_scope.?.start.durationTo(
-                        Timestamp.now(tile_rng_ctx.io, .awake),
-                    ).raw.nanoseconds)
-                else
-                    0;
                 rasterreport.finishTile(
                     ctx_report_task,
-                    tile_rng_ctx.ctx_rast,
-                    tile,
-                    tile_duration_ns,
                     result.shaded_px,
                     tile.overlap_count,
                     result.cam_duration_ns,
@@ -495,7 +478,6 @@ fn initThreadReportLog(
     return switch (report_mode) {
         .off => .{},
         .bench => .{},
-        .full_stats => .{},
     };
 }
 

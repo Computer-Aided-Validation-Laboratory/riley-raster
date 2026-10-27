@@ -332,7 +332,7 @@ pub fn main(init: std.process.Init) !void {
     const config = rastcfg.RasterConfig{
         .parallel = .{ .threads = args.threads },
         .save_strategy = .none,
-        .report = .{ .mode = .bench },
+        .report_perf = .bench,
         .advanced = .{
             .raster = .{ .buffer_mode = args.buffer_mode },
             .solver = .{

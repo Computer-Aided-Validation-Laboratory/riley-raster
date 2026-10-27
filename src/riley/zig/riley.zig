@@ -50,7 +50,6 @@ const F = buildconfig.F;
 pub const RasterConfig = rastcfg.RasterConfig;
 pub const ParallelConfig = rastcfg.ParallelConfig;
 pub const OutputConfig = rastcfg.OutputConfig;
-pub const ReportConfig = rastcfg.ReportConfig;
 pub const AdvancedConfig = rastcfg.AdvancedConfig;
 pub const RasterTuning = rastcfg.RasterTuning;
 pub const DistortionTuning = rastcfg.DistortionTuning;
@@ -63,7 +62,6 @@ pub const SaveStrategy = rastcfg.SaveStrategy;
 pub const RenderMode = rastcfg.RenderMode;
 pub const ReportMode = rastcfg.ReportMode;
 pub const ValidateInput = rastcfg.ValidateInput;
-pub const FullStatsOpts = rastcfg.FullStatsOpts;
 pub const GeometrySchedulingMode = rastcfg.GeometrySchedulingMode;
 
 // --------------------------------------------------------------------------------------
@@ -152,7 +150,7 @@ pub fn rasterAdvanced(
     };
     if (render_groups.len == 0) return error.NoRenderGroups;
 
-    const time_start_render = Timestamp.now(user_io, .awake);
+    const time_start_render = report.timestamp(user_io, config.report_perf);
     const valid_summary = try validateAndSummarise(
         render_groups,
         cam_inps,
@@ -220,7 +218,7 @@ pub fn rasterAdvancedInto(
     };
     if (render_groups.len == 0) return error.NoRenderGroups;
 
-    const time_start_render = Timestamp.now(user_io, .awake);
+    const time_start_render = report.timestamp(user_io, config.report_perf);
     const valid_summary = try validateAndSummarise(
         render_groups,
         cam_inps,
@@ -323,7 +321,6 @@ fn resolveRenderParallelPlan(
     return scalingpolicy.resolveRenderParallelPlan(
         workload,
         config.parallel,
-        config.report.mode,
     );
 }
 
@@ -376,8 +373,8 @@ fn rasterIntoValidated(
     defer outer_alloc.free(nodal_glob_scaling);
 
     // Timing hooks for frame buffer setup, render time and E2E times
-    const time_start_frame_buff = Timestamp.now(user_io, .awake);
-    const time_end_setup = Timestamp.now(user_io, .awake);
+    const time_start_frame_buff = report.timestamp(user_io, config.report_perf);
+    const time_end_setup = report.timestamp(user_io, config.report_perf);
     var end_to_end_times = report.EndToEndTimes{
         .setup_time = @floatFromInt(
             time_start_render.durationTo(time_end_setup).raw.nanoseconds,
@@ -393,7 +390,7 @@ fn rasterIntoValidated(
             ).raw.nanoseconds,
         ),
     };
-    const time_start_dispatch = Timestamp.now(user_io, .awake);
+    const time_start_dispatch = report.timestamp(user_io, config.report_perf);
 
     // Dispatch frame jobs to render groups to run the geomtry then raster pipelines
     if (config.render_mode == .in_order) {
@@ -428,7 +425,7 @@ fn rasterIntoValidated(
         );
     }
 
-    const time_end_render = Timestamp.now(user_io, .awake);
+    const time_end_render = report.timestamp(user_io, config.report_perf);
     end_to_end_times.dispatch_time = @floatFromInt(
         time_start_dispatch.durationTo(time_end_render).raw.nanoseconds,
     );
@@ -441,7 +438,7 @@ fn rasterIntoValidated(
         cams,
         config,
         num_time,
-        config.report.mode,
+        config.report_perf,
         end_to_end_times,
         if (bench_capt) |capt| capt else null,
     );
@@ -1043,10 +1040,8 @@ fn processRasterBatch(
     save_overlap: ?*saveoverlap.SaveOverlap,
     jobs: []PreparedFrameJob,
 ) !void {
-    const raster_workers = if (config.report.mode == .full_stats)
-        @as(u16, 1)
-    else
-        @max(@as(u16, 1), group_workers);
+    _ = config;
+    const raster_workers = @max(@as(u16, 1), group_workers);
 
     for (jobs) |*job| {
         defer job.deinit(group_alloc);
@@ -1109,12 +1104,12 @@ fn runGeometryStage(
     geom_workers: u16,
 ) !void {
     if (job.time_start_frame == null) {
-        job.time_start_frame = Timestamp.now(io, .awake);
+        job.time_start_frame = report.timestamp(io, job.desc.config.report_perf);
     }
 
     const arena_alloc = job.arena.allocator();
 
-    const time_start_geo = Timestamp.now(io, .awake);
+    const time_start_geo = report.timestamp(io, job.desc.config.report_perf);
     const time_start_pfc = time_start_geo;
 
     try prepareFrameContext(
@@ -1124,7 +1119,7 @@ fn runGeometryStage(
         &job.ctx,
     );
 
-    const time_end_pfc = Timestamp.now(io, .awake);
+    const time_end_pfc = report.timestamp(io, job.desc.config.report_perf);
 
     job.ctx.frame_times.prepare_frame_context = @floatFromInt(
         time_start_pfc.durationTo(time_end_pfc).raw.nanoseconds,
@@ -1167,7 +1162,7 @@ fn runGeometryStage(
     job.ctx.total_elems_in_image = geo_res.total_elems_in_image;
     job.ctx.total_nodes_num = meshpipe.countStaticMeshNodes(job.desc.mesh_static);
 
-    const time_end_geo = Timestamp.now(io, .awake);
+    const time_end_geo = report.timestamp(io, job.desc.config.report_perf);
     job.ctx.frame_times.geometry_prep = @floatFromInt(
         time_start_geo.durationTo(time_end_geo).raw.nanoseconds,
     );
@@ -1201,7 +1196,7 @@ fn sceneTileOverlapBinning(
         ctx.actual_tile_size,
     );
 
-    const time_start_overlap = Timestamp.now(io, .awake);
+    const time_start_overlap = report.timestamp(io, job.config.report_perf);
 
     ctx.tiling = if (job.config.advanced.raster.buffer_mode == .tile_local)
         try elemtilebin.binElemsInSceneTileLoc(
@@ -1236,7 +1231,7 @@ fn sceneTileOverlapBinning(
             ctx.root_classes_by_mesh,
         );
 
-    const time_end_overlap = Timestamp.now(io, .awake);
+    const time_end_overlap = report.timestamp(io, job.config.report_perf);
 
     ctx.frame_times.tile_overlap = @floatFromInt(
         time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds,
@@ -1251,15 +1246,15 @@ fn runRasterStage(
 ) !void {
     const arena_alloc = job.arena.allocator();
 
-    const time_start_fb = Timestamp.now(io, .awake);
+    const time_start_fb = report.timestamp(io, job.desc.config.report_perf);
     try prepareFrameBuff(arena_alloc, &job.desc, &job.ctx);
-    const time_end_fb = Timestamp.now(io, .awake);
+    const time_end_fb = report.timestamp(io, job.desc.config.report_perf);
 
     job.ctx.frame_times.setup_frame_buff = @floatFromInt(
         time_start_fb.durationTo(time_end_fb).raw.nanoseconds,
     );
 
-    switch (job.desc.config.report.mode) {
+    switch (job.desc.config.report_perf) {
         .off => try rasterFrame(
             .off,
             outer_alloc,
@@ -1270,14 +1265,6 @@ fn runRasterStage(
         ),
         .bench => try rasterFrame(
             .bench,
-            outer_alloc,
-            io,
-            &job.desc,
-            raster_workers,
-            &job.ctx,
-        ),
-        .full_stats => try rasterFrame(
-            .full_stats,
             outer_alloc,
             io,
             &job.desc,
@@ -1301,9 +1288,9 @@ fn runRasterAndSaveFrame(
     );
 
     const arena_alloc = job.arena.allocator();
-    const time_start_save = Timestamp.now(io, .awake);
+    const time_start_save = report.timestamp(io, job.desc.config.report_perf);
     try saveFrame(arena_alloc, io, &job.desc, &job.ctx);
-    const time_end_save = Timestamp.now(io, .awake);
+    const time_end_save = report.timestamp(io, job.desc.config.report_perf);
 
     job.ctx.frame_times.save_frame = @floatFromInt(
         time_start_save.durationTo(time_end_save).raw.nanoseconds,
@@ -1315,7 +1302,7 @@ fn runRasterAndSaveFrame(
         job.ctx.frame_times.raster_loop +
         job.ctx.frame_times.save_frame;
 
-    const time_end_frame = Timestamp.now(io, .awake);
+    const time_end_frame = report.timestamp(io, job.desc.config.report_perf);
 
     job.ctx.frame_times.latency_time = @floatFromInt(
         job.time_start_frame.?.durationTo(time_end_frame).raw.nanoseconds,
@@ -1357,7 +1344,6 @@ fn getFrameReportPtr(
     return switch (report_mode) {
         .off => &ctx.report_storage.off,
         .bench => &ctx.report_storage.bench,
-        .full_stats => &ctx.report_storage.full_stats,
     };
 }
 
@@ -1493,21 +1479,11 @@ fn getFrameImageView(
 }
 
 fn initFrameReportStorage(
-    outer_alloc: std.mem.Allocator,
-    camera: *const cam.CameraPrepared,
-    actual_tile_size: u16,
     config: RasterConfig,
-) !report.FrameReportStorage {
-    return switch (config.report.mode) {
+) report.FrameReportStorage {
+    return switch (config.report_perf) {
         .off => .{ .off = .{} },
         .bench => .{ .bench = .{} },
-        .full_stats => .{ .full_stats = try report.initFullStatsLog(
-            outer_alloc,
-            camera.pixels_num,
-            actual_tile_size,
-            camera.sub_sample,
-            config.report.full_stats_opts,
-        ) },
     };
 }
 
@@ -1552,17 +1528,7 @@ const FrameContext = struct {
     report_storage: report.FrameReportStorage = .{ .off = .{} },
     frame_times: report.FrameTimes = .{},
 
-    fn deinit(
-        self: *FrameContext,
-        outer_alloc: std.mem.Allocator,
-        config: RasterConfig,
-    ) void {
-        report.deinitFrameReportStorage(
-            outer_alloc,
-            config,
-            &self.report_storage,
-        );
-    }
+    fn deinit(_: *FrameContext, _: std.mem.Allocator, _: RasterConfig) void {}
 };
 
 fn prepareFrameContext(
@@ -1571,6 +1537,7 @@ fn prepareFrameContext(
     input: *const FrameJobDesc,
     ctx: *FrameContext,
 ) !void {
+    _ = group_alloc;
     ctx.actual_tile_size = switch (input.config.advanced.raster.buffer_mode) {
         .tile_local => scalingpolicy.tileSize(
             input.config.advanced.raster.tile_size_override,
@@ -1591,12 +1558,7 @@ fn prepareFrameContext(
         },
     };
 
-    ctx.report_storage = try initFrameReportStorage(
-        group_alloc,
-        input.camera,
-        ctx.actual_tile_size,
-        input.config,
-    );
+    ctx.report_storage = initFrameReportStorage(input.config);
 
     const mesh_n = input.mesh_static.len;
     ctx.frame_meshes = try outer_alloc.alloc(meshpipe.MeshFrame, mesh_n);
@@ -1756,7 +1718,7 @@ fn rasterFrameGlobBuffFull(
         &ctx.frame_times,
     );
 
-    const time_start_buffer_setup = Timestamp.now(io, .awake);
+    const time_start_buffer_setup = report.timestamp(io, report_mode);
     const sub_samp: usize = @intCast(frame_job.camera.sub_sample);
     const halo_px = frame_job.camera.prep_psf.halo_px;
     const halo_subpx = @as(usize, halo_px) * sub_samp;
@@ -1778,17 +1740,17 @@ fn rasterFrameGlobBuffFull(
     defer target.deinit(outer_alloc);
 
     ctx.frame_times.global_subpx_times.buffer_setup += @floatFromInt(
-        time_start_buffer_setup.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds,
+        time_start_buffer_setup.durationTo(report.timestamp(io, report_mode)).raw.nanoseconds,
     );
 
-    report.recordGlobalSubpxFullStats(
+    report.recordGlobalSubpxStats(
         frame_job.camera.pixels_num,
         ctx.actual_tile_size,
         ctx.tiling.?,
         &ctx.frame_times,
     );
 
-    const time_start_tile_raster = Timestamp.now(io, .awake);
+    const time_start_tile_raster = report.timestamp(io, report_mode);
     const workers_used = try rasterengine.rasterSceneGlobBuff(
         report_mode,
         outer_alloc,
@@ -1808,10 +1770,10 @@ fn rasterFrameGlobBuffFull(
 
     ctx.frame_times.raster_workers_used = @intCast(workers_used);
     ctx.frame_times.global_subpx_times.tile_raster += @floatFromInt(
-        time_start_tile_raster.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds,
+        time_start_tile_raster.durationTo(report.timestamp(io, report_mode)).raw.nanoseconds,
     );
 
-    const time_start_resolve = Timestamp.now(io, .awake);
+    const time_start_resolve = report.timestamp(io, report_mode);
     const resolve_workers_used = try scratchresolveglobbuff.resolveGlobBuff(
         outer_alloc,
         io,
@@ -1824,7 +1786,7 @@ fn rasterFrameGlobBuffFull(
 
     ctx.frame_times.resolve_workers_used = @intCast(resolve_workers_used);
     const global_resolve_time_ns: F = @floatFromInt(
-        time_start_resolve.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds,
+        time_start_resolve.durationTo(report.timestamp(io, report_mode)).raw.nanoseconds,
     );
     ctx.frame_times.global_subpx_times.resolve += global_resolve_time_ns;
     ctx.frame_times.scratch_resolve = global_resolve_time_ns;
@@ -1861,7 +1823,7 @@ fn rasterFrameGlobBuffStripe(
     const stripe_subpx: usize = requested_stripe_subpx;
     const first_core_suby_max = @min(image_h_subpx, stripe_subpx);
 
-    const time_start_buffer_setup = Timestamp.now(io, .awake);
+    const time_start_buffer_setup = report.timestamp(io, report_mode);
     var stripe = try subpxframe.SubpxStripe.init(
         outer_alloc,
         frame_job.num_fields,
@@ -1875,7 +1837,7 @@ fn rasterFrameGlobBuffStripe(
     defer stripe.deinit(outer_alloc);
 
     ctx.frame_times.global_subpx_times.buffer_setup += @floatFromInt(
-        time_start_buffer_setup.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds,
+        time_start_buffer_setup.durationTo(report.timestamp(io, report_mode)).raw.nanoseconds,
     );
 
     var core_suby_min: usize = 0;
@@ -1885,7 +1847,7 @@ fn rasterFrameGlobBuffStripe(
             core_suby_min + stripe_subpx,
         );
 
-        const time_start_buffer_plan = Timestamp.now(io, .awake);
+        const time_start_buffer_plan = report.timestamp(io, report_mode);
         stripe.reset(
             @intCast(core_suby_min),
             @intCast(core_suby_max),
@@ -1915,7 +1877,7 @@ fn rasterFrameGlobBuffStripe(
             stripe_tiling_owned = true;
         }
 
-        const time_end_buffer_plan = Timestamp.now(io, .awake);
+        const time_end_buffer_plan = report.timestamp(io, report_mode);
         ctx.frame_times.global_subpx_times.buffer_setup += @floatFromInt(
             time_start_buffer_plan.durationTo(time_end_buffer_plan).raw.nanoseconds,
         );
@@ -1939,7 +1901,7 @@ fn rasterFrameGlobBuffStripe(
             }
         }
 
-        const time_start_tile_raster = Timestamp.now(io, .awake);
+        const time_start_tile_raster = report.timestamp(io, report_mode);
         const workers_used = try rasterengine.rasterSceneGlobBuff(
             report_mode,
             outer_alloc,
@@ -1962,11 +1924,11 @@ fn rasterFrameGlobBuffStripe(
             @as(u16, @intCast(workers_used)),
         );
 
-        const time_end_tile_raster = Timestamp.now(io, .awake);
+        const time_end_tile_raster = report.timestamp(io, report_mode);
         ctx.frame_times.global_subpx_times.tile_raster += @floatFromInt(
             time_start_tile_raster.durationTo(time_end_tile_raster).raw.nanoseconds,
         );
-        const time_start_resolve = Timestamp.now(io, .awake);
+        const time_start_resolve = report.timestamp(io, report_mode);
 
         const resolve_workers_used = try scratchresolveglobbuff.resolveRowsGlobBuff(
             outer_alloc,
@@ -1985,7 +1947,7 @@ fn rasterFrameGlobBuffStripe(
             @as(u16, @intCast(resolve_workers_used)),
         );
 
-        const time_end_resolve = Timestamp.now(io, .awake);
+        const time_end_resolve = report.timestamp(io, report_mode);
         global_resolve_time_ns += @floatFromInt(
             time_start_resolve.durationTo(time_end_resolve).raw.nanoseconds,
         );
@@ -2014,7 +1976,7 @@ fn rasterFrame(
 ) !void {
     const report_ptr = getFrameReportPtr(report_mode, ctx);
     const ctx_report = report.ReportContext(report_mode){ .log = report_ptr };
-    const time_start_loop = Timestamp.now(io, .awake);
+    const time_start_loop = report.timestamp(io, report_mode);
     ctx.frame_times.raster_workers_requested = raster_workers;
     ctx.frame_times.resolve_workers_requested = raster_workers;
 
@@ -2056,7 +2018,7 @@ fn rasterFrame(
         ),
     }
 
-    const time_end_loop = Timestamp.now(io, .awake);
+    const time_end_loop = report.timestamp(io, report_mode);
     ctx.frame_times.raster_loop = @floatFromInt(
         time_start_loop.durationTo(time_end_loop).raw.nanoseconds,
     );

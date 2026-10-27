@@ -33,13 +33,8 @@ pub inline fn shadeNodalScalComm(
     ctx_report: anytype,
     spx_img_scratch: *MatSlice(F),
 ) void {
-    if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-        ctx_report.recordDepth(
-            ctx_shade.global_subx,
-            ctx_shade.global_suby,
-            1.0 / interp.sub_pixel_z,
-        );
-    }
+    _ = ctx_report;
+    _ = ctx_report;
 
     if (comptime coord_space == CoordSpace.clip_px_leng) {
         shaderops.fillNodalClipScal(
@@ -78,13 +73,8 @@ pub inline fn shadeTexScalComm(
     ctx_report: anytype,
     spx_img_scratch: *MatSlice(F),
 ) void {
-    if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-        ctx_report.recordDepth(
-            ctx_shade.global_subx,
-            ctx_shade.global_suby,
-            1.0 / interp.sub_pixel_z,
-        );
-    }
+    _ = ctx_report;
+    _ = ctx_report;
 
     shadeTexScalDispatchSample(
         N,
@@ -265,13 +255,8 @@ pub inline fn shadeFuncScalComm(
     ctx_report: anytype,
     spx_img_scratch: *MatSlice(F),
 ) void {
-    if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-        ctx_report.recordDepth(
-            ctx_shade.global_subx,
-            ctx_shade.global_suby,
-            1.0 / interp.sub_pixel_z,
-        );
-    }
+    _ = ctx_report;
+    _ = ctx_report;
 
     if (comptime coord_space == CoordSpace.clip_px_leng) {
         shaderops.fillFuncClipScal(

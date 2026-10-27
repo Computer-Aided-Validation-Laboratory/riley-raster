@@ -58,11 +58,9 @@ pub const SaveSlot = struct {
         outer_alloc: std.mem.Allocator,
         config: RasterConfig,
     ) void {
-        report.deinitFrameReportStorage(
-            outer_alloc,
-            config,
-            &self.report_storage,
-        );
+        _ = outer_alloc;
+        _ = config;
+        self.report_storage = .{ .off = .{} };
     }
 };
 
@@ -382,7 +380,7 @@ pub fn completeSaveSlot(
     config: RasterConfig,
 ) !void {
     var slot = &coordinator.slots[slot_idx];
-    const time_start_save = Timestamp.now(save_io, .awake);
+    const time_start_save = report.timestamp(save_io, config.report_perf);
     std.debug.assert(slot.camera != null);
     std.debug.assert(slot.pixels_num[0] > 0);
     std.debug.assert(slot.pixels_num[1] > 0);
@@ -399,7 +397,7 @@ pub fn completeSaveSlot(
         slot.camera.?.output_encoding,
         config.output_name_format,
     );
-    const time_end_save = Timestamp.now(save_io, .awake);
+    const time_end_save = report.timestamp(save_io, config.report_perf);
 
     slot.frame_times.save_frame = @floatFromInt(
         time_start_save.durationTo(time_end_save).raw.nanoseconds,

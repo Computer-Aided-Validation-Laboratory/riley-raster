@@ -268,25 +268,6 @@ fn testInvalidRenderGroupWorkers(
     );
 }
 
-fn testFullStatsRequiresSingleRasterWorker(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    fixture: *const BaselineFixture,
-) !void {
-    _ = allocator;
-    const cam_inps = common_full.createScene3Cameras();
-    const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 2 }};
-
-    var config = fixture.config;
-    config.report = .{ .mode = .full_stats };
-
-    try std.testing.expectError(
-        error.FullStatsRequiresSingleRasterWorker,
-        runRender(&render_groups, &cam_inps, &mesh_inps, config),
-    );
-}
-
 fn testInvalidTotalThreads(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -496,21 +477,6 @@ fn testInvalidImageSaveOpts(
         error.InvalidImageSaveOpts,
         runRender(&render_groups, &cameras, &meshes, config),
     );
-}
-
-fn testInvalidFullStatsFormats(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    fixture: *const BaselineFixture,
-) !void {
-    _ = allocator;
-    var config = fixture.config;
-    config.report = .{
-        .mode = .full_stats,
-        .full_stats_opts = .{},
-    };
-    config.advanced.diagnostic_image_formats = &.{};
-    try expectConfigError(io, fixture, config, error.InvalidFullStatsFormats);
 }
 
 // --------------------------------------------------------------------------
@@ -1310,7 +1276,6 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
 
     // Render Groups & Threading
     try testInvalidRenderGroupWorkers(allocator, io, &fixture);
-    try testFullStatsRequiresSingleRasterWorker(allocator, io, &fixture);
     try testInvalidTotalThreads(allocator, io, &fixture);
     try testInvalidEdgeSpacing(allocator, io, &fixture);
 
@@ -1332,7 +1297,6 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     try testInvalidBackgroundValue(allocator, io, &fixture);
     try testInvalidSaveFrameBuffCount(allocator, io, &fixture);
     try testInvalidImageSaveOpts(allocator, io, &fixture);
-    try testInvalidFullStatsFormats(allocator, io, &fixture);
 
     // Camera parameters
     try testInvalidCameraPixels(allocator, io, &fixture);

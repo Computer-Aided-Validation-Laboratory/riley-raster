@@ -104,10 +104,7 @@ fn rasterSceneTileLocImpl(
             const worker_state = &tile_rng_ctx.worker_states[worker_idx];
 
             const ctx_report_task = report.ReportContext(report_mode){
-                .log = if (comptime report_mode == .full_stats)
-                    tile_rng_ctx.shared_log
-                else
-                    &worker_state.log,
+                .log = &worker_state.log,
             };
 
             for (range_start..range_end) |tile_idx| {
@@ -148,7 +145,7 @@ fn rasterSceneTileLocImpl(
     defer for (worker_states[0..worker_states_initialized]) |*worker_state| {
         worker_state.deinit();
     };
-    
+
     for (worker_states) |*worker_state| {
         worker_state.* = try WorkerState.init(
             arena_alloc,
@@ -205,12 +202,6 @@ fn rasterTileLoc(
     fields_num: u8,
     subpx_tile_size: usize,
 ) !void {
-    const tile_scope: ?rasterreport.TileScope =
-        if (comptime report_mode == .full_stats)
-            rasterreport.beginTile(io)
-        else
-            null;
-
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const scratch_geom = scratchresolve.ScratchTileGeometry.init(tile, sub_samp);
 
@@ -282,16 +273,8 @@ fn rasterTileLoc(
     else
         0;
 
-    const tile_duration_ns: u64 = if (comptime report_mode == .full_stats)
-        @intCast(tile_scope.?.start.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds)
-    else
-        0;
-
     rasterreport.finishTile(
         ctx_report,
-        ctx_rast,
-        tile,
-        tile_duration_ns,
         result.shaded_px,
         tile.overlap_count,
         result.cam_duration_ns,
@@ -329,7 +312,6 @@ fn initThreadReportLog(
     return switch (report_mode) {
         .off => .{},
         .bench => .{},
-        .full_stats => .{},
     };
 }
 
