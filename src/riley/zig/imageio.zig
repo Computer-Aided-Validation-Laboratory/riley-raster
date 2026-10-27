@@ -72,7 +72,7 @@ pub fn loadImage(
     io: std.Io,
     path: []const u8,
     format: ImageFormat,
-) !texops.Tex(T, channels) {
+) !texops.TexDataFix(T, channels) {
     return switch (format) {
         .csv => try loadCSV(T, channels, allocator, io, path),
         .fimg => {
@@ -687,7 +687,7 @@ pub fn loadPPM(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !texops.TexDataFix(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -738,7 +738,7 @@ pub fn loadPPM(
     const height = try std.fmt.parseInt(usize, height_str, 10);
     const max_val = try std.fmt.parseInt(u32, max_val_str, 10);
 
-    var tex = try texops.Tex(T, channels).init(allocator, height, width);
+    var tex = try texops.TexDataFix(T, channels).init(allocator, height, width);
     errdefer tex.deinit(allocator);
 
     const max_val_f = @as(F, @floatFromInt(max_val));
@@ -779,7 +779,7 @@ pub fn loadCSV(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !texops.TexDataFix(T, channels) {
     const array = if (channels == 1)
         try csvio.loadScalarCsv2D(allocator, io, path)
     else
@@ -792,7 +792,7 @@ pub fn loadCSV(
 
     const rows = array.dims[0];
     const cols = array.dims[1];
-    var tex = try texops.Tex(T, channels).init(allocator, rows, cols);
+    var tex = try texops.TexDataFix(T, channels).init(allocator, rows, cols);
     errdefer tex.deinit(allocator);
 
     for (0..rows) |rr| {
@@ -916,7 +916,7 @@ fn loadFIMGTex(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !texops.TexDataFix(T, channels) {
     const array = try loadFIMG(allocator, io, path);
     defer {
         allocator.free(array.slice);
@@ -928,7 +928,7 @@ fn loadFIMGTex(
         return error.ChannelMismatch;
     }
 
-    var tex = try texops.Tex(T, channels).init(
+    var tex = try texops.TexDataFix(T, channels).init(
         allocator,
         array.dims[1],
         array.dims[2],
@@ -953,7 +953,7 @@ pub fn loadBMP(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !texops.TexDataFix(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -986,7 +986,7 @@ pub fn loadBMP(
     const abs_height = @as(usize, @intCast(@abs(height)));
     const abs_width = @as(usize, @intCast(@abs(width)));
 
-    var tex = try texops.Tex(T, channels).init(
+    var tex = try texops.TexDataFix(T, channels).init(
         allocator,
         abs_height,
         abs_width,
@@ -1083,7 +1083,7 @@ pub fn loadTIFF(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !texops.TexDataFix(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -1141,7 +1141,7 @@ pub fn loadTIFF(
 
     if (samples_per_pixel != 1) return error.UnsuppedTIFFColorSpace;
 
-    var tex = try texops.Tex(T, channels).init(
+    var tex = try texops.TexDataFix(T, channels).init(
         allocator,
         height,
         width,
@@ -1186,7 +1186,7 @@ pub fn CLoadTIFF(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !texops.TexDataFix(T, channels) {
     _ = io;
     var libtiff = try clibtiff.LibTiff.init();
     defer libtiff.deinit();
@@ -1208,7 +1208,7 @@ pub fn CLoadTIFF(
 
     if (libtiff.readRGBAImage(tif, w, h, raster.ptr, 0) == 0) return error.ReadFailed;
 
-    var tex = try texops.Tex(T, channels).init(allocator, h, w);
+    var tex = try texops.TexDataFix(T, channels).init(allocator, h, w);
     errdefer tex.deinit(allocator);
 
     for (0..h) |row| {
@@ -1552,7 +1552,7 @@ test "FIMG Save and Load Roundtrip" {
     const height: usize = 3;
     const channels: usize = 2;
 
-    var tex = try texops.Tex(F, channels).init(
+    var tex = try texops.TexDataFix(F, channels).init(
         allocator,
         height,
         width,

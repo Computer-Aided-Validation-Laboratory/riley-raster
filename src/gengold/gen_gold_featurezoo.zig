@@ -111,7 +111,7 @@ fn buildRgbFieldTwoFrames(
 fn textureShader(
     comptime T: type,
     comptime C: usize,
-    texture: texops.Tex(T, C),
+    texture: texops.TexDataFix(T, C),
     uvs: uvio.UVMap,
     comptime bits: u8,
     linear: bool,
@@ -120,7 +120,7 @@ fn textureShader(
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
     };
-    const input = shaderops.TexInput(T, C){
+    const input = shaderops.TexInput(@TypeOf(texture)){
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = samp_cfg,
@@ -140,7 +140,7 @@ fn loadZooMesh(
     io: std.Io,
     case: Case,
     case_index: usize,
-    texture: texops.Tex(T, C),
+    texture: texops.TexDataFix(T, C),
 ) !MeshInput {
     const dir = try std.fmt.allocPrint(
         allocator,
@@ -254,7 +254,7 @@ pub fn buildZooScene(
     comptime bits: u8,
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture: texops.Tex(T, C),
+    texture: texops.TexDataFix(T, C),
 ) ![]MeshInput {
     var meshes = std.ArrayList(MeshInput).empty;
     var groups = std.ArrayList(sceneops.MeshGroup).empty;
@@ -387,7 +387,7 @@ pub fn buildAllZooCameras(meshes: []MeshInput) [6]camera.CameraInput {
 pub fn generateZooMonoGold(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_grey: texops.Tex(u8, 1),
+    texture_grey: texops.TexDataFix(u8, 1),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {
@@ -430,7 +430,7 @@ pub fn generateZooMonoGold(
 pub fn generateZooRgbGold(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_rgb: texops.Tex(u8, 3),
+    texture_rgb: texops.TexDataFix(u8, 3),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {
@@ -475,8 +475,8 @@ pub fn generateZooRgbGold(
 pub fn generateAllFeatureZooCases(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_grey: texops.Tex(u8, 1),
-    texture_rgb: texops.Tex(u8, 3),
+    texture_grey: texops.TexDataFix(u8, 1),
+    texture_rgb: texops.TexDataFix(u8, 3),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {

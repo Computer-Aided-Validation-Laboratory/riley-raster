@@ -63,7 +63,7 @@ fn buildRgbField(
 fn textureShader(
     comptime T: type,
     comptime C: usize,
-    texture: texops.Tex(T, C),
+    texture: texops.TexDataFix(T, C),
     uvs: uvio.UVMap,
     comptime bits: u8,
     linear: bool,
@@ -72,7 +72,7 @@ fn textureShader(
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
     };
-    const input = shaderops.TexInput(T, C){
+    const input = shaderops.TexInput(@TypeOf(texture)){
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = samp_cfg,
@@ -94,7 +94,7 @@ fn loadMesh(
     io: std.Io,
     mesh_shape: MeshShape,
     mesh_index: usize,
-    texture: texops.Tex(T, C),
+    texture: texops.TexDataFix(T, C),
 ) !MeshInput {
     const dir = try std.fmt.allocPrint(
         allocator,
@@ -207,7 +207,7 @@ fn buildScene(
     comptime bits: u8,
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture: texops.Tex(T, C),
+    texture: texops.TexDataFix(T, C),
     options: DemoOptions,
 ) ![]MeshInput {
     var meshes = std.ArrayList(MeshInput).empty;
@@ -352,7 +352,7 @@ fn renderCase(
     // -------------------------------------------------------------------------
     // 1. Build scene meshes and cameras
     // -------------------------------------------------------------------------
-    const texture: texops.Tex(T, C) = if (T == u16 and C == 3) blk: {
+    const texture: texops.TexDataFix(T, C) = if (T == u16 and C == 3) blk: {
         const tex_u8 = try iio.loadImage(
             u8,
             3,
@@ -363,7 +363,7 @@ fn renderCase(
         );
         defer tex_u8.deinit(local_alloc);
 
-        var tex_u16 = try texops.Tex(u16, 3).init(
+        var tex_u16 = try texops.TexDataFix(u16, 3).init(
             local_alloc,
             tex_u8.rows_num,
             tex_u8.cols_num,

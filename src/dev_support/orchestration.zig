@@ -405,7 +405,7 @@ pub fn buildMixedMeshInputs(
     allocator: std.mem.Allocator,
     io: std.Io,
     dir_paths: []const []const u8,
-    texture: texops.Tex(u8, 1),
+    texture: texops.TexDataFix(u8, 1),
 ) ![]mo.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
     var mesh_inputs = try allocator.alloc(mo.MeshInput, 10);
@@ -462,7 +462,7 @@ pub fn buildMixedRgbMeshInputs(
     allocator: std.mem.Allocator,
     io: std.Io,
     dir_paths: []const []const u8,
-    texture: texops.Tex(u8, 3),
+    texture: texops.TexDataFix(u8, 3),
 ) ![]mo.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
     var mesh_inputs = try allocator.alloc(mo.MeshInput, 10);

@@ -94,7 +94,7 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
             ctx_shade: shaderops.ShadeContext,
             interp: meshhit.RasterHit(N),
             shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.TexPrepared(T, 0),
+            shader: *const shaderops.TexMultiPrepared(T),
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {

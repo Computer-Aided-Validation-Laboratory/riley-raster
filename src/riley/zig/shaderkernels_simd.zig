@@ -241,7 +241,7 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
             ctx_shade: shaderops.ShadeContext,
             interp: meshhit.RasterHit(N),
             shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.TexPrepared(T, 0),
+            shader: *const shaderops.TexMultiPrepared(T),
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
@@ -274,7 +274,7 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
             v_nodes_inv_z: [N]VecSF,
             v_subpx_z: VecSF,
             shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.TexPrepared(T, 0),
+            shader: *const shaderops.TexMultiPrepared(T),
             sink: anytype,
         ) void {
             inline for (1..9) |C| {
@@ -311,7 +311,7 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
             v_nodes_inv_z: [N]VecSF,
             v_subpx_z: VecSF,
             shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.TexPrepared(T, 0),
+            shader: *const shaderops.TexMultiPrepared(T),
             spx_img_scratch: *MatSlice(F),
         ) void {
             var sink = shaderops.ImageSink{ .ctx = ctx_shade, .scratch = spx_img_scratch };

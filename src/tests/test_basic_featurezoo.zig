@@ -42,8 +42,8 @@ pub const ZooColorMode = enum {
 };
 
 pub const ZooInput = union(ZooColorMode) {
-    mono: texops.Tex(u8, 1),
-    rgb: texops.Tex(u8, 3),
+    mono: texops.TexDataFix(u8, 1),
+    rgb: texops.TexDataFix(u8, 3),
 };
 
 pub const zoo_threading_cases = [_]ZooThreadingCase{
@@ -268,7 +268,7 @@ pub fn runZooCase(
 pub fn runZooMonoTest(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_grey: texops.Tex(u8, 1),
+    texture_grey: texops.TexDataFix(u8, 1),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {
@@ -280,7 +280,7 @@ pub fn runZooMonoTest(
 pub fn runZooRgbTest(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_rgb: texops.Tex(u8, 3),
+    texture_rgb: texops.TexDataFix(u8, 3),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {

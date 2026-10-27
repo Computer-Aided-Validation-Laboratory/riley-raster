@@ -88,10 +88,10 @@ pub const NodalInput = struct {
     scale_over: ScaleOver = .over_frames,
 };
 
-pub fn TexInput(comptime T: type, comptime C: usize) type {
+pub fn TexInput(comptime Texture: type) type {
     return struct {
         uvs: ndarray.NDArray(F),
-        tex: texops.Tex(T, C),
+        tex: Texture,
         samp_cfg: texops.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .direct,
@@ -128,15 +128,15 @@ pub const FuncMultiInput = struct {
 
 pub const ShaderDirectInput = union(enum) {
     nodal: NodalInput,
-    tex_u8: TexInput(u8, 1),
-    tex_u16: TexInput(u16, 1),
-    tex_f: TexInput(F, 1),
-    tex_rgb_u8: TexInput(u8, 3),
-    tex_rgb_u16: TexInput(u16, 3),
-    tex_rgb_f: TexInput(F, 3),
-    tex_multi_u8: TexInput(u8, 0),
-    tex_multi_u16: TexInput(u16, 0),
-    tex_multi_f: TexInput(F, 0),
+    tex_u8: TexInput(texops.TexDataFix(u8, 1)),
+    tex_u16: TexInput(texops.TexDataFix(u16, 1)),
+    tex_f: TexInput(texops.TexDataFix(F, 1)),
+    tex_rgb_u8: TexInput(texops.TexDataFix(u8, 3)),
+    tex_rgb_u16: TexInput(texops.TexDataFix(u16, 3)),
+    tex_rgb_f: TexInput(texops.TexDataFix(F, 3)),
+    tex_multi_u8: TexInput(texops.TexDataDyn(u8)),
+    tex_multi_u16: TexInput(texops.TexDataDyn(u16)),
+    tex_multi_f: TexInput(texops.TexDataDyn(F)),
     func: FuncInput,
     func_rgb: FuncInput,
     func_multi: FuncMultiInput,
@@ -187,9 +187,17 @@ pub const NodalStatic = struct {
 };
 
 pub fn TexStatic(comptime T: type, comptime C: usize) type {
+    return texStaticType(T, C);
+}
+
+pub fn TexMultiStatic(comptime T: type) type {
+    return texStaticType(T, null);
+}
+
+fn texStaticType(comptime T: type, comptime C: ?usize) type {
     return struct {
         elem_uvs: ndarray.NDArray(F),
-        tex: texops.Tex(T, C),
+        tex: if (C) |channels| texops.TexDataFix(T, channels) else texops.TexDataDyn(T),
         samp_cfg: texops.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .direct,
@@ -220,7 +228,7 @@ pub const ShaderDirectStatic = union(enum) {
     tex_rgb_u8: TexStatic(u8, 3),
     tex_rgb_u16: TexStatic(u16, 3),
     tex_rgb_f: TexStatic(F, 3),
-    tex_multi_f: TexStatic(F, 0),
+    tex_multi_f: TexMultiStatic(F),
     func: FuncStatic,
     func_rgb: FuncStatic,
     func_multi: FuncStatic,
@@ -277,9 +285,17 @@ pub const NodalPrepared = struct {
 };
 
 pub fn TexPrepared(comptime T: type, comptime C: usize) type {
+    return texPreparedType(T, C);
+}
+
+pub fn TexMultiPrepared(comptime T: type) type {
+    return texPreparedType(T, null);
+}
+
+fn texPreparedType(comptime T: type, comptime C: ?usize) type {
     return struct {
         elem_uvs: ndarray.NDArray(F),
-        tex: texops.Tex(T, C),
+        tex: if (C) |channels| texops.TexDataFix(T, channels) else texops.TexDataDyn(T),
         samp_cfg: texops.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .direct,
@@ -295,7 +311,7 @@ pub fn TexPrepared(comptime T: type, comptime C: usize) type {
 pub fn concreteTexture(
     comptime T: type,
     comptime C: usize,
-    dynamic: *const TexPrepared(T, 0),
+    dynamic: *const TexMultiPrepared(T),
 ) TexPrepared(T, C) {
     return .{
         .elem_uvs = dynamic.elem_uvs,
@@ -343,7 +359,7 @@ pub const ShaderDirectPrepared = union(enum) {
     tex_rgb_u8: TexPrepared(u8, 3),
     tex_rgb_u16: TexPrepared(u16, 3),
     tex_rgb_f: TexPrepared(F, 3),
-    tex_multi_f: TexPrepared(F, 0),
+    tex_multi_f: TexMultiPrepared(F),
     func: FuncPrepared,
     func_rgb: FuncPrepared,
     func_multi: FuncPrepared,
@@ -530,7 +546,7 @@ pub const ShadeContext = struct {
 const testing = std.testing;
 
 test "texture input defaults to direct evaluation mode" {
-    const ti_cfg = (TexInput(u8, 1){
+    const ti_cfg = (TexInput(texops.TexDataFix(u8, 1)){
         .uvs = undefined,
         .tex = undefined,
     }).samp_cfg;

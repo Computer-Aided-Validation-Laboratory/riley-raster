@@ -37,7 +37,7 @@ pub fn buildRabbitPairScene(
     comptime C: usize,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    texture: texops.Tex(u8, C),
+    texture: texops.TexDataFix(u8, C),
     options: SceneOptions,
 ) ![]MeshInput {
     // -------------------------------------------------------------------------
@@ -216,7 +216,7 @@ fn makeMeshInput(
     rabbit_name: []const u8,
     mesh_type: gk.MeshType,
     shader_mode: ShaderMode,
-    texture: texops.Tex(u8, C),
+    texture: texops.TexDataFix(u8, C),
     checker_squares_per_axis: F,
     render_as_multifield: bool,
 ) !MeshInput {
@@ -227,7 +227,7 @@ fn makeMeshInput(
 
     const shader: shaderops.ShaderDirectInput = switch (shader_mode) {
         .tex => blk: {
-            const input = shaderops.TexInput(u8, C){
+            const input = shaderops.TexInput(@TypeOf(texture)){
                 .uvs = uvs.array,
                 .tex = texture,
                 .samp_cfg = .{

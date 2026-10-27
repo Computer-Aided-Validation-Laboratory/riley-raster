@@ -86,7 +86,16 @@ pub const TexSampConfig = struct {
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub fn Tex(comptime T: type, comptime C: usize) type {
+pub fn TexDataFix(comptime T: type, comptime C: usize) type {
+    if (C == 0) @compileError("Use TexDataDyn for runtime channel counts");
+    return texDataType(T, C);
+}
+
+pub fn TexDataDyn(comptime T: type) type {
+    return texDataType(T, null);
+}
+
+fn texDataType(comptime T: type, comptime C: ?usize) type {
     return struct {
         array: NDArray(T),
         rows_num: usize,
@@ -94,14 +103,17 @@ pub fn Tex(comptime T: type, comptime C: usize) type {
 
         const Self = @This();
 
-        pub fn init(allocator: std.mem.Allocator, rows: usize, cols: usize) !Self {
-            const dims = &[_]usize{ C, rows, cols };
+        pub const init = if (C == null) initDynamic else initFixed;
+
+        fn initFixed(allocator: std.mem.Allocator, rows: usize, cols: usize) !Self {
+            const dims = &[_]usize{ C orelse unreachable, rows, cols };
             const array = try NDArray(T).initFlat(allocator, dims);
-            return .{
-                .array = array,
-                .rows_num = rows,
-                .cols_num = cols,
-            };
+            return .{ .array = array, .rows_num = rows, .cols_num = cols };
+        }
+
+        fn initDynamic(allocator: std.mem.Allocator, channels: usize, rows: usize, cols: usize) !Self {
+            const array = try NDArray(T).initFlat(allocator, &.{ channels, rows, cols });
+            return .{ .array = array, .rows_num = rows, .cols_num = cols };
         }
 
         pub fn deinit(self: *const Self, allocator: std.mem.Allocator) void {
@@ -137,7 +149,7 @@ pub fn Tex(comptime T: type, comptime C: usize) type {
                 file_name,
                 self.rows_num,
                 self.cols_num,
-                C,
+                C orelse self.array.dims[0],
                 self,
                 SaveCtx.getVal,
             );

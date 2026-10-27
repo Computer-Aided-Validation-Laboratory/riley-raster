@@ -599,11 +599,11 @@ fn createShaderDirectStatic(
 fn createTextureMultiStatic(
     comptime T: type,
     allocator: std.mem.Allocator,
-    input: shaderops.TexInput(T, 0),
+    input: shaderops.TexInput(texops.TexDataDyn(T)),
     connect: *const meshio.Connect,
 ) !shaderops.ShaderDirectStatic {
     const elem_uvs = try prepUVs(allocator, &input.uvs, connect);
-    const float_tex: texops.Tex(F, 0) = if (comptime T == F) input.tex else blk: {
+    const float_tex: texops.TexDataDyn(F) = if (comptime T == F) input.tex else blk: {
         const values = try ndarray.NDArray(F).initFlat(allocator, input.tex.array.dims);
         for (input.tex.array.slice, values.slice) |source, *destination| {
             destination.* = @floatFromInt(source);
@@ -1917,7 +1917,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
                 },
                 .tex_multi_f => |tex_static| {
-                    return try prepareTexShader(F, 0, outer_alloc, self, tex_static);
+                    return try prepareTexShader(F, null, outer_alloc, self, tex_static);
                 },
                 .tex_u8 => |tex_static| {
                     return try prepareTexShader(
@@ -2110,10 +2110,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         fn prepareTexShader(
             comptime T: type,
-            comptime C: usize,
+            comptime C: ?usize,
             outer_alloc: std.mem.Allocator,
             self: *FrameMeshPipelineType,
-            tex_static: shaderops.TexStatic(T, C),
+            tex_static: if (C) |channels| shaderops.TexStatic(T, channels) else shaderops.TexMultiStatic(T),
         ) !shaderops.ShaderDirectPrepared {
             const params = imageops.getScalingParamsTex(
                 T,
@@ -2150,8 +2150,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 self.vis_chunk_size,
             );
 
-            if (comptime C == 0) {
-                const prepared: shaderops.TexPrepared(T, 0) = .{
+            if (comptime C == null) {
+                const prepared: shaderops.TexMultiPrepared(T) = .{
                     .elem_uvs = elem_uvs,
                     .tex = tex_static.tex,
                     .samp_cfg = tex_static.samp_cfg,

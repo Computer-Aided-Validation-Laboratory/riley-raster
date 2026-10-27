@@ -487,7 +487,7 @@ pub fn rasterTileCore(
                             shaded_px += try RasterBackend.RasterEngine(
                                 GK,
                                 SK,
-                                TexPrepared(F, 0),
+                                shaderops.TexMultiPrepared(F),
                                 root_class,
                             ).rasterElemInTile(
                                 report_mode,

@@ -258,7 +258,7 @@ fn runTexSampConfigContractTests() !void {
 fn runUVBoundaryDirectSamplingTests(allocator: std.mem.Allocator) !void {
     @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
 
-    var tex_u8 = try texops.Tex(u8, 1).init(allocator, 4, 4);
+    var tex_u8 = try texops.TexDataFix(u8, 1).init(allocator, 4, 4);
     defer tex_u8.deinit(allocator);
     for (0..4) |rr| {
         for (0..4) |cc| {
@@ -267,7 +267,7 @@ fn runUVBoundaryDirectSamplingTests(allocator: std.mem.Allocator) !void {
         }
     }
 
-    var tex_f64 = try texops.Tex(F, 3).init(allocator, 4, 4);
+    var tex_f64 = try texops.TexDataFix(F, 3).init(allocator, 4, 4);
     defer tex_f64.deinit(allocator);
     for (0..4) |rr| {
         for (0..4) |cc| {
@@ -432,18 +432,18 @@ fn runUVBoundaryDirectSamplingTests(allocator: std.mem.Allocator) !void {
 fn runSmallTextureFilterSupportTests(allocator: std.mem.Allocator) !void {
     @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
 
-    var tex_1x1 = try texops.Tex(u8, 1).init(allocator, 1, 1);
+    var tex_1x1 = try texops.TexDataFix(u8, 1).init(allocator, 1, 1);
     defer tex_1x1.deinit(allocator);
     tex_1x1.setVal(0, 0, 0, 180);
 
-    var tex_2x2 = try texops.Tex(u16, 1).init(allocator, 2, 2);
+    var tex_2x2 = try texops.TexDataFix(u16, 1).init(allocator, 2, 2);
     defer tex_2x2.deinit(allocator);
     tex_2x2.setVal(0, 0, 0, 1000);
     tex_2x2.setVal(0, 0, 1, 2000);
     tex_2x2.setVal(0, 1, 0, 3000);
     tex_2x2.setVal(0, 1, 1, 4000);
 
-    var tex_3x3 = try texops.Tex(F, 1).init(allocator, 3, 3);
+    var tex_3x3 = try texops.TexDataFix(F, 1).init(allocator, 3, 3);
     defer tex_3x3.deinit(allocator);
     for (0..3) |rr| {
         for (0..3) |cc| {
@@ -518,7 +518,7 @@ fn runUVBoundaryRasterPipelineTests(
         &[_]usize{ nodes_num, 2 },
     );
 
-    var tex_small = try texops.Tex(u8, 1).init(aa, 2, 2);
+    var tex_small = try texops.TexDataFix(u8, 1).init(aa, 2, 2);
     tex_small.setVal(0, 0, 0, 50);
     tex_small.setVal(0, 0, 1, 120);
     tex_small.setVal(0, 1, 0, 180);

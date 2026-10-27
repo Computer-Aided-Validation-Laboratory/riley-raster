@@ -58,11 +58,11 @@ pub const TwoShapesShaderKind = enum {
 
 pub fn convertU16TexToF64(
     allocator: std.mem.Allocator,
-    tex_u16: texops.Tex(u16, 1),
-) !texops.Tex(F, 1) {
+    tex_u16: texops.TexDataFix(u16, 1),
+) !texops.TexDataFix(F, 1) {
     const rows_num = tex_u16.rows_num;
     const cols_num = tex_u16.cols_num;
-    var tex_f = try texops.Tex(F, 1).init(allocator, rows_num, cols_num);
+    var tex_f = try texops.TexDataFix(F, 1).init(allocator, rows_num, cols_num);
     for (tex_u16.array.slice, 0..) |pixel_val, ii| {
         tex_f.array.slice[ii] = @as(F, @floatFromInt(pixel_val)) / 65535.0;
     }
@@ -111,10 +111,10 @@ fn loadShapeMesh(
     shape_dir_name: []const u8,
     mesh_type: gk.MeshType,
     shader_kind: TwoShapesShaderKind,
-    texture_u8_grey: texops.Tex(u8, 1),
-    texture_u8_rgb: texops.Tex(u8, 3),
-    texture_u16_grey: texops.Tex(u16, 1),
-    texture_f64_grey: texops.Tex(F, 1),
+    texture_u8_grey: texops.TexDataFix(u8, 1),
+    texture_u8_rgb: texops.TexDataFix(u8, 3),
+    texture_u16_grey: texops.TexDataFix(u16, 1),
+    texture_f64_grey: texops.TexDataFix(F, 1),
 ) !MeshInput {
     const elem_str = @tagName(mesh_type);
     const dir = try std.fmt.allocPrint(
@@ -278,10 +278,10 @@ pub fn buildTwoShapesScene(
     io: std.Io,
     mesh_type: gk.MeshType,
     shader_kind: TwoShapesShaderKind,
-    texture_u8_grey: texops.Tex(u8, 1),
-    texture_u8_rgb: texops.Tex(u8, 3),
-    texture_u16_grey: texops.Tex(u16, 1),
-    texture_f64_grey: texops.Tex(F, 1),
+    texture_u8_grey: texops.TexDataFix(u8, 1),
+    texture_u8_rgb: texops.TexDataFix(u8, 3),
+    texture_u16_grey: texops.TexDataFix(u16, 1),
+    texture_f64_grey: texops.TexDataFix(F, 1),
 ) ![]MeshInput {
     var meshes = try allocator.alloc(MeshInput, 2);
     meshes[0] = try loadShapeMesh(
@@ -331,10 +331,10 @@ pub fn generateTwoShapesCase(
     io: std.Io,
     mesh_type: gk.MeshType,
     shader_kind: TwoShapesShaderKind,
-    texture_u8_grey: texops.Tex(u8, 1),
-    texture_u8_rgb: texops.Tex(u8, 3),
-    texture_u16_grey: texops.Tex(u16, 1),
-    texture_f64_grey: texops.Tex(F, 1),
+    texture_u8_grey: texops.TexDataFix(u8, 1),
+    texture_u8_rgb: texops.TexDataFix(u8, 3),
+    texture_u16_grey: texops.TexDataFix(u16, 1),
+    texture_f64_grey: texops.TexDataFix(F, 1),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {
@@ -419,10 +419,10 @@ pub fn generateTwoShapesCase(
 pub fn generateAllTwoShapesCases(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_u8_grey: texops.Tex(u8, 1),
-    texture_u8_rgb: texops.Tex(u8, 3),
-    texture_u16_grey: texops.Tex(u16, 1),
-    texture_f64_grey: texops.Tex(F, 1),
+    texture_u8_grey: texops.TexDataFix(u8, 1),
+    texture_u8_rgb: texops.TexDataFix(u8, 3),
+    texture_u16_grey: texops.TexDataFix(u16, 1),
+    texture_f64_grey: texops.TexDataFix(F, 1),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {

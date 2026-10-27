@@ -23,6 +23,30 @@ A camera only rasterises meshes that provide a shader matching its `render_forma
 
 Direct shaders retain specialised, zero-overhead raster kernels. Direct shaders and pipe sources share unified source parameter contracts (`output_gain: F = 1.0`, `output_offset: F = 0.0`, `scaling: ScaleStrategy = .none`).
 
+### Zig texture inputs
+
+Texture storage uses `TexDataFix(T, C)` when the channel count is fixed and
+`TexDataDyn(T)` when the count is chosen at runtime. The shader union tag
+selects the input type, so callers do not need to spell out `TexInput(...)`:
+
+```zig
+const mono_tex = try texops.TexDataFix(u8, 1).init(allocator, rows, cols);
+const mono_shader: shaderops.ShaderDirectInput = .{ .tex_u8 = .{
+    .uvs = uvs,
+    .tex = mono_tex,
+} };
+
+const fields_tex = try texops.TexDataDyn(F).init(allocator, 4, rows, cols);
+const fields_shader: shaderops.ShaderDirectInput = .{ .tex_multi_f = .{
+    .uvs = uvs,
+    .tex = fields_tex,
+} };
+```
+
+The dynamic texture stores its actual channel count in `array.dims[0]`.
+Preparation validates the supported 2–8 channel range and converts integer
+multifield textures to floating-point storage once before rendering.
+
 ## Shader Pipes and Resolvers
 
 A `ShaderPipe` evaluates ordered source and transform stages at each covered surface sample:
