@@ -60,4 +60,5 @@ filterwarnings = [
 ]
 
 [tool.cibuildwheel.windows]
+archs = ["AMD64"]
 repair-wheel-command = "delvewheel repair -w {dest_dir} --add-path src\\riley\\cython -v {wheel}"
