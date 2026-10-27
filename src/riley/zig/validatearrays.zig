@@ -156,13 +156,15 @@ fn checkShaderArrays(shader: shaderops.ShaderDirectInput) InputArrayError!void {
                 return error.NonFiniteTexels;
             }
         },
-        .texture => |tex_shader| {
+        .tex_multi_u8 => |tex_shader| {
             if (!isFiniteSlice(tex_shader.uvs.slice)) return error.NonFiniteUvs;
-            switch (tex_shader.tex) {
-                .float => |tex| if (!isFiniteSlice(tex.array.slice))
-                    return error.NonFiniteTexels,
-                else => {},
-            }
+        },
+        .tex_multi_u16 => |tex_shader| {
+            if (!isFiniteSlice(tex_shader.uvs.slice)) return error.NonFiniteUvs;
+        },
+        .tex_multi_f => |tex_shader| {
+            if (!isFiniteSlice(tex_shader.uvs.slice)) return error.NonFiniteUvs;
+            if (!isFiniteSlice(tex_shader.tex.array.slice)) return error.NonFiniteTexels;
         },
         .nodal => |nodal_shader| {
             if (!isFiniteSlice(nodal_shader.field.array_mem)) {

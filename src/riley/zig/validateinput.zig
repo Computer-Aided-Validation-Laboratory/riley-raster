@@ -416,9 +416,9 @@ fn directChannels(shader: shaderops.ShaderDirectInput) u8 {
         .nodal => |s| s.field.getFieldsN(),
         .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f, .func_rgb => 3,
         .func_multi => |multi| @intCast(multi.channels.len),
-        .texture => |t| switch (t.tex) {
-            inline else => |tex| @intCast(tex.array.dims[0]),
-        },
+        .tex_multi_u8 => |t| @intCast(t.tex.array.dims[0]),
+        .tex_multi_u16 => |t| @intCast(t.tex.array.dims[0]),
+        .tex_multi_f => |t| @intCast(t.tex.array.dims[0]),
         else => 1,
     };
 }
@@ -613,15 +613,7 @@ fn checkPipeMetadata(
     for (pipe.stages) |stage| switch (stage) {
         .source => |src| {
             try checkShaderMetadata(src.shader, coords_num);
-            const count: u8 = switch (src.shader) {
-                .nodal => |n| n.field.getFieldsN(),
-                .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f, .func_rgb => 3,
-                .func_multi => |multi| @intCast(multi.channels.len),
-                .texture => |t| switch (t.tex) {
-                    inline else => |tex| @intCast(tex.array.dims[0]),
-                },
-                else => 1,
-            };
+            const count = directChannels(src.shader);
             for (0..count) |offset| {
                 var dest = src.destination;
                 const index = @as(usize, dest.index) + offset;
@@ -704,22 +696,9 @@ fn checkShaderMetadata(
     coords_num: usize,
 ) InputValidationError!void {
     switch (shader) {
-        .texture => |texture| {
-            try checkTexUvMetadata(texture.uvs, coords_num);
-            try checkSampCfg(texture.samp_cfg);
-            if (!std.math.isFinite(texture.output_gain) or
-                !std.math.isFinite(texture.output_offset)) return error.InvalidShaderOutputMap;
-            try checkScaling(texture.scaling);
-            switch (texture.tex) {
-                inline else => |tex| {
-                    if (tex.array.dims.len != 3 or tex.array.dims[0] == 0 or
-                        tex.array.dims[0] > 8 or tex.array.dims[1] == 0 or
-                        tex.array.dims[2] == 0 or
-                        tex.rows_num != tex.array.dims[1] or
-                        tex.cols_num != tex.array.dims[2]) return error.InvalidTextureDimensions;
-                },
-            }
-        },
+        .tex_multi_u8 => |t| try checkTexMultiMetadata(t, coords_num),
+        .tex_multi_u16 => |t| try checkTexMultiMetadata(t, coords_num),
+        .tex_multi_f => |t| try checkTexMultiMetadata(t, coords_num),
         .tex_u8 => |tex_shader| {
             try checkTexMetadata(tex_shader.tex, 1);
             try checkTexUvMetadata(tex_shader.uvs, coords_num);
@@ -810,6 +789,20 @@ fn checkShaderMetadata(
             try checkFuncParams(func_shader.builtin, func_shader.params);
         },
     }
+}
+
+fn checkTexMultiMetadata(t: anytype, coords_num: usize) InputValidationError!void {
+    const tex = t.tex;
+    const dims = tex.array.dims;
+    if (dims.len != 3 or dims[0] < 2 or dims[0] > 8 or
+        dims[1] == 0 or dims[2] == 0 or
+        tex.rows_num != dims[1] or tex.cols_num != dims[2])
+        return error.InvalidTextureDimensions;
+    try checkTexUvMetadata(t.uvs, coords_num);
+    try checkSampCfg(t.samp_cfg);
+    if (!std.math.isFinite(t.output_gain) or
+        !std.math.isFinite(t.output_offset)) return error.InvalidShaderOutputMap;
+    try checkScaling(t.scaling);
 }
 
 fn checkTexMetadata(tex: anytype, expected_channels: usize) InputValidationError!void {

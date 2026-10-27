@@ -102,36 +102,6 @@ pub fn TexInput(comptime T: type, comptime C: usize) type {
     };
 }
 
-pub const TextureStorageInput = union(enum) {
-    u8: texops.Tex(u8, 0),
-    u16: texops.Tex(u16, 0),
-    float: texops.Tex(F, 0),
-
-    pub fn fromTex(comptime T: type, comptime C: usize, tex: texops.Tex(T, C)) @This() {
-        const dynamic: texops.Tex(T, 0) = .{
-            .array = tex.array,
-            .rows_num = tex.rows_num,
-            .cols_num = tex.cols_num,
-        };
-        if (T == u8) return .{ .u8 = dynamic };
-        if (T == u16) return .{ .u16 = dynamic };
-        if (T == F) return .{ .float = dynamic };
-        @compileError("Unsupported texture storage type");
-    }
-};
-
-pub const TextureInput = struct {
-    uvs: ndarray.NDArray(F),
-    tex: TextureStorageInput,
-    samp_cfg: texops.TexSampConfig = .{
-        .sample = .cubic_catmull_rom,
-        .mode = .direct,
-    },
-    output_gain: F = 1.0,
-    output_offset: F = 0.0,
-    scaling: imageops.ScaleStrategy = .none,
-};
-
 pub const FuncInput = struct {
     uvs: ?ndarray.NDArray(F) = null,
     coord_mode: FuncCoordMode = .para,
@@ -164,7 +134,9 @@ pub const ShaderDirectInput = union(enum) {
     tex_rgb_u8: TexInput(u8, 3),
     tex_rgb_u16: TexInput(u16, 3),
     tex_rgb_f: TexInput(F, 3),
-    texture: TextureInput,
+    tex_multi_u8: TexInput(u8, 0),
+    tex_multi_u16: TexInput(u16, 0),
+    tex_multi_f: TexInput(F, 0),
     func: FuncInput,
     func_rgb: FuncInput,
     func_multi: FuncMultiInput,

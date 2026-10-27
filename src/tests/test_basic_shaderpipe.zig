@@ -297,9 +297,9 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         &.{ prepared.sim_data.coords.mat.rows_num, 2 },
     );
     @memset(texture_uvs.slice, 0.5);
-    const texture_shader: shaderops.ShaderDirectInput = .{ .texture = .{
+    const texture_shader: shaderops.ShaderDirectInput = .{ .tex_multi_f = .{
         .uvs = texture_uvs,
-        .tex = shaderops.TextureStorageInput.fromTex(F, 4, multifield_tex),
+        .tex = .{ .array = multifield_tex.array, .rows_num = multifield_tex.rows_num, .cols_num = multifield_tex.cols_num },
         .samp_cfg = .{ .sample = .nearest },
         .output_gain = 2,
         .output_offset = 0.05,
@@ -345,9 +345,9 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     var eight_camera = cam_in;
     eight_camera.render_format = .{ .multifield = 8 };
     var eight_mesh = direct_mesh;
-    eight_mesh.shaders = .{ .multifield = .{ .direct = .{ .texture = .{
+    eight_mesh.shaders = .{ .multifield = .{ .direct = .{ .tex_multi_u8 = .{
         .uvs = texture_uvs,
-        .tex = shaderops.TextureStorageInput.fromTex(u8, 8, eight_tex),
+        .tex = .{ .array = eight_tex.array, .rows_num = eight_tex.rows_num, .cols_num = eight_tex.cols_num },
         .samp_cfg = .{ .sample = .nearest },
     } } } };
     const eight_result = (try riley.raster(

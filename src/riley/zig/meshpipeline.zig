@@ -437,13 +437,14 @@ fn createShaderDirectStatic(
                     null,
             } };
         },
-        .texture => |tex_in| {
-            const elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect);
-            shader_static = switch (tex_in.tex) {
-                .u8 => |tex| try createTextureStatic(u8, allocator, tex_in, elem_uvs, tex),
-                .u16 => |tex| try createTextureStatic(u16, allocator, tex_in, elem_uvs, tex),
-                .float => |tex| try createTextureStatic(F, allocator, tex_in, elem_uvs, tex),
-            };
+        .tex_multi_u8 => |tex_in| {
+            shader_static = try createTextureMultiStatic(u8, allocator, tex_in, connect);
+        },
+        .tex_multi_u16 => |tex_in| {
+            shader_static = try createTextureMultiStatic(u16, allocator, tex_in, connect);
+        },
+        .tex_multi_f => |tex_in| {
+            shader_static = try createTextureMultiStatic(F, allocator, tex_in, connect);
         },
         .tex_u8 => |tex_in| {
             const elem_uvs = try prepUVs(
@@ -595,48 +596,23 @@ fn createShaderDirectStatic(
     return shader_static;
 }
 
-fn createTextureStatic(
+fn createTextureMultiStatic(
     comptime T: type,
     allocator: std.mem.Allocator,
-    input: shaderops.TextureInput,
-    elem_uvs: ndarray.NDArray(F),
-    tex: texops.Tex(T, 0),
+    input: shaderops.TexInput(T, 0),
+    connect: *const meshio.Connect,
 ) !shaderops.ShaderDirectStatic {
-    const channels = tex.array.dims[0];
-    if (channels == 1 or channels == 3) {
-        const one = shaderops.TexStatic(T, 1){
-            .elem_uvs = elem_uvs,
-            .tex = .{ .array = tex.array, .rows_num = tex.rows_num, .cols_num = tex.cols_num },
-            .samp_cfg = input.samp_cfg,
-            .output_gain = input.output_gain,
-            .output_offset = input.output_offset,
-            .scaling = input.scaling,
-        };
-        const three = shaderops.TexStatic(T, 3){
-            .elem_uvs = elem_uvs,
-            .tex = .{ .array = tex.array, .rows_num = tex.rows_num, .cols_num = tex.cols_num },
-            .samp_cfg = input.samp_cfg,
-            .output_gain = input.output_gain,
-            .output_offset = input.output_offset,
-            .scaling = input.scaling,
-        };
-        if (comptime T == u8) return if (channels == 1) .{ .tex_u8 = one } else .{ .tex_rgb_u8 = three };
-        if (comptime T == u16) return if (channels == 1) .{ .tex_u16 = one } else .{ .tex_rgb_u16 = three };
-        return if (channels == 1) .{ .tex_f = one } else .{ .tex_rgb_f = three };
-    }
-
-    // Additional channel counts share one prepared float kernel. Convert once,
-    // while static resources are built, so sampling never converts texels.
-    const float_tex: texops.Tex(F, 0) = if (comptime T == F) .{
-        .array = tex.array,
-        .rows_num = tex.rows_num,
-        .cols_num = tex.cols_num,
-    } else blk: {
-        const values = try ndarray.NDArray(F).initFlat(allocator, tex.array.dims);
-        for (tex.array.slice, values.slice) |source, *destination| {
+    const elem_uvs = try prepUVs(allocator, &input.uvs, connect);
+    const float_tex: texops.Tex(F, 0) = if (comptime T == F) input.tex else blk: {
+        const values = try ndarray.NDArray(F).initFlat(allocator, input.tex.array.dims);
+        for (input.tex.array.slice, values.slice) |source, *destination| {
             destination.* = @floatFromInt(source);
         }
-        break :blk .{ .array = values, .rows_num = tex.rows_num, .cols_num = tex.cols_num };
+        break :blk .{
+            .array = values,
+            .rows_num = input.tex.rows_num,
+            .cols_num = input.tex.cols_num,
+        };
     };
     return .{ .tex_multi_f = .{
         .elem_uvs = elem_uvs,
