@@ -52,13 +52,21 @@ class RenderFormat(IntEnum):
     multifield = 3
 
 
+class CodePacking(IntEnum):
+    spread = 0
+    lower = 1
+    upper = 2
+
+
 @dataclass(slots=True)
 class ImageSaveOpts:
     format: int = 3
-    bits: int | None = 8
+    file_bits: int | None = 8
+    adc_bits: int | None = None
     scaling: int = 0
     scaling_min: float = 0.0
     scaling_max: float = 1.0
+    packing: CodePacking = CodePacking.spread
 
 
 @dataclass(slots=True)
@@ -97,9 +105,6 @@ class Camera:
     render_format: Any = RenderFormat.mono
     render_channels: int = 1
     output_files: tuple[ImageSaveOpts, ...] | list[ImageSaveOpts] | None = None
-    output_encoding: int = 0
-    encoding_min: float = 0.0
-    encoding_max: float = 1.0
     shader_selection: int | None = None
 
     def __post_init__(self) -> None:
@@ -510,12 +515,6 @@ class CameraShaderSelection(IntEnum):
     multifield = 4
 
 
-class OutputEncoding(IntEnum):
-    native = 0
-    grid12_to_u16 = 1
-    linear_u16 = 2
-
-
 class SlotKind(IntEnum):
     channel = 0
     field = 1
@@ -874,16 +873,15 @@ def _make_camera_input(
         for fi in range(files_len):
             item = out_files[fi]
             c_files[fi].format = int(item.format)
-            c_files[fi].bits = -1 if item.bits is None else int(item.bits)
+            c_files[fi].file_bits = -1 if item.file_bits is None else int(item.file_bits)
+            c_files[fi].adc_bits = -1 if item.adc_bits is None else int(item.adc_bits)
             c_files[fi].scaling_tag = int(item.scaling)
             c_files[fi].scaling_min = float(getattr(item, "scaling_min", 0.0))
             c_files[fi].scaling_max = float(getattr(item, "scaling_max", 1.0))
+            c_files[fi].packing = int(item.packing)
         camera_out.output_files = c_files
         camera_out.output_files_len = files_len
 
-    camera_out.output_encoding = int(camera.output_encoding)
-    camera_out.encoding_min = float(camera.encoding_min)
-    camera_out.encoding_max = float(camera.encoding_max)
     camera_out.psf.psf_type = int(camera.psf_type)
     camera_out.psf.psf_sigma_x = float(camera.psf_sigma_x)
     camera_out.psf.psf_sigma_y = float(camera.psf_sigma_y)
@@ -952,9 +950,6 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
         psf_separable=camera_in.psf.psf_separable,
         render_format=RenderFormat(camera_in.render_format_tag),
         render_channels=camera_in.render_channels,
-        output_encoding=camera_in.output_encoding,
-        encoding_min=camera_in.encoding_min,
-        encoding_max=camera_in.encoding_max,
     )
 
 
@@ -2398,6 +2393,7 @@ __all__ = [
     "TextureSampleMode",
     "PsfType",
     "ImageFormat",
+    "CodePacking",
     "load_camera",
     "load_stereo_pair",
     "pos_fill_frame_from_rot",

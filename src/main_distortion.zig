@@ -126,7 +126,7 @@ fn makeCameraInput(
         FOV_SCALE,
     );
     return .{
-        .output_files = &.{.{ .format = .bmp, .bits = 8, .scaling = .auto }},
+        .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }},
         .pixels_num = PIXELS_NUM,
         .pixels_size = PIXELS_SIZE,
         .pos_world = cam_pos,
@@ -164,14 +164,14 @@ fn renderCase(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shaders = .{ .mono = .{ .direct = .{ .func = .{
+        .shaders = .{ .mono_direct = .{ .func = .{
             .uvs = uvs.array,
             .coord_mode = .uv,
             .builtin = SHADER_BUILTIN,
             .params = SHADER_PARAMS,
 
             .scaling = .none,
-        } } } },
+        } } },
     };
     const camera_input = makeCameraInput(
         &sim_data.coords,

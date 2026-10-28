@@ -285,7 +285,7 @@ def render_case(channels: int, bits: int, options: DemoOptions) -> None:
         cam.output_files = [
             riley.ImageSaveOpts(
                 format=save_fmt,
-                bits=bits,
+                file_bits=bits,
                 scaling=riley.ScaleStrategy.none,
             )
         ]

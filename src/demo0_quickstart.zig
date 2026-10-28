@@ -14,6 +14,7 @@ const cameraops = @import("riley/zig/cameraops.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
+const shaderops = @import("riley/zig/shaderops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
 
@@ -33,20 +34,22 @@ pub fn main(init: std.process.Init) !void {
     const coords = meshio.Coords.init(&coord_values, 3);
     const connect = meshio.Connect.init(&connect_values, 1, 3);
 
+    const checker: shaderops.ShaderMonoInput = .{ .func = .{
+        .coord_mode = .world_reference,
+        .builtin = .checker,
+        .params = .{
+            .coord_scale = .{ 4.0, 4.0 },
+            .settings = .{ .checker = .{} },
+        },
+        .scaling = .auto,
+    } };
+
     const mesh_input = meshpipe.MeshInput{
         .mesh_type = .tri3opt,
         .coords = coords,
         .connect = connect,
         .disp = null,
-        .shaders = .{ .mono = .{ .direct = .{ .func = .{
-            .coord_mode = .world_reference,
-            .builtin = .checker,
-            .params = .{
-                .coord_scale = .{ 4.0, 4.0 },
-                .settings = .{ .checker = .{} },
-            },
-            .scaling = .auto,
-        } } } },
+        .shaders = .{ .mono_direct = checker },
     };
 
     // -------------------------------------------------------------------------
@@ -77,7 +80,8 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = target,
         .focal_length = focal_length,
         .sub_sample = 4,
-        .output_files = &.{.{ .format = .bmp, .bits = 8, .scaling = .auto }},
+        .render_format = .mono,
+        .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }},
     };
 
     // -------------------------------------------------------------------------

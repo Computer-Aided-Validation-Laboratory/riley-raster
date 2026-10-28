@@ -141,13 +141,13 @@ fn initCameraForSimDataAllFrames(
             .coords = frame_coords,
             .connect = sim_data.connect,
             .disp = null,
-            .shaders = .{ .mono = .{ .direct = .{
+            .shaders = .{ .mono_direct = .{
                 .func = .{
                     .uvs = null,
                     .coord_mode = .para,
                     .builtin = .constant,
                 },
-            } } },
+            } },
         };
     }
 
@@ -418,12 +418,12 @@ pub fn buildMixedMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shaders = .{ .mono = .{ .direct = .{ .nodal = .{
+            .shaders = .{ .mono_direct = .{ .nodal = .{
                 .field = sim_datas[ii].field.?,
                 .output_gain = 255.0,
                 .scaling = .auto,
                 .scale_over = .within_frames,
-            } } } },
+            } } },
         };
     }
 
@@ -440,7 +440,7 @@ pub fn buildMixedMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shaders = .{ .mono = .{ .direct = .{ .tex_u8 = .{
+            .shaders = .{ .mono_direct = .{ .tex_u8 = .{
                 .uvs = uvs.array,
                 .tex = texture,
                 .samp_cfg = .{
@@ -449,7 +449,7 @@ pub fn buildMixedMeshInputs(
                 },
 
                 .scaling = .none,
-            } } } },
+            } } },
         };
     }
 
@@ -493,7 +493,7 @@ pub fn buildMixedRgbMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shaders = .{ .rgb = .{
+            .shaders = .{ .rgb_pipe = .{
                 .stages = stages,
                 .resolver = .{ .identity = shaderpipe.identity_channels_3 },
             } },
@@ -520,7 +520,7 @@ pub fn buildMixedRgbMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shaders = .{ .rgb = .{
+            .shaders = .{ .rgb_pipe = .{
                 .stages = stages,
                 .resolver = .{ .identity = shaderpipe.identity_channels_3 },
             } },

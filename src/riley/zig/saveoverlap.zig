@@ -394,7 +394,6 @@ pub fn completeSaveSlot(
         &slot.frame_arr,
         if (slot.camera.?.render_format == .rgb) 3 else 1,
         slot.camera.?.output_files,
-        slot.camera.?.output_encoding,
         config.output_name_format,
     );
     const time_end_save = report.timestamp(save_io, config.report_perf);

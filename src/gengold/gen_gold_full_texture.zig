@@ -58,8 +58,8 @@ pub fn generateFullTexCase(
         case,
     );
     defer if (case.is_rgb) {
-        allocator.free(meshes[0].shaders.rgb.?.stages);
-        allocator.free(meshes[1].shaders.rgb.?.stages);
+        allocator.free(meshes[0].shaders.rgb_pipe.?.stages);
+        allocator.free(meshes[1].shaders.rgb_pipe.?.stages);
     };
     var selected_camera = prep.camera_input;
     selected_camera.render_format = if (case.is_rgb) .rgb else .mono;

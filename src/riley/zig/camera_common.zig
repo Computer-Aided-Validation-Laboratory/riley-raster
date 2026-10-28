@@ -42,9 +42,8 @@ pub const CameraInput = struct {
     subpixel_center_map: SubPixelCenterMap = .per_tile,
     render_format: shaderops.RenderFormat = .mono,
     output_files: []const imageio.ImageSaveOpts = &.{
-        .{ .format = .bmp, .bits = 8, .scaling = .none },
+        .{ .format = .bmp, .file_bits = 8, .scaling = .none },
     },
-    output_encoding: imageio.ImageEncoding = .native,
 };
 
 pub const StereoPairInput = struct {
@@ -148,9 +147,8 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         subpixel_center_map: SubPixelCenterMap,
         render_format: shaderops.RenderFormat = .mono,
         output_files: []const imageio.ImageSaveOpts = &.{
-            .{ .format = .bmp, .bits = 8, .scaling = .none },
+            .{ .format = .bmp, .file_bits = 8, .scaling = .none },
         },
-        output_encoding: imageio.ImageEncoding = .native,
         ideal_sensor_bounds: ?distbounds.DistortBounds = null,
 
         pub fn init(
@@ -208,7 +206,6 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
                 .pixels_num = input.pixels_num,
                 .render_format = input.render_format,
                 .output_files = input.output_files,
-                .output_encoding = input.output_encoding,
                 .pixels_size = input.pixels_size,
                 .pos_world = input.pos_world,
                 .rot_world = input.rot_world,

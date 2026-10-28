@@ -731,7 +731,7 @@ pub fn loadBenchmarkMeshInput(
         const stages = try allocator.alloc(so.ShaderPipeStageInput, 1);
         stages[0] = so.stageSource(pipe_source);
         break :blk .{
-            .rgb = .{
+            .rgb_pipe = .{
                 .stages = stages,
                 .resolver = .{ .identity = shaderpipe.identity_channels_3 },
             },
@@ -802,7 +802,7 @@ pub fn loadBenchmarkMeshInput(
             else => unreachable,
         };
         break :blk .{
-            .mono = .{ .direct = mono_shader },
+            .mono_direct = mono_shader,
         };
     };
 
@@ -985,9 +985,9 @@ fn runBenchmarkInternal(
         texture_rgb,
     );
     const base_source: so.PipeSourceInput = if (calcOutputChannels(shader_type) == 3)
-        mesh_input.shaders.rgb.?.stages[0].source.shader
+        mesh_input.shaders.rgb_pipe.?.stages[0].source.shader
     else
-        so.monoToPipeSource(mesh_input.shaders.mono.?.direct);
+        so.monoToPipeSource(mesh_input.shaders.mono_direct.?);
 
     const output_slot: shaderpipe.Slot = .{ .kind = .channel, .index = 0 };
     const pipe_stages = [_]so.ShaderPipeStageInput{.{ .source = .{
@@ -1021,16 +1021,16 @@ fn runBenchmarkInternal(
     };
     if (render_defaults.shader_path == .one_stage_pipe) {
         std.debug.assert(calcOutputChannels(shader_type) == 1);
-        mesh_input.shaders = .{ .mono = .{ .pipe = .{
+        mesh_input.shaders = .{ .mono_pipe = .{
             .stages = &pipe_stages,
             .resolver = .{ .identity = &pipe_slots },
-        } } };
+        } };
     } else if (render_defaults.shader_path == .multi_source_pipe) {
         std.debug.assert(calcOutputChannels(shader_type) == 1);
-        mesh_input.shaders = .{ .mono = .{ .pipe = .{
+        mesh_input.shaders = .{ .mono_pipe = .{
             .stages = &multi_stages,
             .resolver = .{ .sum = &multi_slots },
-        } } };
+        } };
     }
 
     const roi_pos = sceneops.boundsCenter(&mesh_input.coords);

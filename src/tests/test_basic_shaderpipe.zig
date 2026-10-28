@@ -77,7 +77,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shaders = .{ .mono = .{ .pipe = pipes[0] } },
+        .shaders = .{ .mono_pipe = pipes[0] },
     };
     const cam_in = camera.CameraInput{
         .pixels_num = prepared.camera.pixels_num,
@@ -109,10 +109,10 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     };
     const generic_result_slot = [_]shaderpipe.Slot{.{ .kind = .channel, .index = 3 }};
     var generic_mesh = mesh;
-    generic_mesh.shaders = .{ .mono = .{ .pipe = .{
+    generic_mesh.shaders = .{ .mono_pipe = .{
         .stages = &generic_stages,
         .resolver = .{ .identity = &generic_result_slot },
-    } } };
+    } };
     var generic_config = config;
     generic_config.save_strategy = .memory;
     const generic_result = try riley.raster(
@@ -170,7 +170,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     } };
     var direct_mesh = mesh;
     direct_mesh.disp = zero_disp;
-    direct_mesh.shaders = .{ .mono = .{ .direct = nodal_mono } };
+    direct_mesh.shaders = .{ .mono_direct = nodal_mono };
     var direct_cam = cam_in;
     direct_cam.render_format = .mono;
     var parity_config = config;
@@ -194,8 +194,14 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .stages = &parity_stage,
         .resolver = .{ .identity = &parity_slots },
     }};
+    var conflicting_mesh = direct_mesh;
+    conflicting_mesh.shaders.mono_pipe = parity_pipe[0];
+    try std.testing.expectError(
+        error.DuplicateShaderFormat,
+        riley.raster(aa, io, &.{cam_in}, &.{conflicting_mesh}, parity_config, null),
+    );
     var pipe_mesh = direct_mesh;
-    pipe_mesh.shaders = .{ .mono = .{ .pipe = parity_pipe[0] } };
+    pipe_mesh.shaders = .{ .mono_pipe = parity_pipe[0] };
     const pipe_result = try riley.raster(
         aa,
         io,
@@ -246,7 +252,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .{ .kind = .channel, .index = 3 },
     };
     var function_mesh = direct_mesh;
-    function_mesh.shaders = .{ .multifield = .{
+    function_mesh.shaders = .{ .multifield_pipe = .{
         .stages = &function_stages,
         .resolver = .{ .identity = &function_slots },
     } };
@@ -300,7 +306,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .destination = .{ .kind = .channel, .index = 0 },
     } }};
     var texture_mesh = direct_mesh;
-    texture_mesh.shaders = .{ .multifield = .{
+    texture_mesh.shaders = .{ .multifield_pipe = .{
         .stages = &texture_stages,
         .resolver = .{ .identity = &function_slots },
     } };
@@ -353,7 +359,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     var eight_slots: [8]shaderpipe.Slot = undefined;
     for (0..8) |ii| eight_slots[ii] = .{ .kind = .channel, .index = @intCast(ii) };
     var eight_mesh = direct_mesh;
-    eight_mesh.shaders = .{ .multifield = .{
+    eight_mesh.shaders = .{ .multifield_pipe = .{
         .stages = &eight_stages,
         .resolver = .{ .identity = &eight_slots },
     } };
@@ -386,8 +392,8 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
 
     var format_mesh = direct_mesh;
     format_mesh.shaders = .{
-        .mono = .{ .direct = nodal_mono },
-        .multifield = .{
+        .mono_direct = nodal_mono,
+        .multifield_pipe = .{
             .stages = &function_stages,
             .resolver = .{ .identity = &function_slots },
         },
@@ -520,7 +526,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         } },
     }};
     var ir_mesh = mesh;
-    ir_mesh.shaders = .{ .ir = .{ .pipe = ir_pipe[0] } };
+    ir_mesh.shaders = .{ .ir_pipe = ir_pipe[0] };
     var ir_cam = cam_in;
     ir_cam.render_format = .ir;
     const ir_result = try riley.raster(
@@ -575,7 +581,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .resolver = .{ .identity = &missing_slots },
     }};
     var invalid_mesh = mesh;
-    invalid_mesh.shaders = .{ .mono = .{ .pipe = invalid_pipe[0] } };
+    invalid_mesh.shaders = .{ .mono_pipe = invalid_pipe[0] };
     try std.testing.expectError(
         error.InvalidShaderPipe,
         riley.raster(aa, io, &.{cam_in}, &.{invalid_mesh}, memory_config, null),
@@ -601,7 +607,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .resolver = .{ .identity = &last_slot },
     }};
     var max_mesh = direct_mesh;
-    max_mesh.shaders = .{ .mono = .{ .pipe = max_pipe[0] } };
+    max_mesh.shaders = .{ .mono_pipe = max_pipe[0] };
     const max_result = try riley.raster(
         aa,
         io,
@@ -627,7 +633,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .stages = &too_many_stages,
         .resolver = .{ .identity = &last_slot },
     }};
-    max_mesh.shaders = .{ .mono = .{ .pipe = overflow_pipe[0] } };
+    max_mesh.shaders = .{ .mono_pipe = overflow_pipe[0] };
     try std.testing.expectError(
         error.InvalidShaderPipe,
         riley.raster(aa, io, &.{cam_in}, &.{max_mesh}, parity_config, null),
@@ -674,7 +680,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .resolver = .{ .identity = &rgb_slots },
     }};
     var invalid_rgb_mesh = mesh;
-    invalid_rgb_mesh.shaders = .{ .rgb = invalid_rgb_pipe[0] };
+    invalid_rgb_mesh.shaders = .{ .rgb_pipe = invalid_rgb_pipe[0] };
     var invalid_rgb_cam = cam_in;
     invalid_rgb_cam.render_format = .rgb;
     try std.testing.expectError(
@@ -699,8 +705,8 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     var mixed_mesh = mesh;
     mixed_mesh.disp = null;
     mixed_mesh.shaders = .{
-        .rgb = mixed_pipes[0],
-        .multifield = mixed_pipes[1],
+        .rgb_pipe = mixed_pipes[0],
+        .multifield_pipe = mixed_pipes[1],
     };
     var rgb_cam = cam_in;
     rgb_cam.render_format = .rgb;
@@ -764,7 +770,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .destination = .{ .kind = .channel, .index = 0 },
     } }};
     var direct_with_unused = direct_mesh;
-    direct_with_unused.shaders.multifield = .{
+    direct_with_unused.shaders.multifield_pipe = .{
         .stages = &unused_stages,
         .resolver = .{ .identity = &multi_slots },
     };
@@ -797,7 +803,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     // One geometry and one displacement history can serve direct stereo and
     // an independent IR pipe in a single camera batch.
     var multimodal_mesh = direct_mesh;
-    multimodal_mesh.shaders.ir = .{ .pipe = parity_pipe[0] };
+    multimodal_mesh.shaders.ir_pipe = parity_pipe[0];
     const multimodal = (try riley.raster(
         aa,
         io,
@@ -879,7 +885,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         } },
     }};
     var expr_mesh = mixed_mesh;
-    expr_mesh.shaders = .{ .mono = .{ .pipe = expression_pipe[0] } };
+    expr_mesh.shaders = .{ .mono_pipe = expression_pipe[0] };
     const expr_result = try riley.raster(
         aa,
         io,
@@ -914,7 +920,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     const front_rgb_pipe = [_]shaderops.ShaderPipeInput{mixed_pipes[0]};
     var front_rgb_mesh = mixed_mesh;
     front_rgb_mesh.coords = front_coords;
-    front_rgb_mesh.shaders = .{ .rgb = front_rgb_pipe[0] };
+    front_rgb_mesh.shaders = .{ .rgb_pipe = front_rgb_pipe[0] };
     var rear_mono_mesh = mesh;
     rear_mono_mesh.disp = null;
     const mixed_scene = [_]meshpipe.MeshInput{ front_rgb_mesh, rear_mono_mesh };
@@ -966,11 +972,11 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     // A selected mesh at scene index 1 must retain its own global nodal
     // scaling after the incompatible mesh at index 0 is filtered out.
     var scaled_direct_mesh = direct_mesh;
-    scaled_direct_mesh.shaders = .{ .mono = .{ .direct = .{ .nodal = .{
+    scaled_direct_mesh.shaders = .{ .mono_direct = .{ .nodal = .{
         .field = timed_field,
 
         .scaling = .{ .fixed = .{ 0, 0.8 } },
-    } } } };
+    } } };
     const scaled_only_result = try riley.raster(
         aa,
         io,
@@ -1039,7 +1045,7 @@ fn runSharedWorldGeometryCase(
     var direct_camera = camera_mono;
     direct_camera.render_format = .mono;
     var direct_mesh = mesh;
-    direct_mesh.shaders = .{ .mono = .{ .direct = ref_shader } };
+    direct_mesh.shaders = .{ .mono_direct = ref_shader };
     const ref_result = try riley.raster(
         allocator,
         io,
@@ -1050,7 +1056,7 @@ fn runSharedWorldGeometryCase(
     );
     const ref_image = ref_result orelse return error.NoResult;
     defer allocator.free(ref_image.slice);
-    direct_mesh.shaders = .{ .mono = .{ .direct = def_shader } };
+    direct_mesh.shaders = .{ .mono_direct = def_shader };
     const def_result = try riley.raster(
         allocator,
         io,
@@ -1082,10 +1088,10 @@ fn runSharedWorldGeometryCase(
         .{ .kind = .channel, .index = 2 },
     };
     var pipe_mesh = mesh;
-    pipe_mesh.shaders = .{ .mono = .{ .pipe = .{
+    pipe_mesh.shaders = .{ .mono_pipe = .{
         .stages = &stages,
         .resolver = .{ .sum = &slots },
-    } } };
+    } };
     const pipe_result = try riley.raster(
         allocator,
         io,

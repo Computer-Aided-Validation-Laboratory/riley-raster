@@ -76,7 +76,7 @@ pub fn main(init: std.process.Init) !void {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shaders = .{ .mono = .{ .direct = .{ .tex_u8 = .{
+        .shaders = .{ .mono_direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = .{
@@ -85,7 +85,7 @@ pub fn main(init: std.process.Init) !void {
             },
 
             .scaling = .none,
-        } } } },
+        } } },
     };
 
     // -------------------------------------------------------------------------
@@ -107,7 +107,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     const camera_input = camera.CameraInput{
-        .output_files = &.{.{ .format = .bmp, .bits = 8, .scaling = .auto }},
+        .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }},
         .pixels_num = pixels_num,
         .pixels_size = pixel_size,
         .pos_world = pos_world,

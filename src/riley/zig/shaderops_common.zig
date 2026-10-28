@@ -170,18 +170,13 @@ pub const ShaderPipeInput = struct {
     constants: []const F = &.{},
 };
 
-pub const ShaderMonoExecutionInput = union(enum) {
-    direct: ShaderMonoInput,
-    pipe: ShaderPipeInput,
-};
-
-pub const ShaderExecutionInput = ShaderMonoExecutionInput;
-
 pub const MeshShaderSetInput = struct {
-    mono: ?ShaderMonoExecutionInput = null,
-    ir: ?ShaderMonoExecutionInput = null,
-    rgb: ?ShaderPipeInput = null,
-    multifield: ?ShaderPipeInput = null,
+    mono_direct: ?ShaderMonoInput = null,
+    mono_pipe: ?ShaderPipeInput = null,
+    ir_direct: ?ShaderMonoInput = null,
+    ir_pipe: ?ShaderPipeInput = null,
+    rgb_pipe: ?ShaderPipeInput = null,
+    multifield_pipe: ?ShaderPipeInput = null,
 };
 
 pub fn stageSource(source: PipeSourceInput) ShaderPipeStageInput {
@@ -505,6 +500,14 @@ pub fn SelectedShader(comptime Direct: type, comptime Pipe: type) type {
 }
 
 pub fn hasShader(shaders: anytype, format: RenderFormat) bool {
+    if (comptime @TypeOf(shaders) == MeshShaderSetInput) {
+        return switch (format) {
+            .mono => shaders.mono_direct != null or shaders.mono_pipe != null,
+            .ir => shaders.ir_direct != null or shaders.ir_pipe != null,
+            .rgb => shaders.rgb_pipe != null,
+            .multifield => shaders.multifield_pipe != null,
+        };
+    }
     return switch (format) {
         .mono => shaders.mono != null,
         .ir => shaders.ir != null,
@@ -519,6 +522,14 @@ pub fn selectShader(
     shaders: anytype,
     format: RenderFormat,
 ) ?SelectedShader(Direct, Pipe) {
+    if (comptime @TypeOf(shaders.*) == MeshShaderSetInput) {
+        return switch (format) {
+            .mono => if (shaders.mono_direct) |*shader| .{ .direct = shader } else if (shaders.mono_pipe) |*pipe| .{ .pipe = pipe } else null,
+            .ir => if (shaders.ir_direct) |*shader| .{ .direct = shader } else if (shaders.ir_pipe) |*pipe| .{ .pipe = pipe } else null,
+            .rgb => if (shaders.rgb_pipe) |*pipe| .{ .pipe = pipe } else null,
+            .multifield => if (shaders.multifield_pipe) |*pipe| .{ .pipe = pipe } else null,
+        };
+    }
     return switch (format) {
         .mono => if (shaders.mono) |*exec| switch (exec.*) {
             .direct => |*shader| .{ .direct = shader },

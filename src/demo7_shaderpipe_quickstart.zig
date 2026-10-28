@@ -87,7 +87,7 @@ pub fn main(init: std.process.Init) !void {
         .connect = connect,
         .disp = null,
         .shaders = .{
-            .mono = .{ .pipe = .{
+            .mono_pipe = .{
                 .stages = &stages,
                 .resolver = .{
                     .modulate = .{
@@ -95,7 +95,7 @@ pub fn main(init: std.process.Init) !void {
                         .factor = parameter,
                     },
                 },
-            } },
+            },
         },
     };
 

@@ -673,7 +673,7 @@ fn testInvalidNodalFieldDimensions(
 ) !void {
     _ = allocator;
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    switch (mesh_inps[0].shaders.mono.?.direct) {
+    switch (mesh_inps[0].shaders.mono_direct.?) {
         .nodal => |*nodal_shader| {
             const orig_dim = nodal_shader.field.array.dims[1];
             nodal_shader.field.array.dims[1] = 1;
@@ -698,7 +698,7 @@ fn testInvalidTexSampleConfig(
 ) !void {
     _ = allocator;
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    switch (mesh_inps[2].shaders.mono.?.direct) {
+    switch (mesh_inps[2].shaders.mono_direct.?) {
         .tex_u8 => |*tex_shader| {
             tex_shader.samp_cfg = .{
                 .sample = .nearest,
@@ -723,7 +723,7 @@ fn testInvalidShaderOutputMap(
 ) !void {
     _ = allocator;
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    switch (mesh_inps[0].shaders.mono.?.direct) {
+    switch (mesh_inps[0].shaders.mono_direct.?) {
         .nodal => |*nodal_shader| {
             nodal_shader.output_gain = std.math.nan(F);
         },
@@ -745,7 +745,7 @@ fn testInvalidScalingBounds(
 ) !void {
     _ = allocator;
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    switch (mesh_inps[0].shaders.mono.?.direct) {
+    switch (mesh_inps[0].shaders.mono_direct.?) {
         .nodal => |*nodal_shader| {
             nodal_shader.scaling = .{ .fixed = .{ 10.0, 5.0 } };
         },
@@ -767,7 +767,7 @@ fn testInvalidFuncShaderParams(
 ) !void {
     _ = allocator;
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    switch (mesh_inps[1].shaders.mono.?.direct) {
+    switch (mesh_inps[1].shaders.mono_direct.?) {
         .func => |*func_shader| {
             func_shader.params.coord_scale[0] = 0.0;
         },
@@ -1062,7 +1062,7 @@ fn testNonFiniteNodalFields(
     var full_config = fixture.config;
     full_config.validation = .full;
 
-    switch (mesh_inps[0].shaders.mono.?.direct) {
+    switch (mesh_inps[0].shaders.mono_direct.?) {
         .nodal => |*nodal_shader| {
             const orig_val = nodal_shader.field.array_mem[0];
             nodal_shader.field.array_mem[0] = std.math.nan(F);
@@ -1091,7 +1091,7 @@ fn testNonFiniteUvs(
     var full_config = fixture.config;
     full_config.validation = .full;
 
-    switch (mesh_inps[1].shaders.mono.?.direct) {
+    switch (mesh_inps[1].shaders.mono_direct.?) {
         .func => |*func_shader| {
             if (func_shader.uvs) |uvs| {
                 const orig_uv = uvs.slice[0];
@@ -1130,7 +1130,7 @@ fn testNonFiniteTexels(
     }
     @memcpy(float_tex_arr.slice, float_tex_data[0..]);
 
-    mesh_inps[2].shaders = .{ .mono = .{ .direct = .{
+    mesh_inps[2].shaders = .{ .mono_direct = .{
         .tex_f = .{
             .uvs = fixture.prep.meshes[2].uvs.array,
             .tex = .{
@@ -1145,7 +1145,7 @@ fn testNonFiniteTexels(
             .output_gain = 65535.0,
             .scaling = .auto,
         },
-    } } };
+    } };
 
     float_tex_arr.slice[0] = std.math.nan(F);
 

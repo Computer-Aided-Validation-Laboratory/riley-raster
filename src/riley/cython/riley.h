@@ -96,10 +96,12 @@ typedef struct c_psf {
 
 typedef struct c_image_save_opts {
     uint32_t format;
-    int bits;
+    int file_bits; /* -1: floating point (CSV/FIMG) */
+    int adc_bits;  /* -1: use file_bits, or no ADC when file_bits is -1 */
     uint32_t scaling_tag;
     double scaling_min;
     double scaling_max;
+    uint32_t packing; /* 0=spread, 1=lower, 2=upper */
 } CImageSaveOpts;
 
 typedef struct c_camera_input {
@@ -116,9 +118,6 @@ typedef struct c_camera_input {
     uint32_t subpixel_center_map;
     uint32_t render_format_tag;
     uint32_t render_channels;
-    uint32_t output_encoding; /* 0=native, 1=12-bit grid in u16, 2=linear u16 */
-    double encoding_min;
-    double encoding_max;
     const CImageSaveOpts* output_files;
     size_t output_files_len;
 } CCameraInput;

@@ -141,7 +141,7 @@ pub fn main(init: std.process.Init) !void {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = selected_disp,
-        .shaders = .{ .mono = .{ .direct = .{ .tex_u8 = .{
+        .shaders = .{ .mono_direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = .{
@@ -150,7 +150,7 @@ pub fn main(init: std.process.Init) !void {
             },
 
             .scaling = .none,
-        } } } },
+        } } },
     };
 
     // -------------------------------------------------------------------------

@@ -52,13 +52,13 @@ fn render(
     const save_opts = if (role == .rgb)
         iio.ImageSaveOpts{
             .format = .bmp,
-            .bits = 8,
+            .file_bits = 8,
             .scaling = .{ .fixed = .{ 0.0, 1.0 } },
         }
     else
         iio.ImageSaveOpts{
             .format = .tiff,
-            .bits = 16,
+            .file_bits = 16,
             .scaling = .{ .fixed = .{ 0.0, 1.0 } },
         };
     selected_camera.output_files = &.{save_opts};
@@ -179,7 +179,7 @@ pub fn main(init: std.process.Init) !void {
     };
     const mod_sources = [_]shaderpipe.Slot{ch0};
     mesh.shaders = .{
-        .mono = .{ .pipe = .{
+        .mono_pipe = .{
             .stages = &mod_stages,
             .resolver = .{
                 .modulate = .{
@@ -187,7 +187,7 @@ pub fn main(init: std.process.Init) !void {
                     .factor = param0,
                 },
             },
-        } },
+        },
     };
     try render(
         init.gpa,
@@ -223,7 +223,7 @@ pub fn main(init: std.process.Init) !void {
     };
     const rgb_slots = [_]shaderpipe.Slot{ ch0, ch1, ch2 };
     mesh.shaders = .{
-        .rgb = .{
+        .rgb_pipe = .{
             .stages = &rgb_stages,
             .resolver = .{ .identity = &rgb_slots },
         },
@@ -266,7 +266,7 @@ pub fn main(init: std.process.Init) !void {
         .{ .store = 0 },
     };
     mesh.shaders = .{
-        .mono = .{ .pipe = .{
+        .mono_pipe = .{
             .stages = &expr_stages,
             .resolver = .{
                 .expression = .{
@@ -274,7 +274,7 @@ pub fn main(init: std.process.Init) !void {
                     .constants = &.{ 0.65, 0.35 },
                 },
             },
-        } },
+        },
     };
     try render(
         init.gpa,
@@ -314,7 +314,7 @@ pub fn main(init: std.process.Init) !void {
         .{ .store = 0 },
     };
     mesh.shaders = .{
-        .mono = .{ .pipe = .{
+        .mono_pipe = .{
             .stages = &emissivity_stages,
             .resolver = .{
                 .expression = .{
@@ -322,7 +322,7 @@ pub fn main(init: std.process.Init) !void {
                     .constants = &.{ 0.90, 1.0 / 0.06 },
                 },
             },
-        } },
+        },
     };
     try render(
         init.gpa,

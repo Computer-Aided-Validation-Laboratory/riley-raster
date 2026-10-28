@@ -1355,19 +1355,16 @@ fn initNodalGlobalScaling(
 
     for (meshes, 0..) |mesh, ii| {
         nodal_global_scaling[ii] = null;
-        inline for (.{ mesh.shaders.mono, mesh.shaders.ir }) |execution_opt| {
-            if (execution_opt) |execution| switch (execution) {
-                .direct => |shader| switch (shader) {
-                    .nodal => |s| if (s.scale_over == .over_frames) {
-                        nodal_global_scaling[ii] = imageops.getScalingParamsNDArray(
-                            &s.field.array,
-                            null,
-                            s.scaling,
-                        );
-                    },
-                    else => {},
+        inline for (.{ mesh.shaders.mono_direct, mesh.shaders.ir_direct }) |shader_opt| {
+            if (shader_opt) |shader| switch (shader) {
+                .nodal => |s| if (s.scale_over == .over_frames) {
+                    nodal_global_scaling[ii] = imageops.getScalingParamsNDArray(
+                        &s.field.array,
+                        null,
+                        s.scaling,
+                    );
                 },
-                .pipe => {},
+                else => {},
             };
         }
     }
@@ -2046,7 +2043,6 @@ fn saveFrame(
             &ctx.frame_arr,
             if (input.camera.render_format == .rgb) 3 else 1,
             input.camera.output_files,
-            input.camera.output_encoding,
             input.config.output_name_format,
         );
     }

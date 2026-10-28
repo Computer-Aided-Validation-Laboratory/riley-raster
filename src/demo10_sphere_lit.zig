@@ -144,7 +144,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     var camera_input = camera.CameraInput{
-        .output_files = &.{.{ .format = .bmp, .bits = 8, .scaling = .auto }},
+        .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }},
         .pixels_num = pixels_num,
         .pixels_size = pixels_size,
         .pos_world = cam_pos,
@@ -173,7 +173,7 @@ pub fn main(init: std.process.Init) !void {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shaders = .{ .mono = .{ .direct = speckle_shader } },
+        .shaders = .{ .mono_direct = speckle_shader },
     };
 
     // 1) Direct speckle shader (like the normal sphere demo)
@@ -195,7 +195,7 @@ pub fn main(init: std.process.Init) !void {
 
     // 2) Direct lambertian function shader
     std.debug.print("2/3: Rendering direct lambertian sphere...\n", .{});
-    mesh.shaders = .{ .mono = .{ .direct = lambertian_shader } };
+    mesh.shaders = .{ .mono_direct = lambertian_shader };
     camera_input.render_format = .mono;
     config.output_name_format = "demo10_2_direct_lambertian";
     images = try riley.raster(
@@ -214,10 +214,10 @@ pub fn main(init: std.process.Init) !void {
     // 3) Combined speckle texture and lambertian shader via shader pipe
     std.debug.print("3/3: Rendering combined lit speckle sphere...\n", .{});
     mesh.shaders = .{
-        .mono = .{ .pipe = .{
+        .mono_pipe = .{
             .stages = &lit_stages,
             .resolver = lit_resolver,
-        } },
+        },
     };
     camera_input.render_format = .mono;
     config.output_name_format = "demo10_3_combined_lit";

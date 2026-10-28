@@ -98,6 +98,7 @@ pub const InputValidationError = error{
     NoMeshFrames,
     NoOutputFields,
     InvalidShaderPipe,
+    DuplicateShaderFormat,
     NoCompatibleShader,
 };
 
@@ -384,32 +385,28 @@ fn checkMeshesMetadata(
         }
 
         const shaders = mesh.shaders;
-        if (shaders.mono == null and
-            shaders.rgb == null and
-            shaders.ir == null and
-            shaders.multifield == null)
+        if (shaders.mono_direct == null and shaders.mono_pipe == null and
+            shaders.ir_direct == null and shaders.ir_pipe == null and
+            shaders.rgb_pipe == null and shaders.multifield_pipe == null)
         {
             return error.InvalidShaderPipe;
         }
-        if (shaders.mono) |execution|
-            try checkShaderMonoExecutionMetadata(execution, mesh.coords.mat.rows_num);
-        if (shaders.rgb) |pipe|
+        if ((shaders.mono_direct != null and shaders.mono_pipe != null) or
+            (shaders.ir_direct != null and shaders.ir_pipe != null))
+            return error.DuplicateShaderFormat;
+        if (shaders.mono_direct) |shader|
+            try checkShaderMonoMetadata(shader, mesh.coords.mat.rows_num);
+        if (shaders.mono_pipe) |pipe|
+            try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 1);
+        if (shaders.rgb_pipe) |pipe|
             try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 3);
-        if (shaders.ir) |execution|
-            try checkShaderMonoExecutionMetadata(execution, mesh.coords.mat.rows_num);
-        if (shaders.multifield) |_| {
+        if (shaders.ir_direct) |shader|
+            try checkShaderMonoMetadata(shader, mesh.coords.mat.rows_num);
+        if (shaders.ir_pipe) |pipe|
+            try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 1);
+        if (shaders.multifield_pipe) |_| {
             // output arity is supplied by a selecting camera
         }
-    }
-}
-
-fn checkShaderMonoExecutionMetadata(
-    execution: shaderops.ShaderMonoExecutionInput,
-    coords_num: usize,
-) InputValidationError!void {
-    switch (execution) {
-        .direct => |shader| try checkShaderMonoMetadata(shader, coords_num),
-        .pipe => |pipe| try checkPipeMetadata(pipe, coords_num, 1),
     }
 }
 
@@ -448,25 +445,23 @@ fn checkCameras(
             try checkScaling(opts.scaling);
             if (cam_inp.render_format == .rgb and opts.format == .tiff)
                 return error.InvalidImageSaveOpts;
-            if (opts.format == .bmp or opts.format == .ppm or opts.format == .tiff) {
-                if (opts.bits != 8 and opts.bits != 16)
+            switch (opts.format) {
+                .bmp, .ppm, .tiff => if (opts.file_bits != 8 and opts.file_bits != 16)
+                    return error.InvalidImageSaveOpts,
+                .fimg => if (opts.file_bits != null) return error.InvalidImageSaveOpts,
+                .csv => if (opts.file_bits != null and opts.file_bits != 8 and opts.file_bits != 16)
+                    return error.InvalidImageSaveOpts,
+            }
+            if (opts.file_bits) |file_bits| {
+                const adc_bits = opts.adc_bits orelse file_bits;
+                if (adc_bits == 0 or adc_bits > file_bits)
                     return error.InvalidImageSaveOpts;
+            } else if (opts.adc_bits != null or opts.packing != .spread) {
+                return error.InvalidImageSaveOpts;
             }
             for (cam_inp.output_files[0..ii]) |previous| {
                 if (previous.format == opts.format) return error.InvalidImageSaveOpts;
             }
-        }
-        switch (cam_inp.output_encoding) {
-            .native => {},
-            .grid12_to_u16, .linear_u16 => |range| {
-                if (!isFiniteSlice(&range) or range[1] <= range[0]) {
-                    return error.InvalidImageSaveOpts;
-                }
-                for (cam_inp.output_files) |opts| {
-                    if (opts.format != .tiff or opts.bits != 16)
-                        return error.InvalidImageSaveOpts;
-                }
-            },
         }
         try checkGlobalSubpxAlignment(config, cam_inp.sub_sample);
     }

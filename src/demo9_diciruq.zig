@@ -37,8 +37,11 @@ fn buildTemperatureField(
         min_y = @min(min_y, y);
         max_y = @max(max_y, y);
     }
+
     if (max_y <= min_y) return error.DegenerateVerticalExtent;
+
     var field = try meshio.Field.initAlloc(allocator, frames, coords.mat.rows_num, 1);
+
     for (0..frames) |frame| {
         for (0..coords.mat.rows_num) |node| {
             const y = coords.mat.get(node, 1);
@@ -97,6 +100,7 @@ pub fn main(init: std.process.Init) !void {
     // 3. Setup shaders, pipe stages, and radiance lookup
     // -------------------------------------------------------------------------
     const uvs = try uvio.loadUVMap(allocator, io, data_dir ++ "uvs.csv");
+
     const texture = try imageio.loadImage(
         u8,
         1,
@@ -105,6 +109,7 @@ pub fn main(init: std.process.Init) !void {
         "texture/speckle_mono.bmp",
         .bmp,
     );
+
     const speckle_tex = shaderops.TexInput(texops.TexDataFix(u8, 1)){
         .uvs = uvs.array,
         .tex = texture,
@@ -144,7 +149,6 @@ pub fn main(init: std.process.Init) !void {
                 .shader = .{
                     .nodal = .{
                         .field = temperature,
-
                         .scaling = .none,
                     },
                 },
@@ -159,6 +163,7 @@ pub fn main(init: std.process.Init) !void {
     for (&wavelengths, 0..) |*lambda, ii| {
         lambda.* = (8.0 + 0.25 * @as(F, @floatFromInt(ii))) * 1e-6;
     }
+
     const band_resp = shaderpipe.BandResponse{
         .wavelengths_m = &wavelengths,
         .response = &response,
@@ -176,8 +181,8 @@ pub fn main(init: std.process.Init) !void {
         .connect = sim_data.connect,
         .disp = selected_disp,
         .shaders = .{
-            .mono = .{ .direct = speckle_mono },
-            .ir = .{ .pipe = .{
+            .mono_direct = speckle_mono,
+            .ir_pipe = .{
                 .stages = &stages,
                 .resolver = .{
                     .greybody_band_apparent_c = .{
@@ -187,7 +192,7 @@ pub fn main(init: std.process.Init) !void {
                         .ambient_k = 293.15,
                     },
                 },
-            } },
+            },
         },
     };
 
@@ -232,7 +237,7 @@ pub fn main(init: std.process.Init) !void {
         0.65,
     );
     const left = camera.CameraInput{
-        .output_files = &.{.{ .format = .tiff, .bits = 16, .scaling = .none }},
+        .output_files = &.{.{ .format = .tiff, .file_bits = 16, .adc_bits = 12, .scaling = .{ .fixed = .{ 0, 255 } }, .packing = .upper }},
         .pixels_num = dic_pixels,
         .pixels_size = dic_pitch,
         .pos_world = left_pos,
@@ -241,7 +246,6 @@ pub fn main(init: std.process.Init) !void {
         .focal_length = 0.05,
         .sub_sample = 4,
         .distort = distort,
-        .output_encoding = .{ .grid12_to_u16 = .{ 0.0, 255.0 } },
     };
 
     const ir_pos = cameraops.posFillFrameFromRotAndTarg(
@@ -254,7 +258,7 @@ pub fn main(init: std.process.Init) !void {
         0.65,
     );
     const ir = camera.CameraInput{
-        .output_files = &.{.{ .format = .tiff, .bits = 16, .scaling = .none }},
+        .output_files = &.{.{ .format = .tiff, .file_bits = 16, .scaling = .{ .fixed = .{ 0, 250 } } }},
         .pixels_num = ir_pixels,
         .pixels_size = ir_pitch,
         .pos_world = ir_pos,
@@ -263,7 +267,6 @@ pub fn main(init: std.process.Init) !void {
         .focal_length = 0.035,
         .sub_sample = 4,
         .render_format = .ir,
-        .output_encoding = .{ .linear_u16 = .{ 0.0, 250.0 } },
     };
 
     var right = left;

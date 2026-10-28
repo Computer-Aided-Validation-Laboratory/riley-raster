@@ -138,19 +138,19 @@ fn createShaders(
         const s2_stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
         s2_stages[0] = shaderops.stageSource(cyl_source);
         return .{
-            .{ .rgb = .{
+            .{ .rgb_pipe = .{
                 .stages = s1_stages,
                 .resolver = .{ .identity = shaderpipe.identity_channels_3[0..3] },
             } },
-            .{ .rgb = .{
+            .{ .rgb_pipe = .{
                 .stages = s2_stages,
                 .resolver = .{ .identity = shaderpipe.identity_channels_3[0..3] },
             } },
         };
     } else {
         return .{
-            .{ .mono = .{ .direct = sphere_mono } },
-            .{ .mono = .{ .direct = cyl_mono } },
+            .{ .mono_direct = sphere_mono },
+            .{ .mono_direct = cyl_mono },
         };
     }
 }
@@ -161,7 +161,7 @@ pub fn buildShaderCaseMeshes(
     prep: *const common_full.Scene0Prepared,
     textures: *const common_full.FullTextures,
     case: FullShaderCase,
-) ! [2]MeshInput {
+) ![2]MeshInput {
     switch (case) {
         .nodal => |n| {
             const sphere_field = if (n.is_rgb)

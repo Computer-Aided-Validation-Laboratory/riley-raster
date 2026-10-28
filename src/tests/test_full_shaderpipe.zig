@@ -85,14 +85,14 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                 .coords = scene.sphere_coords,
                 .connect = scene.sphere_connect,
                 .disp = scene.sphere_disp,
-                .shaders = .{ .mono = .{ .pipe = sphere_pipes[0] } },
+                .shaders = .{ .mono_pipe = sphere_pipes[0] },
             },
             .{
                 .mesh_type = mesh_type,
                 .coords = scene.cylinder_coords,
                 .connect = scene.cylinder_connect,
                 .disp = scene.cylinder_disp,
-                .shaders = .{ .mono = .{ .pipe = cylinder_pipes[0] } },
+                .shaders = .{ .mono_pipe = cylinder_pipes[0] },
             },
         };
         var camera = scene.camera_input;
@@ -190,8 +190,8 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                 .resolver = expression_resolver,
             }};
             var expression_meshes = meshes;
-            expression_meshes[0].shaders = .{ .mono = .{ .pipe = sphere_expr[0] } };
-            expression_meshes[1].shaders = .{ .mono = .{ .pipe = cylinder_expr[0] } };
+            expression_meshes[0].shaders = .{ .mono_pipe = sphere_expr[0] };
+            expression_meshes[1].shaders = .{ .mono_pipe = cylinder_expr[0] };
             config.advanced.raster.buffer_mode = .tile_local;
             const expression_result = try riley.raster(
                 aa,

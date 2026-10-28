@@ -111,7 +111,7 @@ def main() -> None:
             camera.output_files = [
                 riley.ImageSaveOpts(
                     format=riley.ImageFormat.bmp,
-                    bits=8,
+                    file_bits=8,
                     scaling=riley.ScaleStrategy.fixed,
                     scaling_min=0.0,
                     scaling_max=1.0,
@@ -121,7 +121,7 @@ def main() -> None:
             camera.output_files = [
                 riley.ImageSaveOpts(
                     format=riley.ImageFormat.tiff,
-                    bits=16,
+                    file_bits=16,
                     scaling=riley.ScaleStrategy.fixed,
                     scaling_min=0.0,
                     scaling_max=1.0,

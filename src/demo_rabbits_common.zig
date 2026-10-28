@@ -264,7 +264,7 @@ fn makeMeshInput(
                 },
             },
         };
-        break :blk .{ .mono = .{ .direct = mono_shader } };
+        break :blk .{ .mono_direct = mono_shader };
     } else blk: {
         const pipe_source: shaderops.PipeSourceInput = switch (shader_mode) {
             .tex => .{
@@ -312,9 +312,9 @@ fn makeMeshInput(
             .resolver = .{ .identity = shaderpipe.identity_channels_3 },
         };
         if (render_as_multifield) {
-            break :blk .{ .multifield = pipe };
+            break :blk .{ .multifield_pipe = pipe };
         } else {
-            break :blk .{ .rgb = pipe };
+            break :blk .{ .rgb_pipe = pipe };
         }
     };
 

@@ -243,13 +243,13 @@ pub fn prepareBenchmark(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = sim_data.disp,
-        .shaders = .{ .mono = .{ .direct = .{ .tex_u8 = .{
+        .shaders = .{ .mono_direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = samp_cfg,
 
             .scaling = .none,
-        } } } },
+        } } },
     };
 
     const pixel_size = defaults.pixels_size;

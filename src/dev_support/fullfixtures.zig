@@ -423,14 +423,14 @@ pub fn prepareScene0(
         .coords = sphere_coords,
         .connect = sphere_connect,
         .disp = sphere_disp,
-        .shaders = .{ .mono = .{ .direct = .{ .nodal = .{ .field = sphere_temp } } } },
+        .shaders = .{ .mono_direct = .{ .nodal = .{ .field = sphere_temp } } },
     };
     const dummy_cylinder = MeshInput{
         .mesh_type = mesh_type,
         .coords = cylinder_coords,
         .connect = cylinder_connect,
         .disp = cylinder_disp,
-        .shaders = .{ .mono = .{ .direct = .{ .nodal = .{ .field = cylinder_temp } } } },
+        .shaders = .{ .mono_direct = .{ .nodal = .{ .field = cylinder_temp } } },
     };
     const dummy_meshes = [_]MeshInput{ dummy_sphere, dummy_cylinder };
     const camera_input = createScene0Camera(&dummy_meshes);
@@ -573,7 +573,7 @@ pub fn prepareScene1(
         .coords = coords,
         .connect = connect,
         .disp = null,
-        .shaders = .{ .mono = .{ .direct = .{
+        .shaders = .{ .mono_direct = .{
             .func = .{
                 .uvs = uvs.array,
                 .builtin = .checker,
@@ -586,7 +586,7 @@ pub fn prepareScene1(
                 .output_gain = 255.0,
                 .scaling = .auto,
             },
-        } } },
+        } },
     };
     const dummy_meshes = [_]MeshInput{dummy_mesh};
     const camera_input = createScene1Camera(&dummy_meshes);
@@ -685,14 +685,14 @@ pub fn buildScene2Meshes(
             .coords = prep.sphere1_coords,
             .connect = prep.sphere1_connect,
             .disp = null,
-            .shaders = .{ .mono = .{ .direct = sphere1_shader } },
+            .shaders = .{ .mono_direct = sphere1_shader },
         },
         .{
             .mesh_type = prep.mesh_type,
             .coords = prep.sphere2_coords,
             .connect = prep.sphere2_connect,
             .disp = null,
-            .shaders = .{ .mono = .{ .direct = sphere2_shader } },
+            .shaders = .{ .mono_direct = sphere2_shader },
         },
     };
 }
@@ -1189,7 +1189,7 @@ pub fn buildScene3Meshes(
             .coords = prep.meshes[ii].coords,
             .connect = prep.meshes[ii].connect,
             .disp = prep.meshes[ii].disp,
-            .shaders = .{ .mono = .{ .direct = shader } },
+            .shaders = .{ .mono_direct = shader },
         };
     }
 
@@ -1359,7 +1359,7 @@ pub fn createScene2ImageOutputCamera(meshes: []const MeshInput) CameraInput {
         .focal_length = focal_length_scene0,
         .sub_sample = 2,
         .distort = .none,
-        .render_format = if (meshes[0].shaders.rgb != null) .rgb else .mono,
+        .render_format = if (meshes[0].shaders.rgb_pipe != null) .rgb else .mono,
     };
 }
 
@@ -1369,7 +1369,7 @@ pub fn buildScene2ImageOutputMeshes(
     textures: *const FullTextures,
     is_rgb: bool,
     is_u16: bool,
-) ! [2]MeshInput {
+) ![2]MeshInput {
     const bits: ?u8 = if (is_u16) 16 else 8;
     if (is_rgb) {
         const sphere1_source: shaderops.PipeSourceInput = .{
@@ -1432,7 +1432,7 @@ pub fn buildScene2ImageOutputMeshes(
                 .connect = prep.sphere1_connect,
                 .disp = null,
                 .shaders = .{
-                    .rgb = .{
+                    .rgb_pipe = .{
                         .stages = s1_stages,
                         .resolver = .{ .identity = shaderpipe.identity_channels_3[0..3] },
                     },
@@ -1444,7 +1444,7 @@ pub fn buildScene2ImageOutputMeshes(
                 .connect = prep.sphere2_connect,
                 .disp = null,
                 .shaders = .{
-                    .rgb = .{
+                    .rgb_pipe = .{
                         .stages = s2_stages,
                         .resolver = .{ .identity = shaderpipe.identity_channels_3[0..3] },
                     },
@@ -1499,14 +1499,14 @@ pub fn buildScene2ImageOutputMeshes(
                 .coords = prep.sphere1_coords,
                 .connect = prep.sphere1_connect,
                 .disp = null,
-                .shaders = .{ .mono = .{ .direct = sphere1_mono } },
+                .shaders = .{ .mono_direct = sphere1_mono },
             },
             .{
                 .mesh_type = prep.mesh_type,
                 .coords = prep.sphere2_coords,
                 .connect = prep.sphere2_connect,
                 .disp = null,
-                .shaders = .{ .mono = .{ .direct = sphere2_mono } },
+                .shaders = .{ .mono_direct = sphere2_mono },
             },
         };
     }

@@ -164,16 +164,16 @@ pub fn main(init: std.process.Init) !void {
                     };
 
                     if (std.mem.eql(u8, shader_name, "funcconst")) {
-                        mesh_input.shaders = .{ .mono = .{ .direct = .{ .func = .{
+                        mesh_input.shaders = .{ .mono_direct = .{ .func = .{
                             .uvs = uv_map.array,
                             .coord_mode = .uv,
                             .builtin = .constant,
                             .params = .{},
                             .output_gain = 255.0,
                             .scaling = .auto,
-                        } } } };
+                        } } };
                     } else {
-                        mesh_input.shaders = .{ .mono = .{ .direct = .{ .tex_u8 = .{
+                        mesh_input.shaders = .{ .mono_direct = .{ .tex_u8 = .{
                             .uvs = uv_map.array,
                             .tex = texture,
                             .samp_cfg = .{
@@ -182,7 +182,7 @@ pub fn main(init: std.process.Init) !void {
                             },
 
                             .scaling = .none,
-                        } } } };
+                        } } };
                     }
 
                     const mesh_inputs = &[_]MeshInput{mesh_input};
@@ -275,7 +275,7 @@ pub fn main(init: std.process.Init) !void {
                             &ssaa_mat,
                             .{
                                 .format = .bmp,
-                                .bits = 8,
+                                .file_bits = 8,
                                 .scaling = .auto,
                             },
                         );
@@ -298,7 +298,7 @@ pub fn main(init: std.process.Init) !void {
                             &diff_mat,
                             .{
                                 .format = .bmp,
-                                .bits = 8,
+                                .file_bits = 8,
                                 .scaling = .auto,
                             },
                         );

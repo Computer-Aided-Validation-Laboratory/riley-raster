@@ -244,7 +244,7 @@ fn loadZooMesh(
         const stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
         stages[0] = shaderops.stageSource(pipe_source);
         break :blk .{
-            .rgb = .{
+            .rgb_pipe = .{
                 .stages = stages,
                 .resolver = .{ .identity = shaderpipe.identity_channels_3[0..3] },
             },
@@ -293,7 +293,7 @@ fn loadZooMesh(
             },
             else => unreachable,
         };
-        break :blk .{ .mono = .{ .direct = mono_shader } };
+        break :blk .{ .mono_direct = mono_shader };
     };
 
     return .{

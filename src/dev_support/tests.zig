@@ -399,14 +399,14 @@ fn saveResultToFails(
                     out_dir,
                     name,
                     &mat,
-                    .{ .format = .csv, .bits = null, .scaling = .none },
+                    .{ .format = .csv, .file_bits = null, .scaling = .none },
                 );
                 try iio.saveMatAsImage(
                     io,
                     out_dir,
                     name,
                     &mat,
-                    .{ .format = .bmp, .bits = 8, .scaling = .auto },
+                    .{ .format = .bmp, .file_bits = 8, .scaling = .auto },
                 );
             }
         }
@@ -733,9 +733,9 @@ fn saveImageArtifacts(
     }
     try iio.saveImage(io, dir, base_name, &bmp_image, 0, .{
         .format = .bmp,
-        .bits = 8,
+        .file_bits = 8,
         .scaling = .auto,
-    }, bmp_image.dims[0], .native);
+    }, bmp_image.dims[0]);
 }
 
 pub fn saveComparisonArtifactsFromResult(
@@ -907,11 +907,11 @@ pub fn runSingleMeshSuiteDriver(
                 .coords = prepared.sim_data.coords,
                 .connect = prepared.sim_data.connect,
                 .disp = if (add_disp) prepared.sim_data.field else null,
-                .shaders = .{ .mono = .{ .direct = .{
+                .shaders = .{ .mono_direct = .{
                     .nodal = .{
                         .field = prepared.sim_data.field.?,
                     },
-                } } },
+                } },
             };
 
             var run_config = config;
@@ -1051,13 +1051,13 @@ pub fn runSingleMeshSuiteDriver(
                     .coords = prepared.sim_data.coords,
                     .connect = prepared.sim_data.connect,
                     .disp = if (add_disp) prepared.sim_data.field else null,
-                    .shaders = .{ .mono = .{ .direct = .{
+                    .shaders = .{ .mono_direct = .{
                         .tex_u8 = .{
                             .uvs = prepared.uvs.array,
                             .tex = texture,
                             .samp_cfg = sc,
                         },
-                    } } },
+                    } },
                 };
 
                 var run_config = config;
@@ -1727,13 +1727,13 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shaders = .{ .mono = .{ .direct = .{
+        .shaders = .{ .mono_direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
                 .builtin = .constant,
             },
-        } } },
+        } },
     };
 
     var run_config = config;

@@ -241,7 +241,7 @@ pub fn buildCheckerMeshInput(
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shaders = .{ .mono = .{ .direct = .{
+        .shaders = .{ .mono_direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
@@ -250,7 +250,7 @@ pub fn buildCheckerMeshInput(
                 .output_gain = 255.0,
                 .scaling = .auto,
             },
-        } } },
+        } },
     };
 }
 

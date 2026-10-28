@@ -159,14 +159,15 @@ def main() -> None:
         distort_k2=0.1,
         distort_p1=0.0001,
         distort_p2=-0.0001,
-        output_encoding=riley.OutputEncoding.grid12_to_u16,
-        encoding_min=0.0,
-        encoding_max=255.0,
         output_files=[
             riley.ImageSaveOpts(
                 format=riley.ImageFormat.tiff,
-                bits=16,
-                scaling=riley.ScaleStrategy.none,
+                file_bits=16,
+                adc_bits=12,
+                packing=riley.CodePacking.upper,
+                scaling=riley.ScaleStrategy.fixed,
+                scaling_min=0.0,
+                scaling_max=255.0,
             )
         ],
     )
@@ -204,14 +205,13 @@ def main() -> None:
         focal_length=ir_focal,
         sub_sample=4,
         render_format=riley.RenderFormat.ir,
-        output_encoding=riley.OutputEncoding.linear_u16,
-        encoding_min=0.0,
-        encoding_max=250.0,
         output_files=[
             riley.ImageSaveOpts(
                 format=riley.ImageFormat.tiff,
-                bits=16,
-                scaling=riley.ScaleStrategy.none,
+                file_bits=16,
+                scaling=riley.ScaleStrategy.fixed,
+                scaling_min=0.0,
+                scaling_max=250.0,
             )
         ],
     )

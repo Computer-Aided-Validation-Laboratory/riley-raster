@@ -94,10 +94,12 @@ cdef extern from "riley.h":
 
     ctypedef struct CImageSaveOpts:
         uint32_t format
-        int bits
+        int file_bits
+        int adc_bits
         uint32_t scaling_tag
         double scaling_min
         double scaling_max
+        uint32_t packing
 
     ctypedef struct CCameraInput:
         CVec2U32 pixels_num
@@ -113,9 +115,6 @@ cdef extern from "riley.h":
         uint32_t subpixel_center_map
         uint32_t render_format_tag
         uint32_t render_channels
-        uint32_t output_encoding
-        double encoding_min
-        double encoding_max
         const CImageSaveOpts* output_files
         size_t output_files_len
 

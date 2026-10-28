@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from PIL import Image
 
 import riley
 
@@ -57,7 +58,7 @@ def make_scene(channels: int) -> tuple[riley.Mesh, riley.Camera]:
         output_files=[
             riley.ImageSaveOpts(
                 format=3,
-                bits=8,
+                file_bits=8,
                 scaling=0,
             )
         ],
@@ -127,3 +128,35 @@ def test_disk_save_overlap_matches_synchronous_output(
     sync_bytes = (tmp_path / "synchronous" / filename).read_bytes()
     overlap_bytes = (tmp_path / "overlap" / filename).read_bytes()
     assert sync_bytes == overlap_bytes
+
+
+def test_float_csv_and_packed_tiff_from_one_camera(tmp_path: Path) -> None:
+    mesh, camera = make_scene(1)
+    camera = replace(
+        camera,
+        output_files=[
+            riley.ImageSaveOpts(format=riley.ImageFormat.csv, file_bits=None),
+            riley.ImageSaveOpts(
+                format=riley.ImageFormat.tiff,
+                file_bits=16,
+                adc_bits=12,
+                scaling=riley.ScaleStrategy.fixed,
+                scaling_min=0.0,
+                scaling_max=1.0,
+                packing=riley.CodePacking.upper,
+            ),
+        ],
+    )
+    config = riley.RasterConfig(
+        parallel=1,
+        save_strategy=riley.SaveStrategy.both,
+        report=riley.ReportMode.off,
+    )
+    image = riley.raster(mesh, camera, config, out_dir=str(tmp_path))
+    assert image is not None
+    raw = image[0, 0, 0]
+    csv = np.loadtxt(tmp_path / "cam0_frame0_field0.csv", delimiter=",")
+    tiff = np.asarray(Image.open(tmp_path / "cam0_frame0_field0.tiff"))
+    np.testing.assert_allclose(csv, raw, atol=1e-6)
+    expected = np.rint(np.clip(raw, 0, 1) * 4095).astype(np.uint16) << 4
+    np.testing.assert_array_equal(tiff, expected)

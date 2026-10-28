@@ -53,7 +53,7 @@ const error_buf_len: usize = 512;
 const default_image_save_opts = [_]iio.ImageSaveOpts{
     .{
         .format = .bmp,
-        .bits = 8,
+        .file_bits = 8,
         .scaling = .none,
     },
 };
@@ -159,10 +159,12 @@ pub const CPSF = extern struct {
 
 pub const CImageSaveOpts = extern struct {
     format: u32,
-    bits: c_int,
+    file_bits: c_int,
+    adc_bits: c_int,
     scaling_tag: u32,
     scaling_min: F,
     scaling_max: F,
+    packing: u32,
 };
 
 pub const CCameraInput = extern struct {
@@ -179,9 +181,6 @@ pub const CCameraInput = extern struct {
     subpixel_center_map: u32,
     render_format_tag: u32,
     render_channels: u32,
-    output_encoding: u32,
-    encoding_min: F,
-    encoding_max: F,
     output_files: [*c]const CImageSaveOpts,
     output_files_len: usize,
 };
@@ -1239,12 +1238,19 @@ fn buildCameraInput(
         for (c_files, files) |c_opt, *opt| {
             opt.* = .{
                 .format = try imageFormatFromC(c_opt.format),
-                .bits = try bitsFromC(c_opt.bits),
+                .file_bits = try bitsFromC(c_opt.file_bits),
+                .adc_bits = try bitsFromC(c_opt.adc_bits),
                 .scaling = try scaleStrategyFromC(
                     c_opt.scaling_tag,
                     c_opt.scaling_min,
                     c_opt.scaling_max,
                 ),
+                .packing = switch (c_opt.packing) {
+                    0 => .spread,
+                    1 => .lower,
+                    2 => .upper,
+                    else => return error.InvalidCodePacking,
+                },
             };
         }
         output_files = files;
@@ -1273,12 +1279,6 @@ fn buildCameraInput(
         .coord_sys = try coordSysFromC(in_camera.coord_sys),
         .render_format = render_format,
         .output_files = output_files,
-        .output_encoding = switch (in_camera.output_encoding) {
-            0 => .native,
-            1 => .{ .grid12_to_u16 = .{ in_camera.encoding_min, in_camera.encoding_max } },
-            2 => .{ .linear_u16 = .{ in_camera.encoding_min, in_camera.encoding_max } },
-            else => return error.InvalidImageEncoding,
-        },
         .subpixel_center_map = try subpxCenterMapFromC(
             in_camera.subpixel_center_map,
         ),
@@ -1886,7 +1886,7 @@ fn buildMeshInput(
     for (in_entries) |entry| {
         switch (entry.format_tag) {
             0 => {
-                if (built.mesh_input.shaders.mono != null) return error.DuplicateRole;
+                if ((built.mesh_input.shaders.mono_direct != null or built.mesh_input.shaders.mono_pipe != null)) return error.DuplicateRole;
                 switch (entry.execution_tag) {
                     0 => {
                         built.direct_shaders[direct_idx] = try buildShaderDirectInput(
@@ -1897,7 +1897,7 @@ fn buildMeshInput(
                             built.direct_shaders[direct_idx].shader,
                         );
                         direct_idx += 1;
-                        built.mesh_input.shaders.mono = .{ .direct = shader };
+                        built.mesh_input.shaders.mono_direct = shader;
                     },
                     1 => {
                         const pipe_in = try buildPipeInput(
@@ -1909,13 +1909,13 @@ fn buildMeshInput(
                             &source_idx,
                             &pipe_idx,
                         );
-                        built.mesh_input.shaders.mono = .{ .pipe = pipe_in };
+                        built.mesh_input.shaders.mono_pipe = pipe_in;
                     },
                     else => return error.InvalidExecutionTag,
                 }
             },
             1 => {
-                if (built.mesh_input.shaders.rgb != null) return error.DuplicateRole;
+                if (built.mesh_input.shaders.rgb_pipe != null) return error.DuplicateRole;
                 switch (entry.execution_tag) {
                     0 => {
                         built.pipe_sources[source_idx] = try buildShaderDirectInput(
@@ -1936,7 +1936,7 @@ fn buildMeshInput(
                                 .identity = shaderpipe.identity_channels_3[0..3],
                             },
                         };
-                        built.mesh_input.shaders.rgb = built.pipe_inputs[pipe_idx];
+                        built.mesh_input.shaders.rgb_pipe = built.pipe_inputs[pipe_idx];
                         pipe_idx += 1;
                     },
                     1 => {
@@ -1949,13 +1949,13 @@ fn buildMeshInput(
                             &source_idx,
                             &pipe_idx,
                         );
-                        built.mesh_input.shaders.rgb = pipe_in;
+                        built.mesh_input.shaders.rgb_pipe = pipe_in;
                     },
                     else => return error.InvalidExecutionTag,
                 }
             },
             2 => {
-                if (built.mesh_input.shaders.ir != null) return error.DuplicateRole;
+                if ((built.mesh_input.shaders.ir_direct != null or built.mesh_input.shaders.ir_pipe != null)) return error.DuplicateRole;
                 switch (entry.execution_tag) {
                     0 => {
                         built.direct_shaders[direct_idx] = try buildShaderDirectInput(
@@ -1966,7 +1966,7 @@ fn buildMeshInput(
                             built.direct_shaders[direct_idx].shader,
                         );
                         direct_idx += 1;
-                        built.mesh_input.shaders.ir = .{ .direct = shader };
+                        built.mesh_input.shaders.ir_direct = shader;
                     },
                     1 => {
                         const pipe_in = try buildPipeInput(
@@ -1978,13 +1978,13 @@ fn buildMeshInput(
                             &source_idx,
                             &pipe_idx,
                         );
-                        built.mesh_input.shaders.ir = .{ .pipe = pipe_in };
+                        built.mesh_input.shaders.ir_pipe = pipe_in;
                     },
                     else => return error.InvalidExecutionTag,
                 }
             },
             3 => {
-                if (built.mesh_input.shaders.multifield != null) {
+                if (built.mesh_input.shaders.multifield_pipe != null) {
                     return error.DuplicateRole;
                 }
                 switch (entry.execution_tag) {
@@ -2008,7 +2008,7 @@ fn buildMeshInput(
                                 .identity = shaderpipe.identity_channels_8[0..count],
                             },
                         };
-                        built.mesh_input.shaders.multifield = built.pipe_inputs[pipe_idx];
+                        built.mesh_input.shaders.multifield_pipe = built.pipe_inputs[pipe_idx];
                         pipe_idx += 1;
                     },
                     1 => {
@@ -2021,7 +2021,7 @@ fn buildMeshInput(
                             &source_idx,
                             &pipe_idx,
                         );
-                        built.mesh_input.shaders.multifield = pipe_in;
+                        built.mesh_input.shaders.multifield_pipe = pipe_in;
                     },
                     else => return error.InvalidExecutionTag,
                 }
@@ -2193,7 +2193,6 @@ fn buildRasterConfig(
         config.output_name_format = std.mem.span(format);
     }
 
-
     return config;
 }
 
@@ -2265,19 +2264,6 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
             .mono, .ir => 1,
             .rgb => 3,
             .multifield => |channels_num| channels_num,
-        },
-        .output_encoding = switch (in_camera.output_encoding) {
-            .native => 0,
-            .grid12_to_u16 => 1,
-            .linear_u16 => 2,
-        },
-        .encoding_min = switch (in_camera.output_encoding) {
-            .native => 0,
-            inline else => |range| range[0],
-        },
-        .encoding_max = switch (in_camera.output_encoding) {
-            .native => 0,
-            inline else => |range| range[1],
         },
         .output_files = null,
         .output_files_len = 0,

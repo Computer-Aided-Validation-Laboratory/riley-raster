@@ -203,7 +203,7 @@ pub fn main(init: std.process.Init) !void {
     defer loaded_stereo.deinit(local_alloc);
     stereo_pair = loaded_stereo.stereo_pair;
     for (&stereo_pair.cameras) |*camera_input| {
-        camera_input.output_files = &.{.{ .format = .bmp, .bits = 8, .scaling = .auto }};
+        camera_input.output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }};
     }
 
     // -------------------------------------------------------------------------
@@ -214,7 +214,7 @@ pub fn main(init: std.process.Init) !void {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = selected_disp,
-        .shaders = .{ .mono = .{ .direct = .{ .tex_u8 = .{
+        .shaders = .{ .mono_direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = .{
@@ -223,7 +223,7 @@ pub fn main(init: std.process.Init) !void {
             },
 
             .scaling = .none,
-        } } } },
+        } } },
     };
 
     const config = RasterConfig{

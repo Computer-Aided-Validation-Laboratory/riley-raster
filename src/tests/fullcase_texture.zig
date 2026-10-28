@@ -76,7 +76,7 @@ pub fn buildTexSamplingCaseMeshes(
     prep: *const common_full.Scene0Prepared,
     textures: *const common_full.FullTextures,
     case: FullTexSamplingCase,
-) ! [2]MeshInput {
+) ![2]MeshInput {
     if (case.is_rgb) {
         const sphere_source: shaderops.PipeSourceInput = switch (case.dtype) {
             .u8 => .{
@@ -138,7 +138,7 @@ pub fn buildTexSamplingCaseMeshes(
                 .connect = prep.sphere_connect,
                 .disp = prep.sphere_disp,
                 .shaders = .{
-                    .rgb = .{
+                    .rgb_pipe = .{
                         .stages = s1_stages,
                         .resolver = .{ .identity = shaderpipe.identity_channels_3 },
                     },
@@ -150,7 +150,7 @@ pub fn buildTexSamplingCaseMeshes(
                 .connect = prep.cylinder_connect,
                 .disp = prep.cylinder_disp,
                 .shaders = .{
-                    .rgb = .{
+                    .rgb_pipe = .{
                         .stages = s2_stages,
                         .resolver = .{ .identity = shaderpipe.identity_channels_3 },
                     },
@@ -212,14 +212,14 @@ pub fn buildTexSamplingCaseMeshes(
                 .coords = prep.sphere_coords,
                 .connect = prep.sphere_connect,
                 .disp = prep.sphere_disp,
-                .shaders = .{ .mono = .{ .direct = sphere_mono } },
+                .shaders = .{ .mono_direct = sphere_mono },
             },
             .{
                 .mesh_type = mesh_type,
                 .coords = prep.cylinder_coords,
                 .connect = prep.cylinder_connect,
                 .disp = prep.cylinder_disp,
-                .shaders = .{ .mono = .{ .direct = cyl_mono } },
+                .shaders = .{ .mono_direct = cyl_mono },
             },
         };
     }

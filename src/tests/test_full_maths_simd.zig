@@ -96,7 +96,7 @@ fn loadFuncMeshInput(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shaders = .{ .mono = .{ .direct = .{
+        .shaders = .{ .mono_direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
@@ -105,7 +105,7 @@ fn loadFuncMeshInput(
 
                 .scaling = .none,
             },
-        } } },
+        } },
     };
 }
 
@@ -212,11 +212,10 @@ fn saveGreyBMP(
         0,
         .{
             .format = .bmp,
-            .bits = 8,
+            .file_bits = 8,
             .scaling = .auto,
         },
         1,
-        .native,
     );
 }
 

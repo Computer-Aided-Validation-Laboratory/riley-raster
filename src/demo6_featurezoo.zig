@@ -203,7 +203,7 @@ fn loadMesh(
         const stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
         stages[0] = shaderops.stageSource(pipe_source);
         break :blk .{
-            .rgb = .{
+            .rgb_pipe = .{
                 .stages = stages,
                 .resolver = .{ .identity = shaderpipe.identity_channels_3 },
             },
@@ -254,7 +254,7 @@ fn loadMesh(
             else => unreachable,
         };
         break :blk .{
-            .mono = .{ .direct = mono_shader },
+            .mono_direct = mono_shader,
         };
     };
 
@@ -458,7 +458,7 @@ fn renderCase(
         camera_input.render_format = if (C == 1) .mono else .rgb;
         camera_input.output_files = &.{.{
             .format = if (bits == 8) .bmp else if (C == 1) .tiff else .ppm,
-            .bits = bits,
+            .file_bits = bits,
             .scaling = .none,
         }};
     }

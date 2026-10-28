@@ -37,22 +37,21 @@ pub const ImageFormat = enum {
 
 pub const ImageSaveOpts = struct {
     format: ImageFormat,
-    bits: ?u8 = 8,
+    file_bits: ?u8 = 8,
+    adc_bits: ?u8 = null,
     scaling: imageops.ScaleStrategy = .none,
+    packing: CodePacking = .spread,
 };
+
+pub const CodePacking = enum { lower, upper, spread };
 
 const ImageWriteOpts = struct {
     format: ImageFormat,
-    bits: ?u8,
+    file_bits: ?u8,
+    adc_bits: ?u8,
     scaling: imageops.ScaleStrategy,
+    packing: CodePacking,
     channels: usize,
-    encoding: ImageEncoding,
-};
-
-pub const ImageEncoding = union(enum) {
-    native,
-    grid12_to_u16: [2]F,
-    linear_u16: [2]F,
 };
 
 const OutputNameField = enum {
@@ -60,6 +59,21 @@ const OutputNameField = enum {
     frame,
     field,
 };
+
+fn digitise(value: F, opts: ImageWriteOpts, params: imageops.ScalingParams) u16 {
+    const file_bits = opts.file_bits.?;
+    const adc_bits = opts.adc_bits orelse file_bits;
+    const adc_max = imageops.getScaleMax(adc_bits);
+    const adc_value = imageops.applyScaling(value, opts.scaling, adc_bits, params);
+    const code = @as(u16, @intFromFloat(@round(std.math.clamp(adc_value, 0, adc_max))));
+    if (adc_bits == file_bits) return code;
+    const file_max = imageops.getScaleMax(file_bits);
+    return switch (opts.packing) {
+        .lower => code,
+        .upper => code << @as(u4, @intCast(file_bits - adc_bits)),
+        .spread => @intFromFloat(@round(@as(F, @floatFromInt(code)) * file_max / adc_max)),
+    };
+}
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -92,14 +106,14 @@ pub fn saveImage(
     start_field: usize,
     opts: ImageSaveOpts,
     channels: usize,
-    encoding: ImageEncoding,
 ) !void {
     const write_opts = ImageWriteOpts{
         .format = opts.format,
-        .bits = opts.bits,
+        .file_bits = opts.file_bits,
+        .adc_bits = opts.adc_bits,
         .scaling = opts.scaling,
+        .packing = opts.packing,
         .channels = channels,
-        .encoding = encoding,
     };
     var name_buff: [1024]u8 = undefined;
     const ext = switch (opts.format) {
@@ -131,17 +145,6 @@ pub fn saveMatAsImage(
     image: *const matslice.MatSlice(F),
     opts: ImageSaveOpts,
 ) !void {
-    try saveMatAsImageEncoded(io, out_dir, file_name_no_ext, image, opts, .native);
-}
-
-pub fn saveMatAsImageEncoded(
-    io: std.Io,
-    out_dir: std.Io.Dir,
-    file_name_no_ext: []const u8,
-    image: *const matslice.MatSlice(F),
-    opts: ImageSaveOpts,
-    encoding: ImageEncoding,
-) !void {
     var dims = [_]usize{ 1, image.rows_num, image.cols_num };
     var strides = [_]usize{ image.rows_num * image.cols_num, image.cols_num, 1 };
     const arr = ndarray.NDArray(F){
@@ -149,7 +152,7 @@ pub fn saveMatAsImageEncoded(
         .dims = &dims,
         .strides = &strides,
     };
-    try saveImage(io, out_dir, file_name_no_ext, &arr, 0, opts, 1, encoding);
+    try saveImage(io, out_dir, file_name_no_ext, &arr, 0, opts, 1);
 }
 
 pub fn saveImages(
@@ -162,7 +165,6 @@ pub fn saveImages(
     frame_arr: *const ndarray.NDArray(F),
     channels: usize,
     opts_slice: []const ImageSaveOpts,
-    encoding: ImageEncoding,
     output_name_format: []const u8,
 ) !void {
     const save_dir = out_dir orelse return;
@@ -170,8 +172,6 @@ pub fn saveImages(
     _ = pixels_num;
 
     for (opts_slice) |opts| {
-        if (encoding != .native and (opts.format != .tiff or opts.bits != 16))
-            return error.InvalidImageEncoding;
         var ff: usize = 0;
         while (ff + channels <= @as(usize, num_fields)) {
             const file_name = try formatFrameFieldBaseName(
@@ -182,7 +182,7 @@ pub fn saveImages(
                 output_name_format,
             );
 
-            try saveImage(io, save_dir, file_name, frame_arr, ff, opts, channels, encoding);
+            try saveImage(io, save_dir, file_name, frame_arr, ff, opts, channels);
             ff += channels;
         }
     }
@@ -337,7 +337,7 @@ pub fn savePPM(
     var file_writer = ppm_file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    const bits = opts.bits orelse 8;
+    const bits = opts.file_bits orelse 8;
     const max_val_f = imageops.getScaleMax(bits);
     const max_val = @as(u32, @intFromFloat(max_val_f));
 
@@ -365,11 +365,7 @@ pub fn savePPM(
                 const raw_val = image_arr.get(&[_]usize{ field_idx, rr, cc });
                 const params = if (ch < channels) params_array[ch] else params_array[0];
 
-                var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
-                if (opts.bits == null) {
-                    val *= imageops.getScaleMax(bits);
-                }
-                const px = @as(u32, @intFromFloat(imageops.applyClamping(val, bits)));
+                const px: u32 = digitise(raw_val, opts, params);
                 try writer.print("{d}", .{px});
                 if (ch < 2) try writer.writeByte(' ');
             }
@@ -414,16 +410,9 @@ fn saveCSV(
             const raw_val = ctx.image_arr.get(&[_]usize{ field_idx, row, col });
             const params = ctx.params_array[ch];
 
-            var val = imageops.applyScaling(
-                raw_val,
-                ctx.opts.scaling,
-                ctx.opts.bits,
-                params,
-            );
-            if (ctx.opts.scaling == .none and ctx.opts.bits != null) {
-                val = imageops.applyClamping(val, ctx.opts.bits);
-            }
-            return val;
+            if (ctx.opts.file_bits != null)
+                return @floatFromInt(digitise(raw_val, ctx.opts, params));
+            return imageops.applyScaling(raw_val, ctx.opts.scaling, null, params);
         }
     };
 
@@ -497,7 +486,7 @@ fn saveBMP(
     var file_writer = file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    const bits = opts.bits orelse 8;
+    const bits = opts.file_bits orelse 8;
     const is_16bit = (bits == 16);
     const bpp: u16 = if (is_16bit) 48 else 24;
 
@@ -556,15 +545,11 @@ fn saveBMP(
                 const raw_val = image_arr.get(&[_]usize{ field_idx, rr, cc });
                 const params = if (ch < channels) params_array[ch] else params_array[0];
 
-                var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
-                if (opts.bits == null and opts.scaling != .none) {
-                    val *= if (is_16bit) 65535.0 else 255.0;
-                }
-                const px_f = imageops.applyClamping(val, bits);
+                const px = digitise(raw_val, opts, params);
                 if (is_16bit) {
-                    try writer.writeInt(u16, @as(u16, @intFromFloat(px_f)), .little);
+                    try writer.writeInt(u16, px, .little);
                 } else {
-                    try writer.writeByte(@as(u8, @intFromFloat(px_f)));
+                    try writer.writeByte(@intCast(px));
                 }
             }
         }
@@ -592,7 +577,7 @@ fn saveTIFF(
     var file_writer = file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    const bits = opts.bits orelse 8;
+    const bits = opts.file_bits orelse 8;
     const width = @as(u32, @intCast(image.cols_num));
     const height = @as(u32, @intCast(image.rows_num));
     const pixel_data_offset: u32 = 8;
@@ -606,40 +591,16 @@ fn saveTIFF(
     try writer.writeInt(u32, ifd_offset, .little);
 
     const params = imageops.getScalingParams(&image, opts.scaling);
-    const max_v = imageops.getScaleMax(bits);
 
     // 2. Pixel Data
     for (0..image.rows_num) |r| {
         for (0..image.cols_num) |c| {
             const raw_val = image.get(r, c);
-            var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
-            if (opts.bits == null and opts.scaling != .none) {
-                val *= max_v;
-            }
-
-            const px_clamped = switch (opts.encoding) {
-                .native => imageops.applyClamping(val, bits),
-                .grid12_to_u16 => |range| blk: {
-                    const norm = std.math.clamp(
-                        (raw_val - range[0]) / (range[1] - range[0]),
-                        0,
-                        1,
-                    );
-                    break :blk @round(norm * 4095.0) * 16.0;
-                },
-                .linear_u16 => |range| blk: {
-                    const norm = std.math.clamp(
-                        (raw_val - range[0]) / (range[1] - range[0]),
-                        0,
-                        1,
-                    );
-                    break :blk @round(norm * 65535.0);
-                },
-            };
+            const px = digitise(raw_val, opts, params);
             if (bits == 16) {
-                try writer.writeInt(u16, @as(u16, @intFromFloat(px_clamped)), .little);
+                try writer.writeInt(u16, px, .little);
             } else {
-                try writer.writeByte(@as(u8, @intFromFloat(px_clamped)));
+                try writer.writeByte(@intCast(px));
             }
         }
     }
@@ -1319,7 +1280,7 @@ test "Verify hand-written TIFF loader" {
         out_dir,
         temp_test_dir ++ "/speckle_mono",
         &mat,
-        .{ .format = .tiff, .bits = 8, .scaling = .none },
+        .{ .format = .tiff, .file_bits = 8, .scaling = .none },
     );
 
     var tex_zig = try loadImage(
@@ -1382,7 +1343,7 @@ test "Save and Load All Formats 8-bit and 16-bit" {
                 out_dir,
                 base_name,
                 &mat,
-                .{ .format = fmt, .bits = bits, .scaling = .auto },
+                .{ .format = fmt, .file_bits = bits, .scaling = .auto },
             );
 
             var ext_buff: [1024]u8 = undefined;
@@ -1429,17 +1390,20 @@ test "Save and Load All Formats 8-bit and 16-bit" {
     }
 }
 
-test "camera TIFF encodings quantise DIC and apparent temperature independently" {
+test "TIFF ADC packing and range scaling" {
     const allocator = testing.allocator;
     const io = std.testing.io;
     try ensureTempTestDir(io);
     defer deleteTempTestDir(io);
     const samples = [_]F{ 0, 63.75, 127.5, 191.25, 255, 300 };
     const mat = matslice.MatSlice(F).init(@constCast(&samples), 2, 3);
-    try saveMatAsImageEncoded(io, std.Io.Dir.cwd(), temp_test_dir ++ "/dic_grid", &mat, .{
+    try saveMatAsImage(io, std.Io.Dir.cwd(), temp_test_dir ++ "/dic_grid", &mat, .{
         .format = .tiff,
-        .bits = 16,
-    }, .{ .grid12_to_u16 = .{ 0, 255 } });
+        .file_bits = 16,
+        .adc_bits = 12,
+        .scaling = .{ .fixed = .{ 0, 255 } },
+        .packing = .upper,
+    });
     var dic = try loadImage(u16, 1, allocator, io, temp_test_dir ++ "/dic_grid.tiff", .tiff);
     defer dic.deinit(allocator);
     const expected_dic = [_]u16{ 0, 16384, 32768, 49136, 65520, 65520 };
@@ -1452,10 +1416,11 @@ test "camera TIFF encodings quantise DIC and apparent temperature independently"
 
     const temperatures = [_]F{ 0, 25, 50, 100, 200, 250 };
     const thermal = matslice.MatSlice(F).init(@constCast(&temperatures), 2, 3);
-    try saveMatAsImageEncoded(io, std.Io.Dir.cwd(), temp_test_dir ++ "/ir_linear", &thermal, .{
+    try saveMatAsImage(io, std.Io.Dir.cwd(), temp_test_dir ++ "/ir_linear", &thermal, .{
         .format = .tiff,
-        .bits = 16,
-    }, .{ .linear_u16 = .{ 0, 250 } });
+        .file_bits = 16,
+        .scaling = .{ .fixed = .{ 0, 250 } },
+    });
     var ir = try loadImage(u16, 1, allocator, io, temp_test_dir ++ "/ir_linear.tiff", .tiff);
     defer ir.deinit(allocator);
     for (ir.array.slice, temperatures) |code, celsius| {
@@ -1485,7 +1450,7 @@ test "Scaling Strategy: Fractional" {
     // Test 1: Frac [0.4, 0.6], bits = null (CSV) -> should map [0, 10] to [0.4, 0.6]
     const opts1 = ImageSaveOpts{
         .format = .csv,
-        .bits = null,
+        .file_bits = null,
         .scaling = .{ .frac = .{ 0.4, 0.6 } },
     };
     try saveMatAsImage(io, cwd, temp_test_dir ++ "/test_frac_float", &mat, opts1);
@@ -1507,7 +1472,7 @@ test "Scaling Strategy: Fractional" {
     // Test 2: Frac [0.4, 0.6], bits = 8 (CSV) -> should map [0, 10] to [0.4*255, 0.6*255]
     const opts2 = ImageSaveOpts{
         .format = .csv,
-        .bits = 8,
+        .file_bits = 8,
         .scaling = .{ .frac = .{ 0.4, 0.6 } },
     };
     try saveMatAsImage(io, cwd, temp_test_dir ++ "/test_frac_bits", &mat, opts2);
@@ -1523,22 +1488,22 @@ test "Scaling Strategy: Fractional" {
     defer loaded2.deinit(allocator);
     try testing.expectApproxEqAbs(
         loaded2.getVal(0, 0, 0),
-        0.4 * 255.0,
+        102.0,
         frac_tol,
     );
     try testing.expectApproxEqAbs(
         loaded2.getVal(0, 0, 1),
-        0.6 * 255.0,
+        153.0,
         frac_tol,
     );
     try testing.expectApproxEqAbs(
         loaded2.getVal(0, 1, 0),
-        0.5 * 255.0,
+        128.0,
         frac_tol,
     );
     try testing.expectApproxEqAbs(
         loaded2.getVal(0, 1, 1),
-        0.45 * 255.0,
+        115.0,
         frac_tol,
     );
 }
@@ -1585,7 +1550,7 @@ test "FIMG Save and Load Roundtrip" {
         .format = .fimg,
     };
 
-    try saveImage(io, cwd, file_base, &arr, 0, opts, channels, .native);
+    try saveImage(io, cwd, file_base, &arr, 0, opts, channels);
 
     var loaded = try loadImage(F, channels, allocator, io, file_full, .fimg);
     defer loaded.deinit(allocator);

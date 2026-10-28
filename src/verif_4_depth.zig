@@ -118,11 +118,10 @@ fn saveImageArtifacts(
         0,
         .{
             .format = .csv,
-            .bits = null,
+            .file_bits = null,
             .scaling = .none,
         },
         image.dims[0],
-        .native,
     );
     try iio.saveImage(
         io,
@@ -132,11 +131,10 @@ fn saveImageArtifacts(
         0,
         .{
             .format = .bmp,
-            .bits = 8,
+            .file_bits = 8,
             .scaling = .{ .fixed = .{ 0.0, 1.0 } },
         },
         image.dims[0],
-        .native,
     );
 }
 
@@ -279,7 +277,7 @@ fn runCase(
         .coords = front_coords_mut,
         .connect = front_sim_data.connect,
         .disp = null,
-        .shaders = .{ .mono = .{ .direct = .{ .func = .{
+        .shaders = .{ .mono_direct = .{ .func = .{
             .uvs = null,
             .coord_mode = .para,
             .builtin = .constant,
@@ -287,14 +285,14 @@ fn runCase(
             .output_offset = 1.0,
 
             .scaling = .none,
-        } } } },
+        } } },
     };
     var back_mesh = MeshInput{
         .mesh_type = case_spec.back_mesh_type,
         .coords = back_coords_mut,
         .connect = back_sim_data.connect,
         .disp = null,
-        .shaders = .{ .mono = .{ .direct = .{ .func = .{
+        .shaders = .{ .mono_direct = .{ .func = .{
             .uvs = null,
             .coord_mode = .para,
             .builtin = .constant,
@@ -302,7 +300,7 @@ fn runCase(
             .output_offset = 0.5,
 
             .scaling = .none,
-        } } } },
+        } } },
     };
 
     const temp_meshes = [_]MeshInput{ front_mesh, back_mesh };

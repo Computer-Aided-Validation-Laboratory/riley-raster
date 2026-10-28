@@ -100,19 +100,12 @@ fn checkMeshDisplacements(mesh: meshpipe.MeshInput) InputArrayError!void {
 // --------------------------------------------------------------------------------------
 
 fn checkMeshShaderArrays(mesh: meshpipe.MeshInput) InputArrayError!void {
-    if (mesh.shaders.mono) |execution| try checkMonoExecutionArrays(execution);
-    if (mesh.shaders.ir) |execution| try checkMonoExecutionArrays(execution);
-    if (mesh.shaders.rgb) |pipe| try checkPipeArrays(pipe);
-    if (mesh.shaders.multifield) |pipe| try checkPipeArrays(pipe);
-}
-
-fn checkMonoExecutionArrays(
-    execution: shaderops.ShaderMonoExecutionInput,
-) InputArrayError!void {
-    switch (execution) {
-        .direct => |shader| try checkShaderMonoArrays(shader),
-        .pipe => |pipe| try checkPipeArrays(pipe),
-    }
+    if (mesh.shaders.mono_direct) |shader| try checkShaderMonoArrays(shader);
+    if (mesh.shaders.mono_pipe) |pipe| try checkPipeArrays(pipe);
+    if (mesh.shaders.ir_direct) |shader| try checkShaderMonoArrays(shader);
+    if (mesh.shaders.ir_pipe) |pipe| try checkPipeArrays(pipe);
+    if (mesh.shaders.rgb_pipe) |pipe| try checkPipeArrays(pipe);
+    if (mesh.shaders.multifield_pipe) |pipe| try checkPipeArrays(pipe);
 }
 
 fn checkPipeArrays(pipe: shaderops.ShaderPipeInput) InputArrayError!void {

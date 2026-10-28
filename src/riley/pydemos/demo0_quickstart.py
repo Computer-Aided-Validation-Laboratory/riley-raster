@@ -78,7 +78,7 @@ def main() -> None:
         output_files=[
             riley.ImageSaveOpts(
                 format=riley.ImageFormat.bmp,
-                bits=8,
+                file_bits=8,
                 scaling=riley.ScaleStrategy.auto,
             )
         ],

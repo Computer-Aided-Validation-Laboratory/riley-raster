@@ -251,7 +251,7 @@ pub fn meshInputFromSimDataSlice(
     var initialized_count: usize = 0;
     errdefer {
         for (0..initialized_count) |ii| {
-            switch (mesh_inputs[ii].shaders.mono.?.direct) {
+            switch (mesh_inputs[ii].shaders.mono_direct.?) {
                 .tex_u8 => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
@@ -295,9 +295,9 @@ pub fn meshInputFromSimDataSlice(
 
         if (shader_mode == .nodal) {
             if (sim_data.field) |field| {
-                mesh_inputs[ii].shaders.mono = .{ .direct = .{ .nodal = .{
+                mesh_inputs[ii].shaders.mono_direct = .{ .nodal = .{
                     .field = field,
-                } } };
+                } };
             } else {
                 return error.MissingFieldData;
             }
@@ -326,11 +326,11 @@ pub fn meshInputFromSimDataSlice(
                 format,
             );
 
-            mesh_inputs[ii].shaders.mono = .{ .direct = .{ .tex_u8 = .{
+            mesh_inputs[ii].shaders.mono_direct = .{ .tex_u8 = .{
                 .uvs = uvmap.array,
                 .tex = tex,
                 .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
-            } } };
+            } };
         }
         initialized_count += 1;
     }
@@ -351,25 +351,21 @@ pub fn initMeshStatic(
     );
 
     var shaders: shaderops.MeshShaderSetStatic = .{};
-    if (mesh_input.shaders.mono) |execution|
-        shaders.mono = try createShaderMonoExecutionStatic(
-            allocator,
-            execution,
-            &mesh_input.connect,
-        );
-    if (mesh_input.shaders.rgb) |pipe|
+    if (mesh_input.shaders.mono_direct) |shader|
+        shaders.mono = .{ .direct = try createShaderMonoStatic(allocator, shader, &mesh_input.connect) };
+    if (mesh_input.shaders.mono_pipe) |pipe|
+        shaders.mono = .{ .pipe = try createShaderPipeStatic(allocator, pipe, &mesh_input.connect) };
+    if (mesh_input.shaders.rgb_pipe) |pipe|
         shaders.rgb = try createShaderPipeStatic(
             allocator,
             pipe,
             &mesh_input.connect,
         );
-    if (mesh_input.shaders.ir) |execution|
-        shaders.ir = try createShaderMonoExecutionStatic(
-            allocator,
-            execution,
-            &mesh_input.connect,
-        );
-    if (mesh_input.shaders.multifield) |pipe|
+    if (mesh_input.shaders.ir_direct) |shader|
+        shaders.ir = .{ .direct = try createShaderMonoStatic(allocator, shader, &mesh_input.connect) };
+    if (mesh_input.shaders.ir_pipe) |pipe|
+        shaders.ir = .{ .pipe = try createShaderPipeStatic(allocator, pipe, &mesh_input.connect) };
+    if (mesh_input.shaders.multifield_pipe) |pipe|
         shaders.multifield = try createShaderPipeStatic(
             allocator,
             pipe,
@@ -383,21 +379,6 @@ pub fn initMeshStatic(
         .connect = mesh_input.connect,
         .disp = mesh_input.disp,
         .shaders = shaders,
-    };
-}
-
-fn createShaderMonoExecutionStatic(
-    allocator: std.mem.Allocator,
-    execution: shaderops.ShaderMonoExecutionInput,
-    connect: *const meshio.Connect,
-) !shaderops.ShaderMonoExecutionStatic {
-    return switch (execution) {
-        .direct => |shader| .{
-            .direct = try createShaderMonoStatic(allocator, shader, connect),
-        },
-        .pipe => |pipe| .{
-            .pipe = try createShaderPipeStatic(allocator, pipe, connect),
-        },
     };
 }
 
