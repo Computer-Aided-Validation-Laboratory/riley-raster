@@ -545,7 +545,11 @@ fn perlinCornerIDs(lattice: PerlinLattice2D, x: i64, y: i64) [4]u8 {
         };
     }
     // Only cached owners are bounded by allocated, pointer-sized dimensions.
-    const i = @as(usize, @intCast(y)) * lattice.dims[0] + @as(usize, @intCast(x));
+    const xx: usize = @intCast(x);
+    const yy: usize = @intCast(y);
+    std.debug.assert(xx + 1 < lattice.dims[0]);
+    std.debug.assert(yy + 1 < lattice.dims[1]);
+    const i = yy * lattice.dims[0] + xx;
     return .{ lattice.gradients[i], lattice.gradients[i + 1], lattice.gradients[i + lattice.dims[0]], lattice.gradients[i + lattice.dims[0] + 1] };
 }
 
@@ -1158,8 +1162,10 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 
             var coverage: F = 0.0;
             const row: usize = @intCast(cell_y - speckles.cell_origin[1]);
+            std.debug.assert(row < speckles.cell_dims[1]);
             neighbor_loop: for (offsets, min_delta_x) |offset_x, min_dx| {
                 const column: usize = @intCast(cell_x + offset_x - speckles.cell_origin[0]);
+                std.debug.assert(column < speckles.cell_dims[0]);
                 const base = (row * speckles.cell_dims[0] + column) * strip_length;
                 for (min_delta_y, 0..) |min_dy, ii| {
                     if (min_dx * min_dx + min_dy * min_dy > max_outer_radius2) continue;
@@ -1565,6 +1571,8 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             const cell_y: i64 = @intFromFloat(@floor(proc_y));
             const column: usize = @intCast(cell_x - 1 - speckles.cell_origin[0]);
             const row: usize = @intCast(cell_y - speckles.cell_origin[1]);
+            std.debug.assert(column + 2 < speckles.cell_dims[0]);
+            std.debug.assert(row < speckles.cell_dims[1]);
             var remaining = state & 511;
             var hit = false;
             while (remaining != 0) {
@@ -2077,6 +2085,8 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             const texel_y: usize = @intFromFloat(
                 @max(0.0, @min(1.0, uv[1])) * mask.uv_to_texel[1] + 0.5,
             );
+            std.debug.assert(texel_x < mask.dims[0]);
+            std.debug.assert(texel_y < mask.dims[1]);
             if (comptime evaluator == .mask_u8) {
                 const coverage = @as(F, @floatFromInt(
                     mask.bits[texel_y * mask.row_stride + texel_x],
@@ -2097,6 +2107,8 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         ) usize {
             const rel_x: usize = @intCast(cell_x - direct.cell_origin[0]);
             const rel_y: usize = @intCast(cell_y - direct.cell_origin[1]);
+            std.debug.assert(rel_x < direct.cell_dims[0]);
+            std.debug.assert(rel_y < direct.cell_dims[1]);
             return rel_y * direct.cell_dims[0] + rel_x;
         }
 
@@ -2180,6 +2192,8 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             };
             const x: usize = @intFromFloat(proc[0] * speckle_mask_samples_per_cell);
             const y: usize = @intFromFloat(proc[1] * speckle_mask_samples_per_cell);
+            std.debug.assert(x < classified.dims[0]);
+            std.debug.assert(y < classified.dims[1]);
             const state = classified.states[y * classified.dims[0] + x];
             if ((state & 511) == 0) return speckleCoverageEndpointValue(params, if (state == 512) 1.0 else 0.0);
             if (classified.speckles.centers.len != 0) return evalMaskedNeighborsAtProc(true, proc, state, classified.speckles);
@@ -2326,6 +2340,8 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             inline for (0..S) |lane| {
                 const x: usize = @intCast(cell_x[lane]);
                 const y: usize = @intCast(cell_y[lane]);
+                std.debug.assert(x < classified.dims[0]);
+                std.debug.assert(y < classified.dims[1]);
                 state_values[lane] = classified.states[y * classified.dims[0] + x];
             }
 
@@ -2441,16 +2457,26 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             const texel_x: [S]isize = v_texel_x;
             const texel_y: [S]isize = v_texel_y;
 
-            if (comptime evaluator == .mask_u8) {
-                var coverage_bytes = [_]u8{0} ** S;
-                inline for (0..S) |lane| {
-                    if (sample[lane]) {
-                        const x: usize = @intCast(texel_x[lane]);
-                        const y: usize = @intCast(texel_y[lane]);
-                        coverage_bytes[lane] = mask.bits[y * mask.row_stride + x];
+            const Sample = if (evaluator == .mask_u8) u8 else bool;
+            var samples: [S]Sample = @splat(std.mem.zeroes(Sample));
+            inline for (0..S) |lane| {
+                if (sample[lane]) {
+                    const x: usize = @intCast(texel_x[lane]);
+                    const y: usize = @intCast(texel_y[lane]);
+                    std.debug.assert(x < mask.dims[0]);
+                    std.debug.assert(y < mask.dims[1]);
+                    if (comptime evaluator == .mask_u8) {
+                        samples[lane] = mask.bits[y * mask.row_stride + x];
+                    } else {
+                        const shift: u3 = @intCast(x & 7);
+                        samples[lane] = mask.bits[y * mask.row_stride + x / 8] &
+                            (@as(u8, 1) << shift) != 0;
                     }
                 }
-                const v_coverage_u8: @Vector(S, u8) = coverage_bytes;
+            }
+
+            if (comptime evaluator == .mask_u8) {
+                const v_coverage_u8: @Vector(S, u8) = samples;
                 const v_coverage: VecSF = @as(
                     VecSF,
                     @floatFromInt(v_coverage_u8),
@@ -2460,19 +2486,9 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 return v_value;
             }
 
-            var is_foreground = [_]bool{false} ** S;
-            inline for (0..S) |lane| {
-                if (sample[lane]) {
-                    const x: usize = @intCast(texel_x[lane]);
-                    const y: usize = @intCast(texel_y[lane]);
-                    const shift: u3 = @intCast(x & 7);
-                    is_foreground[lane] = mask.bits[y * mask.row_stride + x / 8] &
-                        (@as(u8, 1) << shift) != 0;
-                }
-            }
             const v_value = @select(
                 F,
-                v_mask_active & @as(VecSB, is_foreground),
+                v_mask_active & @as(VecSB, samples),
                 @as(VecSF, @splat(params.foreground)),
                 v_background,
             );
