@@ -38,13 +38,19 @@ def design(args):
     tuning = args.profile == 'tuning'
     repeats = args.repeats if args.repeats is not None else (12 if tuning else 16)
     alpha = args.alpha if args.alpha is not None else (.05 if tuning else .10)
+    overrides = (args.scenes, args.patterns, args.jitter, args.occupancy, args.neighbors)
+    if args.case_file:
+        require(not any(value is not None for value in (*overrides, args.workers, args.radius, args.softness)),
+                '--case-file cannot be mixed with factor overrides, --radius or --softness')
+    radius = .35 if args.radius is None else args.radius
+    softness = .04 if args.softness is None else args.softness
     require(math.isfinite(alpha) and 0 < alpha < 1, 'alpha must be between 0 and 1')
     require(args.permutations > 0, 'permutations must be positive')
     require(math.isfinite(args.timeout_seconds) and args.timeout_seconds > 0, 'timeout must be positive and finite')
     require(all(x > 0 for x in (args.width, args.height, args.frames, *args.cells_plate, *args.cells_sphere)),
             'dimensions, frames and cells must be positive')
-    require(math.isfinite(args.radius) and args.radius > 0, 'radius must be positive and finite')
-    require(math.isfinite(args.softness) and args.softness > 0, 'soft-case softness must be positive and finite')
+    require(math.isfinite(radius) and radius > 0, 'radius must be positive and finite')
+    require(math.isfinite(softness) and softness > 0, 'soft-case softness must be positive and finite')
     require(0 <= args.seed < 2**32, 'seed must be uint32')
     require(args.perlin_threshold is None or math.isfinite(args.perlin_threshold), 'Perlin threshold must be finite')
     require(args.perlin_transition is None or (math.isfinite(args.perlin_transition) and args.perlin_transition >= 0),
@@ -60,7 +66,6 @@ def design(args):
                       (['sphere'], ['hard'], [.08], [.7], [9]),
                       (['plate'], ['hard'], [.08], [.7], [4]),
                       (['plate'], ['gaussian'], [.08], [.7], [9])]
-    overrides = (args.scenes, args.patterns, args.jitter, args.occupancy, args.neighbors)
     cases = []
     for component in components:
         factors = [workers, *(override if override is not None else default
@@ -72,9 +77,11 @@ def design(args):
                 continue
             if case['pattern'] == 'perlin':
                 case['neighbors'] = None
-            case['softness'] = args.softness if case['pattern'] == 'soft' else 0.
+            case['softness'] = softness if case['pattern'] == 'soft' else 0.
             if case not in cases:
                 cases.append(case)
+    if args.case_file:
+        cases = load_cases(args.case_file)
     require('texture' not in (args.a, args.b) or args.texture, 'texture mapping requires --texture')
     return dict(profile=args.profile, mode='full-render' if args.profile == 'full-render' else 'evaluation',
                 configurations=cases, repeats=repeats, schedules=schedules(repeats), alpha=alpha,
@@ -83,10 +90,38 @@ def design(args):
                 permutations=args.permutations, permutation_seed=20261005,
                 inference='two-sided blocked sum contrast; exact <=200000 subsets/block, otherwise Monte Carlo plus-one; joint Holm',
                 require_equal_output=args.require_equal_output, skip_output_checks=args.skip_output_checks,
-                config=dict(width=args.width, height=args.height, frames=args.frames, radius=args.radius,
+                config=dict(width=args.width, height=args.height, frames=args.frames, radius=None if args.case_file else radius,
                             seed=args.seed, texture=None, texture_filter=args.texture_filter,
                             perlin_threshold=args.perlin_threshold, perlin_transition=args.perlin_transition),
                 cells=dict(plate=args.cells_plate, sphere=args.cells_sphere), variants={})
+
+
+def load_cases(path):
+    """Explicit non-Cartesian cases; resolve worker aliases once and deduplicate."""
+    raw = json.loads(path.read_text())
+    require(isinstance(raw, list) and raw, 'case file must contain a nonempty JSON list')
+    cases = []
+    for row in raw:
+        require(isinstance(row, dict) and set(row) == set(FACTORS) | {'radius'}, 'invalid case fields')
+        case = dict(row)
+        if case['threads'] == 'available-cpus':
+            case['threads'] = available_cpus()
+        require(type(case['threads']) is int and 0 < case['threads'] < 65536, 'invalid case workers')
+        require(case['scene'] in ('plate', 'sphere'), 'invalid case scene')
+        require(case['pattern'] in ('hard', 'soft', 'gaussian', 'perlin'), 'invalid case pattern')
+        require(case['neighbors'] is None if case['pattern'] == 'perlin' else
+                type(case['neighbors']) is int and case['neighbors'] in (1, 4, 9), 'invalid case neighbors')
+        for key in ('radius', 'jitter', 'occupancy', 'softness'):
+            require(type(case[key]) in (int, float) and math.isfinite(case[key]), 'invalid case ' + key)
+        require(0 <= case['occupancy'] <= 1 and 0 <= case['jitter'] <= case['radius'], 'invalid case occupancy/jitter')
+        require(case['radius'] > 0 and case['softness'] >= 0, 'invalid case radius/softness')
+        require((case['softness'] > 0) == (case['pattern'] == 'soft'), 'invalid case edge softness')
+        if case['pattern'] != 'perlin':
+            require(case['radius'] + case['jitter'] + case['softness'] <= (.5 if case['neighbors'] == 1 else 1),
+                    'case support exceeds neighborhood')
+        if case not in cases:
+            cases.append(case)
+    return cases
 
 
 def freeze(original, destination):
@@ -154,6 +189,7 @@ def holm(values):
 
 def report(out, metadata, groups, outputs):
     records = []
+    factors = FACTORS + (('radius',) if 'radius' in metadata['configurations'][0] else ())
     for i, case in enumerate(metadata['configurations']):
         for metric in METRICS:
             blocks = [tuple([r[metric] for r in groups[i, s, v]] for v in 'AB') for s in (0, 1)]
@@ -181,13 +217,13 @@ def report(out, metadata, groups, outputs):
              f"Texture filter: {metadata['config']['texture_filter']} (Catmull–Rom uses lut_lerp; nearest/linear use direct). "
              'Interpolation LUTs are compile-time constants. Texture uses one frozen asset: procedural factors are requested control labels, not texture synthesis or matching imagery. '
              f"Output mismatch cases: {sum(outputs[i, 'A'] != outputs[i, 'B'] for i in range(n))}.", '',
-             '| Case | Factors (workers, scene, pattern, jitter, occupancy, neighbors, softness) | Metric | A ns | B ns | B/A | p | Holm p | Detected |',
+             f"| Case | Factors ({', '.join(factors)}) | Metric | A ns | B ns | B/A | p | Holm p | Detected |",
              '|---|---|---|---:|---:|---:|---:|---:|---|']
     if metadata.get('skip_output_checks', False):
         lines.insert(2, 'Within-repeat and cross-variant output consistency checks disabled; no image consistency guarantee.')
     for r in records:
         ratio = f"{r['ratio']:.6g}" if r['ratio'] is not None else 'n/a'
-        lines.append(f"| {r['case_id']} | {tuple(r['case'][k] for k in FACTORS)} | {r['metric']} | "
+        lines.append(f"| {r['case_id']} | {tuple(r['case'][k] for k in factors)} | {r['metric']} | "
                      f"{r['a_median_ns']:g} | {r['b_median_ns']:g} | {ratio} | {r.get('p', 'descriptive')} | "
                      f"{r.get('holm_p', '—')} | {r.get('detected', '—')} |")
     (out / 'comparison.md').write_text('\n'.join(lines) + '\n')
@@ -210,6 +246,7 @@ def parser():
     p.add_argument('--binary', type=Path, default=ROOT / 'zig-out/bin/bench_speckle_evaluators_f64_simd', help='common native binary')
     for v in 'ab':
         p.add_argument('--binary-' + v, type=Path, help='override common binary for ' + v.upper())
+    p.add_argument('--case-file', type=Path, help='explicit JSON list: threads, scene, pattern, jitter, occupancy, neighbors, softness, radius; replaces profile cases')
     p.add_argument('--workers', nargs='+', help='integers or available-cpus; default 1 and affinity CPU count, deduplicated')
     for name, choices in (('scenes', ('plate', 'sphere')), ('patterns', ('hard', 'soft', 'gaussian', 'perlin'))):
         p.add_argument('--' + name, nargs='+', choices=choices, help='replace profile factor')
@@ -224,8 +261,8 @@ def parser():
     p.add_argument('--seed', type=lambda x: int(x, 0), default=0xa511e9b3, help='native uint32 seed (decimal or hex)')
     p.add_argument('--perlin-threshold', type=float, help='override Perlin coverage threshold')
     p.add_argument('--perlin-transition', type=float, help='override Perlin transition width; 0 selects hard threshold')
-    p.add_argument('--radius', type=float, default=.35, help='procedural radius')
-    p.add_argument('--softness', type=float, default=.04, help='soft cases only; hard/Gaussian always use 0')
+    p.add_argument('--radius', type=float, help='procedural radius; implicit 0.35; conflicts with --case-file')
+    p.add_argument('--softness', type=float, help='soft cases only; implicit 0.04; conflicts with --case-file; hard/Gaussian use 0')
     p.add_argument('--texture', type=Path, help='BMP asset required for texture mapping; copied before execution')
     p.add_argument('--texture-filter', choices=('nearest', 'linear', 'cubic_catmull_rom'), default='cubic_catmull_rom',
                    help='texture sampling: Catmull–Rom uses lut_lerp; nearest/linear use direct')
@@ -267,7 +304,8 @@ def main(argv=None):
                     for position, v in enumerate(order):
                         spec = metadata['variants'][v]
                         u, w = metadata['cells'][case['scene']]
-                        config = dict(metadata['config'], **case, mode=metadata['mode'],
+                        config = dict(metadata['config'])
+                        config.update(case, mode=metadata['mode'],
                                       evaluator=spec['evaluator'], cells_u=u, cells_v=w)
                         command = [spec['file'], *[item for k, value in config.items() if value is not None
                                                   for item in ('--' + k.replace('_', '-'), str(value))]]

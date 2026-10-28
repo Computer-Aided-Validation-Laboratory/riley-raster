@@ -65,6 +65,90 @@ class BenchmarkTests(unittest.TestCase):
             self.assertEqual(bench.design(self.args('--texture-filter', filter))['config']['texture_filter'], filter)
 
 
+    @patch.object(bench, 'available_cpus', return_value=14)
+    def test_explicit_cases(self, _):
+        rows = []
+        def add(scene, radius, jitter=0, occupancy=1, threads=1):
+            rows.append(dict(threads=threads, scene=scene, pattern='gaussian', jitter=jitter,
+                             occupancy=occupancy, neighbors=9, softness=0, radius=radius))
+        for radius, occupancy in ((.4, 1), (.6, 1), (.6, .7)):
+            for jitter in (0, .08):
+                add('plate', radius, jitter, occupancy)
+        for radius in (.4, .6):
+            add('sphere', radius)
+        for scene in ('plate', 'sphere'):
+            add(scene, .4, threads='available-cpus')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'cases.json'
+            path.write_text(json.dumps(rows))
+            for profile in ('tuning', 'full'):
+                d = bench.design(self.args('--case-file', str(path), '--profile', profile))
+                self.assertEqual(len(d['configurations']), 10)
+                self.assertEqual([c['radius'] for c in d['configurations']], [.4, .4, .6, .6, .6, .6, .4, .6, .4, .4])
+                self.assertEqual([c['threads'] for c in d['configurations']], [1]*8 + [14]*2)
+            with patch.object(bench, 'available_cpus', return_value=1):
+                self.assertEqual(len(bench.load_cases(path)), 8)
+            with self.assertRaises(ValueError):
+                bench.design(self.args('--case-file', str(path), '--patterns', 'gaussian'))
+            for bad in ({**rows[0], 'radius': float('nan')}, {**rows[0], 'threads': 0},
+                        {**rows[0], 'neighbors': 4, 'radius': 1.1}, {**rows[0], 'neighbors': True},
+                        {**rows[0], 'neighbors': 9.0}, {**rows[0], 'softness': .01},
+                        {**rows[0], 'unexpected': 1}):
+                path.write_text(json.dumps([bad]))
+                with self.assertRaises(ValueError):
+                    bench.load_cases(path)
+
+    def test_case_file_rejects_explicit_radius_and_softness_even_at_defaults(self):
+        self.assertIsNone(self.args().radius)
+        self.assertIsNone(self.args().softness)
+        ordinary = bench.design(self.args('--patterns', 'soft'))
+        self.assertEqual(ordinary['config']['radius'], .35)
+        self.assertTrue(all(c['softness'] == .04 for c in ordinary['configurations']))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cases = root / 'cases.json'
+            cases.write_text(json.dumps([dict(threads=1, scene='plate', pattern='gaussian',
+                                             radius=.4, jitter=0, occupancy=1, neighbors=9, softness=0)]))
+            for options in (['--radius', '.35'], ['--radius=.35'], ['--radius', '.6'],
+                            ['--softness', '.04'], ['--softness=.04'], ['--softness', '.03']):
+                with self.subTest(options=options):
+                    with self.assertRaisesRegex(ValueError, '--case-file cannot be mixed'):
+                        bench.design(self.args('--case-file', str(cases), *options))
+                    out = root / 'not-created'
+                    with patch.object(bench.subprocess, 'run') as native:
+                        with self.assertRaises(SystemExit):
+                            bench.main(['--out', str(out), '--case-file', str(cases), *options])
+                        native.assert_not_called()
+                    self.assertFalse(out.exists())
+            explicit = bench.design(self.args('--patterns', 'soft', '--radius', '.35', '--softness', '.04'))
+            self.assertEqual(explicit, ordinary)
+
+    def test_complete_explicit_case_passes_and_echoes_radius(self):
+        row = dict(threads=1, scene='plate', pattern='gaussian', radius=.6,
+                   jitter=.08, occupancy=1, neighbors=9, softness=0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            case_file, binary = root / 'cases.json', root / 'native'
+            case_file.write_text(json.dumps([row]))
+            binary.write_bytes(b'frozen fixture')
+            calls = []
+            def run(command, **kwargs):
+                config = {k[2:].replace('-', '_'): v for k, v in zip(command[1::2], command[2::2])}
+                for key in ('threads', 'width', 'height', 'frames', 'cells_u', 'cells_v', 'seed', 'neighbors'):
+                    config[key] = int(config[key])
+                for key in ('jitter', 'occupancy', 'radius', 'softness'):
+                    config[key] = float(config[key])
+                calls.append(config)
+                return SimpleNamespace(returncode=0, stdout='BENCH ' + json.dumps(self.native(config)), stderr='')
+            with patch.object(bench.subprocess, 'run', side_effect=run):
+                self.assertEqual(bench.main(['--out', str(root / 'result'), '--binary', str(binary),
+                                            '--case-file', str(case_file), '--repeats', '2',
+                                            '--require-equal-output']), 0)
+            self.assertEqual(len(calls), 4)
+            for config in calls:
+                self.assertEqual({k: config[k] for k in row}, row)
+            self.assertIn('radius', (root / 'result/comparison.md').read_text())
+
     def test_schedules(self):
         for repeats in range(2, 42, 2):
             first, second = bench.schedules(repeats)
@@ -103,11 +187,11 @@ class BenchmarkTests(unittest.TestCase):
     def test_native_contract(self):
         for mode in ('evaluation', 'full-render'):
             config = dict(mode=mode, evaluator='texture', width=32, height=24, frames=2,
-                          texture='/custom.bmp', texture_filter='cubic_catmull_rom', neighbors=4)
+                          texture='/custom.bmp', texture_filter='cubic_catmull_rom', neighbors=4, radius=.4)
             native = self.native(config)
             bench.validate_native(native, config)
             bad = [('mode', 'old'), ('texture', '/wrong.bmp'), ('texture_filter', 'linear'), ('neighbors', 1),
-                   ('combined_ns', 9), ('render_ns', float('nan')), ('checksum', -1),
+                   ('radius', .6), ('combined_ns', 9), ('render_ns', float('nan')), ('checksum', -1),
                    ('evaluation_counters_available', mode != 'evaluation'), ('image_samples', 1),
                    ('shaded_samples', 0 if mode == 'evaluation' else 10)]
             for key, value in bad:

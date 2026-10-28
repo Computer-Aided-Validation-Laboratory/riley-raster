@@ -139,9 +139,9 @@ ignored controls after external validation. CLI neighborhoods remain numeric
 
 | Pattern | Default evaluator | Native alternatives |
 | --- | --- | --- |
-| Hard disk | `classified-indexed` (9 neighbors) | Hash/list evaluators, `direct-fixed`, masks |
-| Soft disk | `list-indexed` | `cell-hash`, `list-naive`, `mask-u8` |
-| Gaussian | `list-indexed` | `cell-hash`, `list-naive`, `mask-u8` |
+| Hard disk | `classified-indexed` (9 neighbors) | Hash/list/cell-binned evaluators, `direct-fixed`, masks |
+| Soft disk | `list-indexed` | `cell-hash`, `list-naive`, cell-binned evaluators, `mask-u8` |
+| Gaussian | `list-indexed` | `cell-hash`, `list-naive`, cell-binned evaluators, `mask-u8` |
 | Perlin | `gradient-lattice` | `cell-hash`, `mask-u8` |
 
 All defaults preserve analytic coverage. Masks use nearest-grid sampling;
@@ -149,8 +149,8 @@ All defaults preserve analytic coverage. Masks use nearest-grid sampling;
 ablation for every pattern. Python/C expose only the defaults.
 Compatibility rules are defined in [speckleconfig.zig](../src/riley/zig/speckleconfig.zig).
 
-The native catalogue has 45 distinct generators (12 equivalent mock
-configurations collapse to one); experimental sampling remains 28 configurations.
+The native catalogue has 117 distinct generators (12 equivalent mock
+configurations collapse to one); experimental sampling has 31 configurations.
 Default generation and sampling each have four configurations.
 Perlin records have null neighborhood, and irrelevant pattern/neighborhood/edge
 metadata may be null. The benchmark request still carries the requested pattern
@@ -165,12 +165,67 @@ or `--b classified-indexed`, not historical numbered selectors. It supports
 `--patterns hard soft gaussian perlin`; `--perlin-threshold` and
 `--perlin-transition` select hard/smooth Perlin cases without a neighborhood override.
 
+The experimental exact CSR selectors `cell-binned`, `cell-binned-2`,
+`cell-binned-3`, `cell-binned-9`, `cell-binned-12`, `cell-binned-26`,
+`cell-binned-29`, and `cell-binned-35` support hard disks,
+soft disks and Gaussians with 1/4/9 neighbours. They do not change any default.
+The baseline duplicates full center/radius records into procedural-cell lists.
+`-2` specializes fixed radii to center records; `-3` also reduces fixed Gaussian
+squared distances before one exponential. `-9` uses split X/Y center arrays for
+fixed radii. `-12` additionally caches exactly rounded outer-radius-squared and
+sigma-squared coefficients for variable Gaussians. Other cases retain full records.
+`-26` uses directly constructed nine-slot SoA cells with byte counts when radius
+jitter is zero; variable radii retain `-12`'s records. Its coordinate planes share
+one allocation, with a separate byte-count allocation (two allocations total),
+preserving the incumbent tagged-backing size. This trades more
+fixed-resource memory for lower setup/evaluation time; `-12` remains available
+for compact CSR storage. `-29` adds a paired fixed-Gaussian distance traversal; `-35` computes those pairs
+with explicit two-wide vectors. Both retain `-26`'s preparation, fixed-disk path,
+and exactly rounded variable-Gaussian coefficient records. Their owned memory is
+identical to `-26`. All eight share three sampling kernels; neighborhood and
+placement remain setup choices, and runtime layout dispatch happens before the
+SIMD lane adapter.
+
+For explicit non-Cartesian benchmark matrices, pass `--case-file cases.json`.
+It replaces profile cases (not repeats/statistics) and rejects explicit factor
+overrides, including `--radius` and `--softness` even when explicitly set to their
+usual defaults. Without a case file, omitted radius/softness remain 0.35/0.04.
+Each JSON-list entry has exactly `threads`, `scene`, `pattern`, `radius`, `jitter`,
+`occupancy`, `neighbors`, and `softness`; workers can be integers or
+`"available-cpus"`. Duplicate resolved cases collapse, including one-CPU hosts.
+Per-case radii are passed to and validated against native metadata. For example:
+
+```json
+[{"threads":1,"scene":"plate","pattern":"gaussian","radius":0.4,"jitter":0,"occupancy":1,"neighbors":9,"softness":0}]
+```
+
+The CSR campaign's approved ten-case matrix, frozen binaries, complete comparison
+reports, decisions and interruption record are in
+[`perf/csr-cell-binning-20261027-sol/`](../perf/csr-cell-binning-20261027-sol/).
+A local compact-metadata follow-up, including a fresh recheck of the historical
+byte-count design and four current-source attempts, is recorded in
+[`perf/csr-byte-count-followup-20261027-sol/REPORT.md`](../perf/csr-byte-count-followup-20261027-sol/REPORT.md).
+The historical benefit reproduced in its frozen build, but no new design was
+promoted over the then-current `cell-binned-12`.
+The subsequent fixed-stride split follow-up accepted the implementation now named
+`cell-binned-26` (historically `cell-binned-13`; historical records retain that name);
+its seven fixed / three variable case evidence, resource tradeoffs and verification
+are in [`perf/csr-fixed-stride-followup-20261027-sol/REPORT.md`](../perf/csr-fixed-stride-followup-20261027-sol/REPORT.md).
+The rename has no arithmetic changes and no compatibility alias. All previous
+accepted predecessor selectors and defaults remain unchanged. The new coefficient
+fixed-stride campaign and unique candidate registry are recorded in
+[`perf/csr-fixed-stride-coeff-campaign-20261028-sol/REPORT.md`](../perf/csr-fixed-stride-coeff-campaign-20261028-sol/REPORT.md).
+That speed-focused campaign retained the accepted critical chain `-26` → `-29` →
+`-35`; rejected/invalid investigation IDs are never reused. The fresh ten-case
+final comparison has descriptive combined GM 0.98660 versus `-26`, with four
+Holm-significant evaluation wins and no losses. Defaults remain unchanged.
+
 #### Implementation constraints
 
 Generation and sampling live in [speckleops.zig](../src/riley/zig/speckleops.zig).
 `Resources.init(allocator, params)` replaces `generateResources`; its `.data`
 tagged union has exactly one active backing variant: `none`, `list`,
-`strip_list`, `classified`, `direct_fixed`, `mask`, or `perlin`. `deinit(allocator)`
+`strip_list`, `cell_binned`, `classified`, `direct_fixed`, `mask`, or `perlin`. `deinit(allocator)`
 releases the active allocation and resets the value. Resources own no allocator;
 the static shader owns the resource value, and `Prepared.resources: *const Resources`
 is borrowed from that stable static shader for frame/worker use. Frames do not
@@ -185,6 +240,19 @@ is itself a checked preparation boundary for direct low-level callers.
 - `classified-indexed` stores nine candidate bits and a foreground flag per
   procedural-aligned microcell. Its 256 MiB state limit returns
   `SpeckleClassificationTooLarge` on excess or checked size overflow.
+- CSR cell-binned evaluators count eligible overlaps, prefix-sum offsets, then assign
+  contiguous duplicated records. `-26` directly fills at most nine centers per cell
+  for zero jitter, retaining only two coordinate planes and byte counts, with no
+  temporary CSR/conversion allocations. Closed-cell nearest-point tests conservatively
+  include touching support; runtime retains strict disk/Gaussian predicates and
+  soft/max/color arithmetic. Finite inactive SIMD lanes retain analytic-list
+  behavior; nonfinite lanes return background. Empty-cell zero-coverage mapping
+  is arithmetic, preserving existing list signed-zero behavior.
+  Their 256 MiB preparation budget includes CSR offsets, temporary cursors, records,
+  and simultaneous AoS/SoA conversion storage where applicable; `-26`'s fixed
+  path budgets its complete final padded backing. The existing 10-million owner-cell
+  limit also applies. Excess/checked overflow returns `SpeckleCellBinsTooLarge`,
+  with no fallback; in-budget allocation failures propagate and clean up.
 - `gradient-lattice` stores shared byte gradient IDs, including outer corners at
   UV 1. Above its 256 MiB budget, or on checked size overflow, it uses exact
   on-demand hashing. In-budget allocation failures propagate. Perlin mask setup

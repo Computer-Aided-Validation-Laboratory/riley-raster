@@ -130,7 +130,7 @@ fn recordNeighbors(opts: Options, resolved: policy.Config) ?u8 {
         opts.neighbors orelse policy.default_neighborhood
     else
         resolved.neighborhood() orelse return null;
-    return @intFromEnum(neighbors);
+    return @backingInt(neighbors);
 }
 
 fn listEvaluators() void {
@@ -143,7 +143,7 @@ fn listEvaluators() void {
         std.debug.print("{s}{{\"evaluator\":\"{s}\",\"pattern\":", .{ if (i == 0) "" else ",", policy.evaluatorName(std.meta.activeTag(cfg)) });
         if (cfg.pattern()) |pattern| std.debug.print("\"{s}\"", .{@tagName(pattern)}) else std.debug.print("null", .{});
         std.debug.print(",\"neighbors\":", .{});
-        if (cfg.neighborhood()) |neighbors| std.debug.print("{d}", .{@intFromEnum(neighbors)}) else std.debug.print("null", .{});
+        if (cfg.neighborhood()) |neighbors| std.debug.print("{d}", .{@backingInt(neighbors)}) else std.debug.print("null", .{});
         std.debug.print(",\"soft_edges\":", .{});
         if (cfg.edges()) |edges| std.debug.print("{}", .{edges == .soft}) else std.debug.print("null", .{});
         std.debug.print("}}", .{});
@@ -174,6 +174,8 @@ pub fn main(init: std.process.Init) !void {
     var combined_ns: i96 = 0;
     var result: bench.Result = .{};
     var image_samples: usize = 0;
+    var resource_bytes: usize = 0;
+    var duplicated_disk_records: usize = 0;
     if (opts.mode == .evaluation) {
         const config = opts.rasterConfig();
         const cam = try camera.CameraPrepared.init(alloc, cameraInput(scene.sim, opts));
@@ -185,6 +187,14 @@ pub fn main(init: std.process.Init) !void {
         // Production UV gathering; interpolation LUTs are compile-time constants.
         const prepared: ?shaderops.TexPrepared(u8, 1) = if (texture) |tex| .{ .elem_uvs = try mo.prepUVs(alloc, &scene.uvs.array, &scene.sim.connect), .tex = tex, .samp_cfg = opts.textureConfig(), .bits = null } else null;
         resource_ns = resource_start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
+        switch (resources.data) {
+            .cell_binned => |binned| {
+                resource_bytes = binned.byteSize();
+                duplicated_disk_records = binned.recordCount();
+            },
+            .strip_list => |strip| resource_bytes = strip.centers.len * @sizeOf([2]F) + strip.disks.len * @sizeOf(speckle.SpeckleDisk2D),
+            else => {},
+        }
         const eval_start = std.Io.Timestamp.now(io, .awake);
         if (prepared) |shader| try evaluation.evaluateTexture(shader, opts.frames) else try evaluation.evaluate(params, &resources, opts.frames);
         render_ns = eval_start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
@@ -231,6 +241,8 @@ pub fn main(init: std.process.Init) !void {
         .texture = opts.texture,
         .texture_filter = @tagName(opts.texture_filter),
         .texture_mode = @tagName(opts.textureConfig().mode),
+        .resource_bytes = resource_bytes,
+        .duplicated_disk_records = duplicated_disk_records,
         .resource_ns = resource_ns,
         .render_ns = render_ns,
         .combined_ns = combined_ns,
@@ -357,7 +369,7 @@ test "speckle benchmark rejects occluded samples but keeps closer depth updates"
     tiles[0].overlap_start = 0;
     tiles[0].overlap_count = 1;
     tiles[0].bins = @splat(.{});
-    const one_root_bin = @intFromEnum(@import("riley/zig/elemtilebinning.zig").ElemBin.tri6_one_root);
+    const one_root_bin = @backingInt(@import("riley/zig/elemtilebinning.zig").ElemBin.tri6_one_root);
     tiles[0].bins[one_root_bin] = .{ .start = 0, .count = 1 };
     var overlaps = [_]@import("riley/zig/elemtilebinning.zig").OverlapBBox{ overlap, overlap };
     overlaps[0].elem_idx = 0;
@@ -390,7 +402,7 @@ test "speckle benchmark root bins preserve production facing and multi-root slot
     const fixture = try TestFixture.init(arena.allocator(), opts, 8);
     for (fixture.geometry.tiling.active_tiles) |tile| {
         inline for (.{ bins.ElemBin.tri6_one_root, bins.ElemBin.tri6_multi_root }) |bin| {
-            const range = tile.bins[@intFromEnum(bin)];
+            const range = tile.bins[@backingInt(bin)];
             for (fixture.geometry.tiling.overlaps[range.start .. range.start + range.count]) |overlap| {
                 const nodes = try frontend.loadElemVec3Slices(6, F, &fixture.geometry.coords, overlap.elem_idx);
                 var projected: frontend.RasterCoords2D(6) = undefined;
