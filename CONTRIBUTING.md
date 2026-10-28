@@ -63,12 +63,12 @@ _This policy has been adapted from the [Ghostty AI policy](https://github.com/gh
 
 You can clone the riley-raster repository at https://github.com/Computer-Aided-Validation-Laboratory/riley-raster. 
 
-Use the following command in the riley-raster directory to install riley-raster for development:
+Use the following command in the riley-raster directory to install riley-raster Python package for development:
 ```shell
 pip install -e .
 ```
 
-We recommend installing riley-raster into a virtual environment of your choice as riley-raster requires python 3.13.
+We recommend installing riley-raster into a virtual environment of your choice as riley-raster requires Python 3.11 and above.
 
 ### Make a Branch
 
@@ -80,13 +80,13 @@ git switch -c branchname
 
 ### Developer Guidance
 
-Much of riley-raster is written in Python. See our [Riley Developer Guide](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/dev/README.md) for guidance on how to write code that best aligns with riley-raster's code values.
+Riley is largely written in Zig. See our [Riley Developer Guide](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/dev/README.md) for guidance on how to write code that best aligns with riley-raster's code values.
 
 ### Docstrings
 
-Docstrings are used to support making riley-raster documentation, as well as being a useful tool to help developers understand code that has been contributed. All contributions should include docstrings. These should include a short summary of what a function or class does, the parameters it takes, and what it returns.
+Docstrings are used to support making riley-raster documentation, as well as being a useful tool to help developers understand code that has been contributed. Contributions should include docstrings. These should include a short summary of what a function or class does, the parameters it takes, and what it returns.
 
-See below for an example of how we structure our docstrings.
+See below for an example of how we structure our docstrings for Python code.
 ```python
 def check_strain_files(strain_files: str | Path) -> list[str]:
     """
@@ -128,13 +128,23 @@ def check_strain_files(strain_files: str | Path) -> list[str]:
 
 ### Testing
 
-riley-raster uses [pytest](https://github.com/pytest-dev/pytest/). Please test your code before submitting a pull request. You can create your tests in the (riley-raster/src/tests) directory. 
+Please test you code before submitting a pull request.
 
-To run all tests, use the following command in the (riley-raster/src) directory:
-```shell
-pytest tests
+The recommended testing workflow for Riley is:
+
+```bash
+# Step 1: Run the core test suites (fast, repository-packaged references)
+zig build test-verif
+zig build test-basic
+.venv/bin/pytest src/riley/pytests/
+
+# Step 2: Generate reference gold data for the Full suite
+zig build gen-gold-full -Doptimize=ReleaseSafe
+
+# Step 3: Run the exhaustive Full test suite
+zig build test-full -Doptimize=ReleaseSafe
 ```
-For more information on using pytest, refer to the [pytest docs](https://docs.pytest.org/en/stable/).
+More details on testing zig code for riley-raster can be found at [Riley Testing Architecture & Test Suites](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/dev/TESTING.md).
 
 
 ## Creating a Pull Request
