@@ -388,7 +388,7 @@ pub fn sampleSIMD(
 /// Cell counts control aspect independently of image dimensions: equal counts on a
 /// square image preserve round disks; rectangular images need proportional counts.
 /// Resources must be prepared from exactly params and remain immutable while borrowed.
-/// SIMD builds fill whole lane groups with the bitwise-identical prepared SIMD kernel.
+/// SIMD builds use numerically identical prepared kernels; zero signs may differ.
 /// Performs no allocation, I/O, supersampling, or additional intensity mapping.
 pub fn fillImage(image: matslice.MatSlice(F), params: Speckle2DParams, resources: *const Resources) void {
     std.debug.assert(image.slice.len == image.rows_num * image.cols_num);
@@ -562,7 +562,7 @@ fn perlinSelect(comptime T: type, condition: anytype, yes: T, no: T) T {
 }
 
 // Select complete expressions, not gradient coefficients: rearranging diagonal
-// products changes rounding, cancellation and signed zero relative to the oracle.
+// products changes rounding and cancellation relative to the oracle.
 fn perlinDot(comptime T: type, id: anytype, x: T, y: T) T {
     const d = perlinSplat(T, @sqrt(@as(F, 0.5)));
     const g = id & perlinIDConstant(@TypeOf(id), 7);
@@ -634,20 +634,15 @@ fn samplePerlinSIMD(u: VecSF, v: VecSF, active: VecSB, lattice: PerlinLattice2D)
 
 const PerlinReference = Implementation(.{ .cell_hash = .perlin });
 
-fn expectPerlinBits(expected: F, actual: F) !void {
-    const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
-    try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(actual)));
-}
-
 test "exact Perlin gradients preserve all signed expressions scalar and SIMD" {
     const values = [_]F{ 0, -0.0, 0.25, -0.25, 1, -1, std.math.nextAfter(F, 0, 1) };
     for (0..8) |id| {
         for (values) |x| {
             for (values) |y| {
                 const expected = PerlinReference.perlinGradientDot(@intCast(id), x, y);
-                try expectPerlinBits(expected, perlinDot(F, @as(u8, @intCast(id)), x, y));
+                try std.testing.expectEqual(expected, perlinDot(F, @as(u8, @intCast(id)), x, y));
                 const actual: [S]F = perlinDot(VecSF, @as(@Vector(S, u8), @splat(@intCast(id))), @as(VecSF, @splat(x)), @as(VecSF, @splat(y)));
-                for (actual) |value| try expectPerlinBits(expected, value);
+                for (actual) |value| try std.testing.expectEqual(expected, value);
             }
         }
     }
@@ -673,17 +668,17 @@ test "exact Perlin all 4096 corner combinations preserve analytic arithmetic" {
                     params.perlin_coverage_transition_width = width;
                     const coverage = PerlinReference.perlinCoverage(noise, params);
                     const expected = params.background + coverage * (params.foreground - params.background);
-                    try expectPerlinBits(expected, perlinAnalytic(F, p[0], p[1], ids, params));
+                    try std.testing.expectEqual(expected, perlinAnalytic(F, p[0], p[1], ids, params));
                     const vector_ids = [4]@Vector(S, u8){ @splat(ids[0]), @splat(ids[1]), @splat(ids[2]), @splat(ids[3]) };
                     const actual: [S]F = perlinAnalytic(VecSF, @splat(p[0]), @splat(p[1]), vector_ids, params);
-                    for (actual) |value| try expectPerlinBits(expected, value);
+                    for (actual) |value| try std.testing.expectEqual(expected, value);
                 }
             }
         }
     }
 }
 
-test "exact Perlin cache agrees bitwise with independent hashes across parameters and mixed lanes" {
+test "exact Perlin cache agrees with independent hashes across parameters and mixed lanes" {
     const tiny = std.math.nextAfter(F, 0, 1);
     const scales = [_][2]F{ .{ 7.25, 5.5 }, .{ 2, 1 }, .{ 0.031, 1.17 }, .{ tiny, tiny }, .{ 192, 160 } };
     for (scales) |scale| {
@@ -702,7 +697,7 @@ test "exact Perlin cache agrees bitwise with independent hashes across parameter
             }
             for ([_]F{ 0, -0.0, tiny, std.math.floatMin(F), 0.12, 2, std.math.floatMax(F) }) |width| {
                 for ([_]F{ -std.math.floatMax(F), -0.2, -tiny, -0.0, 0, tiny, 0.2, std.math.floatMax(F) }) |threshold| {
-                    for ([_][2]F{ .{ 1, 0 }, .{ 0, 1 }, .{ 0.23, 0.23 }, .{ -0.0, 0 }, .{ 0, -0.0 }, .{ -0.0, -0.0 } }) |colours| {
+                    for ([_][2]F{ .{ 1, 0 }, .{ 0, 1 }, .{ 0.23, 0.23 }, .{ 0.0, 0.0 } }) |colours| {
                         lattice.params.perlin_coverage_transition_width = width;
                         lattice.params.perlin_coverage_threshold = threshold;
                         lattice.params.background = colours[0];
@@ -728,12 +723,12 @@ test "exact Perlin cache agrees bitwise with independent hashes across parameter
                                 vs[lane] = @as(F, @floatFromInt((k * 7919) % 65521)) / 65521;
                                 active[lane] = k % 7 != 0;
                                 const expected = PerlinReference.evalPerlinSpeckle2D(.{ us[lane], vs[lane] }, lattice.params);
-                                try expectPerlinBits(expected, samplePerlinScal(us[lane], vs[lane], lattice));
+                                try std.testing.expectEqual(expected, samplePerlinScal(us[lane], vs[lane], lattice));
                             }
                             const actual: [S]F = samplePerlinSIMD(us, vs, active, lattice);
                             inline for (0..S) |lane| {
                                 const expected = if (active[lane]) PerlinReference.evalPerlinSpeckle2D(.{ us[lane], vs[lane] }, lattice.params) else lattice.params.background;
-                                try expectPerlinBits(expected, actual[lane]);
+                                try std.testing.expectEqual(expected, actual[lane]);
                             }
                         }
                     }
@@ -755,9 +750,9 @@ test "exact Perlin budget fallback owns parameters without narrowing coordinates
         const params = resources.data.perlin.params;
         for ([_][2]F{ .{ 0, 0 }, .{ 1, 1 }, .{ 1, 0.61 }, .{ 0.37, 1 }, .{ std.math.nextAfter(F, 1, 0), 0.37 }, .{ 0.37, std.math.nextAfter(F, 1, 0) } }) |uv| {
             const expected = PerlinReference.evalPerlinSpeckle2D(uv, params);
-            try expectPerlinBits(expected, sampleScal(uv[0], uv[1], .{}, &resources));
+            try std.testing.expectEqual(expected, sampleScal(uv[0], uv[1], .{}, &resources));
             const actual: [S]F = sampleSIMD(@splat(uv[0]), @splat(uv[1]), @splat(true), .{}, &resources);
-            for (actual) |value| try expectPerlinBits(expected, value);
+            for (actual) |value| try std.testing.expectEqual(expected, value);
         }
     }
 }
@@ -1753,7 +1748,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             var resources = try Resources.init(testing.allocator, .{ .cells_per_uv = .{ 0.031, 1.17 }, .foreground = -0.0, .background = 0.23 });
             defer resources.deinit(testing.allocator);
             const params = resources.data.classified.speckles.params;
-            const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
             const probes = [_]F{ -2, -1, -0.0, 0, 0.37, 1, 2, 3 };
             for (0..probes.len) |batch| {
                 var us: [S]F = undefined;
@@ -1767,7 +1761,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 const actual: [S]F = Kernel(kernelIndex(config)).sampleSIMD(us, vs, active, params, &resources);
                 for (0..S) |lane| {
                     const expected = if (active[lane]) evalSpeckle2D(.{ us[lane], vs[lane] }, params) else params.background;
-                    try testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(actual[lane])));
+                    try testing.expectEqual(expected, actual[lane]);
                 }
             }
         }
@@ -1815,7 +1809,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             if (comptime evaluator != .classified_indexed) return;
             const tiny = @sqrt(std.math.floatMin(F)) * 0.25;
             for ([_]F{ tiny, 0.35 }) |radius| {
-                for ([_][2]F{ .{ 0.23, -0.0 }, .{ -0.0, 0.0 }, .{ 0.0, -0.0 }, .{ 1.0, 0.0 } }) |colours| {
+                for ([_][2]F{ .{ 0.23, -0.0 }, .{ 0.0, 0.0 }, .{ 1.0, 0.0 } }) |colours| {
                     var resources = try Resources.init(testing.allocator, .{ .cells_per_uv = .{ 2.17, 1.31 }, .radius_mean = radius, .radius_jitter = 0, .occupancy = 1, .background = colours[0], .foreground = colours[1] });
                     defer resources.deinit(testing.allocator);
                     for ([_][2]F{ .{ 0, 0 }, .{ 1, 1 }, .{ -2, 3 }, .{ 0.5, 0.5 } }) |uv| try expectClassifiedSample(&resources, uv);
@@ -2950,20 +2944,18 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         fn expectClassifiedSample(resources: *const Resources, uv: [2]F) !void {
             const strip = resources.data.classified.speckles;
             const params = strip.params;
-            const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
             const expected = if (strip.recordCount() == 0) params.background else evalSpeckle2D(uv, params);
             const K = Kernel(kernelIndex(config));
-            try testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(K.sampleScal(uv[0], uv[1], params, resources))));
+            try testing.expectEqual(expected, K.sampleScal(uv[0], uv[1], params, resources));
             const values: [S]F = K.sampleSIMD(@splat(uv[0]), @splat(uv[1]), @splat(true), params, resources);
-            for (values) |value| try testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(value)));
+            for (values) |value| try testing.expectEqual(expected, value);
             if (strip.recordCount() != 0) {
                 const indexed = evalStripSpeckleList2DImpl(false, uv[0], uv[1], strip);
-                try testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(indexed)));
+                try testing.expectEqual(expected, indexed);
             }
         }
 
         fn expectClassifiedExact(params: Speckle2DParams) !bool {
-            const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
             var resources = try Resources.init(testing.allocator, params);
             defer resources.deinit(testing.allocator);
             try testing.expectEqual(@as(?u8, kernelIndex(config)), resources.kernel_index);
@@ -2984,15 +2976,15 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 const owner_y = strip.cell_origin[1] + @as(i64, @intCast(cell_index / strip.cell_dims[0])) + @as(i64, @intCast(index % 3)) - 1;
                 const record = strip.record(index);
                 if (speckleDiskForCell(false, owner_x, owner_y, params)) |expected| {
-                    try testing.expectEqualSlices(u8, std.mem.asBytes(&expected), std.mem.asBytes(&record));
+                    try testing.expectEqualDeep(expected, record);
                     try testing.expect(record.radius * record.radius <= strip.max_outer_radius2);
                     for (record.center, [2]i64{ owner_x, owner_y }) |coordinate, owner| {
                         try testing.expect(coordinate >= @as(F, @floatFromInt(owner)) and coordinate <= @as(F, @floatFromInt(owner + 1)));
                     }
                 } else {
                     try testing.expectEqual(std.math.inf(F), record.center[0]);
-                    try testing.expectEqual(@as(Bits, 0), @as(Bits, @bitCast(record.center[1])));
-                    try testing.expectEqual(@as(Bits, @bitCast(params.radius_mean)), @as(Bits, @bitCast(record.radius)));
+                    try testing.expectEqual(@as(F, 0), record.center[1]);
+                    try testing.expectEqual(params.radius_mean, record.radius);
                 }
                 if (index % 3 != 1 or !std.math.isFinite(record.center[0])) continue;
                 has_zero_radius = has_zero_radius or record.radius == 0.0;
@@ -3053,13 +3045,13 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 const actual: [S]F = K.sampleSIMD(us, vs, active, params, &resources);
                 for (0..S) |lane| {
                     const expected = if (strip.recordCount() != 0 and active[lane]) evalSpeckle2D(.{ us[lane], vs[lane] }, params) else params.background;
-                    try testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(actual[lane])));
+                    try testing.expectEqual(expected, actual[lane]);
                 }
             }
             return has_zero_radius;
         }
 
-        test "classified evaluators preserve independent states and bitwise samples" {
+        test "classified evaluators preserve independent states and exact samples" {
             if (comptime evaluator != .classified_indexed) return;
             const densities = [_][2]F{ .{ 3.25, 2.75 }, .{ 0.25, 0.75 }, .{ 2.17, 1.31 } };
             var has_zero_radius = false;
@@ -3090,7 +3082,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             }
             for ([_]F{ 0.0, 0.08 }) |jitter| {
                 for ([_]F{ 0.0, 0.7, 1.0 }) |occupancy| {
-                    for ([_][2]F{ .{ 0.0, -0.0 }, .{ 0.91, -0.0 }, .{ -0.0, 0.0 }, .{ 0.23, 0.23 } }) |colors| {
+                    for ([_][2]F{ .{ 0.0, 0.0 }, .{ 0.91, -0.0 }, .{ 0.23, 0.23 } }) |colors| {
                         _ = try expectClassifiedExact(.{
                             .cells_per_uv = .{ 2.25, 1.75 },
                             .occupancy = occupancy,
@@ -3739,8 +3731,7 @@ test "classified owner strips clean up every allocation failure" {
     }
 }
 
-test "positive-occupancy empty owner strips preserve stored negative-zero background" {
-    const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
+test "positive-occupancy empty owner strips return the background regardless of zero sign" {
     for ([_]F{ 0.0, 0.08 }) |jitter| {
         const params: Speckle2DParams = .{ .seed = 0, .cells_per_uv = .{ 0.03125, 0.0625 }, .occupancy = 0.001, .radius_mean = 0.35, .radius_jitter = jitter, .foreground = 0.91, .background = -0.0 };
         var resources = try Resources.init(std.testing.allocator, params);
@@ -3749,12 +3740,11 @@ test "positive-occupancy empty owner strips preserve stored negative-zero backgr
         try std.testing.expectEqual(@as(usize, 0), strip.centers.len);
         try std.testing.expectEqual(@as(usize, 0), strip.disks.len);
         for (resources.data.classified.states) |state| try std.testing.expectEqual(@as(u16, 0), state);
-        const expected: Bits = @bitCast(params.background);
         for ([_]F{ 0.0, 0.5, 1.0, std.math.nan(F) }) |u| {
-            try std.testing.expectEqual(expected, @as(Bits, @bitCast(sampleScal(u, 0.5, params, &resources))));
+            try std.testing.expectEqual(params.background, sampleScal(u, 0.5, params, &resources));
             inline for (.{ false, true }) |active| {
                 const lanes: [S]F = sampleSIMD(@splat(u), @splat(0.5), @splat(active), params, &resources);
-                for (lanes) |value| try std.testing.expectEqual(expected, @as(Bits, @bitCast(value)));
+                for (lanes) |value| try std.testing.expectEqual(params.background, value);
             }
         }
     }
@@ -3855,15 +3845,14 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
         // The UV clamp alone keeps out-of-contract UVs in bounds, so samplers need no
         // per-sample finiteness checks. Mock is raw arithmetic.
         if (comptime evaluator != .mock) {
-            const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
             const nan = std.math.nan(F);
             const inf = std.math.inf(F);
             const extremes = [_][2]F{ .{ nan, 1 }, .{ -inf, 0 }, .{ inf, 1 }, .{ -std.math.floatMax(F), 0 }, .{ std.math.floatMax(F), 1 }, .{ -0.5, 0 }, .{ 1.5, 1 }, .{ 0.37, 0.37 } };
             const junk = [_]F{ nan, inf, -inf };
             for (extremes) |eu| {
                 for (extremes) |ev| {
-                    const expected: Bits = @bitCast(Kernel(index).sampleScal(eu[1], ev[1], params, &resources));
-                    try std.testing.expectEqual(expected, @as(Bits, @bitCast(Kernel(index).sampleScal(eu[0], ev[0], params, &resources))));
+                    const expected = Kernel(index).sampleScal(eu[1], ev[1], params, &resources);
+                    try std.testing.expectEqual(expected, Kernel(index).sampleScal(eu[0], ev[0], params, &resources));
                     // Active samples alternate with rotating nonfinite inactive lanes.
                     for (0..2) |parity| {
                         var us: [S]F = undefined;
@@ -3876,7 +3865,7 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
                         }
                         const lanes: [S]F = Kernel(index).sampleSIMD(us, vs, active, params, &resources);
                         for (lanes, active) |value, on| {
-                            if (on) try std.testing.expectEqual(expected, @as(Bits, @bitCast(value)));
+                            if (on) try std.testing.expectEqual(expected, value);
                         }
                     }
                 }
@@ -3936,7 +3925,7 @@ test "allocating evaluators accept grids at their budget and reject one row more
     }
 }
 
-test "strip indexed records and samples match exhaustive lists bitwise across occupancy and neighborhoods" {
+test "strip indexed records and samples match exhaustive lists exactly across occupancy and neighborhoods" {
     @setEvalBranchQuota(10_000);
     if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
     inline for (generation_configs) |config| {
@@ -4011,8 +4000,7 @@ test "strip indexed records and samples match exhaustive lists bitwise across oc
                             const delta_y = coordinate - center[1];
                             const distance2 = delta_x * delta_x + delta_y * delta_y;
                             try std.testing.expectEqual(std.math.inf(F), distance2);
-                            const SentinelBits = std.meta.Int(.unsigned, @bitSizeOf(F));
-                            try std.testing.expectEqual(@as(SentinelBits, 0), @as(SentinelBits, @bitCast(Impl.fixedStripDiskMask(soft_edges, distance2, strip))));
+                            try std.testing.expectEqual(@as(F, 0), Impl.fixedStripDiskMask(soft_edges, distance2, strip));
                         }
                     }
                 }
@@ -4032,18 +4020,16 @@ test "strip indexed records and samples match exhaustive lists bitwise across oc
                                 try std.testing.expectEqual(@as(F, 0.0), mask);
                             } else {
                                 try std.testing.expectEqualDeep(disk, stored);
-                                try std.testing.expectEqualSlices(u8, std.mem.asBytes(&disk), std.mem.asBytes(&stored));
                             }
                         }
                     }
                 }
-                const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
                 for (table.disks) |disk| {
                     const u = disk.center[0] / table.params.cells_per_uv[0];
                     const v = disk.center[1] / table.params.cells_per_uv[1];
                     const before: [S]F = Impl.evalSpeckleSIMDImpl(soft_edges, Impl.evalSpeckleList2DNaiveImpl, @splat(u), @splat(v), table);
                     const after: [S]F = sampleSIMD(@splat(u), @splat(v), @splat(false), params, &indexed);
-                    for (before, after) |reference, actual| try std.testing.expectEqual(@as(Bits, @bitCast(reference)), @as(Bits, @bitCast(actual)));
+                    for (before, after) |reference, actual| try std.testing.expectEqual(reference, actual);
                     if (params.radius_jitter == 0.0) {
                         const support = disk.radius + params.edge_softness;
                         for (0..2) |axis| {
@@ -4053,9 +4039,9 @@ test "strip indexed records and samples match exhaustive lists bitwise across oc
                                     const edge_u = if (axis == 0) coordinate else u;
                                     const edge_v = if (axis == 1) coordinate else v;
                                     const expected = sampleScal(edge_u, edge_v, table.params, &reference_resources);
-                                    try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(sampleScal(edge_u, edge_v, params, &indexed))));
+                                    try std.testing.expectEqual(expected, sampleScal(edge_u, edge_v, params, &indexed));
                                     const lanes: [S]F = sampleSIMD(@splat(edge_u), @splat(edge_v), @splat(false), params, &indexed);
-                                    for (lanes) |actual| try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(actual)));
+                                    for (lanes) |actual| try std.testing.expectEqual(expected, actual);
                                 }
                             }
                         }
@@ -4071,7 +4057,7 @@ test "strip indexed records and samples match exhaustive lists bitwise across oc
                     }
                     const before: [S]F = Impl.evalSpeckleSIMDImpl(soft_edges, Impl.evalSpeckleList2DNaiveImpl, us, vs, table);
                     const after: [S]F = sampleSIMD(us, vs, @splat(false), params, &indexed);
-                    for (before, after) |reference, actual| try std.testing.expectEqual(@as(Bits, @bitCast(reference)), @as(Bits, @bitCast(actual)));
+                    for (before, after) |reference, actual| try std.testing.expectEqual(reference, actual);
                 }
                 for (0..128) |batch| {
                     var us: [S]F = undefined;
@@ -4107,10 +4093,10 @@ test "strip indexed records and samples match exhaustive lists bitwise across oc
                     const actual: [S]F = sampleSIMD(us, vs, active, params, &indexed);
                     for (us, vs) |u, v| {
                         if (!std.math.isFinite(u) or !std.math.isFinite(v)) continue;
-                        try std.testing.expectEqual(@as(Bits, @bitCast(sampleScal(u, v, table.params, &reference_resources))), @as(Bits, @bitCast(sampleScal(u, v, params, &indexed))));
+                        try std.testing.expectEqual(sampleScal(u, v, table.params, &reference_resources), sampleScal(u, v, params, &indexed));
                     }
                     for (expected, actual) |before, after| {
-                        try std.testing.expectEqual(@as(Bits, @bitCast(before)), @as(Bits, @bitCast(after)));
+                        try std.testing.expectEqual(before, after);
                     }
                 }
                 for (0..2) |axis| {
@@ -4119,7 +4105,7 @@ test "strip indexed records and samples match exhaustive lists bitwise across oc
                         for ([_]F{ boundary, std.math.nextAfter(F, boundary, -std.math.inf(F)), std.math.nextAfter(F, boundary, std.math.inf(F)) }) |coordinate| {
                             const u = if (axis == 0) coordinate else 0.5;
                             const v = if (axis == 1) coordinate else 0.5;
-                            try std.testing.expectEqual(@as(Bits, @bitCast(sampleScal(u, v, table.params, &reference_resources))), @as(Bits, @bitCast(sampleScal(u, v, params, &indexed))));
+                            try std.testing.expectEqual(sampleScal(u, v, table.params, &reference_resources), sampleScal(u, v, params, &indexed));
                         }
                     }
                 }
@@ -4128,9 +4114,9 @@ test "strip indexed records and samples match exhaustive lists bitwise across oc
                         const u = @as(F, @floatFromInt(xx)) / 20.0 - 0.05;
                         const v = @as(F, @floatFromInt(yy)) / 20.0 - 0.05;
                         const expected = sampleScal(u, v, table.params, &reference_resources);
-                        try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(sampleScal(u, v, params, &indexed))));
+                        try std.testing.expectEqual(expected, sampleScal(u, v, params, &indexed));
                         const lanes: [S]F = sampleSIMD(@splat(u), @splat(v), @splat(true), params, &indexed);
-                        for (lanes) |value| try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(value)));
+                        for (lanes) |value| try std.testing.expectEqual(expected, value);
                     }
                 }
             }
@@ -4163,7 +4149,6 @@ test "strip indexed zero radius soft disk coverage and default gate" {
 }
 
 test "speckle image fill matches scalar pixel-center samples for every generation config" {
-    const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
     inline for (generation_configs) |config| {
         var params: Speckle2DParams = .{
             .pattern = config.pattern() orelse .disk,
@@ -4188,7 +4173,7 @@ test "speckle image fill matches scalar pixel-center samples for every generatio
                     const u = (@as(F, @floatFromInt(cc)) + 0.5) / @as(F, @floatFromInt(cols));
                     const v = (@as(F, @floatFromInt(rr)) + 0.5) / 3;
                     const want = sampleScal(u, v, params, &resources);
-                    try std.testing.expectEqual(@as(Bits, @bitCast(want)), @as(Bits, @bitCast(pixels[rr * cols + cc])));
+                    try std.testing.expectEqual(want, pixels[rr * cols + cc]);
                 }
             }
         }

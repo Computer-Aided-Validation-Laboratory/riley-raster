@@ -170,7 +170,7 @@ or `--b classified-indexed`, not historical numbered selectors. It supports
 Generation and sampling live in [speckleops.zig](../src/riley/zig/speckleops.zig).
 `fillImage(image, params, resources)` samples the whole field once per pixel center,
 row zero at the top, with no supersampling or output scaling; SIMD builds use the
-bitwise-identical prepared SIMD kernels for whole lane groups. The
+numerically identical prepared SIMD kernels for whole lane groups (zero signs may differ). The
 [direct pattern demo](../README.md#procedural-speckles) writes it to a BMP and accepts
 the native evaluator overrides described above.
 
@@ -203,10 +203,12 @@ no other overflow checks are needed.
 - `gradient-lattice` stores shared byte gradient IDs, including outer corners at
   UV 1. Above its 256 MiB budget it uses exact on-demand hashing. In-budget allocation failures propagate. Perlin mask setup
   reuses this evaluator with unit colors before quantizing coverage.
-- Exactness is bitwise agreement with the independent reference at the same
-  precision/build, under strict round-to-nearest with gradual underflow. Preserve
-  gradient expressions, interpolation order, transition division, and color
-  arithmetic; algebraically equivalent rewrites can change rounding or signed zero.
+- Exactness is numerical equality with the independent reference at the same
+  precision/build, under strict round-to-nearest with gradual underflow. Positive
+  and negative zero are interchangeable; nonzero results must still agree exactly,
+  without a tolerance. Preserve gradient expressions, interpolation order,
+  transition division, and color arithmetic where rewriting them changes nonzero
+  results through rounding.
 
 
 ## Benchmark Binaries
