@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "riley-raster"
-version = "2026.10.2"
+version = "2026.10.3"
 description = "A Zig software rasteriser for DIC UQ."
 authors = [
   { name = "scepticalrabbit (Lloyd Fletcher)", email = "thescepticalrabbit@gmail.com" },
@@ -30,6 +30,18 @@ dependencies = [
 [project.urls]
 "Repository" = "https://github.com/Computer-Aided-Validation-Laboratory/riley-raster"
 
+[project.optional-dependencies]
+dev = [
+  "build",
+  "twine",
+  "ziglang",
+  "cython",
+]
+docs = [
+  "sphinx>=8.0.0",
+  "shibuya>=2024.0.0",
+]
+
 [dependency-groups]
 dev = [
   "build",
@@ -37,6 +49,10 @@ dev = [
   "ziglang==0.16.0",
   "cython",
   "opencv-python-headless",
+]
+docs = [
+  "sphinx>=8.0.0",
+  "shibuya>=2024.0.0",
 ]
 
 [tool.setuptools.packages.find]

@@ -3,7 +3,7 @@ const std = @import("std");
 const riley_version = std.SemanticVersion{
     .major = 2026,
     .minor = 10,
-    .patch = 2,
+    .patch = 3,
 };
 
 const RunEntry = struct {
