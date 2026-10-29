@@ -22,12 +22,28 @@ dependencies = [
 [project.urls]
 "Repository" = "https://github.com/Computer-Aided-Validation-Laboratory/riley-raster"
 
+[project.optional-dependencies]
+dev = [
+  "build",
+  "twine",
+  "ziglang",
+  "cython",
+]
+docs = [
+  "sphinx>=8.0.0",
+  "shibuya>=2024.0.0",
+]
+
 [dependency-groups]
 dev = [
   "build",
   "twine",
   "ziglang",
   "cython",
+]
+docs = [
+  "sphinx>=8.0.0",
+  "shibuya>=2024.0.0",
 ]
 
 [tool.setuptools.packages.find]
