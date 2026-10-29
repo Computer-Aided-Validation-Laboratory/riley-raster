@@ -1,0 +1,137 @@
+// --------------------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2026 James Panayis
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: James Panayis
+// --------------------------------------------------------------------------------------
+const std = @import("std");
+
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const expected_config = @import("expected_speckle_config.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const meshpipeline = @import("../riley/zig/meshpipeline.zig");
+const speckleconfig = @import("../riley/zig/speckleconfig.zig");
+const speckleops = @import("../riley/zig/speckleops.zig");
+const ndarray = @import("../riley/zig/ndarray.zig");
+
+const F = buildconfig.F;
+const Params = speckleops.Speckle2DParams;
+const Pattern = speckleconfig.Pattern;
+const Evaluator = speckleconfig.Evaluator;
+const fixture_params: Params = .{
+    .seed = 12345,
+    .cells_per_uv = .{ 4.0, 3.0 },
+    .occupancy = 0.8,
+    .radius_mean = 0.3,
+};
+
+test "speckle catalogues contain distinct generation and sampling variants" {
+    try std.testing.expectEqual(@as(usize, 54), speckleconfig.generationConfigs(true).len);
+    try std.testing.expectEqual(@as(usize, 31), speckleconfig.sampleConfigs(true).len);
+    for (speckleconfig.generationConfigs(true), 0..) |config, index| {
+        for (speckleconfig.generationConfigs(true)[0..index]) |previous| {
+            try std.testing.expect(!std.meta.eql(previous, config));
+        }
+    }
+}
+
+test "runtime speckle patterns prepare their production resources" {
+    try std.testing.expectEqual(
+        expected_config.enable_all_evaluators,
+        buildconfig.enable_all_evaluators,
+    );
+    try std.testing.expectEqual(
+        expected_config.speckle_mask_samples_per_cell,
+        buildconfig.speckle_mask_samples_per_cell,
+    );
+    var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+    var connect = [_]usize{ 0, 1, 2 };
+    var uv_values = [_]F{ 0, 0, 1, 0, 0, 1 };
+    const uvs = try ndarray.NDArray(F).init(std.testing.allocator, &uv_values, &.{ 3, 2 });
+    defer uvs.deinit(std.testing.allocator);
+    const mesh_input = meshpipeline.MeshInput{
+        .mesh_type = .tri3,
+        .coords = meshio.Coords.init(&coords, 3),
+        .connect = meshio.Connect.init(&connect, 1, 3),
+        .disp = null,
+        .shader = .{ .speckle = .{ .uvs = uvs } },
+    };
+    const automatic = [_]struct {
+        pattern: Pattern,
+        softness: F = 0.0,
+        evaluator: Evaluator,
+    }{
+        .{ .pattern = .disk, .evaluator = .classified_indexed },
+        .{ .pattern = .disk, .softness = 0.03, .evaluator = .cell_binned },
+        .{ .pattern = .gaussian, .evaluator = .cell_binned },
+        .{ .pattern = .perlin, .evaluator = .gradient_lattice },
+    };
+    for (automatic) |case| {
+        var params = fixture_params;
+        params.pattern = case.pattern;
+        params.edge_softness = case.softness;
+        try expectPreparedResources(std.testing.allocator, &mesh_input, params, case.evaluator, if (case.pattern == .perlin) null else .nine);
+    }
+
+    if (comptime !buildconfig.enable_all_evaluators) return;
+    for (speckleconfig.generationConfigs(true)) |config| {
+        var params = fixture_params;
+        params.pattern = config.pattern() orelse .disk;
+        params.edge_softness = if (config.edges() == .soft) 0.03 else 0.0;
+        params.evaluator = std.meta.activeTag(config);
+        params.neighbor_count = config.neighborhood();
+        try expectPreparedResources(
+            std.testing.allocator,
+            &mesh_input,
+            params,
+            std.meta.activeTag(config),
+            config.neighborhood(),
+        );
+    }
+    var direct = fixture_params;
+    direct.evaluator = .direct_fixed;
+    try expectPreparedResources(std.testing.allocator, &mesh_input, direct, .direct_fixed, .one);
+}
+
+fn expectPreparedResources(
+    outer_alloc: std.mem.Allocator,
+    base_input: *const meshpipeline.MeshInput,
+    params: Params,
+    evaluator: Evaluator,
+    neighbors: ?speckleconfig.Neighborhood,
+) !void {
+    const expected = try speckleconfig.resolve(
+        true,
+        params.pattern,
+        evaluator,
+        neighbors,
+        if (params.edge_softness > 0.0) .soft else .hard,
+    );
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer arena.deinit();
+    var mesh_input = base_input.*;
+    mesh_input.shader.speckle.params = params;
+    const mesh_static = try meshpipeline.initMeshStatic(arena.allocator(), &mesh_input);
+    const resources = switch (mesh_static.shader) {
+        .speckle => |*shader| &shader.resources,
+        else => return error.UnexpectedShaderVariant,
+    };
+    try std.testing.expect(resources.kernel_index != null);
+    try std.testing.expectEqualDeep(
+        speckleconfig.canonicalizeSampleConfig(expected),
+        speckleops.kernel_configs[resources.kernel_index.?],
+    );
+    const expected_backing: std.meta.Tag(speckleops.Backing) = switch (evaluator) {
+        .gradient_lattice => .perlin,
+        .list_naive => .list,
+        .list_indexed => .strip_list,
+        .cell_binned => .cell_binned,
+        .classified_indexed => .classified,
+        .direct_fixed => .direct_fixed,
+        .mask_1bit, .mask_u8 => .mask,
+        .cell_hash, .mock => .none,
+    };
+    try std.testing.expectEqual(expected_backing, std.meta.activeTag(resources.data));
+}

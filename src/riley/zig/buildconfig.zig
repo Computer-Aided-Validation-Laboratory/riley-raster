@@ -2,12 +2,14 @@
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2026 James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const root = @import("root");
+const speckleconfig = @import("speckleconfig.zig");
 
 const build_options = if (@hasDecl(root, "build_options"))
     root.build_options
@@ -48,6 +50,16 @@ pub const Scalar = Scal;
 pub const default_simd = parseSimd(build_options.simd);
 pub const default_newton_solver_mode =
     parseNewtonSolverMode(build_options.newton_solver);
+pub const enable_all_evaluators: bool = if (@hasDecl(build_options, "enable_all_evaluators"))
+    build_options.enable_all_evaluators
+else
+    false;
+pub const speckle_mask_resolution: speckleconfig.MaskResolution = if (@hasDecl(build_options, "speckle_mask_samples_per_cell"))
+    std.enums.fromInt(speckleconfig.MaskResolution, build_options.speckle_mask_samples_per_cell) orelse
+        @compileError("speckle_mask_samples_per_cell must be 8, 12, or 16.")
+else
+    speckleconfig.default_mask_resolution;
+pub const speckle_mask_samples_per_cell: comptime_int = @intFromEnum(speckle_mask_resolution);
 
 pub const config = configForPrecision(F);
 

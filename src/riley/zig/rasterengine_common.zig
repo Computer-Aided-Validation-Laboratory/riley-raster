@@ -2,9 +2,10 @@
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2026 James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
@@ -36,6 +37,7 @@ const TexPrepared = shaderops.TexPrepared;
 const FuncPrepared = shaderops.FuncPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
+const speckle = @import("speckleops.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 
 // --------------------------------------------------------------------------------------
@@ -395,7 +397,7 @@ pub fn rasterTileCore(
                         @intCast(s.elem_field.dims[2]),
                     .tex_u8, .tex_u16, .tex_f => 1,
                     .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
-                    .func => 1,
+                    .func, .speckle => 1,
                     .func_rgb => 3,
                 };
 
@@ -621,44 +623,43 @@ pub fn rasterTileCore(
                             subpx_scratch,
                         );
                     },
+                    .speckle => |*shader| {
+                        @setEvalBranchQuota(100_000);
+                        var shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                        shader_buf.loadFuncCoords(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
+                        // Resolve the prepared evaluator once per overlap, outside sample loops.
+                        const index = shader.resources.kernel_index orelse
+                            return error.MissingPreparedSpeckleKernel;
+                        shaded_px += try switch (index) {
+                            inline 0...speckle.kernel_configs.len - 1 => |kernel_index| blk: {
+                                const SK = shadekerns.SpeckleKernel(N, kernel_index);
+                                break :blk RasterBackend.RasterEngine(
+                                    GK,
+                                    SK,
+                                    shaderops.SpecklePrepared,
+                                    root_class,
+                                ).rasterElemInTile(
+                                    report_mode,
+                                    ctx_rast,
+                                    ctx_report,
+                                    tile,
+                                    ov,
+                                    coords,
+                                    hull,
+                                    shader,
+                                    &shader_buf,
+                                    subpx_scratch,
+                                );
+                            },
+                            else => error.InvalidPreparedSpeckleKernel,
+                        };
+                    },
                     .func => |*shader| {
-                        const SK = shadekerns.FuncKernel(N, 1);
-                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
-                        switch (shader.coord_mode) {
-                            .uv => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_uvs.?,
-                                    ov.elem_idx * 2 * N,
-                                    2,
-                                );
-                            },
-                            .world_reference => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_world_ref.?,
-                                    ov.elem_idx * 3 * N,
-                                    3,
-                                );
-                            },
-                            .world_deformed => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_world_def.?,
-                                    ov.elem_idx * 3 * N,
-                                    3,
-                                );
-                            },
-                            .para => {},
-                        }
-                        if (shader.elem_normals) |en| {
-                            const prep_idx = en.map[ov.elem_idx];
-                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                        }
-
-                        shaded_px += try RasterBackend.RasterEngine(
+                        shaded_px += try renderFunc(
+                            RasterBackend,
                             GK,
-                            SK,
-                            FuncPrepared,
+                            1,
                             root_class,
-                        ).rasterElemInTile(
                             report_mode,
                             ctx_rast,
                             ctx_report,
@@ -667,48 +668,15 @@ pub fn rasterTileCore(
                             coords,
                             hull,
                             shader,
-                            &local_shader_buf,
                             subpx_scratch,
                         );
                     },
                     .func_rgb => |*shader| {
-                        const SK = shadekerns.FuncKernel(N, 3);
-                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
-                        switch (shader.coord_mode) {
-                            .uv => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_uvs.?,
-                                    ov.elem_idx * 2 * N,
-                                    2,
-                                );
-                            },
-                            .world_reference => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_world_ref.?,
-                                    ov.elem_idx * 3 * N,
-                                    3,
-                                );
-                            },
-                            .world_deformed => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_world_def.?,
-                                    ov.elem_idx * 3 * N,
-                                    3,
-                                );
-                            },
-                            .para => {},
-                        }
-                        if (shader.elem_normals) |en| {
-                            const prep_idx = en.map[ov.elem_idx];
-                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                        }
-
-                        shaded_px += try RasterBackend.RasterEngine(
+                        shaded_px += try renderFunc(
+                            RasterBackend,
                             GK,
-                            SK,
-                            FuncPrepared,
+                            3,
                             root_class,
-                        ).rasterElemInTile(
                             report_mode,
                             ctx_rast,
                             ctx_report,
@@ -717,7 +685,6 @@ pub fn rasterTileCore(
                             coords,
                             hull,
                             shader,
-                            &local_shader_buf,
                             subpx_scratch,
                         );
                     },
@@ -741,6 +708,57 @@ pub fn rasterTileCore(
         .cam_duration_ns = cam_duration_ns,
         .elem_duration_ns = elem_duration_ns,
     };
+}
+
+fn renderFunc(
+    comptime RasterBackend: type,
+    comptime GK: type,
+    comptime C: usize,
+    comptime root_class: frontend.ElemRootClass,
+    comptime report_mode: ReportMode,
+    ctx_rast: frontend.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+    tile: elemtilebin.ActiveTile,
+    overlap: elemtilebin.OverlapBBox,
+    coords: *const NDArray(F),
+    hull: if (root_class == .multi_root) *const meshpipe.MultiRootHulls else ?*const NDArray(F),
+    shader: *const FuncPrepared,
+    subpx_scratch: *RasterBackend.SubpxScratchBuffs,
+) !u64 {
+    const N = GK.nodes_num;
+    var shader_buf: shaderops.LocalShaderBuff(N) = .{};
+    switch (shader.coord_mode) {
+        .uv => shader_buf.loadFuncCoords(shader.elem_uvs.?, overlap.elem_idx * 2 * N, 2),
+        .world_reference => shader_buf.loadFuncCoords(
+            shader.elem_world_ref.?,
+            overlap.elem_idx * 3 * N,
+            3,
+        ),
+        .world_deformed => shader_buf.loadFuncCoords(
+            shader.elem_world_def.?,
+            overlap.elem_idx * 3 * N,
+            3,
+        ),
+        .para => {},
+    }
+    if (shader.elem_normals) |normals| {
+        const prep_idx = normals.map[overlap.elem_idx];
+        shader_buf.loadNormals(normals.array, prep_idx * 3 * N);
+    }
+
+    const SK = shadekerns.FuncKernel(N, C);
+    return RasterBackend.RasterEngine(GK, SK, FuncPrepared, root_class).rasterElemInTile(
+        report_mode,
+        ctx_rast,
+        ctx_report,
+        tile,
+        overlap,
+        coords,
+        hull,
+        shader,
+        &shader_buf,
+        subpx_scratch,
+    );
 }
 
 // --------------------------------------------------------------------------------------
