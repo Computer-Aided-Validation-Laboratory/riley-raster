@@ -148,7 +148,7 @@ class Speckle2DParams:
     only points where ``distance**2 < radius**2``; zero-radius draws are empty.
 
     The Python/C binding uses the native defaults-only build. Hard disks use
-    ``classified-indexed``; soft disks and Gaussian blobs use ``list-indexed``;
+    ``classified-indexed``; soft disks and Gaussian blobs use ``cell-binned``;
     Perlin uses ``gradient-lattice``. These defaults evaluate the analytic
     patterns without texture sampling or coverage quantization.
     Evaluator and neighbor overrides are not exposed.
@@ -158,6 +158,8 @@ class Speckle2DParams:
     ``[-1, cells_per_uv + 1]`` must remain within
     ``[-2**45, 2**45]`` to retain sub-cell precision. Native resource generation
     also rejects patterns exceeding the selected evaluator's size limits.
+    Soft disks and Gaussian blobs have a 256 MiB native preparation budget;
+    excess raises ``RuntimeError`` containing ``SpeckleCellBinsTooLarge``.
 
     Construction does not validate these values.
     Invalid pattern identifiers raise ``ValueError`` during binding conversion.

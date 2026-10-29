@@ -108,7 +108,7 @@ shader = riley.SpeckleShader(
 ```
 
 Evaluators are selected automatically; see the
-[developer notes](./dev/README.md#procedural-generation-options) for native experiments.
+[developer notes](./dev/README.md#procedural-generation) for native experiments.
 
 ```shell
 zig build demo-procedural-sphere200 -Doptimize=ReleaseFast -- --pattern gaussian

@@ -108,83 +108,51 @@ zig build test-basic -Dprecision=f32 -Dsimd=on
 zig build test-basic -Dprecision=f32 -Dsimd=off
 ```
 
-### Procedural generation options
+## Procedural generation
 
-Speckles are a dedicated grayscale shader, not a function-shader builtin:
+Speckles use a dedicated grayscale shader with required UV coordinates:
 
 ```zig
 .shader = .{ .speckle = .{ .uvs = uvs, .params = .{ .seed = 42 } } }
 ```
 
-Python uses `SpeckleShader(uvs=uvs, params=Speckle2DParams(seed=42))`.
-UVs are required; RGB, normals, and coordinate-mode controls are not exposed.
-`SpeckleInput` becomes `SpeckleStatic` at mesh setup (gathered UVs and generated
-resources), then `SpecklePrepared` per frame (visible UVs and borrowed resources).
-Parameter/shape checks run at the input boundary; UV payload scans require full
-validation. Output transforms retain the arithmetic order
-`(sample * output_scale + output_offset) * scale_mul + scale_add`.
+The Python equivalent is `SpeckleShader(uvs=uvs, params=Speckle2DParams(seed=42))`.
+RGB, normals, and coordinate-mode controls are not supported. Output transforms
+apply in the order `(sample * output_scale + output_offset) * scale_mul + scale_add`.
 
-This replaces `FunctionShader` with the speckle builtin and
-`Speckle2DParams.to_func_shader_params()`; migrate callers rather than retaining
-that route. The C ABI uses shader tag 6 and dedicated speckle fields; rebuild
-native/Cython clients against the updated header. Other shader/builtin IDs are unchanged.
+### Configuration
 
-Native Zig `Speckle2DParams.neighbor_count` uses `Neighborhood` (`.one`, `.four`,
-`.nine`); build settings use `MaskResolution` (`.eight`, `.twelve`, `.sixteen`).
-Resolved `Config` is a tagged evaluator union encoding valid combinations. `-Denable-all-evaluators=true` enables native evaluator and
-neighborhood overrides; default builds reject explicit overrides. Hard/soft edges
-apply only to disks. Perlin has no dummy neighborhood, and mock resolution erases
-ignored controls after external validation. CLI neighborhoods remain numeric
-1/4/9; `-Dspeckle-mask-samples-per-cell` remains 8/12/16.
+`Speckle2DParams` resolves to a tagged `Config` that encodes valid evaluator,
+pattern, neighborhood, and edge combinations. Compatibility rules live in
+[speckleconfig.zig](../src/riley/zig/speckleconfig.zig).
+`-Denable-all-evaluators=true` enables native Zig evaluator and neighborhood
+overrides; default builds reject explicit overrides. Python/C use defaults only.
+Neighborhoods use `.one`, `.four`, or `.nine` in Zig and numeric 1/4/9 in the CLI.
+Non-mock Perlin rejects neighborhood overrides; hard/soft edges apply only to disks.
 
 | Pattern | Default evaluator | Native alternatives |
 | --- | --- | --- |
-| Hard disk | `classified-indexed` (9 neighbors) | Hash/list/cell-binned evaluators, `direct-fixed`, masks |
-| Soft disk | `list-indexed` | `cell-hash`, `list-naive`, cell-binned evaluators, `mask-u8` |
-| Gaussian | `list-indexed` | `cell-hash`, `list-naive`, cell-binned evaluators, `mask-u8` |
+| Hard disk | `classified-indexed` (9 neighbors) | `cell-hash`, `list-indexed`, `list-naive`, `cell-binned`, `direct-fixed`, masks |
+| Soft disk | `cell-binned` (9 neighbors) | `cell-hash`, `list-indexed`, `list-naive`, `mask-u8` |
+| Gaussian | `cell-binned` (9 neighbors) | `cell-hash`, `list-indexed`, `list-naive`, `mask-u8` |
 | Perlin | `gradient-lattice` | `cell-hash`, `mask-u8` |
 
+Native one/four-neighbour modes default to `list-indexed` for disks and Gaussians.
 All defaults preserve analytic coverage. Masks use nearest-grid sampling;
-`mask-u8` additionally quantizes coverage to bytes. `mock` is a raw arithmetic
-ablation for every pattern. Python/C expose only the defaults.
-Compatibility rules are defined in [speckleconfig.zig](../src/riley/zig/speckleconfig.zig).
+`mask-u8` also quantizes coverage to bytes. `mock` provides raw-arithmetic ablation.
+Defaults favor evaluation throughput with reused resources; `list-indexed` can be
+preferable for short runs or lower preparation/storage costs.
 
-The native catalogue has 117 distinct generators (12 equivalent mock
-configurations collapse to one); experimental sampling has 31 configurations.
-Default generation and sampling each have four configurations.
-Perlin records have null neighborhood, and irrelevant pattern/neighborhood/edge
-metadata may be null. The benchmark request still carries the requested pattern
-and echoes explicit mock neighborhoods for driver validation. Python and C retain
-flat parameters and default-only policy; their representations do not change.
-`-Dspeckle-mask-samples-per-cell=8|12|16` selects mask resolution (default 12),
-affecting explicit masks but not analytic field fidelity. Precision affects
-generation: a fixed seed does not guarantee identical f32/f64 results.
+`-Dspeckle-mask-samples-per-cell=8|12|16` selects mask/classification resolution
+(default 12), represented by `MaskResolution` in Zig. Classification resolution
+affects acceleration, not analytic field fidelity; masks remain approximations.
+A fixed seed does not guarantee identical f32/f64 results.
 
-The benchmark runner reads the native catalogue; use `--a classified-indexed`
-or `--b classified-indexed`, not historical numbered selectors. It supports
-`--patterns hard soft gaussian perlin`; `--perlin-threshold` and
-`--perlin-transition` select hard/smooth Perlin cases without a neighborhood override.
+### Benchmarking
 
-The experimental exact CSR selectors `cell-binned`, `cell-binned-2`,
-`cell-binned-3`, `cell-binned-9`, `cell-binned-12`, `cell-binned-26`,
-`cell-binned-29`, and `cell-binned-35` support hard disks,
-soft disks and Gaussians with 1/4/9 neighbours. They do not change any default.
-The baseline duplicates full center/radius records into procedural-cell lists.
-`-2` specializes fixed radii to center records; `-3` also reduces fixed Gaussian
-squared distances before one exponential. `-9` uses split X/Y center arrays for
-fixed radii. `-12` additionally caches exactly rounded outer-radius-squared and
-sigma-squared coefficients for variable Gaussians. Other cases retain full records.
-`-26` uses directly constructed nine-slot SoA cells with byte counts when radius
-jitter is zero; variable radii retain `-12`'s records. Its coordinate planes share
-one allocation, with a separate byte-count allocation (two allocations total),
-preserving the incumbent tagged-backing size. This trades more
-fixed-resource memory for lower setup/evaluation time; `-12` remains available
-for compact CSR storage. `-29` adds a paired fixed-Gaussian distance traversal; `-35` computes those pairs
-with explicit two-wide vectors. Both retain `-26`'s preparation, fixed-disk path,
-and exactly rounded variable-Gaussian coefficient records. Their owned memory is
-identical to `-26`. All eight share three sampling kernels; neighborhood and
-placement remain setup choices, and runtime layout dispatch happens before the
-SIMD lane adapter.
+`scripts/bench_speckle.py` reads the native evaluator catalogue and supports
+`--patterns hard soft gaussian perlin`. Use `--perlin-threshold` and
+`--perlin-transition` to select hard/smooth Perlin cases.
 
 For explicit non-Cartesian benchmark matrices, pass `--case-file cases.json`.
 It replaces profile cases (not repeats/statistics) and rejects explicit factor
@@ -199,69 +167,44 @@ Per-case radii are passed to and validated against native metadata. For example:
 [{"threads":1,"scene":"plate","pattern":"gaussian","radius":0.4,"jitter":0,"occupancy":1,"neighbors":9,"softness":0}]
 ```
 
-The CSR campaign's approved ten-case matrix, frozen binaries, complete comparison
-reports, decisions and interruption record are in
-[`perf/csr-cell-binning-20261027-sol/`](../perf/csr-cell-binning-20261027-sol/).
-A local compact-metadata follow-up, including a fresh recheck of the historical
-byte-count design and four current-source attempts, is recorded in
-[`perf/csr-byte-count-followup-20261027-sol/REPORT.md`](../perf/csr-byte-count-followup-20261027-sol/REPORT.md).
-The historical benefit reproduced in its frozen build, but no new design was
-promoted over the then-current `cell-binned-12`.
-The subsequent fixed-stride split follow-up accepted the implementation now named
-`cell-binned-26` (historically `cell-binned-13`; historical records retain that name);
-its seven fixed / three variable case evidence, resource tradeoffs and verification
-are in [`perf/csr-fixed-stride-followup-20261027-sol/REPORT.md`](../perf/csr-fixed-stride-followup-20261027-sol/REPORT.md).
-The rename has no arithmetic changes and no compatibility alias. All previous
-accepted predecessor selectors and defaults remain unchanged. The new coefficient
-fixed-stride campaign and unique candidate registry are recorded in
-[`perf/csr-fixed-stride-coeff-campaign-20261028-sol/REPORT.md`](../perf/csr-fixed-stride-coeff-campaign-20261028-sol/REPORT.md).
-That speed-focused campaign retained the accepted critical chain `-26` → `-29` →
-`-35`; rejected/invalid investigation IDs are never reused. The fresh ten-case
-final comparison has descriptive combined GM 0.98660 versus `-26`, with four
-Holm-significant evaluation wins and no losses. Defaults remain unchanged.
-
-#### Implementation constraints
+### Implementation constraints
 
 Generation and sampling live in [speckleops.zig](../src/riley/zig/speckleops.zig).
-`Resources.init(allocator, params)` replaces `generateResources`; its `.data`
-tagged union has exactly one active backing variant: `none`, `list`,
-`strip_list`, `cell_binned`, `classified`, `direct_fixed`, `mask`, or `perlin`. `deinit(allocator)`
-releases the active allocation and resets the value. Resources own no allocator;
-the static shader owns the resource value, and `Prepared.resources: *const Resources`
-is borrowed from that stable static shader for frame/worker use. Frames do not
-deinitialize it. Speckle parameters remain in the shader input/static shader,
-not in `Resources`. Finite UVs clamp to `[0,1]` before procedural scaling.
+Mesh setup turns `SpeckleInput` into `SpeckleStatic`, which owns gathered UVs and
+resources initialized by `Resources.init(allocator, params)`. Per-frame
+`SpecklePrepared` borrows resources through a stable `*const Resources`; frames
+and workers do not deinitialize them. Parameters reside in the shader, not in
+`Resources`. `Resources.deinit(allocator)` frees the active tagged backing and
+resets it; the resource does not retain an allocator.
 
-Input validation happens before render allocations: fast validation checks
-metadata, shapes, and parameters; full validation additionally scans array
-payloads, including UV finiteness and connectivity indices. Resource initialization
-is itself a checked preparation boundary for direct low-level callers.
+Fast input validation checks metadata, shapes, and parameters before render
+allocations. Full validation also scans UVs and connectivity payloads.
+`Resources.init` is a checked preparation boundary for low-level callers.
+Finite UVs clamp to `[0,1]` before procedural scaling.
 
-- `classified-indexed` stores nine candidate bits and a foreground flag per
-  procedural-aligned microcell. Its 256 MiB state limit returns
+- **`classified-indexed`:** procedural-aligned microcells store nine candidate
+  bits and a foreground flag. Certified cells avoid disk tests; other samples
+  test only candidate owners. The 256 MiB state limit returns
   `SpeckleClassificationTooLarge` on excess or checked size overflow.
-- CSR cell-binned evaluators count eligible overlaps, prefix-sum offsets, then assign
-  contiguous duplicated records. `-26` directly fills at most nine centers per cell
-  for zero jitter, retaining only two coordinate planes and byte counts, with no
-  temporary CSR/conversion allocations. Closed-cell nearest-point tests conservatively
-  include touching support; runtime retains strict disk/Gaussian predicates and
-  soft/max/color arithmetic. Finite inactive SIMD lanes retain analytic-list
-  behavior; nonfinite lanes return background. Empty-cell zero-coverage mapping
-  is arithmetic, preserving existing list signed-zero behavior.
-  Their 256 MiB preparation budget includes CSR offsets, temporary cursors, records,
-  and simultaneous AoS/SoA conversion storage where applicable; `-26`'s fixed
-  path budgets its complete final padded backing. The existing 10-million owner-cell
-  limit also applies. Excess/checked overflow returns `SpeckleCellBinsTooLarge`,
-  with no fallback; in-budget allocation failures propagate and clean up.
-- `gradient-lattice` stores shared byte gradient IDs, including outer corners at
-  UV 1. Above its 256 MiB budget, or on checked size overflow, it uses exact
-  on-demand hashing. In-budget allocation failures propagate. Perlin mask setup
-  reuses this evaluator with unit colors before quantizing coverage.
-- Exactness is bitwise agreement with the independent reference at the same
-  precision/build, under strict round-to-nearest with gradual underflow. Preserve
-  gradient expressions, interpolation order, transition division, and color
-  arithmetic; algebraically equivalent rewrites can change rounding or signed zero.
+- **`cell-binned`:** setup bins touching support into procedural cells. Fixed
+  radii use nine-slot X/Y planes and byte counts; variable radii use CSR records.
+  Fixed Gaussians reduce paired squared distances before one exponential;
+  variable Gaussians cache rounded support-squared and sigma-squared coefficients.
+  Layout dispatch precedes the SIMD lane adapter. The 256 MiB preparation budget
+  includes temporary storage, and the owner-cell limit is ten million.
+  Excess or checked overflow returns `SpeckleCellBinsTooLarge`, without fallback.
+- **`gradient-lattice`:** shared byte gradient IDs include outer corners at UV 1.
+  A cache exceeding 256 MiB, or checked size overflow, selects exact on-demand
+  hashing. Perlin mask setup samples this evaluator with unit colors, then
+  quantizes coverage.
 
+In-budget allocation failures propagate. Exactness means bitwise agreement with
+independent references at the same precision/build under strict round-to-nearest
+with gradual underflow. Preserve gradient expressions, interpolation order,
+transition division, and color arithmetic: algebraically equivalent rewrites can
+change rounding or signed zero. Cell-binned finite inactive SIMD lanes retain
+analytic-list behavior; nonfinite lanes return background. Empty-cell coverage
+uses the arithmetic color mapping rather than returning the stored background.
 
 ## Benchmark Binaries
 The benchmark entry points exposed through `zig build` are:
@@ -289,7 +232,7 @@ zig build install-bench-bins -Doptimize=ReleaseFast --prefix .
 The installed binaries land in `./bin/`.
 
 ## Performance Regression Scripts
-The older performance regression workflow uses the scripts in `./scripts/` with reference data under `./perf/`.
+Performance regression scripts in `./scripts/` compare against reference data under `./perf/`.
 
 Compile the standard SIMD benchmark binaries:
 
@@ -321,7 +264,7 @@ python ./scripts/test_perf_sphere2000zoom.py
 These scripts support perf profiles such as `1thread` and `4thread` through their `--profile` flag.
 
 ## Benchmark Experiment Orchestration
-For the newer raster-performance study workflow, use:
+For raster-performance experiments, use:
 
 - `scripts/compile_perf_all.py`
 - `scripts/bench_perf_raster.py`
@@ -380,13 +323,13 @@ Using the experimental benchmark binary (`-Denable-all-evaluators=true`):
 
 ```shell
 python3 scripts/bench_speckle.py --out out/texture_vs_disk --profile full-render --a texture --b classified-indexed --texture texture/speckle_mono.bmp --patterns hard --neighbors 9
-python3 scripts/bench_speckle.py --out out/texture_vs_gaussian --profile full-render --a texture --b list-indexed --texture texture/speckle_mono.bmp --patterns gaussian --neighbors 9
+python3 scripts/bench_speckle.py --out out/texture_vs_gaussian --profile full-render --a texture --b cell-binned --texture texture/speckle_mono.bmp --patterns gaussian --neighbors 9
 ```
 
 Use `--profile full` for static-geometry evaluation instead of production rendering.
 The integrated multiroot pipeline reports workload IDs
-`static-geometry-depth-accumulator-v2` and `production-raster-advanced-memory-v2`;
-rerun baselines rather than comparing their timings directly with historical v1 runs.
+`static-geometry-depth-accumulator-v2` and `production-raster-advanced-memory-v2`.
+Compare timings only between matching workload IDs and configurations.
 Each comparison needs a fresh output directory. The texture is frozen, not regenerated
 to match procedural factors, so cross-variant output differences are expected;
 do not use `--require-equal-output` for these comparisons.

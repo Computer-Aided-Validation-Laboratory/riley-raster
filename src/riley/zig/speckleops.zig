@@ -235,8 +235,6 @@ pub const GaussianDiskCoefficients = struct { center: [2]F, outer2: F, sigma2: F
 
 pub const CellBinnedRecords = union(enum) {
     disks: []const SpeckleDisk2D,
-    centers: []const [2]F,
-    soa: struct { xs: []const F, ys: []const F },
     gaussian: []const GaussianDiskCoefficients,
     // One allocation contains X then Y planes; two slices keep the tagged value compact.
     strided: struct { coordinates: []const F, counts: []const u8 },
@@ -269,8 +267,6 @@ pub const CellBinnedSpeckle2D = struct {
     pub fn byteSize(self: @This()) usize {
         return self.offsets.len * @sizeOf(usize) + switch (self.records) {
             .disks => |records| records.len * @sizeOf(SpeckleDisk2D),
-            .centers => |records| records.len * @sizeOf([2]F),
-            .soa => |records| (records.xs.len + records.ys.len) * @sizeOf(F),
             .gaussian => |records| records.len * @sizeOf(GaussianDiskCoefficients),
             .strided => |records| records.coordinates.len * @sizeOf(F) + records.counts.len,
         };
@@ -278,10 +274,6 @@ pub const CellBinnedSpeckle2D = struct {
 
     fn deinit(self: @This(), allocator: std.mem.Allocator) void {
         switch (self.records) {
-            .soa => |records| {
-                allocator.free(records.xs);
-                allocator.free(records.ys);
-            },
             .strided => |records| {
                 allocator.free(records.coordinates);
                 allocator.free(records.counts);
@@ -294,9 +286,8 @@ pub const CellBinnedSpeckle2D = struct {
 
 const max_cell_binned_bytes = 256 * 1024 * 1024;
 
-fn checkCellBinnedPreparationBudget(index_bytes: usize, record_bytes: usize, comptime soa: bool, budget: usize) !void {
-    const live_records = std.math.mul(usize, record_bytes, if (soa) 2 else 1) catch return error.SpeckleCellBinsTooLarge;
-    const total = std.math.add(usize, index_bytes, live_records) catch return error.SpeckleCellBinsTooLarge;
+fn checkCellBinnedPreparationBudget(index_bytes: usize, record_bytes: usize, budget: usize) !void {
+    const total = std.math.add(usize, index_bytes, record_bytes) catch return error.SpeckleCellBinsTooLarge;
     if (total > budget) return error.SpeckleCellBinsTooLarge;
 }
 
@@ -822,7 +813,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 },
                 .list_naive => .{ .list = try generateSpeckleList2D(outer_alloc, params) },
                 .list_indexed => .{ .strip_list = try generateStripSpeckleList2D(outer_alloc, params) },
-                .cell_binned, .cell_binned_2, .cell_binned_3, .cell_binned_9, .cell_binned_12, .cell_binned_26, .cell_binned_35, .cell_binned_29 => .{ .cell_binned = try generateCellBinnedSpeckle2D(outer_alloc, params) },
+                .cell_binned => .{ .cell_binned = try generateCellBinnedSpeckle2D(outer_alloc, params) },
                 .classified_indexed => .{
                     .classified = try generateClassifiedSpeckle2D(outer_alloc, params),
                 },
@@ -850,7 +841,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 .cell_hash => evalSpeckle2DImpl(soft_edges, u, v, params),
                 .list_naive => evalSpeckleList2DNaiveImpl(soft_edges, u, v, resources.data.list),
                 .list_indexed => evalStripSpeckleList2DImpl(soft_edges, u, v, resources.data.strip_list),
-                .cell_binned, .cell_binned_2, .cell_binned_3, .cell_binned_9, .cell_binned_12, .cell_binned_26, .cell_binned_35, .cell_binned_29 => evalCellBinnedSpeckle2D(soft_edges, u, v, resources.data.cell_binned),
+                .cell_binned => evalCellBinnedSpeckle2D(soft_edges, u, v, resources.data.cell_binned),
                 .classified_indexed => evalClassifiedIndexedSpeckle2D(.{ u, v }, resources.data.classified),
                 .direct_fixed => evalDirectFixedSpeckle2D(.{ u, v }, resources.data.direct_fixed),
                 .mask_1bit, .mask_u8 => evalSpeckleMask2D(.{ u, v }, resources.data.mask),
@@ -888,13 +879,11 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     if (strip.centers.len != 0) break :blk evalSpeckleSIMDImpl(soft_edges, evalFixedStripSpeckleList2DImpl, u, v, strip, strip.params.background);
                     break :blk evalSpeckleSIMDImpl(soft_edges, evalGeneralStripSpeckleList2DImpl, u, v, strip, strip.params.background);
                 },
-                .cell_binned, .cell_binned_2, .cell_binned_3, .cell_binned_9, .cell_binned_12, .cell_binned_26, .cell_binned_35, .cell_binned_29 => blk: {
+                .cell_binned => blk: {
                     const binned = resources.data.cell_binned;
                     break :blk switch (binned.records) {
                         .disks => evalSpeckleSIMDImpl(soft_edges, evalFullCellBinnedSpeckle2D, u, v, binned, binned.params.background),
-                        .centers => evalSpeckleSIMDImpl(soft_edges, evalFixedCellBinnedSpeckle2D, u, v, binned, binned.params.background),
-                        .soa => evalSpeckleSIMDImpl(soft_edges, evalSoACellBinnedSpeckle2D, u, v, binned, binned.params.background),
-                        .strided => if (speckle_shape == .gaussian and binned.params.evaluator == .cell_binned_35) evalSpeckleSIMDImpl(soft_edges, evalVectorPairCellBinnedSpeckle2D, u, v, binned, binned.params.background) else if (speckle_shape == .gaussian and binned.params.evaluator == .cell_binned_29) evalSpeckleSIMDImpl(soft_edges, evalPairedCellBinnedSpeckle2D, u, v, binned, binned.params.background) else evalSpeckleSIMDImpl(soft_edges, evalStridedCellBinnedSpeckle2D, u, v, binned, binned.params.background),
+                        .strided => evalSpeckleSIMDImpl(soft_edges, evalStridedCellBinnedSpeckle2D, u, v, binned, binned.params.background),
                         .gaussian => evalSpeckleSIMDImpl(soft_edges, evalGaussianCellBinnedSpeckle2D, u, v, binned, binned.params.background),
                     };
                 },
@@ -1106,16 +1095,8 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         fn generateCellBinnedSpeckle2D(outer_alloc: std.mem.Allocator, params: Speckle2DParams) !CellBinnedSpeckle2D {
-            if (evaluator == .cell_binned) return generateCellBinnedRecords(.disks, outer_alloc, params);
-            if (params.radius_jitter == 0) {
-                if (evaluator == .cell_binned_26 or evaluator == .cell_binned_29 or evaluator == .cell_binned_35) return generateCellBinnedRecords(.strided, outer_alloc, params);
-                return if (evaluator == .cell_binned_9 or evaluator == .cell_binned_12)
-                    generateCellBinnedRecords(.soa, outer_alloc, params)
-                else
-                    generateCellBinnedRecords(.centers, outer_alloc, params);
-            }
-            if ((evaluator == .cell_binned_12 or evaluator == .cell_binned_26 or evaluator == .cell_binned_29 or evaluator == .cell_binned_35) and speckle_shape == .gaussian)
-                return generateCellBinnedRecords(.gaussian, outer_alloc, params);
+            if (params.radius_jitter == 0) return generateCellBinnedRecords(.strided, outer_alloc, params);
+            if (speckle_shape == .gaussian) return generateCellBinnedRecords(.gaussian, outer_alloc, params);
             return generateCellBinnedRecords(.disks, outer_alloc, params);
         }
 
@@ -1124,7 +1105,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         fn CellBinnedRecord(comptime layout: CellBinnedLayout) type {
             return switch (layout) {
                 .disks => SpeckleDisk2D,
-                .centers, .soa, .strided => [2]F,
+                .strided => [2]F,
                 .gaussian => GaussianDiskCoefficients,
             };
         }
@@ -1138,7 +1119,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             if (layout == .strided) {
                 const slots = std.math.mul(usize, bounds.count, 9) catch return error.SpeckleCellBinsTooLarge;
                 const center_bytes = std.math.mul(usize, slots, 2 * @sizeOf(F)) catch return error.SpeckleCellBinsTooLarge;
-                try checkCellBinnedPreparationBudget(bounds.count, center_bytes, false, max_cell_binned_bytes);
+                try checkCellBinnedPreparationBudget(bounds.count, center_bytes, max_cell_binned_bytes);
                 const counts = try outer_alloc.alloc(u8, bounds.count);
                 errdefer outer_alloc.free(counts);
                 const coordinates = try outer_alloc.alloc(F, slots * 2);
@@ -1166,23 +1147,12 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 offsets[ii + 1] = std.math.add(usize, offsets[ii], count) catch return error.SpeckleCellBinsTooLarge;
             }
             const record_bytes = std.math.mul(usize, offsets[bounds.count], @sizeOf(Record)) catch return error.SpeckleCellBinsTooLarge;
-            try checkCellBinnedPreparationBudget(index_bytes, record_bytes, layout == .soa, max_cell_binned_bytes);
+            try checkCellBinnedPreparationBudget(index_bytes, record_bytes, max_cell_binned_bytes);
             const records = try outer_alloc.alloc(Record, offsets[bounds.count]);
             errdefer outer_alloc.free(records);
             @memset(cursors, 0);
             assignCellBinnedDisks(true, layout, params, owners, bounds, cursors, offsets, records);
-            const stored: CellBinnedRecords = if (layout == .soa) blk: {
-                const xs = try outer_alloc.alloc(F, records.len);
-                errdefer outer_alloc.free(xs);
-                const ys = try outer_alloc.alloc(F, records.len);
-                for (xs, ys, records) |*x, *y, center| {
-                    x.* = center[0];
-                    y.* = center[1];
-                }
-                outer_alloc.free(records);
-                break :blk .{ .soa = .{ .xs = xs, .ys = ys } };
-            } else @unionInit(CellBinnedRecords, @tagName(layout), records);
-            return .{ .params = params, .offsets = offsets, .records = stored, .dims = bounds.dims };
+            return .{ .params = params, .offsets = offsets, .records = @unionInit(CellBinnedRecords, @tagName(layout), records), .dims = bounds.dims };
         }
 
         fn assignCellBinnedDisks(comptime assign: bool, comptime layout: CellBinnedLayout, params: Speckle2DParams, owners: SpeckleCellBounds, bounds: SpeckleCellBounds, cursors: if (layout == .strided) []u8 else []usize, offsets: []const usize, records: if (layout == .strided) struct { xs: []F, ys: []F } else []CellBinnedRecord(layout)) void {
@@ -1218,7 +1188,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                                     const target = offsets[cell] + cursors[cell];
                                     records[target] = switch (layout) {
                                         .disks => disk,
-                                        .centers, .soa, .strided => disk.center,
+                                        .strided => disk.center,
                                         .gaussian => blk: {
                                             const sigma = disk.radius / 3.0;
                                             break :blk .{ .center = disk.center, .outer2 = disk.radius * disk.radius, .sigma2 = sigma * sigma };
@@ -1236,44 +1206,25 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         fn evalCellBinnedSpeckle2D(comptime soft_edges: bool, u: F, v: F, binned: CellBinnedSpeckle2D) F {
             return switch (binned.records) {
                 .disks => evalFullCellBinnedSpeckle2D(soft_edges, u, v, binned),
-                .centers => evalFixedCellBinnedSpeckle2D(soft_edges, u, v, binned),
-                .soa => evalSoACellBinnedSpeckle2D(soft_edges, u, v, binned),
-                .strided => if (speckle_shape == .gaussian and binned.params.evaluator == .cell_binned_35) evalVectorPairCellBinnedSpeckle2D(soft_edges, u, v, binned) else if (speckle_shape == .gaussian and binned.params.evaluator == .cell_binned_29) evalPairedCellBinnedSpeckle2D(soft_edges, u, v, binned) else evalStridedCellBinnedSpeckle2D(soft_edges, u, v, binned),
+                .strided => evalStridedCellBinnedSpeckle2D(soft_edges, u, v, binned),
                 .gaussian => evalGaussianCellBinnedSpeckle2D(soft_edges, u, v, binned),
             };
         }
 
         // Wrappers resolve layout before entering the shared finite-lane SIMD adapter.
         fn evalFullCellBinnedSpeckle2D(comptime soft_edges: bool, u: F, v: F, binned: CellBinnedSpeckle2D) F {
-            return evalCellBinnedRecords(0, soft_edges, .disks, false, u, v, binned);
-        }
-
-        fn evalFixedCellBinnedSpeckle2D(comptime soft_edges: bool, u: F, v: F, binned: CellBinnedSpeckle2D) F {
-            if (binned.params.evaluator == .cell_binned_3) return evalCellBinnedRecords(0, soft_edges, .centers, true, u, v, binned);
-            return evalCellBinnedRecords(0, soft_edges, .centers, false, u, v, binned);
-        }
-
-        fn evalSoACellBinnedSpeckle2D(comptime soft_edges: bool, u: F, v: F, binned: CellBinnedSpeckle2D) F {
-            return evalCellBinnedRecords(0, soft_edges, .soa, true, u, v, binned);
+            return evalCellBinnedRecords(soft_edges, .disks, u, v, binned);
         }
 
         fn evalStridedCellBinnedSpeckle2D(comptime soft_edges: bool, u: F, v: F, binned: CellBinnedSpeckle2D) F {
-            return evalCellBinnedRecords(0, soft_edges, .strided, true, u, v, binned);
-        }
-
-        fn evalPairedCellBinnedSpeckle2D(comptime soft_edges: bool, u: F, v: F, binned: CellBinnedSpeckle2D) F {
-            return evalCellBinnedRecords(1, soft_edges, .strided, true, u, v, binned);
-        }
-
-        fn evalVectorPairCellBinnedSpeckle2D(comptime soft_edges: bool, u: F, v: F, binned: CellBinnedSpeckle2D) F {
-            return evalCellBinnedRecords(2, soft_edges, .strided, true, u, v, binned);
+            return evalCellBinnedRecords(soft_edges, .strided, u, v, binned);
         }
 
         fn evalGaussianCellBinnedSpeckle2D(comptime soft_edges: bool, u: F, v: F, binned: CellBinnedSpeckle2D) F {
-            return evalCellBinnedRecords(0, soft_edges, .gaussian, false, u, v, binned);
+            return evalCellBinnedRecords(soft_edges, .gaussian, u, v, binned);
         }
 
-        fn evalCellBinnedRecords(comptime paired: u2, comptime soft_edges: bool, comptime layout: CellBinnedLayout, comptime nearest: bool, u: F, v: F, binned: CellBinnedSpeckle2D) F {
+        fn evalCellBinnedRecords(comptime soft_edges: bool, comptime layout: CellBinnedLayout, u: F, v: F, binned: CellBinnedSpeckle2D) F {
             const params = binned.params;
             if (params.foreground == params.background) return params.background;
             const proc_x = @max(0.0, @min(1.0, u)) * params.cells_per_uv[0];
@@ -1286,43 +1237,32 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             var coverage: F = 0.0;
             var nearest2: F = std.math.inf(F);
             var index = range[0];
-            if (comptime paired != 0) {
+            if (comptime layout == .strided and speckle_shape == .gaussian) {
                 const coordinates = binned.records.strided.coordinates;
                 const half = coordinates.len / 2;
                 var alternate: F = std.math.inf(F);
                 while (index + 1 < range[1]) : (index += 2) {
-                    if (comptime paired == 2) {
-                        const V = @Vector(2, F);
-                        const xs: V = coordinates[index..][0..2].*;
-                        const ys: V = coordinates[half + index ..][0..2].*;
-                        const dx = @as(V, @splat(proc_x)) - xs;
-                        const dy = @as(V, @splat(proc_y)) - ys;
-                        const squared = dx * dx + dy * dy;
-                        nearest2 = @min(nearest2, squared[0]);
-                        alternate = @min(alternate, squared[1]);
-                    } else {
-                        const dx0 = proc_x - coordinates[index];
-                        const dy0 = proc_y - coordinates[half + index];
-                        const dx1 = proc_x - coordinates[index + 1];
-                        const dy1 = proc_y - coordinates[half + index + 1];
-                        nearest2 = @min(nearest2, dx0 * dx0 + dy0 * dy0);
-                        alternate = @min(alternate, dx1 * dx1 + dy1 * dy1);
-                    }
+                    const V = @Vector(2, F);
+                    const xs: V = coordinates[index..][0..2].*;
+                    const ys: V = coordinates[half + index ..][0..2].*;
+                    const dx = @as(V, @splat(proc_x)) - xs;
+                    const dy = @as(V, @splat(proc_y)) - ys;
+                    const squared = dx * dx + dy * dy;
+                    nearest2 = @min(nearest2, squared[0]);
+                    alternate = @min(alternate, squared[1]);
                 }
                 nearest2 = @min(nearest2, alternate);
             }
             while (index < range[1]) : (index += 1) {
                 const disk = switch (layout) {
                     .disks => binned.records.disks[index],
-                    .centers => SpeckleDisk2D{ .center = binned.records.centers[index], .radius = params.radius_mean },
-                    .soa => SpeckleDisk2D{ .center = .{ binned.records.soa.xs[index], binned.records.soa.ys[index] }, .radius = params.radius_mean },
                     .strided => SpeckleDisk2D{ .center = .{ binned.records.strided.coordinates[index], binned.records.strided.coordinates[binned.records.strided.coordinates.len / 2 + index] }, .radius = params.radius_mean },
                     .gaussian => SpeckleDisk2D{ .center = binned.records.gaussian[index].center, .radius = 0 },
                 };
                 const dx = proc_x - disk.center[0];
                 const dy = proc_y - disk.center[1];
                 const distance2 = dx * dx + dy * dy;
-                if (comptime nearest and speckle_shape == .gaussian) {
+                if (comptime layout == .strided and speckle_shape == .gaussian) {
                     nearest2 = @min(nearest2, distance2);
                 } else {
                     const mask = if (layout == .gaussian) blk: {
@@ -1333,7 +1273,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     if (coverage == 1.0) break;
                 }
             }
-            if (comptime nearest and speckle_shape == .gaussian) {
+            if (comptime layout == .strided and speckle_shape == .gaussian) {
                 // Tiny supported radii can underflow sigma² to zero. Preserve the
                 // original max reduction's NaN handling rather than returning that mask.
                 coverage = @max(@as(F, 0), speckleDiskMask(soft_edges, nearest2, params.radius_mean, edge));
@@ -2977,7 +2917,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                         params.validateResolved(config),
                     );
                 },
-                .cell_hash, .list_naive, .list_indexed, .cell_binned, .cell_binned_2, .cell_binned_3, .cell_binned_9, .cell_binned_12, .cell_binned_26, .cell_binned_35, .cell_binned_29, .mask_u8, .mock => try params.validateResolved(config),
+                .cell_hash, .list_naive, .list_indexed, .cell_binned, .mask_u8, .mock => try params.validateResolved(config),
             }
         }
 
@@ -3998,7 +3938,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     .cell_hash, .gradient_lattice => evalSpeckle2D(uv, params),
                     .list_naive => evalSpeckleList2DNaiveImpl(configured_soft_edges, uv[0], uv[1], resources.data.list),
                     .list_indexed => evalStripSpeckleList2DImpl(configured_soft_edges, uv[0], uv[1], resources.data.strip_list),
-                    .cell_binned, .cell_binned_2, .cell_binned_3, .cell_binned_9, .cell_binned_12, .cell_binned_26, .cell_binned_35, .cell_binned_29 => evalCellBinnedSpeckle2D(configured_soft_edges, uv[0], uv[1], resources.data.cell_binned),
+                    .cell_binned => evalCellBinnedSpeckle2D(configured_soft_edges, uv[0], uv[1], resources.data.cell_binned),
                     .classified_indexed => evalClassifiedIndexedSpeckle2D(
                         uv,
                         resources.data.classified,
@@ -4205,7 +4145,7 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
             .cell_hash, .mock => .none,
             .list_naive => .list,
             .list_indexed => .strip_list,
-            .cell_binned, .cell_binned_2, .cell_binned_3, .cell_binned_9, .cell_binned_12, .cell_binned_26, .cell_binned_35, .cell_binned_29 => .cell_binned,
+            .cell_binned => .cell_binned,
             .classified_indexed => .classified,
             .direct_fixed => .direct_fixed,
             .mask_1bit, .mask_u8 => .mask,
@@ -4230,7 +4170,7 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
             const Impl = Implementation(config);
             const reference = switch (comptime evaluator) {
                 .mock => 0.5 * (uv[0] + uv[1]),
-                .cell_hash, .gradient_lattice, .list_indexed, .cell_binned, .cell_binned_2, .cell_binned_3, .cell_binned_9, .cell_binned_12, .cell_binned_26, .cell_binned_35, .cell_binned_29 => Impl.evalSpeckle2D(uv, params),
+                .cell_hash, .gradient_lattice, .list_indexed, .cell_binned => Impl.evalSpeckle2D(uv, params),
                 // Direct-fixed returns stored endpoints, not the hash reference's arithmetic mapping.
                 .direct_fixed => if (Impl.evalSpeckle2D(uv, params) == params.background)
                     params.background
@@ -4257,7 +4197,7 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
             );
             const inactive_expected = switch (evaluator) {
                 .cell_hash => if (speckle_shape == .perlin) params.background else reference,
-                .list_naive, .list_indexed, .cell_binned, .cell_binned_2, .cell_binned_3, .cell_binned_9, .cell_binned_12, .cell_binned_26, .cell_binned_35, .cell_binned_29, .mock => reference,
+                .list_naive, .list_indexed, .cell_binned, .mock => reference,
                 else => params.background,
             };
             for (inactive) |value| try std.testing.expectEqual(inactive_expected, value);
@@ -4557,7 +4497,7 @@ test "cell binned review independent exhaustive field reference" {
     const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
     inline for (generation_configs) |config| {
         switch (comptime std.meta.activeTag(config)) {
-            .cell_binned, .cell_binned_2, .cell_binned_3, .cell_binned_9, .cell_binned_12, .cell_binned_26, .cell_binned_35, .cell_binned_29 => {},
+            .cell_binned => {},
             else => continue,
         }
         const soft = comptime config.edges() == .soft;
@@ -4606,17 +4546,10 @@ test "cell binned review independent exhaustive field reference" {
     }
 }
 
-test "cell binned review SoA simultaneous conversion budget" {
-    const index_bytes: usize = 32;
-    const record_bytes: usize = 48;
-    const budget: usize = 100;
-    try std.testing.expect(index_bytes / 2 + record_bytes < budget); // Persistent storage fits.
-    try checkCellBinnedPreparationBudget(index_bytes, record_bytes, false, budget);
-    try std.testing.expectError(error.SpeckleCellBinsTooLarge, checkCellBinnedPreparationBudget(index_bytes, record_bytes, true, budget));
-    try checkCellBinnedPreparationBudget(index_bytes, record_bytes, true, 128);
-    try std.testing.expectError(error.SpeckleCellBinsTooLarge, checkCellBinnedPreparationBudget(index_bytes, record_bytes, true, 127));
-    try std.testing.expectError(error.SpeckleCellBinsTooLarge, checkCellBinnedPreparationBudget(0, std.math.maxInt(usize), true, std.math.maxInt(usize)));
-    try std.testing.expectError(error.SpeckleCellBinsTooLarge, checkCellBinnedPreparationBudget(std.math.maxInt(usize), 1, false, std.math.maxInt(usize)));
+test "cell binned preparation budget includes temporary indices and checked addition" {
+    try checkCellBinnedPreparationBudget(32, 48, 80);
+    try std.testing.expectError(error.SpeckleCellBinsTooLarge, checkCellBinnedPreparationBudget(32, 48, 79));
+    try std.testing.expectError(error.SpeckleCellBinsTooLarge, checkCellBinnedPreparationBudget(std.math.maxInt(usize), 1, std.math.maxInt(usize)));
 }
 
 test "cell binned review overlapping Gaussian adjacent scores and exp plateaus" {
@@ -4625,7 +4558,6 @@ test "cell binned review overlapping Gaussian adjacent scores and exp plateaus" 
     const Check = struct {
         fn pair(radius: F, centers: [2][2]F) !void {
             const Impl = Implementation(.{ .cell_binned = .{ .gaussian = .nine } });
-            const offsets = [_]usize{ 0, 2 };
             for (0..2) |order| {
                 const points = [_][2]F{ centers[order], centers[1 - order] };
                 var original: F = 0;
@@ -4641,16 +4573,14 @@ test "cell binned review overlapping Gaussian adjacent scores and exp plateaus" 
                 @memcpy(coordinates[0..2], &xs);
                 @memcpy(coordinates[9..11], &ys);
                 const counts = [_]u8{2};
-                for ([_]speckleconfig.Evaluator{ .cell_binned_3, .cell_binned_9, .cell_binned_12, .cell_binned_26, .cell_binned_35, .cell_binned_29 }) |selected| {
-                    const p: Speckle2DParams = .{ .pattern = .gaussian, .evaluator = selected, .neighbor_count = .nine, .radius_mean = radius, .cells_per_uv = .{ 1, 1 }, .foreground = 0.91, .background = -0.0 };
-                    const binned: CellBinnedSpeckle2D = .{ .params = p, .offsets = if ((selected == .cell_binned_26 or selected == .cell_binned_29 or selected == .cell_binned_35)) &.{} else &offsets, .dims = .{ 1, 1 }, .records = if (selected == .cell_binned_3) .{ .centers = &points } else if ((selected == .cell_binned_26 or selected == .cell_binned_29 or selected == .cell_binned_35)) .{ .strided = .{ .coordinates = &coordinates, .counts = &counts } } else .{ .soa = .{ .xs = &xs, .ys = &ys } } };
-                    // Borrowed stack fixtures: no owning-resource deinit is appropriate.
-                    const resources: Resources = .{ .data = .{ .cell_binned = binned } };
-                    const expected = p.background + original * (p.foreground - p.background);
-                    try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(Impl.evalCellBinnedSpeckle2D(false, 0, 0, binned))));
-                    const lanes: [S]F = Impl.samplePreparedSIMD(false, @splat(0), @splat(0), @splat(false), p, &resources);
-                    for (lanes) |value| try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(value)));
-                }
+                const p: Speckle2DParams = .{ .pattern = .gaussian, .evaluator = .cell_binned, .neighbor_count = .nine, .radius_mean = radius, .cells_per_uv = .{ 1, 1 }, .foreground = 0.91, .background = -0.0 };
+                const binned: CellBinnedSpeckle2D = .{ .params = p, .offsets = &.{}, .dims = .{ 1, 1 }, .records = .{ .strided = .{ .coordinates = &coordinates, .counts = &counts } } };
+                // Borrowed stack fixtures: no owning-resource deinit is appropriate.
+                const resources: Resources = .{ .data = .{ .cell_binned = binned } };
+                const expected = p.background + original * (p.foreground - p.background);
+                try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(Impl.evalCellBinnedSpeckle2D(false, 0, 0, binned))));
+                const lanes: [S]F = Impl.samplePreparedSIMD(false, @splat(0), @splat(0), @splat(false), p, &resources);
+                for (lanes) |value| try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(value)));
             }
         }
     };
@@ -4679,13 +4609,13 @@ test "cell binned review overlapping Gaussian adjacent scores and exp plateaus" 
     }
 }
 
-test "cell binned full records preserve original bits at supports faces colors and SIMD lanes" {
+test "cell binned records preserve original bits at supports faces colors and SIMD lanes" {
     @setEvalBranchQuota(100_000);
     if (comptime !buildconfig.enable_all_evaluators) return;
     const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
     inline for (generation_configs) |config| {
         switch (comptime std.meta.activeTag(config)) {
-            .cell_binned, .cell_binned_2, .cell_binned_3, .cell_binned_9, .cell_binned_12, .cell_binned_26, .cell_binned_35, .cell_binned_29 => {},
+            .cell_binned => {},
             else => continue,
         }
         const Impl = Implementation(config);
@@ -4721,8 +4651,6 @@ test "cell binned full records preserve original bits at supports faces colors a
                 const binned = owned.data.cell_binned;
                 const count = switch (binned.records) {
                     .disks => |records| records.len,
-                    .centers => |records| records.len,
-                    .soa => |records| records.xs.len,
                     .gaussian => |records| records.len,
                     .strided => binned.recordCount(),
                 };
@@ -4801,25 +4729,30 @@ test "cell binned preparation budget and allocation failures are checked" {
     const params: Speckle2DParams = .{ .evaluator = .cell_binned, .cells_per_uv = .{ 65534, 65534 } };
     try std.testing.expectError(error.SpeckleCellBinsTooLarge, Resources.init(std.testing.failing_allocator, params));
     var wide = params;
-    wide.cells_per_uv = .{ 3000, 3000 };
+    wide.cells_per_uv = .{ 100, 100 };
     try std.testing.expectError(error.OutOfMemory, Resources.init(std.testing.failing_allocator, wide));
     // Counts fit the cell limit, but full-support duplication exceeds the byte budget.
     wide.cells_per_uv = .{ 1800, 1800 };
-    wide.radius_mean = 1;
+    wide.radius_mean = 0.99;
+    wide.radius_jitter = 0.01;
     wide.occupancy = 1;
     try std.testing.expectError(error.SpeckleCellBinsTooLarge, Resources.init(std.testing.allocator, wide));
     if (F == f64) {
         wide.cells_per_uv = .{ 35_184_372_088_831, 35_184_372_088_831 };
         try std.testing.expectError(error.SpeckleCellBinsTooLarge, Resources.init(std.testing.failing_allocator, wide));
     }
-    for ([_]speckleconfig.Evaluator{ .cell_binned, .cell_binned_2, .cell_binned_3, .cell_binned_9, .cell_binned_12, .cell_binned_26, .cell_binned_35, .cell_binned_29 }) |evaluator| {
-        for ([_]F{ 0, 0.08 }) |jitter| {
+    for ([_]F{ 0, 0.08 }) |jitter| {
+        for ([_]struct { pattern: speckleconfig.Pattern, softness: F }{
+            .{ .pattern = .disk, .softness = 0 },
+            .{ .pattern = .disk, .softness = 0.04 },
+            .{ .pattern = .gaussian, .softness = 0 },
+        }) |shape| {
             try std.testing.checkAllAllocationFailures(std.testing.allocator, struct {
-                fn run(allocator: std.mem.Allocator, selected: speckleconfig.Evaluator, radius_jitter: F) !void {
-                    var resources = try Resources.init(allocator, .{ .evaluator = selected, .pattern = .gaussian, .radius_jitter = radius_jitter, .cells_per_uv = .{ 3.25, 2.5 } });
+                fn run(allocator: std.mem.Allocator, pattern: speckleconfig.Pattern, softness: F, radius_jitter: F) !void {
+                    var resources = try Resources.init(allocator, .{ .evaluator = .cell_binned, .pattern = pattern, .edge_softness = softness, .radius_jitter = radius_jitter, .cells_per_uv = .{ 3.25, 2.5 } });
                     defer resources.deinit(allocator);
                 }
-            }.run, .{ evaluator, jitter });
+            }.run, .{ shape.pattern, shape.softness, jitter });
         }
     }
 }
@@ -4832,7 +4765,7 @@ test "cell binned Gaussian nearest reductions preserve underflowed sigma squared
     inline for (generation_configs) |config| {
         if (comptime config.pattern() != .gaussian) continue;
         switch (comptime std.meta.activeTag(config)) {
-            .cell_binned, .cell_binned_2, .cell_binned_3, .cell_binned_9, .cell_binned_12, .cell_binned_26, .cell_binned_35, .cell_binned_29 => {},
+            .cell_binned => {},
             else => continue,
         }
         const Impl = Implementation(config);
@@ -4856,7 +4789,7 @@ test "cell binned wide procedural grids retain rounded face and endpoint members
     const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
     inline for (generation_configs) |config| {
         switch (comptime std.meta.activeTag(config)) {
-            .cell_binned, .cell_binned_2, .cell_binned_3, .cell_binned_9, .cell_binned_12, .cell_binned_26, .cell_binned_35, .cell_binned_29 => {},
+            .cell_binned => {},
             else => continue,
         }
         const Impl = Implementation(config);
@@ -4912,57 +4845,57 @@ test "strip indexed zero radius soft disk coverage and default gate" {
     for (lanes) |value| try std.testing.expectEqual(expected, value);
 }
 
-test "cell binned fixed stride split layout padding and coefficient preservation" {
+test "cell binned canonical layouts padding and rounded coefficients" {
     if (comptime !buildconfig.enable_all_evaluators) return;
+    var checked: usize = 0;
     inline for (generation_configs) |config| {
-        if (comptime std.meta.activeTag(config) != .cell_binned_26) continue;
+        if (comptime std.meta.activeTag(config) != .cell_binned) continue;
+        checked += 1;
         for ([_]F{ 0, 0.08 }) |jitter| {
-            const p: Speckle2DParams = .{ .evaluator = .cell_binned_26, .pattern = config.pattern().?, .neighbor_count = config.neighborhood(), .edge_softness = if (config.edges() == .soft) 0.04 else 0, .cells_per_uv = .{ 3.25, 2.75 }, .radius_mean = 0.3, .radius_jitter = jitter, .occupancy = 0.7 };
-            var trial = try Resources.init(std.testing.allocator, p);
-            defer trial.deinit(std.testing.allocator);
-            var original_p = p;
-            original_p.evaluator = .cell_binned_12;
-            var original = try Resources.init(std.testing.allocator, original_p);
-            defer original.deinit(std.testing.allocator);
-            const binned = trial.data.cell_binned;
-            const incumbent = original.data.cell_binned;
-            try std.testing.expectEqual(incumbent.recordCount(), binned.recordCount());
+            const p: Speckle2DParams = .{ .evaluator = .cell_binned, .pattern = config.pattern().?, .neighbor_count = config.neighborhood(), .edge_softness = if (config.edges() == .soft) 0.04 else 0, .cells_per_uv = .{ 3.25, 2.75 }, .radius_mean = 0.3, .radius_jitter = jitter, .occupancy = 0.7 };
+            var owned = try Resources.init(std.testing.allocator, p);
+            defer owned.deinit(std.testing.allocator);
+            const binned = owned.data.cell_binned;
+            const expected: std.meta.Tag(CellBinnedRecords) = if (jitter == 0) .strided else if (p.pattern == .gaussian) .gaussian else .disks;
+            try std.testing.expectEqual(expected, std.meta.activeTag(binned.records));
             if (jitter == 0) {
-                try std.testing.expect(binned.records == .strided);
                 const strided = binned.records.strided;
                 const cells = binned.dims[0] * binned.dims[1];
+                try std.testing.expectEqual(@as(usize, 0), binned.offsets.len);
                 try std.testing.expectEqual(cells * 18, strided.coordinates.len);
+                try std.testing.expectEqual(cells, strided.counts.len);
                 const xs = strided.coordinates[0 .. cells * 9];
                 const ys = strided.coordinates[cells * 9 ..];
                 for (strided.counts, 0..) |count, cell| {
                     try std.testing.expect(count <= 9);
-                    const before = incumbent.range(cell);
-                    for (0..count) |ii| {
-                        try std.testing.expectEqual(incumbent.records.soa.xs[before[0] + ii], xs[cell * 9 + ii]);
-                        try std.testing.expectEqual(incumbent.records.soa.ys[before[0] + ii], ys[cell * 9 + ii]);
-                    }
                     for (count..9) |ii| {
                         try std.testing.expectEqual(std.math.inf(F), xs[cell * 9 + ii]);
                         try std.testing.expectEqual(@as(F, 0), ys[cell * 9 + ii]);
                     }
                 }
-                try std.testing.expectEqual(binned.offsets.len * @sizeOf(usize) + cells * (18 * @sizeOf(F) + 1), binned.byteSize());
-            } else {
-                try std.testing.expectEqual(std.meta.activeTag(incumbent.records), std.meta.activeTag(binned.records));
-                try std.testing.expectEqualSlices(usize, incumbent.offsets, binned.offsets);
-                if (binned.records == .gaussian) {
-                    for (incumbent.records.gaussian, binned.records.gaussian) |a, b| {
-                        try std.testing.expect(std.meta.eql(a, b));
+                try std.testing.expectEqual(cells * (18 * @sizeOf(F) + 1), binned.byteSize());
+            } else if (p.pattern == .gaussian) {
+                // Independent owner generation checks the cached rounding, not another layout.
+                for (binned.records.gaussian) |record| {
+                    var found = false;
+                    var y: i64 = -1;
+                    while (y <= 3) : (y += 1) {
+                        var x: i64 = -1;
+                        while (x <= 4) : (x += 1) {
+                            const disk = CellBinnedIndependentReference.disk(p, x, y) orelse continue;
+                            if (!std.meta.eql(record.center, disk.xy)) continue;
+                            const sigma = disk.radius / 3;
+                            try std.testing.expectEqual(disk.radius * disk.radius, record.outer2);
+                            try std.testing.expectEqual(sigma * sigma, record.sigma2);
+                            found = true;
+                        }
                     }
-                } else {
-                    for (incumbent.records.disks, binned.records.disks) |a, b| {
-                        try std.testing.expect(std.meta.eql(a, b));
-                    }
+                    try std.testing.expect(found);
                 }
-                try std.testing.expectEqual(incumbent.byteSize(), binned.byteSize());
             }
         }
     }
+    try std.testing.expectEqual(@as(usize, 9), checked);
 }
 
 test "cell binned fixed stride padded independent Gaussian masks and direct budget" {
@@ -4978,7 +4911,7 @@ test "cell binned fixed stride padded independent Gaussian masks and direct budg
             xs[1] = if (count < 2) std.math.inf(F) else @sqrt(smallest);
             const offsets = [_]usize{ 0, count };
             const counts = [_]u8{@intCast(count)};
-            const p: Speckle2DParams = .{ .evaluator = .cell_binned_26, .pattern = .gaussian, .radius_mean = radius, .cells_per_uv = .{ 1, 1 }, .foreground = 0.91, .background = -0.0 };
+            const p: Speckle2DParams = .{ .evaluator = .cell_binned, .pattern = .gaussian, .radius_mean = radius, .cells_per_uv = .{ 1, 1 }, .foreground = 0.91, .background = -0.0 };
             const binned: CellBinnedSpeckle2D = .{ .params = p, .offsets = &offsets, .dims = .{ 1, 1 }, .records = .{ .strided = .{ .coordinates = &(xs ++ ys), .counts = &counts } } };
             const resources: Resources = .{ .data = .{ .cell_binned = binned } };
             var coverage: F = 0;
@@ -4992,10 +4925,10 @@ test "cell binned fixed stride padded independent Gaussian masks and direct budg
     }
     // Direct preparation owns only the final padded centers and byte counts.
     const centers = 9 * 2 * @sizeOf(F);
-    try checkCellBinnedPreparationBudget(1, centers, false, centers + 1);
-    try std.testing.expectError(error.SpeckleCellBinsTooLarge, checkCellBinnedPreparationBudget(1, centers, false, centers));
+    try checkCellBinnedPreparationBudget(1, centers, centers + 1);
+    try std.testing.expectError(error.SpeckleCellBinsTooLarge, checkCellBinnedPreparationBudget(1, centers, centers));
 
-    const params: Speckle2DParams = .{ .evaluator = .cell_binned_26, .pattern = .gaussian, .neighbor_count = .nine, .cells_per_uv = .{ 2000, 2000 }, .radius_jitter = 0 };
+    const params: Speckle2DParams = .{ .evaluator = .cell_binned, .pattern = .gaussian, .neighbor_count = .nine, .cells_per_uv = .{ 2000, 2000 }, .radius_jitter = 0 };
     const bounds = Impl.speckleProceduralCellBounds(params, 0).?;
     const owners = Impl.speckleProceduralCellBounds(params, 1).?;
     try std.testing.expect(owners.count < max_speckle_cells);
@@ -5004,87 +4937,77 @@ test "cell binned fixed stride padded independent Gaussian masks and direct budg
     try std.testing.expectError(error.SpeckleCellBinsTooLarge, Resources.init(std.testing.failing_allocator, params));
 }
 
-test "cell binned fixed stride preserves incumbent resource value size" {
-    const OldRecords = union(enum) {
-        disks: []const SpeckleDisk2D,
-        centers: []const [2]F,
-        soa: struct { xs: []const F, ys: []const F },
-        gaussian: []const GaussianDiskCoefficients,
-    };
-    const OldBinned = struct {
-        params: Speckle2DParams,
-        offsets: []const usize,
-        records: OldRecords,
-        dims: [2]usize,
-    };
-    try std.testing.expectEqual(@sizeOf(OldRecords), @sizeOf(CellBinnedRecords));
-    try std.testing.expectEqual(@sizeOf(OldBinned), @sizeOf(CellBinnedSpeckle2D));
-}
-
-test "cell binned accepted successor selects fixed and coefficient layouts" {
-    if (comptime !buildconfig.enable_all_evaluators) return;
-    var checked: usize = 0;
-    inline for (generation_configs) |config| {
-        if (comptime std.meta.activeTag(config) != .cell_binned_35) continue;
-        checked += 1;
+test "cell binned defaults preserve independent analytic bits without overrides" {
+    const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
+    for ([_]speckleconfig.Pattern{ .disk, .gaussian }) |pattern| {
         for ([_]F{ 0, 0.08 }) |jitter| {
-            const p: Speckle2DParams = .{ .evaluator = .cell_binned_35, .pattern = config.pattern().?, .neighbor_count = config.neighborhood(), .edge_softness = if (config.edges() == .soft) 0.04 else 0, .cells_per_uv = .{ 3.25, 2.75 }, .radius_mean = 0.3, .radius_jitter = jitter, .occupancy = 0.7 };
-            var owned = try Resources.init(std.testing.allocator, p);
-            defer owned.deinit(std.testing.allocator);
-            const expected: std.meta.Tag(CellBinnedRecords) = if (jitter == 0) .strided else if (p.pattern == .gaussian) .gaussian else .disks;
-            try std.testing.expectEqual(expected, std.meta.activeTag(owned.data.cell_binned.records));
-            if (jitter != 0 and p.pattern == .gaussian) {
-                var previous_p = p;
-                previous_p.evaluator = .cell_binned_26;
-                var previous = try Resources.init(std.testing.allocator, previous_p);
-                defer previous.deinit(std.testing.allocator);
-                try std.testing.expectEqualSlices(usize, previous.data.cell_binned.offsets, owned.data.cell_binned.offsets);
-                for (previous.data.cell_binned.records.gaussian, owned.data.cell_binned.records.gaussian) |a, b| try std.testing.expectEqualDeep(a, b);
+            for ([_]F{ 0, 0.7, 1 }) |occupancy| {
+                const params: Speckle2DParams = .{
+                    .pattern = pattern,
+                    .edge_softness = if (pattern == .disk) 0.04 else 0,
+                    .radius_mean = 0.3,
+                    .radius_jitter = jitter,
+                    .occupancy = occupancy,
+                    .cells_per_uv = .{ 3.25, 2.75 },
+                    .foreground = 0.91,
+                    .background = -0.0,
+                };
+                const resolved = try params.resolve();
+                try std.testing.expectEqual(speckleconfig.Evaluator.cell_binned, std.meta.activeTag(resolved));
+                var resources = try Resources.init(std.testing.allocator, params);
+                defer resources.deinit(std.testing.allocator);
+                var reference_params = params;
+                reference_params.neighbor_count = .nine;
+                for ([_]F{ -1, 0, 1.0 / 3.25, 0.5, 1, 2 }) |u| {
+                    for ([_]F{ -1, 0, 1.0 / 2.75, 0.5, 1, 2 }) |v| {
+                        const expected: Bits = @bitCast(CellBinnedIndependentReference.sample(reference_params, u, v));
+                        try std.testing.expectEqual(expected, @as(Bits, @bitCast(sampleScal(u, v, params, &resources))));
+                        const lanes: [S]F = sampleSIMD(@splat(u), @splat(v), @splat(false), params, &resources);
+                        for (lanes) |actual| try std.testing.expectEqual(expected, @as(Bits, @bitCast(actual)));
+                    }
+                }
             }
         }
     }
-    try std.testing.expectEqual(@as(usize, 9), checked);
 }
 
-test "cell binned accepted paired kernels preserve count tails plateaus colors and borrowed params" {
+test "cell binned paired vectors preserve count tails plateaus colors and borrowed params" {
     if (comptime !buildconfig.enable_all_evaluators) return;
     const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
     const Ref = Implementation(.{ .cell_binned = .{ .gaussian = .nine } });
     const smallest = std.math.floatMin(F) * std.math.floatEps(F);
     const base: F = 0.015625;
     const ulp = std.math.nextAfter(F, base, std.math.inf(F)) - base;
-    for ([_]speckleconfig.Evaluator{ .cell_binned_26, .cell_binned_29, .cell_binned_35 }) |selected| {
-        for ([_]F{ 0.75, @sqrt(smallest), @sqrt(smallest) * 1.5 }) |radius| {
-            for (0..10) |count| {
-                for (0..2) |order| {
-                    var coordinates: [18]F = @splat(0);
-                    @memset(coordinates[0..9], std.math.inf(F));
+    for ([_]F{ 0.75, @sqrt(smallest), @sqrt(smallest) * 1.5 }) |radius| {
+        for (0..10) |count| {
+            for (0..2) |order| {
+                var coordinates: [18]F = @splat(0);
+                @memset(coordinates[0..9], std.math.inf(F));
+                for (0..count) |ii| {
+                    const k = if (order == 0) ii else count - ii - 1;
+                    coordinates[ii] = if (radius == 0.75) 0.125 else if (k % 2 == 0) 0 else @sqrt(smallest);
+                    coordinates[9 + ii] = if (radius == 0.75) @sqrt(@as(F, @floatFromInt(k)) * ulp) else 0;
+                }
+                for ([_][2]F{ .{ 0.91, -0.0 }, .{ -0.0, 0.83 }, .{ -0.0, -0.0 }, .{ 0.0, -0.0 }, .{ 0.17, 0.83 } }) |colors| {
+                    const p: Speckle2DParams = .{ .evaluator = .cell_binned, .pattern = .gaussian, .neighbor_count = .nine, .radius_mean = radius, .cells_per_uv = .{ 1, 1 }, .foreground = colors[0], .background = colors[1] };
+                    const counts = [_]u8{@intCast(count)};
+                    const binned: CellBinnedSpeckle2D = .{ .params = p, .dims = .{ 1, 1 }, .offsets = &.{}, .records = .{ .strided = .{ .coordinates = &coordinates, .counts = &counts } } };
+                    const resources: Resources = .{ .kernel_index = kernelIndex(try p.resolve()), .data = .{ .cell_binned = binned } };
+                    var coverage: F = 0;
                     for (0..count) |ii| {
-                        const k = if (order == 0) ii else count - ii - 1;
-                        coordinates[ii] = if (radius == 0.75) 0.125 else if (k % 2 == 0) 0 else @sqrt(smallest);
-                        coordinates[9 + ii] = if (radius == 0.75) @sqrt(@as(F, @floatFromInt(k)) * ulp) else 0;
+                        const d2 = coordinates[ii] * coordinates[ii] + coordinates[9 + ii] * coordinates[9 + ii];
+                        coverage = @max(coverage, Ref.speckleDiskMask(false, d2, radius, 0));
                     }
-                    for ([_][2]F{ .{ 0.91, -0.0 }, .{ -0.0, 0.83 }, .{ -0.0, -0.0 }, .{ 0.0, -0.0 }, .{ 0.17, 0.83 } }) |colors| {
-                        const p: Speckle2DParams = .{ .evaluator = selected, .pattern = .gaussian, .neighbor_count = .nine, .radius_mean = radius, .cells_per_uv = .{ 1, 1 }, .foreground = colors[0], .background = colors[1] };
-                        const counts = [_]u8{@intCast(count)};
-                        const binned: CellBinnedSpeckle2D = .{ .params = p, .dims = .{ 1, 1 }, .offsets = &.{}, .records = .{ .strided = .{ .coordinates = &coordinates, .counts = &counts } } };
-                        const resources: Resources = .{ .kernel_index = kernelIndex(try p.resolve()), .data = .{ .cell_binned = binned } };
-                        var coverage: F = 0;
-                        for (0..count) |ii| {
-                            const d2 = coordinates[ii] * coordinates[ii] + coordinates[9 + ii] * coordinates[9 + ii];
-                            coverage = @max(coverage, Ref.speckleDiskMask(false, d2, radius, 0));
-                        }
-                        const expected = if (p.foreground == p.background) p.background else p.background + coverage * (p.foreground - p.background);
-                        var borrowed = p;
-                        borrowed.foreground = 0.37;
-                        borrowed.background = 0.63;
-                        borrowed.radius_mean = 0.2;
-                        try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(sampleScal(0, 0, borrowed, &resources))));
-                        const lanes: [S]F = sampleSIMD(@splat(0), @splat(0), @splat(false), borrowed, &resources);
-                        for (lanes) |actual| try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(actual)));
-                        const invalid: [S]F = sampleSIMD(@splat(std.math.nan(F)), @splat(0), @splat(true), borrowed, &resources);
-                        for (invalid) |actual| try std.testing.expectEqual(@as(Bits, @bitCast(p.background)), @as(Bits, @bitCast(actual)));
-                    }
+                    const expected = if (p.foreground == p.background) p.background else p.background + coverage * (p.foreground - p.background);
+                    var borrowed = p;
+                    borrowed.foreground = 0.37;
+                    borrowed.background = 0.63;
+                    borrowed.radius_mean = 0.2;
+                    try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(sampleScal(0, 0, borrowed, &resources))));
+                    const lanes: [S]F = sampleSIMD(@splat(0), @splat(0), @splat(false), borrowed, &resources);
+                    for (lanes) |actual| try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(actual)));
+                    const invalid: [S]F = sampleSIMD(@splat(std.math.nan(F)), @splat(0), @splat(true), borrowed, &resources);
+                    for (invalid) |actual| try std.testing.expectEqual(@as(Bits, @bitCast(p.background)), @as(Bits, @bitCast(actual)));
                 }
             }
         }
