@@ -17,7 +17,7 @@ const shaderops = @import("shaderops.zig");
 const pce = @import("parachunkexec.zig");
 const geomkerns = @import("geometrykernels.zig");
 const MeshType = geomkerns.MeshType;
-const rops = @import("rasterops.zig");
+const frontend = @import("rasterfrontend.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -87,16 +87,21 @@ fn writePrepNormal(
 //------------------------------------------------------------------------------------------
 
 pub fn calcVisExactNormals(
+    comptime N: usize,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     vis_orig_elem_inds: []const usize,
     prep_normals: *ndarray.NDArray(F),
-    comptime N: usize,
 ) void {
     const nodal_derivs = comptime shapefun.getNodalDerivs(N);
 
     for (vis_orig_elem_inds, 0..) |orig_ee, pp| {
-        const coords_elem = rops.gatherElemNodeCoords(N, coords_nodes, connect, orig_ee);
+        const coords_elem = frontend.gatherElemNodeCoords(
+            N,
+            coords_nodes,
+            connect,
+            orig_ee,
+        );
         for (0..N) |nn| {
             var normal_vec = calcElemNodeNormal(
                 N,
@@ -113,12 +118,12 @@ pub fn calcVisExactNormals(
 }
 
 pub fn calcVisAvgNormals(
+    comptime N: usize,
     allocator: std.mem.Allocator,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     vis_orig_elem_inds: []const usize,
     prep_normals: *ndarray.NDArray(F),
-    comptime N: usize,
 ) !void {
     const nodal_derivs = comptime shapefun.getNodalDerivs(N);
     var max_node_idx: usize = 0;
@@ -132,7 +137,12 @@ pub fn calcVisAvgNormals(
     @memset(node_normals, 0.0);
 
     for (0..connect.getElemsNum()) |ee| {
-        const coords_elem = rops.gatherElemNodeCoords(N, coords_nodes, connect, ee);
+        const coords_elem = frontend.gatherElemNodeCoords(
+            N,
+            coords_nodes,
+            connect,
+            ee,
+        );
         const coord_inds = connect.getElem(ee);
 
         for (0..N) |nn| {
@@ -183,19 +193,19 @@ pub fn prepVisNormals(
     switch (normal_type) {
         .none => unreachable,
         .exact => calcVisExactNormals(
+            N,
             coords_nodes,
             connect,
             vis_orig_elem_inds,
             &prep_normals.array,
-            N,
         ),
         .avg => try calcVisAvgNormals(
+            N,
             allocator,
             coords_nodes,
             connect,
             vis_orig_elem_inds,
             &prep_normals.array,
-            N,
         ),
     }
     return prep_normals;
@@ -219,7 +229,12 @@ pub fn prepVisExactNormalsRange(
 
     for (vis_start..vis_end) |pp| {
         const orig_ee = vis_orig_elem_inds[pp];
-        const coords_elem = rops.gatherElemNodeCoords(N, coords_nodes, connect, orig_ee);
+        const coords_elem = frontend.gatherElemNodeCoords(
+            N,
+            coords_nodes,
+            connect,
+            orig_ee,
+        );
         for (0..N) |nn| {
             var normal_vec = calcElemNodeNormal(
                 N,
@@ -247,7 +262,12 @@ pub fn accumAvgNodeNormalsRange(
     const nodal_derivs = comptime shapefun.getNodalDerivs(N);
 
     for (elem_start..elem_end) |ee| {
-        const coords_elem = rops.gatherElemNodeCoords(N, coords_nodes, connect, ee);
+        const coords_elem = frontend.gatherElemNodeCoords(
+            N,
+            coords_nodes,
+            connect,
+            ee,
+        );
         const coord_inds = connect.getElem(ee);
 
         for (0..N) |nn| {

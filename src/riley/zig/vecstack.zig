@@ -16,8 +16,10 @@ const SliceOps = @import("sliceops.zig");
 const ValIdx = SliceOps.ValIdx;
 
 const EType = buildconfig.F;
-pub const Vec2f = Vec2T(EType);
-pub const Vec3f = Vec3T(EType);
+pub const Vec2F = Vec2T(EType);
+pub const Vec3F = Vec3T(EType);
+pub const Vec2f = Vec2F;
+pub const Vec3f = Vec3F;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -25,12 +27,12 @@ pub const Vec3f = Vec3T(EType);
 
 pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
     return struct {
-        slice: [elem_n]T,
+        vec: [elem_n]T,
 
         const Self: type = @This();
 
         pub fn initFill(fill_val: T) Self {
-            return .{ .slice = [_]T{fill_val} ** elem_n };
+            return .{ .vec = [_]T{fill_val} ** elem_n };
         }
 
         pub fn initOnes() Self {
@@ -42,37 +44,41 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
         }
 
         pub fn initSlice(slice_in: []const T) Self {
-            return .{ .slice = slice_in[0..elem_n].* };
+            return .{ .vec = slice_in[0..elem_n].* };
+        }
+
+        pub fn asSlice(self: *const Self) []const T {
+            return &self.vec;
         }
 
         pub fn get(self: *const Self, ind: usize) T {
-            return self.slice[ind];
+            return self.vec[ind];
         }
 
         pub fn set(self: *Self, ind: usize, val: T) void {
-            self.slice[ind] = val;
+            self.vec[ind] = val;
         }
 
         pub fn x(self: Self) T {
-            return self.slice[0];
+            return self.vec[0];
         }
 
         pub fn y(self: Self) T {
-            return self.slice[1];
+            return self.vec[1];
         }
 
         pub fn z(self: Self) T {
-            return self.slice[2];
+            return self.vec[2];
         }
 
         pub fn w(self: Self) T {
-            return self.slice[3];
+            return self.vec[3];
         }
 
         pub fn add(self: *const Self, to_add: Self) Self {
             var vec_out: Self = undefined;
             for (0..elem_n) |ii| {
-                vec_out.slice[ii] = self.slice[ii] + to_add.slice[ii];
+                vec_out.vec[ii] = self.vec[ii] + to_add.vec[ii];
             }
             return vec_out;
         }
@@ -80,7 +86,7 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
         pub fn sub(self: *const Self, to_sub: Self) Self {
             var vec_out: Self = undefined;
             for (0..elem_n) |ii| {
-                vec_out.slice[ii] = self.slice[ii] - to_sub.slice[ii];
+                vec_out.vec[ii] = self.vec[ii] - to_sub.vec[ii];
             }
             return vec_out;
         }
@@ -88,7 +94,7 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
         pub fn mulScal(self: *const Self, scal: T) Self {
             var vec_out: Self = undefined;
             for (0..elem_n) |ii| {
-                vec_out.slice[ii] = scal * self.slice[ii];
+                vec_out.vec[ii] = scal * self.vec[ii];
             }
             return vec_out;
         }
@@ -96,7 +102,7 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
         pub fn dot(self: *const Self, to_dot: Self) T {
             var dot_prod: T = 0;
             for (0..elem_n) |ii| {
-                dot_prod += self.slice[ii] * to_dot.slice[ii];
+                dot_prod += self.vec[ii] * to_dot.vec[ii];
             }
             return dot_prod;
         }
@@ -104,7 +110,7 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
         pub fn norm(self: *const Self) T {
             var norm_out: T = 0;
             for (0..elem_n) |ii| {
-                norm_out += self.slice[ii] * self.slice[ii];
+                norm_out += self.vec[ii] * self.vec[ii];
             }
             return norm_out;
         }
@@ -114,19 +120,19 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
         }
 
         pub fn max(self: *const Self) ValIdx(T) {
-            return SliceOps.max(T, &self.slice);
+            return SliceOps.max(T, &self.vec);
         }
 
         pub fn min(self: *const Self) ValIdx(T) {
-            return SliceOps.min(T, &self.slice);
+            return SliceOps.min(T, &self.vec);
         }
 
         pub fn sum(self: *const Self) T {
-            return SliceOps.sum(T, &self.slice);
+            return SliceOps.sum(T, &self.vec);
         }
 
         pub fn mean(self: *const Self) T {
-            return SliceOps.mean(T, &self.slice);
+            return SliceOps.mean(T, &self.vec);
         }
 
         pub fn apply(
@@ -134,8 +140,8 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
             comptime func: anytype,
         ) Self {
             var applied: Self = undefined;
-            for (self.slice, 0..) |elem, ii| {
-                applied.slice[ii] = func(elem);
+            for (self.vec, 0..) |elem, ii| {
+                applied.vec[ii] = func(elem);
             }
             return applied;
         }
@@ -143,7 +149,7 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
         pub fn vecPrint(self: *const Self) void {
             print("[", .{});
             for (0..elem_n) |ii| {
-                print("{e:.6},", .{self.slice[ii]});
+                print("{e:.6},", .{self.vec[ii]});
             }
             print("]\n", .{});
         }
@@ -160,22 +166,68 @@ pub fn Vec3T(comptime T: type) type {
 
 pub fn initVec2(comptime T: type, x_in: T, y_in: T) Vec2T(T) {
     return Vec2T(T){
-        .slice = [2]T{ x_in, y_in },
+        .vec = [2]T{ x_in, y_in },
     };
 }
 
 pub fn initVec3(comptime T: type, x_in: T, y_in: T, z_in: T) Vec3T(T) {
     return Vec3T(T){
-        .slice = [3]T{ x_in, y_in, z_in },
+        .vec = [3]T{ x_in, y_in, z_in },
     };
 }
+
+pub const Vec2Ops = struct {
+    pub fn cross2(comptime T: type, vec0: Vec2T(T), vec1: Vec2T(T)) T {
+        return vec0.x() * vec1.y() - vec0.y() * vec1.x();
+    }
+
+    pub fn cross3(comptime T: type, pt_a: Vec2T(T), pt_b: Vec2T(T), pt_c: Vec2T(T)) T {
+        return (pt_b.x() - pt_a.x()) * (pt_c.y() - pt_a.y()) -
+            (pt_b.y() - pt_a.y()) * (pt_c.x() - pt_a.x());
+    }
+};
+
+pub fn insertSortVec2(comptime T: type, slice: []Vec2T(T)) void {
+    if (slice.len < 2) return;
+    for (1..slice.len) |ii| {
+        const value = slice[ii];
+        var jj = ii;
+        while (jj > 0 and (slice[jj - 1].x() > value.x() or
+            (slice[jj - 1].x() == value.x() and slice[jj - 1].y() > value.y())))
+        {
+            slice[jj] = slice[jj - 1];
+            jj -= 1;
+        }
+        slice[jj] = value;
+    }
+}
+
+pub fn insertSortVec3(comptime T: type, slice: []Vec3T(T)) void {
+    if (slice.len < 2) return;
+    for (1..slice.len) |ii| {
+        const value = slice[ii];
+        var jj = ii;
+        while (jj > 0 and (slice[jj - 1].x() > value.x() or
+            (slice[jj - 1].x() == value.x() and (slice[jj - 1].y() > value.y() or
+            (slice[jj - 1].y() == value.y() and slice[jj - 1].z() > value.z())))))
+        {
+            slice[jj] = slice[jj - 1];
+            jj -= 1;
+        }
+        slice[jj] = value;
+    }
+}
+
+pub const Vec2SliceOps = struct {
+    pub const insertSort = insertSortVec2;
+};
 
 pub const Vec3Ops = struct {
     pub fn cross(comptime T: type, vec0: Vec3T(T), vec1: Vec3T(T)) Vec3T(T) {
         var vec_out: Vec3T(T) = undefined;
-        vec_out.slice[0] = vec0.slice[1] * vec1.slice[2] - vec0.slice[2] * vec1.slice[1];
-        vec_out.slice[1] = vec0.slice[0] * vec1.slice[2] - vec0.slice[2] * vec1.slice[0];
-        vec_out.slice[2] = vec0.slice[0] * vec1.slice[1] - vec0.slice[1] * vec1.slice[0];
+        vec_out.vec[0] = vec0.vec[1] * vec1.vec[2] - vec0.vec[2] * vec1.vec[1];
+        vec_out.vec[1] = vec0.vec[0] * vec1.vec[2] - vec0.vec[2] * vec1.vec[0];
+        vec_out.vec[2] = vec0.vec[0] * vec1.vec[1] - vec0.vec[1] * vec1.vec[0];
         return vec_out;
     }
 };
@@ -218,7 +270,7 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualSlices = std.testing.expectEqualSlices;
 
 test "VecSliceOps.max" {
-    var vec_slice: [3]Vec3f = undefined;
+    var vec_slice: [3]Vec3F = undefined;
     vec_slice[0] = initVec3(F, -1.0, 2.0, 7.0);
     vec_slice[1] = initVec3(F, 2.0, -2.0, 7.0);
     vec_slice[2] = initVec3(F, 5.0, -10.0, 0.0);
@@ -245,16 +297,16 @@ test "Vec.apply" {
 
     const vec_sqrt = vec0.apply(std.math.sqrt);
 
-    try expectEqualSlices(EType, &vec_exp_ones.slice, &vec_sqrt.slice);
+    try expectEqualSlices(EType, &vec_exp_ones.vec, &vec_sqrt.vec);
 
     const vec1 = VecStack(vec_len, EType).initZeros();
     const vec_atan = vec1.apply(std.math.atan);
 
-    try expectEqualSlices(EType, &vec_exp_zeros.slice, &vec_atan.slice);
+    try expectEqualSlices(EType, &vec_exp_zeros.vec, &vec_atan.vec);
 
     const vec_e = vec1.apply(SliceOps.exp);
 
-    try expectEqualSlices(EType, &vec_exp_ones.slice, &vec_e.slice);
+    try expectEqualSlices(EType, &vec_exp_ones.vec, &vec_e.vec);
 }
 
 test "Vec.max" {
@@ -299,63 +351,113 @@ test "Vec.mean" {
     try expectEqual(exp_val, vec0.mean());
 }
 
-test "Vec3f.add" {
-    var vec0 = Vec3f.initOnes();
-    const vec1 = Vec3f.initFill(2);
-    const vec_exp = Vec3f.initFill(3);
+test "Vec3F.add" {
+    var vec0 = Vec3F.initOnes();
+    const vec1 = Vec3F.initFill(2);
+    const vec_exp = Vec3F.initFill(3);
 
-    try expectEqualSlices(EType, &vec0.add(vec1).slice, &vec_exp.slice);
+    try expectEqualSlices(EType, &vec0.add(vec1).vec, &vec_exp.vec);
 }
 
-test "Vec3f.sub" {
-    var vec0 = Vec3f.initOnes();
-    const vec1 = Vec3f.initFill(7);
-    const vec_exp = Vec3f.initFill(-6);
+test "Vec3F.sub" {
+    var vec0 = Vec3F.initOnes();
+    const vec1 = Vec3F.initFill(7);
+    const vec_exp = Vec3F.initFill(-6);
 
-    try expectEqualSlices(EType, &vec0.sub(vec1).slice, &vec_exp.slice);
+    try expectEqualSlices(EType, &vec0.sub(vec1).vec, &vec_exp.vec);
 }
 
-test "Vec3f.mulScal" {
-    var vec0 = Vec3f.initOnes();
+test "Vec3F.mulScal" {
+    var vec0 = Vec3F.initOnes();
     const scal: EType = 1.23;
-    const vec_exp = Vec3f.initFill(scal);
+    const vec_exp = Vec3F.initFill(scal);
 
-    try expectEqualSlices(EType, &vec0.mulScal(scal).slice, &vec_exp.slice);
+    try expectEqualSlices(EType, &vec0.mulScal(scal).vec, &vec_exp.vec);
 }
 
-test "Vec3f.dot" {
+test "Vec3F.dot" {
     const fill: EType = 7.0;
-    var vec0 = Vec3f.initFill(fill);
-    var vec1 = Vec3f.initFill(fill);
+    var vec0 = Vec3F.initFill(fill);
+    var vec1 = Vec3F.initFill(fill);
     const dot_exp: EType = 3 * fill * fill;
 
     try expectEqual(vec0.dot(vec1), dot_exp);
     try expectEqual(vec1.dot(vec0), dot_exp);
 }
 
-test "Vec3f.norm" {
+test "Vec3F.norm" {
     const fill: EType = 2.0;
-    var vec0 = Vec3f.initFill(fill);
+    var vec0 = Vec3F.initFill(fill);
     const norm_exp: EType = 3 * fill * fill;
 
     try expectEqual(vec0.norm(), norm_exp);
 }
 
-test "Vec3f.length" {
+test "Vec3F.length" {
     const arr = [_]EType{ 2.0, -1.0, 3.0 };
     const leng_exp = @sqrt(arr[0] * arr[0] + arr[1] * arr[1] + arr[2] * arr[2]);
-    var vec = Vec3f.initSlice(&arr);
+    var vec = Vec3F.initSlice(&arr);
 
     try expectEqual(vec.vecLen(), leng_exp);
 }
 
 test "Vec3Ops.cross" {
     const v0 = [_]EType{ 1.0, 0.0, 0.0 };
-    const vec0 = Vec3f.initSlice(&v0);
+    const vec0 = Vec3F.initSlice(&v0);
     const v1 = [_]EType{ 0.0, 1.0, 0.0 };
-    const vec1 = Vec3f.initSlice(&v1);
+    const vec1 = Vec3F.initSlice(&v1);
     const v2 = [_]EType{ 0.0, 0.0, 1.0 };
-    const cross_exp = Vec3f.initSlice(&v2);
+    const cross_exp = Vec3F.initSlice(&v2);
 
     try expectEqual(Vec3Ops.cross(F, vec0, vec1), cross_exp);
 }
+
+test "Vec2Ops.cross2" {
+    const u = initVec2(F, 2.0, 3.0);
+    const v = initVec2(F, 4.0, 5.0);
+    try expectEqual(@as(F, -2.0), Vec2Ops.cross2(F, u, v));
+}
+
+test "Vec2Ops.cross3" {
+    const pt_a = initVec2(F, 1.0, 1.0);
+    const pt_b = initVec2(F, 3.0, 4.0);
+    const pt_c = initVec2(F, 5.0, 6.0);
+    try expectEqual(@as(F, -2.0), Vec2Ops.cross3(F, pt_a, pt_b, pt_c));
+}
+
+test "insertSortVec2" {
+    var points = [_]Vec2F{
+        initVec2(F, 3.0, 4.0),
+        initVec2(F, 1.0, 5.0),
+        initVec2(F, 3.0, 1.0),
+        initVec2(F, 1.0, 2.0),
+        initVec2(F, -2.0, 8.0),
+    };
+    insertSortVec2(F, &points);
+    const expected = [_]Vec2F{
+        initVec2(F, -2.0, 8.0),
+        initVec2(F, 1.0, 2.0),
+        initVec2(F, 1.0, 5.0),
+        initVec2(F, 3.0, 1.0),
+        initVec2(F, 3.0, 4.0),
+    };
+    try expectEqualSlices(Vec2F, &expected, &points);
+}
+
+test "insertSortVec3" {
+    var points = [_]Vec3F{
+        initVec3(F, 2.0, 3.0, 5.0),
+        initVec3(F, 1.0, 4.0, 1.0),
+        initVec3(F, 2.0, 3.0, 2.0),
+        initVec3(F, 2.0, 1.0, 9.0),
+    };
+    insertSortVec3(F, &points);
+    const expected = [_]Vec3F{
+        initVec3(F, 1.0, 4.0, 1.0),
+        initVec3(F, 2.0, 1.0, 9.0),
+        initVec3(F, 2.0, 3.0, 2.0),
+        initVec3(F, 2.0, 3.0, 5.0),
+    };
+    try expectEqualSlices(Vec3F, &expected, &points);
+}
+

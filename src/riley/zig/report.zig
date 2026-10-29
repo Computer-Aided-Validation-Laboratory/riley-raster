@@ -13,10 +13,11 @@ const ndarray = @import("ndarray.zig");
 const iio = @import("imageio.zig");
 const matslice = @import("matslice.zig");
 const cam = @import("camera.zig");
-const mo = @import("meshpipeline.zig");
+const meshpipe = @import("meshpipeline.zig");
 const newton = @import("newton.zig");
 const rastcfg = @import("rasterconfig.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
+const elemtilebin = @import("elemtilebinning.zig");
 pub const ReportMode = rastcfg.ReportMode;
 
 // --------------------------------------------------------------------------------------
@@ -84,6 +85,97 @@ pub fn rasterStageTime(frame_times: FrameTimes) F {
     return frame_times.raster_loop;
 }
 
+pub fn initGlobalSubpxStats(
+    buffer_mode: rastcfg.BufferMode,
+    pixels_num: [2]u32,
+    sub_sample: u32,
+    halo_px: u16,
+    actual_tile_size: u16,
+    frame_times: *FrameTimes,
+) void {
+    const sub_samp: usize = @intCast(sub_sample);
+    frame_times.global_subpx_stats = .{
+        .mode = buffer_mode,
+        .output_w_subpx = @as(usize, pixels_num[0]) * sub_samp,
+        .output_h_subpx = @as(usize, pixels_num[1]) * sub_samp,
+        .outer_halo_subpx = @as(usize, halo_px) * sub_samp,
+        .tile_core_subpx = @as(usize, actual_tile_size) * sub_samp,
+        .tile_scratch_subpx = (@as(usize, actual_tile_size) +
+            2 * @as(usize, halo_px)) * sub_samp,
+    };
+}
+
+pub fn recordTilingStatsGlobBuff(
+    tiling: elemtilebin.TileElemOverlaps,
+    tile_grid_count: usize,
+    stats: *GlobalSubpxStats,
+) void {
+    stats.tile_grid_count += tile_grid_count;
+    stats.active_tile_count += tiling.active_tiles.len;
+    stats.overlap_refs_total += tiling.overlaps.len;
+    for (tiling.active_tiles) |tile| {
+        stats.overlap_refs_max = @max(stats.overlap_refs_max, tile.overlap_count);
+    }
+}
+
+pub fn recordGlobalSubpxFullStats(
+    pixels_num: [2]u32,
+    actual_tile_size: u16,
+    tiling: elemtilebin.TileElemOverlaps,
+    frame_times: *FrameTimes,
+) void {
+    if (frame_times.global_subpx_stats) |*stats| {
+        const tiles_x = std.math.divCeil(
+            usize,
+            pixels_num[0],
+            actual_tile_size,
+        ) catch unreachable;
+        const tiles_y = std.math.divCeil(
+            usize,
+            pixels_num[1],
+            actual_tile_size,
+        ) catch unreachable;
+        recordTilingStatsGlobBuff(tiling, tiles_x * tiles_y, stats);
+    }
+}
+
+pub fn recordGlobalSubpxStripeStats(
+    cam_w_px: u32,
+    actual_tile_size: u16,
+    core_suby_min: usize,
+    core_suby_max: usize,
+    sub_samp: usize,
+    stripe_subpx: usize,
+    storage_w_subpx: usize,
+    storage_h_subpx: usize,
+    stripe_tiling: elemtilebin.TileElemOverlaps,
+    frame_times: *FrameTimes,
+) void {
+    if (frame_times.global_subpx_stats) |*stats| {
+        const tiles_x = std.math.divCeil(
+            usize,
+            cam_w_px,
+            actual_tile_size,
+        ) catch unreachable;
+        const stripe_h_px = (core_suby_max - core_suby_min) / sub_samp;
+        const tiles_y = std.math.divCeil(
+            usize,
+            stripe_h_px,
+            actual_tile_size,
+        ) catch unreachable;
+        recordTilingStatsGlobBuff(stripe_tiling, tiles_x * tiles_y, stats);
+
+        stats.stripe_core_subpx = stripe_subpx;
+        stats.stripe_count += 1;
+        stats.final_stripe_core_subpx = core_suby_max - core_suby_min;
+        stats.stripe_storage_w_subpx = storage_w_subpx;
+        stats.stripe_storage_h_subpx = storage_h_subpx;
+        stats.stripe_storage_samples_cleared += @intCast(
+            storage_w_subpx * storage_h_subpx,
+        );
+    }
+}
+
 pub const EndToEndTimes = struct {
     setup_time: F = 0,
     setup_other_time: F = 0,
@@ -100,6 +192,7 @@ pub const BenchLog = struct {
     solver_calls: u64 = 0,
     total_solver_iters: u64 = 0,
     solver_diverged: u64 = 0,
+    coherent: CoherentStats = .{},
     tess_checks: u64 = 0,
     tess_passes: u64 = 0,
     total_shaded_px: u64 = 0,
@@ -109,6 +202,26 @@ pub const BenchLog = struct {
     cam_time_ns: F = 0,
     elem_time_ns: F = 0,
     resolve_time_ns: F = 0,
+};
+
+pub const CoherentStats = struct {
+    candidate_children: u64 = 0,
+    cache_eligible: u64 = 0,
+    cache_attempts: u64 = 0,
+    cache_successes: u64 = 0,
+    cache_failures: u64 = 0,
+    extrap_attempts: u64 = 0,
+    extrap_successes: u64 = 0,
+    center_attempts: u64 = 0,
+    center_successes: u64 = 0,
+    center_failures: u64 = 0,
+    reuse_recoveries: u64 = 0,
+    bank_fallbacks: u64 = 0,
+    bank_fallback_successes: u64 = 0,
+    bank_improved: u64 = 0,
+    bank_recovered: u64 = 0,
+    bank_numerical_ties: u64 = 0,
+    cross_child: u64 = 0,
 };
 
 pub const FrameBenchCapture = struct {
@@ -132,7 +245,7 @@ pub fn deinitFrameReportStorage(
     config: rastcfg.RasterConfig,
     report_storage: *FrameReportStorage,
 ) void {
-    if (config.report == .full_stats) {
+    if (config.report.mode == .full_stats) {
         report_storage.full_stats.deinit(outer_alloc);
     }
     report_storage.* = .{ .off = .{} };
@@ -171,9 +284,9 @@ pub fn publishFrameResults(
     total_nodes_num: usize,
     total_elems_num: usize,
     total_elems_in_image: usize,
-    prep_meshes: []const mo.MeshPrepared,
+    prep_meshes: []const meshpipe.MeshPrepared,
 ) !void {
-    const nodes_per_elem = mo.calcNodesPerElem(prep_meshes);
+    const nodes_per_elem = meshpipe.calcNodesPerElem(prep_meshes);
     try publishFrameResultsWithNodesPerElem(
         outer_alloc,
         io,
@@ -214,7 +327,7 @@ pub fn publishFrameResultsWithNodesPerElem(
     total_elems_in_image: usize,
     nodes_per_elem: F,
 ) !void {
-    switch (config.report) {
+    switch (config.report.mode) {
         .off => {
             if (bench_capture) |capture| {
                 const capture_idx = calcBenchCaptureIdx(
@@ -258,7 +371,7 @@ pub fn publishFrameResultsWithNodesPerElem(
                 frame_idx,
                 camera_idx,
                 frame_times,
-                config.raster_halo_px_override orelse camera.prep_psf.halo_px,
+                camera.prep_psf.halo_px,
                 out_dir_path,
                 total_elems_num,
                 total_elems_in_image,
@@ -291,7 +404,7 @@ pub fn publishFrameResultsWithNodesPerElem(
                 frame_idx,
                 camera,
                 actual_tile_size,
-                config.full_stats_opts,
+                config.report.full_stats_opts,
                 nodes_per_elem,
             );
         },
@@ -303,6 +416,9 @@ pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
     dst.solver_calls += src.solver_calls;
     dst.total_solver_iters += src.total_solver_iters;
     dst.solver_diverged += src.solver_diverged;
+    inline for (std.meta.fields(CoherentStats)) |field| {
+        @field(dst.coherent, field.name) += @field(src.coherent, field.name);
+    }
     dst.tess_checks += src.tess_checks;
     dst.tess_passes += src.tess_passes;
     dst.total_shaded_px += src.total_shaded_px;
@@ -487,7 +603,8 @@ pub const FullStatsLog = struct {
                         "unknown";
 
                 try writer.print(
-                    "{d},{d},{d},{d},{s},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d}\n",
+                    "{d},{d},{d},{d},{s},{d},{d},{d},{d}," ++
+                        "{d},{d},{d},{d},{d},{d},{d},{d},{d}\n",
                     .{
                         xx,
                         yy,
@@ -1388,6 +1505,18 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             }
         }
 
+        pub inline fn recordCoherentStats(
+            self: @This(),
+            counts: CoherentStats,
+        ) void {
+            if (self.bench()) |bench_log| {
+                inline for (std.meta.fields(CoherentStats)) |field| {
+                    @field(bench_log.coherent, field.name) +=
+                        @field(counts, field.name);
+                }
+            }
+        }
+
         pub inline fn recordSolverIters(self: @This(), solver_iters: u64) void {
             if (self.bench()) |bench_log| {
                 bench_log.total_solver_iters += solver_iters;
@@ -1862,7 +1991,7 @@ pub fn standardReport(
         camera.pixels_num[1],
     });
     try writer.print("Camera Distortion          = {s}\n", .{
-        @tagName(camera.distortion),
+        @tagName(camera.distort),
     });
     try writer.print("Camera PSF                 = {s}\n", .{@tagName(camera.psf)});
     try writer.print("Camera Subsamples          = {d}x{d}\n", .{
@@ -2061,7 +2190,10 @@ fn globalSubpxStandardReport(
         const repeated_storage = stats.stripe_storage_samples_cleared -|
             stats.output_w_subpx * stats.output_h_subpx;
         try writer.print("{s}\nSTRIPE DOMAIN\n", .{section_break});
-        try writer.print("Core Height                  = {d} subpx\n", .{stats.stripe_core_subpx});
+        try writer.print(
+            "Core Height                  = {d} subpx\n",
+            .{stats.stripe_core_subpx},
+        );
         try writer.print("Stripe Count / Final Height  = {d} / {d} subpx\n", .{
             stats.stripe_count,
             stats.final_stripe_core_subpx,
@@ -2084,9 +2216,18 @@ fn globalSubpxStandardReport(
     try writer.print("Global Resolve               = {d:.3} ms\n", .{
         frame_times.global_subpx_times.resolve * conv,
     });
-    try writer.print("Save Frame                   = {d:.3} ms\n", .{frame_times.save_frame * conv});
-    try writer.print("Active Frame                 = {d:.3} ms\n", .{frame_times.active_time * conv});
-    try writer.print("Frame Latency                = {d:.3} ms\n", .{frame_times.latency_time * conv});
+    try writer.print(
+        "Save Frame                   = {d:.3} ms\n",
+        .{frame_times.save_frame * conv},
+    );
+    try writer.print(
+        "Active Frame                 = {d:.3} ms\n",
+        .{frame_times.active_time * conv},
+    );
+    try writer.print(
+        "Frame Latency                = {d:.3} ms\n",
+        .{frame_times.latency_time * conv},
+    );
     try writer.print("{s}\nRATES\n", .{section_break});
     try writer.print("Executed Shade Rate          = {d:.3} Msubpx/s\n", .{shade_rate});
     try writer.print("Output Sample Rate           = {d:.3} Msubpx/s\n", .{sample_rate});
@@ -2121,18 +2262,18 @@ pub fn printRenderSummary(
     }
     total_pixels *= num_time;
 
-    const actual_tile_size = switch (config.buffer_mode) {
+    const actual_tile_size = switch (config.advanced.raster.buffer_mode) {
         .tile_local => scalingpolicy.tileSize(
-            config.tile_size_override,
-            config.tile_size_min,
-            config.tile_size_max,
+            config.advanced.raster.tile_size_override,
+            config.advanced.raster.tile_size_min,
+            config.advanced.raster.tile_size_max,
             cameras[0].pixels_num,
             cameras[0].sub_sample,
             cameras[0].prep_psf.halo_px,
         ),
         .global_subpx_full, .global_subpx_stripe => @divExact(
-            config.global_subpx_tile_size_override orelse
-                config.global_subpx_tile_size_min,
+            config.advanced.raster.global_subpx_tile_size_override orelse
+                config.advanced.raster.global_subpx_tile_size_min,
             @as(u16, @intCast(cameras[0].sub_sample)),
         ),
     };
@@ -2175,15 +2316,16 @@ pub fn printRenderSummary(
         print_break,
     });
     try writer.print("Buffer Mode             = {s}\n", .{
-        @tagName(config.buffer_mode),
+        @tagName(config.advanced.raster.buffer_mode),
     });
-    if (config.buffer_mode != .tile_local) {
+    if (config.advanced.raster.buffer_mode != .tile_local) {
         const global_tile_subpx = @as(usize, actual_tile_size) *
             @as(usize, cameras[0].sub_sample);
         try writer.print("Global Raster Tile      = {d} subpx\n", .{global_tile_subpx});
-        if (config.buffer_mode == .global_subpx_stripe) {
-            const stripe_subpx = config.global_subpx_stripe_size_override orelse
-                config.global_subpx_stripe_size_min;
+        if (config.advanced.raster.buffer_mode == .global_subpx_stripe) {
+            const stripe_subpx =
+                config.advanced.raster.global_subpx_stripe_size_override orelse
+                config.advanced.raster.global_subpx_stripe_size_min;
             try writer.print("Global Stripe Height    = {d} subpx\n", .{stripe_subpx});
         }
     }

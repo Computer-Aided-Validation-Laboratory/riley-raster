@@ -97,7 +97,7 @@ pub fn runTwoShapesCaseTest(
         .roi_cent_world = target,
         .focal_length = focal_length_twoshapes,
         .sub_sample = 2,
-        .distortion = .none,
+        .distort = .none,
     };
 
     var run_config = config;
@@ -105,13 +105,9 @@ pub fn runTwoShapesCaseTest(
     run_config.background_value = 127.5;
 
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
-
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         meshes,
         run_config,
@@ -158,13 +154,30 @@ pub fn runTwoShapesCaseTest(
                 tcfg.REL_TOL,
                 tcfg.ABS_TOL,
             ) catch |err| {
+                const fail_dir = try std.fmt.allocPrint(
+                    aa,
+                    "basic_twoshapes/{s}",
+                    .{case_dir_name},
+                );
+                try common.saveComparisonArtifactsFromResult(
+                    aa,
+                    io,
+                    common.default_fails_root,
+                    fail_dir,
+                    &render_result,
+                    0,
+                    ff,
+                    ch,
+                    gold_path,
+                    1,
+                );
                 if (tcfg.TEST_CASE_VERBOSE) {
                     std.debug.print(
                         "FAIL {s} frame {d} ch {d} ({d:.2} ms)\n",
                         .{ case_dir_name, ff, ch, duration_ms },
                     );
                 }
-                return err;
+                try common.recordGoldFailure(err);
             };
         }
     }

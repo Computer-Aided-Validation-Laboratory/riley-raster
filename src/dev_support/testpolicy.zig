@@ -23,6 +23,7 @@ pub const GoldSuite = enum {
     full_shader,
     full_texture,
     full_dist_psf,
+    full_dist_frontend,
     full_ssaa_pxmap,
     full_hull,
     full_tiling,
@@ -48,6 +49,7 @@ pub fn suiteDirName(comptime suite: GoldSuite) []const u8 {
         .full_shader => "full_shader",
         .full_texture => "full_texture",
         .full_dist_psf => "full_dist_psf",
+        .full_dist_frontend => "full_dist_frontend",
         .full_ssaa_pxmap => "full_ssaa_pxmap",
         .full_hull => "full_hull",
         .full_tiling => "full_tiling",
@@ -71,6 +73,10 @@ pub fn goldRoot(comptime suite: GoldSuite) []const u8 {
             "gold/full_dist_psf"
         else
             "gold/full_dist_psf_f32",
+        .full_dist_frontend => if (F == f64)
+            "gold/full_dist_frontend"
+        else
+            "gold/full_dist_frontend_f32",
         .full_ssaa_pxmap => if (F == f64)
             "gold/full_ssaa_pxmap"
         else

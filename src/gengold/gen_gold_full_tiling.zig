@@ -44,9 +44,9 @@ pub fn formatTilingGoldDirName(
 pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.image_save_mode = .grey;
+    config.output.image_save_mode = .grey;
     config.background_value = 127.5;
-    config.image_save_opts = &[_]iio.ImageSaveOpts{
+    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .fimg, .bits = null, .scaling = .none },
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     };
@@ -78,13 +78,9 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
             var out_dir = try orch.openDirEnsured(io, gold_dir);
             out_dir.close(io);
 
-            const render_groups = [_]riley.RenderGroupSpec{
-                .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-            };
-
             _ = try riley.raster(
                 aa,
-                &render_groups,
+                io,
                 &[_]CameraInput{cam_inp},
                 &meshes,
                 config,

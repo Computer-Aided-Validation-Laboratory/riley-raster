@@ -176,8 +176,6 @@ pub fn slicePrint(comptime T: type, slice: []const T) void {
     print("]\n", .{});
 }
 
-
-
 // --------------------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------------------
@@ -317,4 +315,54 @@ test "slice.mean" {
     const mean_arr = mean(TestType, &array);
 
     try expectEqual(mean_exp, mean_arr);
+}
+
+pub fn insertSort(comptime T: type, slice: []T) void {
+    if (slice.len < 2) return;
+    for (1..slice.len) |ii| {
+        const value = slice[ii];
+        var jj = ii;
+        while (jj > 0 and slice[jj - 1] > value) {
+            slice[jj] = slice[jj - 1];
+            jj -= 1;
+        }
+        slice[jj] = value;
+    }
+}
+
+pub fn insertSortBy(
+    comptime T: type,
+    slice: []T,
+    comptime lessThanFn: fn (T, T) bool,
+) void {
+    if (slice.len < 2) return;
+    for (1..slice.len) |ii| {
+        const value = slice[ii];
+        var jj = ii;
+        while (jj > 0 and lessThanFn(value, slice[jj - 1])) {
+            slice[jj] = slice[jj - 1];
+            jj -= 1;
+        }
+        slice[jj] = value;
+    }
+}
+
+test "slice.insertSort" {
+    var array = [_]TestType{ 5.0, -2.0, 9.0, 0.0, -2.0, 3.5 };
+    insertSort(TestType, &array);
+    const expected = [_]TestType{ -2.0, -2.0, 0.0, 3.5, 5.0, 9.0 };
+    try expectEqualSlices(TestType, &expected, &array);
+}
+
+test "slice.insertSortBy" {
+    const descending = struct {
+        fn lessThan(a: TestType, b: TestType) bool {
+            return a > b;
+        }
+    }.lessThan;
+
+    var array = [_]TestType{ 5.0, -2.0, 9.0, 0.0, 3.5 };
+    insertSortBy(TestType, &array, descending);
+    const expected = [_]TestType{ 9.0, 5.0, 3.5, 0.0, -2.0 };
+    try expectEqualSlices(TestType, &expected, &array);
 }

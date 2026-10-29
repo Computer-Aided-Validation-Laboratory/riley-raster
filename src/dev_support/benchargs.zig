@@ -34,10 +34,10 @@ pub const BenchArgs = struct {
     pixels_num: [2]u32,
     sub_sample: u32,
     runs: usize,
-    distortion: DistortionMode = .none,
+    distort: DistortMode = .none,
 };
 
-pub const DistortionMode = enum {
+pub const DistortMode = enum {
     none,
     brown,
     brownext,
@@ -69,16 +69,20 @@ pub fn defaultBenchArgs(
         .image_out_dir = "",
         .render_mode = raster_config.render_mode,
         .render_group_count = 1,
-        .total_threads = raster_config.total_threads,
-        .frame_batch_size_per_group = raster_config.frame_batch_size_per_group,
-        .max_geom_jobs_in_flight_per_group = raster_config.max_geom_jobs_in_flight_per_group,
-        .max_geom_workers_per_job = raster_config.max_geom_workers_per_job,
-        .geom_scheduling_mode = raster_config.geom_scheduling_mode,
-        .max_raster_workers_per_job = raster_config.max_raster_workers_per_job,
-        .hull_mode = raster_config.hull_mode,
+        .total_threads = switch (raster_config.parallel) {
+            .auto => 1,
+            .serial => 1,
+            .threads => |th| th,
+        },
+        .frame_batch_size_per_group = 1,
+        .max_geom_jobs_in_flight_per_group = 1,
+        .max_geom_workers_per_job = 1,
+        .geom_scheduling_mode = .auto,
+        .max_raster_workers_per_job = 1,
+        .hull_mode = raster_config.advanced.solver.oneroot.hull_mode,
         .subpixel_center_map = .per_tile,
         .save_strategy = .memory,
-        .disk_save_overlap = raster_config.disk_save_overlap,
+        .disk_save_overlap = raster_config.output.disk_save_overlap,
         .sample = null,
         .sample_mode = null,
         .texture_storage = .u8,
@@ -87,7 +91,7 @@ pub fn defaultBenchArgs(
         .pixels_num = .{ 800, 500 },
         .sub_sample = 2,
         .runs = 10,
-        .distortion = .none,
+        .distort = .none,
     };
 }
 
@@ -194,9 +198,9 @@ pub fn parseArgsWithDefaults(
                 bench_args.sub_sample = try parseInt(u32, value);
             } else if (std.mem.eql(u8, arg, "--runs")) {
                 bench_args.runs = try parseInt(usize, value);
-            } else if (std.mem.eql(u8, arg, "--distortion")) {
-                bench_args.distortion =
-                    try parseEnum(DistortionMode, value);
+            } else if (std.mem.eql(u8, arg, "--distort")) {
+                bench_args.distort =
+                    try parseEnum(DistortMode, value);
             } else {
                 return error.UnknownArgument;
             }
@@ -239,20 +243,10 @@ pub fn applyRasterConfig(
 ) rastcfg.RasterConfig {
     var raster_config = base_config;
     raster_config.render_mode = bench_args.render_mode;
-    raster_config.total_threads = bench_args.total_threads;
-    raster_config.frame_batch_size_per_group =
-        bench_args.frame_batch_size_per_group;
-    raster_config.max_geom_jobs_in_flight_per_group =
-        bench_args.max_geom_jobs_in_flight_per_group;
-    raster_config.max_geom_workers_per_job =
-        bench_args.max_geom_workers_per_job;
-    raster_config.geom_scheduling_mode =
-        bench_args.geom_scheduling_mode;
-    raster_config.max_raster_workers_per_job =
-        bench_args.max_raster_workers_per_job;
-    raster_config.hull_mode = bench_args.hull_mode;
+    raster_config.parallel = .{ .threads = bench_args.total_threads };
+    raster_config.advanced.solver.oneroot.hull_mode = bench_args.hull_mode;
     raster_config.save_strategy = bench_args.save_strategy;
-    raster_config.disk_save_overlap = bench_args.disk_save_overlap;
+    raster_config.output.disk_save_overlap = bench_args.disk_save_overlap;
     return raster_config;
 }
 
@@ -293,16 +287,11 @@ fn argToSlice(arg: anytype) []const u8 {
 
 test "parse bench args defaults" {
     const args = [_][]const u8{"bench_geom"};
-    const raster_config = rastcfg.RasterConfig{
+    var raster_config = rastcfg.RasterConfig{
         .render_mode = .offline,
-        .total_threads = 3,
-        .frame_batch_size_per_group = 2,
-        .max_geom_jobs_in_flight_per_group = 2,
-        .max_geom_workers_per_job = 2,
-        .max_raster_workers_per_job = 3,
-        .hull_mode = .on_convex_fallback,
-        .subpixel_center_map = .affine_jac,
+        .parallel = .{ .threads = 3 },
     };
+    raster_config.advanced.solver.oneroot.hull_mode = .on_convex_fallback;
     const bench_args = try parseArgs(
         args[0..],
         "out/geom",
@@ -335,9 +324,9 @@ test "parse bench args named options" {
         "--max-raster-workers-per-job",
         "7",
         "--hull-mode",
-        "off",
+        "on_no_fallback",
         "--subpixel-center-map",
-        "affine_jac",
+        "per_tile",
         "--save-strategy",
         "memory",
         "--sample",
@@ -390,9 +379,12 @@ test "parse bench args named options" {
         @as(u16, 7),
         bench_args.max_raster_workers_per_job,
     );
-    try std.testing.expectEqual(rastcfg.HullMode.off, bench_args.hull_mode);
     try std.testing.expectEqual(
-        cam.SubPixelCenterMap.affine_jac,
+        rastcfg.HullMode.on_no_fallback,
+        bench_args.hull_mode,
+    );
+    try std.testing.expectEqual(
+        cam.SubPixelCenterMap.per_tile,
         bench_args.subpixel_center_map,
     );
     try std.testing.expectEqual(

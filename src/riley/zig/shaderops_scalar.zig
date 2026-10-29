@@ -191,10 +191,8 @@ inline fn resolveFuncCoordsPersp(
     shader_buf: *const comm.LocalShaderBuff(N),
     shader: *const comm.FuncPrepared,
 ) struct { coord_0: F, coord_1: F } {
-
     return switch (shader.coord_mode) {
         .uv, .world_reference, .world_deformed => blk: {
-
             var coord_0: F = 0.0;
             var coord_1: F = 0.0;
 
@@ -203,7 +201,7 @@ inline fn resolveFuncCoordsPersp(
                 coord_0 += interp.weights[nn] * shader_buf.func_coords[nn] * inv_z;
                 coord_1 += interp.weights[nn] * shader_buf.func_coords[N + nn] * inv_z;
             }
-            
+
             break :blk .{
                 .coord_0 = coord_0 * interp.sub_pixel_z,
                 .coord_1 = coord_1 * interp.sub_pixel_z,
@@ -239,7 +237,6 @@ pub inline fn fillFuncClipScal(
 
         spx_img_scratch.slice[ctx_shade.scratch_idx] =
             value * shader.scale_mul + shader.scale_add;
-
     } else {
         const vals = comm.evalFuncShaderBuiltinRGBNorm(
             shader.builtin,
@@ -277,7 +274,6 @@ pub inline fn fillFuncPerspScal(
 
         spx_img_scratch.slice[ctx_shade.scratch_idx] =
             value * shader.scale_mul + shader.scale_add;
-
     } else {
         const vals = comm.evalFuncShaderBuiltinRGBNorm(
             shader.builtin,

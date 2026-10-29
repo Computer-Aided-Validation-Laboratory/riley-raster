@@ -347,7 +347,7 @@ fn shapeFunc8SIMD(
     v_shape[3] =
         v_splat_neg_quarter * v_one_minus_x * v_one_plus_y *
         (v_splat_one + v_x - v_y);
-        
+
     v_shape[4] = v_splat_half * (v_splat_one - v_x_sq) * v_one_minus_y;
     v_shape[5] = v_splat_half * v_one_plus_x * (v_splat_one - v_y_sq);
     v_shape[6] = v_splat_half * (v_splat_one - v_x_sq) * v_one_plus_y;

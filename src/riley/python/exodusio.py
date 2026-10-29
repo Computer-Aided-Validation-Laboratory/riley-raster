@@ -263,12 +263,18 @@ def _read_exodus_names(variable: netCDF4.Variable) -> list[str]:
 
     names: list[str] = []
     for row in names_raw:
-        row_bytes = bytes(row)
-        name_str = (
-            row_bytes.split(b"\x00")[0]
-            .decode("utf-8", errors="replace")
-            .strip()
-        )
+        if row.dtype.kind == "S":
+            name_str = row.tobytes().decode("utf-8", errors="replace")
+        elif row.dtype.kind == "U":
+            name_str = "".join(row)
+        else:
+            name_str = "".join(
+                c.decode("utf-8", errors="replace")
+                if isinstance(c, bytes)
+                else str(c)
+                for c in row
+            )
+        name_str = name_str.strip("\x00 ").strip()
         if not name_str:
             raise ExodusError("Nodal variable names must not be empty.")
         names.append(name_str)

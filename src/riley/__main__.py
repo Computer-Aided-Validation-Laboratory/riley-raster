@@ -10,18 +10,18 @@ from __future__ import annotations
 
 import argparse
 import importlib
-import sys
-
 
 _DEMO_FUNCS = {
     "demo0_quickstart": "riley.pydemos.demo0_quickstart",
-    "demo1_sphere200": "riley.pydemos.demo1_sphere200",
-    "demo2_psf": "riley.pydemos.demo2_psf",
-    "demo3_rabbits": "riley.pydemos.demo3_rabbits",
-    "demo6_dicuq": "riley.pydemos.demo6_dicuq",
-    "demo7_dic_from_exodus": "riley.pydemos.demo7_dic_from_exodus",
-    "demo8_stereocal": "riley.pydemos.demo8_stereocal",
-    "demo9_feature_zoo": "riley.pydemos.demo9_feature_zoo",
+    "demo1_sphere": "riley.pydemos.demo1_sphere",
+    "demo2a_rabbits_mono": "riley.pydemos.demo2a_rabbits_mono",
+    "demo2b_rabbits_rgb": "riley.pydemos.demo2b_rabbits_rgb",
+    "demo2c_rabbits_fields": "riley.pydemos.demo2c_rabbits_fields",
+    "demo3_dicuq": "riley.pydemos.demo3_dicuq",
+    "demo3_dicuq_from_exodus": "riley.pydemos.demo3_dicuq_from_exodus",
+    "demo4_stereocal": "riley.pydemos.demo4_stereocal",
+    "demo5_cameramodels": "riley.pydemos.demo5_cameramodels",
+    "demo6_featurezoo": "riley.pydemos.demo6_featurezoo",
 }
 
 

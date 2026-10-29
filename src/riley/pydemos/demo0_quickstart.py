@@ -8,8 +8,8 @@
 # --------------------------------------------------------------------------
 from __future__ import annotations
 
-from pathlib import Path
 import shutil
+from pathlib import Path
 
 import numpy as np
 
@@ -73,17 +73,17 @@ def main() -> None:
         rot_world=rotation,
         roi_cent_world=target,
         focal_length=focal_length,
-        sub_sample=1,
+        sub_sample=4,
     )
 
     # --------------------------------------------------------------------------
     # 3. Configure the raster engine and output path
     # --------------------------------------------------------------------------
-    config = riley.create_raster_config(
-        1,
+    config = riley.RasterConfig(
+        parallel=1,
         save_strategy=riley.SaveStrategy.disk,
+        image_save_mode=riley.ImageSaveMode.grey,
     )
-    config.image_save_mode = riley.ImageSaveMode.grey
     config.save_scaling = riley.ScaleStrategy.none
 
     out_dir = Path.cwd() / "out_riley_py" / "demo0_quickstart"

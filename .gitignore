@@ -47,6 +47,9 @@ maths/
 *.csv
 *.msh
 *.e
+*.svg
+*.png
+*.jpg
 
 # Keep the min test suite to ship with the repo
 !data/min/
@@ -56,6 +59,7 @@ maths/
 !data/shapes/**/*.csv
 !data/shapes/**/*.msh
 !data/shapes/**/*.e
+!data/rabbits/outline/*.svg
 !gold/min/
 !gold/min/**/*.fimg
 !gold/min/**/*.bmp
@@ -70,6 +74,7 @@ maths/
 !gold/perf_stats_ref/**/*.md
 !gold/verif/
 !gold/verif/**
+
 
 # Keep our other test suite data committed to the repo
 !data/small/**/*.csv
@@ -96,6 +101,9 @@ src/riley/data/textures/
 # We need to keep the demo images for the README
 !images/*.bmp
 !images/*.tiff
+!images/*.svg
+!images/*.png
+!images/*.jpg
 
 # Keep llvmpipe performance comparison figures
 !perf/*.csv

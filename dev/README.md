@@ -1,4 +1,4 @@
-# Riley Developer Notes
+# Riley Developer Guide
 This document collects information for developers including style guides, testing architecture, benchmark executables, and performance regression workflows.
 
 ## Style Guide
@@ -8,110 +8,103 @@ This project follows the Computer Aided Validation Laboratory style guides for P
 2. **Make it fast.**
 3. **Make it simple for users.**
 
+## Development Guides
+The `dev/` directory provides comprehensive architectural, mathematical, testing, and conventions documentation for Riley developers:
+
+- [**`dev/TESTING.md`**](./dev/TESTING.md): Complete testing architecture, quickstart commands, descriptions of the 4 test scenes, detailed breakdown of all 8 test suites, gold reference generation, and automated regression diagnostics.
+- [**`dev/THEORY.md`**](./dev/THEORY.md): Mathematical foundations and engine design details, including polynomial camera distortion formulation, distortion-aware rasterisation frontend bounds, render thread budgets, and image save mode mechanics.
+- [**`dev/ASSUMPTIONS.md`**](./dev/ASSUMPTIONS.md): Supported engineering operating envelope, mesh validity contracts, conservative numerical margins, and reasoning guidelines for review.
+- [**`dev/MESHCONVENTION.md`**](./dev/MESHCONVENTION.md): Riley standard mesh representation, surface element definitions (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`), 3D continuum elements, node ordering, and connectivity conventions.
+- [**`dev/FILESTRUCTURE.md`**](./dev/FILESTRUCTURE.md): Repository layout, module naming rules (`io`, `ops`, `kernel`), scalar/SIMD file splitting, and internal code organisation.
+- [**`dev/ABBREVIATIONS.md`**](./dev/ABBREVIATIONS.md): Standardized abbreviations and naming conventions across Zig, C ABI, and Python codebases.
+
 ## Testing Architecture & Core Packaged Suites
 Riley provides a layered testing architecture designed for fast routine verification, rigorous mathematical validation, and exhaustive factorial test coverage:
 
+### Optimization Modes & Execution Policy
+
+Riley strictly separates optimization modes by task type:
+- **Verification and Basic test suites (`test-verif`, `test-basic`)**: Run in **Debug mode without optimisation flags** (default `zig build`), ensuring fastest compilation and developer feedback.
+- **Full test suite (`test-full`)**: Run in **ReleaseSafe mode** (`-Doptimize=ReleaseSafe`), enabling optimized factorial sweeps with safety assertions active.
+- **Benchmarks and Performance profiling (`bench-*`, `./scripts/bench_*.py`, `./scripts/perf_*.py`)**: Run in **ReleaseFast mode** (`-Doptimize=ReleaseFast`), ensuring maximum compiler vectorization and realistic production throughput.
+
+> [!IMPORTANT]
+> The combined target `zig build test-verif-basic` is intended **primarily for CI pipelines**. For **local development**, prefer running `zig build test-verif` and `zig build test-basic` as two separate terminal processes in parallel to cut turnaround time in half.
+
 ### Quick Commands
+
 ```shell
-# 1. Combined Verification and Basic Suites (preferred routine/CI command)
-zig build test-verif-basic -Doptimize=ReleaseSafe
+# Local Development: Run verif and basic in parallel across two terminal tabs/jobs (Debug)
+zig build test-verif & zig build test-basic & wait
 
-# 2. Analytic Verification Suite (Mathematical & Numerical Validation)
-zig build test-verif -Doptimize=ReleaseSafe
+# CI Combined Verification & Basic Suite (Debug)
+zig build test-verif-basic
 
-# 3. Basic Test Suite (Fast Core Feature Coverage)
-zig build test-basic -Doptimize=ReleaseSafe
+# Analytic Verification Suite (Mathematical & Numerical Validation in Debug)
+zig build test-verif
 
-# 4. Full Test Suite (Exhaustive Factorial System Coverage)
+# Basic Test Suite (Fast Core Feature Coverage in Debug)
+zig build test-basic
+
+# Full Test Suite (Exhaustive Factorial System & Threading Coverage in ReleaseSafe)
 zig build gen-gold-full -Doptimize=ReleaseSafe  # Generate Full gold (if needed)
 zig build test-full -Doptimize=ReleaseSafe
 
-# 5. Python Integration Suite
-.venv/bin/pytest src/riley/pytests/
+# Warning-only diagnostics for invalid-Jacobian element frames
+zig build test-full-badjac
+
+# Python Integration Suite
+pytest --pyargs riley.pytests -vs
+
+# Benchmarks & Performance Runs (Always ReleaseFast)
+zig build install-bench-multiroot -Doptimize=ReleaseFast -Dsimd=on
+zig build install-bench-buffer-psf -Doptimize=ReleaseFast -Dsimd=on
 ```
 
 ### Core Suites Summary
 
 | Suite Name | Command | Primary Role | Reference Data |
 | :--- | :--- | :--- | :--- |
-| **Combined Core Suite** | `zig build test-verif-basic` | Compiles and runs Verification and Basic together to avoid duplicate CI compile work | `gold/verif/`, `gold/basic/` |
-| **Verification Suite** | `zig build test-verif` | Inverse solver recovery, silhouette area/centroid, depth ordering, and camera distortion oracles | `gold/verif/` |
-| **Basic Suite** | `zig build test-basic` | Fast coverage across 1-element, 2-shape FE interaction, and feature zoo cases | `gold/basic/` |
-| **Full Suite** | `zig build test-full` | Exhaustive sweeps over shaders, textures, PSF/distortion, SSAA, hulls, tiling, scenes, threads, and outputs | `gold/full_*/` |
+| **Verification Suite** | `zig build test-verif` | Inverse solver recovery, silhouette area/centroid, depth ordering, and camera distortion oracles (Debug) | `gold/verif/` |
+| **Basic Suite** | `zig build test-basic` | Fast coverage across 1-element, 2-shape FE interaction, and feature zoo cases (Debug) | `gold/basic/` |
+| **Combined Core Suite** | `zig build test-verif-basic` | Primarily for CI: runs verif and basic sequentially in Debug mode | `gold/verif/`, `gold/basic/` |
+| **Full Suite** | `zig build test-full -Doptimize=ReleaseSafe` | Exhaustive sweeps over shaders, textures, PSF/distortion, SSAA, hulls, tiling, scenes, threads, and outputs in ReleaseSafe | `gold/full_*/` |
+| **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | Warning-only renders of intentionally folded one-element frames, with actual/reference/diff artifacts under `fails/*_full_badjac/` | Existing basic and full-hull gold |
 | **Python Pytests** | `.venv/bin/pytest src/riley/pytests/` | Python/Cython API, mesh pipeline, Exodus conversion, and demo parity | Integrated / `gold/` |
 
 > [!NOTE]
-> For complete documentation of all 4 test scenes, 8 sub-suites, gold generation, tolerances, and design contracts, see [**`dev/TESTING.md`**](file:///home/lloydf/riley-raster/dev/TESTING.md).
+> For complete documentation of all 4 test scenes, 8 sub-suites, gold generation, tolerances, and design contracts, see [**`dev/TESTING.md`**](./dev/TESTING.md).
 
 ## Precision and SIMD Build Matrix
 The `zig build` workflow supports direct control over precision, SIMD mode, Newton solver mode, and SIMD vector width:
 
 ```shell
-zig build <STEP> -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
-zig build <STEP> -Dprecision=f64 -Dsimd=off -Doptimize=ReleaseSafe
-zig build <STEP> -Dprecision=f32 -Dsimd=on -Doptimize=ReleaseSafe
-zig build <STEP> -Dprecision=f32 -Dsimd=off -Doptimize=ReleaseSafe
-zig build <STEP> -Dnewton-solver=robust -Doptimize=ReleaseSafe
-zig build <STEP> -Dsimd-vector-width=8 -Doptimize=ReleaseSafe
+zig build <STEP> -Dprecision=f64 -Dsimd=on
+zig build <STEP> -Dprecision=f64 -Dsimd=off
+zig build <STEP> -Dprecision=f32 -Dsimd=on
+zig build <STEP> -Dprecision=f32 -Dsimd=off
+zig build <STEP> -Dnewton-solver=robust
+zig build <STEP> -Dsimd-vector-width=8
 ```
 
-Suggested first-pass development checks on the main production path:
+Suggested first-pass development checks on the main production path (Debug for verif/basic, ReleaseSafe for full):
 
 ```shell
-zig build test-verif -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
-zig build test-basic -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+zig build test-verif -Dprecision=f64 -Dsimd=on
+zig build test-basic -Dprecision=f64 -Dsimd=on
 zig build test-full -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
 ```
 
 For broader matrix checks across precisions and SIMD modes:
 
 ```shell
-zig build test-verif -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
-zig build test-basic -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+zig build test-verif -Dprecision=f64 -Dsimd=on
+zig build test-basic -Dprecision=f64 -Dsimd=on
 
-zig build test-basic -Dprecision=f64 -Dsimd=off -Doptimize=ReleaseSafe
-zig build test-basic -Dprecision=f32 -Dsimd=on -Doptimize=ReleaseSafe
-zig build test-basic -Dprecision=f32 -Dsimd=off -Doptimize=ReleaseSafe
+zig build test-basic -Dprecision=f64 -Dsimd=off
+zig build test-basic -Dprecision=f32 -Dsimd=on
+zig build test-basic -Dprecision=f32 -Dsimd=off
 ```
-
-## Focused Verification Suite
-
-The focused verification suite checks independent analytic and numerical contracts rather than broad image-output stability. It currently covers:
-
-- inverse element-solver recovery from known parent coordinates;
-- undistorted silhouette area and centroid against Python-generated analytic references;
-- overlapping-rabbit depth ordering at four rear-surface separations;
-- camera-distortion forward/inverse recovery from known ideal raster points.
-
-The suite is intentionally fixed to the production `f64` configuration with SIMD enabled:
-
-```shell
-zig build test-verif -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
-```
-
-The ordinary test command is Zig-only. It reads compact comparison data from
-`./gold/verif/`; it does not run Python or regenerate expected results.
-
-The depth cases place the rear rabbit at separations of one largest mesh-coordinate span,
-`1/100` span, `1/1000` span, and twice the active depth-buffer tolerance. The final case is
-constructed in inverse camera-depth space because Riley's depth-buffer comparison tolerance
-has inverse-depth units. Each case renders the individual masks and both mesh submission
-orders, then verifies the analytic front-over-rear composition pixel by pixel.
-
-Regenerate the verification comparison data with the repository virtual environment:
-
-```shell
-zig build gen-gold-verif -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
-```
-
-This first runs the Zig input generator and then
-`./src/gengold/gengold_verif.py`. The Python stage independently integrates the projected
-linear and quadratic element boundaries and writes only the compact analytic results beneath
-`./gold/verif/`. These files remain ignored for now. If they are committed later, only the
-`f64`, SIMD-enabled dataset should be added.
-
-Changes to verification comparison data should be reviewed together with the generator and
-the numerical diff. Do not regenerate comparison data as part of `test-verif`.
 
 ## Benchmark Binaries
 The benchmark entry points exposed through `zig build` are:
@@ -123,7 +116,6 @@ The benchmark entry points exposed through `zig build` are:
 - `bench-sphere2000`
 - `bench-sphere2000zoom`
 - `bench-thread-geom`
-- `benches`
 
 To install benchmark binaries into `./bin/`:
 
@@ -218,49 +210,11 @@ The current experiment groups are driven directly by constants in the script:
 
 If you want to change the study matrix, edit those constants first.
 
-## Python Parity Check
-The packaged Python tests live in `src/riley/pytests/`.
+## Additional Notes
 
-Run the full packaged Python test suite with:
-
-```shell
-python -m pytest --pyargs riley.pytests -s
-```
-
-or:
-
-```shell
-python -m riley test
-```
-
-To compare the Python bindings against the Zig demo outputs specifically:
-
-```shell
-python -m pytest --pyargs riley.pytests.test_riley -s
-```
-
-To force a fresh Zig render instead of reusing cached demo BMPs:
-
-```shell
-python ./pyscripts/test_riley.py --force-zig-render
-```
-
-Run a packaged Python demo directly with:
-
-```shell
-python -m riley demo0_quickstart
-python -m riley demo1_sphere200
-python -m riley demo2_psf
-python -m riley demo3_rabbits
-python -m riley demo6_dicuq
-python -m riley demo7_dic_from_exodus
-python -m riley demo8_stereocal
-python -m riley demo9_feature_zoo
-```
-
-Python demo output is written to `Path.cwd() / "out_riley_py" / "<demo-name>"`.
-
-## Notes
-- Plain `zig run` and `zig test` under `./src/` still use the default Riley path of `f64` with SIMD enabled.
+- Plain `zig run` and `zig test` under `./src/` use the default Riley path of `f64` with SIMD enabled. Run the suite drivers through `zig build` to select precision, SIMD, solver, or vector-width options.
 - The public C ABI is fixed to that same production path.
+- The shared C library explicitly uses LLVM even in Debug: Zig 0.16's self-hosted Debug backend mispasses floating-point struct arguments at the C boundary in camera helpers. Native demo/test backend selection is unchanged.
+- For detailed camera model mathematics, thread budgeting, distortion-aware hulls, and image save mode mechanics, see [**`dev/THEORY.md`**](./dev/THEORY.md).
 - Some older benchmark helper scripts remain in `./scripts/` for historical studies. Prefer the current commands above unless you specifically need an archived workflow.
+

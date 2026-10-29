@@ -8,11 +8,13 @@
 # --------------------------------------------------------------------------
 __all__ = [
     "demo0_quickstart",
-    "demo1_sphere200",
-    "demo2_psf",
-    "demo3_rabbits",
-    "demo6_dicuq",
-    "demo7_dic_from_exodus",
-    "demo8_stereocal",
-    "demo9_feature_zoo",
+    "demo1_sphere",
+    "demo2a_rabbits_mono",
+    "demo2b_rabbits_rgb",
+    "demo2c_rabbits_fields",
+    "demo3_dicuq",
+    "demo3_dicuq_from_exodus",
+    "demo4_stereocal",
+    "demo5_cameramodels",
+    "demo6_featurezoo",
 ]

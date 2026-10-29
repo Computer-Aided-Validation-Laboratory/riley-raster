@@ -110,6 +110,9 @@ pub const isConvStatus = common.isConvStatus;
 pub const isPreDomConvStatus = common.isPreDomConvStatus;
 pub const hitIterLimitStatus = common.hitIterLimitStatus;
 pub const statusLabel = common.statusLabel;
+pub const refineSeedFrozenScal = scal.refineSeedFrozenScal;
+pub const FrozenJacConfig = scal.FrozenJacConfig;
+pub const FrozenJacResult = scal.FrozenJacResult;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types

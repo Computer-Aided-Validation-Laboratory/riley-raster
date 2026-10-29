@@ -18,7 +18,7 @@ const MeshInput = mo.MeshInput;
 
 pub const DistCase = struct {
     tag: []const u8,
-    distortion: camera.DistortionModel,
+    distort: camera.DistortParams,
 };
 
 pub const PsfCase = struct {
@@ -29,36 +29,36 @@ pub const PsfCase = struct {
 pub const dist_cases = [_]DistCase{
     .{
         .tag = "dist_none",
-        .distortion = .none,
+        .distort = .none,
     },
     .{
         .tag = "dist_light_barrel_bc",
-        .distortion = .{ .brown_conrady = .{ .k1 = -1000.0 } },
+        .distort = .{ .brown_con = .{ .k1 = -1000.0 } },
     },
     .{
         .tag = "dist_light_pincushion_bc",
-        .distortion = .{ .brown_conrady = .{ .k1 = 1000.0 } },
+        .distort = .{ .brown_con = .{ .k1 = 1000.0 } },
     },
     .{
         .tag = "dist_extreme_barrel_bc",
-        .distortion = .{ .brown_conrady = .{ .k1 = -2500.0, .k2 = 1.0e7 } },
+        .distort = .{ .brown_con = .{ .k1 = -2500.0, .k2 = 1.0e7 } },
     },
     .{
         .tag = "dist_extreme_pincushion_bc",
-        .distortion = .{ .brown_conrady = .{ .k1 = 2500.0, .k2 = 1.0e7 } },
+        .distort = .{ .brown_con = .{ .k1 = 2500.0, .k2 = 1.0e7 } },
     },
     .{
         .tag = "dist_light_barrel_bce",
-        .distortion = .{ .brown_conrady_ext = .{ .k1 = -1000.0 } },
+        .distort = .{ .brown_con_ext = .{ .k1 = -1000.0 } },
     },
     .{
         .tag = "dist_light_pincushion_bce",
-        .distortion = .{ .brown_conrady_ext = .{ .k1 = 1000.0 } },
+        .distort = .{ .brown_con_ext = .{ .k1 = 1000.0 } },
     },
     .{
         .tag = "dist_extreme_barrel_bce",
-        .distortion = .{
-            .brown_conrady_ext = .{
+        .distort = .{
+            .brown_con_ext = .{
                 .k1 = -2500.0,
                 .k2 = 1.0e7,
                 .k4 = 500.0,
@@ -67,8 +67,8 @@ pub const dist_cases = [_]DistCase{
     },
     .{
         .tag = "dist_extreme_pincushion_bce",
-        .distortion = .{
-            .brown_conrady_ext = .{
+        .distort = .{
+            .brown_con_ext = .{
                 .k1 = 2500.0,
                 .k2 = 1.0e7,
                 .k4 = 500.0,
@@ -77,12 +77,10 @@ pub const dist_cases = [_]DistCase{
     },
     .{
         .tag = "dist_poly_bc",
-        .distortion = .{
-            .brown_conrady_polynomial = .{
-                .brown_conrady = .{ .k1 = -1000.0 },
-                .polynomial = .{
-                    .forward_map = common_full.getRepresentativePolynomialMap(),
-                },
+        .distort = .{
+            .brown_con_poly = .{
+                .brown_con = .{ .k1 = -1000.0 },
+                .poly = common_full.getRepresentativePolyMap(),
             },
         },
     },

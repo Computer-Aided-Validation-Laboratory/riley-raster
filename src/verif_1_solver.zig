@@ -55,7 +55,7 @@ pub fn evalSample(
     sample: verif.SamplePoint,
 ) !verif.SampleRecord {
     const nan = std.math.nan(F);
-    const world_true = verif.forwardMapWorldForMeshType(
+    const world_true = verif.fordMapWorldForMeshType(
         mesh_type,
         sample.xi_true,
         sample.eta_true,
@@ -93,7 +93,7 @@ pub fn evalSample(
         err_param = @sqrt(err_xi * err_xi + err_eta * err_eta);
         in_domain = verif.isInParametricDomain(mesh_type, xi_rec, eta_rec);
 
-        const world_rec = verif.forwardMapWorldForMeshType(
+        const world_rec = verif.fordMapWorldForMeshType(
             mesh_type,
             xi_rec,
             eta_rec,

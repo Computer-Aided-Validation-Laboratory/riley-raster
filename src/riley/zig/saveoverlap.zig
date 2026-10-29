@@ -13,7 +13,7 @@ const F = buildconfig.F;
 const Timestamp = std.Io.Clock.Timestamp;
 const ndarray = @import("ndarray.zig");
 const cam = @import("camera.zig");
-const mo = @import("meshpipeline.zig");
+const meshpipe = @import("meshpipeline.zig");
 const iio = @import("imageio.zig");
 const rastcfg = @import("rasterconfig.zig");
 const report = @import("report.zig");
@@ -97,7 +97,6 @@ pub const SaveSlotBuff = struct {
 };
 
 pub const SaveOverlap = struct {
-    outer_alloc: std.mem.Allocator,
     save_io: std.Io,
     config: RasterConfig,
     enabled_flag: bool,
@@ -115,7 +114,6 @@ pub const SaveOverlap = struct {
         is_enabled: bool,
     ) !SaveOverlap {
         var session = SaveOverlap{
-            .outer_alloc = outer_alloc,
             .save_io = save_io,
             .config = config,
             .enabled_flag = is_enabled,
@@ -129,7 +127,7 @@ pub const SaveOverlap = struct {
             session.arena.allocator(),
             cameras,
             num_fields,
-            @max(@as(usize, 1), config.save_frame_buff_count),
+            @max(@as(usize, 1), config.output.save_frame_buff_count),
         );
 
         const coordinator = try outer_alloc.create(SaveCoordinator);
@@ -149,7 +147,10 @@ pub const SaveOverlap = struct {
         return session;
     }
 
-    pub fn deinit(self: *SaveOverlap) void {
+    pub fn deinit(
+        self: *SaveOverlap,
+        outer_alloc: std.mem.Allocator,
+    ) void {
         if (self.coordinator) |coordinator| {
             coordinator.mutex.lockUncancelable(self.save_io);
             coordinator.done_submitting = true;
@@ -162,9 +163,9 @@ pub const SaveOverlap = struct {
                 self.thread = null;
             }
             for (coordinator.slots) |*slot| {
-                slot.resetReportStorage(self.outer_alloc, self.config);
+                slot.resetReportStorage(outer_alloc, self.config);
             }
-            self.outer_alloc.destroy(coordinator);
+            outer_alloc.destroy(coordinator);
             self.coordinator = null;
         }
         self.arena.deinit();
@@ -189,7 +190,7 @@ pub const SaveOverlap = struct {
         slot: *SaveSlot,
         meta: RenderedFrameMeta,
         report_storage: *FrameReportStorage,
-        prep_meshes: []const mo.MeshPrepared,
+        prep_meshes: []const meshpipe.MeshPrepared,
     ) !void {
         const coordinator = self.coordinator orelse unreachable;
         try publishRenderedSlot(
@@ -204,13 +205,14 @@ pub const SaveOverlap = struct {
 
     fn releaseSlot(
         self: *SaveOverlap,
+        outer_alloc: std.mem.Allocator,
         io: std.Io,
         slot: *SaveSlot,
     ) void {
         const coordinator = self.coordinator orelse unreachable;
         coordinator.mutex.lockUncancelable(io);
         defer coordinator.mutex.unlock(io);
-        slot.resetReportStorage(self.outer_alloc, self.config);
+        slot.resetReportStorage(outer_alloc, self.config);
         slot.state = .free;
         coordinator.free_cond.signal(io);
     }
@@ -232,7 +234,7 @@ pub const SaveOverlap = struct {
         comptime raster_stage_fn: anytype,
     ) !void {
         const slot = try self.acquireSlot(io);
-        errdefer self.releaseSlot(io, slot);
+        errdefer self.releaseSlot(outer_alloc, io, slot);
         job.desc.save_slot = slot;
         try raster_stage_fn(
             outer_alloc,
@@ -287,12 +289,10 @@ pub const RenderedFrameMeta = struct {
 
 inline fn needsOutputTransform(
     image_save_mode: ImageSaveMode,
-    raw_num_fields: u8,
 ) bool {
     return switch (image_save_mode) {
-        .multifield => false,
-        .grey => raw_num_fields != 1,
-        .rgb => raw_num_fields != 3,
+        .multifield, .grey, .rgb => false,
+        .rgb_to_grey, .grey_to_rgb => true,
     };
 }
 
@@ -303,11 +303,19 @@ inline fn outputFieldsForImageSaveMode(
     return switch (image_save_mode) {
         .multifield => raw_num_fields,
         .grey => switch (raw_num_fields) {
-            1, 3 => 1,
+            1 => 1,
             else => error.UnsuppedImageModeFieldCount,
         },
         .rgb => switch (raw_num_fields) {
-            1, 3 => 3,
+            3 => 3,
+            else => error.UnsuppedImageModeFieldCount,
+        },
+        .rgb_to_grey => switch (raw_num_fields) {
+            3 => 1,
+            else => error.UnsuppedImageModeFieldCount,
+        },
+        .grey_to_rgb => switch (raw_num_fields) {
+            1 => 3,
             else => error.UnsuppedImageModeFieldCount,
         },
     };
@@ -319,8 +327,8 @@ inline fn outputFieldsForImageSaveMode(
 
 pub fn imageSaveChannelsOverride(image_save_mode: ImageSaveMode) ?usize {
     return switch (image_save_mode) {
-        .grey => 1,
-        .rgb => 3,
+        .grey, .rgb_to_grey => 1,
+        .rgb, .grey_to_rgb => 3,
         .multifield => null,
     };
 }
@@ -340,12 +348,12 @@ pub fn buildOutputFrameView(
 ) !ndarray.NDArray(F) {
     std.debug.assert(raw_frame_arr.dims.len == 3);
     const raw_num_fields: u8 = @intCast(raw_frame_arr.dims[0]);
-    if (!needsOutputTransform(config.image_save_mode, raw_num_fields)) {
+    if (!needsOutputTransform(config.output.image_save_mode)) {
         return raw_frame_arr.*;
     }
 
     const out_num_fields = try outputFieldsForImageSaveMode(
-        config.image_save_mode,
+        config.output.image_save_mode,
         raw_num_fields,
     );
     var output_frame_arr = try ndarray.NDArray(F).initFlat(
@@ -357,9 +365,9 @@ pub fn buildOutputFrameView(
         },
     );
 
-    switch (config.image_save_mode) {
-        .multifield => unreachable,
-        .grey => {
+    switch (config.output.image_save_mode) {
+        .multifield, .grey, .rgb => unreachable,
+        .rgb_to_grey => {
             std.debug.assert(raw_num_fields == 3);
             for (0..raw_frame_arr.dims[1]) |rr| {
                 for (0..raw_frame_arr.dims[2]) |cc| {
@@ -372,7 +380,7 @@ pub fn buildOutputFrameView(
                 }
             }
         },
-        .rgb => {
+        .grey_to_rgb => {
             std.debug.assert(raw_num_fields == 1);
             for (0..raw_frame_arr.dims[1]) |rr| {
                 for (0..raw_frame_arr.dims[2]) |cc| {
@@ -449,7 +457,7 @@ pub fn publishRenderedSlot(
     slot: *SaveSlot,
     meta: RenderedFrameMeta,
     report_storage: *FrameReportStorage,
-    prep_meshes: []const mo.MeshPrepared,
+    prep_meshes: []const meshpipe.MeshPrepared,
 ) !void {
     slot.camera = meta.camera;
     slot.camera_idx = meta.camera_idx;
@@ -466,7 +474,7 @@ pub fn publishRenderedSlot(
     slot.total_nodes_num = meta.total_nodes_num;
     slot.total_elems_num = meta.total_elems_num;
     slot.total_elems_in_image = meta.total_elems_in_image;
-    slot.nodes_per_elem = mo.calcNodesPerElem(prep_meshes);
+    slot.nodes_per_elem = meshpipe.calcNodesPerElem(prep_meshes);
     slot.actual_tile_size = meta.actual_tile_size;
     slot.time_start_frame = meta.time_start_frame;
 
@@ -503,8 +511,8 @@ pub fn completeSaveSlot(
         @intCast(output_frame_arr.dims[0]),
         slot.pixels_num,
         &output_frame_arr,
-        imageSaveChannelsOverride(config.image_save_mode),
-        config.image_save_opts,
+        imageSaveChannelsOverride(config.output.image_save_mode),
+        config.output.image_save_opts,
         config.output_name_format,
     );
     const time_end_save = Timestamp.now(save_io, .awake);

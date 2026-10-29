@@ -14,9 +14,9 @@ const rotation = @import("../riley/zig/rotation.zig");
 
 pub const output_dir_name = "verif";
 
-pub const CameraDistortionCase = struct {
+pub const CameraDistortCase = struct {
     case_name: []const u8,
-    distortion: cam.DistortionModel,
+    distort: cam.DistortParams,
 };
 
 pub const DistortCase = struct {
@@ -33,24 +33,24 @@ fn edgeCameraInput(
     return .{
         .pixels_num = .{ 800, 500 },
         .pixels_size = .{ 5.3e-6, 5.3e-6 },
-        .pos_world = .{ .slice = pos_world },
+        .pos_world = .{ .vec = pos_world },
         .rot_world = rotation.Rotation.init(0.0, 0.0, 0.0),
-        .roi_cent_world = .{ .slice = roi_cent_world },
+        .roi_cent_world = .{ .vec = roi_cent_world },
         .focal_length = 5.0e-2,
         .sub_sample = 1,
-        .distortion = .none,
+        .distort = .none,
     };
 }
 
-fn brownConradyDistortion(
+fn brownConradyDistort(
     k1: F,
     k2: F,
     k3: F,
     p1: F,
     p2: F,
-) cam.DistortionModel {
+) cam.DistortParams {
     return .{
-        .brown_conrady = .{
+        .brown_con = .{
             .k1 = k1,
             .k2 = k2,
             .k3 = k3,
@@ -60,7 +60,7 @@ fn brownConradyDistortion(
     };
 }
 
-fn brownConradyExtDistortion(
+fn brownConradyExtDistort(
     k1: F,
     k2: F,
     k3: F,
@@ -69,9 +69,9 @@ fn brownConradyExtDistortion(
     k6: F,
     p1: F,
     p2: F,
-) cam.DistortionModel {
+) cam.DistortParams {
     return .{
-        .brown_conrady_ext = .{
+        .brown_con_ext = .{
             .k1 = k1,
             .k2 = k2,
             .k3 = k3,
@@ -84,53 +84,67 @@ fn brownConradyExtDistortion(
     };
 }
 
-fn standalonePolynomialDistortion(
-    order: cam.PolynomialOrder,
-    coeffs_u: [10]F,
-    coeffs_v: [10]F,
-) cam.DistortionModel {
+fn fixturePolyCoeffs(
+    comptime degree: u8,
+    comptime cu: [10]F,
+    comptime cv: [10]F,
+) []const F {
+    const Storage = struct {
+        const pairs = blk: {
+            var data: [2 * cam.polyTermCount(degree)]F = undefined;
+            for (0..cam.polyTermCount(degree)) |ii| {
+                data[2 * ii] = cu[ii];
+                data[2 * ii + 1] = cv[ii];
+            }
+            break :blk data;
+        };
+    };
+    return &Storage.pairs;
+}
+
+fn standalonePolyDistort(
+    comptime degree: u8,
+    comptime coeffs_u: [10]F,
+    comptime coeffs_v: [10]F,
+) cam.DistortParams {
     return .{
-        .polynomial = .{
-            .forward_map = .{
-                .order = order,
-                .coeffs_u = coeffs_u,
-                .coeffs_v = coeffs_v,
-            },
+        .poly = .{
+            .degree = degree,
+            .mode = .displacement,
+            .coeffs = fixturePolyCoeffs(degree, coeffs_u, coeffs_v),
         },
     };
 }
 
-fn brownConradyPolynomialDistortion(
+fn brownConradyPolyDistort(
     k1: F,
     k2: F,
     k3: F,
     p1: F,
     p2: F,
-    order: cam.PolynomialOrder,
-    coeffs_u: [10]F,
-    coeffs_v: [10]F,
-) cam.DistortionModel {
+    comptime degree: u8,
+    comptime coeffs_u: [10]F,
+    comptime coeffs_v: [10]F,
+) cam.DistortParams {
     return .{
-        .brown_conrady_polynomial = .{
-            .brown_conrady = .{
+        .brown_con_poly = .{
+            .brown_con = .{
                 .k1 = k1,
                 .k2 = k2,
                 .k3 = k3,
                 .p1 = p1,
                 .p2 = p2,
             },
-            .polynomial = .{
-                .forward_map = .{
-                    .order = order,
-                    .coeffs_u = coeffs_u,
-                    .coeffs_v = coeffs_v,
-                },
+            .poly = .{
+                .degree = degree,
+                .mode = .displacement,
+                .coeffs = fixturePolyCoeffs(degree, coeffs_u, coeffs_v),
             },
         },
     };
 }
 
-fn brownConradyExtPolynomialDistortion(
+fn brownConradyExtPolyDistort(
     k1: F,
     k2: F,
     k3: F,
@@ -139,13 +153,13 @@ fn brownConradyExtPolynomialDistortion(
     k6: F,
     p1: F,
     p2: F,
-    order: cam.PolynomialOrder,
-    coeffs_u: [10]F,
-    coeffs_v: [10]F,
-) cam.DistortionModel {
+    comptime degree: u8,
+    comptime coeffs_u: [10]F,
+    comptime coeffs_v: [10]F,
+) cam.DistortParams {
     return .{
-        .brown_conrady_ext_polynomial = .{
-            .brown_conrady_ext = .{
+        .brown_con_ext_poly = .{
+            .brown_con_ext = .{
                 .k1 = k1,
                 .k2 = k2,
                 .k3 = k3,
@@ -155,25 +169,23 @@ fn brownConradyExtPolynomialDistortion(
                 .p1 = p1,
                 .p2 = p2,
             },
-            .polynomial = .{
-                .forward_map = .{
-                    .order = order,
-                    .coeffs_u = coeffs_u,
-                    .coeffs_v = coeffs_v,
-                },
+            .poly = .{
+                .degree = degree,
+                .mode = .displacement,
+                .coeffs = fixturePolyCoeffs(degree, coeffs_u, coeffs_v),
             },
         },
     };
 }
 
-pub const camera_distortion_cases = [_]CameraDistortionCase{
+pub const camera_distort_cases = [_]CameraDistortCase{
     .{
         .case_name = "none",
-        .distortion = .none,
+        .distort = .none,
     },
     .{
         .case_name = "mild_barrel",
-        .distortion = brownConradyDistortion(
+        .distort = brownConradyDistort(
             -5.0e-2,
             1.0e-2,
             0.0,
@@ -183,7 +195,7 @@ pub const camera_distortion_cases = [_]CameraDistortionCase{
     },
     .{
         .case_name = "mild_pincushion",
-        .distortion = brownConradyDistortion(
+        .distort = brownConradyDistort(
             5.0e-2,
             -1.0e-2,
             0.0,
@@ -193,7 +205,7 @@ pub const camera_distortion_cases = [_]CameraDistortionCase{
     },
     .{
         .case_name = "strong_barrel",
-        .distortion = brownConradyDistortion(
+        .distort = brownConradyDistort(
             -1.5e-1,
             3.0e-2,
             0.0,
@@ -203,7 +215,7 @@ pub const camera_distortion_cases = [_]CameraDistortionCase{
     },
     .{
         .case_name = "mixed_asymmetric",
-        .distortion = brownConradyDistortion(
+        .distort = brownConradyDistort(
             -8.0e-2,
             1.5e-2,
             0.0,
@@ -213,7 +225,7 @@ pub const camera_distortion_cases = [_]CameraDistortionCase{
     },
     .{
         .case_name = "brown_conrady_ext",
-        .distortion = brownConradyExtDistortion(
+        .distort = brownConradyExtDistort(
             -5.0e-2,
             1.0e-2,
             0.0,
@@ -225,37 +237,37 @@ pub const camera_distortion_cases = [_]CameraDistortionCase{
         ),
     },
     .{
-        .case_name = "polynomial_quadratic",
-        .distortion = standalonePolynomialDistortion(
-            .quadratic,
+        .case_name = "poly_quadratic",
+        .distort = standalonePolyDistort(
+            2,
             [_]F{ 0.0, 0.01, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0 },
             [_]F{ 0.0, 0.0, -0.01, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 },
         ),
     },
     .{
-        .case_name = "polynomial_cubic",
-        .distortion = standalonePolynomialDistortion(
-            .cubic,
+        .case_name = "poly_cubic",
+        .distort = standalonePolyDistort(
+            3,
             [_]F{ 0.0, 0.01, 0.0, 0.0, 0.5, 0.0, 2.0, 0.0, 0.0, 0.0 },
             [_]F{ 0.0, 0.0, -0.01, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, -2.0 },
         ),
     },
     .{
         .case_name = "brown_conrady_polynomial",
-        .distortion = brownConradyPolynomialDistortion(
+        .distort = brownConradyPolyDistort(
             -5.0e-2,
             1.0e-2,
             0.0,
             1.0e-3,
             -1.0e-3,
-            .quadratic,
+            2,
             [_]F{ 0.0, 0.01, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0 },
             [_]F{ 0.0, 0.0, -0.01, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 },
         ),
     },
     .{
         .case_name = "brown_conrady_ext_polynomial",
-        .distortion = brownConradyExtPolynomialDistortion(
+        .distort = brownConradyExtPolyDistort(
             -5.0e-2,
             1.0e-2,
             0.0,
@@ -264,19 +276,19 @@ pub const camera_distortion_cases = [_]CameraDistortionCase{
             0.0,
             1.0e-3,
             -1.0e-3,
-            .quadratic,
+            2,
             [_]F{ 0.0, 0.01, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0 },
             [_]F{ 0.0, 0.0, -0.01, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 },
         ),
     },
 };
 
-pub fn cameraInputWithDistortion(
+pub fn cameraInputWithDistort(
     camera_input: cam.CameraInput,
-    distortion_case: CameraDistortionCase,
+    distort_case: CameraDistortCase,
 ) cam.CameraInput {
     var distorted_camera_input = camera_input;
-    distorted_camera_input.distortion = distortion_case.distortion;
+    distorted_camera_input.distort = distort_case.distort;
     return distorted_camera_input;
 }
 

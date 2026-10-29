@@ -1,23 +1,23 @@
 const std = @import("std");
 
 const demo0_quickstart = @import("demo0_quickstart.zig");
-const demo1_sphere200 = @import("demo1_sphere200.zig");
-const demo2_psf = @import("demo2_psf.zig");
-const demo3_rabbits = @import("demo3_rabbits.zig");
-const demo4_rabbits_rgb = @import("demo4_rabbits_rgb.zig");
-const demo5_rabbits_fields = @import("demo5_rabbits_fields.zig");
-const demo6_dicuq = @import("demo6_dicuq.zig");
-const demo8_stereocal = @import("demo8_stereocal.zig");
-const demo9_feature_zoo = @import("demo9_feature_zoo.zig");
+const demo1_sphere = @import("demo1_sphere.zig");
+const demo2a_rabbits_mono = @import("demo2a_rabbits_mono.zig");
+const demo2b_rabbits_rgb = @import("demo2b_rabbits_rgb.zig");
+const demo2c_rabbits_fields = @import("demo2c_rabbits_fields.zig");
+const demo3_dicuq = @import("demo3_dicuq.zig");
+const demo4_stereocal = @import("demo4_stereocal.zig");
+const demo5_cameramodels = @import("demo5_cameramodels.zig");
+const demo6_featurezoo = @import("demo6_featurezoo.zig");
 
 pub fn main(init: std.process.Init) !void {
     try demo0_quickstart.main(init);
-    try demo1_sphere200.main(init);
-    try demo2_psf.main(init);
-    try demo3_rabbits.main(init);
-    try demo4_rabbits_rgb.main(init);
-    try demo5_rabbits_fields.main(init);
-    try demo6_dicuq.main(init);
-    try demo8_stereocal.main(init);
-    try demo9_feature_zoo.main(init);
+    try demo1_sphere.main(init);
+    try demo2a_rabbits_mono.main(init);
+    try demo2b_rabbits_rgb.main(init);
+    try demo2c_rabbits_fields.main(init);
+    try demo3_dicuq.main(init);
+    try demo4_stereocal.main(init);
+    try demo5_cameramodels.main(init);
+    try demo6_featurezoo.main(init);
 }

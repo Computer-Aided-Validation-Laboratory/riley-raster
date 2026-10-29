@@ -137,7 +137,7 @@ fn renderSinImage(
             .roi_cent_world = roi_pos,
             .focal_length = focal_length,
             .sub_sample = sub_sample,
-            .distortion = .none,
+            .distort = .none,
         },
     );
     defer camera.deinit(aa);
@@ -150,19 +150,16 @@ fn renderSinImage(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .distortion = camera.distortion,
+        .distort = camera.distort,
     };
 
     var config = tcfg.getRasterConfig(.testing);
     config.save_strategy = .memory;
-    config.image_save_opts = &[_]iio.ImageSaveOpts{};
+    config.output.image_save_opts = &[_]iio.ImageSaveOpts{};
 
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-    };
     const result = (try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         &[_]mo.MeshInput{mesh_input},
         config,

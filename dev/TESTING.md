@@ -19,6 +19,27 @@ zig build gen-gold-full -Doptimize=ReleaseSafe
 zig build test-full -Doptimize=ReleaseSafe
 ```
 
+The basic and full gold suites continue after image-comparison failures:
+each failed camera/frame/field writes actual, reference, and (when dimensions
+match) difference images under `fails/`. All remaining cases and sub-suites
+still run. The command exits unsuccessfully only after printing the total
+comparison and other suite-failure counts. Gold files are never updated by a
+test run. Rendering, setup, or artifact-write errors still abort the current
+sub-suite, but the next sub-suite runs.
+The focused verification suite likewise continues through its remaining
+verification cases and reports failure at the end.
+The generated one-element bulge/tangent fixtures include deformation frames
+whose in-plane Jacobian becomes zero or changes sign. Normal basic and full
+comparisons cover only valid frames. Run `zig build test-full-badjac` to render
+the excluded frames as warning-only diagnostics. It writes actual, reference,
+and difference BMP/CSV files under `fails/*_full_badjac/`; changes in these
+out-of-domain renders do not fail the test command.
+After reviewing and approving distortion failures, run
+`zig build gen-gold-failed-distortion -Doptimize=ReleaseSafe` to regenerate
+only the distinct distortion/PSF and SSAA/pixel-map gold cases represented
+in `fails/`. The generator writes both `.fimg` and `.bmp` references; it does
+not select or modify unrelated full-suite cases.
+
 > [!NOTE]
 > Running `gen-gold-full` and `test-full` with `-Doptimize=ReleaseSafe` is strongly recommended for high throughput, generating and verifying thousands of cases in seconds while maintaining safety checks.
 
@@ -32,6 +53,7 @@ Riley provides three core repository-packaged test suites intended for routine d
 | :--- | :--- | :--- | :--- | :--- |
 | **Verification Suite** | `zig build test-verif` | [`src/test_verif.zig`](file:///home/lloydf/riley-raster/src/test_verif.zig) | Mathematical validation against analytical Python oracles | `gold/verif/` |
 | **Basic Test Suite** | `zig build test-basic` | [`src/test_basic.zig`](file:///home/lloydf/riley-raster/src/test_basic.zig) | Fast, comprehensive coverage of core rasteriser features | `gold/basic/` |
+| **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | [`src/test_full_badjac.zig`](file:///home/lloydf/riley-raster/src/test_full_badjac.zig) | Warning-only renders and diffs for invalid one-element frames | Existing basic and full-hull gold |
 | **Python Pytest Suite** | `.venv/bin/pytest src/riley/pytests/` | [`src/riley/pytests/`](file:///home/lloydf/riley-raster/src/riley/pytests) | Python/Cython API, mesh pipeline, Exodus conversion, demo parity | Integrated / `gold/` |
 
 ### Regenerating Reference Gold for Core Suites
@@ -104,11 +126,40 @@ The test suites leverage standardized benchmark scenes designed to exercise spec
 - **Generators**: [`src/gengold/gengold_verif.py`](file:///home/lloydf/riley-raster/src/gengold/gengold_verif.py) & [`src/gen_gold_verif.zig`](file:///home/lloydf/riley-raster/src/gen_gold_verif.zig)
 - **Data Location**: `gold/verif/`
 
-The **Verification Suite** validates the mathematical foundations of the Riley rasterisation engine against closed-form analytical equations and Python oracle solvers:
+The **Verification Suite** checks independent analytic and numerical contracts rather than broad image-output stability:
 
-1. **Newton-Raphson Shape Function Inversion**: Validates parametric coordinate $(u, v)$ convergence across linear and quadratic elements (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`) and verifies analytical Jacobian derivatives.
-2. **Ray-Intersection & Sub-Pixel Sampling**: Validates ray-plane and ray-quadric intersection precision across arbitrary 3D orientations.
-3. **Geometric & Depth Boundaries**: Validates depth sorting ($Z$-buffering) and multi-mesh tie-breaking under exact floating-point tolerances.
+1. **Newton-Raphson Shape Function Inversion**: Validates inverse element-solver recovery from known parent coordinates across linear and quadratic elements (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`) and verifies analytical Jacobian derivatives.
+2. **Undistorted Silhouette Area and Centroid**: Compares projected silhouette area and centroid against Python-generated analytic references.
+3. **Overlapping-Rabbit Depth Ordering**: Validates depth buffer ordering across four rear-surface separations:
+   - One largest mesh-coordinate span,
+   - $1/100$ span,
+   - $1/1000$ span, and
+   - Twice the active depth-buffer tolerance (constructed in inverse camera-depth space because Riley's depth-buffer comparison tolerance has inverse-depth units).
+   Each case renders individual masks and both mesh submission orders, then verifies analytic front-over-rear composition pixel by pixel.
+4. **Camera Distortion Oracles**: Validates camera-distortion round trips plus independent OpenCV/NumPy forward, inverse, stacked-model, SIMD, and Jacobian oracles.
+
+### Execution and Precision Configuration
+
+The suite is intentionally fixed to the production `f64` configuration with SIMD enabled (run in Debug mode without optimization flags):
+
+```bash
+zig build test-verif -Dprecision=f64 -Dsimd=on
+```
+
+The test command is Zig-only. It reads compact comparison data from `./gold/verif/`; it does not invoke Python or regenerate expected results during test runs.
+
+### Regenerating Verification Comparison Data
+
+Regenerate verification comparison data using the repository virtual environment:
+
+```bash
+zig build gen-gold-verif -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+```
+
+This runs the Zig input generator followed by `./src/gengold/gengold_verif.py`. The Python stage independently integrates the projected linear and quadratic element boundaries and writes compact analytic results beneath `./gold/verif/`.
+
+> [!WARNING]
+> Changes to verification comparison data should be reviewed together with the generator and numerical diff. Do not regenerate comparison data as part of `test-verif`.
 
 ---
 
@@ -173,6 +224,13 @@ zig build test-full -Doptimize=ReleaseSafe
 - **Coverage** (240 test cases):
   - **SSAA Levels**: $1$ (direct pixel centers) and $4$ ($16$ subpixel samples/pixel).
   - **Distortion Models (10)**: Baseline `none`, light barrel/pincushion ($k_1 = \pm 1000.0$), extreme barrel/pincushion ($k_1 = \pm 2500.0, k_2 = 1.0\times 10^7$) with Brown-Conrady and Brown-Conrady-Ext, and quadratic polynomial distortion combinations.
+
+The focused verification suite keeps two distortion checks separate:
+`distortion_roundtrip` checks Riley's internal forward/inverse consistency,
+while `distortion_oracle` compares scalar and SIMD evaluation, inversion, and
+analytic Jacobians with compact OpenCV/NumPy gold data in `gold/verif/`. Oracle
+tolerances are centralized in `src/dev_support/testconfig.zig`; they do not
+change the production Newton solver tolerances.
   - **Point Spread Functions (4)**: Baseline pixel box (`off`), separable Gaussian ($\sigma = 1.5\text{ px}$), non-separable Gaussian ($\sigma = 1.5\text{ px}$), and anisotropic Gaussian ($\sigma_x = 1.5\text{ px}, \sigma_y = 0.1\text{ px}$).
   - **Buffer Architectures (3)**: Verified for identical bit-accurate output across `tile_local`, `global_subpx_full`, and `global_subpx_stripe`.
 
@@ -181,7 +239,7 @@ zig build test-full -Doptimize=ReleaseSafe
 - **Scene**: Scene 1 (Cube `tri3`)
 - **Coverage** (72 cases):
   - **SSAA Levels**: $1, 2, 3, 4$ ($1, 4, 9, 16$ subpixels per pixel).
-  - **Subpixel Center Mapping Engines**: `full_in_mem` (precomputed global grid), `per_tile` (on-the-fly tile evaluation), and `affine_jac` (first-order Jacobian local approximation).
+  - **Subpixel Center Mapping Engines**: `full_in_mem` (precomputed global grid) and `per_tile` (on-the-fly tile evaluation).
   - **Distortion Models**: Brown-Conrady, Brown-Conrady-Ext, and Brown-Conrady-Polynomial.
   - **PSFs & Halos**: Pixel box and Gaussian halo filtering ($\sigma = 1.5\text{ px}$, $5\text{ px}$ halo margin).
 
@@ -246,8 +304,59 @@ When any case in the Full Test Suite encounters a regression or discrepancy exce
 - **Driver**: `.venv/bin/pytest src/riley/pytests/`
 - **Location**: [`src/riley/pytests/`](file:///home/lloydf/riley-raster/src/riley/pytests)
 
-The **Python Test Suite** provides 520+ automated test cases covering:
+The **Python Test Suite** provides 640+ automated test cases covering:
 1. **Mesh Pipeline & Conversions**: Element connectivity verification, quadratic-to-linear order reduction, surface extraction, and polygon triangulation.
 2. **File I/O & Exodus Pipeline**: Multi-block Exodus II `.e` and CSV file reading/writing.
 3. **Texture & UV Tools**: Image loading/saving (BMP, TIFF) and centered planar UV projection.
 4. **End-to-End Demo Parity**: Verification that Python demos produce identical pixel output to the corresponding Zig demo binaries.
+
+### Running Pytests
+
+Run the full packaged Python test suite with:
+
+```bash
+python -m pytest --pyargs riley.pytests -s
+```
+
+or via the CLI wrapper:
+
+```bash
+python -m riley test
+```
+
+### Python-to-Zig Demo Parity Checks
+
+To compare Python bindings against Zig demo outputs specifically:
+
+```bash
+python -m pytest --pyargs riley.pytests.test_riley -s
+```
+
+To force a fresh Zig render instead of reusing cached demo BMPs:
+
+```bash
+RILEY_FORCE_ZIG_RENDER=1 python -m pytest --pyargs riley.pytests.test_riley -s
+```
+
+Individual packaged Python demos can also be run directly:
+
+```bash
+python -m riley demo0_quickstart
+python -m riley demo1_sphere
+python -m riley demo2a_rabbits_mono
+python -m riley demo2b_rabbits_rgb
+python -m riley demo2c_rabbits_fields
+python -m riley demo3_dicuq
+python -m riley demo3_dicuq_from_exodus
+python -m riley demo4_stereocal
+python -m riley demo5_cameramodels
+python -m riley demo6_featurezoo
+```
+
+Python demo output is written to `Path.cwd() / "out_riley_py" / "<demo-name>"`.
+
+The Zig demos use the same numbered names and ordering:
+- The rabbit demos (`demo2a`, `demo2b`, `demo2c`) share mesh loading, shader setup, and layout in `src/demo_rabbits_common.zig`; the Python variants share `demo_rabbits_common.py`.
+- Rabbit parity checks require greater than 10% foreground coverage in every render, ensuring blank or unrendered frames cannot pass verification.
+- Demos that clear previous output share `src/demo_common.zig` (`demo_common.resetOutputDir`). This removes the named demo output directory and recreates it cleanly.
+- `demo5_cameramodels` renders all 6 distortion families with pixel-box, Gaussian (separable/non-separable), aligned anisotropic Gaussian, and rotated anisotropic Gaussian PSFs across all 3 buffer modes (90 comparison images per run under `<distortion>/<psf>/<buffer-mode>/`). Parity checks require the entire matrix to match.

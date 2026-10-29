@@ -11,7 +11,6 @@ const common = @import("cameramodels_common.zig");
 
 const F = buildconfig.F;
 
-
 // --------------------------------------------------------------------------------------
 // Distortion Unions
 // --------------------------------------------------------------------------------------
@@ -20,32 +19,32 @@ const F = buildconfig.F;
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub fn forwardDistortionModel(
-    distortion: common.DistortionModel,
+pub fn fordDistortModel(
+    distort: common.DistortModel,
     x: F,
     y: F,
-) [2]F {
-    return switch (distortion) {
-        .none => .{ x, y },
-        .brown_conrady => |bc| bc.forward(x, y),
-        .brown_conrady_ext => |bc_ext| bc_ext.forward(x, y),
-        .polynomial => |poly| poly.forward(x, y),
-        .brown_conrady_polynomial => |chain| chain.forward(x, y),
-        .brown_conrady_ext_polynomial => |chain| chain.forward(x, y),
+) common.DistortCoords {
+    return switch (distort) {
+        .none => .{ .x = x, .y = y },
+        .brown_con => |params| common.BrownCon.ford(params, x, y),
+        .brown_con_ext => |model| model.ford(x, y),
+        .poly => |poly| poly.ford(x, y),
+        .brown_con_poly => |chain| chain.ford(x, y),
+        .brown_con_ext_poly => |chain| chain.ford(x, y),
     };
 }
 
-pub fn invDistortionModel(
-    distortion: common.DistortionModel,
+pub fn invDistortModel(
+    distort: common.DistortModel,
     x_d: F,
     y_d: F,
-) !common.DistortionInvResult {
-    return switch (distortion) {
+) !common.DistortCoords {
+    return switch (distort) {
         .none => .{ .x = x_d, .y = y_d },
-        .brown_conrady => |bc| try bc.inv(x_d, y_d),
-        .brown_conrady_ext => |bc_ext| try bc_ext.inv(x_d, y_d),
-        .polynomial => |poly| try poly.inv(x_d, y_d),
-        .brown_conrady_polynomial => |chain| try chain.inv(x_d, y_d),
-        .brown_conrady_ext_polynomial => |chain| try chain.inv(x_d, y_d),
+        .brown_con => |params| try common.BrownCon.inv(params, x_d, y_d),
+        .brown_con_ext => |model| try model.inv(x_d, y_d),
+        .poly => |poly| try poly.inv(x_d, y_d),
+        .brown_con_poly => |chain| try chain.inv(x_d, y_d),
+        .brown_con_ext_poly => |chain| try chain.inv(x_d, y_d),
     };
 }

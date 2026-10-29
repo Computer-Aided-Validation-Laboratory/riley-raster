@@ -282,7 +282,7 @@ fn makeZooCamera(
     pixels_num: [2]u32,
     rot: Rotation,
     sub_sample: u32,
-    distortion: camera.DistortionModel,
+    distort: camera.DistortParams,
     psf: camera.PointSpreadFunc,
 ) camera.CameraInput {
     const target = sceneops.boundsCenterOverMeshes(meshes);
@@ -302,14 +302,14 @@ fn makeZooCamera(
         .roi_cent_world = target,
         .focal_length = focal_length_zoo,
         .sub_sample = sub_sample,
-        .distortion = distortion,
+        .distort = distort,
         .psf = psf,
     };
 }
 
 pub fn buildAllZooCameras(meshes: []MeshInput) [6]camera.CameraInput {
     const deg = std.math.degreesToRadians;
-    const brown: camera.DistortionModel = .{ .brown_conrady = .{
+    const brown: camera.DistortParams = .{ .brown_con = .{
         .k1 = -0.12,
         .k2 = 0.035,
         .p1 = 0.0002,
@@ -410,13 +410,9 @@ pub fn generateZooMonoGold(
     run_config.save_strategy = .disk;
     run_config.background_value = 127.5;
 
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
-
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &cameras,
         meshes,
         run_config,
@@ -460,23 +456,19 @@ pub fn generateZooRgbGold(
 
     const rgb_save_opts = try aa.alloc(
         iio.ImageSaveOpts,
-        config.image_save_opts.len,
+        config.output.image_save_opts.len,
     );
-    for (config.image_save_opts, 0..) |opt, ii| {
+    for (config.output.image_save_opts, 0..) |opt, ii| {
         rgb_save_opts[ii] = opt;
         if (opt.format == .bmp or opt.format == .ppm) {
             rgb_save_opts[ii].channels = 3;
         }
     }
-    run_config.image_save_opts = rgb_save_opts;
-
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
+    run_config.output.image_save_opts = rgb_save_opts;
 
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &rgb_cameras,
         meshes,
         run_config,
@@ -527,7 +519,7 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.image_save_opts = &[_]iio.ImageSaveOpts{
+    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .fimg, .bits = null, .scaling = .none },
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };

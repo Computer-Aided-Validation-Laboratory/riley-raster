@@ -57,7 +57,7 @@ pub fn runFullSsaaPxmapCaseTest(
 
     var camera_input = prep.camera_input;
     camera_input.sub_sample = ssaa;
-    camera_input.distortion = dist_case.distortion;
+    camera_input.distort = dist_case.distort;
     camera_input.psf = psf_case.psf;
     camera_input.subpixel_center_map = pxmap_case.map_mode;
 
@@ -66,13 +66,10 @@ pub fn runFullSsaaPxmapCaseTest(
     run_config.background_value = common_full.grey_background_scene1;
 
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
 
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         &meshes,
         run_config,
@@ -133,7 +130,7 @@ pub fn runFullSsaaPxmapCaseTest(
                 .{ case_name, duration_ms },
             );
         }
-        return err;
+        try common_test.recordGoldFailure(err);
     };
 
     if (tcfg.TEST_CASE_VERBOSE) {
@@ -183,17 +180,16 @@ fn runPxmapEquivalenceTests(
     const mesh = fullcase_ssaa_pxmap.buildScene1Mesh(prep);
     const meshes = [_]MeshInput{mesh};
 
-    // 1. No-distortion control: full_in_mem, per_tile, and affine_jac must match exactly
+    // 1. No-distortion control: full_in_mem and per_tile must match exactly.
     const pxmap_modes = [_]camera.SubPixelCenterMap{
         .full_in_mem,
         .per_tile,
-        .affine_jac,
     };
 
-    var base_renders: [3]?ndarray.NDArray(F) = [_]?ndarray.NDArray(F){ null, null, null };
-    var arenas: [3]std.heap.ArenaAllocator = undefined;
+    var base_renders: [2]?ndarray.NDArray(F) = [_]?ndarray.NDArray(F){ null, null };
+    var arenas: [2]std.heap.ArenaAllocator = undefined;
     defer {
-        for (0..3) |ii| {
+        for (0..2) |ii| {
             if (base_renders[ii]) |_| arenas[ii].deinit();
         }
     }
@@ -204,7 +200,7 @@ fn runPxmapEquivalenceTests(
 
         var cam_input = prep.camera_input;
         cam_input.sub_sample = 2;
-        cam_input.distortion = .none;
+        cam_input.distort = .none;
         cam_input.psf = .{ .pixel_box = .{} };
         cam_input.subpixel_center_map = mode;
 
@@ -212,13 +208,9 @@ fn runPxmapEquivalenceTests(
         run_config.save_strategy = .memory;
         run_config.background_value = common_full.grey_background_scene1;
 
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = 1 },
-        };
-
         const result = try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{cam_input},
             &meshes,
             run_config,
@@ -229,7 +221,7 @@ fn runPxmapEquivalenceTests(
     }
 
     const ref_img = base_renders[0] orelse return error.NoResult;
-    for (1..3) |ii| {
+    for (1..2) |ii| {
         const test_img = base_renders[ii] orelse return error.NoResult;
         try std.testing.expectEqualSlices(usize, ref_img.dims, test_img.dims);
         for (ref_img.slice, test_img.slice) |ref_val, test_val| {

@@ -13,7 +13,7 @@ const geomkerns = @import("geometrykernels.zig");
 const imageops = @import("imageops.zig");
 const imageio = @import("imageio.zig");
 const matslice = @import("matslice.zig");
-const mo = @import("meshpipeline.zig");
+const meshpipe = @import("meshpipeline.zig");
 const ndarray = @import("ndarray.zig");
 const rastcfg = @import("rasterconfig.zig");
 const report = @import("report.zig");
@@ -46,9 +46,9 @@ pub const InputValidationError = error{
     InvalidCameraSubSample,
     InvalidCameraRoi,
     InvalidCameraRotation,
-    InvalidCameraDistortion,
+    InvalidCameraDistort,
     InvalidCameraPsf,
-    DistortionNotSuppedWithTri3Opt,
+    DistortNotSuppedWithTri3Opt,
     NoMeshes,
     ZeroCoordinateCount,
     ZeroElementCount,
@@ -74,6 +74,7 @@ pub const InputValidationError = error{
     InvalidTileSizeMax,
     InvalidTileSizeRange,
     InvalidTileSizeOverride,
+    InvalidDistortEdgeSpacing,
     InvalidGlobalSubpxTileSizeMin,
     InvalidGlobalSubpxTileSizeMax,
     InvalidGlobalSubpxTileSizeRange,
@@ -116,7 +117,7 @@ pub const RenderSummary = ValidSummary;
 pub fn checkRenderInps(
     render_groups: anytype,
     cam_inps: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
+    meshes: []const meshpipe.MeshInput,
     config: rastcfg.RasterConfig,
     imgs_arr: ?*ndarray.NDArray(F),
     require_out_buff: bool,
@@ -128,12 +129,12 @@ pub fn checkRenderInps(
     try checkMeshesMetadata(meshes, cam_inps);
     try checkCameras(cam_inps, config);
 
-    const num_time = mo.countFrames(meshes);
+    const num_time = meshpipe.countFrames(meshes);
     if (num_time == 0) {
         return error.NoMeshFrames;
     }
 
-    const raw_num_fields = mo.countOutputFields(meshes);
+    const raw_num_fields = meshpipe.countOutputFields(meshes);
     if (raw_num_fields == 0) {
         return error.NoOutputFields;
     }
@@ -145,7 +146,7 @@ pub fn checkRenderInps(
     }
 
     const out_num_fields = try calcOutFieldsForImgSaveMode(
-        config.image_save_mode,
+        config.output.image_save_mode,
         raw_num_fields,
     );
     const img_dims = calcAllFramesImgDims(
@@ -171,13 +172,13 @@ pub fn checkRenderInps(
 /// Computes metadata needed for allocations in `.off` mode without executing validation.
 pub fn summariseRenderInpsAssumeValid(
     cam_inps: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
+    meshes: []const meshpipe.MeshInput,
     config: rastcfg.RasterConfig,
 ) ValidSummary {
-    const num_time = if (meshes.len > 0) mo.countFrames(meshes) else 1;
-    const raw_num_fields = if (meshes.len > 0) mo.countOutputFields(meshes) else 1;
+    const num_time = if (meshes.len > 0) meshpipe.countFrames(meshes) else 1;
+    const raw_num_fields = if (meshes.len > 0) meshpipe.countOutputFields(meshes) else 1;
     const out_num_fields = calcOutFieldsForImgSaveMode(
-        config.image_save_mode,
+        config.output.image_save_mode,
         raw_num_fields,
     ) catch raw_num_fields;
     const img_dims = if (cam_inps.len > 0)
@@ -208,74 +209,70 @@ fn checkTopLevelAndRenderGroups(
         if (render_group.workers == 0) {
             return error.InvalidRenderGroupWorkers;
         }
-        if (config.report == .full_stats and
-            @min(render_group.workers, config.max_raster_workers_per_job) > 1)
-        {
+        if (config.report.mode == .full_stats and render_group.workers > 1) {
             return error.FullStatsRequiresSingleRasterWorker;
         }
     }
 }
 
 fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
-    if (config.total_threads == 0) {
-        return error.InvalidTotalThreads;
+    if (!std.math.isFinite(config.advanced.distortion.edge_spacing_px) or
+        config.advanced.distortion.edge_spacing_px <= 0.0)
+    {
+        return error.InvalidDistortEdgeSpacing;
     }
-    if (config.frame_batch_size_per_group == 0) {
-        return error.InvalidFrameBatchSize;
+    switch (config.parallel) {
+        .threads => |t| if (t == 0) return error.InvalidTotalThreads,
+        else => {},
     }
-    if (config.max_geom_jobs_in_flight_per_group == 0) {
-        return error.InvalidGeomJobsInFlight;
-    }
-    if (config.max_geom_workers_per_job == 0) {
-        return error.InvalidGeomWorkersPerJob;
-    }
-    if (config.max_raster_workers_per_job == 0) {
-        return error.InvalidRasterWorkersPerJob;
-    }
-    if (config.tile_size_min == 0) {
+    if (config.advanced.raster.tile_size_min == 0) {
         return error.InvalidTileSizeMin;
     }
-    if (config.tile_size_max == 0) {
+    if (config.advanced.raster.tile_size_max == 0) {
         return error.InvalidTileSizeMax;
     }
-    if (config.tile_size_min > config.tile_size_max) {
+    if (config.advanced.raster.tile_size_min > config.advanced.raster.tile_size_max) {
         return error.InvalidTileSizeRange;
     }
-    if (config.tile_size_override) |tile_size_override| {
-        if (tile_size_override < config.tile_size_min or
-            tile_size_override > config.tile_size_max)
+    if (config.advanced.raster.tile_size_override) |tile_size_override| {
+        if (tile_size_override < config.advanced.raster.tile_size_min or
+            tile_size_override > config.advanced.raster.tile_size_max)
         {
             return error.InvalidTileSizeOverride;
         }
     }
-    if (config.global_subpx_tile_size_min == 0) {
+    if (config.advanced.raster.global_subpx_tile_size_min == 0) {
         return error.InvalidGlobalSubpxTileSizeMin;
     }
-    if (config.global_subpx_tile_size_max == 0) {
+    if (config.advanced.raster.global_subpx_tile_size_max == 0) {
         return error.InvalidGlobalSubpxTileSizeMax;
     }
-    if (config.global_subpx_tile_size_min > config.global_subpx_tile_size_max) {
+    if (config.advanced.raster.global_subpx_tile_size_min >
+        config.advanced.raster.global_subpx_tile_size_max)
+    {
         return error.InvalidGlobalSubpxTileSizeRange;
     }
-    if (config.global_subpx_tile_size_override) |tile_size_override| {
-        if (tile_size_override < config.global_subpx_tile_size_min or
-            tile_size_override > config.global_subpx_tile_size_max)
+    if (config.advanced.raster.global_subpx_tile_size_override) |tile_size_override| {
+        if (tile_size_override < config.advanced.raster.global_subpx_tile_size_min or
+            tile_size_override > config.advanced.raster.global_subpx_tile_size_max)
         {
             return error.InvalidGlobalSubpxTileSizeOverride;
         }
     }
-    if (config.global_subpx_stripe_size_min == 0) {
+    if (config.advanced.raster.global_subpx_stripe_size_min == 0) {
         return error.InvalidGlobalSubpxStripeSizeMin;
     }
-    if (config.global_subpx_stripe_size_max == 0) {
+    if (config.advanced.raster.global_subpx_stripe_size_max == 0) {
         return error.InvalidGlobalSubpxStripeSizeMax;
     }
-    if (config.global_subpx_stripe_size_min > config.global_subpx_stripe_size_max) {
+    if (config.advanced.raster.global_subpx_stripe_size_min >
+        config.advanced.raster.global_subpx_stripe_size_max)
+    {
         return error.InvalidGlobalSubpxStripeSizeRange;
     }
-    if (config.global_subpx_stripe_size_override) |stripe_size_override| {
-        if (stripe_size_override < config.global_subpx_stripe_size_min or
-            stripe_size_override > config.global_subpx_stripe_size_max)
+    if (config.advanced.raster.global_subpx_stripe_size_override) |stripe_size_override| {
+        if (stripe_size_override < config.advanced.raster.global_subpx_stripe_size_min or
+            stripe_size_override > config.advanced.raster.global_subpx_stripe_size_max)
         {
             return error.InvalidGlobalSubpxStripeSizeOverride;
         }
@@ -283,15 +280,17 @@ fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
     if (!std.math.isFinite(config.background_value)) {
         return error.InvalidBackgroundValue;
     }
-    if (config.save_frame_buff_count == 0) {
+    if (config.output.save_frame_buff_count == 0) {
         return error.InvalidSaveFrameBuffCount;
     }
     if ((config.save_strategy == .disk or config.save_strategy == .both) and
-        config.image_save_opts.len == 0)
+        config.output.image_save_opts.len == 0)
     {
         return error.InvalidImageSaveOpts;
     }
-    if (config.report == .full_stats and config.full_stats_opts.formats.len == 0) {
+    if (config.report.mode == .full_stats and
+        config.report.full_stats_opts.formats.len == 0)
+    {
         return error.InvalidFullStatsFormats;
     }
 }
@@ -301,7 +300,7 @@ fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
 // --------------------------------------------------------------------------------------
 
 fn checkMeshesMetadata(
-    meshes: []const mo.MeshInput,
+    meshes: []const meshpipe.MeshInput,
     cam_inps: []const cam.CameraInput,
 ) InputValidationError!void {
     if (meshes.len == 0) {
@@ -324,7 +323,7 @@ fn checkMeshesMetadata(
         }
         if (mesh.connect.table.cols_num != expected_nodes_per_elem or
             mesh.connect.table_mem.len !=
-            mesh.connect.table.rows_num * mesh.connect.table.cols_num)
+                mesh.connect.table.rows_num * mesh.connect.table.cols_num)
         {
             return error.InvalidConnectivityDimensions;
         }
@@ -335,7 +334,9 @@ fn checkMeshesMetadata(
                 disp_field.array.dims[1] != mesh.coords.mat.rows_num or
                 disp_field.array.dims[2] != 3 or
                 disp_field.array_mem.len !=
-                disp_field.array.dims[0] * disp_field.array.dims[1] * disp_field.array.dims[2])
+                    disp_field.array.dims[0] *
+                        disp_field.array.dims[1] *
+                        disp_field.array.dims[2])
             {
                 return error.InvalidDisplacementDimensions;
             }
@@ -343,8 +344,8 @@ fn checkMeshesMetadata(
 
         if (mesh.mesh_type == .tri3opt) {
             for (cam_inps) |cam_inp| {
-                if (!cam.isNoDistortion(cam_inp.distortion)) {
-                    return error.DistortionNotSuppedWithTri3Opt;
+                if (!cam.isNoDistort(cam_inp.distort)) {
+                    return error.DistortNotSuppedWithTri3Opt;
                 }
             }
         }
@@ -402,14 +403,14 @@ fn checkCamInp(cam_inp: cam.CameraInput) InputValidationError!void {
         return error.InvalidCameraRoi;
     }
 
-    if (!isFiniteSlice(cam_inp.rot_world.matrix.slice[0..])) {
+    if (!isFiniteSlice(cam_inp.rot_world.matrix.asSlice())) {
         return error.InvalidCameraRotation;
     }
     if (!isValidRotationMatrix(cam_inp.rot_world.matrix)) {
         return error.InvalidCameraRotation;
     }
-    if (!isValidDistortion(cam_inp.distortion)) {
-        return error.InvalidCameraDistortion;
+    if (!isValidDistort(cam_inp.distort)) {
+        return error.InvalidCameraDistort;
     }
     if (!isValidPsf(cam_inp.psf)) {
         return error.InvalidCameraPsf;
@@ -464,16 +465,17 @@ fn checkGlobalSubpxAlignment(
     config: rastcfg.RasterConfig,
     sub_samp: u32,
 ) InputValidationError!void {
-    if (config.buffer_mode == .tile_local) return;
+    if (config.advanced.raster.buffer_mode == .tile_local) return;
 
-    const tile_size = config.global_subpx_tile_size_override orelse
-        config.global_subpx_tile_size_min;
+    const tile_size = config.advanced.raster.global_subpx_tile_size_override orelse
+        config.advanced.raster.global_subpx_tile_size_min;
     if (@mod(tile_size, sub_samp) != 0) {
         return error.GlobalSubpxTileSizeNotAligned;
     }
-    if (config.buffer_mode == .global_subpx_stripe) {
-        const stripe_size = config.global_subpx_stripe_size_override orelse
-            config.global_subpx_stripe_size_min;
+    if (config.advanced.raster.buffer_mode == .global_subpx_stripe) {
+        const stripe_size =
+            config.advanced.raster.global_subpx_stripe_size_override orelse
+            config.advanced.raster.global_subpx_stripe_size_min;
         if (@mod(stripe_size, sub_samp) != 0) {
             return error.GlobalSubpxStripeSizeNotAligned;
         }
@@ -724,11 +726,19 @@ pub fn calcOutFieldsForImgSaveMode(
     return switch (img_save_mode) {
         .multifield => raw_num_fields,
         .grey => switch (raw_num_fields) {
-            1, 3 => 1,
+            1 => 1,
             else => error.UnsuppedImageModeFieldCount,
         },
         .rgb => switch (raw_num_fields) {
-            1, 3 => 3,
+            3 => 3,
+            else => error.UnsuppedImageModeFieldCount,
+        },
+        .rgb_to_grey => switch (raw_num_fields) {
+            3 => 1,
+            else => error.UnsuppedImageModeFieldCount,
+        },
+        .grey_to_rgb => switch (raw_num_fields) {
+            1 => 3,
             else => error.UnsuppedImageModeFieldCount,
         },
     };
@@ -791,36 +801,22 @@ fn validAllFramesBuff(
 // Low-Level Distortion & PSF Validators
 // --------------------------------------------------------------------------------------
 
-fn isValidPolynomialMap(map: cam.PolynomialMap) bool {
-    const term_count = map.order.termCount();
-    return isFiniteSlice(map.coeffs_u[0..term_count]) and
-        isFiniteSlice(map.coeffs_v[0..term_count]);
-}
-
-fn isValidBidirectionalPolynomial(poly: cam.BidirectionalPolynomial) bool {
-    if (poly.forward_map == null and poly.inv_map == null) {
-        return false;
-    }
-    if (poly.forward_map) |forward_map| {
-        if (!isValidPolynomialMap(forward_map)) return false;
-    }
-    if (poly.inv_map) |inv_map| {
-        if (!isValidPolynomialMap(inv_map)) return false;
-    }
+fn isValidPolyMap(map: cam.PolyMap) bool {
+    map.validate() catch return false;
     return true;
 }
 
-fn isValidDistortion(distortion: cam.DistortionModel) bool {
-    return switch (distortion) {
+fn isValidDistort(distort: cam.DistortParams) bool {
+    return switch (distort) {
         .none => true,
-        .brown_conrady => |bc| isFiniteSlice(&[_]F{
+        .brown_con => |bc| isFiniteSlice(&[_]F{
             bc.k1,
             bc.k2,
             bc.k3,
             bc.p1,
             bc.p2,
         }),
-        .brown_conrady_ext => |bc| isFiniteSlice(&[_]F{
+        .brown_con_ext => |bc| isFiniteSlice(&[_]F{
             bc.k1,
             bc.k2,
             bc.k3,
@@ -829,25 +825,37 @@ fn isValidDistortion(distortion: cam.DistortionModel) bool {
             bc.k6,
             bc.p1,
             bc.p2,
+            bc.s1,
+            bc.s2,
+            bc.s3,
+            bc.s4,
+            bc.tau_x,
+            bc.tau_y,
         }),
-        .polynomial => |poly| isValidBidirectionalPolynomial(poly),
-        .brown_conrady_polynomial => |chain| isFiniteSlice(&[_]F{
-            chain.brown_conrady.k1,
-            chain.brown_conrady.k2,
-            chain.brown_conrady.k3,
-            chain.brown_conrady.p1,
-            chain.brown_conrady.p2,
-        }) and isValidBidirectionalPolynomial(chain.polynomial),
-        .brown_conrady_ext_polynomial => |chain| isFiniteSlice(&[_]F{
-            chain.brown_conrady_ext.k1,
-            chain.brown_conrady_ext.k2,
-            chain.brown_conrady_ext.k3,
-            chain.brown_conrady_ext.k4,
-            chain.brown_conrady_ext.k5,
-            chain.brown_conrady_ext.k6,
-            chain.brown_conrady_ext.p1,
-            chain.brown_conrady_ext.p2,
-        }) and isValidBidirectionalPolynomial(chain.polynomial),
+        .poly => |poly| isValidPolyMap(poly),
+        .brown_con_poly => |chain| isFiniteSlice(&[_]F{
+            chain.brown_con.k1,
+            chain.brown_con.k2,
+            chain.brown_con.k3,
+            chain.brown_con.p1,
+            chain.brown_con.p2,
+        }) and isValidPolyMap(chain.poly),
+        .brown_con_ext_poly => |chain| isFiniteSlice(&[_]F{
+            chain.brown_con_ext.k1,
+            chain.brown_con_ext.k2,
+            chain.brown_con_ext.k3,
+            chain.brown_con_ext.k4,
+            chain.brown_con_ext.k5,
+            chain.brown_con_ext.k6,
+            chain.brown_con_ext.p1,
+            chain.brown_con_ext.p2,
+            chain.brown_con_ext.s1,
+            chain.brown_con_ext.s2,
+            chain.brown_con_ext.s3,
+            chain.brown_con_ext.s4,
+            chain.brown_con_ext.tau_x,
+            chain.brown_con_ext.tau_y,
+        }) and isValidPolyMap(chain.poly),
     };
 }
 
@@ -896,5 +904,17 @@ fn isFinite2D(comptime N1: usize, comptime N2: usize, arr: *const [N1][N2]F) boo
 }
 
 fn isFiniteVec3(vec_val: anytype) bool {
-    return isFiniteSlice(vec_val.slice[0..]);
+    return isFiniteSlice(vec_val.asSlice());
 }
+
+test "raster configuration rejects invalid distortion edge spacing" {
+    var config = rastcfg.RasterConfig{};
+    for ([_]F{ 0.0, -1.0, std.math.nan(F), std.math.inf(F) }) |spacing| {
+        config.advanced.distortion.edge_spacing_px = spacing;
+        try std.testing.expectError(
+            error.InvalidDistortEdgeSpacing,
+            checkRasterConfig(config),
+        );
+    }
+}
+

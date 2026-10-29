@@ -8,6 +8,7 @@
 # --------------------------------------------------------------------------
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
 import shutil
@@ -20,7 +21,6 @@ from time import perf_counter
 import numpy as np
 import pytest
 from PIL import Image
-
 
 PROJECT_ROOT = Path.cwd()
 PYTHON_EXE = Path(sys.executable)
@@ -36,55 +36,76 @@ STANDARD_DEMO_CASES = (
         None,
     ),
     (
-        "sphere200",
-        [str(PYTHON_EXE), "-m", "riley", "demo1_sphere200"],
-        "out/demo1_sphere200",
-        "out_riley_py/demo1_sphere200",
+        "sphere",
+        [str(PYTHON_EXE), "-m", "riley", "demo1_sphere"],
+        "out/demo1_sphere",
+        "out_riley_py/demo1_sphere",
         None,
     ),
     (
-        "psf",
-        [str(PYTHON_EXE), "-m", "riley", "demo2_psf"],
-        "out/demo2_psf",
-        "out_riley_py/demo2_psf",
+        "rabbits_mono",
+        [str(PYTHON_EXE), "-m", "riley", "demo2a_rabbits_mono"],
+        "out/demo2a_rabbits_mono",
+        "out_riley_py/demo2a_rabbits_mono",
         None,
     ),
     (
-        "rabbits",
-        [str(PYTHON_EXE), "-m", "riley", "demo3_rabbits"],
-        "out/demo3_rabbits",
-        "out_riley_py/demo3_rabbits",
+        "rabbits_rgb",
+        [str(PYTHON_EXE), "-m", "riley", "demo2b_rabbits_rgb"],
+        "out/demo2b_rabbits_rgb",
+        "out_riley_py/demo2b_rabbits_rgb",
+        None,
+    ),
+    (
+        "rabbits_fields",
+        [str(PYTHON_EXE), "-m", "riley", "demo2c_rabbits_fields"],
+        "out/demo2c_rabbits_fields",
+        "out_riley_py/demo2c_rabbits_fields",
         None,
     ),
     (
         "dicuq",
-        [str(PYTHON_EXE), "-m", "riley", "demo6_dicuq"],
-        "out/demo6_dicuq",
-        "out_riley_py/demo6_dicuq",
+        [str(PYTHON_EXE), "-m", "riley", "demo3_dicuq"],
+        "out/demo3_dicuq",
+        "out_riley_py/demo3_dicuq",
         2,
     ),
     (
         "stereocal",
-        [str(PYTHON_EXE), "-m", "riley", "demo8_stereocal"],
-        "out/demo8_stereocal",
-        "out_riley_py/demo8_stereocal",
+        [str(PYTHON_EXE), "-m", "riley", "demo4_stereocal"],
+        "out/demo4_stereocal",
+        "out_riley_py/demo4_stereocal",
         8,
     ),
     (
+        "cameramodels",
+        [str(PYTHON_EXE), "-m", "riley", "demo5_cameramodels"],
+        "out/demo5_cameramodels",
+        "out_riley_py/demo5_cameramodels",
+        None,
+    ),
+    (
         "feature_zoo",
-        [str(PYTHON_EXE), "-m", "riley", "demo9_feature_zoo"],
-        "out/demo9_feature_zoo",
-        "out_riley_py/demo9_feature_zoo",
+        [str(PYTHON_EXE), "-m", "riley", "demo6_featurezoo"],
+        "out/demo6_featurezoo",
+        "out_riley_py/demo6_featurezoo",
         None,
     ),
 )
 
 EXODUS_DEMO_CASE = (
     "dic_from_exodus",
-    [str(PYTHON_EXE), "-m", "riley", "demo7_dic_from_exodus"],
-    "out/demo6_dicuq",
-    "out_riley_py/demo7_dic_from_exodus",
+    [str(PYTHON_EXE), "-m", "riley", "demo3_dicuq_from_exodus"],
+    "out/demo3_dicuq",
+    "out_riley_py/demo3_dicuq_from_exodus",
     2,
+)
+
+CALIBRATION_DEMO_CASE = (
+    "stereocal",
+    [str(PYTHON_EXE), "-m", "riley", "demo4_stereocal"],
+    "out_riley_py/demo4_stereocal",
+    8,
 )
 
 ALL_DEMO_CASES = (*STANDARD_DEMO_CASES, EXODUS_DEMO_CASE)
@@ -154,10 +175,40 @@ def _has_renders(dir_path: Path) -> bool:
     return dir_path.is_dir() and bool(_render_paths(dir_path))
 
 
+def _has_cameramodel_renders(dir_path: Path) -> bool:
+    """Require full distortion/PSF/buffer matrix, not a partial render."""
+    distorts = (
+        "none",
+        "brown_conrady",
+        "brown_conrady_ext",
+        "polynomial",
+        "brown_conrady_polynomial",
+        "brown_conrady_ext_polynomial",
+    )
+    psfs = (
+        "pixel_box",
+        "gaussian_separable",
+        "gaussian_nonseparable",
+        "anisotropic_separable",
+        "anisotropic_rotated",
+    )
+    modes = ("tile_local", "global_subpx_full", "global_subpx_stripe")
+    expected = set()
+    for distort in distorts:
+        for psf in psfs:
+            for mode in modes:
+                rel = Path(distort) / psf / mode / "cam0_frame0_field0.bmp"
+                expected.add(rel)
+    actual = {path.relative_to(dir_path) for path in _render_paths(dir_path)}
+    return actual == expected
+
+
 def _has_expected_demo_renders(
     dir_path: Path,
     frames_num: int | None,
 ) -> bool:
+    if dir_path.name == "demo5_cameramodels":
+        return _has_cameramodel_renders(dir_path)
     if frames_num is None:
         return _has_renders(dir_path)
     expected = {
@@ -165,10 +216,11 @@ def _has_expected_demo_renders(
         for camera in range(2)
         for frame in range(frames_num)
     }
-    actual = {
-        path.relative_to(dir_path)
-        for path in _render_paths(dir_path)
-    } if dir_path.is_dir() else set()
+    actual = (
+        {path.relative_to(dir_path) for path in _render_paths(dir_path)}
+        if dir_path.is_dir()
+        else set()
+    )
     return actual == expected
 
 
@@ -177,6 +229,7 @@ def _run_command(label: str, cmd: list[str], env: dict[str, str]) -> float:
     start_time = perf_counter()
     res = subprocess.run(
         cmd,
+        check=False,
         cwd=PROJECT_ROOT,
         env=env,
         capture_output=True,
@@ -249,6 +302,21 @@ def _compare_render_dirs(dir_a: Path, dir_b: Path) -> None:
     print(f"Compare completed in {elapsed_time:.3f}s.")
 
 
+def _verify_rabbit_coverage(dir_path: Path) -> None:
+    images = _render_paths(dir_path)
+    assert images, f"no rabbit renders in {dir_path}"
+    for image_path in images:
+        image = np.asarray(Image.open(image_path))
+        foreground = (
+            np.any(image != 128, axis=2) if image.ndim == 3 else image != 128
+        )
+        coverage = np.count_nonzero(foreground) / foreground.size
+        assert coverage > 0.10, (
+            f"rabbit foreground coverage for {image_path} is "
+            f"{coverage:.2%}; expected more than 10%"
+        )
+
+
 def _verify_feature_zoo_coverage(dir_path: Path) -> None:
     for image_path in _render_paths(dir_path):
         image = np.asarray(Image.open(image_path))
@@ -278,32 +346,69 @@ def ensure_repo_context() -> None:
         )
 
 
+def _compute_zig_demo_sources_sha() -> str:
+    hasher = hashlib.sha256()
+    paths: list[Path] = []
+    src_dir = PROJECT_ROOT / "src"
+    if src_dir.is_dir():
+        paths.extend(src_dir.rglob("*.zig"))
+    for dir_name in ("data", "texture"):
+        asset_dir = PROJECT_ROOT / dir_name
+        if asset_dir.is_dir():
+            paths.extend(f for f in asset_dir.rglob("*") if f.is_file())
+    paths.sort()
+    for path in paths:
+        rel_str = str(path.relative_to(PROJECT_ROOT).as_posix())
+        hasher.update(rel_str.encode("utf-8"))
+        hasher.update(path.read_bytes())
+    return hasher.hexdigest()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def ensure_zig_demo_renders() -> None:
     if not _repo_assets_available():
         return
     if not _has_zig_compiler():
         pytest.skip(
-            "Zig compiler is not available to render Zig demos for "
-            "comparison.",
+            "Zig compiler is not available to render Zig demos for comparison.",
             allow_module_level=True,
         )
 
     silent_env = dict(os.environ)
     silent_env["RILEY_DEMO_SILENT"] = "1"
 
-    force_zig_render = os.environ.get("RILEY_FORCE_ZIG_RENDER", "0") == "1"
-    if force_zig_render:
-        for _, _, zig_dir, _, _ in DEMO_CASES:
-            shutil.rmtree(PROJECT_ROOT / zig_dir, ignore_errors=True)
+    stamp_path = PROJECT_ROOT / "out" / ".zig_demos.sha256"
+    current_sha = _compute_zig_demo_sources_sha()
+    cached_sha = ""
+    if stamp_path.is_file():
+        try:
+            cached_sha = stamp_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            cached_sha = ""
+    hash_mismatch = cached_sha != current_sha
 
-    needs_zig_render = force_zig_render or any(
-        not _has_expected_demo_renders(PROJECT_ROOT / zig_dir, frames_num)
-        for _, _, zig_dir, _, frames_num in DEMO_CASES
+    force_zig_render = os.environ.get("RILEY_FORCE_ZIG_RENDER", "0") == "1"
+
+    needs_zig_render = (
+        force_zig_render
+        or hash_mismatch
+        or any(
+            not _has_expected_demo_renders(PROJECT_ROOT / zig_dir, frames_num)
+            for _, _, zig_dir, _, frames_num in DEMO_CASES
+        )
     )
 
     if needs_zig_render:
+        if hash_mismatch and not force_zig_render:
+            print(
+                f"Zig sources or assets changed (cached={cached_sha[:8]}, "
+                f"current={current_sha[:8]}); re-rendering Zig demos."
+            )
+        for _, _, zig_dir, _, _ in DEMO_CASES:
+            shutil.rmtree(PROJECT_ROOT / zig_dir, ignore_errors=True)
         _run_command("zig demo render", _get_zig_run_cmd(), silent_env)
+        stamp_path.parent.mkdir(parents=True, exist_ok=True)
+        stamp_path.write_text(f"{current_sha}\n", encoding="utf-8")
     else:
         print("Reusing cached Zig demo renders.")
 
@@ -323,6 +428,12 @@ def _run_demo_case(
     print(f"Testing demo case: {case_name}")
     _run_command(f"python render {case_name}", python_cmd, silent_env)
     _compare_render_dirs(PROJECT_ROOT / zig_dir, py_dir_path)
+    if case_name in ("rabbits_mono", "rabbits_rgb", "rabbits_fields"):
+        _verify_rabbit_coverage(PROJECT_ROOT / zig_dir)
+        _verify_rabbit_coverage(py_dir_path)
+    if case_name == "cameramodels":
+        assert _has_cameramodel_renders(PROJECT_ROOT / zig_dir)
+        assert _has_cameramodel_renders(py_dir_path)
     if case_name == "feature_zoo":
         _verify_feature_zoo_coverage(PROJECT_ROOT / zig_dir)
         _verify_feature_zoo_coverage(py_dir_path)
@@ -348,6 +459,18 @@ def test_demo_parity(
     find_spec("netCDF4") is None,
     reason="netCDF4 is required for the exodus Python demo parity test.",
 )
-def test_demo7_dic_from_exodus_parity() -> None:
+def test_demo3_dicuq_from_exodus_parity() -> None:
     case_name, python_cmd, zig_dir, py_dir, _ = EXODUS_DEMO_CASE
     _run_demo_case(case_name, python_cmd, zig_dir, py_dir)
+
+
+def test_demo4_stereocal_motion() -> None:
+    """The Python calibration helper drives the stereocal demonstration."""
+    case_name, python_cmd, py_dir, frames_num = CALIBRATION_DEMO_CASE
+    silent_env = dict(os.environ)
+    silent_env["RILEY_DEMO_SILENT"] = "1"
+    py_dir_path = PROJECT_ROOT / py_dir
+    shutil.rmtree(py_dir_path, ignore_errors=True)
+
+    _run_command(f"python render {case_name}", python_cmd, silent_env)
+    assert _has_expected_demo_renders(py_dir_path, frames_num)

@@ -32,9 +32,44 @@ const cfg = buildconfig.config;
 const csvio = @import("../riley/zig/csvio.zig");
 const policy = @import("testpolicy.zig");
 const tcfg = @import("testconfig.zig");
+const testsuites = @import("testsuites.zig");
+
+pub const recordGoldFailure = testsuites.recordGoldFailure;
 
 pub const default_fails_root = "fails";
 pub const impl_suffix = if (cfg.simd == .on) "_simd" else "_scalar";
+
+/// The generated planar edge fixtures use 13 deformation steps. Their extreme
+/// steps fold the FE parameterization, so they are not valid raster gold cases.
+/// These ranges were checked against the signed mapping Jacobian over each step.
+pub fn isValidOneElemFrame(
+    case_name: []const u8,
+    mesh_type: MeshType,
+    frame: usize,
+) bool {
+    if (std.mem.eql(u8, case_name, "distort_bulge")) {
+        return switch (mesh_type) {
+            .tri6 => frame <= 8,
+            .quad8, .quad9 => frame >= 2 and frame <= 10,
+            else => true,
+        };
+    }
+    if (std.mem.eql(u8, case_name, "distort_tan")) {
+        return frame >= 2 and frame <= 10;
+    }
+    return true;
+}
+
+test "invalid one-element deformation steps are isolated" {
+    try std.testing.expect(!isValidOneElemFrame("distort_bulge", .quad8, 0));
+    try std.testing.expect(!isValidOneElemFrame("distort_bulge", .quad8, 1));
+    try std.testing.expect(isValidOneElemFrame("distort_bulge", .quad8, 2));
+    try std.testing.expect(isValidOneElemFrame("distort_bulge", .tri6, 8));
+    try std.testing.expect(!isValidOneElemFrame("distort_bulge", .tri6, 9));
+    try std.testing.expect(!isValidOneElemFrame("distort_tan", .quad9, 11));
+    try std.testing.expect(isValidOneElemFrame("distort_tan", .quad9, 10));
+    try std.testing.expect(isValidOneElemFrame("vertbulge", .quad9, 0));
+}
 
 // Default tolerances: for scientific accuracy and DIC
 // F: rel= 1e-11, abs= 1e-11
@@ -133,18 +168,12 @@ pub fn renderMemoryCase(
     var mem_config = config;
     mem_config.save_strategy = .memory;
 
-    const render_groups = [_]riley.RenderGroupSpec{.{
-        .io = io,
-        .workers = mem_config.total_threads,
-    }};
-
-    const result = try riley.rasterReport(
+    const result = try riley.raster(
         allocator,
-        &render_groups,
+        io,
         cam_inps,
         mesh_inps,
         mem_config,
-        null,
         null,
     );
 
@@ -403,10 +432,49 @@ pub fn extractFrameImage(
         4 => dims[3],
         else => dims[2],
     };
-    var image = try NDArray(F).initFlat(allocator, &[_]usize{ rows, cols, channels });
+    return extractFrameImageCropped(
+        allocator,
+        array,
+        camera_idx,
+        frame,
+        field_start,
+        channels,
+        rows,
+        cols,
+    );
+}
 
-    for (0..rows) |rr| {
-        for (0..cols) |cc| {
+pub fn extractFrameImageCropped(
+    outer_alloc: std.mem.Allocator,
+    array: *const NDArray(F),
+    camera_idx: usize,
+    frame: usize,
+    field_start: usize,
+    channels: usize,
+    image_rows: usize,
+    image_cols: usize,
+) !NDArray(F) {
+    const dims = array.dims;
+    const rows = switch (dims.len) {
+        5 => dims[3],
+        4 => dims[2],
+        else => dims[1],
+    };
+    const cols = switch (dims.len) {
+        5 => dims[4],
+        4 => dims[3],
+        else => dims[2],
+    };
+    if (image_rows > rows or image_cols > cols) {
+        return error.ArrayDimensionMismatch;
+    }
+    var image = try NDArray(F).initFlat(
+        outer_alloc,
+        &[_]usize{ image_rows, image_cols, channels },
+    );
+
+    for (0..image_rows) |rr| {
+        for (0..image_cols) |cc| {
             for (0..channels) |ch| {
                 const val = switch (dims.len) {
                     5 => array.get(&[_]usize{
@@ -425,6 +493,29 @@ pub fn extractFrameImage(
     }
 
     return image;
+}
+
+test "extract frame image crops a padded camera batch" {
+    const alloc = std.testing.allocator;
+    var padded = try NDArray(F).initFlat(alloc, &.{ 2, 1, 1, 4, 4 });
+    defer {
+        alloc.free(padded.slice);
+        padded.deinit(alloc);
+    }
+    @memset(padded.slice, -1);
+    padded.set(&.{ 0, 0, 0, 1, 2 }, 7);
+
+    var image = try extractFrameImageCropped(alloc, &padded, 0, 0, 0, 1, 2, 3);
+    defer {
+        alloc.free(image.slice);
+        image.deinit(alloc);
+    }
+    try std.testing.expectEqualSlices(usize, &.{ 2, 3, 1 }, image.dims);
+    try std.testing.expectEqual(@as(F, 7), image.get(&.{ 1, 2, 0 }));
+    try std.testing.expectError(
+        error.ArrayDimensionMismatch,
+        extractFrameImageCropped(alloc, &padded, 0, 0, 0, 1, 5, 3),
+    );
 }
 
 pub fn findGoldPath(
@@ -554,6 +645,10 @@ pub fn calculateDiffImage(
     actual: *const NDArray(F),
     gold: *const NDArray(F),
 ) !NDArray(F) {
+    if (actual.dims.len != gold.dims.len) return error.ArrayDimensionMismatch;
+    for (actual.dims, gold.dims) |actual_dim, gold_dim| {
+        if (actual_dim != gold_dim) return error.ArrayDimensionMismatch;
+    }
     var diff = try NDArray(F).initFlat(allocator, actual.dims);
     for (0..actual.slice.len) |ii| {
         diff.slice[ii] = @abs(actual.slice[ii] - gold.slice[ii]);
@@ -670,29 +765,25 @@ pub fn saveComparisonArtifactsFromResult(
     var out_dir = try openFailsSubDir(allocator, io, fails_root, prepended_dir);
     defer out_dir.close(io);
 
-    var actual = try extractFrameImage(
-        allocator,
-        result,
-        camera_idx,
-        frame,
-        field_start,
-        channels,
-    );
-    defer {
-        allocator.free(actual.slice);
-        actual.deinit(allocator);
-    }
-
     var gold = try loadNDArrayFromGold(allocator, io, gold_csv_path, channels);
     defer {
         allocator.free(gold.slice);
         gold.deinit(allocator);
     }
 
-    var diff = try calculateDiffImage(allocator, &actual, &gold);
+    var actual = try extractFrameImageCropped(
+        allocator,
+        result,
+        camera_idx,
+        frame,
+        field_start,
+        channels,
+        gold.dims[0],
+        gold.dims[1],
+    );
     defer {
-        allocator.free(diff.slice);
-        diff.deinit(allocator);
+        allocator.free(actual.slice);
+        actual.deinit(allocator);
     }
 
     const base_name = try std.fmt.allocPrint(
@@ -708,9 +799,19 @@ pub fn saveComparisonArtifactsFromResult(
     defer allocator.free(ref_name);
     try saveImageArtifacts(allocator, io, out_dir, ref_name, &gold);
 
-    const diff_name = try std.fmt.allocPrint(allocator, "{s}_diff", .{base_name});
-    defer allocator.free(diff_name);
-    try saveImageArtifacts(allocator, io, out_dir, diff_name, &diff);
+    if (calculateDiffImage(allocator, &actual, &gold)) |image| {
+        var diff = image;
+        defer {
+            allocator.free(diff.slice);
+            diff.deinit(allocator);
+        }
+        const diff_name = try std.fmt.allocPrint(allocator, "{s}_diff", .{base_name});
+        defer allocator.free(diff_name);
+        try saveImageArtifacts(allocator, io, out_dir, diff_name, &diff);
+    } else |err| switch (err) {
+        error.ArrayDimensionMismatch => {},
+        else => return err,
+    }
 }
 
 pub fn saveComparisonArtifactsFromImages(
@@ -733,15 +834,19 @@ pub fn saveComparisonArtifactsFromImages(
     var out_dir = try openFailsSubDir(allocator, io, fails_root, prepended_dir);
     defer out_dir.close(io);
 
-    var diff = try calculateDiffImage(allocator, actual, gold);
-    defer {
-        allocator.free(diff.slice);
-        diff.deinit(allocator);
-    }
-
     try saveImageArtifacts(allocator, io, out_dir, "cam0_frame0_field0", actual);
     try saveImageArtifacts(allocator, io, out_dir, "cam0_frame0_field0_ref", gold);
-    try saveImageArtifacts(allocator, io, out_dir, "cam0_frame0_field0_diff", &diff);
+    if (calculateDiffImage(allocator, actual, gold)) |image| {
+        var diff = image;
+        defer {
+            allocator.free(diff.slice);
+            diff.deinit(allocator);
+        }
+        try saveImageArtifacts(allocator, io, out_dir, "cam0_frame0_field0_diff", &diff);
+    } else |err| switch (err) {
+        error.ArrayDimensionMismatch => {},
+        else => return err,
+    }
 }
 
 pub const ShaderFilter = enum { nodal, tex, both };
@@ -816,10 +921,10 @@ pub fn runSingleMeshSuiteDriver(
             var run_config = config;
             if (mode == .test_gold) {
                 run_config.save_strategy = .memory;
-                run_config.image_save_opts = &[_]iio.ImageSaveOpts{
+                run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
                     .{ .format = .csv, .bits = null, .scaling = .none },
                 };
-                run_config.report = if (report_perf) .full_stats else .off;
+                run_config.report = .{ .mode = if (report_perf) .full_stats else .off };
             } else {
                 var out_dir = try orch.openDirEnsured(io, nodal_dir);
                 out_dir.close(io);
@@ -833,19 +938,16 @@ pub fn runSingleMeshSuiteDriver(
                 .roi_cent_world = prepared.camera.roi_cent_world,
                 .focal_length = prepared.camera.focal_length,
                 .sub_sample = prepared.camera.sub_sample,
-                .distortion = prepared.camera.distortion,
+                .distort = prepared.camera.distort,
             };
 
             if (mode == .test_gold and tcfg.TEST_CASE_VERBOSE) {
                 std.debug.print("Testing {s} ... ", .{case_dir_name});
             }
             const time_start = Timestamp.now(io, .awake);
-            const render_groups = [_]riley.RenderGroupSpec{
-                .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-            };
             const result = try riley.raster(
                 aa,
-                &render_groups,
+                io,
                 &[_]CameraInput{camera_input},
                 &[_]MeshInput{mesh_input},
                 run_config,
@@ -922,10 +1024,10 @@ pub fn runSingleMeshSuiteDriver(
                             fname,
                             1,
                         );
+                        try recordGoldFailure(err);
                     };
                 }
-                if (first_err) |err| return err;
-                if (tcfg.TEST_CASE_VERBOSE) {
+                if (first_err == null and tcfg.TEST_CASE_VERBOSE) {
                     std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
                 }
             }
@@ -968,10 +1070,10 @@ pub fn runSingleMeshSuiteDriver(
                 var run_config = config;
                 if (mode == .test_gold) {
                     run_config.save_strategy = .memory;
-                    run_config.image_save_opts = &[_]iio.ImageSaveOpts{
+                    run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
                         .{ .format = .csv, .bits = null, .scaling = .none },
                     };
-                    run_config.report = if (report_perf) .full_stats else .off;
+                    run_config.report = .{ .mode = if (report_perf) .full_stats else .off };
                 } else {
                     var out_dir = try orch.openDirEnsured(io, tex_dir);
                     out_dir.close(io);
@@ -985,19 +1087,16 @@ pub fn runSingleMeshSuiteDriver(
                     .roi_cent_world = prepared.camera.roi_cent_world,
                     .focal_length = prepared.camera.focal_length,
                     .sub_sample = prepared.camera.sub_sample,
-                    .distortion = prepared.camera.distortion,
+                    .distort = prepared.camera.distort,
                 };
 
                 if (mode == .test_gold and tcfg.TEST_CASE_VERBOSE) {
                     std.debug.print("Testing {s} ... ", .{case_dir_name});
                 }
                 const time_start = Timestamp.now(io, .awake);
-                const render_groups = [_]riley.RenderGroupSpec{
-                    .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-                };
                 const result = try riley.raster(
                     aa,
-                    &render_groups,
+                    io,
                     &[_]CameraInput{camera_input},
                     &[_]MeshInput{mesh_input},
                     run_config,
@@ -1074,10 +1173,10 @@ pub fn runSingleMeshSuiteDriver(
                                 fname,
                                 1,
                             );
+                            try recordGoldFailure(err);
                         };
                     }
-                    if (first_err) |err| return err;
-                    if (tcfg.TEST_CASE_VERBOSE) {
+                    if (first_err == null and tcfg.TEST_CASE_VERBOSE) {
                         std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
                     }
                 }
@@ -1213,9 +1312,9 @@ pub fn runMultimeshTestExt(
         defer camera.deinit(aa);
 
         var config = tcfg.getRasterConfig(.testing);
-        config.buffer_mode = buffer_mode;
+        config.advanced.raster.buffer_mode = buffer_mode;
         config.save_strategy = .memory;
-        config.image_save_opts = &[_]iio.ImageSaveOpts{
+        config.output.image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         };
 
@@ -1227,7 +1326,7 @@ pub fn runMultimeshTestExt(
             .roi_cent_world = camera.roi_cent_world,
             .focal_length = camera.focal_length,
             .sub_sample = camera.sub_sample,
-            .distortion = camera.distortion,
+            .distort = camera.distort,
         };
         const case_name = if (mode == .nodal)
             "multimesh_allelem_nodal"
@@ -1238,12 +1337,9 @@ pub fn runMultimeshTestExt(
         }
 
         const time_start = Timestamp.now(io, .awake);
-        const render_groups = [_]riley.RenderGroupSpec{
-            .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-        };
         const result = (try riley.raster(
             aa,
-            &render_groups,
+            io,
             &[_]CameraInput{camera_input},
             mesh_inputs,
             config,
@@ -1304,7 +1400,7 @@ pub fn runMultimeshTestExt(
                     fname,
                     1,
                 );
-                return err;
+                try recordGoldFailure(err);
             };
         }
         if (tcfg.TEST_CASE_VERBOSE) {
@@ -1373,9 +1469,9 @@ pub fn runMultimeshMixedTestExt(
     defer camera.deinit(aa);
 
     var config = tcfg.getRasterConfig(.testing);
-    config.buffer_mode = buffer_mode;
+    config.advanced.raster.buffer_mode = buffer_mode;
     config.save_strategy = .memory;
-    config.image_save_opts = &[_]iio.ImageSaveOpts{
+    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
     const camera_input = CameraInput{
@@ -1386,16 +1482,13 @@ pub fn runMultimeshMixedTestExt(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .distortion = camera.distortion,
+        .distort = camera.distort,
     };
 
     const time_start = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-    };
     const result = (try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         mesh_inputs,
         config,
@@ -1446,7 +1539,7 @@ pub fn runMultimeshMixedTestExt(
                 fname,
                 1,
             );
-            return err;
+            try recordGoldFailure(err);
         };
     }
 }
@@ -1511,9 +1604,9 @@ pub fn runMultimeshMixedRGBTestExt(
     defer camera.deinit(aa);
 
     var config_rgb = tcfg.getRasterConfig(.testing);
-    config_rgb.buffer_mode = buffer_mode;
+    config_rgb.advanced.raster.buffer_mode = buffer_mode;
     config_rgb.save_strategy = .memory;
-    config_rgb.image_save_opts = &[_]iio.ImageSaveOpts{
+    config_rgb.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
     };
 
@@ -1525,16 +1618,13 @@ pub fn runMultimeshMixedRGBTestExt(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .distortion = camera.distortion,
+        .distort = camera.distort,
     };
 
     const time_start = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config_rgb.total_threads) },
-    };
     const result = (try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         mesh_inputs,
         config_rgb,
@@ -1585,7 +1675,7 @@ pub fn runMultimeshMixedRGBTestExt(
                 fname,
                 3,
             );
-            return err;
+            try recordGoldFailure(err);
         };
     }
     if (tcfg.TEST_CASE_VERBOSE) {
@@ -1668,11 +1758,11 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
 
     var run_config = config;
     if (hull_mode) |hm| {
-        run_config.hull_mode = hm;
+        run_config.advanced.solver.oneroot.hull_mode = hm;
     }
     if (mode == .test_gold) {
         run_config.save_strategy = .memory;
-        run_config.image_save_opts = &[_]iio.ImageSaveOpts{
+        run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         };
     } else {
@@ -1688,19 +1778,16 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
         .roi_cent_world = prepared.camera.roi_cent_world,
         .focal_length = prepared.camera.focal_length,
         .sub_sample = prepared.camera.sub_sample,
-        .distortion = prepared.camera.distortion,
+        .distort = prepared.camera.distort,
     };
 
     if (mode == .test_gold and tcfg.TEST_CASE_VERBOSE) {
         std.debug.print("Testing {s} ... ", .{case_dir_name});
     }
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
-    };
     const result = try riley.raster(
         aa,
-        &render_groups,
+        io,
         &[_]CameraInput{camera_input},
         &[_]MeshInput{mesh_input},
         run_config,
@@ -1728,6 +1815,7 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
             render_result.dims[0];
         var first_err: ?anyerror = null;
         for (0..frames_num) |frame_idx| {
+            if (!isValidOneElemFrame(test_type, mesh_type, frame_idx)) continue;
             const gold_path = try findGoldPath(
                 aa,
                 io,
@@ -1780,10 +1868,10 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
                     gold_path,
                     1,
                 );
+                try recordGoldFailure(err);
             };
         }
-        if (first_err) |err| return err;
-        if (tcfg.TEST_CASE_VERBOSE) {
+        if (first_err == null and tcfg.TEST_CASE_VERBOSE) {
             std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
         }
     }
@@ -1837,7 +1925,7 @@ fn runDistortEdgeTexFuncTestForHullModeExt(
     pixel_num: [2]u32,
     hull_mode: ?rastcfg.HullMode,
 ) !void {
-    const distortion_cases = [_]struct {
+    const distort_cases = [_]struct {
         name: []const u8,
         supports: *const fn (gk.MeshType) bool,
     }{
@@ -1848,12 +1936,12 @@ fn runDistortEdgeTexFuncTestForHullModeExt(
         .{ .name = "distort_rot", .supports = supportsAnyDistortMesh },
     };
 
-    for (distortion_cases) |distortion_case| {
-        if (!distortion_case.supports(mesh_type)) continue;
+    for (distort_cases) |distort_case| {
+        if (!distort_case.supports(mesh_type)) continue;
         try runEdgeTexFuncConstantCaseForHullModeExt(
             allocator,
             io,
-            distortion_case.name,
+            distort_case.name,
             mesh_type,
             gold_dir_root,
             data_dir_root,

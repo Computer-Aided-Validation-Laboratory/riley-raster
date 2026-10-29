@@ -251,7 +251,7 @@ fn writeStatsCsv(
     out_dir: std.Io.Dir,
     file_name: []const u8,
     stats: CentroidStats,
-    centroid_world: vector.Vec3f,
+    centroid_world: vector.Vec3F,
     scaling: cam.FOVScaling,
     camera_prepared: *const cam.CameraPrepared,
     frame_coords: *const meshio.Coords,
@@ -313,29 +313,29 @@ fn writeStatsCsv(
 
 fn projectWorldNodeToRaster(
     camera_prepared: *const cam.CameraPrepared,
-    coord_world: vector.Vec3f,
-) vector.Vec3f {
+    coord_world: vector.Vec3F,
+) vector.Vec3F {
     var coord_raster = matrix.Mat44Ops.mulVec3(
         F,
         camera_prepared.world_to_cam_mat,
         coord_world,
     );
 
-    coord_raster.slice[0] = camera_prepared.image_dist * coord_raster.slice[0] /
-        (-coord_raster.slice[2]);
-    coord_raster.slice[1] = camera_prepared.image_dist * coord_raster.slice[1] /
-        (-coord_raster.slice[2]);
+    coord_raster.vec[0] = camera_prepared.image_dist * coord_raster.vec[0] /
+        (-coord_raster.vec[2]);
+    coord_raster.vec[1] = camera_prepared.image_dist * coord_raster.vec[1] /
+        (-coord_raster.vec[2]);
 
-    coord_raster.slice[0] = 2.0 * coord_raster.slice[0] /
+    coord_raster.vec[0] = 2.0 * coord_raster.vec[0] /
         camera_prepared.image_dims[0];
-    coord_raster.slice[1] = 2.0 * coord_raster.slice[1] /
+    coord_raster.vec[1] = 2.0 * coord_raster.vec[1] /
         camera_prepared.image_dims[1];
 
-    coord_raster.slice[0] = (coord_raster.slice[0] + 1.0) * 0.5 *
+    coord_raster.vec[0] = (coord_raster.vec[0] + 1.0) * 0.5 *
         @as(F, @floatFromInt(camera_prepared.pixels_num[0]));
-    coord_raster.slice[1] = (1.0 - coord_raster.slice[1]) * 0.5 *
+    coord_raster.vec[1] = (1.0 - coord_raster.vec[1]) * 0.5 *
         @as(F, @floatFromInt(camera_prepared.pixels_num[1]));
-    coord_raster.slice[2] = -coord_raster.slice[2];
+    coord_raster.vec[2] = -coord_raster.vec[2];
     return coord_raster;
 }
 
@@ -365,12 +365,9 @@ fn renderScalarMap(
         },
     };
 
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-    };
     const result = (try riley.raster(
         render_allocator,
-        &render_groups,
+        io,
         &[_]cam.CameraInput{camera_input},
         &[_]mo.MeshInput{mesh_input},
         config,
@@ -401,7 +398,7 @@ fn buildCentroidCameraInput(ref_coords: *const meshio.Coords) cam.CameraInput {
         .roi_cent_world = roi_cent_world,
         .focal_length = orch.default_focal_length,
         .sub_sample = 1,
-        .distortion = .none,
+        .distort = .none,
     };
 }
 
@@ -455,7 +452,7 @@ fn buildCentroidCameraInputOverFrames(
         .roi_cent_world = roi_cent_world,
         .focal_length = orch.default_focal_length,
         .sub_sample = 1,
-        .distortion = .none,
+        .distort = .none,
     };
 }
 
@@ -609,7 +606,7 @@ fn renderFocusedCase(
     const frame_coords = try buildFrameCoords(local_alloc, &sim_data, focused_case.frame_idx);
     var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .memory;
-    config.report = .off;
+    config.report = .{ .mode = .off };
     const scalar_map = try renderScalarMap(
         local_alloc,
         allocator,

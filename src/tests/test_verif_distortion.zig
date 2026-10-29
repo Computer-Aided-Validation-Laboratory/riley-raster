@@ -27,11 +27,11 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
         .{ 0.78 * width, 0.31 * height },
     };
 
-    for (vconst.camera_distortion_cases) |distortion_case| {
+    for (vconst.camera_distort_cases) |distort_case| {
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
         const local_alloc = arena.allocator();
-        const camera_input = vconst.cameraInputWithDistortion(camera_base, distortion_case);
+        const camera_input = vconst.cameraInputWithDistort(camera_base, distort_case);
         const camera = try cam.CameraPrepared.init(local_alloc, camera_input);
 
         for (points, 0..) |point, point_idx| {
@@ -47,9 +47,9 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
             );
             try std.testing.expect(record.converged);
             try std.testing.expect(record.in_bounds);
-            try std.testing.expect(record.err_dist <= tcfg.VERIF_TOL.distortion_abs_px);
+            try std.testing.expect(record.err_dist <= tcfg.VERIF_TOL.distort_abs_px);
             try std.testing.expect(
-                record.observed_reproj_err <= tcfg.VERIF_TOL.distortion_abs_px,
+                record.observed_reproj_err <= tcfg.VERIF_TOL.distort_abs_px,
             );
         }
     }

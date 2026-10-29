@@ -1,28 +1,36 @@
+from __future__ import annotations
+
+from pathlib import Path
+
 import numpy as np
-import os
 
 from riley.python import meshconv
 
 
 ELEMENT_TYPES = {
-    "tri3": meshconv.EElementType.TRI3,
-    "tri6": meshconv.EElementType.TRI6,
-    "quad4": meshconv.EElementType.QUAD4,
-    "quad8": meshconv.EElementType.QUAD8,
-    "quad9": meshconv.EElementType.QUAD9,
+    "tri3": meshconv.EElemType.TRI3,
+    "tri6": meshconv.EElemType.TRI6,
+    "quad4": meshconv.EElemType.QUAD4,
+    "quad8": meshconv.EElemType.QUAD8,
+    "quad9": meshconv.EElemType.QUAD9,
 }
 
-def save_csv(path, data):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    np.savetxt(path, data, delimiter=',', fmt='%.10f' if data.dtype == np.float64 else '%d')
+
+def save_csv(path: Path | str, data: np.ndarray) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fmt = "%.10f" if np.issubdtype(data.dtype, np.floating) else "%d"
+    np.savetxt(path, data, delimiter=",", fmt=fmt)
+
 
 def save_surface_mesh(
-    out_dir,
-    elem_type,
-    coords,
-    connect,
-    material_normal_hint=(0.0, 0.0, 1.0),
-):
+    out_dir: Path | str,
+    elem_type: meshconv.EElemType,
+    coords: np.ndarray,
+    connect: np.ndarray,
+    material_normal_hint: tuple[float, float, float] | None = (0.0, 0.0, 1.0),
+) -> None:
+    out_path = Path(out_dir)
     convention = meshconv.ConnectConvention(
         elem_type,
         meshconv.EConnectAxis.ROW,
@@ -32,8 +40,9 @@ def save_surface_mesh(
     )
     mesh = meshconv.convert_mesh(coords, connect, convention)
     meshconv.verify_mesh(mesh)
-    save_csv(f"{out_dir}/coords.csv", mesh.coords)
-    save_csv(f"{out_dir}/connect.csv", mesh.connect)
+    save_csv(out_path / "coords.csv", mesh.coords)
+    save_csv(out_path / "connect.csv", mesh.connect)
+
 
 WIDTH = 16.0
 HEIGHT = 10.0
@@ -44,13 +53,14 @@ SPHERE_ORIENT_TOL = 1.0e-12
 def verify_sphere_orientation(
     coords: np.ndarray,
     connect: np.ndarray,
-    elem_type: meshconv.EElementType,
+    elem_type: meshconv.EElemType,
 ) -> None:
     """Verify that every non-collapsed sphere element faces outwards."""
-    corner_count = 3 if elem_type in (
-        meshconv.EElementType.TRI3,
-        meshconv.EElementType.TRI6,
-    ) else 4
+    corner_count = (
+        3
+        if elem_type in (meshconv.EElemType.TRI3, meshconv.EElemType.TRI6)
+        else 4
+    )
     corners = coords[connect[:, :corner_count]]
     edge_a = corners[:, 1] - corners[:, 0]
     edge_b = corners[:, 2] - corners[:, 0]
@@ -71,67 +81,100 @@ def verify_sphere_orientation(
             f"{elem_idxs.tolist()}."
         )
 
-def compute_uvs(coords, u_range=(0.4, 0.6), v_range=(0.4, 0.6)):
+
+def compute_uvs(
+    coords: np.ndarray,
+    u_range: tuple[float, float] = (0.4, 0.6),
+    v_range: tuple[float, float] = (0.4, 0.6),
+) -> np.ndarray:
     xmin, ymin, _ = np.min(coords, axis=0)
     xmax, ymax, _ = np.max(coords, axis=0)
-    xrng, yrng = max(xmax - xmin, 1.0), max(ymax - ymin, 1.0)
-    uvs = np.zeros((len(coords), 2))
-    for j in range(len(coords)):
-        x, y, _ = coords[j]
-        uvs[j, 0] = u_range[0] + (u_range[1] - u_range[0]) * (x - xmin) / xrng
-        uvs[j, 1] = v_range[0] + (v_range[1] - v_range[0]) * (y - ymin) / yrng
+    xrng = max(float(xmax - xmin), 1.0)
+    yrng = max(float(ymax - ymin), 1.0)
+    uvs = np.zeros((len(coords), 2), dtype=np.float64)
+    uvs[:, 0] = u_range[0] + (u_range[1] - u_range[0]) * (coords[:, 0] - xmin) / xrng
+    uvs[:, 1] = v_range[0] + (v_range[1] - v_range[0]) * (coords[:, 1] - ymin) / yrng
     return uvs
 
-def compute_rgb_fields(coords):
+
+def compute_rgb_fields(coords: np.ndarray) -> np.ndarray:
     xmin, ymin, _ = np.min(coords, axis=0)
     xmax, ymax, _ = np.max(coords, axis=0)
-    xrng, yrng = max(xmax - xmin, 1.0), max(ymax - ymin, 1.0)
-    fields = np.zeros((len(coords), 3))
-    for j in range(len(coords)):
-        xn = (coords[j, 0] - xmin) / xrng
-        yn = (coords[j, 1] - ymin) / yrng
-        # Purely linear gradient experiment
-        r = xn
-        g = yn
-        b = 1.0 - (xn + yn) / 2.0
-        fields[j] = [r, g, b]
-    return fields
+    xrng = max(float(xmax - xmin), 1.0)
+    yrng = max(float(ymax - ymin), 1.0)
+    xn = (coords[:, 0] - xmin) / xrng
+    yn = (coords[:, 1] - ymin) / yrng
+    r = xn
+    g = yn
+    b = 1.0 - (xn + yn) / 2.0
+    return np.column_stack([r, g, b])
 
-def generate_fullscreen(etype, out_dir):
+def generate_fullscreen(etype: str, out_dir: Path | str) -> None:
+    out_path = Path(out_dir)
     if "tri" in etype:
-        coords = np.array([[0, 0, 0], [WIDTH, 0, 0], [WIDTH, HEIGHT, 0], [0, HEIGHT, 0]], dtype=float)
+        coords = np.array(
+            [[0, 0, 0], [WIDTH, 0, 0], [WIDTH, HEIGHT, 0], [0, HEIGHT, 0]],
+            dtype=float,
+        )
         if etype == "tri6":
-            coords = np.array([
-                [0, 0, 0], [WIDTH, 0, 0], [WIDTH, HEIGHT, 0], [0, HEIGHT, 0],
-                [WIDTH/2, 0, 0], [WIDTH, HEIGHT/2, 0], [WIDTH/2, HEIGHT, 0], [0, HEIGHT/2, 0],
-                [WIDTH/2, HEIGHT/2, 0]
-            ], dtype=float)
+            coords = np.array(
+                [
+                    [0, 0, 0],
+                    [WIDTH, 0, 0],
+                    [WIDTH, HEIGHT, 0],
+                    [0, HEIGHT, 0],
+                    [WIDTH / 2, 0, 0],
+                    [WIDTH, HEIGHT / 2, 0],
+                    [WIDTH / 2, HEIGHT, 0],
+                    [0, HEIGHT / 2, 0],
+                    [WIDTH / 2, HEIGHT / 2, 0],
+                ],
+                dtype=float,
+            )
             connect = np.array([[0, 1, 2, 4, 5, 8], [0, 2, 3, 8, 6, 7]])
         else:
             connect = np.array([[0, 1, 2], [0, 2, 3]])
     else:
-        coords = np.array([[0, 0, 0], [WIDTH, 0, 0], [WIDTH, HEIGHT, 0], [0, HEIGHT, 0]], dtype=float)
+        coords = np.array(
+            [[0, 0, 0], [WIDTH, 0, 0], [WIDTH, HEIGHT, 0], [0, HEIGHT, 0]],
+            dtype=float,
+        )
         if etype in ["quad8", "quad9"]:
-            coords = np.array([
-                [0, 0, 0], [WIDTH, 0, 0], [WIDTH, HEIGHT, 0], [0, HEIGHT, 0],
-                [WIDTH/2, 0, 0], [WIDTH, HEIGHT/2, 0], [WIDTH/2, HEIGHT, 0], [0, HEIGHT/2, 0],
-                [WIDTH/2, HEIGHT/2, 0]
-            ], dtype=float)
-            if etype == "quad8": connect = np.array([[0, 1, 2, 3, 4, 5, 6, 7]])
-            else: connect = np.array([[0, 1, 2, 3, 4, 5, 6, 7, 8]])
+            coords = np.array(
+                [
+                    [0, 0, 0],
+                    [WIDTH, 0, 0],
+                    [WIDTH, HEIGHT, 0],
+                    [0, HEIGHT, 0],
+                    [WIDTH / 2, 0, 0],
+                    [WIDTH, HEIGHT / 2, 0],
+                    [WIDTH / 2, HEIGHT, 0],
+                    [0, HEIGHT / 2, 0],
+                    [WIDTH / 2, HEIGHT / 2, 0],
+                ],
+                dtype=float,
+            )
+            if etype == "quad8":
+                connect = np.array([[0, 1, 2, 3, 4, 5, 6, 7]])
+            else:
+                connect = np.array([[0, 1, 2, 3, 4, 5, 6, 7, 8]])
         else:
             connect = np.array([[0, 1, 2, 3]])
-    save_surface_mesh(out_dir, ELEMENT_TYPES[etype], coords, connect)
-    save_csv(f"{out_dir}/field.csv", compute_rgb_fields(coords))
-    save_csv(f"{out_dir}/uvs.csv", compute_uvs(coords))
+    save_surface_mesh(out_path, ELEMENT_TYPES[etype], coords, connect)
+    save_csv(out_path / "field.csv", compute_rgb_fields(coords))
+    save_csv(out_path / "uvs.csv", compute_uvs(coords))
 
-def generate_grid(etype, out_dir, N=320):
+
+def generate_grid(etype: str, out_dir: Path | str, N: int = 320) -> None:
+    out_path = Path(out_dir)
     is_higher = etype in ["tri6", "quad8", "quad9"]
     step = 2 if is_higher else 1
     xn, yn = N * step, N * step
     x, y = np.linspace(0, WIDTH, xn + 1), np.linspace(0, HEIGHT, yn + 1)
     xv, yv = np.meshgrid(x, y)
-    coords = np.stack([xv.flatten(), yv.flatten(), np.zeros_like(xv.flatten())], axis=1)
+    coords = np.stack(
+        [xv.flatten(), yv.flatten(), np.zeros_like(xv.flatten())], axis=1
+    )
     conn = []
     for jj in range(0, yn, step):
         for ii in range(0, xn, step):
@@ -145,41 +188,54 @@ def generate_grid(etype, out_dir, N=320):
             elif "quad" in etype and not is_higher:
                 conn.append([i0, i1, i2, i3])
             elif etype == "tri6":
-                m01, m12, m23, m30 = i0+1, i1+(xn+1), i3+1, i0+(xn+1)
-                m02 = i0+(xn+1)+1
+                m01, m12, m23, m30 = (
+                    i0 + 1,
+                    i1 + (xn + 1),
+                    i3 + 1,
+                    i0 + (xn + 1),
+                )
+                m02 = i0 + (xn + 1) + 1
                 conn.append([i0, i1, i2, m01, m12, m02])
                 conn.append([i0, i2, i3, m02, m23, m30])
             elif etype in ["quad8", "quad9"]:
-                m01, m12, m23, m30 = i0+1, i1+(xn+1), i3+1, i0+(xn+1)
+                m01, m12, m23, m30 = (
+                    i0 + 1,
+                    i1 + (xn + 1),
+                    i3 + 1,
+                    i0 + (xn + 1),
+                )
                 q8 = [i0, i1, i2, i3, m01, m12, m23, m30]
-                if etype == "quad9": q8.append(i0+(xn+1)+1)
+                if etype == "quad9":
+                    q8.append(i0 + (xn + 1) + 1)
                 conn.append(q8)
     save_surface_mesh(
-        out_dir,
+        out_path,
         ELEMENT_TYPES[etype],
         coords,
         np.array(conn),
     )
-    save_csv(f"{out_dir}/field.csv", compute_rgb_fields(coords))
-    save_csv(f"{out_dir}/uvs.csv", compute_uvs(coords))
+    save_csv(out_path / "field.csv", compute_rgb_fields(coords))
+    save_csv(out_path / "uvs.csv", compute_uvs(coords))
 
-def generate_sphere(etype, out_dir, N_target):
+
+def generate_sphere(etype: str, out_dir: Path | str, N_target: int) -> None:
+    out_path = Path(out_dir)
     # side is the number of elements per side of the grid
     side = int(np.sqrt(N_target)) + 1
-    
+
     # For high order elements, we need a grid that provides mid-nodes
     is_high = etype in ["tri6", "quad8", "quad9"]
     grid_side = side * 2 if is_high else side
     rows, cols = grid_side + 1, grid_side + 1
-    
+
     v_vals = np.linspace(0, np.pi, rows)
     # Move seam to the back by using -pi to pi
     u_vals = np.linspace(-np.pi, np.pi, cols)
-    
+
     coords = []
     uvs = []
     fields = []
-    
+
     for r, v in enumerate(v_vals):
         for c, u in enumerate(u_vals):
             x = np.cos(u) * np.sin(v)
@@ -194,11 +250,11 @@ def generate_sphere(etype, out_dir, N_target):
             vv = 0.4 + 0.2 * vv
             uvs.append([uu, vv])
             fields.append([uu, vv, 1.0 - (uu + vv) / 2.0])
-            
+
     coords = np.array(coords)
     uvs = np.array(uvs)
     fields = np.array(fields)
-    
+
     conn = []
     step = 2 if is_high else 1
     for r in range(0, grid_side, step):
@@ -210,7 +266,7 @@ def generate_sphere(etype, out_dir, N_target):
             i1 = r * cols + (c + step)
             i2 = (r + step) * cols + (c + step)
             i3 = (r + step) * cols + c
-            
+
             if etype == "tri3":
                 conn.append([i0, i3, i2])
                 conn.append([i0, i2, i1])
@@ -245,14 +301,14 @@ def generate_sphere(etype, out_dir, N_target):
     elem_type = ELEMENT_TYPES[etype]
     verify_sphere_orientation(coords, connect, elem_type)
     save_surface_mesh(
-        out_dir,
+        out_path,
         elem_type,
         coords,
         connect,
         material_normal_hint=None,
     )
-    save_csv(f"{out_dir}/uvs.csv", uvs)
-    save_csv(f"{out_dir}/field.csv", fields)
+    save_csv(out_path / "uvs.csv", uvs)
+    save_csv(out_path / "field.csv", fields)
 
 
 if __name__ == "__main__":
@@ -268,10 +324,10 @@ if __name__ == "__main__":
         generate_fullscreen(et, f"data/bench/{et}_fullraster")
         generate_grid(et, f"data/bench/{et}_geom", N=320)
         for size_str, target_elems in [
+            ("1e2", 100),
             ("1e3", 1000),
             ("1e4", 10000),
             ("1e5", 100000),
-            ("1e6", 1000000),
         ]:
             if "tri" in et:
                 N = int(round(np.sqrt(target_elems / 2)))
