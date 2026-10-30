@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const shadertypes = @import("shadertypes.zig");
 const cfg = @import("buildconfig.zig").config;
 const comm = @import("shaderops_common.zig");
 const scal = @import("shaderops_scalar.zig");
@@ -15,27 +16,20 @@ const simd_impl = @import("shaderops_simd.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const ScaleOver = comm.ScaleOver;
-pub const NormalType = comm.NormalType;
-pub const FuncCoordMode = comm.FuncCoordMode;
-pub const FuncShaderBuiltin = comm.FuncShaderBuiltin;
-pub const FuncShaderParams = comm.FuncShaderParams;
-pub const LocalShaderBuff = comm.LocalShaderBuff;
-pub const NodalInput = comm.NodalInput;
-pub const NodalPrepared = comm.NodalPrepared;
-pub const TexInput = comm.TexInput;
-pub const TexPrepared = comm.TexPrepared;
-pub const FuncInput = comm.FuncInput;
-pub const FuncPrepared = comm.FuncPrepared;
-pub const ShadeContext = comm.ShadeContext;
-pub const InterpData = comm.InterpData;
-pub const ShaderInput = comm.ShaderInput;
-pub const normFuncShaderParams = comm.normFuncShaderParams;
-pub const NodalStatic = comm.NodalStatic;
-pub const TexStatic = comm.TexStatic;
-pub const FuncStatic = comm.FuncStatic;
-pub const ShaderStatic = comm.ShaderStatic;
-pub const ShaderPrepared = comm.ShaderPrepared;
+pub const concreteTexture = shadertypes.concreteTexture;
+pub const normFuncShaderParams = shadertypes.normFuncShaderParams;
+pub const hasShader = comm.hasShader;
+pub const selectShader = comm.selectShader;
+pub const stageSource = comm.stageSource;
+pub const identityRGB = comm.identityRGB;
+pub const identityMulti = comm.identityMulti;
+pub const monoToPipeSource = comm.monoToPipeSource;
+pub const pipeSourceToMono = comm.pipeSourceToMono;
+pub const identitySlots = @import("shaderpipe.zig").identitySlots;
+pub const resolverIdentity = @import("shaderpipe.zig").resolverIdentity;
+pub const identity_channels_1 = @import("shaderpipe.zig").identity_channels_1;
+pub const identity_channels_3 = @import("shaderpipe.zig").identity_channels_3;
+pub const identity_channels_8 = @import("shaderpipe.zig").identity_channels_8;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -54,8 +48,12 @@ pub const fillTexPersp = fillTexPerspScal;
 pub const fillFuncClip = fillFuncClipScal;
 pub const fillFuncPersp = fillFuncPerspScal;
 pub const fillNodalClipSIMD = simd_impl.fillNodalClipSIMD;
+pub const ImageSink = simd_impl.ImageSink;
+pub const VectorSink = simd_impl.VectorSink;
 pub const fillNodalPerspSIMD = simd_impl.fillNodalPerspSIMD;
 pub const fillTexClipSIMD = simd_impl.fillTexClipSIMD;
 pub const fillTexPerspSIMD = simd_impl.fillTexPerspSIMD;
 pub const fillFuncClipSIMD = simd_impl.fillFuncClipSIMD;
 pub const fillFuncPerspSIMD = simd_impl.fillFuncPerspSIMD;
+pub const evalFuncShaderGreyNormSIMD = simd_impl.evalFuncShaderGreyNormSIMD;
+pub const evalFuncShaderRGBNormSIMD = simd_impl.evalFuncShaderRGBNormSIMD;

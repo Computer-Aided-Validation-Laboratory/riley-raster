@@ -81,7 +81,9 @@ def main() -> None:
         coords=sim.coords,
         connect=block.connect,
         disp=disp,
-        shader=riley.TextureShader(uvs=uvs, texture=texture),
+        shaders=riley.MeshShaderSet(
+            direct=riley.TextureShader(uvs=uvs, texture=texture),
+        ),
     )
     coords = mesh.coords
 
@@ -131,7 +133,6 @@ def main() -> None:
         save_strategy=riley.SaveStrategy.disk,
     )
     config.background_value = 128.0
-    config.save_scaling = riley.ScaleStrategy.none
 
     start_time = perf_counter()
     riley.raster([mesh], [camera_0, camera_1], config, out_dir=str(out_dir))

@@ -6,18 +6,21 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const orch = @import("../dev_support/orchestration.zig");
-const shaderops = @import("../riley/zig/shaderops_common.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 pub const pixel_num_dist_frontend = [_]u32{ 128, 128 };
 pub const sub_sample_dist_frontend: u32 = 2;
@@ -232,7 +235,7 @@ pub fn buildCheckerMeshInput(
     prepared: *const orch.SingleMeshPrepared,
     mesh_type: gk.MeshType,
 ) MeshInput {
-    const shader_params = shaderops.FuncShaderParams{
+    const shader_params = shadertypes.FuncShaderParams{
         .coord_scale = .{ 4.0, 4.0 },
         .settings = .{ .checker = .{} },
     };
@@ -241,17 +244,16 @@ pub fn buildCheckerMeshInput(
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shader = .{
+        .shaders = .{ .mono_direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
                 .builtin = .checker,
                 .params = shader_params,
-                .bits = 8,
+                .output_gain = 255.0,
                 .scaling = .auto,
-                .normal_type = .none,
             },
-        },
+        } },
     };
 }
 

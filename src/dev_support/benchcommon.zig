@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const shadertypes = @import("../riley/zig/shadertypes.zig");
+const meshtypes = @import("../riley/zig/meshtypes.zig");
 const std = @import("std");
 const riley = @import("../riley/zig/riley.zig");
 const meshio = @import("../riley/zig/meshio.zig");
@@ -15,11 +17,13 @@ const uvio = @import("../riley/zig/uvio.zig");
 const csvio = @import("../riley/zig/csvio.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const so = @import("../riley/zig/shaderops.zig");
+const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
-const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
-const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
-const DistortParams = @import("../riley/zig/camera.zig").DistortParams;
-const cameraops = @import("../riley/zig/cameraops.zig");
+const CameraPrepared = @import("../riley/zig/cameraprojops.zig").CameraPrepared;
+const CameraInput = @import("../riley/zig/cameraprojops.zig").CameraInput;
+const DistortParams = @import("../riley/zig/cameraprojops.zig").DistortParams;
+const SubPixelCenterMap = @import("../riley/zig/cameraprojops.zig").SubPixelCenterMap;
+const cameraops = @import("../riley/zig/cameraframops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const report = @import("../riley/zig/report.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
@@ -319,7 +323,7 @@ pub fn writeBenchmarkConfig(
     image_out_dir_base: []const u8,
     benchmark_name: []const u8,
     argv: anytype,
-    subpixel_center_map: @import("../riley/zig/camera.zig").SubPixelCenterMap,
+    subpixel_center_map: SubPixelCenterMap,
     config: rastcfg.RasterConfig,
     render_group_workers: []const u16,
     pixel_num: [2]u32,
@@ -439,11 +443,13 @@ pub const ShaderType = enum {
     func_rgb,
 };
 const TextureSampleConfig = @import("../riley/zig/textureops.zig").TextureSampleConfig;
-pub const TexFuncCoordMode = enum { uv, param };
+pub const TexFuncCoordMode = enum { uv, param, world_reference };
 pub const TexFuncCase = struct {
-    builtin: so.FuncShaderBuiltin,
+    builtin: shadertypes.FuncShaderBuiltin,
     coord_mode: TexFuncCoordMode,
 };
+
+pub const BenchShaderPath = enum { direct, one_stage_pipe, multi_source_pipe };
 
 pub const BenchRenderDefaults = struct {
     pixels_num: [2]u32,
@@ -453,6 +459,7 @@ pub const BenchRenderDefaults = struct {
     fov_scale: F,
     rot: Rotation,
     distort: DistortParams = .none,
+    shader_path: BenchShaderPath = .direct,
 };
 
 pub const RunMode = enum { all, element, texture, interpolator };
@@ -629,9 +636,9 @@ pub fn loadBenchmarkMeshInput(
     samp_cfg: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
-    texture_grey: texops.Tex(T, 1),
-    texture_rgb: texops.Tex(T, 3),
-) !mo.MeshInput {
+    texture_grey: texops.TexDataFix(T, 1),
+    texture_rgb: texops.TexDataFix(T, 3),
+) !meshtypes.MeshInput {
     const coord_path = try std.fs.path.join(allocator, &[_][]const u8{
         data_dir,
         "coords.csv",
@@ -657,119 +664,156 @@ pub fn loadBenchmarkMeshInput(
         null,
         null,
     );
-    var shader: so.ShaderInput = undefined;
-    switch (shader_type) {
-        .nodal_grey, .nodal_rgb => {
-            const field_raw = try loadNDArrayFromCSV(
-                allocator,
-                io,
-                field_path,
-                calcOutputChannels(shader_type),
-                true,
-            );
-            shader = .{ .nodal = .{
-                .field = .{ .array = field_raw, .array_mem = field_raw.slice },
-                .scaling = .none,
-            } };
-        },
-        .tex8_grey => {
-            const uvs_raw = try loadNDArrayFromCSV(
-                allocator,
-                io,
-                uv_path,
-                2,
-                false,
-            );
-            shader = if (T == u8)
-                .{ .tex_u8 = .{
-                    .uvs = uvs_raw,
-                    .tex = texture_grey,
-                    .samp_cfg = samp_cfg.?,
-                } }
-            else if (T == u16)
-                .{ .tex_u16 = .{
-                    .uvs = uvs_raw,
-                    .tex = texture_grey,
-                    .samp_cfg = samp_cfg.?,
-                } }
-            else
-                @compileError("Unsupported texture storage type.");
-        },
-        .tex8_rgb => {
-            const uvs_raw = try loadNDArrayFromCSV(
-                allocator,
-                io,
-                uv_path,
-                2,
-                false,
-            );
-            shader = if (T == u8)
-                .{ .tex_rgb_u8 = .{
-                    .uvs = uvs_raw,
-                    .tex = texture_rgb,
-                    .samp_cfg = samp_cfg.?,
-                } }
-            else if (T == u16)
-                .{ .tex_rgb_u16 = .{
-                    .uvs = uvs_raw,
-                    .tex = texture_rgb,
-                    .samp_cfg = samp_cfg.?,
-                } }
-            else
-                @compileError("Unsupported texture storage type.");
-        },
-        .func => {
-            const tex_case = tex_func_case.?;
-            const tex_func_uvs = if (tex_case.coord_mode == .uv)
-                try loadNDArrayFromCSV(
+    const is_rgb = (calcOutputChannels(shader_type) == 3);
+    const shaders: shadertypes.MeshShaderSetInput = if (is_rgb) blk: {
+        const pipe_source: shadertypes.PipeSourceInput = switch (shader_type) {
+            .nodal_rgb => blk_n: {
+                const field_raw = try loadNDArrayFromCSV(
+                    allocator,
+                    io,
+                    field_path,
+                    3,
+                    true,
+                );
+                break :blk_n .{ .nodal = .{
+                    .field = .{ .array = field_raw, .array_mem = field_raw.slice },
+                    .scaling = .none,
+                } };
+            },
+            .tex8_rgb => blk_t: {
+                const uvs_raw = try loadNDArrayFromCSV(
                     allocator,
                     io,
                     uv_path,
                     2,
                     false,
-                )
-            else
-                null;
-            shader = .{ .func = .{
-                .uvs = tex_func_uvs,
-                .coord_mode = if (tex_case.coord_mode == .uv) .uv else .para,
-                .builtin = tex_case.builtin,
-                .params = calcTexFuncParams(tex_case),
-                .bits = 8,
-                .scaling = .none,
-                .normal_type = .none,
-            } };
-        },
-        .func_rgb => {
-            const tex_case = tex_func_case.?;
-            const tex_func_uvs = if (tex_case.coord_mode == .uv)
-                try loadNDArrayFromCSV(
+                );
+                if (T == u8) {
+                    break :blk_t .{ .tex_rgb_u8 = .{
+                        .uvs = uvs_raw,
+                        .tex = texture_rgb,
+                        .samp_cfg = samp_cfg.?,
+                    } };
+                } else if (T == u16) {
+                    break :blk_t .{ .tex_rgb_u16 = .{
+                        .uvs = uvs_raw,
+                        .tex = texture_rgb,
+                        .samp_cfg = samp_cfg.?,
+                    } };
+                } else {
+                    @compileError("Unsupported texture storage type.");
+                }
+            },
+            .func_rgb => blk_f: {
+                const tex_case = tex_func_case.?;
+                const tex_func_uvs = if (tex_case.coord_mode == .uv)
+                    try loadNDArrayFromCSV(
+                        allocator,
+                        io,
+                        uv_path,
+                        2,
+                        false,
+                    )
+                else
+                    null;
+                break :blk_f .{ .func = .{ .rgb = .{
+                    .uvs = tex_func_uvs,
+                    .coord_mode = switch (tex_case.coord_mode) {
+                        .uv => .uv,
+                        .param => .para,
+                        .world_reference => .world_reference,
+                    },
+                    .builtin = tex_case.builtin,
+                    .params = calcTexFuncParams(tex_case),
+                    .scaling = .none,
+                } } };
+            },
+            else => unreachable,
+        };
+        const stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
+        stages[0] = so.stageSource(pipe_source);
+        break :blk .{
+            .rgb_pipe = .{
+                .stages = stages,
+                .resolver = .{ .identity = shaderpipe.identity_channels_3 },
+            },
+        };
+    } else blk: {
+        const mono_shader: shadertypes.ShaderMonoInput = switch (shader_type) {
+            .nodal_grey => blk_n: {
+                const field_raw = try loadNDArrayFromCSV(
+                    allocator,
+                    io,
+                    field_path,
+                    1,
+                    true,
+                );
+                break :blk_n .{ .nodal = .{
+                    .field = .{ .array = field_raw, .array_mem = field_raw.slice },
+                    .scaling = .none,
+                } };
+            },
+            .tex8_grey => blk_t: {
+                const uvs_raw = try loadNDArrayFromCSV(
                     allocator,
                     io,
                     uv_path,
                     2,
                     false,
-                )
-            else
-                null;
-            shader = .{ .func_rgb = .{
-                .uvs = tex_func_uvs,
-                .coord_mode = if (tex_case.coord_mode == .uv) .uv else .para,
-                .builtin = tex_case.builtin,
-                .params = calcTexFuncParams(tex_case),
-                .bits = 8,
-                .scaling = .none,
-                .normal_type = .none,
-            } };
-        },
-    }
+                );
+                if (T == u8) {
+                    break :blk_t .{ .tex_u8 = .{
+                        .uvs = uvs_raw,
+                        .tex = texture_grey,
+                        .samp_cfg = samp_cfg.?,
+                    } };
+                } else if (T == u16) {
+                    break :blk_t .{ .tex_u16 = .{
+                        .uvs = uvs_raw,
+                        .tex = texture_grey,
+                        .samp_cfg = samp_cfg.?,
+                    } };
+                } else {
+                    @compileError("Unsupported texture storage type.");
+                }
+            },
+            .func => blk_f: {
+                const tex_case = tex_func_case.?;
+                const tex_func_uvs = if (tex_case.coord_mode == .uv)
+                    try loadNDArrayFromCSV(
+                        allocator,
+                        io,
+                        uv_path,
+                        2,
+                        false,
+                    )
+                else
+                    null;
+                break :blk_f .{ .func = .{
+                    .uvs = tex_func_uvs,
+                    .coord_mode = switch (tex_case.coord_mode) {
+                        .uv => .uv,
+                        .param => .para,
+                        .world_reference => .world_reference,
+                    },
+                    .builtin = tex_case.builtin,
+                    .params = calcTexFuncParams(tex_case),
+                    .scaling = .none,
+                } };
+            },
+            else => unreachable,
+        };
+        break :blk .{
+            .mono_direct = mono_shader,
+        };
+    };
 
     return .{
         .mesh_type = etype,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = shader,
+        .shaders = shaders,
     };
 }
 
@@ -783,8 +827,8 @@ pub fn runBenchmark(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: texops.Tex(T, 1),
-    texture_rgb: texops.Tex(T, 3),
+    texture_grey: texops.TexDataFix(T, 1),
+    texture_rgb: texops.TexDataFix(T, 3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
 ) !BenchResult {
@@ -816,8 +860,8 @@ pub fn runBenchmarkWithImageOut(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: texops.Tex(T, 1),
-    texture_rgb: texops.Tex(T, 3),
+    texture_grey: texops.TexDataFix(T, 1),
+    texture_rgb: texops.TexDataFix(T, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,
@@ -851,8 +895,8 @@ pub fn runBenchmarkQuiet(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: texops.Tex(T, 1),
-    texture_rgb: texops.Tex(T, 3),
+    texture_grey: texops.TexDataFix(T, 1),
+    texture_rgb: texops.TexDataFix(T, 3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
 ) !BenchResult {
@@ -884,8 +928,8 @@ pub fn runBenchmarkQuietWithImageOut(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: texops.Tex(T, 1),
-    texture_rgb: texops.Tex(T, 3),
+    texture_grey: texops.TexDataFix(T, 1),
+    texture_rgb: texops.TexDataFix(T, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,
@@ -920,8 +964,8 @@ fn runBenchmarkInternal(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: texops.Tex(T, 1),
-    texture_rgb: texops.Tex(T, 3),
+    texture_grey: texops.TexDataFix(T, 1),
+    texture_rgb: texops.TexDataFix(T, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,
@@ -930,7 +974,7 @@ fn runBenchmarkInternal(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const mesh_input = try loadBenchmarkMeshInput(
+    var mesh_input = try loadBenchmarkMeshInput(
         T,
         aa,
         io,
@@ -942,7 +986,54 @@ fn runBenchmarkInternal(
         texture_grey,
         texture_rgb,
     );
-    _ = calcOutputChannels(shader_type);
+    const base_source: shadertypes.PipeSourceInput = if (calcOutputChannels(shader_type) == 3)
+        mesh_input.shaders.rgb_pipe.?.stages[0].source.shader
+    else
+        so.monoToPipeSource(mesh_input.shaders.mono_direct.?);
+
+    const output_slot: shaderpipe.Slot = .{ .kind = .channel, .index = 0 };
+    const pipe_stages = [_]shadertypes.ShaderPipeStageInput{.{ .source = .{
+        .shader = base_source,
+        .destination = output_slot,
+    } }};
+    const pipe_slots = [_]shaderpipe.Slot{output_slot};
+    var deformed_source = base_source;
+    if (render_defaults.shader_path == .multi_source_pipe) {
+        std.debug.assert(deformed_source == .func and deformed_source.func == .mono);
+        deformed_source.func.mono.coord_mode = .world_deformed;
+    }
+    const multi_stages = [_]shadertypes.ShaderPipeStageInput{
+        .{ .source = .{
+            .shader = base_source,
+            .destination = .{ .kind = .channel, .index = 0 },
+        } },
+        .{ .source = .{
+            .shader = deformed_source,
+            .destination = .{ .kind = .channel, .index = 1 },
+        } },
+        .{ .source = .{
+            .shader = base_source,
+            .destination = .{ .kind = .channel, .index = 2 },
+        } },
+    };
+    const multi_slots = [_]shaderpipe.Slot{
+        .{ .kind = .channel, .index = 0 },
+        .{ .kind = .channel, .index = 1 },
+        .{ .kind = .channel, .index = 2 },
+    };
+    if (render_defaults.shader_path == .one_stage_pipe) {
+        std.debug.assert(calcOutputChannels(shader_type) == 1);
+        mesh_input.shaders = .{ .mono_pipe = .{
+            .stages = &pipe_stages,
+            .resolver = .{ .identity = &pipe_slots },
+        } };
+    } else if (render_defaults.shader_path == .multi_source_pipe) {
+        std.debug.assert(calcOutputChannels(shader_type) == 1);
+        mesh_input.shaders = .{ .mono_pipe = .{
+            .stages = &multi_stages,
+            .resolver = .{ .sum = &multi_slots },
+        } };
+    }
 
     const roi_pos = sceneops.boundsCenter(&mesh_input.coords);
     const cam_pos = cameraops.posFillFrameFromRot(
@@ -975,11 +1066,11 @@ fn runBenchmarkInternal(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .distort = render_defaults.distort,
+        .render_format = if (calcOutputChannels(shader_type) == 3) .rgb else .mono,
     };
 
     var config_run = config;
-    config_run.report = .{ .mode = report_mode };
+    config_run.report_perf = report_mode;
 
     if (stats_out_dir_base.len > 0) {
         var out_dir = try orch.openDirEnsured(io, stats_out_dir_base);
@@ -1018,7 +1109,7 @@ fn runBenchmarkInternal(
     if (needs_images_arr) {
         const dims = try riley.calcAllFramesImageDims(
             &[_]CameraInput{camera_input},
-            &[_]mo.MeshInput{mesh_input},
+            &[_]meshtypes.MeshInput{mesh_input},
             config_run,
         );
         image_arr = try NDArray(F).initFlat(
@@ -1032,7 +1123,7 @@ fn runBenchmarkInternal(
         outer_alloc,
         io,
         &[_]CameraInput{camera_input},
-        &[_]mo.MeshInput{mesh_input},
+        &[_]meshtypes.MeshInput{mesh_input},
         config_run,
         out_path,
         if (image_arr) |*arr| arr else null,
@@ -1145,7 +1236,7 @@ fn printPaddedSafe(writer: anytype, text: []const u8, width: usize) !void {
     }
 }
 
-fn calcTexFuncParams(tex_func_case: TexFuncCase) so.FuncShaderParams {
+fn calcTexFuncParams(tex_func_case: TexFuncCase) shadertypes.FuncShaderParams {
     const pi: F = std.math.pi;
     const oscillations: F = if (tex_func_case.coord_mode == .param)
         2.0
@@ -1154,6 +1245,13 @@ fn calcTexFuncParams(tex_func_case: TexFuncCase) so.FuncShaderParams {
     const wave_num = 2.0 * pi * oscillations;
 
     return switch (tex_func_case.builtin) {
+        .checker => .{
+            .coord_scale = if (tex_func_case.coord_mode == .world_reference)
+                .{ 1000.0, 1000.0 }
+            else
+                .{ 8.0, 8.0 },
+            .settings = .{ .checker = .{} },
+        },
         .sinusoidal => .{
             .settings = .{
                 .sinusoidal = .{

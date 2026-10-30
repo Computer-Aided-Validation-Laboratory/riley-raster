@@ -69,8 +69,8 @@ pub fn getScaleFactors(
 
 pub fn getScalingParamsTex(
     comptime T: type,
-    comptime channels: usize,
-    tex: *const texops.Tex(T, channels),
+    comptime channels: ?usize,
+    tex: *const (if (channels) |count| texops.TexDataFix(T, count) else texops.TexDataDyn(T)),
     strategy: ScaleStrategy,
 ) ScalingParams {
     switch (strategy) {

@@ -6,28 +6,33 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 
-const benchcommon = @import("dev_support/benchcommon.zig");
-const orch = @import("dev_support/orchestration.zig");
-const tcfg = @import("dev_support/testconfig.zig");
-const CameraInput = @import("riley/zig/camera.zig").CameraInput;
-const CameraPrepared = @import("riley/zig/camera.zig").CameraPrepared;
-const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const buildconfig = @import("riley/zig/buildconfig.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
-const iio = @import("riley/zig/imageio.zig");
-const meshio = @import("riley/zig/meshio.zig");
-const mo = @import("riley/zig/meshpipeline.zig");
-const sceneops = @import("riley/zig/sceneops.zig");
-const NDArray = @import("riley/zig/ndarray.zig").NDArray;
-const riley = @import("riley/zig/riley.zig");
-const shaderops = @import("riley/zig/shaderops.zig");
+const benchcommon = @import("../dev_support/benchcommon.zig");
+const orch = @import("../dev_support/orchestration.zig");
+const tcfg = @import("../dev_support/testconfig.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
+const rotation = @import("../riley/zig/rotation.zig");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const cameraops = @import("../riley/zig/cameraframops.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const mo = @import("../riley/zig/meshpipeline.zig");
+const sceneops = @import("../riley/zig/sceneops.zig");
+const ndarray = @import("../riley/zig/ndarray.zig");
+const riley = @import("../riley/zig/riley.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
 
 const F = buildconfig.F;
+const CameraInput = cameratypes.CameraInput;
+const Rotation = rotation.Rotation;
+const NDArray = ndarray.NDArray;
 
 const data_dir = "data/bench/tri3_fullraster";
-const out_dir_root = "out/test_sin_approx";
+const out_dir_root = "out/test_full_maths_simd";
 const pixels_num = [_]u32{ 800, 500 };
 const pixels_size = [_]F{ 5.3e-6, 5.3e-6 };
 const focal_length: F = 50.0e-3;
@@ -42,8 +47,8 @@ const ImageDiffStats = struct {
 };
 
 fn sinusoidalParams(
-    builtin: shaderops.FuncShaderBuiltin,
-) shaderops.FuncShaderParams {
+    builtin: shadertypes.FuncShaderBuiltin,
+) shadertypes.FuncShaderParams {
     const wave_num = 2.0 * std.math.pi * wave_oscillations;
     return switch (builtin) {
         .sinusoidal => .{
@@ -69,8 +74,8 @@ fn sinusoidalParams(
 fn loadFuncMeshInput(
     allocator: std.mem.Allocator,
     io: std.Io,
-    builtin: shaderops.FuncShaderBuiltin,
-) !mo.MeshInput {
+    builtin: shadertypes.FuncShaderBuiltin,
+) !meshtypes.MeshInput {
     const coord_path = try std.fs.path.join(
         allocator,
         &[_][]const u8{ data_dir, "coords.csv" },
@@ -94,24 +99,23 @@ fn loadFuncMeshInput(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = .{
+        .shaders = .{ .mono_direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
                 .builtin = builtin,
                 .params = sinusoidalParams(builtin),
-                .bits = 8,
+
                 .scaling = .none,
-                .normal_type = .none,
             },
-        },
+        } },
     };
 }
 
 fn renderSinImage(
     allocator: std.mem.Allocator,
     io: std.Io,
-    builtin: shaderops.FuncShaderBuiltin,
+    builtin: shadertypes.FuncShaderBuiltin,
 ) !NDArray(F) {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -127,41 +131,25 @@ fn renderSinImage(
         Rotation.init(0, 0, 0),
         1.0,
     );
-    const camera = try CameraPrepared.init(
-        aa,
-        .{
-            .pixels_num = pixels_num,
-            .pixels_size = pixels_size,
-            .pos_world = cam_pos,
-            .rot_world = Rotation.init(0, 0, 0),
-            .roi_cent_world = roi_pos,
-            .focal_length = focal_length,
-            .sub_sample = sub_sample,
-            .distort = .none,
-        },
-    );
-    defer camera.deinit(aa);
-
     const camera_input = CameraInput{
-        .pixels_num = camera.pixels_num,
-        .pixels_size = camera.pixels_size,
-        .pos_world = camera.pos_world,
-        .rot_world = camera.rot_world,
-        .roi_cent_world = camera.roi_cent_world,
-        .focal_length = camera.focal_length,
-        .sub_sample = camera.sub_sample,
-        .distort = camera.distort,
+        .pixels_num = pixels_num,
+        .pixels_size = pixels_size,
+        .pos_world = cam_pos,
+        .rot_world = Rotation.init(0, 0, 0),
+        .roi_cent_world = roi_pos,
+        .focal_length = focal_length,
+        .sub_sample = sub_sample,
+        .distort = .none,
     };
 
     var config = tcfg.getRasterConfig(.testing);
     config.save_strategy = .memory;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{};
 
     const result = (try riley.raster(
         aa,
         io,
         &[_]CameraInput{camera_input},
-        &[_]mo.MeshInput{mesh_input},
+        &[_]meshtypes.MeshInput{mesh_input},
         config,
         null,
     )) orelse return error.NoResult;
@@ -227,17 +215,14 @@ fn saveGreyBMP(
         0,
         .{
             .format = .bmp,
-            .bits = 8,
+            .file_bits = 8,
             .scaling = .auto,
-            .channels = 1,
         },
+        1,
     );
 }
 
-test "sinusoidal approx matches builtin fullraster render" {
-    const allocator = std.heap.page_allocator;
-    const io = std.testing.io;
-
+pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     var builtin_image = try renderSinImage(
         allocator,
         io,
@@ -280,10 +265,11 @@ test "sinusoidal approx matches builtin fullraster render" {
     try saveGreyBMP(io, out_dir, "sinusoidal_approx", &approx_image);
     try saveGreyBMP(io, out_dir, "sinusoidal_abs_diff", &diff_image);
 
-    std.debug.print(
-        "sin approx diff: max={e:.6}, mean={e:.6}, rmse={e:.6}\n",
-        .{ stats.max_abs, stats.mean_abs, stats.rmse },
-    );
-
     try std.testing.expect(stats.max_abs <= compare_abs_tol);
+}
+
+test "sinusoidal approx matches builtin fullraster render" {
+    const allocator = std.heap.page_allocator;
+    const io = std.testing.io;
+    try run(allocator, io);
 }

@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameratypes = @import("riley/zig/cameratypes.zig");
 const std = @import("std");
 const demo_common = @import("demo_common.zig");
 
@@ -16,18 +17,18 @@ const meshio = @import("riley/zig/meshio.zig");
 const uvio = @import("riley/zig/uvio.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
-const MeshInput = meshpipe.MeshInput;
-const camera_mod = @import("riley/zig/camera.zig");
-const CameraInput = camera_mod.CameraInput;
+const MeshInput = riley.MeshInput;
+const camera_mod = @import("riley/zig/cameraprojops.zig");
+const CameraInput = cameratypes.CameraInput;
 const cameraio = @import("riley/zig/cameraio.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const vecstack = @import("riley/zig/vecstack.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const DistortModel = camera_mod.DistortParams;
 const BrownCon = camera_mod.BrownCon;
 const BrownConExt = camera_mod.BrownConExt;
-const StereoPairInput = camera_mod.StereoPairInput;
+const StereoPairInput = cameratypes.StereoPairInput;
 const F = buildconfig.F;
 
 const DistortCase = enum {
@@ -142,7 +143,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 3. Create, save, and reload stereo camera pair
     // -------------------------------------------------------------------------
-    const coord_sys = camera_mod.CameraCoordSys.opengl;
+    const coord_sys = cameratypes.CameraCoordSys.opengl;
     const stereo_file_name = if (coord_sys == .opencv)
         "stereo_data_opencv.csv"
     else
@@ -202,6 +203,9 @@ pub fn main(init: std.process.Init) !void {
     );
     defer loaded_stereo.deinit(local_alloc);
     stereo_pair = loaded_stereo.stereo_pair;
+    for (&stereo_pair.cameras) |*camera_input| {
+        camera_input.output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }};
+    }
 
     // -------------------------------------------------------------------------
     // 4. Build mesh and raster configuration
@@ -211,16 +215,16 @@ pub fn main(init: std.process.Init) !void {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = selected_disp,
-        .shader = .{ .tex_u8 = .{
+        .shaders = .{ .mono_direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = .{
                 .sample = .cubic_catmull_rom,
                 .mode = .direct,
             },
-            .bits = 8,
+
             .scaling = .none,
-        } },
+        } } },
     };
 
     const config = RasterConfig{
@@ -228,12 +232,8 @@ pub fn main(init: std.process.Init) !void {
         .parallel = .{ .threads = total_threads },
         .save_strategy = .disk,
         .background_value = 128.0,
-        .output = .{
-            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .auto },
-            },
-        },
-        .report = .{ .mode = .bench },
+        .report_perf = .bench,
+        .report_console = true,
     };
 
     // -------------------------------------------------------------------------

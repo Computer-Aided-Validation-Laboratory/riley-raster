@@ -9,7 +9,7 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const cam = @import("camera.zig");
+const cam = @import("cameraprojops.zig");
 const distbounds = @import("distortbounds.zig");
 const geomkerns = @import("geometrykernels.zig");
 const rastcfg = @import("rasterconfig.zig");
@@ -347,7 +347,7 @@ fn controlNet(
         dst[grid[2][1]] = row2;
         dst[grid[2][2]] = src[2];
     }
-    
+
     return controls;
 }
 pub const BezierLeafPreCalc = struct {

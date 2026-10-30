@@ -25,7 +25,8 @@ pub const TexSampleMode = TexSampMode;
 pub const TexSampleConfig = TexSampConfig;
 pub const TextureSampleConfig = TextureSampConfig;
 pub const texelToFloat = common_impl.texelToFloat;
-pub const Tex = impl.Tex;
+pub const TexDataFix = common_impl.TexDataFix;
+pub const TexDataDyn = common_impl.TexDataDyn;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func

@@ -9,11 +9,12 @@
 const std = @import("std");
 
 const riley = @import("riley/zig/riley.zig");
-const camera = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
+const shaderops = @import("riley/zig/shaderops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
 
@@ -33,20 +34,22 @@ pub fn main(init: std.process.Init) !void {
     const coords = meshio.Coords.init(&coord_values, 3);
     const connect = meshio.Connect.init(&connect_values, 1, 3);
 
-    const mesh_input = meshpipe.MeshInput{
+    const checker: riley.ShaderMonoInput = .{ .func = .{
+        .coord_mode = .world_reference,
+        .builtin = .checker,
+        .params = .{
+            .coord_scale = .{ 4.0, 4.0 },
+            .settings = .{ .checker = .{} },
+        },
+        .scaling = .auto,
+    } };
+
+    const mesh_input = riley.MeshInput{
         .mesh_type = .tri3opt,
         .coords = coords,
         .connect = connect,
         .disp = null,
-        .shader = .{ .func = .{
-            .coord_mode = .world_reference,
-            .builtin = .checker,
-            .params = .{
-                .coord_scale = .{ 4.0, 4.0 },
-                .settings = .{ .checker = .{} },
-            },
-            .scaling = .auto,
-        } },
+        .shaders = .{ .mono_direct = checker },
     };
 
     // -------------------------------------------------------------------------
@@ -69,7 +72,7 @@ pub fn main(init: std.process.Init) !void {
         1.0,
     );
 
-    const camera_input = camera.CameraInput{
+    const camera_input = riley.CameraInput{
         .pixels_num = pixels_num,
         .pixels_size = pixels_size,
         .pos_world = position,
@@ -77,6 +80,8 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = target,
         .focal_length = focal_length,
         .sub_sample = 4,
+        .render_format = .mono,
+        .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }},
     };
 
     // -------------------------------------------------------------------------
@@ -84,12 +89,6 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const config = riley.RasterConfig{
         .save_strategy = .disk,
-        .output = .{
-            .image_save_mode = .grey,
-            .image_save_opts = &.{
-                .{ .format = iio.ImageFormat.bmp, .bits = 8, .scaling = .none },
-            },
-        },
     };
 
     // -------------------------------------------------------------------------

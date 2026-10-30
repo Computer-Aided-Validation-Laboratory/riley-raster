@@ -6,9 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const common = @import("../dev_support/tests.zig");
 const gengold_zoo = @import("../gengold/gen_gold_featurezoo.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
@@ -22,8 +24,8 @@ const tcfg = @import("../dev_support/testconfig.zig");
 const texops = @import("../riley/zig/textureops.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 const Timestamp = std.Io.Clock.Timestamp;
 
 pub const ZooThreadingCase = struct {
@@ -42,8 +44,8 @@ pub const ZooColorMode = enum {
 };
 
 pub const ZooInput = union(ZooColorMode) {
-    mono: texops.Tex(u8, 1),
-    rgb: texops.Tex(u8, 3),
+    mono: texops.TexDataFix(u8, 1),
+    rgb: texops.TexDataFix(u8, 3),
 };
 
 pub const zoo_threading_cases = [_]ZooThreadingCase{
@@ -139,6 +141,7 @@ pub fn runZooCase(
         .mono => &all_cameras,
         .rgb => blk: {
             rgb_cams_buf = [_]CameraInput{ all_cameras[0], all_cameras[1] };
+            for (&rgb_cams_buf) |*camera_input| camera_input.render_format = .rgb;
             break :blk &rgb_cams_buf;
         },
     };
@@ -267,7 +270,7 @@ pub fn runZooCase(
 pub fn runZooMonoTest(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_grey: texops.Tex(u8, 1),
+    texture_grey: texops.TexDataFix(u8, 1),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {
@@ -279,7 +282,7 @@ pub fn runZooMonoTest(
 pub fn runZooRgbTest(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_rgb: texops.Tex(u8, 3),
+    texture_rgb: texops.TexDataFix(u8, 3),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {

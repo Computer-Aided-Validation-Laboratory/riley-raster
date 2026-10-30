@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
@@ -18,8 +20,10 @@ const sceneops = @import("../riley/zig/sceneops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const texops = @import("../riley/zig/textureops.zig");
 const uvio = @import("../riley/zig/uvio.zig");
-const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
-const cameraops = @import("../riley/zig/cameraops.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
+const shaderpipe = @import("../riley/zig/shaderpipe.zig");
+const CameraPrepared = @import("../riley/zig/cameraprojops.zig").CameraPrepared;
+const cameraops = @import("../riley/zig/cameraframops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const policy = @import("testpolicy.zig");
 
@@ -105,7 +109,7 @@ fn initCameraForSimDataAllFrames(
     const aa = arena.allocator();
 
     const time_steps = if (sim_data.field) |field| field.getTimeN() else 1;
-    var mesh_inputs = try aa.alloc(mo.MeshInput, time_steps);
+    var mesh_inputs = try aa.alloc(meshtypes.MeshInput, time_steps);
 
     for (0..time_steps) |tt| {
         var frame_coords = try meshio.Coords.initAlloc(aa, sim_data.coords.mat.rows_num);
@@ -139,14 +143,13 @@ fn initCameraForSimDataAllFrames(
             .coords = frame_coords,
             .connect = sim_data.connect,
             .disp = null,
-            .shader = .{
+            .shaders = .{ .mono_direct = .{
                 .func = .{
                     .uvs = null,
                     .coord_mode = .para,
                     .builtin = .constant,
-                    .normal_type = .none,
                 },
-            },
+            } },
         };
     }
 
@@ -278,7 +281,7 @@ pub fn initStereoCamerasForCoords(
 
 pub fn initCameraForMeshes(
     allocator: std.mem.Allocator,
-    mesh_inputs: []mo.MeshInput,
+    mesh_inputs: []meshtypes.MeshInput,
     pixel_num: [2]u32,
     fov_scale: F,
 ) !CameraPrepared {
@@ -313,7 +316,7 @@ pub fn buildMultimeshInputs(
     io: std.Io,
     dir_paths: []const []const u8,
     shader_mode: MultimeshShaderMode,
-) ![]mo.MeshInput {
+) ![]meshtypes.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
     const mesh_inputs = switch (shader_mode) {
         .nodal => try mo.meshInputFromSimDataSlice(
@@ -406,10 +409,10 @@ pub fn buildMixedMeshInputs(
     allocator: std.mem.Allocator,
     io: std.Io,
     dir_paths: []const []const u8,
-    texture: texops.Tex(u8, 1),
-) ![]mo.MeshInput {
+    texture: texops.TexDataFix(u8, 1),
+) ![]meshtypes.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
-    var mesh_inputs = try allocator.alloc(mo.MeshInput, 10);
+    var mesh_inputs = try allocator.alloc(meshtypes.MeshInput, 10);
 
     for (0..default_multimesh_mesh_types.len) |ii| {
         mesh_inputs[ii] = .{
@@ -417,12 +420,12 @@ pub fn buildMixedMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .nodal = .{
+            .shaders = .{ .mono_direct = .{ .nodal = .{
                 .field = sim_datas[ii].field.?,
-                .bits = 8,
+                .output_gain = 255.0,
                 .scaling = .auto,
                 .scale_over = .within_frames,
-            } },
+            } } },
         };
     }
 
@@ -439,16 +442,16 @@ pub fn buildMixedMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .tex_u8 = .{
+            .shaders = .{ .mono_direct = .{ .tex_u8 = .{
                 .uvs = uvs.array,
                 .tex = texture,
                 .samp_cfg = .{
                     .sample = .cubic_catmull_rom,
                     .mode = .lut_lerp,
                 },
-                .bits = 8,
+
                 .scaling = .none,
-            } },
+            } } },
         };
     }
 
@@ -463,10 +466,10 @@ pub fn buildMixedRgbMeshInputs(
     allocator: std.mem.Allocator,
     io: std.Io,
     dir_paths: []const []const u8,
-    texture: texops.Tex(u8, 3),
-) ![]mo.MeshInput {
+    texture: texops.TexDataFix(u8, 3),
+) ![]meshtypes.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
-    var mesh_inputs = try allocator.alloc(mo.MeshInput, 10);
+    var mesh_inputs = try allocator.alloc(meshtypes.MeshInput, 10);
 
     for (0..default_multimesh_mesh_types.len) |ii| {
         const uv_path = try std.fmt.allocPrint(
@@ -476,20 +479,25 @@ pub fn buildMixedRgbMeshInputs(
         );
         const uvs = try uvio.loadUVMap(allocator, io, uv_path);
 
+        const stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
+        stages[0] = shaderops.stageSource(.{ .tex_rgb_u8 = .{
+            .uvs = uvs.array,
+            .tex = texture,
+            .samp_cfg = .{
+                .sample = .cubic_catmull_rom,
+                .mode = .lut_lerp,
+            },
+            .scaling = .none,
+        } });
+
         mesh_inputs[ii] = .{
             .mesh_type = default_multimesh_mesh_types[ii],
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .tex_rgb_u8 = .{
-                .uvs = uvs.array,
-                .tex = texture,
-                .samp_cfg = .{
-                    .sample = .cubic_catmull_rom,
-                    .mode = .lut_lerp,
-                },
-                .bits = 8,
-                .scaling = .none,
+            .shaders = .{ .rgb_pipe = .{
+                .stages = stages,
+                .resolver = .{ .identity = shaderpipe.identity_channels_3 },
             } },
         };
     }
@@ -501,16 +509,22 @@ pub fn buildMixedRgbMeshInputs(
             sim_datas[ii].field.?,
         );
 
+        const stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
+        stages[0] = shaderops.stageSource(.{ .nodal = .{
+            .field = rgb_field,
+            .output_gain = 255.0,
+            .scaling = .auto,
+            .scale_over = .within_frames,
+        } });
+
         mesh_inputs[ii + default_multimesh_mesh_types.len] = .{
             .mesh_type = default_multimesh_mesh_types[ii],
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .nodal = .{
-                .field = rgb_field,
-                .bits = 8,
-                .scaling = .auto,
-                .scale_over = .within_frames,
+            .shaders = .{ .rgb_pipe = .{
+                .stages = stages,
+                .resolver = .{ .identity = shaderpipe.identity_channels_3 },
             } },
         };
     }

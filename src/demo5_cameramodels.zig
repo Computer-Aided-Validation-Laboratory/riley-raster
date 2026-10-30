@@ -15,8 +15,8 @@ const meshio = @import("riley/zig/meshio.zig");
 const uvio = @import("riley/zig/uvio.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
-const camera = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
@@ -37,18 +37,13 @@ pub fn main(init: std.process.Init) !void {
     const config_base = riley.RasterConfig{
         .save_strategy = .disk,
         .parallel = .{ .threads = 4 },
-        .output = .{
-            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .auto },
-            },
-        },
-        .report = .{ .mode = .bench },
+        .report_perf = .bench,
+        .report_console = true,
     };
 
     const data_dir = "data/min/tri6_sphere200/";
     const out_dir_root = "./out/demo5_cameramodels";
 
-    
     // -------------------------------------------------------------------------
     // 2. Load mesh data and texture shader
     // -------------------------------------------------------------------------
@@ -56,7 +51,7 @@ pub fn main(init: std.process.Init) !void {
         "Loading sphere simulation data from {s}...\n",
         .{data_dir},
     );
-    
+
     const sim_data = try meshio.loadSimData(
         local_alloc,
         io,
@@ -76,21 +71,21 @@ pub fn main(init: std.process.Init) !void {
         "texture/speckle_mono.bmp",
         .bmp,
     );
-    const mesh = meshpipe.MeshInput{
+    const mesh = riley.MeshInput{
         .mesh_type = .tri6,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = .{ .tex_u8 = .{
+        .shaders = .{ .mono_direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = .{
                 .sample = .cubic_catmull_rom,
                 .mode = .direct,
             },
-            .bits = 8,
+
             .scaling = .none,
-        } },
+        } } },
     };
 
     // -------------------------------------------------------------------------
@@ -111,7 +106,8 @@ pub fn main(init: std.process.Init) !void {
         1.0,
     );
 
-    const camera_input = camera.CameraInput{
+    const camera_input = riley.CameraInput{
+        .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }},
         .pixels_num = pixels_num,
         .pixels_size = pixel_size,
         .pos_world = pos_world,

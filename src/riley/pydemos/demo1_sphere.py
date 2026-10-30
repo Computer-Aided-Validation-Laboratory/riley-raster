@@ -58,7 +58,7 @@ def main() -> None:
         mesh_type=riley.MeshType.tri6,
         coords=coords,
         connect=connect,
-        shader=shader,
+        shaders=riley.MeshShaderSet(direct=shader),
     )
 
     # --------------------------------------------------------------------------
@@ -83,6 +83,14 @@ def main() -> None:
         focal_length=focal_length,
         sub_sample=4,
         coord_sys=riley.CameraCoordSys.opengl,
+        render_format=riley.RenderFormat.mono,
+        output_files=[
+            riley.ImageSaveOpts(
+                format=riley.ImageFormat.bmp,
+                file_bits=8,
+                scaling=riley.ScaleStrategy.auto,
+            )
+        ],
     )
 
     # --------------------------------------------------------------------------
@@ -91,7 +99,6 @@ def main() -> None:
     config = riley.RasterConfig(
         parallel=total_threads,
         save_strategy=riley.SaveStrategy.disk,
-        save_scaling=riley.ScaleStrategy.auto,
     )
 
     # --------------------------------------------------------------------------

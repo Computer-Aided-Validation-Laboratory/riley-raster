@@ -53,7 +53,9 @@ def main() -> None:
         mesh_type=riley.MeshType.tri6,
         coords=coords,
         connect=connect,
-        shader=riley.TextureShader(uvs=uvs, texture=texture),
+        shaders=riley.MeshShaderSet(
+            direct=riley.TextureShader(uvs=uvs, texture=texture),
+        ),
     )
 
     # --------------------------------------------------------------------------
@@ -78,6 +80,13 @@ def main() -> None:
         focal_length=focal_length,
         sub_sample=4,
         coord_sys=riley.CameraCoordSys.opengl,
+        output_files=[
+            riley.ImageSaveOpts(
+                format=riley.ImageFormat.bmp,
+                file_bits=8,
+                scaling=riley.ScaleStrategy.auto,
+            )
+        ],
     )
 
     # --------------------------------------------------------------------------
@@ -178,7 +187,6 @@ def main() -> None:
     config = riley.RasterConfig(
         parallel=raster_threads,
         save_strategy=riley.SaveStrategy.disk,
-        save_scaling=riley.ScaleStrategy.auto,
     )
 
     for distort_name, distort in distorts:

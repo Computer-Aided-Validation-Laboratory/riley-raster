@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameratypes = @import("riley/zig/cameratypes.zig");
 const std = @import("std");
 
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -15,13 +16,13 @@ const meshio = @import("riley/zig/meshio.zig");
 const uvio = @import("riley/zig/uvio.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
-const MeshInput = meshpipe.MeshInput;
+const MeshInput = riley.MeshInput;
 const gk = @import("riley/zig/geometrykernels.zig");
 const MeshType = gk.MeshType;
-const camera_mod = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera_mod = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
-const CameraInput = camera_mod.CameraInput;
+const CameraInput = cameratypes.CameraInput;
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
 const F = buildconfig.F;
@@ -77,16 +78,15 @@ pub fn main(init: std.process.Init) !void {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = .{ .tex_u8 = .{
+        .shaders = .{ .mono_direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = .{
                 .sample = .cubic_catmull_rom,
                 .mode = .direct,
             },
-            .bits = 8,
             .scaling = .none,
-        } },
+        } } },
     };
 
     // -------------------------------------------------------------------------
@@ -114,6 +114,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     const camera_input = CameraInput{
+        .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }},
         .pixels_num = pixels_num,
         .pixels_size = pixels_size,
         .pos_world = cam_pos,
@@ -129,12 +130,8 @@ pub fn main(init: std.process.Init) !void {
     const config = RasterConfig{
         .save_strategy = .disk,
         .parallel = .{ .threads = total_threads },
-        .output = .{
-            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .auto },
-            },
-        },
-        .report = .{ .mode = .bench },
+        .report_perf = .bench,
+        .report_console = true,
     };
 
     // -------------------------------------------------------------------------

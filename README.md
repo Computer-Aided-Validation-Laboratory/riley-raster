@@ -84,6 +84,14 @@ The equivalent Python demo is:
 python -m riley demo2a_rabbits_mono
 ```
 
+ShaderSet examples start with `zig build demo7-shaderpipe-quickstart` or
+`python -m riley demo7_shaderpipe_quickstart`. The four-case gallery is
+`demo8-shaderpipe-gallery` / `demo8_shaderpipe_gallery`; the stereo DIC and
+IR FE example is `demo9-diciruq` / `demo9_diciruq`; the lit sphere comparison
+is `demo10-sphere-lit` / `demo10_sphere_lit`. See
+[the shader-pipe guide](dev/SHADERPIPE.md) for shader selection, radiometric
+units, and per-camera TIFF encoding.
+
 Browse the complete [Zig demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src) or [Python demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src/riley/pydemos). The image links below are absolute GitHub URLs so they render both on GitHub and on PyPI.
 
 ### Rabbits demo

@@ -1,0 +1,252 @@
+# --------------------------------------------------------------------------
+# Riley: A High Performance Rasteriser for DIC UQ
+#
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Licensed under the MIT License (see LICENSE file for details)
+#
+# Authors: scepticalrabbit (Lloyd Fletcher)
+# --------------------------------------------------------------------------
+"""Four small ShaderPipe compositions sharing one procedural scene."""
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+
+import riley
+
+
+def linear(
+    x: float,
+    y: float,
+    bias: float = 0.5,
+) -> riley.FunctionShader:
+    return riley.FunctionShader(
+        builtin=riley.FuncShaderBuiltin.linear,
+        coord_mode=riley.FuncCoordMode.world_reference,
+        params=riley.FuncShaderParams(linear_coeffs=(bias, x, y)),
+        bits=-1,
+        scaling_type=riley.ScaleStrategy.none,
+    )
+
+
+def main() -> None:
+    # --------------------------------------------------------------------------
+    # 1. Setup paths, base mesh geometry, and shared camera
+    # --------------------------------------------------------------------------
+    coords = np.array(
+        ((-1.0, -1.0, 0.0), (1.0, -1.0, 0.0), (0.0, 1.0, 0.0)),
+        dtype=np.float64,
+    )
+    connect = np.array(((0, 1, 2),), dtype=np.int64)
+    convention = riley.ConnectConvention(
+        riley.EElemType.TRI3,
+        riley.EConnectAxis.ROW,
+        0,
+        riley.ENodeOrder.RILEY,
+    )
+    pixels_num = (512, 512)
+    pixels_size = (0.02, 0.02)
+    target = riley.roi_cent_from_coords(coords)
+
+    base_mesh = riley.create_mesh(
+        convention,
+        riley.MeshType.tri3opt,
+        coords,
+        connect,
+        riley.MeshShaderSet(direct=linear(0.0, 0.0)),
+    )
+    position = riley.pos_frame_mesh(
+        base_mesh,
+        pixels_num,
+        pixels_size,
+        1.0,
+        (0.0, 0.0, 0.0),
+        target=target,
+    )
+    camera = riley.Camera(
+        pixels_num,
+        pixels_size,
+        position,
+        (0.0, 0.0, 0.0),
+        target,
+        1.0,
+        4,
+    )
+
+    config = riley.RasterConfig(
+        parallel=1,
+        save_strategy=riley.SaveStrategy.disk,
+    )
+
+    ch = tuple(riley.Slot(riley.SlotKind.channel, ii) for ii in range(3))
+    fields = tuple(riley.Slot(riley.SlotKind.field, ii) for ii in range(2))
+    param = riley.Slot(riley.SlotKind.parameter, 0)
+    constants = tuple(
+        riley.Slot(riley.SlotKind.constant, ii) for ii in range(2)
+    )
+
+    checker = riley.FunctionShader(
+        builtin=riley.FuncShaderBuiltin.checker,
+        coord_mode=riley.FuncCoordMode.world_reference,
+        params=riley.FuncShaderParams(coord_scale=(4.0, 4.0)),
+        bits=-1,
+        scaling_type=riley.ScaleStrategy.none,
+    )
+
+    def render(
+        name: str,
+        shaders: riley.MeshShaderSet,
+        role: riley.RenderFormat = riley.RenderFormat.mono,
+    ) -> None:
+        mesh = riley.create_mesh(
+            convention,
+            riley.MeshType.tri3opt,
+            coords,
+            connect,
+            shaders,
+        )
+        camera.render_format = role
+        if role == riley.RenderFormat.rgb:
+            camera.output_files = [
+                riley.ImageSaveOpts(
+                    format=riley.ImageFormat.bmp,
+                    file_bits=8,
+                    scaling=riley.ScaleStrategy.fixed,
+                    scaling_min=0.0,
+                    scaling_max=1.0,
+                )
+            ]
+        else:
+            camera.output_files = [
+                riley.ImageSaveOpts(
+                    format=riley.ImageFormat.tiff,
+                    file_bits=16,
+                    scaling=riley.ScaleStrategy.fixed,
+                    scaling_min=0.0,
+                    scaling_max=1.0,
+                )
+            ]
+        out_dir = str(
+            Path.cwd() / "out_riley_py" / "demo8_shaderpipe_gallery" / name
+        )
+        riley.raster(mesh, camera, config, out_dir=out_dir)
+
+    # --------------------------------------------------------------------------
+    # 2. Composition A: Spatially modulated illumination
+    # --------------------------------------------------------------------------
+    render(
+        "a_modulation",
+        riley.MeshShaderSet(
+            mono=riley.ShaderPipe(
+                stages=(
+                    riley.ShaderSource(checker, ch[0]),
+                    riley.ShaderSource(linear(0.375, 0.0, 0.625), param),
+                ),
+                resolver=riley.ShaderResolver(
+                    riley.ResolverKind.modulate,
+                    slots=(ch[0],),
+                    factor=param,
+                ),
+            ),
+        ),
+        riley.RenderFormat.mono,
+    )
+
+    # --------------------------------------------------------------------------
+    # 3. Composition B: Multi-channel RGB gradient composition
+    # --------------------------------------------------------------------------
+    render(
+        "b_rgb",
+        riley.MeshShaderSet(
+            rgb=riley.ShaderPipe(
+                stages=tuple(
+                    riley.ShaderSource(shader, slot)
+                    for shader, slot in zip(
+                        (
+                            linear(0.5, 0.0),
+                            linear(0.0, 0.5),
+                            linear(0.25, -0.25),
+                        ),
+                        ch,
+                    )
+                ),
+                resolver=riley.ShaderResolver(
+                    riley.ResolverKind.identity,
+                    slots=ch,
+                ),
+            ),
+        ),
+        riley.RenderFormat.rgb,
+    )
+
+    # --------------------------------------------------------------------------
+    # 4. Composition C: Bounded expression blend
+    # --------------------------------------------------------------------------
+    expression = (
+        riley.Operation(riley.OperationKind.load, fields[0]),
+        riley.Operation(riley.OperationKind.load, constants[0]),
+        riley.Operation(riley.OperationKind.multiply),
+        riley.Operation(riley.OperationKind.load, fields[1]),
+        riley.Operation(riley.OperationKind.load, constants[1]),
+        riley.Operation(riley.OperationKind.multiply),
+        riley.Operation(riley.OperationKind.add),
+        riley.Operation(riley.OperationKind.clamp01),
+        riley.Operation(riley.OperationKind.store),
+    )
+    render(
+        "c_expression",
+        riley.MeshShaderSet(
+            mono=riley.ShaderPipe(
+                stages=(
+                    riley.ShaderSource(linear(0.5, 0.0), fields[0]),
+                    riley.ShaderSource(linear(0.0, 0.5), fields[1]),
+                ),
+                resolver=riley.ShaderResolver(
+                    riley.ResolverKind.expression,
+                    operations=expression,
+                ),
+                constants=(0.65, 0.35),
+            ),
+        ),
+        riley.RenderFormat.mono,
+    )
+
+    # --------------------------------------------------------------------------
+    # 5. Composition D: Emissivity material parameter mapping
+    # --------------------------------------------------------------------------
+    emissivity_ops = (
+        riley.Operation(riley.OperationKind.load, param),
+        riley.Operation(riley.OperationKind.load, constants[0]),
+        riley.Operation(riley.OperationKind.subtract),
+        riley.Operation(riley.OperationKind.load, constants[1]),
+        riley.Operation(riley.OperationKind.multiply),
+        riley.Operation(riley.OperationKind.clamp01),
+        riley.Operation(riley.OperationKind.store),
+    )
+    render(
+        "d_emissivity_visualisation",
+        riley.MeshShaderSet(
+            mono=riley.ShaderPipe(
+                stages=(
+                    riley.ShaderSource(checker, ch[0]),
+                    riley.GreyToEmissivity(
+                        ch[0],
+                        param,
+                        black=0.96,
+                        white=0.90,
+                    ),
+                ),
+                resolver=riley.ShaderResolver(
+                    riley.ResolverKind.expression,
+                    operations=emissivity_ops,
+                ),
+                constants=(0.90, 1.0 / 0.06),
+            ),
+        ),
+        riley.RenderFormat.mono,
+    )
+
+
+if __name__ == "__main__":
+    main()

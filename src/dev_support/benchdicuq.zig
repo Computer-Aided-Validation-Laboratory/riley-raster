@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameratypes = @import("../riley/zig/cameratypes.zig");
+const meshtypes = @import("../riley/zig/meshtypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
@@ -19,15 +21,15 @@ const iio = @import("../riley/zig/imageio.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const texops = @import("../riley/zig/textureops.zig");
-const camera_mod = @import("../riley/zig/camera.zig");
-const cameraops = @import("../riley/zig/cameraops.zig");
+const camera_mod = @import("../riley/zig/cameraprojops.zig");
+const cameraops = @import("../riley/zig/cameraframops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const sceneops = @import("../riley/zig/sceneops.zig");
 const report = @import("../riley/zig/report.zig");
 const tcfg = @import("testconfig.zig");
 
-const CameraInput = camera_mod.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 pub const PreparedDicuqBenchmark = struct {
     mesh_input: MeshInput,
@@ -161,9 +163,6 @@ pub fn getBaseRasterConfig() riley.RasterConfig {
     base_raster_config.advanced.raster.tile_size_min = 8;
     base_raster_config.advanced.raster.tile_size_max = 128;
     base_raster_config.background_value = 128.0;
-    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
     return base_raster_config;
 }
 
@@ -246,13 +245,13 @@ pub fn prepareBenchmark(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = sim_data.disp,
-        .shader = .{ .tex_u8 = .{
+        .shaders = .{ .mono_direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = samp_cfg,
-            .bits = 8,
+
             .scaling = .none,
-        } },
+        } } },
     };
 
     const pixel_size = defaults.pixels_size;

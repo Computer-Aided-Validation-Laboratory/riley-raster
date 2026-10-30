@@ -128,13 +128,23 @@ def main() -> None:
         coords=coords,
         connect=connect,
         disp=disp_components,
-        shader=riley.TextureShader(uvs=uvs, texture=texture),
+        shaders=riley.MeshShaderSet(
+            direct=riley.TextureShader(uvs=uvs, texture=texture),
+        ),
     )
+
+    for cam in (camera_0, camera_1):
+        cam.output_files = [
+            riley.ImageSaveOpts(
+                format=riley.ImageFormat.bmp,
+                file_bits=8,
+                scaling=riley.ScaleStrategy.auto,
+            )
+        ]
 
     config = riley.RasterConfig(
         parallel=total_threads,
         save_strategy=riley.SaveStrategy.disk,
-        save_scaling=riley.ScaleStrategy.auto,
     )
     config.background_value = 128.0
 

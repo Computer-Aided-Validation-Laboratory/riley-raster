@@ -6,9 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const common = @import("../dev_support/tests.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const iio = @import("../riley/zig/imageio.zig");
@@ -20,8 +22,8 @@ const riley = @import("../riley/zig/riley.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 const NDArray = ndarray.NDArray;
 
 pub const ThreadingCase = struct {
@@ -196,12 +198,7 @@ fn assertImagesDiffer(
 pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     var config = tcfg.getRasterConfig(.testing);
     config.save_strategy = .memory;
-    config.output.image_save_mode = .grey;
     config.background_value = 32767.5;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     const gold_dir_root = policy.goldRoot(.full_scene_camera_threads);
 
@@ -551,7 +548,7 @@ fn runAdditionalSceneCameraThreadTests(
     }
 
     // 4. OpenGL vs OpenCV coordinate systems parity
-    for ([_]camera.CameraCoordSys{ .opengl, .opencv }) |coord_sys| {
+    for ([_]cameratypes.CameraCoordSys{ .opengl, .opencv }) |coord_sys| {
         var cam_test = cam_inp;
         cam_test.coord_sys = coord_sys;
 

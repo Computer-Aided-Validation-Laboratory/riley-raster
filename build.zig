@@ -62,11 +62,6 @@ pub fn build(b: *std.Build) void {
 
     const tests = [_]TestEntry{
         .{
-            .step_name = "test-poly",
-            .description = "Run camera-model unit tests across supported build configurations",
-            .source_path = "src/test_poly.zig",
-        },
-        .{
             .step_name = "test-verif-basic",
             .description = "Run the verification and BASIC test suites in one build",
             .source_path = "src/test_verif_basic.zig",
@@ -80,11 +75,6 @@ pub fn build(b: *std.Build) void {
             .step_name = "test-full",
             .description = "Run the FULL test suite",
             .source_path = "src/test_full.zig",
-        },
-        .{
-            .step_name = "test-full-badjac",
-            .description = "Save warning-only invalid-Jacobian render diagnostics",
-            .source_path = "src/test_full_badjac.zig",
         },
         .{
             .step_name = "test-verif",
@@ -104,6 +94,23 @@ pub fn build(b: *std.Build) void {
         );
         test_step.dependOn(&test_run.step);
     }
+
+    const diag_badjac_step = b.step(
+        "diag-badjac",
+        "Run warning-only invalid-Jacobian render diagnostics",
+    );
+    const diag_badjac_run = addRunStep(
+        b,
+        target,
+        optimize,
+        build_options_module,
+        .{
+            .step_name = "diag-badjac",
+            .description = "Run warning-only invalid-Jacobian render diagnostics",
+            .source_path = "src/root.zig",
+        },
+    );
+    diag_badjac_step.dependOn(&diag_badjac_run.step);
 
     const demos = [_]RunEntry{
         .{
@@ -151,6 +158,26 @@ pub fn build(b: *std.Build) void {
             .description = "Run the complete feature-zoo demo",
             .source_path = "src/demo6_featurezoo.zig",
         },
+        .{
+            .step_name = "demo7-shaderpipe-quickstart",
+            .description = "Run the ShaderSet quickstart demo",
+            .source_path = "src/demo7_shaderpipe_quickstart.zig",
+        },
+        .{
+            .step_name = "demo8-shaderpipe-gallery",
+            .description = "Run the ShaderPipe gallery demo",
+            .source_path = "src/demo8_shaderpipe_gallery.zig",
+        },
+        .{
+            .step_name = "demo9-diciruq",
+            .description = "Run the multimodal DIC and IR demo",
+            .source_path = "src/demo9_diciruq.zig",
+        },
+        .{
+            .step_name = "demo10-sphere-lit",
+            .description = "Run the lit sphere shaderpipe demo",
+            .source_path = "src/demo10_sphere_lit.zig",
+        },
     };
 
     const demos_step = b.step("demos", "Run all demo entrypoints");
@@ -181,7 +208,7 @@ pub fn build(b: *std.Build) void {
         .{
             .step_name = "gen-gold-failed-distortion",
             .description = "Regenerate only distortion gold cases listed in fails/",
-            .source_path = "src/gen_gold_failed_distortion.zig",
+            .source_path = "src/gen_gold_full.zig",
         },
         .{
             .step_name = "gen-gold-verif-zig",
@@ -200,6 +227,9 @@ pub fn build(b: *std.Build) void {
             build_options_module,
             entry,
         );
+        if (std.mem.eql(u8, entry.step_name, "gen-gold-failed-distortion")) {
+            run_artifact.addArg("--failed-distortion-only");
+        }
         run_step.dependOn(&run_artifact.step);
         if (std.mem.eql(u8, entry.step_name, "gen-gold-full")) {
             gold_step.dependOn(&run_artifact.step);

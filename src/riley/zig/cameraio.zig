@@ -6,11 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameratypes = @import("cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 
-const cam = @import("camera.zig");
-const cameraops = @import("cameraops.zig");
+const cam = @import("cameraprojops.zig");
+const cameraops = @import("cameraframops.zig");
 const rotation = @import("rotation.zig");
 const vec = @import("vecstack.zig");
 const F = buildconfig.F;
@@ -24,7 +25,7 @@ pub fn saveCamera(
     out_dir: std.Io.Dir,
     file_name: []const u8,
     camera_idx: usize,
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
 ) !void {
     const metrics = cameraops.calcPlaneMetrics(camera_input);
 
@@ -148,7 +149,7 @@ pub fn saveCamera(
 
 /// Owns CSV-loaded coefficient storage; keep alive until rendering completes.
 pub const LoadedCamera = struct {
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
     coeffs: ?[]const F,
 
     pub fn init(
@@ -165,13 +166,13 @@ pub const LoadedCamera = struct {
         const coord_sys = blk: {
             if (kv.get("coord_sys")) |sys_str| {
                 if (std.mem.eql(u8, sys_str, "opencv")) {
-                    break :blk cam.CameraCoordSys.opencv;
+                    break :blk cameratypes.CameraCoordSys.opencv;
                 }
             }
-            break :blk cam.CameraCoordSys.opengl;
+            break :blk cameratypes.CameraCoordSys.opengl;
         };
 
-        var camera_input = cam.CameraInput{
+        var camera_input = cameratypes.CameraInput{
             .pixels_num = .{
                 try std.fmt.parseInt(u32, try requireValue(&kv, "pixels_x"), 10),
                 try std.fmt.parseInt(u32, try requireValue(&kv, "pixels_y"), 10),
@@ -232,7 +233,7 @@ pub fn saveStereoPair(
     io: std.Io,
     out_dir: std.Io.Dir,
     stereo_file_name: []const u8,
-    stereo_pair: cam.StereoPairInput,
+    stereo_pair: cameratypes.StereoPairInput,
 ) !void {
     var suffix: []const u8 = "";
     if (stereo_file_name.len > 11 and std.mem.eql(
@@ -345,7 +346,7 @@ pub fn saveStereoPair(
 
 pub const LoadedStereoPair = struct {
     loaded_cameras: [2]LoadedCamera,
-    stereo_pair: cam.StereoPairInput,
+    stereo_pair: cameratypes.StereoPairInput,
 
     pub fn init(
         outer_alloc: std.mem.Allocator,
@@ -371,7 +372,7 @@ pub const LoadedStereoPair = struct {
     }
 };
 
-fn calculateStereoBaseline(stereo_pair: cam.StereoPairInput) vec.Vec3F {
+fn calculateStereoBaseline(stereo_pair: cameratypes.StereoPairInput) vec.Vec3F {
     const cam0 = stereo_pair.cameras[0];
     const cam1 = stereo_pair.cameras[1];
     return cam1.pos_world.sub(cam0.pos_world);
@@ -744,8 +745,8 @@ fn initTestCamera(
     alpha_z: F,
     beta_y: F,
     gamma_x: F,
-    coord_sys: cam.CameraCoordSys,
-) cam.CameraInput {
+    coord_sys: cameratypes.CameraCoordSys,
+) cameratypes.CameraInput {
     return .{
         .pixels_num = .{ 640, 480 },
         .pixels_size = .{ 3.45e-6, 3.45e-6 },

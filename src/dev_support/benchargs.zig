@@ -6,8 +6,9 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
-const cam = @import("../riley/zig/camera.zig");
+const cam = @import("../riley/zig/cameraprojops.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const texops = @import("../riley/zig/textureops.zig");
 
@@ -23,7 +24,7 @@ pub const BenchArgs = struct {
     geom_scheduling_mode: rastcfg.GeometrySchedulingMode,
     max_raster_workers_per_job: u16,
     hull_mode: rastcfg.HullMode,
-    subpixel_center_map: cam.SubPixelCenterMap,
+    subpixel_center_map: cameratypes.SubPixelCenterMap,
     save_strategy: rastcfg.SaveStrategy,
     disk_save_overlap: bool,
     sample: ?texops.TexSample,
@@ -51,6 +52,9 @@ pub const TextureStorage = enum {
 pub const ShaderSubset = enum {
     all,
     texture,
+    shaderpipe_baseline,
+    shaderpipe_compare,
+    shaderpipe_multisource,
 };
 
 pub const MeshSubset = enum {
@@ -165,7 +169,7 @@ pub fn parseArgsWithDefaults(
                     try parseEnum(rastcfg.HullMode, value);
             } else if (std.mem.eql(u8, arg, "--subpixel-center-map")) {
                 bench_args.subpixel_center_map =
-                    try parseEnum(cam.SubPixelCenterMap, value);
+                    try parseEnum(cameratypes.SubPixelCenterMap, value);
             } else if (std.mem.eql(u8, arg, "--save-strategy")) {
                 bench_args.save_strategy =
                     try parseSaveStrategy(value);
@@ -384,7 +388,7 @@ test "parse bench args named options" {
         bench_args.hull_mode,
     );
     try std.testing.expectEqual(
-        cam.SubPixelCenterMap.per_tile,
+        cameratypes.SubPixelCenterMap.per_tile,
         bench_args.subpixel_center_map,
     );
     try std.testing.expectEqual(

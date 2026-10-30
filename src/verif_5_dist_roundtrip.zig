@@ -6,10 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameratypes = @import("riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
-const cam = @import("riley/zig/camera.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
 const orch = @import("dev_support/orchestration.zig");
 const verif = @import("dev_support/verif.zig");
 const vconst = @import("dev_support/verifconstants.zig");
@@ -179,7 +180,7 @@ fn observedToIdealRasterWithIters(
 
 fn buildPixelSampleGrid(
     allocator: std.mem.Allocator,
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
 ) !std.ArrayList(PixelSample) {
     var sample_list: std.ArrayList(PixelSample) = .empty;
     try sample_list.ensureTotalCapacity(
@@ -218,7 +219,7 @@ fn buildPixelSampleGrid(
 }
 
 fn isInSensorBounds(
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
     ideal_x: F,
     ideal_y: F,
 ) bool {
@@ -230,7 +231,7 @@ fn isInSensorBounds(
 
 pub fn evalPixelSample(
     camera: *const cam.CameraPrepared,
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
     sample: PixelSample,
 ) DistortRoundTripRecord {
     const nan = std.math.nan(F);

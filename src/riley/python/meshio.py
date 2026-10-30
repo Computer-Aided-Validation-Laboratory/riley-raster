@@ -9,8 +9,12 @@ import numpy.typing as npt
 
 from riley.cython.riley import (
     FunctionShader,
+    MeshShaderSet,
+    ShaderPipe,
+    ShaderSource,
     Mesh,
     MeshType,
+    NormalType,
     NodalShader,
     RileyShader,
     TextureShader,
@@ -265,7 +269,7 @@ def _prepare_shader(
 
     Parameters
     ----------
-    shader : RileyShader
+    shaders : MeshShaderSet
         Input texture, nodal, or function shader.
     nodes_num : int
         Expected original node count `N`.
@@ -308,9 +312,16 @@ def _prepare_shader(
             uvs = _prepare_uvs(shader.uvs, nodes_num, source_node_idxs)
 
             return TextureShader(
-                uvs, np.ascontiguousarray(texture), shader.sample,
-                shader.sample_mode, shader.bits, shader.scaling_type,
-                shader.scaling_min, shader.scaling_max, shader.normal_type,
+                uvs=uvs,
+                texture=np.ascontiguousarray(texture),
+                sample=shader.sample,
+                sample_mode=shader.sample_mode,
+                bits=shader.bits,
+                output_gain=shader.output_gain,
+                output_offset=shader.output_offset,
+                scaling_type=shader.scaling_type,
+                scaling_min=shader.scaling_min,
+                scaling_max=shader.scaling_max,
             )
 
         case NodalShader():
@@ -324,9 +335,9 @@ def _prepare_shader(
                     "nodal field must have shape (nodes, time[, fields])."
                 )
 
-            if values.shape[2] not in (1, 3):
+            if not 1 <= values.shape[2] <= 8:
                 raise ValueError(
-                    "nodal field must contain one or three fields."
+                    "nodal field must contain between one and eight fields."
                 )
 
             if not np.issubdtype(values.dtype, np.floating):
@@ -348,7 +359,6 @@ def _prepare_shader(
                 scaling_min=shader.scaling_min,
                 scaling_max=shader.scaling_max,
                 scale_over=shader.scale_over,
-                normal_type=shader.normal_type,
             )
 
         case FunctionShader():
@@ -374,7 +384,6 @@ def _prepare_shader(
                 scaling_type=shader.scaling_type,
                 scaling_min=shader.scaling_min,
                 scaling_max=shader.scaling_max,
-                normal_type=shader.normal_type,
             )
 
         case _:
@@ -467,16 +476,57 @@ def convert_mesh_for_render(
     )
 
 
+def _prepare_shader_set(
+    shaders: MeshShaderSet,
+    nodes_num: int,
+    source_node_idxs: np.ndarray,
+) -> MeshShaderSet:
+    def prepare_entry(entry: Any) -> Any:
+        if entry is None:
+            return None
+        if isinstance(entry, ShaderPipe):
+            return ShaderPipe(
+                stages=tuple(
+                    ShaderSource(
+                        _prepare_shader(
+                            stage.shader, nodes_num, source_node_idxs
+                        ),
+                        stage.destination,
+                    )
+                    if isinstance(stage, ShaderSource)
+                    else stage
+                    for stage in entry.stages
+                ),
+                resolver=entry.resolver,
+                channels=entry.channels,
+                constants=entry.constants,
+            )
+        return _prepare_shader(entry, nodes_num, source_node_idxs)
+
+    return MeshShaderSet(
+        direct=(
+            _prepare_shader(shaders.direct, nodes_num, source_node_idxs)
+            if shaders.direct is not None
+            else None
+        ),
+        mono=prepare_entry(shaders.mono),
+        rgb=prepare_entry(shaders.rgb),
+        ir=prepare_entry(shaders.ir),
+        multifield=prepare_entry(shaders.multifield),
+    )
+
+
 def create_mesh_from_conversion(
     conversion: MeshConversion,
-    shader: RileyShader,
+    shaders: MeshShaderSet,
     disp: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
+    normal_type: NormalType = NormalType.exact,
 ) -> Mesh:
     """Create a Riley mesh from source-indexed nodal attributes."""
     if not isinstance(conversion, MeshConversion):
         raise TypeError("conversion must be a MeshConversion.")
-    if not isinstance(shader, RileyShader):
-        raise TypeError("shader must be a Riley supported shader.")
+    if not isinstance(shaders, MeshShaderSet):
+        raise TypeError("shaders must be a MeshShaderSet.")
 
     geometry = conversion.geometry
     return Mesh(
@@ -488,18 +538,20 @@ def create_mesh_from_conversion(
             conversion.source_node_count,
             conversion.source_node_indices,
         ),
-        _prepare_shader(
-            shader,
+        _prepare_shader_set(
+            shaders,
             conversion.source_node_count,
             conversion.source_node_indices,
         ),
+        normal_type,
     )
 
 
 def create_mesh_from_prepared(
     conversion: MeshConversion,
-    shader: RileyShader,
+    shaders: MeshShaderSet,
     disp: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
+    normal_type: NormalType = NormalType.exact,
 ) -> Mesh:
     """Create a Riley mesh from attributes indexed by converted mesh nodes."""
     if not isinstance(conversion, MeshConversion):
@@ -513,7 +565,8 @@ def create_mesh_from_prepared(
         geometry.coords,
         np.ascontiguousarray(geometry.connect, dtype=np.uintp),
         _prepare_disp(disp, nodes_num, identity),
-        _prepare_shader(shader, nodes_num, identity),
+        _prepare_shader_set(shaders, nodes_num, identity),
+        normal_type,
     )
 
 
@@ -522,8 +575,9 @@ def create_mesh(
     mesh_type: MeshType,
     coords: np.ndarray,
     connect: np.ndarray,
-    shader: RileyShader,
+    shaders: MeshShaderSet,
     disp: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
+    normal_type: NormalType = NormalType.exact,
 ) -> Mesh:
     """Build a renderable Riley Mesh from raw coordinates and connectivity.
 
@@ -544,11 +598,14 @@ def create_mesh(
     connect : numpy.ndarray
         Connectivity table of shape `(E, M)` or `(M, E)` with integer dtype,
         where `E` is elements and `M` is nodes per element.
-    shader : RileyShader
-        Configured texture, nodal, or procedural function shader.
+    shaders : MeshShaderSet
+        A set of direct and/or pipeline shader choices.
     disp : tuple of numpy.ndarray or None, default=None
         Optional displacement field tuple `(disp_x, disp_y, disp_z)`, where
         each component has shape `(N,)` or `(N, T)` with floating dtype.
+    normal_type : NormalType, default=NormalType.exact
+        Mesh normal mode shared by all shader choices. ``none`` skips normals;
+        ``exact`` and ``averaged`` retain Riley's element-node methods.
 
     Returns
     -------
@@ -564,7 +621,7 @@ def create_mesh(
     conversion = convert_mesh_for_render(
         convention, mesh_type, coords, connect
     )
-    return create_mesh_from_conversion(conversion, shader, disp)
+    return create_mesh_from_conversion(conversion, shaders, disp, normal_type)
 
 
 __all__ = [

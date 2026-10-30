@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
@@ -17,8 +18,8 @@ const VecSF = buildconfig.VecSF;
 
 const comm = @import("shaderkernels_common.zig");
 const shaderops = @import("shaderops.zig");
+const meshhit = @import("meshhit.zig");
 const texops = @import("textureops.zig");
-const report = @import("report.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
@@ -28,12 +29,15 @@ const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
 pub fn NodalKernel(comptime N: usize) type {
     return struct {
+        pub const LocalBuff = shadertypes.LocalShaderBuff(N);
+        pub const Hit = meshhit.RasterHit(N);
+
         pub inline fn shade(
             comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
-            shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.NodalPrepared,
+            ctx_shade: shadertypes.ShadeContext,
+            interp: meshhit.RasterHit(N),
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.NodalPrepared,
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
@@ -49,9 +53,9 @@ pub fn NodalKernel(comptime N: usize) type {
             );
         }
 
-        pub inline fn shadeSIMD(
+        pub inline fn shadeSIMDTo(
             comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
+            ctx_shade: shadertypes.ShadeContext,
             ctx_report: anytype,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
@@ -59,25 +63,14 @@ pub fn NodalKernel(comptime N: usize) type {
             v_eta: VecSF,
             v_nodes_inv_z: [N]VecSF,
             v_subpx_z: VecSF,
-            shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.NodalPrepared,
-            spx_image_scratch: *MatSlice(F),
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.NodalPrepared,
+            sink: anytype,
         ) void {
             _ = v_xi;
             _ = v_eta;
-            if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-                if (shader.elem_normals != null) {
-                    report.recordNormalSIMD(
-                        N,
-                        S,
-                        ctx_report,
-                        ctx_shade,
-                        shader_buf,
-                        v_mask_active,
-                        v_weights,
-                    );
-                }
-            }
+            _ = v_mask_active;
+            _ = ctx_report;
 
             if (comptime coord_space == CoordSpace.raster) {
                 shaderops.fillNodalPerspSIMD(
@@ -88,7 +81,7 @@ pub fn NodalKernel(comptime N: usize) type {
                     v_nodes_inv_z,
                     v_subpx_z,
                     shader,
-                    spx_image_scratch,
+                    sink,
                 );
             } else if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillNodalClipSIMD(
@@ -97,11 +90,42 @@ pub fn NodalKernel(comptime N: usize) type {
                     shader_buf,
                     v_weights,
                     shader,
-                    spx_image_scratch,
+                    sink,
                 );
             } else {
                 @panic("shadeSIMD not implemented for this coord_space");
             }
+        }
+
+        pub inline fn shadeSIMD(
+            comptime coord_space: CoordSpace,
+            ctx_shade: shadertypes.ShadeContext,
+            ctx_report: anytype,
+            v_mask_active: VecSB,
+            v_weights: [N]VecSF,
+            v_xi: VecSF,
+            v_eta: VecSF,
+            v_nodes_inv_z: [N]VecSF,
+            v_subpx_z: VecSF,
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.NodalPrepared,
+            spx_image_scratch: *MatSlice(F),
+        ) void {
+            var sink = shaderops.ImageSink{ .ctx = ctx_shade, .scratch = spx_image_scratch };
+            shadeSIMDTo(
+                coord_space,
+                ctx_shade,
+                ctx_report,
+                v_mask_active,
+                v_weights,
+                v_xi,
+                v_eta,
+                v_nodes_inv_z,
+                v_subpx_z,
+                shader_buf,
+                shader,
+                &sink,
+            );
         }
     };
 }
@@ -116,12 +140,15 @@ pub fn TexKernel(
     comptime C: usize,
 ) type {
     return struct {
+        pub const LocalBuff = shadertypes.LocalShaderBuff(N);
+        pub const Hit = meshhit.RasterHit(N);
+
         pub inline fn shade(
             comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
-            shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.TexPrepared(T, C),
+            ctx_shade: shadertypes.ShadeContext,
+            interp: meshhit.RasterHit(N),
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.TexPrepared(T, C),
             ctx_report: anytype,
             spx_img_scratch: *MatSlice(F),
         ) void {
@@ -139,9 +166,9 @@ pub fn TexKernel(
             );
         }
 
-        pub inline fn shadeSIMD(
+        pub inline fn shadeSIMDTo(
             comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
+            ctx_shade: shadertypes.ShadeContext,
             ctx_report: anytype,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
@@ -149,9 +176,9 @@ pub fn TexKernel(
             v_eta: VecSF,
             v_nodes_inv_z: [N]VecSF,
             v_subpx_z: VecSF,
-            shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.TexPrepared(T, C),
-            spx_img_scratch: *MatSlice(F),
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.TexPrepared(T, C),
+            sink: anytype,
         ) void {
             shadeTexSIMD(
                 N,
@@ -168,7 +195,140 @@ pub fn TexKernel(
                 v_subpx_z,
                 shader_buf,
                 shader,
-                spx_img_scratch,
+                sink,
+            );
+        }
+
+        pub inline fn shadeSIMD(
+            comptime coord_space: CoordSpace,
+            ctx_shade: shadertypes.ShadeContext,
+            ctx_report: anytype,
+            v_mask_active: VecSB,
+            v_weights: [N]VecSF,
+            v_xi: VecSF,
+            v_eta: VecSF,
+            v_nodes_inv_z: [N]VecSF,
+            v_subpx_z: VecSF,
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.TexPrepared(T, C),
+            spx_img_scratch: *MatSlice(F),
+        ) void {
+            var sink = shaderops.ImageSink{ .ctx = ctx_shade, .scratch = spx_img_scratch };
+            shadeSIMDTo(
+                coord_space,
+                ctx_shade,
+                ctx_report,
+                v_mask_active,
+                v_weights,
+                v_xi,
+                v_eta,
+                v_nodes_inv_z,
+                v_subpx_z,
+                shader_buf,
+                shader,
+                &sink,
+            );
+        }
+    };
+}
+
+pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
+    return struct {
+        pub const LocalBuff = shadertypes.LocalShaderBuff(N);
+        pub const Hit = meshhit.RasterHit(N);
+
+        pub inline fn shade(
+            comptime coord_space: CoordSpace,
+            ctx_shade: shadertypes.ShadeContext,
+            interp: meshhit.RasterHit(N),
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.TexMultiPrepared(T),
+            ctx_report: anytype,
+            spx_image_scratch: *MatSlice(F),
+        ) void {
+            inline for (1..9) |C| {
+                if (shader.tex.array.dims[0] == C) {
+                    const concrete = shadertypes.concreteTexture(T, C, shader);
+                    TexKernel(N, T, C).shade(
+                        coord_space,
+                        ctx_shade,
+                        interp,
+                        shader_buf,
+                        &concrete,
+                        ctx_report,
+                        spx_image_scratch,
+                    );
+                    return;
+                }
+            }
+            unreachable;
+        }
+
+        pub inline fn shadeSIMDTo(
+            comptime coord_space: CoordSpace,
+            ctx_shade: shadertypes.ShadeContext,
+            ctx_report: anytype,
+            v_mask_active: VecSB,
+            v_weights: [N]VecSF,
+            v_xi: VecSF,
+            v_eta: VecSF,
+            v_nodes_inv_z: [N]VecSF,
+            v_subpx_z: VecSF,
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.TexMultiPrepared(T),
+            sink: anytype,
+        ) void {
+            inline for (1..9) |C| {
+                if (shader.tex.array.dims[0] == C) {
+                    const concrete = shadertypes.concreteTexture(T, C, shader);
+                    TexKernel(N, T, C).shadeSIMDTo(
+                        coord_space,
+                        ctx_shade,
+                        ctx_report,
+                        v_mask_active,
+                        v_weights,
+                        v_xi,
+                        v_eta,
+                        v_nodes_inv_z,
+                        v_subpx_z,
+                        shader_buf,
+                        &concrete,
+                        sink,
+                    );
+                    return;
+                }
+            }
+            unreachable;
+        }
+
+        pub inline fn shadeSIMD(
+            comptime coord_space: CoordSpace,
+            ctx_shade: shadertypes.ShadeContext,
+            ctx_report: anytype,
+            v_mask_active: VecSB,
+            v_weights: [N]VecSF,
+            v_xi: VecSF,
+            v_eta: VecSF,
+            v_nodes_inv_z: [N]VecSF,
+            v_subpx_z: VecSF,
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.TexMultiPrepared(T),
+            spx_img_scratch: *MatSlice(F),
+        ) void {
+            var sink = shaderops.ImageSink{ .ctx = ctx_shade, .scratch = spx_img_scratch };
+            shadeSIMDTo(
+                coord_space,
+                ctx_shade,
+                ctx_report,
+                v_mask_active,
+                v_weights,
+                v_xi,
+                v_eta,
+                v_nodes_inv_z,
+                v_subpx_z,
+                shader_buf,
+                shader,
+                &sink,
             );
         }
     };
@@ -179,7 +339,7 @@ fn shadeTexSIMD(
     comptime T: type,
     comptime C: usize,
     comptime coord_space: CoordSpace,
-    ctx_shade: shaderops.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     ctx_report: anytype,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -187,25 +347,13 @@ fn shadeTexSIMD(
     v_eta: VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    shader_buf: *const shaderops.LocalShaderBuff(N),
-    shader: *const shaderops.TexPrepared(T, C),
-    spx_img_scratch: *MatSlice(F),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.TexPrepared(T, C),
+    sink: anytype,
 ) void {
     _ = v_xi;
     _ = v_eta;
-    if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-        if (shader.elem_normals != null) {
-            report.recordNormalSIMD(
-                N,
-                S,
-                ctx_report,
-                ctx_shade,
-                shader_buf,
-                v_mask_active,
-                v_weights,
-            );
-        }
-    }
+    _ = ctx_report;
 
     shadeTexSIMDDispatchSample(
         N,
@@ -220,7 +368,7 @@ fn shadeTexSIMD(
         v_subpx_z,
         shader_buf,
         shader,
-        spx_img_scratch,
+        sink,
     );
 }
 
@@ -230,14 +378,14 @@ inline fn shadeTexSIMDDispatchSample(
     comptime C: usize,
     comptime coord_space: CoordSpace,
     samp_cfg: texops.TexSampConfig,
-    ctx_shade: shaderops.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    shader_buf: *const shaderops.LocalShaderBuff(N),
-    shader: *const shaderops.TexPrepared(T, C),
-    spx_img_scratch: *MatSlice(F),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.TexPrepared(T, C),
+    sink: anytype,
 ) void {
     @setEvalBranchQuota(eval_branch_quota);
     switch (samp_cfg.sample) {
@@ -255,7 +403,7 @@ inline fn shadeTexSIMDDispatchSample(
             v_subpx_z,
             shader_buf,
             shader,
-            spx_img_scratch,
+            sink,
         ),
     }
 }
@@ -267,14 +415,14 @@ inline fn shadeTexSIMDDispatchMode(
     comptime coord_space: CoordSpace,
     comptime samp_type: texops.TexSamp,
     mode: texops.TexSampMode,
-    ctx_shade: shaderops.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    shader_buf: *const shaderops.LocalShaderBuff(N),
-    shader: *const shaderops.TexPrepared(T, C),
-    spx_img_scratch: *MatSlice(F),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.TexPrepared(T, C),
+    sink: anytype,
 ) void {
     switch (mode) {
         inline else => |mode_type| {
@@ -296,7 +444,7 @@ inline fn shadeTexSIMDDispatchMode(
                     v_subpx_z,
                     shader_buf,
                     shader,
-                    spx_img_scratch,
+                    sink,
                 );
             } else if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillTexClipSIMD(
@@ -309,7 +457,7 @@ inline fn shadeTexSIMDDispatchMode(
                     v_weights,
                     shader_buf,
                     shader,
-                    spx_img_scratch,
+                    sink,
                 );
             } else {
                 @panic("shadeSIMD not implemented for this coord_space");
@@ -327,21 +475,25 @@ pub fn FuncKernel(
     comptime C: usize,
 ) type {
     return struct {
+        pub const LocalBuff = shadertypes.LocalShaderBuff(N);
+        pub const Hit = meshhit.MeshHit(N);
+
         pub inline fn shade(
             comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
-            shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.FuncPrepared,
+            ctx_shade: shadertypes.ShadeContext,
+            interp: meshhit.MeshHit(N),
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.FuncPrepared,
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
+            const hit = comm.completeFuncHit(N, coord_space, interp, shader_buf, shader);
             comm.shadeFuncScalComm(
                 N,
                 C,
                 coord_space,
                 ctx_shade,
-                interp,
+                hit,
                 shader_buf,
                 shader,
                 ctx_report,
@@ -349,9 +501,9 @@ pub fn FuncKernel(
             );
         }
 
-        pub inline fn shadeSIMD(
+        pub inline fn shadeSIMDTo(
             comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
+            ctx_shade: shadertypes.ShadeContext,
             ctx_report: anytype,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
@@ -359,23 +511,53 @@ pub fn FuncKernel(
             v_eta: VecSF,
             v_nodes_inv_z: [N]VecSF,
             v_subpx_z: VecSF,
-            shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.FuncPrepared,
-            spx_image_scratch: *MatSlice(F),
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.FuncPrepared,
+            sink: anytype,
         ) void {
-            if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-                if (shader.elem_normals != null) {
-                    report.recordNormalSIMD(
-                        N,
-                        S,
-                        ctx_report,
-                        ctx_shade,
-                        shader_buf,
-                        v_mask_active,
-                        v_weights,
-                    );
-                }
-            }
+            const hit = comm.completeFuncHitSIMD(
+                N,
+                coord_space,
+                v_mask_active,
+                v_weights,
+                v_nodes_inv_z,
+                v_subpx_z,
+                shader_buf,
+                shader,
+            );
+            shadeSIMDToHit(
+                coord_space,
+                ctx_shade,
+                ctx_report,
+                v_mask_active,
+                v_weights,
+                v_xi,
+                v_eta,
+                v_nodes_inv_z,
+                v_subpx_z,
+                hit,
+                shader_buf,
+                shader,
+                sink,
+            );
+        }
+
+        pub inline fn shadeSIMDToHit(
+            comptime coord_space: CoordSpace,
+            ctx_shade: shadertypes.ShadeContext,
+            ctx_report: anytype,
+            v_mask_active: VecSB,
+            v_weights: [N]VecSF,
+            v_xi: VecSF,
+            v_eta: VecSF,
+            v_nodes_inv_z: [N]VecSF,
+            v_subpx_z: VecSF,
+            hit: meshhit.MeshHitGeomSIMD,
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.FuncPrepared,
+            sink: anytype,
+        ) void {
+            _ = ctx_report;
 
             if (comptime coord_space == CoordSpace.raster) {
                 shaderops.fillFuncPerspSIMD(
@@ -388,9 +570,10 @@ pub fn FuncKernel(
                     v_eta,
                     v_nodes_inv_z,
                     v_subpx_z,
+                    hit,
                     shader_buf,
                     shader,
-                    spx_image_scratch,
+                    sink,
                 );
             } else if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillFuncClipSIMD(
@@ -401,13 +584,45 @@ pub fn FuncKernel(
                     v_weights,
                     v_xi,
                     v_eta,
+                    hit,
                     shader_buf,
                     shader,
-                    spx_image_scratch,
+                    sink,
                 );
             } else {
                 @panic("shadeSIMD not implemented for this coord_space");
             }
+        }
+
+        pub inline fn shadeSIMD(
+            comptime coord_space: CoordSpace,
+            ctx_shade: shadertypes.ShadeContext,
+            ctx_report: anytype,
+            v_mask_active: VecSB,
+            v_weights: [N]VecSF,
+            v_xi: VecSF,
+            v_eta: VecSF,
+            v_nodes_inv_z: [N]VecSF,
+            v_subpx_z: VecSF,
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.FuncPrepared,
+            spx_image_scratch: *MatSlice(F),
+        ) void {
+            var sink = shaderops.ImageSink{ .ctx = ctx_shade, .scratch = spx_image_scratch };
+            shadeSIMDTo(
+                coord_space,
+                ctx_shade,
+                ctx_report,
+                v_mask_active,
+                v_weights,
+                v_xi,
+                v_eta,
+                v_nodes_inv_z,
+                v_subpx_z,
+                shader_buf,
+                shader,
+                &sink,
+            );
         }
     };
 }

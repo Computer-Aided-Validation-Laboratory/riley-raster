@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------------------
 const cfg = @import("buildconfig.zig").config;
 const std = @import("std");
-const cam = @import("camera.zig");
+const cam = @import("cameraprojops.zig");
 const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;

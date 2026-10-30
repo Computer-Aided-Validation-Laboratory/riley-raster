@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameratypes = @import("cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -15,14 +16,14 @@ const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const VecSU = buildconfig.VecSU;
-const common = @import("camera_common.zig");
+const common = @import("cameraprojops_common.zig");
 const simdops = @import("simdops.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const CameraPrepared = common.CameraPreparedType(@This());
+pub const CameraPrepared = cameratypes.CameraPreparedType(@This());
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -34,7 +35,7 @@ pub fn calcPinholeRasterPointSIMD(
     v_observed_y_px: VecSF,
     v_lane_active: VecSB,
 ) !struct { x: VecSF, y: VecSF } {
-    if (common.isNoDistort(camera.distort)) {
+    if (cameratypes.isNoDistort(camera.distort)) {
         return .{ .x = v_observed_x_px, .y = v_observed_y_px };
     }
 
@@ -81,7 +82,7 @@ pub fn fillTileIdealCentersPerTile(
     const step = 1.0 / @as(F, @floatFromInt(camera.sub_sample));
     const off = 0.5 / @as(F, @floatFromInt(camera.sub_sample));
 
-    if (common.isNoDistort(camera.distort)) {
+    if (cameratypes.isNoDistort(camera.distort)) {
         for (0..tile_h) |jj| {
             const global_y = start_y + @as(i32, @intCast(jj));
             const observed_y = @as(F, @floatFromInt(global_y)) * step + off;

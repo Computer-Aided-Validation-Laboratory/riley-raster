@@ -6,9 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const fullfixtures = @import("../dev_support/fullfixtures.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const iio = @import("../riley/zig/imageio.zig");
@@ -20,8 +22,8 @@ const riley = @import("../riley/zig/riley.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 pub const ImageOutputBaseCase = struct {
     tag: []const u8,
@@ -56,7 +58,8 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
         defer arena.deinit();
         const aa = arena.allocator();
 
-        const meshes = fullfixtures.buildScene2ImageOutputMeshes(
+        const meshes = try fullfixtures.buildScene2ImageOutputMeshes(
+            aa,
             &prep,
             &textures,
             bc.is_rgb,
@@ -64,12 +67,7 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
         );
         const cam_inp = fullfixtures.createScene2ImageOutputCamera(&meshes);
 
-        var run_config = config;
-        run_config.output.image_save_mode = if (bc.is_rgb) .rgb else .grey;
-        run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .fimg, .bits = null, .scaling = .none },
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
-        };
+        const run_config = config;
 
         const gold_dir = try std.fmt.allocPrint(
             aa,

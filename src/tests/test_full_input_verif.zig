@@ -6,26 +6,27 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
-const iio = @import("../riley/zig/imageio.zig");
 const matslice = @import("../riley/zig/matslice.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const ndarray = @import("../riley/zig/ndarray.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const report = @import("../riley/zig/report.zig");
 const riley = @import("../riley/zig/riley.zig");
-const shaderops = @import("../riley/zig/shaderops_common.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 const valarr = @import("../riley/zig/validatearrays.zig");
 const valinp = @import("../riley/zig/validateinput.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 const RenderGroup = riley.RenderGroup;
 const RasterConfig = rastcfg.RasterConfig;
 const NDArray = ndarray.NDArray(F);
@@ -44,7 +45,6 @@ const BaselineFixture = struct {
 
         var config = tcfg.getRasterConfig(.testing);
         config.save_strategy = .memory;
-        config.output.image_save_mode = .grey;
         config.background_value = 0.5;
 
         return .{
@@ -270,25 +270,6 @@ fn testInvalidRenderGroupWorkers(
     );
 }
 
-fn testFullStatsRequiresSingleRasterWorker(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    fixture: *const BaselineFixture,
-) !void {
-    _ = allocator;
-    const cam_inps = common_full.createScene3Cameras();
-    const mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 2 }};
-
-    var config = fixture.config;
-    config.report = .{ .mode = .full_stats };
-
-    try std.testing.expectError(
-        error.FullStatsRequiresSingleRasterWorker,
-        runRender(&render_groups, &cam_inps, &mesh_inps, config),
-    );
-}
-
 fn testInvalidTotalThreads(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -488,24 +469,16 @@ fn testInvalidImageSaveOpts(
     fixture: *const BaselineFixture,
 ) !void {
     _ = allocator;
+    var cameras = common_full.createScene3Cameras();
+    cameras[0].output_files = &.{};
     var config = fixture.config;
     config.save_strategy = .disk;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{};
-    try expectConfigError(io, fixture, config, error.InvalidImageSaveOpts);
-}
-
-fn testInvalidFullStatsFormats(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    fixture: *const BaselineFixture,
-) !void {
-    _ = allocator;
-    var config = fixture.config;
-    config.report = .{
-        .mode = .full_stats,
-        .full_stats_opts = .{ .formats = &[_]iio.ImageSaveOpts{} },
-    };
-    try expectConfigError(io, fixture, config, error.InvalidFullStatsFormats);
+    const meshes = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
+    const render_groups = [_]RenderGroup{.{ .io = io, .workers = 1 }};
+    try std.testing.expectError(
+        error.InvalidImageSaveOpts,
+        runRender(&render_groups, &cameras, &meshes, config),
+    );
 }
 
 // --------------------------------------------------------------------------
@@ -702,7 +675,7 @@ fn testInvalidNodalFieldDimensions(
 ) !void {
     _ = allocator;
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    switch (mesh_inps[0].shader) {
+    switch (mesh_inps[0].shaders.mono_direct.?) {
         .nodal => |*nodal_shader| {
             const orig_dim = nodal_shader.field.array.dims[1];
             nodal_shader.field.array.dims[1] = 1;
@@ -727,7 +700,7 @@ fn testInvalidTexSampleConfig(
 ) !void {
     _ = allocator;
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    switch (mesh_inps[2].shader) {
+    switch (mesh_inps[2].shaders.mono_direct.?) {
         .tex_u8 => |*tex_shader| {
             tex_shader.samp_cfg = .{
                 .sample = .nearest,
@@ -745,16 +718,16 @@ fn testInvalidTexSampleConfig(
     );
 }
 
-fn testInvalidShaderBitDepth(
+fn testInvalidShaderOutputMap(
     allocator: std.mem.Allocator,
     io: std.Io,
     fixture: *const BaselineFixture,
 ) !void {
     _ = allocator;
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    switch (mesh_inps[0].shader) {
+    switch (mesh_inps[0].shaders.mono_direct.?) {
         .nodal => |*nodal_shader| {
-            nodal_shader.bits = 7;
+            nodal_shader.output_gain = std.math.nan(F);
         },
         else => {},
     }
@@ -763,7 +736,7 @@ fn testInvalidShaderBitDepth(
         fixture,
         &mesh_inps,
         null,
-        error.InvalidShaderBitDepth,
+        error.InvalidShaderOutputMap,
     );
 }
 
@@ -774,7 +747,7 @@ fn testInvalidScalingBounds(
 ) !void {
     _ = allocator;
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    switch (mesh_inps[0].shader) {
+    switch (mesh_inps[0].shaders.mono_direct.?) {
         .nodal => |*nodal_shader| {
             nodal_shader.scaling = .{ .fixed = .{ 10.0, 5.0 } };
         },
@@ -796,7 +769,7 @@ fn testInvalidFuncShaderParams(
 ) !void {
     _ = allocator;
     var mesh_inps = common_full.buildScene3Meshes(&fixture.prep, &fixture.textures);
-    switch (mesh_inps[1].shader) {
+    switch (mesh_inps[1].shaders.mono_direct.?) {
         .func => |*func_shader| {
             func_shader.params.coord_scale[0] = 0.0;
         },
@@ -894,51 +867,17 @@ fn testInvalidBenchCaptureBuff(
     );
 }
 
-fn testUnsuppedImageModeFieldCount(
+fn testInvalidRenderFormatChannels(
     allocator: std.mem.Allocator,
     io: std.Io,
     fixture: *const BaselineFixture,
 ) !void {
     _ = allocator;
-    const cases = [_]struct {
-        mode: rastcfg.ImageSaveMode,
-        expected: [4]?u8,
-    }{
-        .{ .mode = .grey, .expected = .{ 1, null, null, null } },
-        .{ .mode = .rgb, .expected = .{ null, null, 3, null } },
-        .{ .mode = .multifield, .expected = .{ 1, 2, 3, 4 } },
-        .{ .mode = .rgb_to_grey, .expected = .{ null, null, 1, null } },
-        .{ .mode = .grey_to_rgb, .expected = .{ 3, null, null, null } },
-    };
-    for (cases) |case| {
-        for (case.expected, 0..) |expected, field_idx| {
-            const fields: u8 = @intCast(field_idx + 1);
-            if (expected) |count| {
-                try std.testing.expectEqual(
-                    count,
-                    try valinp.calcOutFieldsForImgSaveMode(case.mode, fields),
-                );
-            } else {
-                try std.testing.expectError(
-                    error.UnsuppedImageModeFieldCount,
-                    valinp.calcOutFieldsForImgSaveMode(case.mode, fields),
-                );
-            }
-        }
-    }
-
-    var invalid_rgb = fixture.config;
-    invalid_rgb.output.image_save_mode = .rgb;
-    try expectConfigError(io, fixture, invalid_rgb, error.UnsuppedImageModeFieldCount);
-
-    var invalid_rgb_to_grey = fixture.config;
-    invalid_rgb_to_grey.output.image_save_mode = .rgb_to_grey;
-    try expectConfigError(
-        io,
-        fixture,
-        invalid_rgb_to_grey,
-        error.UnsuppedImageModeFieldCount,
-    );
+    var cameras = common_full.createScene3Cameras();
+    cameras[0].render_format = .{ .multifield = 0 };
+    try expectCameraError(io, fixture, &cameras, error.InvalidRenderFormatChannels);
+    cameras[0].render_format = .{ .multifield = 9 };
+    try expectCameraError(io, fixture, &cameras, error.InvalidRenderFormatChannels);
 }
 
 fn testInvalidOutputBuff(
@@ -975,8 +914,6 @@ fn testInvalidOutputBuff(
 
     var disk_config = fixture.config;
     disk_config.save_strategy = .disk;
-    const disk_opts = [_]iio.ImageSaveOpts{.{ .format = .bmp }};
-    disk_config.output.image_save_opts = &disk_opts;
 
     try std.testing.expectError(
         error.InvalidOutputBuff,
@@ -1127,7 +1064,7 @@ fn testNonFiniteNodalFields(
     var full_config = fixture.config;
     full_config.validation = .full;
 
-    switch (mesh_inps[0].shader) {
+    switch (mesh_inps[0].shaders.mono_direct.?) {
         .nodal => |*nodal_shader| {
             const orig_val = nodal_shader.field.array_mem[0];
             nodal_shader.field.array_mem[0] = std.math.nan(F);
@@ -1156,7 +1093,7 @@ fn testNonFiniteUvs(
     var full_config = fixture.config;
     full_config.validation = .full;
 
-    switch (mesh_inps[1].shader) {
+    switch (mesh_inps[1].shaders.mono_direct.?) {
         .func => |*func_shader| {
             if (func_shader.uvs) |uvs| {
                 const orig_uv = uvs.slice[0];
@@ -1195,7 +1132,7 @@ fn testNonFiniteTexels(
     }
     @memcpy(float_tex_arr.slice, float_tex_data[0..]);
 
-    mesh_inps[2].shader = .{
+    mesh_inps[2].shaders = .{ .mono_direct = .{
         .tex_f = .{
             .uvs = fixture.prep.meshes[2].uvs.array,
             .tex = .{
@@ -1207,11 +1144,10 @@ fn testNonFiniteTexels(
                 .sample = .linear,
                 .mode = .direct,
             },
-            .bits = 16,
+            .output_gain = 65535.0,
             .scaling = .auto,
-            .normal_type = .none,
         },
-    };
+    } };
 
     float_tex_arr.slice[0] = std.math.nan(F);
 
@@ -1342,7 +1278,6 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
 
     // Render Groups & Threading
     try testInvalidRenderGroupWorkers(allocator, io, &fixture);
-    try testFullStatsRequiresSingleRasterWorker(allocator, io, &fixture);
     try testInvalidTotalThreads(allocator, io, &fixture);
     try testInvalidEdgeSpacing(allocator, io, &fixture);
 
@@ -1364,7 +1299,6 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     try testInvalidBackgroundValue(allocator, io, &fixture);
     try testInvalidSaveFrameBuffCount(allocator, io, &fixture);
     try testInvalidImageSaveOpts(allocator, io, &fixture);
-    try testInvalidFullStatsFormats(allocator, io, &fixture);
 
     // Camera parameters
     try testInvalidCameraPixels(allocator, io, &fixture);
@@ -1384,7 +1318,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     try testInvalidDisplacementDimensions(allocator, io, &fixture);
     try testInvalidNodalFieldDimensions(allocator, io, &fixture);
     try testInvalidTexSampleConfig(allocator, io, &fixture);
-    try testInvalidShaderBitDepth(allocator, io, &fixture);
+    try testInvalidShaderOutputMap(allocator, io, &fixture);
     try testInvalidScalingBounds(allocator, io, &fixture);
     try testInvalidFuncShaderParams(allocator, io, &fixture);
 
@@ -1394,7 +1328,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
 
     // Benchmark buffer & output buffer
     try testInvalidBenchCaptureBuff(allocator, io, &fixture);
-    try testUnsuppedImageModeFieldCount(allocator, io, &fixture);
+    try testInvalidRenderFormatChannels(allocator, io, &fixture);
     try testInvalidOutputBuff(allocator, io, &fixture);
 
     // Full payload scan tests

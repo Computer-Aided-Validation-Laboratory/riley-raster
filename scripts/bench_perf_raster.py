@@ -24,9 +24,54 @@ DEFAULT_FRAME_BATCH_SIZE_PER_GROUP = 1
 DEFAULT_MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP = 1
 DEFAULT_EXPERIMENT1 = True
 DEFAULT_EXPERIMENT2 = True
+DEFAULT_EXPERIMENT3 = False
+DEFAULT_EXPERIMENT4 = False
+DEFAULT_EXPERIMENT5 = False
 
 EXPERIMENT1_SUB_SAMPLES = [2]
 EXPERIMENT2_SUB_SAMPLES = [1, 2]
+
+EXPERIMENT3_CASES: list[dict[str, object]] = [
+    {
+        "study_group": "experiment3",
+        "experiment": "shaderpipe_baseline",
+        "case_name": "tiltraster_shaderpipe_baseline_f64_simd_v8_ssaa2",
+        "precision": "f64",
+        "lanes": 8,
+        "texture_storage": "u8",
+        "shader_subset": "shaderpipe_baseline",
+        "mesh_subset": "all",
+        "sub_sample": 2,
+    },
+]
+
+EXPERIMENT4_CASES: list[dict[str, object]] = [
+    {
+        "study_group": "experiment4",
+        "experiment": "one_stage_pipe_compare",
+        "case_name": "tiltraster_one_stage_pipe_compare_f64_simd_v8_ssaa2",
+        "precision": "f64",
+        "lanes": 8,
+        "texture_storage": "u8",
+        "shader_subset": "shaderpipe_compare",
+        "mesh_subset": "all",
+        "sub_sample": 2,
+    },
+]
+
+EXPERIMENT5_CASES: list[dict[str, object]] = [
+    {
+        "study_group": "experiment5",
+        "experiment": "multi_source_world_compare",
+        "case_name": "tiltraster_multi_source_world_f64_simd_v8_ssaa2",
+        "precision": "f64",
+        "lanes": 8,
+        "texture_storage": "u8",
+        "shader_subset": "shaderpipe_multisource",
+        "mesh_subset": "all",
+        "sub_sample": 2,
+    },
+]
 
 EXPERIMENT1_CASES_BASE: list[dict[str, object]] = [
     {
@@ -241,16 +286,25 @@ def run_case(
     pixels_x: int | None,
     pixels_y: int | None,
     dry_run: bool,
+    experiment3_binary: pathlib.Path | None,
+    experiment4_binary: pathlib.Path | None,
 ) -> float:
     output_dir = run_root / str(case["case_name"])
-    binary = binary_path(
-        str(case["precision"]),
-        int(case["lanes"]),
+    override = (
+        experiment3_binary if case["study_group"] == "experiment3"
+        else experiment4_binary if case["study_group"] == "experiment4"
+        else None
     )
-    binary_tag = binary_name(
-        str(case["precision"]),
-        int(case["lanes"]),
-    )
+    if override is not None:
+        binary = override.resolve()
+        if not binary.is_file():
+            raise SystemExit(f"Missing benchmark binary {binary}.")
+    else:
+        binary = binary_path(
+            str(case["precision"]),
+            int(case["lanes"]),
+        )
+    binary_tag = binary.name
     case_with_binary = dict(case)
     case_with_binary["binary"] = binary_tag
     sub_sample = int(case.get("sub_sample", 2))
@@ -302,7 +356,10 @@ def run_case(
     stdout_path = output_dir / "stdout.txt"
     stderr_path = output_dir / "stderr.txt"
     start = time.perf_counter()
-    with stdout_path.open("w") as stdout_file, stderr_path.open("w") as stderr_file:
+    with (
+        stdout_path.open("w") as stdout_file,
+        stderr_path.open("w") as stderr_file,
+    ):
         subprocess.run(
             command,
             check=True,
@@ -329,7 +386,24 @@ def main() -> int:
         action=argparse.BooleanOptionalAction,
         default=DEFAULT_EXPERIMENT2,
     )
+    parser.add_argument(
+        "--experiment3",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_EXPERIMENT3,
+    )
+    parser.add_argument(
+        "--experiment4",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_EXPERIMENT4,
+    )
+    parser.add_argument(
+        "--experiment5",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_EXPERIMENT5,
+    )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--experiment3-binary", type=pathlib.Path, default=None)
+    parser.add_argument("--experiment4-binary", type=pathlib.Path, default=None)
     args = parser.parse_args()
 
     selected_cases: list[dict[str, object]] = []
@@ -337,6 +411,12 @@ def main() -> int:
         selected_cases.extend(EXPERIMENT1_CASES)
     if args.experiment2:
         selected_cases.extend(EXPERIMENT2_CASES)
+    if args.experiment3:
+        selected_cases.extend(EXPERIMENT3_CASES)
+    if args.experiment4:
+        selected_cases.extend(EXPERIMENT4_CASES)
+    if args.experiment5:
+        selected_cases.extend(EXPERIMENT5_CASES)
     if not selected_cases:
         raise SystemExit("No experiments selected.")
 
@@ -357,6 +437,8 @@ def main() -> int:
             args.pixels_x,
             args.pixels_y,
             args.dry_run,
+            args.experiment3_binary,
+            args.experiment4_binary,
         )
         timing_rows.append(
             {

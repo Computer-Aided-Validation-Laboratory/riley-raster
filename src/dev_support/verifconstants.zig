@@ -1,4 +1,5 @@
 // --------------------------------------------------------------------------
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 // Riley: A High Performance Rasteriser for DIC UQ
@@ -8,7 +9,7 @@ const F = buildconfig.F;
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
-const cam = @import("../riley/zig/camera.zig");
+const cam = @import("../riley/zig/cameraprojops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const rotation = @import("../riley/zig/rotation.zig");
 
@@ -23,13 +24,13 @@ pub const DistortCase = struct {
     case_name: []const u8,
     mesh_type: gk.MeshType,
     data_dir: []const u8,
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
 };
 
 fn edgeCameraInput(
     pos_world: [3]F,
     roi_cent_world: [3]F,
-) cam.CameraInput {
+) cameratypes.CameraInput {
     return .{
         .pixels_num = .{ 800, 500 },
         .pixels_size = .{ 5.3e-6, 5.3e-6 },
@@ -284,9 +285,9 @@ pub const camera_distort_cases = [_]CameraDistortCase{
 };
 
 pub fn cameraInputWithDistort(
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
     distort_case: CameraDistortCase,
-) cam.CameraInput {
+) cameratypes.CameraInput {
     var distorted_camera_input = camera_input;
     distorted_camera_input.distort = distort_case.distort;
     return distorted_camera_input;

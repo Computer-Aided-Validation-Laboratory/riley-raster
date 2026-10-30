@@ -94,6 +94,16 @@ typedef struct c_psf {
     uint32_t psf_separable;
 } CPSF;
 
+typedef struct c_image_save_opts {
+    uint32_t format;
+    int file_bits; /* -1: floating point (CSV/FIMG) */
+    int adc_bits;  /* -1: use file_bits, or no ADC when file_bits is -1 */
+    uint32_t scaling_tag;
+    double scaling_min;
+    double scaling_max;
+    uint32_t packing; /* 0=spread, 1=lower, 2=upper */
+} CImageSaveOpts;
+
 typedef struct c_camera_input {
     CVec2U32 pixels_num;
     CVec2F64 pixels_size;
@@ -106,6 +116,10 @@ typedef struct c_camera_input {
     CPSF psf;
     uint32_t coord_sys;
     uint32_t subpixel_center_map;
+    uint32_t render_format_tag;
+    uint32_t render_channels;
+    const CImageSaveOpts* output_files;
+    size_t output_files_len;
 } CCameraInput;
 
 typedef struct c_func_shader_params {
@@ -113,8 +127,6 @@ typedef struct c_func_shader_params {
     double coord_scale_1;
     double coord_offset_0;
     double coord_offset_1;
-    double output_scale;
-    double output_offset;
     double constant_value;
     double constant_value_rgb_0;
     double constant_value_rgb_1;
@@ -202,7 +214,8 @@ typedef struct c_shader_input {
     uint32_t texture_storage;
     uint32_t sample;
     uint32_t sample_mode;
-    int bits;
+    double output_gain;
+    double output_offset;
     uint32_t scaling_tag;
     double scaling_min;
     double scaling_max;
@@ -211,15 +224,94 @@ typedef struct c_shader_input {
     uint32_t func_shader_builtin;
     uint32_t func_shader_coord_mode;
     CFuncShaderParams func_shader_params;
-    uint32_t normal_type;
 } CShaderInput;
+
+typedef struct c_slot {
+    /* kind: channel=0, field=1, parameter=2, constant=3. */
+    uint32_t kind;
+    uint32_t index;
+} CSlot;
+
+typedef struct c_operation {
+    /* tag: load=0, add=1, subtract=2, multiply=3, divide=4,
+     * power4=5, clamp01=6, clamp=7, lut=8, store=9.
+     * slot.index selects the LUT or output channel for lut/store. */
+    uint32_t tag;
+    CSlot slot;
+    double lower;
+    double upper;
+} COperation;
+
+typedef struct c_lookup {
+    double first;
+    double step;
+    const double* values;
+    size_t values_len;
+} CLookup;
+
+typedef struct c_resolver {
+    /* tag: identity=0, sum=1, modulate=2, weighted_sum=3,
+     * greybody_bolometric=4, greybody_band=5, expression=6,
+     * greybody_band_apparent_c=7 (ambient is in kelvin). */
+    uint32_t tag;
+    const CSlot* slots;
+    size_t slots_len;
+    const double* weights;
+    size_t weights_len;
+    CSlot factor;
+    CSlot temperature;
+    CSlot emissivity;
+    double ambient;
+    double gain;
+    CLookup lookup;
+    const COperation* operations;
+    size_t operations_len;
+} CResolver;
+
+typedef struct c_pipe_stage {
+    /* tag: source=0, grey_to_emissivity=1, clamp=2, affine_map=3,
+     * lut_map=4, blend=5, normalise=6. */
+    uint32_t tag;
+    const CShaderInput* shader;
+    CSlot source;
+    CSlot destination;
+    double lower;
+    double upper;
+    double black;
+    double white;
+    CSlot source_b;
+    CSlot alpha_slot;
+    double alpha;
+    uint32_t alpha_from_slot;
+    double gain;
+    double offset;
+    uint32_t components;
+    CLookup lookup;
+} CPipeStage;
+
+typedef struct c_pipe {
+    const CPipeStage* stages;
+    size_t stages_len;
+    CResolver resolver;
+    const double* constants;
+    size_t constants_len;
+} CPipe;
+
+typedef struct c_shader_entry {
+    uint32_t format_tag;    /* 0=mono, 1=rgb, 2=ir, 3=multifield */
+    uint32_t execution_tag; /* 0=direct, 1=pipe */
+    CShaderInput direct_shader;
+    CPipe pipe;
+} CShaderEntry;
 
 typedef struct c_mesh_input {
     uint32_t mesh_type;
+    uint32_t normal_type;
     CArray2DF64 coords;
     CArray2DUsize connect;
     CArray3DF64 disp;
-    CShaderInput shader;
+    const CShaderEntry* shaders;
+    size_t shaders_len;
 } CMeshInput;
 
 typedef enum {
@@ -243,7 +335,6 @@ typedef struct c_raster_config {
     uint32_t parallel_mode; /* 0=auto, 1=serial, 2=thread_count */
     uint16_t thread_count;
     uint32_t save_strategy;
-    uint32_t image_save_mode;
     uint32_t oneroot_hull_mode;
     uint32_t oneroot_newton_seed_mode;
     uint32_t oneroot_newton_seed_reuse;
@@ -265,11 +356,6 @@ typedef struct c_raster_config {
     uint16_t global_subpx_stripe_size_override;
     uint16_t raster_halo_px_override;
     size_t save_frame_buff_count;
-    uint32_t save_format;
-    uint32_t save_bits;
-    uint32_t save_scaling;
-    double save_scaling_min;
-    double save_scaling_max;
     uint8_t full_stats_save_solver_csv;
     uint8_t full_stats_save_iter_map;
     uint8_t full_stats_save_xi_map;
@@ -282,7 +368,6 @@ typedef struct c_raster_config {
     uint8_t full_stats_save_depth_map;
     uint8_t full_stats_save_earlyout_map;
     uint8_t full_stats_save_pixel_occupancy_map;
-    uint8_t full_stats_save_normals_map;
     uint32_t buffer_mode;
     const char* output_name_format;
     double edge_spacing_px;

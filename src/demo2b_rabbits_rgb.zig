@@ -8,8 +8,8 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const cam = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
@@ -73,7 +73,8 @@ pub fn main(init: std.process.Init) !void {
         fov_scale,
     );
 
-    const camera_input = cam.CameraInput{
+    const camera_input = riley.CameraInput{
+        .render_format = .rgb,
         .pixels_num = pixel_num,
         .pixels_size = default_pixel_size,
         .pos_world = cam_pos,
@@ -87,17 +88,11 @@ pub fn main(init: std.process.Init) !void {
     // 3. Configure raster engine
     // -------------------------------------------------------------------------
     const background_value: F = 0.5 * @as(F, std.math.maxInt(u8));
-    
+
     const config = rastcfg.RasterConfig{
         .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
         .background_value = background_value,
-        .output = .{
-            .image_save_mode = .rgb,
-            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .none },
-            },
-        },
     };
 
     // -------------------------------------------------------------------------

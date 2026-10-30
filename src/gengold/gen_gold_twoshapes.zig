@@ -6,10 +6,13 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
-const cameraops = @import("../riley/zig/cameraops.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
+const cameraops = @import("../riley/zig/cameraframops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const iio = @import("../riley/zig/imageio.zig");
 const meshio = @import("../riley/zig/meshio.zig");
@@ -20,14 +23,15 @@ const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const riley = @import("../riley/zig/riley.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const sceneops = @import("../riley/zig/sceneops.zig");
-const shaderops = @import("../riley/zig/shaderops_common.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
+const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 const texops = @import("../riley/zig/textureops.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 const pixel_num_twoshapes = [_]u32{ 160, 100 };
 const pixel_size_twoshapes = [2]F{ @floatCast(5.3e-6), @floatCast(5.3e-6) };
@@ -58,11 +62,11 @@ pub const TwoShapesShaderKind = enum {
 
 pub fn convertU16TexToF64(
     allocator: std.mem.Allocator,
-    tex_u16: texops.Tex(u16, 1),
-) !texops.Tex(F, 1) {
+    tex_u16: texops.TexDataFix(u16, 1),
+) !texops.TexDataFix(F, 1) {
     const rows_num = tex_u16.rows_num;
     const cols_num = tex_u16.cols_num;
-    var tex_f = try texops.Tex(F, 1).init(allocator, rows_num, cols_num);
+    var tex_f = try texops.TexDataFix(F, 1).init(allocator, rows_num, cols_num);
     for (tex_u16.array.slice, 0..) |pixel_val, ii| {
         tex_f.array.slice[ii] = @as(F, @floatFromInt(pixel_val)) / 65535.0;
     }
@@ -111,10 +115,10 @@ fn loadShapeMesh(
     shape_dir_name: []const u8,
     mesh_type: gk.MeshType,
     shader_kind: TwoShapesShaderKind,
-    texture_u8_grey: texops.Tex(u8, 1),
-    texture_u8_rgb: texops.Tex(u8, 3),
-    texture_u16_grey: texops.Tex(u16, 1),
-    texture_f64_grey: texops.Tex(F, 1),
+    texture_u8_grey: texops.TexDataFix(u8, 1),
+    texture_u8_rgb: texops.TexDataFix(u8, 3),
+    texture_u16_grey: texops.TexDataFix(u16, 1),
+    texture_f64_grey: texops.TexDataFix(F, 1),
 ) !MeshInput {
     const elem_str = @tagName(mesh_type);
     const dir = try std.fmt.allocPrint(
@@ -149,132 +153,140 @@ fn loadShapeMesh(
     const temp = try sliceFieldToSingleFrame(allocator, raw_temp);
     const disp = try sliceFieldToSingleFrame(allocator, raw_disp);
 
-    const shader: shaderops.ShaderInput = switch (shader_kind) {
-        .nodal_grey => .{ .nodal = .{
-            .field = temp,
-            .bits = 8,
-            .scaling = .auto,
-            .scale_over = .over_frames,
-            .normal_type = .none,
-        } },
-        .nodal_rgb => .{ .nodal = .{
-            .field = try buildRgbField(allocator, temp, disp),
-            .bits = 8,
-            .scaling = .auto,
-            .scale_over = .over_frames,
-            .normal_type = .none,
-        } },
-        .tex_u8_mono_catmull_direct => .{ .tex_u8 = .{
-            .uvs = uvs.array,
-            .tex = texture_u8_grey,
-            .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
-            .bits = 8,
-            .scaling = .auto,
-            .normal_type = .none,
-        } },
-        .tex_u8_mono_catmull_lutlerp => .{ .tex_u8 = .{
-            .uvs = uvs.array,
-            .tex = texture_u8_grey,
-            .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
-            .bits = 8,
-            .scaling = .auto,
-            .normal_type = .none,
-        } },
-        .tex_u8_mono_linear_direct => .{ .tex_u8 = .{
-            .uvs = uvs.array,
-            .tex = texture_u8_grey,
-            .samp_cfg = .{ .sample = .linear, .mode = .direct },
-            .bits = 8,
-            .scaling = .auto,
-            .normal_type = .none,
-        } },
-        .tex_u16_mono_catmull_direct => .{ .tex_u16 = .{
-            .uvs = uvs.array,
-            .tex = texture_u16_grey,
-            .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
-            .bits = 16,
-            .scaling = .auto,
-            .normal_type = .none,
-        } },
-        .tex_f64_mono_catmull_direct => .{ .tex_f = .{
-            .uvs = uvs.array,
-            .tex = texture_f64_grey,
-            .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
-            .bits = 8,
-            .scaling = .auto,
-            .normal_type = .none,
-        } },
-        .tex_u8_rgb_catmull_direct => .{ .tex_rgb_u8 = .{
-            .uvs = uvs.array,
-            .tex = texture_u8_rgb,
-            .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
-            .bits = 8,
-            .scaling = .auto,
-            .normal_type = .none,
-        } },
-        .func_checker_uvs => .{ .func = .{
-            .uvs = uvs.array,
-            .coord_mode = .uv,
-            .builtin = .checker,
-            .params = .{
-                .coord_scale = .{ 20.0, 20.0 },
-                .settings = .{ .checker = .{} },
+    const shaders: shadertypes.MeshShaderSetInput = if (shader_kind.isRgb()) blk: {
+        const pipe_source: shadertypes.PipeSourceInput = switch (shader_kind) {
+            .nodal_rgb => .{ .nodal = .{
+                .field = try buildRgbField(allocator, temp, disp),
+                .output_gain = 255.0,
+                .scaling = .auto,
+                .scale_over = .over_frames,
+            } },
+            .tex_u8_rgb_catmull_direct => .{ .tex_rgb_u8 = .{
+                .uvs = uvs.array,
+                .tex = texture_u8_rgb,
+                .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .func_rgb_checker_uvs => .{ .func = .{ .rgb = .{
+                .uvs = uvs.array,
+                .coord_mode = .uv,
+                .builtin = .checker,
+                .params = .{
+                    .coord_scale = .{ 20.0, 20.0 },
+                    .settings = .{ .checker = .{} },
+                },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } } },
+            else => unreachable,
+        };
+        const stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
+        stages[0] = shaderops.stageSource(pipe_source);
+        break :blk .{
+            .rgb_pipe = .{
+                .stages = stages,
+                .resolver = .{ .identity = shaderpipe.identity_channels_3[0..3] },
             },
-            .bits = 8,
-            .scaling = .auto,
-            .normal_type = .none,
-        } },
-        .func_eggbox_worldc => .{ .func = .{
-            .coord_mode = .world_reference,
-            .builtin = .eggbox,
-            .params = .{
-                .coord_scale = .{ 1.0, 1.0 },
-                .settings = .{ .eggbox = .{ .pitch = .{ 0.005, 0.005 } } },
-            },
-            .bits = 8,
-            .scaling = .auto,
-            .normal_type = .none,
-        } },
-        .func_lambertian_normavg => .{ .func = .{
-            .coord_mode = .para,
-            .builtin = .lambertian_normal_z,
-            .params = .{
-                .settings = .{ .lambertian_normal_z = .{} },
-            },
-            .bits = 8,
-            .scaling = .auto,
-            .normal_type = .avg,
-        } },
-        .func_lambertian_normexact => .{ .func = .{
-            .coord_mode = .para,
-            .builtin = .lambertian_normal_z,
-            .params = .{
-                .settings = .{ .lambertian_normal_z = .{} },
-            },
-            .bits = 8,
-            .scaling = .auto,
-            .normal_type = .exact,
-        } },
-        .func_rgb_checker_uvs => .{ .func_rgb = .{
-            .uvs = uvs.array,
-            .coord_mode = .uv,
-            .builtin = .checker,
-            .params = .{
-                .coord_scale = .{ 20.0, 20.0 },
-                .settings = .{ .checker = .{} },
-            },
-            .bits = 8,
-            .scaling = .auto,
-            .normal_type = .none,
-        } },
+        };
+    } else blk: {
+        const mono_shader: shadertypes.ShaderMonoInput = switch (shader_kind) {
+            .nodal_grey => .{ .nodal = .{
+                .field = temp,
+                .output_gain = 255.0,
+                .scaling = .auto,
+                .scale_over = .over_frames,
+            } },
+            .tex_u8_mono_catmull_direct => .{ .tex_u8 = .{
+                .uvs = uvs.array,
+                .tex = texture_u8_grey,
+                .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .tex_u8_mono_catmull_lutlerp => .{ .tex_u8 = .{
+                .uvs = uvs.array,
+                .tex = texture_u8_grey,
+                .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .tex_u8_mono_linear_direct => .{ .tex_u8 = .{
+                .uvs = uvs.array,
+                .tex = texture_u8_grey,
+                .samp_cfg = .{ .sample = .linear, .mode = .direct },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .tex_u16_mono_catmull_direct => .{ .tex_u16 = .{
+                .uvs = uvs.array,
+                .tex = texture_u16_grey,
+                .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
+                .output_gain = 65535.0,
+                .scaling = .auto,
+            } },
+            .tex_f64_mono_catmull_direct => .{ .tex_f = .{
+                .uvs = uvs.array,
+                .tex = texture_f64_grey,
+                .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .func_checker_uvs => .{ .func = .{
+                .uvs = uvs.array,
+                .coord_mode = .uv,
+                .builtin = .checker,
+                .params = .{
+                    .coord_scale = .{ 20.0, 20.0 },
+                    .settings = .{ .checker = .{} },
+                },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .func_eggbox_worldc => .{ .func = .{
+                .coord_mode = .world_reference,
+                .builtin = .eggbox,
+                .params = .{
+                    .coord_scale = .{ 1.0, 1.0 },
+                    .settings = .{ .eggbox = .{ .pitch = .{ 0.005, 0.005 } } },
+                },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .func_lambertian_normavg => .{ .func = .{
+                .coord_mode = .para,
+                .builtin = .lambertian_normal_z,
+                .params = .{
+                    .settings = .{ .lambertian_normal_z = .{} },
+                },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            .func_lambertian_normexact => .{ .func = .{
+                .coord_mode = .para,
+                .builtin = .lambertian_normal_z,
+                .params = .{
+                    .settings = .{ .lambertian_normal_z = .{} },
+                },
+                .output_gain = 255.0,
+                .scaling = .auto,
+            } },
+            else => unreachable,
+        };
+        break :blk .{ .mono_direct = mono_shader };
     };
 
     return .{
         .mesh_type = mesh_type,
+        .normal_type = switch (shader_kind) {
+            .func_lambertian_normavg => .avg,
+            .func_lambertian_normexact => .exact,
+            else => .none,
+        },
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = disp,
-        .shader = shader,
+        .shaders = shaders,
     };
 }
 
@@ -283,10 +295,10 @@ pub fn buildTwoShapesScene(
     io: std.Io,
     mesh_type: gk.MeshType,
     shader_kind: TwoShapesShaderKind,
-    texture_u8_grey: texops.Tex(u8, 1),
-    texture_u8_rgb: texops.Tex(u8, 3),
-    texture_u16_grey: texops.Tex(u16, 1),
-    texture_f64_grey: texops.Tex(F, 1),
+    texture_u8_grey: texops.TexDataFix(u8, 1),
+    texture_u8_rgb: texops.TexDataFix(u8, 3),
+    texture_u16_grey: texops.TexDataFix(u16, 1),
+    texture_f64_grey: texops.TexDataFix(F, 1),
 ) ![]MeshInput {
     var meshes = try allocator.alloc(MeshInput, 2);
     meshes[0] = try loadShapeMesh(
@@ -336,10 +348,10 @@ pub fn generateTwoShapesCase(
     io: std.Io,
     mesh_type: gk.MeshType,
     shader_kind: TwoShapesShaderKind,
-    texture_u8_grey: texops.Tex(u8, 1),
-    texture_u8_rgb: texops.Tex(u8, 3),
-    texture_u16_grey: texops.Tex(u16, 1),
-    texture_f64_grey: texops.Tex(F, 1),
+    texture_u8_grey: texops.TexDataFix(u8, 1),
+    texture_u8_rgb: texops.TexDataFix(u8, 3),
+    texture_u16_grey: texops.TexDataFix(u16, 1),
+    texture_f64_grey: texops.TexDataFix(F, 1),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {
@@ -390,6 +402,7 @@ pub fn generateTwoShapesCase(
     );
 
     const camera_input = CameraInput{
+        .render_format = if (shader_kind.isRgb()) .rgb else .mono,
         .pixels_num = pixel_num_twoshapes,
         .pixels_size = pixel_size_twoshapes,
         .pos_world = pos,
@@ -403,20 +416,6 @@ pub fn generateTwoShapesCase(
     var run_config = config;
     run_config.save_strategy = .disk;
     run_config.background_value = 127.5;
-
-    if (shader_kind.isRgb()) {
-        const rgb_save_opts = try aa.alloc(
-            iio.ImageSaveOpts,
-            config.output.image_save_opts.len,
-        );
-        for (config.output.image_save_opts, 0..) |opt, ii| {
-            rgb_save_opts[ii] = opt;
-            if (opt.format == .bmp or opt.format == .ppm) {
-                rgb_save_opts[ii].channels = 3;
-            }
-        }
-        run_config.output.image_save_opts = rgb_save_opts;
-    }
 
     const result = try riley.raster(
         aa,
@@ -437,10 +436,10 @@ pub fn generateTwoShapesCase(
 pub fn generateAllTwoShapesCases(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_u8_grey: texops.Tex(u8, 1),
-    texture_u8_rgb: texops.Tex(u8, 3),
-    texture_u16_grey: texops.Tex(u16, 1),
-    texture_f64_grey: texops.Tex(F, 1),
+    texture_u8_grey: texops.TexDataFix(u8, 1),
+    texture_u8_rgb: texops.TexDataFix(u8, 3),
+    texture_u16_grey: texops.TexDataFix(u16, 1),
+    texture_f64_grey: texops.TexDataFix(F, 1),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {
@@ -505,10 +504,6 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     std.debug.print("Generating Basic Suite: twoshapes cases...\n", .{});
     try generateAllTwoShapesCases(

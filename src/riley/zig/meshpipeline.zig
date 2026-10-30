@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameratypes = @import("cameratypes.zig");
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -16,23 +18,22 @@ const vecslice = @import("vecslice.zig");
 const shapefun = @import("shapefun.zig");
 
 const meshio = @import("meshio.zig");
-
+const meshtypes = @import("meshtypes.zig");
 const uvio = @import("uvio.zig");
-
 const imageio = @import("imageio.zig");
 
 const rastcfg = @import("rasterconfig.zig");
 const imageops = @import("imageops.zig");
-const cam = @import("camera.zig");
+const cam = @import("cameraprojops.zig");
 const pce = @import("parachunkexec.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 const frontend = @import("rasterfrontend.zig");
-const report = @import("report.zig");
 const sceneops = @import("sceneops.zig");
 const texops = @import("textureops.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 
 const shaderops = @import("shaderops.zig");
+const meshhit = @import("meshhit.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
 const HullMultiRoot = @import("hullmultiroot.zig").HullMultiRoot;
@@ -42,82 +43,13 @@ const distbounds = @import("distortbounds.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-// Input: Raw user data for all frames.
-// meshio.Coords/Fields: Node-order [total_nodes, ...]
-// meshio.Connect: Connectivity table links nodes to elems.
-pub const MeshInput = struct {
-    mesh_type: geomkerns.MeshType,
-    coords: meshio.Coords,
-    connect: meshio.Connect,
-    disp: ?meshio.Field,
-    shader: shaderops.ShaderInput,
-};
-
-// Static: Persistent multi-frame resources in the engine's memory.
-// meshio.Coords/Fields: Node-order [total_nodes, ...]
-// Shader UVs: Elem-order (gathered during static init as they are usually static).
-pub const MeshStatic = struct {
-    mesh_type: geomkerns.MeshType,
-    coords_orig: meshio.Coords,
-    connect: meshio.Connect,
-    disp: ?meshio.Field,
-    shader: shaderops.ShaderStatic,
-};
-
-pub const MultiRootHulls = struct {
-    indices: matslice.MatSlice(u8),
-    valid_depth: vecslice.VecSlice(u8),
-    slot_by_visible_elem: vecslice.VecSlice(u32),
-    leaves_pre_calc: []HullMultiRoot.BezierLeafPreCalc = &.{},
-    leaves_on_the_fly: []HullMultiRoot.BezierLeafOnTheFly = &.{},
-};
-
-pub const MeshHulls = struct {
-    // Dims: [mesh_idex][elems_in_image,2(x,y),NH(num_hull_pts)]
-    hull_adaptive_by_mesh: []const ?ndarray.NDArray(F),
-    // Dims: [mesh_idx][slot_by_visible_elem LUT]
-    hull_multiroot_by_mesh: []const ?MultiRootHulls,
-};
-
-// Workspace: Temporary node-order working area for the geometry pipeline.
-// meshio.Coords: Node-order [total_nodes, 3]. Holds coords for a single frame after
-// displacement.
-pub const MeshFrameWorkspace = struct {
-    coords_nodes: meshio.Coords,
-    coords_nodes_def_world: ?meshio.Coords,
-    vis_orig_elem_inds: []usize,
-    elem_bboxes: []frontend.ElemBBox,
-    root_classes: []frontend.ElemRootClass,
-    elem_float_bboxes: ?[]distbounds.DistortBounds = null,
-    elems_in_image: usize,
-    hull_adaptive: ?ndarray.NDArray(F),
-    hull_multiroot: ?MultiRootHulls,
-    vis_counts_by_chunk: []usize,
-    vis_offsets_by_chunk: []usize,
-};
-
-// Frame: Wraps the Prep payload with per-frame spatial metadata.
-// Prep means culled elem-order ndarray.NDArray data ready for the raster loop.
-pub const MeshFrame = struct {
-    mesh: MeshPrepared,
-    elem_bboxes: []frontend.ElemBBox,
-    root_classes: []frontend.ElemRootClass,
-    elem_float_bboxes: ?[]distbounds.DistortBounds = null,
-    elems_in_image: usize,
-    total_elems_num: usize,
-    hull_adaptive: ?ndarray.NDArray(F),
-    hull_multiroot: ?MultiRootHulls,
-    frame_workspace: MeshFrameWorkspace,
-};
-
-// Prep: Data culled and gathered for the raster loop for a SINGLE frame.
-// Prep means culled elem-order ndarray.NDArray data ready for the raster loop.
-// Elem-order [vis_elems, field, nodes_per_elem]
-pub const MeshPrepared = struct {
-    mesh_type: geomkerns.MeshType,
-    coords: ndarray.NDArray(F),
-    shader: shaderops.ShaderPrepared,
-};
+const MeshInput = meshtypes.MeshInput;
+const MeshStatic = meshtypes.MeshStatic;
+const MeshPrepared = meshtypes.MeshPrepared;
+const MeshFrame = meshtypes.MeshFrame;
+const MeshFrameWorkspace = meshtypes.MeshFrameWorkspace;
+const MeshHulls = meshtypes.MeshHulls;
+const MultiRootHulls = meshtypes.MultiRootHulls;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -131,37 +63,79 @@ pub fn calcNodesPerElem(meshes: []const MeshPrepared) F {
     return @as(F, @floatFromInt(nodes_sum)) / @as(F, @floatFromInt(meshes.len));
 }
 
-pub fn countFrames(meshes: []const MeshInput) usize {
+pub fn countFrames(meshes: []const MeshInput, cameras: []const cameratypes.CameraInput) usize {
     const dim_time_pre: usize = 0;
     var num_time: usize = 1;
 
     for (meshes) |mesh| {
+        var selected = false;
+        for (cameras) |camera| {
+            if (shaderops.hasShader(mesh.shaders, camera.render_format)) {
+                selected = true;
+            }
+        }
+
+        if (!selected) continue;
+
         if (mesh.disp) |field| {
             num_time = @max(num_time, field.array.dims[dim_time_pre]);
-        } else switch (mesh.shader) {
-            .nodal => |shader| {
-                num_time = @max(
-                    num_time,
-                    shader.field.array.dims[dim_time_pre],
-                );
-            },
-            else => {},
+        }
+
+        for (cameras) |camera| {
+            const selected_shader = shaderops.selectShader(
+                shadertypes.ShaderMonoInput,
+                shadertypes.ShaderPipeInput,
+                &mesh.shaders,
+                camera.render_format,
+            ) orelse continue;
+
+            switch (selected_shader) {
+                .direct => |shader| switch (shader.*) {
+                    .nodal => |nodal| {
+                        num_time = @max(
+                            num_time,
+                            nodal.field.array.dims[dim_time_pre],
+                        );
+                    },
+                    else => {},
+                },
+                .pipe => |pipe| {
+                    for (pipe.stages) |stage| {
+                        switch (stage) {
+                            .source => |src| switch (src.shader) {
+                                .nodal => |nodal| {
+                                    num_time = @max(
+                                        num_time,
+                                        nodal.field.array.dims[dim_time_pre],
+                                    );
+                                },
+                                else => {},
+                            },
+                            else => {},
+                        }
+                    }
+                },
+            }
         }
     }
+
     return num_time;
 }
 
-pub fn countOutputFields(meshes: []const MeshInput) u8 {
+pub fn countOutputFields(meshes: []const MeshInput, cameras: []const cameratypes.CameraInput) u8 {
     var num_fields: u8 = 0;
     for (meshes) |mesh| {
-        const mesh_fields: u8 = switch (mesh.shader) {
-            .nodal => |shader| shader.field.getFieldsN(),
-            .tex_u8, .tex_u16, .tex_f => 1,
-            .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
-            .func => 1,
-            .func_rgb => 3,
-        };
-        num_fields = @max(num_fields, mesh_fields);
+        for (cameras) |camera| {
+            const selected_shader = shaderops.selectShader(
+                shadertypes.ShaderMonoInput,
+                shadertypes.ShaderPipeInput,
+                &mesh.shaders,
+                camera.render_format,
+            ) orelse continue;
+            _ = selected_shader;
+            const mesh_fields = camera.render_format.channels();
+            num_fields = @max(num_fields, mesh_fields);
+        }
     }
     return num_fields;
 }
@@ -206,7 +180,7 @@ pub fn meshInputFromSimDataSlice(
     var initialized_count: usize = 0;
     errdefer {
         for (0..initialized_count) |ii| {
-            switch (mesh_inputs[ii].shader) {
+            switch (mesh_inputs[ii].shaders.mono_direct.?) {
                 .tex_u8 => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
@@ -228,7 +202,7 @@ pub fn meshInputFromSimDataSlice(
                 .func => |tex_func| {
                     if (tex_func.uvs) |uvs| outer_alloc.free(uvs.slice);
                 },
-                .func_rgb => |tex_func| {
+                .func_rgb, .func_multi => |tex_func| {
                     if (tex_func.uvs) |uvs| outer_alloc.free(uvs.slice);
                 },
                 else => {},
@@ -245,15 +219,13 @@ pub fn meshInputFromSimDataSlice(
             .coords = sim_data.coords,
             .connect = sim_data.connect,
             .disp = sim_data.disp,
-            .shader = undefined,
+            .shaders = .{},
         };
 
         if (shader_mode == .nodal) {
             if (sim_data.field) |field| {
-                mesh_inputs[ii].shader = .{ .nodal = .{
+                mesh_inputs[ii].shaders.mono_direct = .{ .nodal = .{
                     .field = field,
-                    .bits = 8,
-                    .normal_type = .none,
                 } };
             } else {
                 return error.MissingFieldData;
@@ -283,11 +255,10 @@ pub fn meshInputFromSimDataSlice(
                 format,
             );
 
-            mesh_inputs[ii].shader = .{ .tex_u8 = .{
+            mesh_inputs[ii].shaders.mono_direct = .{ .tex_u8 = .{
                 .uvs = uvmap.array,
                 .tex = tex,
                 .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
-                .normal_type = .none,
             } };
         }
         initialized_count += 1;
@@ -308,168 +279,320 @@ pub fn initMeshStatic(
         mesh_input.coords,
     );
 
-    var shader_static: shaderops.ShaderStatic = undefined;
-    switch (mesh_input.shader) {
-        .nodal => |nodal_in| {
-            shader_static = .{ .nodal = .{
-                .field = nodal_in.field,
-                .bits = nodal_in.bits,
-                .scaling = nodal_in.scaling,
-                .scale_over = nodal_in.scale_over,
-                .normal_type = nodal_in.normal_type,
-            } };
-        },
-        .tex_u8 => |tex_in| {
-            const elem_uvs = try prepUVs(
-                allocator,
-                &tex_in.uvs,
-                &mesh_input.connect,
-            );
-            shader_static = .{ .tex_u8 = .{
-                .elem_uvs = elem_uvs,
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .bits = tex_in.bits,
-                .scaling = tex_in.scaling,
-                .normal_type = tex_in.normal_type,
-            } };
-        },
-        .tex_u16 => |tex_in| {
-            const elem_uvs = try prepUVs(
-                allocator,
-                &tex_in.uvs,
-                &mesh_input.connect,
-            );
-            shader_static = .{ .tex_u16 = .{
-                .elem_uvs = elem_uvs,
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .bits = tex_in.bits,
-                .scaling = tex_in.scaling,
-                .normal_type = tex_in.normal_type,
-            } };
-        },
-        .tex_f => |tex_in| {
-            const elem_uvs = try prepUVs(
-                allocator,
-                &tex_in.uvs,
-                &mesh_input.connect,
-            );
-            shader_static = .{ .tex_f = .{
-                .elem_uvs = elem_uvs,
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .bits = tex_in.bits,
-                .scaling = tex_in.scaling,
-                .normal_type = tex_in.normal_type,
-            } };
-        },
-        .tex_rgb_u8 => |tex_in| {
-            const elem_uvs = try prepUVs(
-                allocator,
-                &tex_in.uvs,
-                &mesh_input.connect,
-            );
-            shader_static = .{ .tex_rgb_u8 = .{
-                .elem_uvs = elem_uvs,
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .bits = tex_in.bits,
-                .scaling = tex_in.scaling,
-                .normal_type = tex_in.normal_type,
-            } };
-        },
-        .tex_rgb_u16 => |tex_in| {
-            const elem_uvs = try prepUVs(
-                allocator,
-                &tex_in.uvs,
-                &mesh_input.connect,
-            );
-            shader_static = .{ .tex_rgb_u16 = .{
-                .elem_uvs = elem_uvs,
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .bits = tex_in.bits,
-                .scaling = tex_in.scaling,
-                .normal_type = tex_in.normal_type,
-            } };
-        },
-        .tex_rgb_f => |tex_in| {
-            const elem_uvs = try prepUVs(
-                allocator,
-                &tex_in.uvs,
-                &mesh_input.connect,
-            );
-            shader_static = .{ .tex_rgb_f = .{
-                .elem_uvs = elem_uvs,
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .bits = tex_in.bits,
-                .scaling = tex_in.scaling,
-                .normal_type = tex_in.normal_type,
-            } };
-        },
-        .func => |tex_func_in| {
-            const elem_uvs = if (tex_func_in.uvs) |uvs|
-                try prepUVs(
-                    allocator,
-                    &uvs,
-                    &mesh_input.connect,
-                )
-            else
-                null;
-            shader_static = .{ .func = .{
-                .elem_uvs = elem_uvs,
-                .coord_mode = tex_func_in.coord_mode,
-                .builtin = tex_func_in.builtin,
-                .params = shaderops.normFuncShaderParams(
-                    tex_func_in.builtin,
-                    tex_func_in.params,
-                ),
-                .bits = tex_func_in.bits,
-                .scaling = tex_func_in.scaling,
-                .normal_type = tex_func_in.normal_type,
-            } };
-        },
-        .func_rgb => |tex_func_in| {
-            const elem_uvs = if (tex_func_in.uvs) |uvs|
-                try prepUVs(
-                    allocator,
-                    &uvs,
-                    &mesh_input.connect,
-                )
-            else
-                null;
-            shader_static = .{ .func_rgb = .{
-                .elem_uvs = elem_uvs,
-                .coord_mode = tex_func_in.coord_mode,
-                .builtin = tex_func_in.builtin,
-                .params = shaderops.normFuncShaderParams(
-                    tex_func_in.builtin,
-                    tex_func_in.params,
-                ),
-                .bits = tex_func_in.bits,
-                .scaling = tex_func_in.scaling,
-                .normal_type = tex_func_in.normal_type,
-            } };
-        },
-    }
+    var shaders: shadertypes.MeshShaderSetStatic = .{};
+    if (mesh_input.shaders.mono_direct) |shader|
+        shaders.mono = .{ .direct = try createShaderMonoStatic(allocator, shader, &mesh_input.connect) };
+    if (mesh_input.shaders.mono_pipe) |pipe|
+        shaders.mono = .{ .pipe = try createShaderPipeStatic(allocator, pipe, &mesh_input.connect) };
+    if (mesh_input.shaders.rgb_pipe) |pipe|
+        shaders.rgb = try createShaderPipeStatic(
+            allocator,
+            pipe,
+            &mesh_input.connect,
+        );
+    if (mesh_input.shaders.ir_direct) |shader|
+        shaders.ir = .{ .direct = try createShaderMonoStatic(allocator, shader, &mesh_input.connect) };
+    if (mesh_input.shaders.ir_pipe) |pipe|
+        shaders.ir = .{ .pipe = try createShaderPipeStatic(allocator, pipe, &mesh_input.connect) };
+    if (mesh_input.shaders.multifield_pipe) |pipe|
+        shaders.multifield = try createShaderPipeStatic(
+            allocator,
+            pipe,
+            &mesh_input.connect,
+        );
 
     return .{
         .mesh_type = mesh_input.mesh_type,
+        .normal_type = mesh_input.normal_type,
         .coords_orig = coords_orig,
         .connect = mesh_input.connect,
         .disp = mesh_input.disp,
-        .shader = shader_static,
+        .shaders = shaders,
     };
 }
 
-pub const GeomTimes = struct {
-    coord_ops: u64 = 0,
-    cull_ops: u64 = 0,
-    prep_hulls_shaders: u64 = 0,
-    remap_inds: u64 = 0,
-};
+fn createShaderPipeStatic(
+    allocator: std.mem.Allocator,
+    pipe: shadertypes.ShaderPipeInput,
+    connect: *const meshio.Connect,
+) !shadertypes.ShaderPipeStatic {
+    const stages = try allocator.alloc(
+        shadertypes.ShaderPipeStageStatic,
+        pipe.stages.len,
+    );
+
+    for (pipe.stages, 0..) |stage, si| {
+        stages[si] = switch (stage) {
+            .source => |src| .{ .source = .{
+                .shader = try createPipeSourceStatic(allocator, src.shader, connect),
+                .destination = src.destination,
+                .global_scaling = switch (src.shader) {
+                    .nodal => |n| if (n.scale_over == .over_frames)
+                        imageops.getScalingParamsNDArray(&n.field.array, null, n.scaling)
+                    else
+                        null,
+                    else => null,
+                },
+            } },
+            .grey_to_emissivity => |m| .{ .grey_to_emissivity = m },
+            .clamp => |c| .{ .clamp = c },
+            .affine_map => |m| .{ .affine_map = m },
+            .lut_map => |m| .{ .lut_map = m },
+            .blend => |m| .{ .blend = m },
+            .normalise => |m| .{ .normalise = m },
+        };
+    }
+
+    return .{
+        .stages = stages,
+        .resolver = pipe.resolver,
+        .constants = pipe.constants,
+    };
+}
+
+fn createShaderMonoStatic(
+    allocator: std.mem.Allocator,
+    shader_in: shadertypes.ShaderMonoInput,
+    connect: *const meshio.Connect,
+) !shadertypes.ShaderMonoStatic {
+    return switch (shader_in) {
+        .nodal => |nodal_in| .{
+            .nodal = .{
+                .field = nodal_in.field,
+                .output_gain = nodal_in.output_gain,
+                .output_offset = nodal_in.output_offset,
+                .scaling = nodal_in.scaling,
+                .scale_over = nodal_in.scale_over,
+                .global_scaling = if (nodal_in.scale_over == .over_frames)
+                    imageops.getScalingParamsNDArray(
+                        &nodal_in.field.array,
+                        null,
+                        nodal_in.scaling,
+                    )
+                else
+                    null,
+            },
+        },
+        .tex_u8 => |tex_in| .{
+            .tex_u8 = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .tex_u16 => |tex_in| .{
+            .tex_u16 = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .tex_f => |tex_in| .{
+            .tex_f = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .func => |tex_func_in| .{
+            .func = .{
+                .elem_uvs = if (tex_func_in.uvs) |uvs|
+                    try prepUVs(allocator, &uvs, connect)
+                else
+                    null,
+                .coord_mode = tex_func_in.coord_mode,
+                .builtin = tex_func_in.builtin,
+                .params = shadertypes.normFuncShaderParams(
+                    tex_func_in.builtin,
+                    tex_func_in.params,
+                ),
+                .output_gain = tex_func_in.output_gain,
+                .output_offset = tex_func_in.output_offset,
+                .scaling = tex_func_in.scaling,
+            },
+        },
+    };
+}
+
+fn createPipeSourceStatic(
+    allocator: std.mem.Allocator,
+    source_in: shadertypes.PipeSourceInput,
+    connect: *const meshio.Connect,
+) !shadertypes.PipeSourceStatic {
+    return switch (source_in) {
+        .nodal => |nodal_in| .{
+            .nodal = .{
+                .field = nodal_in.field,
+                .output_gain = nodal_in.output_gain,
+                .output_offset = nodal_in.output_offset,
+                .scaling = nodal_in.scaling,
+                .scale_over = nodal_in.scale_over,
+                .global_scaling = if (nodal_in.scale_over == .over_frames)
+                    imageops.getScalingParamsNDArray(
+                        &nodal_in.field.array,
+                        null,
+                        nodal_in.scaling,
+                    )
+                else
+                    null,
+            },
+        },
+        .tex_multi_u8 => |tex_in| .{
+            .tex_multi_f = try createTextureMultiStatic(u8, allocator, tex_in, connect),
+        },
+        .tex_multi_u16 => |tex_in| .{
+            .tex_multi_f = try createTextureMultiStatic(u16, allocator, tex_in, connect),
+        },
+        .tex_multi_f => |tex_in| .{
+            .tex_multi_f = try createTextureMultiStatic(F, allocator, tex_in, connect),
+        },
+        .tex_u8 => |tex_in| .{
+            .tex_u8 = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .tex_u16 => |tex_in| .{
+            .tex_u16 = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .tex_f => |tex_in| .{
+            .tex_f = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .tex_rgb_u8 => |tex_in| .{
+            .tex_rgb_u8 = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .tex_rgb_u16 => |tex_in| .{
+            .tex_rgb_u16 = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .tex_rgb_f => |tex_in| .{
+            .tex_rgb_f = .{
+                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .output_gain = tex_in.output_gain,
+                .output_offset = tex_in.output_offset,
+                .scaling = tex_in.scaling,
+            },
+        },
+        .func => |func_in| switch (func_in) {
+            .mono => |tex_func_in| .{
+                .func = .{ .mono = .{
+                    .elem_uvs = if (tex_func_in.uvs) |uvs|
+                        try prepUVs(allocator, &uvs, connect)
+                    else
+                        null,
+                    .coord_mode = tex_func_in.coord_mode,
+                    .builtin = tex_func_in.builtin,
+                    .params = shadertypes.normFuncShaderParams(
+                        tex_func_in.builtin,
+                        tex_func_in.params,
+                    ),
+                    .output_gain = tex_func_in.output_gain,
+                    .output_offset = tex_func_in.output_offset,
+                    .scaling = tex_func_in.scaling,
+                } },
+            },
+            .rgb => |tex_func_in| .{
+                .func = .{ .rgb = .{
+                    .elem_uvs = if (tex_func_in.uvs) |uvs|
+                        try prepUVs(allocator, &uvs, connect)
+                    else
+                        null,
+                    .coord_mode = tex_func_in.coord_mode,
+                    .builtin = tex_func_in.builtin,
+                    .params = shadertypes.normFuncShaderParams(
+                        tex_func_in.builtin,
+                        tex_func_in.params,
+                    ),
+                    .output_gain = tex_func_in.output_gain,
+                    .output_offset = tex_func_in.output_offset,
+                    .scaling = tex_func_in.scaling,
+                } },
+            },
+            .multi => |multi_in| .{
+                .func = .{ .multi = .{
+                    .elem_uvs = if (multi_in.uvs) |uvs|
+                        try prepUVs(allocator, &uvs, connect)
+                    else
+                        null,
+                    .coord_mode = multi_in.coord_mode,
+                    .channels = multi_in.channels,
+                } },
+            },
+        },
+    };
+}
+
+fn createTextureMultiStatic(
+    comptime T: type,
+    allocator: std.mem.Allocator,
+    input: shadertypes.TexInput(texops.TexDataDyn(T)),
+    connect: *const meshio.Connect,
+) !shadertypes.TexMultiStatic(F) {
+    const elem_uvs = try prepUVs(allocator, &input.uvs, connect);
+    const float_tex: texops.TexDataDyn(F) = if (comptime T == F) input.tex else blk: {
+        const values = try ndarray.NDArray(F).initFlat(allocator, input.tex.array.dims);
+        for (input.tex.array.slice, values.slice) |source, *destination| {
+            destination.* = @floatFromInt(source);
+        }
+        break :blk .{
+            .array = values,
+            .rows_num = input.tex.rows_num,
+            .cols_num = input.tex.cols_num,
+        };
+    };
+    return .{
+        .elem_uvs = elem_uvs,
+        .tex = float_tex,
+        .samp_cfg = input.samp_cfg,
+        .output_gain = input.output_gain,
+        .output_offset = input.output_offset,
+        .scaling = input.scaling,
+    };
+}
+
+const GeomTimes = meshtypes.GeomTimes;
 
 // -----------------------------------------------------------------------------------------
 // Mesh Pipeline: Main entry point into the mesh frame pipeline
@@ -487,6 +610,7 @@ pub fn prepMeshFrames(
     frame_meshes: []MeshFrame,
     timing: *GeomTimes,
 ) !FrameGeomResult {
+    _ = nodal_global_scaling;
     var res = FrameGeomResult{
         .total_elems_num = 0,
         .total_elems_in_image = 0,
@@ -496,20 +620,29 @@ pub fn prepMeshFrames(
         // Only needed for nodal interpolation shading and only if not .none. If .none we
         // directly render float fields unscaled.
         var nodal_frame_scaling: ?imageops.ScalingParams = null;
-        switch (mesh_static.shader) {
-            .nodal => |s| {
-                if (s.scale_over == .over_frames) {
-                    nodal_frame_scaling = nodal_global_scaling[ii];
-                } else { // .within_frames
-                    nodal_frame_scaling = imageops.getScalingParamsNDArray(
-                        &s.field.array,
-                        frame_idx,
-                        s.scaling,
-                    );
-                }
+        const selected = shaderops.selectShader(
+            shadertypes.ShaderMonoStatic,
+            shadertypes.ShaderPipeStatic,
+            &mesh_static.shaders,
+            camera.render_format,
+        );
+        if (selected) |execution| switch (execution) {
+            .direct => |shader| switch (shader.*) {
+                .nodal => |s| {
+                    if (s.scale_over == .over_frames) {
+                        nodal_frame_scaling = s.global_scaling;
+                    } else { // .within_frames
+                        nodal_frame_scaling = imageops.getScalingParamsNDArray(
+                            &s.field.array,
+                            frame_idx,
+                            s.scaling,
+                        );
+                    }
+                },
+                else => {},
             },
-            else => {},
-        }
+            .pipe => {},
+        };
 
         // Prepares meshes for each frame including coord transforms to camera space and
         // data reshaping to elem order for a given frame.
@@ -562,10 +695,7 @@ pub fn prepMeshFrame(
     };
 }
 
-pub const FrameGeomResult = struct {
-    total_elems_num: usize,
-    total_elems_in_image: usize,
-};
+const FrameGeomResult = meshtypes.FrameGeomResult;
 
 // Outside of pipeline because these are static - we gather these into an NDarray once
 // for all frames and cameras
@@ -598,17 +728,14 @@ fn prepUVs(
 fn initMeshFrameWorkspace(
     allocator: std.mem.Allocator,
     mesh_static: *const MeshStatic,
+    selection: shadertypes.RenderFormat,
 ) !MeshFrameWorkspace {
     return .{
         .coords_nodes = try meshio.Coords.initAlloc(
             allocator,
             mesh_static.coords_orig.mat.rows_num,
         ),
-        .coords_nodes_def_world = if (switch (mesh_static.shader) {
-            .func => |func_static| func_static.coord_mode == .world_deformed,
-            .func_rgb => |func_static| func_static.coord_mode == .world_deformed,
-            else => false,
-        })
+        .coords_nodes_def_world = if (shaderSetNeedsDeformedWorld(mesh_static.shaders, selection))
             try meshio.Coords.initAlloc(
                 allocator,
                 mesh_static.coords_orig.mat.rows_num,
@@ -625,6 +752,166 @@ fn initMeshFrameWorkspace(
         .vis_counts_by_chunk = &.{},
         .vis_offsets_by_chunk = &.{},
     };
+}
+
+fn shaderMonoNeedsDeformedWorld(shader: shadertypes.ShaderMonoStatic) bool {
+    return switch (shader) {
+        .func => |func_static| func_static.coord_mode == .world_deformed,
+        else => false,
+    };
+}
+
+fn pipeSourceNeedsDeformedWorld(source: shadertypes.PipeSourceStatic) bool {
+    return switch (source) {
+        .func => |func_src| switch (func_src) {
+            .mono, .rgb, .multi => |f| f.coord_mode == .world_deformed,
+        },
+        else => false,
+    };
+}
+
+fn shaderMonoHitSelection(
+    shader: shadertypes.ShaderMonoStatic,
+    normal_type: normals.NormalType,
+) meshhit.MeshHitSelection {
+    var selection = meshhit.MeshHitSelection.initEmpty();
+    switch (shader) {
+        .func => |s| {
+            switch (s.coord_mode) {
+                .world_reference => selection.insert(.coords_ref),
+                .world_deformed => selection.insert(.coords_def),
+                else => {},
+            }
+            if ((s.builtin == .lambertian_normal_z or
+                for (s.channels) |ch| {
+                    if (ch.builtin == .lambertian_normal_z) break true;
+                } else false) and normal_type != .none)
+            {
+                selection.insert(.surf_norm);
+            }
+        },
+        else => {},
+    }
+    return selection;
+}
+
+fn pipeSourceHitSelection(
+    source: shadertypes.PipeSourceStatic,
+    normal_type: normals.NormalType,
+) meshhit.MeshHitSelection {
+    var selection = meshhit.MeshHitSelection.initEmpty();
+    switch (source) {
+        .func => |func_src| {
+            const s = switch (func_src) {
+                .mono => |f| f,
+                .rgb => |f| f,
+                .multi => |f| f,
+            };
+            switch (s.coord_mode) {
+                .world_reference => selection.insert(.coords_ref),
+                .world_deformed => selection.insert(.coords_def),
+                else => {},
+            }
+            if ((s.builtin == .lambertian_normal_z or
+                for (s.channels) |ch| {
+                    if (ch.builtin == .lambertian_normal_z) break true;
+                } else false) and normal_type != .none)
+            {
+                selection.insert(.surf_norm);
+            }
+        },
+        else => {},
+    }
+    return selection;
+}
+
+fn shaderSetHitSelection(
+    shaders: shadertypes.MeshShaderSetStatic,
+    role: shadertypes.RenderFormat,
+    normal_type: normals.NormalType,
+) meshhit.MeshHitSelection {
+    var selection = meshhit.MeshHitSelection.initEmpty();
+    const selected = shaderops.selectShader(
+        shadertypes.ShaderMonoStatic,
+        shadertypes.ShaderPipeStatic,
+        &shaders,
+        role,
+    ) orelse return selection;
+    switch (selected) {
+        .direct => |shader| return shaderMonoHitSelection(shader.*, normal_type),
+        .pipe => |pipe| {
+            for (pipe.stages) |stage| switch (stage) {
+                .source => |src| selection.setUnion(
+                    pipeSourceHitSelection(src.shader, normal_type),
+                ),
+                else => {},
+            };
+        },
+    }
+    return selection;
+}
+
+test "MeshHit requirements follow the selected camera role" {
+    const stages = [_]shadertypes.ShaderPipeStageStatic{
+        .{ .source = .{
+            .shader = .{ .func = .{ .mono = .{
+                .elem_uvs = null,
+                .coord_mode = .world_reference,
+                .builtin = .linear,
+            } } },
+            .destination = .{ .kind = .channel, .index = 0 },
+        } },
+        .{ .source = .{
+            .shader = .{ .func = .{ .mono = .{
+                .elem_uvs = null,
+                .coord_mode = .world_deformed,
+                .builtin = .lambertian_normal_z,
+            } } },
+            .destination = .{ .kind = .channel, .index = 0 },
+        } },
+    };
+    const shaders = shadertypes.MeshShaderSetStatic{
+        .mono = .{ .direct = .{ .nodal = .{ .field = undefined } } },
+        .ir = .{ .pipe = .{
+            .stages = &stages,
+            .resolver = undefined,
+            .constants = &.{},
+        } },
+    };
+    const direct = shaderSetHitSelection(shaders, .mono, .exact);
+    try std.testing.expect(direct.count() == 0);
+    try std.testing.expect(!shaderSetNeedsDeformedWorld(shaders, .mono));
+
+    const pipe = shaderSetHitSelection(shaders, .ir, .exact);
+    try std.testing.expect(pipe.contains(.coords_ref));
+    try std.testing.expect(pipe.contains(.coords_def));
+    try std.testing.expect(pipe.contains(.surf_norm));
+    try std.testing.expect(shaderSetNeedsDeformedWorld(shaders, .ir));
+
+    const no_norm = shaderSetHitSelection(shaders, .ir, .none);
+    try std.testing.expect(!no_norm.contains(.surf_norm));
+}
+
+fn shaderSetNeedsDeformedWorld(
+    shaders: shadertypes.MeshShaderSetStatic,
+    selection: shadertypes.RenderFormat,
+) bool {
+    const selected = shaderops.selectShader(
+        shadertypes.ShaderMonoStatic,
+        shadertypes.ShaderPipeStatic,
+        &shaders,
+        selection,
+    ) orelse return false;
+    switch (selected) {
+        .direct => |shader| return shaderMonoNeedsDeformedWorld(shader.*),
+        .pipe => |pipe| {
+            for (pipe.stages) |stage| switch (stage) {
+                .source => |src| if (pipeSourceNeedsDeformedWorld(src.shader)) return true,
+                else => {},
+            };
+            return false;
+        },
+    }
 }
 
 //------------------------------------------------------------------------------------------
@@ -673,6 +960,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         elem_chunks_num: usize,
         vis_chunk_size: usize,
         mesh_workspace: MeshFrameWorkspace,
+        hit_geometry: meshhit.MeshHitGeomPrepared = .{},
 
         fn init(
             outer_alloc: std.mem.Allocator,
@@ -722,6 +1010,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .mesh_workspace = try initMeshFrameWorkspace(
                     outer_alloc,
                     mesh_static,
+                    camera.render_format,
                 ),
             };
         }
@@ -750,6 +1039,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             const time_start_prep = Timestamp.now(self.chunk_exec.io, .awake);
             try self.prepareAdaptiveHulls(outer_alloc, &mesh_prep.coords);
             try self.prepareMultiRootElems(outer_alloc, &mesh_prep.coords);
+            self.hit_geometry = try self.prepareHitGeometry(outer_alloc);
+            mesh_prep.hit_geometry = self.hit_geometry;
             try self.prepareShader(outer_alloc, &mesh_prep);
             const time_end_prep = Timestamp.now(self.chunk_exec.io, .awake);
             timing.prep_hulls_shaders += @intCast(time_start_prep.durationTo(
@@ -953,7 +1244,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             stage.vis_counts_by_chunk[chunk_idx] = vis_count;
         }
 
-        fn cullAndClassifyVisibleElems(self: *FrameMeshPipelineType, outer_alloc: std.mem.Allocator) !void {
+        fn cullAndClassifyVisibleElems(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+        ) !void {
             const has_distort = self.camera.ideal_sensor_bounds != null;
 
             var cached_distort_bboxes: ?[]?frontend.DistortElemBBox = null;
@@ -1189,9 +1483,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
 
             return .{
+                .scene_mesh_idx = self.mesh_static.scene_mesh_idx,
                 .mesh_type = MT,
                 .coords = elem_coords,
-                .shader = undefined,
+                .shaders = .{},
             };
         }
 
@@ -1299,9 +1594,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
                 const leaf_offset = @as(usize, slot) * 4;
                 if (stage.edge_fun_mode == .pre_calc) {
-                    const leaf_slice = stage.hulls.leaves_pre_calc[
-                        leaf_offset .. leaf_offset + 4
-                    ];
+                    const leaf_slice =
+                        stage.hulls.leaves_pre_calc[leaf_offset .. leaf_offset + 4];
                     HullMultiRoot.prepareFourBezierLeavesPreCalc(
                         N,
                         stage.camera,
@@ -1309,9 +1603,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         leaf_slice[0..4],
                     );
                 } else {
-                    const leaf_slice = stage.hulls.leaves_on_the_fly[
-                        leaf_offset .. leaf_offset + 4
-                    ];
+                    const leaf_slice =
+                        stage.hulls.leaves_on_the_fly[leaf_offset .. leaf_offset + 4];
                     HullMultiRoot.prepareFourBezierLeavesOnTheFly(
                         N,
                         stage.camera,
@@ -1490,89 +1783,229 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
         }
 
+        fn prepareHitGeometry(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+        ) !meshhit.MeshHitGeomPrepared {
+            var selection = shaderSetHitSelection(
+                self.mesh_static.shaders,
+                self.camera.render_format,
+                self.mesh_static.normal_type,
+            );
+            var hit_geometry = meshhit.MeshHitGeomPrepared{ .selection = selection };
+            if (selection.contains(.coords_ref)) {
+                hit_geometry.coords_ref = try self.gatherVisElemCoordsFromNodes(
+                    outer_alloc,
+                    &self.mesh_static.coords_orig,
+                );
+            }
+            if (selection.contains(.coords_def)) {
+                hit_geometry.coords_def = try self.gatherVisElemCoordsFromNodes(
+                    outer_alloc,
+                    &(self.mesh_workspace.coords_nodes_def_world orelse
+                        return error.MissingWorldDeformedCoords),
+                );
+            }
+            if (selection.contains(.surf_norm)) {
+                hit_geometry.surf_norm = try self.prepVisNormals(
+                    outer_alloc,
+                    self.mesh_static.normal_type,
+                );
+            }
+            return hit_geometry;
+        }
+
         fn prepareShader(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
             mesh_prep: *MeshPrepared,
         ) !void {
-            switch (self.mesh_static.shader) {
-                .nodal => |nodal_static| {
-                    mesh_prep.shader = try self.prepareNodalShader(
-                        outer_alloc,
-                        nodal_static,
-                    );
+            const format = self.camera.render_format;
+            switch (format) {
+                .mono => {
+                    const exec = self.mesh_static.shaders.mono orelse return;
+                    mesh_prep.shaders.mono = switch (exec) {
+                        .direct => |s| .{
+                            .direct = try self.prepareShaderMono(
+                                outer_alloc,
+                                s,
+                                self.scaling_params,
+                            ),
+                        },
+                        .pipe => |p| .{
+                            .pipe = try self.prepareShaderPipe(outer_alloc, p, 1),
+                        },
+                    };
                 },
-                .tex_u8 => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(
-                        u8,
-                        1,
-                        outer_alloc,
-                        self,
-                        tex_static,
-                    );
+                .ir => {
+                    const exec = self.mesh_static.shaders.ir orelse return;
+                    mesh_prep.shaders.ir = switch (exec) {
+                        .direct => |s| .{
+                            .direct = try self.prepareShaderMono(
+                                outer_alloc,
+                                s,
+                                self.scaling_params,
+                            ),
+                        },
+                        .pipe => |p| .{
+                            .pipe = try self.prepareShaderPipe(outer_alloc, p, 1),
+                        },
+                    };
                 },
-                .tex_u16 => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(
-                        u16,
-                        1,
+                .rgb => {
+                    const pipe = self.mesh_static.shaders.rgb orelse return;
+                    mesh_prep.shaders.rgb = try self.prepareShaderPipe(
                         outer_alloc,
-                        self,
-                        tex_static,
-                    );
-                },
-                .tex_f => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(
-                        F,
-                        1,
-                        outer_alloc,
-                        self,
-                        tex_static,
-                    );
-                },
-                .tex_rgb_u8 => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(
-                        u8,
+                        pipe,
                         3,
-                        outer_alloc,
-                        self,
-                        tex_static,
                     );
                 },
-                .tex_rgb_u16 => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(
-                        u16,
-                        3,
+                .multifield => {
+                    const pipe = self.mesh_static.shaders.multifield orelse return;
+                    mesh_prep.shaders.multifield = try self.prepareShaderPipe(
                         outer_alloc,
-                        self,
-                        tex_static,
-                    );
-                },
-                .tex_rgb_f => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(
-                        F,
-                        3,
-                        outer_alloc,
-                        self,
-                        tex_static,
-                    );
-                },
-                .func => |func_static| {
-                    mesh_prep.shader = try prepareFuncShader(
-                        1,
-                        outer_alloc,
-                        self,
-                        func_static,
-                    );
-                },
-                .func_rgb => |func_static| {
-                    mesh_prep.shader = try prepareFuncShader(
-                        3,
-                        outer_alloc,
-                        self,
-                        func_static,
+                        pipe,
+                        format.channels(),
                     );
                 },
             }
+        }
+
+        fn prepareShaderPipe(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+            pipe: shadertypes.ShaderPipeStatic,
+            channels: u8,
+        ) !shadertypes.ShaderPipePrepared {
+            const stages = try outer_alloc.alloc(
+                shadertypes.ShaderPipeStagePrepared,
+                pipe.stages.len,
+            );
+
+            for (pipe.stages, 0..) |stage, si| {
+                stages[si] = switch (stage) {
+                    .source => |src| blk: {
+                        var prepared_source = try self.preparePipeSource(
+                            outer_alloc,
+                            src.shader,
+                            if (src.shader == .nodal and src.global_scaling == null)
+                                imageops.getScalingParamsNDArray(
+                                    &src.shader.nodal.field.array,
+                                    self.frame_idx,
+                                    src.shader.nodal.scaling,
+                                )
+                            else
+                                src.global_scaling,
+                        );
+                        switch (prepared_source) {
+                            .func => |*func_src| switch (func_src.*) {
+                                .mono, .rgb, .multi => |*shader| shader.hit_geometry = .{},
+                            },
+                            else => {},
+                        }
+                        break :blk .{ .source = .{
+                            .shader = prepared_source,
+                            .destination = src.destination,
+                        } };
+                    },
+                    .grey_to_emissivity => |m| .{ .grey_to_emissivity = m },
+                    .clamp => |c| .{ .clamp = c },
+                    .affine_map => |m| .{ .affine_map = m },
+                    .lut_map => |m| .{ .lut_map = m },
+                    .blend => |m| .{ .blend = m },
+                    .normalise => |m| .{ .normalise = m },
+                };
+            }
+
+            return .{
+                .stages = stages,
+                .resolver = pipe.resolver,
+                .constants = pipe.constants,
+                .channels = channels,
+                .hit_geometry = self.hit_geometry,
+            };
+        }
+
+        fn prepareShaderMono(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+            shader_static: shadertypes.ShaderMonoStatic,
+            scaling: ?imageops.ScalingParams,
+        ) !shadertypes.ShaderMonoPrepared {
+            const previous_scaling = self.scaling_params;
+            self.scaling_params = scaling;
+            defer self.scaling_params = previous_scaling;
+            return switch (shader_static) {
+                .nodal => |s| .{
+                    .nodal = try self.prepareNodalShaderRaw(outer_alloc, s),
+                },
+                .tex_u8 => |s| .{
+                    .tex_u8 = try prepareTexShaderRaw(u8, 1, outer_alloc, self, s),
+                },
+                .tex_u16 => |s| .{
+                    .tex_u16 = try prepareTexShaderRaw(u16, 1, outer_alloc, self, s),
+                },
+                .tex_f => |s| .{
+                    .tex_f = try prepareTexShaderRaw(F, 1, outer_alloc, self, s),
+                },
+                .func => |s| .{
+                    .func = try prepareFuncShaderRaw(1, outer_alloc, self, s),
+                },
+            };
+        }
+
+        fn preparePipeSource(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+            source_static: shadertypes.PipeSourceStatic,
+            scaling: ?imageops.ScalingParams,
+        ) !shadertypes.PipeSourcePrepared {
+            const previous_scaling = self.scaling_params;
+            self.scaling_params = scaling;
+            defer self.scaling_params = previous_scaling;
+            return switch (source_static) {
+                .nodal => |s| .{
+                    .nodal = try self.prepareNodalShaderRaw(outer_alloc, s),
+                },
+                .tex_u8 => |s| .{
+                    .tex_u8 = try prepareTexShaderRaw(u8, 1, outer_alloc, self, s),
+                },
+                .tex_u16 => |s| .{
+                    .tex_u16 = try prepareTexShaderRaw(u16, 1, outer_alloc, self, s),
+                },
+                .tex_f => |s| .{
+                    .tex_f = try prepareTexShaderRaw(F, 1, outer_alloc, self, s),
+                },
+                .tex_rgb_u8 => |s| .{
+                    .tex_rgb_u8 = try prepareTexShaderRaw(u8, 3, outer_alloc, self, s),
+                },
+                .tex_rgb_u16 => |s| .{
+                    .tex_rgb_u16 = try prepareTexShaderRaw(u16, 3, outer_alloc, self, s),
+                },
+                .tex_rgb_f => |s| .{
+                    .tex_rgb_f = try prepareTexShaderRaw(F, 3, outer_alloc, self, s),
+                },
+                .tex_multi_f => |s| .{
+                    .tex_multi_f = try prepareTexShaderRaw(F, null, outer_alloc, self, s),
+                },
+                .func => |func_src| switch (func_src) {
+                    .mono => |s| .{
+                        .func = .{
+                            .mono = try prepareFuncShaderRaw(1, outer_alloc, self, s),
+                        },
+                    },
+                    .rgb => |s| .{
+                        .func = .{
+                            .rgb = try prepareFuncShaderRaw(3, outer_alloc, self, s),
+                        },
+                    },
+                    .multi => |s| .{
+                        .func = .{
+                            .multi = try prepareFuncShaderRaw(0, outer_alloc, self, s),
+                        },
+                    },
+                },
+            };
         }
 
         const GatherVisibleFieldStage = struct {
@@ -1609,11 +2042,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
 
-        fn prepareNodalShader(
+        fn prepareNodalShaderRaw(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
-            nodal_static: shaderops.NodalStatic,
-        ) !shaderops.ShaderPrepared {
+            nodal_static: shadertypes.NodalStatic,
+        ) !shadertypes.NodalPrepared {
             const N = comptime MT.getNodesNum();
             var elem_field = try ndarray.NDArray(F).initFlat(
                 outer_alloc,
@@ -1641,23 +2074,19 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
 
             const factors = if (self.scaling_params) |sp|
-                imageops.getScaleFactors(nodal_static.scaling, nodal_static.bits, sp)
+                imageops.getScaleFactors(nodal_static.scaling, null, sp)
             else
                 imageops.ScaleFactors{ .mul = 1.0, .add = 0.0 };
 
-            return .{ .nodal = .{
+            return .{
                 .elem_field = elem_field,
-                .bits = nodal_static.bits,
+                .output_gain = nodal_static.output_gain,
+                .output_offset = nodal_static.output_offset,
                 .scaling = nodal_static.scaling,
                 .scale_over = nodal_static.scale_over,
-                .scale_mul = factors.mul,
-                .scale_add = factors.add,
-                .normal_type = nodal_static.normal_type,
-                .elem_normals = try self.prepVisNormals(
-                    outer_alloc,
-                    nodal_static.normal_type,
-                ),
-            } };
+                .scale_mul = factors.mul * nodal_static.output_gain,
+                .scale_add = factors.add * nodal_static.output_gain + nodal_static.output_offset,
+            };
         }
 
         const GatherVisibleUVStage = struct {
@@ -1687,13 +2116,19 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
 
-        fn prepareTexShader(
+        fn prepareTexShaderRaw(
             comptime T: type,
-            comptime C: usize,
+            comptime C: ?usize,
             outer_alloc: std.mem.Allocator,
             self: *FrameMeshPipelineType,
-            tex_static: shaderops.TexStatic(T, C),
-        ) !shaderops.ShaderPrepared {
+            tex_static: if (C) |channels|
+                shadertypes.TexStatic(T, channels)
+            else
+                shadertypes.TexMultiStatic(T),
+        ) !if (C) |channels|
+            shadertypes.TexPrepared(T, channels)
+        else
+            shadertypes.TexMultiPrepared(T) {
             const params = imageops.getScalingParamsTex(
                 T,
                 C,
@@ -1702,7 +2137,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
             const factors = imageops.getScaleFactors(
                 tex_static.scaling,
-                tex_static.bits,
+                null,
                 params,
             );
 
@@ -1729,94 +2164,27 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 self.vis_chunk_size,
             );
 
-            const elem_normals = try self.prepVisNormals(
-                outer_alloc,
-                tex_static.normal_type,
-            );
-            if (comptime T == u8 and C == 1) {
-                return .{ .tex_u8 = .{
-                    .elem_uvs = elem_uvs,
-                    .tex = tex_static.tex,
-                    .samp_cfg = tex_static.samp_cfg,
-                    .bits = tex_static.bits,
-                    .scaling = tex_static.scaling,
-                    .scale_mul = factors.mul,
-                    .scale_add = factors.add,
-                    .normal_type = tex_static.normal_type,
-                    .elem_normals = elem_normals,
-                } };
-            } else if (comptime T == u16 and C == 1) {
-                return .{ .tex_u16 = .{
-                    .elem_uvs = elem_uvs,
-                    .tex = tex_static.tex,
-                    .samp_cfg = tex_static.samp_cfg,
-                    .bits = tex_static.bits,
-                    .scaling = tex_static.scaling,
-                    .scale_mul = factors.mul,
-                    .scale_add = factors.add,
-                    .normal_type = tex_static.normal_type,
-                    .elem_normals = elem_normals,
-                } };
-            } else if (comptime T == F and C == 1) {
-                return .{ .tex_f = .{
-                    .elem_uvs = elem_uvs,
-                    .tex = tex_static.tex,
-                    .samp_cfg = tex_static.samp_cfg,
-                    .bits = tex_static.bits,
-                    .scaling = tex_static.scaling,
-                    .scale_mul = factors.mul,
-                    .scale_add = factors.add,
-                    .normal_type = tex_static.normal_type,
-                    .elem_normals = elem_normals,
-                } };
-            } else if (comptime T == u8 and C == 3) {
-                return .{ .tex_rgb_u8 = .{
-                    .elem_uvs = elem_uvs,
-                    .tex = tex_static.tex,
-                    .samp_cfg = tex_static.samp_cfg,
-                    .bits = tex_static.bits,
-                    .scaling = tex_static.scaling,
-                    .scale_mul = factors.mul,
-                    .scale_add = factors.add,
-                    .normal_type = tex_static.normal_type,
-                    .elem_normals = elem_normals,
-                } };
-            } else if (comptime T == u16 and C == 3) {
-                return .{ .tex_rgb_u16 = .{
-                    .elem_uvs = elem_uvs,
-                    .tex = tex_static.tex,
-                    .samp_cfg = tex_static.samp_cfg,
-                    .bits = tex_static.bits,
-                    .scaling = tex_static.scaling,
-                    .scale_mul = factors.mul,
-                    .scale_add = factors.add,
-                    .normal_type = tex_static.normal_type,
-                    .elem_normals = elem_normals,
-                } };
-            } else {
-                return .{ .tex_rgb_f = .{
-                    .elem_uvs = elem_uvs,
-                    .tex = tex_static.tex,
-                    .samp_cfg = tex_static.samp_cfg,
-                    .bits = tex_static.bits,
-                    .scaling = tex_static.scaling,
-                    .scale_mul = factors.mul,
-                    .scale_add = factors.add,
-                    .normal_type = tex_static.normal_type,
-                    .elem_normals = elem_normals,
-                } };
-            }
+            return .{
+                .elem_uvs = elem_uvs,
+                .tex = tex_static.tex,
+                .samp_cfg = tex_static.samp_cfg,
+                .output_gain = tex_static.output_gain,
+                .output_offset = tex_static.output_offset,
+                .scaling = tex_static.scaling,
+                .scale_mul = factors.mul * tex_static.output_gain,
+                .scale_add = factors.add * tex_static.output_gain + tex_static.output_offset,
+            };
         }
 
-        fn prepareFuncShader(
+        fn prepareFuncShaderRaw(
             comptime C: usize,
             outer_alloc: std.mem.Allocator,
             self: *FrameMeshPipelineType,
-            func_static: shaderops.FuncStatic,
-        ) !shaderops.ShaderPrepared {
+            func_static: shadertypes.FuncStatic,
+        ) !shadertypes.FuncPrepared {
             const factors = imageops.getScaleFactors(
                 func_static.scaling,
-                func_static.bits,
+                null,
                 .{ .min = 0.0, .range = 1.0 },
             );
 
@@ -1848,69 +2216,63 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 break :blk elem_uvs;
             } else null;
 
-            const elem_world_ref = if (func_static.coord_mode == .world_reference)
-                try self.gatherVisElemCoordsFromNodes(
-                    outer_alloc,
-                    &self.mesh_static.coords_orig,
-                )
-            else
-                null;
-            const elem_world_def = if (func_static.coord_mode == .world_deformed)
-                try self.gatherVisElemCoordsFromNodes(
-                    outer_alloc,
-                    &(self.mesh_workspace.coords_nodes_def_world orelse
-                        return error.MissingWorldDeformedCoords),
-                )
-            else
-                null;
-
-            const elem_normals = try self.prepVisNormals(
-                outer_alloc,
-                func_static.normal_type,
-            );
-            if (comptime C == 1) {
-                return .{ .func = .{
+            if (comptime C == 0) {
+                const channels = try outer_alloc.alloc(
+                    shadertypes.FuncChannelPrepared,
+                    func_static.channels.len,
+                );
+                var needs_normal = false;
+                for (func_static.channels, channels) |channel, *prepared| {
+                    const channel_factors = imageops.getScaleFactors(
+                        channel.scaling,
+                        null,
+                        .{ .min = 0.0, .range = 1.0 },
+                    );
+                    prepared.* = .{
+                        .builtin = channel.builtin,
+                        .params = shadertypes.normFuncShaderParams(
+                            channel.builtin,
+                            channel.params,
+                        ),
+                        .scale_mul = channel_factors.mul * channel.output_gain,
+                        .scale_add = channel_factors.add * channel.output_gain +
+                            channel.output_offset,
+                    };
+                    needs_normal = needs_normal or channel.builtin == .lambertian_normal_z;
+                }
+                return .{
                     .elem_uvs = elem_uvs,
-                    .elem_world_ref = elem_world_ref,
-                    .elem_world_def = elem_world_def,
+                    .hit_geometry = self.hit_geometry,
                     .coord_mode = func_static.coord_mode,
-                    .builtin = func_static.builtin,
-                    .params = shaderops.normFuncShaderParams(
-                        func_static.builtin,
-                        func_static.params,
-                    ),
-                    .bits = func_static.bits,
-                    .scaling = func_static.scaling,
-                    .scale_mul = factors.mul,
-                    .scale_add = factors.add,
-                    .normal_type = func_static.normal_type,
-                    .elem_normals = elem_normals,
-                } };
+                    .channels = channels,
+                    .needs_normal = needs_normal and self.mesh_static.normal_type != .none,
+                };
             } else {
-                return .{ .func_rgb = .{
+                return .{
                     .elem_uvs = elem_uvs,
-                    .elem_world_ref = elem_world_ref,
-                    .elem_world_def = elem_world_def,
+                    .hit_geometry = self.hit_geometry,
                     .coord_mode = func_static.coord_mode,
                     .builtin = func_static.builtin,
-                    .params = shaderops.normFuncShaderParams(
+                    .params = shadertypes.normFuncShaderParams(
                         func_static.builtin,
                         func_static.params,
                     ),
-                    .bits = func_static.bits,
+                    .output_gain = func_static.output_gain,
+                    .output_offset = func_static.output_offset,
                     .scaling = func_static.scaling,
-                    .scale_mul = factors.mul,
-                    .scale_add = factors.add,
-                    .normal_type = func_static.normal_type,
-                    .elem_normals = elem_normals,
-                } };
+                    .scale_mul = factors.mul * func_static.output_gain,
+                    .scale_add = factors.add * func_static.output_gain +
+                        func_static.output_offset,
+                    .needs_normal = func_static.builtin == .lambertian_normal_z and
+                        self.mesh_static.normal_type != .none,
+                };
             }
         }
 
         fn prepVisNormals(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
-            normal_type: shaderops.NormalType,
+            normal_type: normals.NormalType,
         ) !?ndarray.MappedNDArray(F) {
             if (normal_type == .none) {
                 return null;

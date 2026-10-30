@@ -2,6 +2,22 @@
 
 ---
 
+## Render reference data commit policy
+
+For render test gold, commit only the smallest floating-point comparison data needed by the
+Verification and Basic suites under `gold/verif/` and `gold/basic/`. Select
+representative cases and frames; review numerical values and the corresponding
+test before adding or changing a reference. Do not commit digitised gold images
+(`.bmp` or other integer image formats), even when they are generated for
+visual inspection. Do not commit any Full suite gold. Full suite references,
+including shader-pipe references, are generated and kept locally for testing.
+Generated previews and failure diagnostics are local artifacts as well.
+The benchmark statistics in `gold/perf_stats_ref/` follow their separate
+performance reference policy.
+
+Never regenerate existing gold as a side effect of testing. A gold change
+requires a targeted generator run and review of its numerical diff.
+
 ## 1. Quickstart Guide
 
 The recommended testing workflow for Riley is:
@@ -28,12 +44,30 @@ test run. Rendering, setup, or artifact-write errors still abort the current
 sub-suite, but the next sub-suite runs.
 The focused verification suite likewise continues through its remaining
 verification cases and reports failure at the end.
+
+Shader-pipe coverage is registered in `src/tests/test_basic_shaderpipe.zig` and
+`src/tests/test_full_shaderpipe.zig`; the public Cython boundary has focused
+coverage in `src/riley/pytests/test_shaderpipe.py`. The basic suite renders
+retained channels,
+grey-to-emissivity mapping, IR band radiance, RGB/multichannel camera selection,
+and a four-namespace resolver expression. The full suite renders Scene 0 with
+texture plus Lambertian modulation across five element types and compares
+tile-local, full global, and stripe buffers. Its references live only under
+`gold/basic/shaderpipe_*` and `gold/full_shaderpipe/`. Only the selected Basic
+FIMG comparison frames are committed; Full references and BMP previews remain
+local. To regenerate Basic references during development, run
+`zig build gen-gold-basic`; ordinary tests never write gold.
+The standard `gen-gold-full` command generates the Full shader-pipe
+references locally, without touching the committed Basic references.
+Inspect both BMP previews and floating-point FIMG values before accepting
+new references. Existing gold directories must not be regenerated for a
+shader-pipe change.
 The generated one-element bulge/tangent fixtures include deformation frames
 whose in-plane Jacobian becomes zero or changes sign. Normal basic and full
-comparisons cover only valid frames. Run `zig build test-full-badjac` to render
-the excluded frames as warning-only diagnostics. It writes actual, reference,
-and difference BMP/CSV files under `fails/*_full_badjac/`; changes in these
-out-of-domain renders do not fail the test command.
+comparisons cover only valid frames. Run `zig build diag-badjac` to render
+the excluded frames as warning-only diagnostics (rehomed under `dev_support/diag_badjac.zig`).
+It writes actual, reference, and difference BMP/CSV files under `fails/*_full_badjac/`;
+changes in these out-of-domain renders do not fail the test command.
 After reviewing and approving distortion failures, run
 `zig build gen-gold-failed-distortion -Doptimize=ReleaseSafe` to regenerate
 only the distinct distortion/PSF and SSAA/pixel-map gold cases represented
@@ -53,8 +87,15 @@ Riley provides three core repository-packaged test suites intended for routine d
 | :--- | :--- | :--- | :--- | :--- |
 | **Verification Suite** | `zig build test-verif` | [`src/test_verif.zig`](file:///home/lloydf/riley-raster/src/test_verif.zig) | Mathematical validation against analytical Python oracles | `gold/verif/` |
 | **Basic Test Suite** | `zig build test-basic` | [`src/test_basic.zig`](file:///home/lloydf/riley-raster/src/test_basic.zig) | Fast, comprehensive coverage of core rasteriser features | `gold/basic/` |
-| **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | [`src/test_full_badjac.zig`](file:///home/lloydf/riley-raster/src/test_full_badjac.zig) | Warning-only renders and diffs for invalid one-element frames | Existing basic and full-hull gold |
+| **Combined CI Suite** | `zig build test-verif-basic` | [`src/test_verif_basic.zig`](file:///home/lloydf/riley-raster/src/test_verif_basic.zig) | CI fast-path running verif and basic in one build | `gold/verif/`, `gold/basic/` |
+| **Full Test Suite** | `zig build test-full -Doptimize=ReleaseSafe` | [`src/test_full.zig`](file:///home/lloydf/riley-raster/src/test_full.zig) | Factorial coverage of shaders, camera I/O, maths SIMD, PSFs, tiling, threads | `gold/full_*/` |
 | **Python Pytest Suite** | `.venv/bin/pytest src/riley/pytests/` | [`src/riley/pytests/`](file:///home/lloydf/riley-raster/src/riley/pytests) | Python/Cython API, mesh pipeline, Exodus conversion, demo parity | Integrated / `gold/` |
+
+### Diagnostic Tools
+
+| Diagnostic Name | Execution Command | Source Location | Primary Role | Output Artifacts |
+| :--- | :--- | :--- | :--- | :--- |
+| **Bad-Jacobian Diagnostics** | `zig build diag-badjac` | [`src/dev_support/diag_badjac.zig`](file:///home/lloydf/riley-raster/src/dev_support/diag_badjac.zig) | Warning-only diagnostic renders for intentionally invalid/folded frames | `fails/*_full_badjac/` |
 
 ### Regenerating Reference Gold for Core Suites
 
@@ -172,15 +213,15 @@ This runs the Zig input generator followed by `./src/gengold/gengold_verif.py`. 
 The **Basic Suite** is the primary regression suite packaged with the repository, structured into three sub-suites:
 
 ### A. Single Element Deformation & Edge Curvature (`test_oneelem`)
-- **Driver**: [`src/tests/test_gold_oneelem.zig`](file:///home/lloydf/riley-raster/src/tests/test_gold_oneelem.zig)
+- **Driver**: [`src/tests/test_basic_oneelem.zig`](file:///home/lloydf/riley-raster/src/tests/test_basic_oneelem.zig)
 - **Coverage**: 10-frame continuous deformations (rotation, shear, stretch) and midside node bulging across `tri3`, `tri6`, `quad4`, `quad8`, and `quad9`, plus extreme inverted curvature edge cases.
 
 ### B. Multi-Mesh Occlusion & Shader Matrix (`test_twoshapes`)
-- **Driver**: [`src/tests/test_gold_twoshapes.zig`](file:///home/lloydf/riley-raster/src/tests/test_gold_twoshapes.zig)
+- **Driver**: [`src/tests/test_basic_twoshapes.zig`](file:///home/lloydf/riley-raster/src/tests/test_basic_twoshapes.zig)
 - **Coverage**: Multi-body occlusion between a sphere and a cube across 5 element types $\times$ 13 curated mono and RGB shaders.
 
 ### C. Complete Feature Zoo (`test_featurezoo`)
-- **Driver**: [`src/tests/test_gold_featurezoo.zig`](file:///home/lloydf/riley-raster/src/tests/test_gold_featurezoo.zig)
+- **Driver**: [`src/tests/test_basic_featurezoo.zig`](file:///home/lloydf/riley-raster/src/tests/test_basic_featurezoo.zig)
 - **Coverage**: 2 rows $\times$ 3 columns of FE simulation meshes rendered under 6 distinct camera/distortion/PSF configurations across 8 parallel thread and buffer architectures (`tile_local`, `global_subpx_full`, `global_subpx_stripe`, multi-group `in_order` and `offline`).
 
 ---
@@ -189,15 +230,15 @@ The **Basic Suite** is the primary regression suite packaged with the repository
 
 - **Driver**: [`src/test_full.zig`](file:///home/lloydf/riley-raster/src/test_full.zig)
 - **Generator**: [`src/gen_gold_full.zig`](file:///home/lloydf/riley-raster/src/gen_gold_full.zig)
-- **Data Location**: `gold/full_*/` (uncommitted, generated locally)
+- **Data Location**: `gold/full_*/` (generated locally; never committed)
 
-The **Full Test Suite** is an exhaustive factorial regression suite replacing legacy benchmark and monolithic test runs. Gold reference images are generated locally on-demand and verified across 8 specialized sub-suites:
+The **Full Test Suite** is an exhaustive factorial regression suite replacing legacy benchmark and monolithic test runs. Gold reference images are generated locally on demand and verified across the Full sub-suites:
 
 ```bash
-# Generate reference gold for all 8 sub-suites
+# Generate local references for all Full gold sub-suites
 zig build gen-gold-full -Doptimize=ReleaseSafe
 
-# Run all 8 sub-suites against generated gold
+# Run the Full suite against generated gold
 zig build test-full -Doptimize=ReleaseSafe
 ```
 
@@ -205,9 +246,9 @@ zig build test-full -Doptimize=ReleaseSafe
 - **Driver**: [`src/tests/test_full_shader.zig`](file:///home/lloydf/riley-raster/src/tests/test_full_shader.zig)
 - **Scene**: Scene 0 (Sphere + Cylinder, 5 element types: `tri3`, `tri6`, `quad4`, `quad8`, `quad9`)
 - **Coverage** (1,260 cases + 252 `tri3opt` parity checks):
-  - **Nodal Shaders**: Mono & RGB scalar/vector fields, scaling strategies (`none`, `auto` within frames, `auto` over frames), normal lighting types (`none`, interpolated `.avg`, analytic `.exact`).
-  - **Texture Shaders**: Mono & RGB texture sampling across `u8`, `u16`, and `f64` precisions with normal lighting options.
-  - **Procedural Function Shaders**: 9 built-in functions (`constant`, `linear`, `quadratic`, `sinusoidal`, `sinusoidal_approx`, `checker`, `checker_smooth`, `lambertian_normal_z`, `eggbox`) evaluated across 4 coordinate spaces (`parametric`, `uv`, `world_reference`, `world_deformed`) with normal lighting options.
+  - **Nodal Shaders**: Mono & RGB scalar/vector fields and scaling strategies (`none`, `auto` within frames, `auto` over frames). Normal mode is configured on the mesh.
+  - **Texture Shaders**: Mono & RGB texture sampling across `u8`, `u16`, and `f64` precisions. Normal mode is configured on the mesh.
+  - **Procedural Function Shaders**: 9 built-in functions (`constant`, `linear`, `quadratic`, `sinusoidal`, `sinusoidal_approx`, `checker`, `checker_smooth`, `lambertian_normal_z`, `eggbox`) evaluated across 4 coordinate spaces (`parametric`, `uv`, `world_reference`, `world_deformed`). Lambertian lighting uses the mesh normal mode.
   - **`tri3opt` Parity**: Verifies that the fixed-point subpixel snapped fast triangle pipeline matches standard `tri3` floating-point reference renders within tight tolerances.
 
 ### Sub-Suite 2: Full Texture Sampling Suite (`test_full_texture`)
@@ -286,7 +327,7 @@ change the production Newton solver tolerances.
   - **Output Modes (3)**: `.grey` (1 channel luminance/monochrome), `.rgb` (3 channel RGB), `.multifield` (raw pass-through).
   - **File Formats (4)**: `.fimg` (raw floating point), `.csv` (comma-delimited numerical matrices), `.bmp` (8-bit and 16-bit bitmaps), `.tiff` (8-bit and 16-bit tagged images).
   - **Dynamic Range Scaling**: `.none`, `.auto`, explicit fixed ranges (`.fixed = .{ 0.0, 255.0 }`), and fractional percentile boundaries (`.frac = .{ 0.05, 0.95 }`).
-  - **Diagnostic Reporting Modes**: `.off`, `.bench` (timing breakdown metrics), `.full_stats` (per-stage hardware and pipeline statistics).
+  - **Reporting Controls**: `report_perf = .off` or `.bench` (timing and counter capture), independently of `report_console = false` or `true` (routine console output). The suite checks capture validation when timing is off.
   - **Output Verification**: Asserts bit-level equivalence between memory buffer captures, reference gold data, and reloaded on-disk export images.
 
 ### Automated Failure Diagnostics

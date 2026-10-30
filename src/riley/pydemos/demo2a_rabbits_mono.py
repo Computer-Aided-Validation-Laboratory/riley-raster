@@ -77,6 +77,7 @@ def main() -> None:
         roi_cent_world=roi_pos,
         focal_length=default_focal_length,
         sub_sample=4,
+        render_format=riley.RenderFormat.mono,
     )
 
     background_value = 127.5
@@ -84,9 +85,7 @@ def main() -> None:
         parallel=4,
         save_strategy=riley.SaveStrategy.disk,
     )
-    config.image_save_mode = riley.ImageSaveMode.grey
     config.background_value = background_value
-    config.save_scaling = riley.ScaleStrategy.none
 
     # --------------------------------------------------------------------------
     # 5. Render rabbit multi-mesh scene

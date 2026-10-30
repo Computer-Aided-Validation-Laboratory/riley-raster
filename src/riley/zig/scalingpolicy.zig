@@ -109,12 +109,8 @@ pub fn availableThreadBudget(config: rastcfg.ParallelConfig) u16 {
 pub fn resolveRenderParallelPlan(
     workload: ParallelWorkload,
     parallel_config: rastcfg.ParallelConfig,
-    report_mode: rastcfg.ReportMode,
 ) RenderParallelPlan {
-    const thread_budget = if (report_mode == .full_stats)
-        1
-    else
-        availableThreadBudget(parallel_config);
+    const thread_budget = availableThreadBudget(parallel_config);
 
     const independent_jobs = maxIndependentRenderJobs(workload);
 
@@ -137,10 +133,7 @@ pub fn resolveRenderParallelPlan(
     else
         1;
 
-    const max_raster_workers_per_job = if (report_mode == .full_stats)
-        1
-    else
-        workers_per_group;
+    const max_raster_workers_per_job = workers_per_group;
 
     return .{
         .total_threads = thread_budget,
@@ -330,7 +323,7 @@ test "resolveRenderParallelPlan single job serial" {
         .element_count = 100,
         .render_mode = .offline,
     };
-    const resolved = resolveRenderParallelPlan(workload, .serial, .off);
+    const resolved = resolveRenderParallelPlan(workload, .serial);
     try std.testing.expectEqual(@as(u16, 1), resolved.total_threads);
     try std.testing.expectEqual(@as(u16, 1), resolved.render_group_count);
     try std.testing.expectEqual(@as(u16, 1), resolved.max_geom_workers_per_job);
@@ -344,7 +337,7 @@ test "resolveRenderParallelPlan single job 16 threads" {
         .element_count = 100,
         .render_mode = .offline,
     };
-    const resolved = resolveRenderParallelPlan(workload, .{ .threads = 16 }, .off);
+    const resolved = resolveRenderParallelPlan(workload, .{ .threads = 16 });
     try std.testing.expectEqual(@as(u16, 16), resolved.total_threads);
     try std.testing.expectEqual(@as(u16, 1), resolved.render_group_count);
     try std.testing.expectEqual(@as(u16, 1), resolved.max_geom_workers_per_job);
@@ -358,7 +351,7 @@ test "resolveRenderParallelPlan 8 jobs 16 threads offline" {
         .element_count = 100,
         .render_mode = .offline,
     };
-    const resolved = resolveRenderParallelPlan(workload, .{ .threads = 16 }, .off);
+    const resolved = resolveRenderParallelPlan(workload, .{ .threads = 16 });
     try std.testing.expectEqual(@as(u16, 16), resolved.total_threads);
     try std.testing.expectEqual(@as(u16, 8), resolved.render_group_count);
     try std.testing.expectEqual(@as(u16, 1), resolved.max_geom_workers_per_job);
@@ -372,7 +365,7 @@ test "resolveRenderParallelPlan reports largest remainder group" {
         .element_count = 100,
         .render_mode = .offline,
     };
-    const resolved = resolveRenderParallelPlan(workload, .{ .threads = 7 }, .off);
+    const resolved = resolveRenderParallelPlan(workload, .{ .threads = 7 });
     try std.testing.expectEqual(@as(u16, 3), resolved.render_group_count);
     try std.testing.expectEqual(@as(u16, 3), resolved.max_raster_workers_per_job);
 }
@@ -384,7 +377,7 @@ test "resolveRenderParallelPlan 20 jobs 16 threads offline" {
         .element_count = 100,
         .render_mode = .offline,
     };
-    const resolved = resolveRenderParallelPlan(workload, .{ .threads = 16 }, .off);
+    const resolved = resolveRenderParallelPlan(workload, .{ .threads = 16 });
     try std.testing.expectEqual(@as(u16, 16), resolved.total_threads);
     try std.testing.expectEqual(@as(u16, 16), resolved.render_group_count);
     try std.testing.expectEqual(@as(u16, 1), resolved.max_geom_workers_per_job);
@@ -398,7 +391,7 @@ test "resolveRenderParallelPlan in_order limits concurrency to cameras" {
         .element_count = 100,
         .render_mode = .in_order,
     };
-    const resolved = resolveRenderParallelPlan(workload, .{ .threads = 16 }, .off);
+    const resolved = resolveRenderParallelPlan(workload, .{ .threads = 16 });
     try std.testing.expectEqual(@as(u16, 16), resolved.total_threads);
     try std.testing.expectEqual(@as(u16, 2), resolved.render_group_count);
     try std.testing.expectEqual(@as(u16, 8), resolved.max_raster_workers_per_job);
@@ -411,20 +404,7 @@ test "resolveRenderParallelPlan large geometry enables geom workers" {
         .element_count = 1_500_000,
         .render_mode = .offline,
     };
-    const resolved = resolveRenderParallelPlan(workload, .{ .threads = 8 }, .off);
+    const resolved = resolveRenderParallelPlan(workload, .{ .threads = 8 });
     try std.testing.expectEqual(@as(u16, 8), resolved.max_geom_workers_per_job);
     try std.testing.expectEqual(@as(u16, 8), resolved.max_raster_workers_per_job);
-}
-
-test "resolveRenderParallelPlan full_stats forces single raster worker" {
-    const workload = ParallelWorkload{
-        .camera_count = 1,
-        .frame_count = 1,
-        .element_count = 100,
-        .render_mode = .offline,
-    };
-    const resolved = resolveRenderParallelPlan(workload, .{ .threads = 8 }, .full_stats);
-    try std.testing.expectEqual(@as(u16, 1), resolved.total_threads);
-    try std.testing.expectEqual(@as(u16, 1), resolved.render_group_count);
-    try std.testing.expectEqual(@as(u16, 1), resolved.max_raster_workers_per_job);
 }

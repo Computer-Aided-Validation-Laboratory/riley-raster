@@ -7,7 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const std = @import("std");
-const cam = @import("../riley/zig/camera.zig");
+const cam = @import("../riley/zig/cameraprojops.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 const vconst = @import("../dev_support/verifconstants.zig");
 const dist_verif = @import("../verif_5_dist_roundtrip.zig");

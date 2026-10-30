@@ -6,10 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
-const cameraops = @import("../riley/zig/cameraops.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
+const cameraops = @import("../riley/zig/cameraframops.zig");
 const common = @import("../dev_support/tests.zig");
 const gengold_twoshapes = @import("../gengold/gen_gold_twoshapes.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
@@ -25,8 +27,8 @@ const tcfg = @import("../dev_support/testconfig.zig");
 const texops = @import("../riley/zig/textureops.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 const Timestamp = std.Io.Clock.Timestamp;
 const TwoShapesShaderKind = gengold_twoshapes.TwoShapesShaderKind;
 
@@ -39,10 +41,10 @@ pub fn runTwoShapesCaseTest(
     io: std.Io,
     mesh_type: gk.MeshType,
     shader_kind: TwoShapesShaderKind,
-    texture_u8_grey: texops.Tex(u8, 1),
-    texture_u8_rgb: texops.Tex(u8, 3),
-    texture_u16_grey: texops.Tex(u16, 1),
-    texture_f64_grey: texops.Tex(F, 1),
+    texture_u8_grey: texops.TexDataFix(u8, 1),
+    texture_u8_rgb: texops.TexDataFix(u8, 3),
+    texture_u16_grey: texops.TexDataFix(u16, 1),
+    texture_f64_grey: texops.TexDataFix(F, 1),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {
@@ -90,6 +92,7 @@ pub fn runTwoShapesCaseTest(
     );
 
     const camera_input = CameraInput{
+        .render_format = if (shader_kind.isRgb()) .rgb else .mono,
         .pixels_num = pixel_num_twoshapes,
         .pixels_size = pixel_size_twoshapes,
         .pos_world = pos,

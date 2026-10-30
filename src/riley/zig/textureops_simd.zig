@@ -54,7 +54,6 @@ const common = @import("textureops_common.zig");
 pub const TexSamp = common.TexSamp;
 pub const TexSampMode = common.TexSampMode;
 pub const TexSampConfig = common.TexSampConfig;
-pub const Tex = common.Tex;
 
 const catmull_rom_lut = common.catmull_rom_lut;
 const mitchell_netravali_lut = common.mitchell_netravali_lut;

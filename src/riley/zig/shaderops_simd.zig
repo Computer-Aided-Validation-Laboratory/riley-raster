@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
@@ -21,6 +22,7 @@ const maths_simd = @import("maths_simd.zig");
 const texops = @import("textureops.zig");
 const TexSampConfig = texops.TexSampConfig;
 const comm = @import("shaderops_common.zig");
+const meshhit = @import("meshhit.zig");
 const scal = @import("shaderops_scalar.zig");
 const simdops = @import("simdops.zig");
 
@@ -33,7 +35,7 @@ pub const fillNodalPerspScal = scal.fillNodalPerspScal;
 inline fn storeShadeSIMD(
     subpx_vals: []F,
     start_u: usize,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_vals: VecSF,
 ) void {
@@ -56,17 +58,37 @@ inline fn storeShadeSIMD(
     }
 }
 
+pub const ImageSink = struct {
+    ctx: shadertypes.ShadeContext,
+    scratch: *MatSlice(F),
+
+    pub inline fn store(self: *@This(), channel: usize, mask: VecSB, value: VecSF) void {
+        const index = channel * self.scratch.cols_num + self.ctx.scratch_idx;
+        storeShadeSIMD(self.scratch.slice, index, self.ctx, mask, value);
+    }
+};
+
+pub fn VectorSink(comptime C: usize) type {
+    return struct {
+        values: [C]VecSF = undefined,
+
+        pub inline fn store(self: *@This(), channel: usize, mask: VecSB, value: VecSF) void {
+            _ = mask;
+            self.values[channel] = value;
+        }
+    };
+}
+
 pub inline fn fillNodalClipSIMD(
     comptime N: usize,
-    ctx_shade: comm.ShadeContext,
-    shader_buf: *const comm.LocalShaderBuff(N),
+    ctx_shade: shadertypes.ShadeContext,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
     v_weights: [N]VecSF,
-    shader: *const comm.NodalPrepared,
-    spx_image_scratch: *MatSlice(F),
+    shader: *const shadertypes.NodalPrepared,
+    sink: anytype,
 ) void {
     const v_splat_mul: VecSF = @splat(shader.scale_mul);
     const v_splat_add: VecSF = @splat(shader.scale_add);
-    const px_stride = spx_image_scratch.cols_num;
 
     inline for (0..cfg.max_nodal_fields) |ff| {
         if (ff >= @as(usize, ctx_shade.actual_fields)) break;
@@ -79,30 +101,22 @@ pub inline fn fillNodalClipSIMD(
         }
 
         const v_final = v_weighted_sum * v_splat_mul + v_splat_add;
-        const flat_idx = ff * px_stride + ctx_shade.scratch_idx;
-        storeShadeSIMD(
-            spx_image_scratch.slice,
-            flat_idx,
-            ctx_shade,
-            ctx_shade.v_mask_active.?,
-            v_final,
-        );
+        sink.store(ff, ctx_shade.v_mask_active.?, v_final);
     }
 }
 
 pub inline fn fillNodalPerspSIMD(
     comptime N: usize,
-    ctx_shade: comm.ShadeContext,
-    shader_buf: *const comm.LocalShaderBuff(N),
+    ctx_shade: shadertypes.ShadeContext,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
     v_weights: [N]VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    shader: *const comm.NodalPrepared,
-    spx_image_scratch: *MatSlice(F),
+    shader: *const shadertypes.NodalPrepared,
+    sink: anytype,
 ) void {
     const v_splat_mul: VecSF = @splat(shader.scale_mul);
     const v_splat_add: VecSF = @splat(shader.scale_add);
-    const px_stride = spx_image_scratch.cols_num;
 
     inline for (0..cfg.max_nodal_fields) |ff| {
         if (ff >= @as(usize, ctx_shade.actual_fields)) break;
@@ -115,15 +129,7 @@ pub inline fn fillNodalPerspSIMD(
         }
 
         const v_final = (v_weighted_sum * v_subpx_z) * v_splat_mul + v_splat_add;
-        const flat_idx = ff * px_stride + ctx_shade.scratch_idx;
-
-        storeShadeSIMD(
-            spx_image_scratch.slice,
-            flat_idx,
-            ctx_shade,
-            ctx_shade.v_mask_active.?,
-            v_final,
-        );
+        sink.store(ff, ctx_shade.v_mask_active.?, v_final);
     }
 }
 
@@ -150,13 +156,14 @@ pub inline fn fillTexClipSIMD(
     comptime T: type,
     comptime C: usize,
     comptime samp_cfg: TexSampConfig,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.TexPrepared(T, C),
-    spx_image_scratch: *MatSlice(F),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.TexPrepared(T, C),
+    sink: anytype,
 ) void {
+    _ = ctx_shade;
     var v_tex_u: VecSF = @splat(0.0);
     var v_tex_v: VecSF = @splat(0.0);
     inline for (0..N) |nn| {
@@ -164,7 +171,6 @@ pub inline fn fillTexClipSIMD(
         v_tex_v += v_weights[nn] * @as(VecSF, @splat(shader_buf.data[N + nn]));
     }
 
-    const px_stride = spx_image_scratch.cols_num;
     const sampled_vecs = switch (comptime texSimdInterpMode(C, samp_cfg)) {
         .inner => texops.sampLanes(
             C,
@@ -188,15 +194,7 @@ pub inline fn fillTexClipSIMD(
             @as(VecSF, @splat(shader.scale_mul)) +
             @as(VecSF, @splat(shader.scale_add));
 
-        const flat_idx = ch * px_stride + ctx_shade.scratch_idx;
-
-        storeShadeSIMD(
-            spx_image_scratch.slice,
-            flat_idx,
-            ctx_shade,
-            v_mask_active,
-            v_final,
-        );
+        sink.store(ch, v_mask_active, v_final);
     }
 }
 
@@ -205,18 +203,18 @@ pub inline fn fillTexPerspSIMD(
     comptime T: type,
     comptime C: usize,
     comptime samp_cfg: TexSampConfig,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.TexPrepared(T, C),
-    spx_image_scratch: *MatSlice(F),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.TexPrepared(T, C),
+    sink: anytype,
 ) void {
+    _ = ctx_shade;
     const v_splat_mul: VecSF = @splat(shader.scale_mul);
     const v_splat_add: VecSF = @splat(shader.scale_add);
-    const px_stride = spx_image_scratch.cols_num;
 
     var v_tex_u: VecSF = @splat(0.0);
     var v_tex_v: VecSF = @splat(0.0);
@@ -264,14 +262,7 @@ pub inline fn fillTexPerspSIMD(
 
     inline for (0..C) |ch| {
         const v_final = sampled_vecs[ch] * v_splat_mul + v_splat_add;
-        const flat_idx = ch * px_stride + ctx_shade.scratch_idx;
-        storeShadeSIMD(
-            spx_image_scratch.slice,
-            flat_idx,
-            ctx_shade,
-            v_mask_active,
-            v_final,
-        );
+        sink.store(ch, v_mask_active, v_final);
     }
 }
 
@@ -283,11 +274,11 @@ pub const fillFuncClipScal = scal.fillFuncClipScal;
 pub const fillFuncPerspScal = scal.fillFuncPerspScal;
 
 pub inline fn evalFuncShaderGreyNormSIMD(
-    builtin: comm.FuncShaderBuiltin,
-    coord: comm.FuncCoordSIMD,
-    params: comm.FuncShaderParams,
+    builtin: shadertypes.FuncShaderBuiltin,
+    coord: shadertypes.FuncCoordSIMD,
+    params: shadertypes.FuncShaderParams,
 ) VecSF {
-    const eval_coord = comm.applyFuncShaderCoordParamsSIMD(coord, params);
+    const eval_coord = shadertypes.applyFuncShaderCoordParamsSIMD(coord, params);
     const v_value = switch (builtin) {
         .constant => blk: {
             const p = params.settings.constant;
@@ -364,7 +355,7 @@ pub inline fn evalFuncShaderGreyNormSIMD(
                 v_half * @sin(v_freq_pi * eval_coord.coord_0);
             const v_phase_y = v_half +
                 v_half * @sin(v_freq_pi * eval_coord.coord_1);
-            break :blk comm.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
+            break :blk shadertypes.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
         },
         .lambertian_normal_z => blk: {
             const p = params.settings.lambertian_normal_z;
@@ -388,15 +379,15 @@ pub inline fn evalFuncShaderGreyNormSIMD(
                 (v_one + @cos(v_phase_y)) - v_contrast;
         },
     };
-    return comm.applyFuncShaderOutputParamsSIMD(v_value, params);
+    return v_value;
 }
 
 pub inline fn evalFuncShaderRGBNormSIMD(
-    builtin: comm.FuncShaderBuiltin,
-    coord: comm.FuncCoordSIMD,
-    params: comm.FuncShaderParams,
+    builtin: shadertypes.FuncShaderBuiltin,
+    coord: shadertypes.FuncCoordSIMD,
+    params: shadertypes.FuncShaderParams,
 ) [3]VecSF {
-    const eval_coord = comm.applyFuncShaderCoordParamsSIMD(coord, params);
+    const eval_coord = shadertypes.applyFuncShaderCoordParamsSIMD(coord, params);
 
     const v_vals = switch (builtin) {
         .constant => blk: {
@@ -526,11 +517,11 @@ pub inline fn evalFuncShaderRGBNormSIMD(
 
             const v_phase_x = v_half + v_half * @sin(v_freq_pi * eval_coord.coord_0);
             const v_phase_y = v_half + v_half * @sin(v_freq_pi * eval_coord.coord_1);
-            const v_base = comm.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
+            const v_base = shadertypes.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
 
             break :blk .{
                 v_base,
-                comm.cubicSmoothStepSIMD(v_one - v_base),
+                shadertypes.cubicSmoothStepSIMD(v_one - v_base),
                 v_half + v_half * @sin(v_two_pi * v_base),
             };
         },
@@ -572,17 +563,13 @@ pub inline fn evalFuncShaderRGBNormSIMD(
             break :blk .{ v_value, v_value, v_value };
         },
     };
-    return .{
-        comm.applyFuncShaderOutputParamsSIMD(v_vals[0], params),
-        comm.applyFuncShaderOutputParamsSIMD(v_vals[1], params),
-        comm.applyFuncShaderOutputParamsSIMD(v_vals[2], params),
-    };
+    return v_vals;
 }
 
 fn calcNormalLaneVecs(
     comptime N: usize,
     has_normals: bool,
-    shader_buf: *const comm.LocalShaderBuff(N),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
     v_weights: [N]VecSF,
 ) [3]VecSF {
     var normal_vecs = [3]VecSF{ @splat(0.0), @splat(0.0), @splat(0.0) };
@@ -608,19 +595,29 @@ fn calcNormalLaneVecs(
 pub inline fn fillFuncClipSIMD(
     comptime N: usize,
     comptime C: usize,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
     v_xi: VecSF,
     v_eta: VecSF,
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.FuncPrepared,
-    spx_image_scratch: *MatSlice(F),
+    hit: meshhit.MeshHitGeomSIMD,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.FuncPrepared,
+    sink: anytype,
 ) void {
+    _ = ctx_shade;
     var v_coord_0: VecSF = v_xi;
     var v_coord_1: VecSF = v_eta;
 
-    switch (shader.coord_mode) {
+    const shared_coords = switch (shader.coord_mode) {
+        .world_reference => hit.coords_ref,
+        .world_deformed => hit.coords_def,
+        else => null,
+    };
+    if (shared_coords) |coords| {
+        v_coord_0 = coords[0];
+        v_coord_1 = coords[1];
+    } else switch (shader.coord_mode) {
         .uv, .world_reference, .world_deformed => {
             v_coord_0 = @splat(0.0);
             v_coord_1 = @splat(0.0);
@@ -635,17 +632,17 @@ pub inline fn fillFuncClipSIMD(
         .para => {},
     }
 
-    const normal_vecs = calcNormalLaneVecs(
-        N,
-        shader.elem_normals != null,
-        shader_buf,
-        v_weights,
-    );
+    const normal_vecs = if (shader.needs_normal and hit.surf_norm != null)
+        hit.surf_norm.?
+    else
+        calcNormalLaneVecs(
+            N,
+            shader.needs_normal,
+            shader_buf,
+            v_weights,
+        );
 
-    const px_stride = spx_image_scratch.cols_num;
-    const scratch_idx = ctx_shade.scratch_idx;
-
-    const coord = comm.FuncCoordSIMD{
+    const coord = shadertypes.FuncCoordSIMD{
         .coord_0 = v_coord_0,
         .coord_1 = v_coord_1,
         .normal_x = normal_vecs[0],
@@ -654,21 +651,25 @@ pub inline fn fillFuncClipSIMD(
     };
     const params = shader.params;
 
-    if (comptime C == 1) {
+    if (comptime C == 0) {
+        for (shader.channels, 0..) |channel, ch| {
+            const v_eval = evalFuncShaderGreyNormSIMD(
+                channel.builtin,
+                coord,
+                channel.params,
+            );
+            const v_final = v_eval * @as(VecSF, @splat(channel.scale_mul)) +
+                @as(VecSF, @splat(channel.scale_add));
+            sink.store(ch, v_mask_active, v_final);
+        }
+        return;
+    } else if (comptime C == 1) {
         const v_eval = evalFuncShaderGreyNormSIMD(shader.builtin, coord, params);
         const v_mul = @as(VecSF, @splat(shader.scale_mul));
         const v_add = @as(VecSF, @splat(shader.scale_add));
         const v_final = v_eval * v_mul + v_add;
 
-        const flat_idx = scratch_idx;
-
-        storeShadeSIMD(
-            spx_image_scratch.slice,
-            flat_idx,
-            ctx_shade,
-            v_mask_active,
-            v_final,
-        );
+        sink.store(0, v_mask_active, v_final);
         return;
     }
 
@@ -682,36 +683,38 @@ pub inline fn fillFuncClipSIMD(
         const v_mul = @as(VecSF, @splat(shader.scale_mul));
         const v_add = @as(VecSF, @splat(shader.scale_add));
         const v_final = v_vals[ch] * v_mul + v_add;
-        const flat_idx = ch * px_stride + scratch_idx;
-
-        storeShadeSIMD(
-            spx_image_scratch.slice,
-            flat_idx,
-            ctx_shade,
-            v_mask_active,
-            v_final,
-        );
+        sink.store(ch, v_mask_active, v_final);
     }
 }
 
 pub inline fn fillFuncPerspSIMD(
     comptime N: usize,
     comptime C: usize,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
     v_xi: VecSF,
     v_eta: VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.FuncPrepared,
-    spx_image_scratch: *MatSlice(F),
+    hit: meshhit.MeshHitGeomSIMD,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.FuncPrepared,
+    sink: anytype,
 ) void {
+    _ = ctx_shade;
     var v_coord_0: VecSF = v_xi;
     var v_coord_1: VecSF = v_eta;
 
-    switch (shader.coord_mode) {
+    const shared_coords = switch (shader.coord_mode) {
+        .world_reference => hit.coords_ref,
+        .world_deformed => hit.coords_def,
+        else => null,
+    };
+    if (shared_coords) |coords| {
+        v_coord_0 = coords[0];
+        v_coord_1 = coords[1];
+    } else switch (shader.coord_mode) {
         .uv, .world_reference, .world_deformed => {
             v_coord_0 = @splat(0.0);
             v_coord_1 = @splat(0.0);
@@ -731,16 +734,17 @@ pub inline fn fillFuncPerspSIMD(
         .para => {},
     }
 
-    const normal_vecs = calcNormalLaneVecs(
-        N,
-        shader.elem_normals != null,
-        shader_buf,
-        v_weights,
-    );
+    const normal_vecs = if (shader.needs_normal and hit.surf_norm != null)
+        hit.surf_norm.?
+    else
+        calcNormalLaneVecs(
+            N,
+            shader.needs_normal,
+            shader_buf,
+            v_weights,
+        );
 
-    const px_stride = spx_image_scratch.cols_num;
-    const scratch_idx = ctx_shade.scratch_idx;
-    const coord = comm.FuncCoordSIMD{
+    const coord = shadertypes.FuncCoordSIMD{
         .coord_0 = v_coord_0,
         .coord_1 = v_coord_1,
         .normal_x = normal_vecs[0],
@@ -749,20 +753,25 @@ pub inline fn fillFuncPerspSIMD(
     };
     const params = shader.params;
 
-    if (comptime C == 1) {
+    if (comptime C == 0) {
+        for (shader.channels, 0..) |channel, ch| {
+            const v_eval = evalFuncShaderGreyNormSIMD(
+                channel.builtin,
+                coord,
+                channel.params,
+            );
+            const v_final = v_eval * @as(VecSF, @splat(channel.scale_mul)) +
+                @as(VecSF, @splat(channel.scale_add));
+            sink.store(ch, v_mask_active, v_final);
+        }
+        return;
+    } else if (comptime C == 1) {
         const v_eval = evalFuncShaderGreyNormSIMD(shader.builtin, coord, params);
         const v_mul = @as(VecSF, @splat(shader.scale_mul));
         const v_add = @as(VecSF, @splat(shader.scale_add));
         const v_final = v_eval * v_mul + v_add;
 
-        const flat_idx = scratch_idx;
-        storeShadeSIMD(
-            spx_image_scratch.slice,
-            flat_idx,
-            ctx_shade,
-            v_mask_active,
-            v_final,
-        );
+        sink.store(0, v_mask_active, v_final);
         return;
     }
 
@@ -775,13 +784,6 @@ pub inline fn fillFuncPerspSIMD(
         const v_mul = @as(VecSF, @splat(shader.scale_mul));
         const v_add = @as(VecSF, @splat(shader.scale_add));
         const v_final = v_vals[ch] * v_mul + v_add;
-        const flat_idx = ch * px_stride + scratch_idx;
-        storeShadeSIMD(
-            spx_image_scratch.slice,
-            flat_idx,
-            ctx_shade,
-            v_mask_active,
-            v_final,
-        );
+        sink.store(ch, v_mask_active, v_final);
     }
 }

@@ -92,6 +92,15 @@ cdef extern from "riley.h":
         double psf_supp_rad
         uint32_t psf_separable
 
+    ctypedef struct CImageSaveOpts:
+        uint32_t format
+        int file_bits
+        int adc_bits
+        uint32_t scaling_tag
+        double scaling_min
+        double scaling_max
+        uint32_t packing
+
     ctypedef struct CCameraInput:
         CVec2U32 pixels_num
         CVec2F64 pixels_size
@@ -104,14 +113,16 @@ cdef extern from "riley.h":
         CPSF psf
         uint32_t coord_sys
         uint32_t subpixel_center_map
+        uint32_t render_format_tag
+        uint32_t render_channels
+        const CImageSaveOpts* output_files
+        size_t output_files_len
 
     ctypedef struct CFuncShaderParams:
         double coord_scale_0
         double coord_scale_1
         double coord_offset_0
         double coord_offset_1
-        double output_scale
-        double output_offset
         double constant_value
         double constant_value_rgb_0
         double constant_value_rgb_1
@@ -198,7 +209,8 @@ cdef extern from "riley.h":
         uint32_t texture_storage
         uint32_t sample
         uint32_t sample_mode
-        int bits
+        double output_gain
+        double output_offset
         uint32_t scaling_tag
         double scaling_min
         double scaling_max
@@ -207,21 +219,83 @@ cdef extern from "riley.h":
         uint32_t func_shader_builtin
         uint32_t func_shader_coord_mode
         CFuncShaderParams func_shader_params
-        uint32_t normal_type
+
+    ctypedef struct CSlot:
+        uint32_t kind
+        uint32_t index
+
+    ctypedef struct COperation:
+        uint32_t tag
+        CSlot slot
+        double lower
+        double upper
+
+    ctypedef struct CLookup:
+        double first
+        double step
+        const double* values
+        size_t values_len
+
+    ctypedef struct CResolver:
+        uint32_t tag
+        const CSlot* slots
+        size_t slots_len
+        const double* weights
+        size_t weights_len
+        CSlot factor
+        CSlot temperature
+        CSlot emissivity
+        double ambient
+        double gain
+        CLookup lookup
+        const COperation* operations
+        size_t operations_len
+
+    ctypedef struct CPipeStage:
+        uint32_t tag
+        const CShaderInput* shader
+        CSlot source
+        CSlot destination
+        double lower
+        double upper
+        double black
+        double white
+        CSlot source_b
+        CSlot alpha_slot
+        double alpha
+        uint32_t alpha_from_slot
+        double gain
+        double offset
+        uint32_t components
+        CLookup lookup
+
+    ctypedef struct CPipe:
+        const CPipeStage* stages
+        size_t stages_len
+        CResolver resolver
+        const double* constants
+        size_t constants_len
+
+    ctypedef struct CShaderEntry:
+        uint32_t format_tag
+        uint32_t execution_tag
+        CShaderInput direct_shader
+        CPipe pipe
 
     ctypedef struct CMeshInput:
         uint32_t mesh_type
+        uint32_t normal_type
         CArray2DF64 coords
         CArray2DUsize connect
         CArray3DF64 disp
-        CShaderInput shader
+        const CShaderEntry* shaders
+        size_t shaders_len
 
     ctypedef struct CRasterConfig:
         uint32_t render_mode
         uint32_t parallel_mode
         uint16_t thread_count
         uint32_t save_strategy
-        uint32_t image_save_mode
         uint32_t oneroot_hull_mode
         uint32_t oneroot_newton_seed_mode
         uint32_t oneroot_newton_seed_reuse
@@ -243,11 +317,6 @@ cdef extern from "riley.h":
         uint16_t global_subpx_stripe_size_override
         uint16_t raster_halo_px_override
         size_t save_frame_buff_count
-        uint32_t save_format
-        uint32_t save_bits
-        uint32_t save_scaling
-        double save_scaling_min
-        double save_scaling_max
         uint8_t full_stats_save_solver_csv
         uint8_t full_stats_save_iter_map
         uint8_t full_stats_save_xi_map
@@ -260,7 +329,6 @@ cdef extern from "riley.h":
         uint8_t full_stats_save_depth_map
         uint8_t full_stats_save_earlyout_map
         uint8_t full_stats_save_pixel_occupancy_map
-        uint8_t full_stats_save_normals_map
         uint32_t buffer_mode
         const char* output_name_format
         double edge_spacing_px

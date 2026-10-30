@@ -4,6 +4,13 @@
 - All file names should be lower case unless directly exposed as a struct
 - Use io as a suffix for files that contain operations for reading and writing to disk e.g. imageio.zig
 - Use ops as a suffix for collections of utility/data operation functions e.g. meshops.zig
+- Mesh, camera, and shader input/static/prepared declarations live in
+  `meshtypes.zig`, `cameratypes.zig`, and `shadertypes.zig`. Internal code imports
+  declarations from those owners. `riley.zig` reexports user-facing `*Input`
+  types directly.
+- Camera framing and placement helpers live in `cameraframops.zig`; camera
+  preparation and projection live in `cameraprepops.zig` and
+  `cameraprojops*.zig`.
 - Use the kernel suffix for files defining structs containing only comptime known constants and inline functions e.g. geometrykernels
 - If a scalar/simd split is required the top level file name becomes a thin wrapper with no implementation details then all implementation and tests is moved into _common.zig, _simd.zig, _scalar.zig files.
 - File names should not have underscores unless using _common, _simd or _scalar

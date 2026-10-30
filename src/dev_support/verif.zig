@@ -9,7 +9,7 @@
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
-const cam = @import("../riley/zig/camera.zig");
+const cam = @import("../riley/zig/cameraprojops.zig");
 const csvio = @import("../riley/zig/csvio.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const iio = @import("../riley/zig/imageio.zig");
@@ -697,10 +697,10 @@ pub fn writeScalarMapBmp(
         0,
         .{
             .format = .bmp,
-            .bits = 8,
+            .file_bits = 8,
             .scaling = .auto,
-            .channels = 1,
         },
+        1,
     );
 }
 
@@ -736,10 +736,10 @@ pub fn writeBinaryMaskBmp(
         0,
         .{
             .format = .bmp,
-            .bits = 8,
+            .file_bits = 8,
             .scaling = .{ .fixed = .{ 0.0, 1.0 } },
-            .channels = 1,
         },
+        1,
     );
 }
 

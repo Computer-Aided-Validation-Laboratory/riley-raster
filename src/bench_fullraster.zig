@@ -15,7 +15,7 @@ const common = @import("dev_support/benchcommon.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const riley = @import("riley/zig/riley.zig");
-const cam = @import("riley/zig/camera.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const texops = @import("riley/zig/textureops.zig");
@@ -47,9 +47,6 @@ pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
     var base_raster_config = tcfg.getRasterConfig(.bench);
-    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
     base_raster_config.save_strategy = .memory;
     var default_bench_args = benchargs.defaultBenchArgs(
         DEFAULT_OUT_DIR,
@@ -494,7 +491,7 @@ fn loadBenchmarkTexture(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !texops.TexDataFix(T, channels) {
     if (T == u8) {
         return iio.loadImage(
             u8,
@@ -525,11 +522,11 @@ fn loadBenchmarkTexture(
 fn scaleTexture8To16(
     comptime channels: usize,
     allocator: std.mem.Allocator,
-    texture_u8: texops.Tex(u8, channels),
-) !texops.Tex(u16, channels) {
+    texture_u8: texops.TexDataFix(u8, channels),
+) !texops.TexDataFix(u16, channels) {
     defer texture_u8.deinit(allocator);
 
-    var texture_u16 = try texops.Tex(u16, channels).init(
+    var texture_u16 = try texops.TexDataFix(u16, channels).init(
         allocator,
         texture_u8.rows_num,
         texture_u8.cols_num,

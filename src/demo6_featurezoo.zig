@@ -6,12 +6,14 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const shadertypes = @import("riley/zig/shadertypes.zig");
 const std = @import("std");
+const imageops = @import("riley/zig/imageops.zig");
 const demo_common = @import("demo_common.zig");
 
 const buildconfig = @import("riley/zig/buildconfig.zig");
-const camera = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshio = @import("riley/zig/meshio.zig");
@@ -19,12 +21,14 @@ const meshpipe = @import("riley/zig/meshpipeline.zig");
 const riley = @import("riley/zig/riley.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
-const shaderops = @import("riley/zig/shaderops_common.zig");
+const shaderops = @import("riley/zig/shaderops.zig");
+const shaderpipe = @import("riley/zig/shaderpipe.zig");
+const normals = @import("riley/zig/normals.zig");
 const texops = @import("riley/zig/textureops.zig");
 const uvio = @import("riley/zig/uvio.zig");
 
 const F = buildconfig.F;
-const MeshInput = meshpipe.MeshInput;
+const MeshInput = riley.MeshInput;
 
 const MeshShape = struct {
     shape: []const u8,
@@ -58,31 +62,49 @@ fn buildRgbField(
     return field;
 }
 
-fn textureShader(
+fn textureShaderMono(
     comptime T: type,
-    comptime C: usize,
-    texture: texops.Tex(T, C),
+    texture: texops.TexDataFix(T, 1),
     uvs: uvio.UVMap,
     comptime bits: u8,
     linear: bool,
-    normal_type: shaderops.NormalType,
-) shaderops.ShaderInput {
+) riley.ShaderMonoInput {
     const samp_cfg = texops.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
     };
-    const input = shaderops.TexInput(T, C){
+    const input = riley.TexInput(@TypeOf(texture)){
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = samp_cfg,
-        .bits = bits,
+        .output_gain = imageops.getScaleMax(bits),
         .scaling = .auto,
-        .normal_type = normal_type,
     };
-    if (C == 1 and T == u8) return .{ .tex_u8 = input };
-    if (C == 1 and T == u16) return .{ .tex_u16 = input };
-    if (C == 3 and T == u8) return .{ .tex_rgb_u8 = input };
-    if (C == 3 and T == u16) return .{ .tex_rgb_u16 = input };
+    if (T == u8) return .{ .tex_u8 = input };
+    if (T == u16) return .{ .tex_u16 = input };
+    unreachable;
+}
+
+fn textureShaderRGB(
+    comptime T: type,
+    texture: texops.TexDataFix(T, 3),
+    uvs: uvio.UVMap,
+    comptime bits: u8,
+    linear: bool,
+) riley.PipeSourceInput {
+    const samp_cfg = texops.TexSampConfig{
+        .sample = if (linear) .linear else .cubic_catmull_rom,
+        .mode = if (linear) .direct else .lut_lerp,
+    };
+    const input = riley.TexInput(@TypeOf(texture)){
+        .uvs = uvs.array,
+        .tex = texture,
+        .samp_cfg = samp_cfg,
+        .output_gain = imageops.getScaleMax(bits),
+        .scaling = .auto,
+    };
+    if (T == u8) return .{ .tex_rgb_u8 = input };
+    if (T == u16) return .{ .tex_rgb_u16 = input };
     unreachable;
 }
 
@@ -94,7 +116,7 @@ fn loadMesh(
     io: std.Io,
     mesh_shape: MeshShape,
     mesh_index: usize,
-    texture: texops.Tex(T, C),
+    texture: texops.TexDataFix(T, C),
 ) !MeshInput {
     const dir = try std.fmt.allocPrint(
         allocator,
@@ -128,75 +150,122 @@ fn loadMesh(
 
     const temp = sim.field orelse return error.MissingTemperature;
     const disp = sim.disp orelse return error.MissingDisplacement;
-    const normal_type: shaderops.NormalType = switch (mesh_index % 3) {
+    const normal_type: normals.NormalType = switch (mesh_index % 3) {
         0 => .none,
         1 => .exact,
         else => .avg,
     };
 
-    const shader: shaderops.ShaderInput = switch (mesh_index) {
-        0, 2 => textureShader(
-            T,
-            C,
-            texture,
-            uvs,
-            bits,
-            mesh_index != 0,
-            normal_type,
-        ),
-        1, 5 => blk: {
-            const field = if (C == 1)
-                temp
-            else
-                try buildRgbField(allocator, temp, disp);
-            break :blk .{ .nodal = .{
-                .field = field,
-                .bits = bits,
+    const shaders: riley.MeshShaderSetInput = if (C == 3) blk: {
+        const pipe_source: riley.PipeSourceInput = switch (mesh_index) {
+            0, 2 => textureShaderRGB(
+                T,
+                texture,
+                uvs,
+                bits,
+                mesh_index != 0,
+            ),
+            1, 5 => .{ .nodal = .{
+                .field = try buildRgbField(allocator, temp, disp),
+                .output_gain = imageops.getScaleMax(bits),
                 .scaling = .auto,
                 .scale_over = if (mesh_index == 1)
                     .over_frames
                 else
                     .within_frames,
-                .normal_type = normal_type,
-            } };
-        },
-        3, 4 => blk: {
-            const params = if (mesh_index == 3)
-                shaderops.FuncShaderParams{
-                    .coord_scale = .{ 1000.0, 1000.0 },
-                    .settings = .{ .checker = .{} },
-                }
-            else
-                shaderops.FuncShaderParams{
-                    .coord_scale = .{ 1.0, 1.0 },
-                    .settings = .{ .eggbox = .{
-                        .pitch = .{ 0.005, 0.005 },
-                    } },
-                };
-            const input = shaderops.FuncInput{
-                .coord_mode = if (mesh_index == 3)
-                    .world_reference
+            } },
+            3, 4 => blk_fn: {
+                const params = if (mesh_index == 3)
+                    shadertypes.FuncShaderParams{
+                        .coord_scale = .{ 1000.0, 1000.0 },
+                        .settings = .{ .checker = .{} },
+                    }
                 else
-                    .world_deformed,
-                .builtin = if (mesh_index == 3) .checker else .eggbox,
-                .params = params,
-                .bits = bits,
+                    shadertypes.FuncShaderParams{
+                        .coord_scale = .{ 1.0, 1.0 },
+                        .settings = .{ .eggbox = .{
+                            .pitch = .{ 0.005, 0.005 },
+                        } },
+                    };
+                const input = riley.FuncInput{
+                    .coord_mode = if (mesh_index == 3)
+                        .world_reference
+                    else
+                        .world_deformed,
+                    .builtin = if (mesh_index == 3) .checker else .eggbox,
+                    .params = params,
+                    .output_gain = imageops.getScaleMax(bits),
+                    .scaling = .auto,
+                };
+                break :blk_fn .{ .func = .{ .rgb = input } };
+            },
+            else => unreachable,
+        };
+        const stages = try allocator.alloc(riley.ShaderPipeStageInput, 1);
+        stages[0] = shaderops.stageSource(pipe_source);
+        break :blk .{
+            .rgb_pipe = .{
+                .stages = stages,
+                .resolver = .{ .identity = shaderpipe.identity_channels_3 },
+            },
+        };
+    } else blk: {
+        const mono_shader: riley.ShaderMonoInput = switch (mesh_index) {
+            0, 2 => textureShaderMono(
+                T,
+                texture,
+                uvs,
+                bits,
+                mesh_index != 0,
+            ),
+            1, 5 => .{ .nodal = .{
+                .field = temp,
+                .output_gain = imageops.getScaleMax(bits),
                 .scaling = .auto,
-                .normal_type = normal_type,
-            };
-            break :blk if (C == 1)
-                .{ .func = input }
-            else
-                .{ .func_rgb = input };
-        },
-        else => unreachable,
+                .scale_over = if (mesh_index == 1)
+                    .over_frames
+                else
+                    .within_frames,
+            } },
+            3, 4 => blk_fn: {
+                const params = if (mesh_index == 3)
+                    shadertypes.FuncShaderParams{
+                        .coord_scale = .{ 1000.0, 1000.0 },
+                        .settings = .{ .checker = .{} },
+                    }
+                else
+                    shadertypes.FuncShaderParams{
+                        .coord_scale = .{ 1.0, 1.0 },
+                        .settings = .{ .eggbox = .{
+                            .pitch = .{ 0.005, 0.005 },
+                        } },
+                    };
+                const input = riley.FuncInput{
+                    .coord_mode = if (mesh_index == 3)
+                        .world_reference
+                    else
+                        .world_deformed,
+                    .builtin = if (mesh_index == 3) .checker else .eggbox,
+                    .params = params,
+                    .output_gain = imageops.getScaleMax(bits),
+                    .scaling = .auto,
+                };
+                break :blk_fn .{ .func = input };
+            },
+            else => unreachable,
+        };
+        break :blk .{
+            .mono_direct = mono_shader,
+        };
     };
+
     return .{
         .mesh_type = mesh_shape.mesh_type,
+        .normal_type = normal_type,
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = if (mesh_index % 2 == 1) disp else null,
-        .shader = shader,
+        .shaders = shaders,
     };
 }
 
@@ -206,7 +275,7 @@ fn buildScene(
     comptime bits: u8,
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture: texops.Tex(T, C),
+    texture: texops.TexDataFix(T, C),
     options: DemoOptions,
 ) ![]MeshInput {
     var meshes = std.ArrayList(MeshInput).empty;
@@ -239,7 +308,7 @@ fn makeCamera(
     sub_sample: u32,
     distort: camera.DistortParams,
     psf: camera.PointSpreadFunc,
-) camera.CameraInput {
+) riley.CameraInput {
     const target = sceneops.boundsCenterOverMeshes(meshes);
     return .{
         .pixels_num = pixels_num,
@@ -262,7 +331,7 @@ fn makeCamera(
     };
 }
 
-fn buildCameras(meshes: []MeshInput, options: DemoOptions) [6]camera.CameraInput {
+fn buildCameras(meshes: []MeshInput, options: DemoOptions) [6]riley.CameraInput {
     const deg = std.math.degreesToRadians;
     const brown: camera.DistortParams = .{ .brown_con = .{
         .k1 = -0.12,
@@ -351,7 +420,7 @@ fn renderCase(
     // -------------------------------------------------------------------------
     // 1. Build scene meshes and cameras
     // -------------------------------------------------------------------------
-    const texture: texops.Tex(T, C) = if (T == u16 and C == 3) blk: {
+    const texture: texops.TexDataFix(T, C) = if (T == u16 and C == 3) blk: {
         const tex_u8 = try iio.loadImage(
             u8,
             3,
@@ -362,7 +431,7 @@ fn renderCase(
         );
         defer tex_u8.deinit(local_alloc);
 
-        var tex_u16 = try texops.Tex(u16, 3).init(
+        var tex_u16 = try texops.TexDataFix(u16, 3).init(
             local_alloc,
             tex_u8.rows_num,
             tex_u8.cols_num,
@@ -385,7 +454,15 @@ fn renderCase(
 
     const meshes = try buildScene(T, C, bits, local_alloc, io, texture, options);
 
-    const cameras = buildCameras(meshes, options);
+    var cameras = buildCameras(meshes, options);
+    for (&cameras) |*camera_input| {
+        camera_input.render_format = if (C == 1) .mono else .rgb;
+        camera_input.output_files = &.{.{
+            .format = if (bits == 8) .bmp else if (C == 1) .tiff else .ppm,
+            .file_bits = bits,
+            .scaling = .none,
+        }};
+    }
 
     // -------------------------------------------------------------------------
     // 2. Configure raster settings and output directory
@@ -400,16 +477,6 @@ fn renderCase(
         .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
         .background_value = 0.5 * (@as(F, @floatFromInt((@as(u32, 1) << bits) - 1))),
-        .output = .{
-            .image_save_mode = if (C == 1) .grey else .rgb,
-            .image_save_opts = &.{
-                .{
-                    .format = if (bits == 8) .bmp else .tiff,
-                    .bits = bits,
-                    .scaling = .none,
-                },
-            },
-        },
     };
 
     // -------------------------------------------------------------------------
@@ -467,7 +534,7 @@ pub fn main(init: std.process.Init) !void {
         .mesh_shapes = &mesh_shapes,
         .mesh_centers = &mesh_centers,
     };
-    
+
     // -------------------------------------------------------------------------
     // Clean output root and render all combinations
     // -------------------------------------------------------------------------

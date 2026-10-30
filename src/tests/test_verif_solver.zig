@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const gk = @import("../riley/zig/geometrykernels.zig");
-const cam = @import("../riley/zig/camera.zig");
+const cam = @import("../riley/zig/cameraprojops.zig");
 const orch = @import("../dev_support/orchestration.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 const verif = @import("../dev_support/verif.zig");

@@ -6,10 +6,14 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
 const std = @import("std");
+const imageops = @import("../riley/zig/imageops.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
-const cameraops = @import("../riley/zig/cameraops.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
+const cameraops = @import("../riley/zig/cameraframops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const iio = @import("../riley/zig/imageio.zig");
 const meshio = @import("../riley/zig/meshio.zig");
@@ -20,14 +24,16 @@ const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const riley = @import("../riley/zig/riley.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const sceneops = @import("../riley/zig/sceneops.zig");
-const shaderops = @import("../riley/zig/shaderops_common.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
+const shaderpipe = @import("../riley/zig/shaderpipe.zig");
+const normals = @import("../riley/zig/normals.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 const texops = @import("../riley/zig/textureops.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 const pixel_size_zoo = [2]F{ @floatCast(5.3e-6), @floatCast(5.3e-6) };
 const focal_length_zoo: F = @floatCast(50.0e-3);
@@ -106,30 +112,44 @@ fn buildRgbFieldTwoFrames(
     return field;
 }
 
-fn textureShader(
-    comptime T: type,
-    comptime C: usize,
-    texture: texops.Tex(T, C),
+fn textureShaderMono(
+    texture: texops.TexDataFix(u8, 1),
     uvs: uvio.UVMap,
     comptime bits: u8,
     linear: bool,
-    normal_type: shaderops.NormalType,
-) shaderops.ShaderInput {
+) shadertypes.ShaderMonoInput {
     const samp_cfg = texops.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
     };
-    const input = shaderops.TexInput(T, C){
+    const input = shadertypes.TexInput(texops.TexDataFix(u8, 1)){
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = samp_cfg,
-        .bits = bits,
+        .output_gain = imageops.getScaleMax(bits),
         .scaling = .auto,
-        .normal_type = normal_type,
     };
-    if (C == 1 and T == u8) return .{ .tex_u8 = input };
-    if (C == 3 and T == u8) return .{ .tex_rgb_u8 = input };
-    unreachable;
+    return .{ .tex_u8 = input };
+}
+
+fn textureShaderRGB(
+    texture: texops.TexDataFix(u8, 3),
+    uvs: uvio.UVMap,
+    comptime bits: u8,
+    linear: bool,
+) shadertypes.PipeSourceInput {
+    const samp_cfg = texops.TexSampConfig{
+        .sample = if (linear) .linear else .cubic_catmull_rom,
+        .mode = if (linear) .direct else .lut_lerp,
+    };
+    const input = shadertypes.TexInput(texops.TexDataFix(u8, 3)){
+        .uvs = uvs.array,
+        .tex = texture,
+        .samp_cfg = samp_cfg,
+        .output_gain = imageops.getScaleMax(bits),
+        .scaling = .auto,
+    };
+    return .{ .tex_rgb_u8 = input };
 }
 
 fn loadZooMesh(
@@ -140,7 +160,7 @@ fn loadZooMesh(
     io: std.Io,
     case: Case,
     case_index: usize,
-    texture: texops.Tex(T, C),
+    texture: texops.TexDataFix(T, C),
 ) !MeshInput {
     const dir = try std.fmt.allocPrint(
         allocator,
@@ -174,76 +194,118 @@ fn loadZooMesh(
     const temp = try sliceFieldToTwoFrames(allocator, raw_temp);
     const disp = try sliceFieldToTwoFrames(allocator, raw_disp);
 
-    const normal_type: shaderops.NormalType = switch (case_index % 3) {
+    const normal_type: normals.NormalType = switch (case_index % 3) {
         0 => .none,
         1 => .exact,
         else => .avg,
     };
 
-    const shader: shaderops.ShaderInput = switch (case_index) {
-        0, 2 => textureShader(
-            T,
-            C,
-            texture,
-            uvs,
-            bits,
-            case_index != 0,
-            normal_type,
-        ),
-        1, 5 => blk: {
-            const field = if (C == 1)
-                temp
-            else
-                try buildRgbFieldTwoFrames(allocator, temp, disp);
-            break :blk .{ .nodal = .{
-                .field = field,
-                .bits = bits,
+    const shaders: shadertypes.MeshShaderSetInput = if (C == 3) blk: {
+        const pipe_source: shadertypes.PipeSourceInput = switch (case_index) {
+            0, 2 => textureShaderRGB(
+                texture,
+                uvs,
+                bits,
+                case_index != 0,
+            ),
+            1, 5 => .{ .nodal = .{
+                .field = try buildRgbFieldTwoFrames(allocator, temp, disp),
+                .output_gain = imageops.getScaleMax(bits),
                 .scaling = .auto,
                 .scale_over = if (case_index == 1)
                     .over_frames
                 else
                     .within_frames,
-                .normal_type = normal_type,
-            } };
-        },
-        3, 4 => blk: {
-            const params = if (case_index == 3)
-                shaderops.FuncShaderParams{
-                    .coord_scale = .{ 1000.0, 1000.0 },
-                    .settings = .{ .checker = .{} },
-                }
-            else
-                shaderops.FuncShaderParams{
-                    .coord_scale = .{ 1.0, 1.0 },
-                    .settings = .{ .eggbox = .{
-                        .pitch = .{ 0.005, 0.005 },
-                    } },
-                };
-            const input = shaderops.FuncInput{
-                .coord_mode = if (case_index == 3)
-                    .world_reference
+            } },
+            3, 4 => blk_fn: {
+                const params = if (case_index == 3)
+                    shadertypes.FuncShaderParams{
+                        .coord_scale = .{ 1000.0, 1000.0 },
+                        .settings = .{ .checker = .{} },
+                    }
                 else
-                    .world_deformed,
-                .builtin = if (case_index == 3) .checker else .eggbox,
-                .params = params,
-                .bits = bits,
+                    shadertypes.FuncShaderParams{
+                        .coord_scale = .{ 1.0, 1.0 },
+                        .settings = .{ .eggbox = .{
+                            .pitch = .{ 0.005, 0.005 },
+                        } },
+                    };
+                const input = shadertypes.FuncInput{
+                    .coord_mode = if (case_index == 3)
+                        .world_reference
+                    else
+                        .world_deformed,
+                    .builtin = if (case_index == 3) .checker else .eggbox,
+                    .params = params,
+                    .output_gain = imageops.getScaleMax(bits),
+                    .scaling = .auto,
+                };
+                break :blk_fn .{ .func = .{ .rgb = input } };
+            },
+            else => unreachable,
+        };
+        const stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
+        stages[0] = shaderops.stageSource(pipe_source);
+        break :blk .{
+            .rgb_pipe = .{
+                .stages = stages,
+                .resolver = .{ .identity = shaderpipe.identity_channels_3[0..3] },
+            },
+        };
+    } else blk: {
+        const mono_shader: shadertypes.ShaderMonoInput = switch (case_index) {
+            0, 2 => textureShaderMono(
+                texture,
+                uvs,
+                bits,
+                case_index != 0,
+            ),
+            1, 5 => .{ .nodal = .{
+                .field = temp,
+                .output_gain = imageops.getScaleMax(bits),
                 .scaling = .auto,
-                .normal_type = normal_type,
-            };
-            break :blk if (C == 1)
-                .{ .func = input }
-            else
-                .{ .func_rgb = input };
-        },
-        else => unreachable,
+                .scale_over = if (case_index == 1)
+                    .over_frames
+                else
+                    .within_frames,
+            } },
+            3, 4 => blk_fn: {
+                const params = if (case_index == 3)
+                    shadertypes.FuncShaderParams{
+                        .coord_scale = .{ 1000.0, 1000.0 },
+                        .settings = .{ .checker = .{} },
+                    }
+                else
+                    shadertypes.FuncShaderParams{
+                        .coord_scale = .{ 1.0, 1.0 },
+                        .settings = .{ .eggbox = .{
+                            .pitch = .{ 0.005, 0.005 },
+                        } },
+                    };
+                const input = shadertypes.FuncInput{
+                    .coord_mode = if (case_index == 3)
+                        .world_reference
+                    else
+                        .world_deformed,
+                    .builtin = if (case_index == 3) .checker else .eggbox,
+                    .params = params,
+                    .output_gain = imageops.getScaleMax(bits),
+                    .scaling = .auto,
+                };
+                break :blk_fn .{ .func = input };
+            },
+            else => unreachable,
+        };
+        break :blk .{ .mono_direct = mono_shader };
     };
 
     return .{
         .mesh_type = case.mesh_type,
+        .normal_type = normal_type,
         .coords = sim.coords,
         .connect = sim.connect,
         .disp = if (case_index % 2 == 1) disp else null,
-        .shader = shader,
+        .shaders = shaders,
     };
 }
 
@@ -253,7 +315,7 @@ pub fn buildZooScene(
     comptime bits: u8,
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture: texops.Tex(T, C),
+    texture: texops.TexDataFix(T, C),
 ) ![]MeshInput {
     var meshes = std.ArrayList(MeshInput).empty;
     var groups = std.ArrayList(sceneops.MeshGroup).empty;
@@ -284,7 +346,7 @@ fn makeZooCamera(
     sub_sample: u32,
     distort: camera.DistortParams,
     psf: camera.PointSpreadFunc,
-) camera.CameraInput {
+) cameratypes.CameraInput {
     const target = sceneops.boundsCenterOverMeshes(meshes);
     return .{
         .pixels_num = pixels_num,
@@ -307,7 +369,7 @@ fn makeZooCamera(
     };
 }
 
-pub fn buildAllZooCameras(meshes: []MeshInput) [6]camera.CameraInput {
+pub fn buildAllZooCameras(meshes: []MeshInput) [6]cameratypes.CameraInput {
     const deg = std.math.degreesToRadians;
     const brown: camera.DistortParams = .{ .brown_con = .{
         .k1 = -0.12,
@@ -386,7 +448,7 @@ pub fn buildAllZooCameras(meshes: []MeshInput) [6]camera.CameraInput {
 pub fn generateZooMonoGold(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_grey: texops.Tex(u8, 1),
+    texture_grey: texops.TexDataFix(u8, 1),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {
@@ -429,7 +491,7 @@ pub fn generateZooMonoGold(
 pub fn generateZooRgbGold(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_rgb: texops.Tex(u8, 3),
+    texture_rgb: texops.TexDataFix(u8, 3),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {
@@ -439,7 +501,8 @@ pub fn generateZooRgbGold(
 
     const meshes = try buildZooScene(u8, 3, 8, aa, io, texture_rgb);
     const all_cameras = buildAllZooCameras(meshes);
-    const rgb_cameras = [_]CameraInput{ all_cameras[0], all_cameras[1] };
+    var rgb_cameras = [_]CameraInput{ all_cameras[0], all_cameras[1] };
+    for (&rgb_cameras) |*camera_input| camera_input.render_format = .rgb;
 
     const gold_dir = try std.fmt.allocPrint(
         aa,
@@ -453,18 +516,6 @@ pub fn generateZooRgbGold(
     var run_config = config;
     run_config.save_strategy = .disk;
     run_config.background_value = 127.5;
-
-    const rgb_save_opts = try aa.alloc(
-        iio.ImageSaveOpts,
-        config.output.image_save_opts.len,
-    );
-    for (config.output.image_save_opts, 0..) |opt, ii| {
-        rgb_save_opts[ii] = opt;
-        if (opt.format == .bmp or opt.format == .ppm) {
-            rgb_save_opts[ii].channels = 3;
-        }
-    }
-    run_config.output.image_save_opts = rgb_save_opts;
 
     const result = try riley.raster(
         aa,
@@ -485,8 +536,8 @@ pub fn generateZooRgbGold(
 pub fn generateAllFeatureZooCases(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_grey: texops.Tex(u8, 1),
-    texture_rgb: texops.Tex(u8, 3),
+    texture_grey: texops.TexDataFix(u8, 1),
+    texture_rgb: texops.TexDataFix(u8, 3),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {
@@ -519,10 +570,6 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     std.debug.print("Generating Basic Suite: featurezoo cases...\n", .{});
     try generateAllFeatureZooCases(

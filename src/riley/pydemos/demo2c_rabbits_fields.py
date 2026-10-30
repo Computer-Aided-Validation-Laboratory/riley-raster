@@ -49,6 +49,7 @@ def main() -> None:
         checker_squares_per_axis,
         gap=(0.18, 0.28, 0.0),
         max_divs=(3, 2, 1),
+        render_as_multifield=True,
     )
 
     # --------------------------------------------------------------------------
@@ -77,6 +78,8 @@ def main() -> None:
         roi_cent_world=roi_pos,
         focal_length=default_focal_length,
         sub_sample=4,
+        render_format=riley.RenderFormat.multifield,
+        render_channels=channels,
     )
 
     background_value = 127.5
@@ -84,9 +87,7 @@ def main() -> None:
         parallel=4,
         save_strategy=riley.SaveStrategy.disk,
     )
-    config.image_save_mode = riley.ImageSaveMode.multifield
     config.background_value = background_value
-    config.save_scaling = riley.ScaleStrategy.none
 
     # --------------------------------------------------------------------------
     # 5. Render rabbit multi-mesh scene

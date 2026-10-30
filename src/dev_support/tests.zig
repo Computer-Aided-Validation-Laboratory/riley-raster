@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
 const std = @import("std");
 const Timestamp = std.Io.Clock.Timestamp;
 
@@ -14,13 +15,13 @@ const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
 const MatSlice = @import("../riley/zig/matslice.zig").MatSlice;
 
 const meshio = @import("../riley/zig/meshio.zig");
-const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
-const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
+const CameraPrepared = @import("../riley/zig/cameraprojops.zig").CameraPrepared;
+const CameraInput = @import("../riley/zig/cameraprojops.zig").CameraInput;
 
 const gk = @import("../riley/zig/geometrykernels.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const MeshType = gk.MeshType;
-const MeshInput = mo.MeshInput;
+const MeshInput = meshtypes.MeshInput;
 
 const riley = @import("../riley/zig/riley.zig");
 const iio = @import("../riley/zig/imageio.zig");
@@ -399,14 +400,14 @@ fn saveResultToFails(
                     out_dir,
                     name,
                     &mat,
-                    .{ .format = .csv, .bits = null, .scaling = .none },
+                    .{ .format = .csv, .file_bits = null, .scaling = .none },
                 );
                 try iio.saveMatAsImage(
                     io,
                     out_dir,
                     name,
                     &mat,
-                    .{ .format = .bmp, .bits = 8, .scaling = .auto },
+                    .{ .format = .bmp, .file_bits = 8, .scaling = .auto },
                 );
             }
         }
@@ -726,19 +727,16 @@ fn saveImageArtifacts(
     defer allocator.free(csv_name);
     try saveImageCSV(io, dir, csv_name, image);
 
-    const bmp_name = try std.fmt.allocPrint(allocator, "{s}.bmp", .{base_name});
-    defer allocator.free(bmp_name);
     var bmp_image = try makeBMPImageArray(allocator, image);
     defer {
         allocator.free(bmp_image.slice);
         bmp_image.deinit(allocator);
     }
-    try iio.saveBMP(io, dir, bmp_name, &bmp_image, 0, .{
+    try iio.saveImage(io, dir, base_name, &bmp_image, 0, .{
         .format = .bmp,
-        .bits = 8,
+        .file_bits = 8,
         .scaling = .auto,
-        .channels = bmp_image.dims[0],
-    });
+    }, bmp_image.dims[0]);
 }
 
 pub fn saveComparisonArtifactsFromResult(
@@ -863,7 +861,7 @@ pub fn runSingleMeshSuiteDriver(
     test_type: []const u8,
     mesh_type: gk.MeshType,
     fov_scale: F,
-    texture: texops.Tex(u8, 1),
+    texture: texops.TexDataFix(u8, 1),
     pixel_num: [2]u32,
     samp_cfgs: []const texops.TextureSampleConfig,
     gold_dir_root: []const u8,
@@ -910,21 +908,17 @@ pub fn runSingleMeshSuiteDriver(
                 .coords = prepared.sim_data.coords,
                 .connect = prepared.sim_data.connect,
                 .disp = if (add_disp) prepared.sim_data.field else null,
-                .shader = .{
+                .shaders = .{ .mono_direct = .{
                     .nodal = .{
                         .field = prepared.sim_data.field.?,
-                        .bits = 8,
                     },
-                },
+                } },
             };
 
             var run_config = config;
             if (mode == .test_gold) {
                 run_config.save_strategy = .memory;
-                run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-                    .{ .format = .csv, .bits = null, .scaling = .none },
-                };
-                run_config.report = .{ .mode = if (report_perf) .full_stats else .off };
+                run_config.report_perf = if (report_perf) .bench else .off;
             } else {
                 var out_dir = try orch.openDirEnsured(io, nodal_dir);
                 out_dir.close(io);
@@ -1058,22 +1052,19 @@ pub fn runSingleMeshSuiteDriver(
                     .coords = prepared.sim_data.coords,
                     .connect = prepared.sim_data.connect,
                     .disp = if (add_disp) prepared.sim_data.field else null,
-                    .shader = .{
+                    .shaders = .{ .mono_direct = .{
                         .tex_u8 = .{
                             .uvs = prepared.uvs.array,
                             .tex = texture,
                             .samp_cfg = sc,
                         },
-                    },
+                    } },
                 };
 
                 var run_config = config;
                 if (mode == .test_gold) {
                     run_config.save_strategy = .memory;
-                    run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-                        .{ .format = .csv, .bits = null, .scaling = .none },
-                    };
-                    run_config.report = .{ .mode = if (report_perf) .full_stats else .off };
+                    run_config.report_perf = if (report_perf) .bench else .off;
                 } else {
                     var out_dir = try orch.openDirEnsured(io, tex_dir);
                     out_dir.close(io);
@@ -1191,7 +1182,7 @@ pub fn runTestInternal(
     test_type: []const u8,
     mesh_type: MeshType,
     fov_scale: F,
-    texture: texops.Tex(u8, 1),
+    texture: texops.TexDataFix(u8, 1),
     pixel_num: [2]u32,
     samp_cfgs: []const texops.TextureSampleConfig,
     gold_dir_root: []const u8,
@@ -1227,7 +1218,7 @@ pub fn runMeshTypesSuite(
     test_types: []const []const u8,
     mesh_types: []const gk.MeshType,
     fov_scale: F,
-    texture: texops.Tex(u8, 1),
+    texture: texops.TexDataFix(u8, 1),
     pixel_num: [2]u32,
     samp_cfgs: []const texops.TextureSampleConfig,
     gold_dir_root: []const u8,
@@ -1314,9 +1305,6 @@ pub fn runMultimeshTestExt(
         var config = tcfg.getRasterConfig(.testing);
         config.advanced.raster.buffer_mode = buffer_mode;
         config.save_strategy = .memory;
-        config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none },
-        };
 
         const camera_input = CameraInput{
             .pixels_num = camera.pixels_num,
@@ -1471,9 +1459,6 @@ pub fn runMultimeshMixedTestExt(
     var config = tcfg.getRasterConfig(.testing);
     config.advanced.raster.buffer_mode = buffer_mode;
     config.save_strategy = .memory;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .csv, .bits = null, .scaling = .none },
-    };
     const camera_input = CameraInput{
         .pixels_num = camera.pixels_num,
         .pixels_size = camera.pixels_size,
@@ -1606,9 +1591,6 @@ pub fn runMultimeshMixedRGBTestExt(
     var config_rgb = tcfg.getRasterConfig(.testing);
     config_rgb.advanced.raster.buffer_mode = buffer_mode;
     config_rgb.save_strategy = .memory;
-    config_rgb.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
-    };
 
     const camera_input = CameraInput{
         .pixels_num = camera.pixels_num,
@@ -1746,14 +1728,13 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shader = .{
+        .shaders = .{ .mono_direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
                 .builtin = .constant,
-                .normal_type = .none,
             },
-        },
+        } },
     };
 
     var run_config = config;
@@ -1762,9 +1743,6 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
     }
     if (mode == .test_gold) {
         run_config.save_strategy = .memory;
-        run_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none },
-        };
     } else {
         var out_dir = try orch.openDirEnsured(io, gold_dir);
         out_dir.close(io);

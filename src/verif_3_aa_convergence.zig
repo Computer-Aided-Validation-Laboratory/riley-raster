@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameratypes = @import("riley/zig/cameratypes.zig");
+const meshtypes = @import("riley/zig/meshtypes.zig");
 const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
@@ -21,14 +23,14 @@ const iio = @import("riley/zig/imageio.zig");
 const imageops = @import("riley/zig/imageops.zig");
 const matslice = @import("riley/zig/matslice.zig");
 const ndarray = @import("riley/zig/ndarray.zig");
-const camera_mod = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera_mod = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
 
-const MeshInput = mo.MeshInput;
+const MeshInput = meshtypes.MeshInput;
 const CameraPrepared = camera_mod.CameraPrepared;
-const CameraInput = camera_mod.CameraInput;
+const CameraInput = cameratypes.CameraInput;
 const NDArrayOps = ndarray.NDArrayOps(F);
 const MatSlice = matslice.MatSlice(F);
 
@@ -160,31 +162,29 @@ pub fn main(init: std.process.Init) !void {
                         .coords = try orch.copyCoords(ra, sim_data.coords),
                         .connect = sim_data.connect,
                         .disp = null,
-                        .shader = undefined,
+                        .shaders = .{},
                     };
 
                     if (std.mem.eql(u8, shader_name, "funcconst")) {
-                        mesh_input.shader = .{ .func = .{
+                        mesh_input.shaders = .{ .mono_direct = .{ .func = .{
                             .uvs = uv_map.array,
                             .coord_mode = .uv,
                             .builtin = .constant,
                             .params = .{},
-                            .bits = 8,
+                            .output_gain = 255.0,
                             .scaling = .auto,
-                            .normal_type = .none,
-                        } };
+                        } } };
                     } else {
-                        mesh_input.shader = .{ .tex_u8 = .{
+                        mesh_input.shaders = .{ .mono_direct = .{ .tex_u8 = .{
                             .uvs = uv_map.array,
                             .tex = texture,
                             .samp_cfg = .{
                                 .sample = .cubic_catmull_rom,
                                 .mode = .lut_lerp,
                             },
-                            .bits = 8,
+
                             .scaling = .none,
-                            .normal_type = .none,
-                        } };
+                        } } };
                     }
 
                     const mesh_inputs = &[_]MeshInput{mesh_input};
@@ -229,7 +229,7 @@ pub fn main(init: std.process.Init) !void {
                     };
                     const config = rastcfg.RasterConfig{
                         .save_strategy = .memory,
-                        .report = .{ .mode = .off },
+                        .report_perf = .off,
                     };
 
                     const images = try riley.raster(
@@ -277,7 +277,7 @@ pub fn main(init: std.process.Init) !void {
                             &ssaa_mat,
                             .{
                                 .format = .bmp,
-                                .bits = 8,
+                                .file_bits = 8,
                                 .scaling = .auto,
                             },
                         );
@@ -300,7 +300,7 @@ pub fn main(init: std.process.Init) !void {
                             &diff_mat,
                             .{
                                 .format = .bmp,
-                                .bits = 8,
+                                .file_bits = 8,
                                 .scaling = .auto,
                             },
                         );

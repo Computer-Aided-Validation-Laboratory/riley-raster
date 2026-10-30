@@ -29,7 +29,13 @@ def test_distorted_triangle_interior_survives_tile_culling(
         params=riley.FuncShaderParams(constant_value=1.0),
         scaling_type=riley.ScaleStrategy.none,
     )
-    mesh = riley.create_mesh(convention, riley.MeshType.tri3, coords, connect, shader)
+    mesh = riley.create_mesh(
+        convention,
+        riley.MeshType.tri3,
+        coords,
+        connect,
+        riley.MeshShaderSet(direct=shader),
+    )
     camera = riley.Camera(
         pixels_num=(200, 200),
         pixels_size=(0.01, 0.01),

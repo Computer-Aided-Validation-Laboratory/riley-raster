@@ -7,15 +7,15 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const std = @import("std");
-const buildconfig = @import("riley/zig/buildconfig.zig");
-const dist_gen = @import("gengold/gen_gold_full_dist_psf.zig");
-const ssaa_gen = @import("gengold/gen_gold_full_ssaa_pxmap.zig");
-const dist_case = @import("tests/fullcase_dist_psf.zig");
-const ssaa_case = @import("tests/fullcase_ssaa_pxmap.zig");
-const fullfixtures = @import("dev_support/fullfixtures.zig");
-const iio = @import("riley/zig/imageio.zig");
-const policy = @import("dev_support/testpolicy.zig");
-const tcfg = @import("dev_support/testconfig.zig");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const dist_gen = @import("gen_gold_full_dist_psf.zig");
+const ssaa_gen = @import("gen_gold_full_ssaa_pxmap.zig");
+const dist_case = @import("../tests/fullcase_dist_psf.zig");
+const ssaa_case = @import("../tests/fullcase_ssaa_pxmap.zig");
+const fullfixtures = @import("../dev_support/fullfixtures.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const policy = @import("../dev_support/testpolicy.zig");
+const tcfg = @import("../dev_support/testconfig.zig");
 
 fn exists(io: std.Io, path: []const u8) !bool {
     std.Io.Dir.cwd().access(io, path, .{}) catch |err| switch (err) {
@@ -25,9 +25,8 @@ fn exists(io: std.Io, path: []const u8) !bool {
     return true;
 }
 
-pub fn main(init: std.process.Init) !void {
-    const io = init.io;
-    var arena = std.heap.ArenaAllocator.init(init.gpa);
+pub fn generateFailedDistortion(allocator: std.mem.Allocator, io: std.Io) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
@@ -35,10 +34,6 @@ pub fn main(init: std.process.Init) !void {
     const simd = if (buildconfig.config.simd == .on) "simdon" else "simdoff";
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.output.image_save_opts = &.{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     var prep = try fullfixtures.prepareScene1(arena_alloc, io);
     defer prep.deinit(arena_alloc);

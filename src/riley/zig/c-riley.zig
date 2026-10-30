@@ -6,13 +6,16 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameratypes = @import("cameratypes.zig");
+const meshtypes = @import("meshtypes.zig");
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
-const cam = @import("camera.zig");
+const cam = @import("cameraprojops.zig");
 const cameraio = @import("cameraio.zig");
-const cameraops = @import("cameraops.zig");
+const cameraops = @import("cameraframops.zig");
 const gk = @import("geometrykernels.zig");
 const iio = @import("imageio.zig");
 const imageops = @import("imageops.zig");
@@ -24,6 +27,8 @@ const rotation = @import("rotation.zig");
 const rastcfg = @import("rasterconfig.zig");
 const sceneops = @import("sceneops.zig");
 const shaderops = @import("shaderops.zig");
+const normals = @import("normals.zig");
+const shaderpipe = @import("shaderpipe.zig");
 const texops = @import("textureops.zig");
 const vec = @import("vecstack.zig");
 
@@ -51,8 +56,8 @@ const error_buf_len: usize = 512;
 const default_image_save_opts = [_]iio.ImageSaveOpts{
     .{
         .format = .bmp,
-        .bits = 8,
-        .scaling = .auto,
+        .file_bits = 8,
+        .scaling = .none,
     },
 };
 
@@ -155,6 +160,16 @@ pub const CPSF = extern struct {
     psf_separable: u32,
 };
 
+pub const CImageSaveOpts = extern struct {
+    format: u32,
+    file_bits: c_int,
+    adc_bits: c_int,
+    scaling_tag: u32,
+    scaling_min: F,
+    scaling_max: F,
+    packing: u32,
+};
+
 pub const CCameraInput = extern struct {
     pixels_num: CVec2U32,
     pixels_size: CVec2F64,
@@ -167,6 +182,10 @@ pub const CCameraInput = extern struct {
     psf: CPSF,
     coord_sys: u32,
     subpixel_center_map: u32,
+    render_format_tag: u32,
+    render_channels: u32,
+    output_files: [*c]const CImageSaveOpts,
+    output_files_len: usize,
 };
 
 pub const CFuncShaderParams = extern struct {
@@ -174,8 +193,6 @@ pub const CFuncShaderParams = extern struct {
     coord_scale_1: F,
     coord_offset_0: F,
     coord_offset_1: F,
-    output_scale: F,
-    output_offset: F,
     constant_value: F,
     constant_value_rgb_0: F,
     constant_value_rgb_1: F,
@@ -262,7 +279,8 @@ pub const CShaderInput = extern struct {
     texture_storage: u32,
     sample: u32,
     sample_mode: u32,
-    bits: c_int,
+    output_gain: F,
+    output_offset: F,
     scaling_tag: u32,
     scaling_min: F,
     scaling_max: F,
@@ -271,15 +289,77 @@ pub const CShaderInput = extern struct {
     func_shader_builtin: u32,
     func_shader_coord_mode: u32,
     func_shader_params: CFuncShaderParams,
-    normal_type: u32,
+};
+
+pub const CSlot = extern struct { kind: u32, index: u32 };
+pub const COperation = extern struct {
+    tag: u32,
+    slot: CSlot,
+    lower: F,
+    upper: F,
+};
+pub const CLookup = extern struct {
+    first: F,
+    step: F,
+    values: [*c]const F,
+    values_len: usize,
+};
+pub const CResolver = extern struct {
+    tag: u32,
+    slots: [*c]const CSlot,
+    slots_len: usize,
+    weights: [*c]const F,
+    weights_len: usize,
+    factor: CSlot,
+    temperature: CSlot,
+    emissivity: CSlot,
+    ambient: F,
+    gain: F,
+    lookup: CLookup,
+    operations: [*c]const COperation,
+    operations_len: usize,
+};
+pub const CPipeStage = extern struct {
+    tag: u32,
+    shader: [*c]const CShaderInput,
+    source: CSlot,
+    destination: CSlot,
+    lower: F,
+    upper: F,
+    black: F,
+    white: F,
+    source_b: CSlot,
+    alpha_slot: CSlot,
+    alpha: F,
+    alpha_from_slot: u32,
+    gain: F,
+    offset: F,
+    components: u32,
+    lookup: CLookup,
+};
+pub const CPipe = extern struct {
+    stages: [*c]const CPipeStage,
+    stages_len: usize,
+    resolver: CResolver,
+    constants: [*c]const F,
+    constants_len: usize,
+};
+
+pub const CShaderEntry = extern struct {
+    format_tag: u32,
+    execution_tag: u32,
+    direct_shader: CShaderInput,
+    pipe: CPipe,
 };
 
 pub const CMeshInput = extern struct {
     mesh_type: u32,
+    normal_type: u32,
     coords: CArray2DF64,
     connect: CArray2DUsize,
     disp: CArray3DF64,
-    shader: CShaderInput,
+    shaders: [*c]const CShaderEntry,
+    shaders_len: usize,
 };
 
 pub const CRasterConfig = extern struct {
@@ -287,7 +367,6 @@ pub const CRasterConfig = extern struct {
     parallel_mode: u32,
     thread_count: u16,
     save_strategy: u32,
-    image_save_mode: u32,
     oneroot_hull_mode: u32,
     oneroot_newton_seed_mode: u32,
     oneroot_newton_seed_reuse: u32,
@@ -309,11 +388,6 @@ pub const CRasterConfig = extern struct {
     global_subpx_stripe_size_override: u16,
     raster_halo_px_override: u16,
     save_frame_buff_count: usize,
-    save_format: u32,
-    save_bits: u32,
-    save_scaling: u32,
-    save_scaling_min: F,
-    save_scaling_max: F,
     full_stats_save_solver_csv: u8,
     full_stats_save_iter_map: u8,
     full_stats_save_xi_map: u8,
@@ -326,25 +400,20 @@ pub const CRasterConfig = extern struct {
     full_stats_save_depth_map: u8,
     full_stats_save_earlyout_map: u8,
     full_stats_save_pixel_occupancy_map: u8,
-    full_stats_save_normals_map: u8,
     buffer_mode: u32,
     output_name_format: ?[*:0]const u8,
     edge_spacing_px: F,
 };
 
-const MeshInputBuilt = struct {
-    mesh_input: meshpipe.MeshInput,
-    disp_array: ?ndarray.NDArray(F) = null,
+const ShaderDirectBuilt = struct {
+    shader: shadertypes.PipeSourceInput,
     uvs_array: ?ndarray.NDArray(F) = null,
     tex_array_u8: ?ndarray.NDArray(u8) = null,
     tex_array_u16: ?ndarray.NDArray(u16) = null,
     tex_array_f: ?ndarray.NDArray(F) = null,
     nodal_field_array: ?ndarray.NDArray(F) = null,
 
-    fn deinit(self: *MeshInputBuilt, allocator: std.mem.Allocator) void {
-        if (self.disp_array) |*disp_array| {
-            disp_array.deinit(allocator);
-        }
+    fn deinit(self: *ShaderDirectBuilt, allocator: std.mem.Allocator) void {
         if (self.uvs_array) |*uvs_array| {
             uvs_array.deinit(allocator);
         }
@@ -360,6 +429,30 @@ const MeshInputBuilt = struct {
         if (self.nodal_field_array) |*nodal_field_array| {
             nodal_field_array.deinit(allocator);
         }
+    }
+};
+
+const MeshInputBuilt = struct {
+    mesh_input: meshtypes.MeshInput,
+    disp_array: ?ndarray.NDArray(F) = null,
+    direct_shaders: []ShaderDirectBuilt = &.{},
+    pipe_sources: []ShaderDirectBuilt = &.{},
+    pipe_stages: [][]shadertypes.ShaderPipeStageInput = &.{},
+    pipe_inputs: []shadertypes.ShaderPipeInput = &.{},
+
+    fn deinit(self: *MeshInputBuilt, allocator: std.mem.Allocator) void {
+        if (self.disp_array) |*disp_array| {
+            disp_array.deinit(allocator);
+        }
+        for (self.direct_shaders) |*direct_shader| {
+            direct_shader.deinit(allocator);
+        }
+        if (self.direct_shaders.len > 0) allocator.free(self.direct_shaders);
+        for (self.pipe_sources) |*source| source.deinit(allocator);
+        if (self.pipe_sources.len > 0) allocator.free(self.pipe_sources);
+        for (self.pipe_stages) |stages| allocator.free(stages);
+        if (self.pipe_stages.len > 0) allocator.free(self.pipe_stages);
+        if (self.pipe_inputs.len > 0) allocator.free(self.pipe_inputs);
     }
 };
 
@@ -499,22 +592,10 @@ fn saveStrategyFromC(save_strategy: u32) !riley.SaveStrategy {
     };
 }
 
-fn imageSaveModeFromC(image_save_mode: u32) !riley.ImageSaveMode {
-    return switch (image_save_mode) {
-        @intFromEnum(riley.ImageSaveMode.grey) => .grey,
-        @intFromEnum(riley.ImageSaveMode.rgb) => .rgb,
-        @intFromEnum(riley.ImageSaveMode.multifield) => .multifield,
-        @intFromEnum(riley.ImageSaveMode.rgb_to_grey) => .rgb_to_grey,
-        @intFromEnum(riley.ImageSaveMode.grey_to_rgb) => .grey_to_rgb,
-        else => error.InvalidImageMode,
-    };
-}
-
 fn reportModeFromC(report_mode: u32) !riley.ReportMode {
     return switch (report_mode) {
-        @intFromEnum(riley.ReportMode.off) => .off,
-        @intFromEnum(riley.ReportMode.bench) => .bench,
-        @intFromEnum(riley.ReportMode.full_stats) => .full_stats,
+        0 => .off,
+        1, 2 => .bench,
         else => error.InvalidReportMode,
     };
 }
@@ -528,10 +609,10 @@ fn bufferModeFromC(buffer_mode: u32) !rastcfg.BufferMode {
     };
 }
 
-fn subpxCenterMapFromC(subpx_map: u32) !cam.SubPixelCenterMap {
+fn subpxCenterMapFromC(subpx_map: u32) !cameratypes.SubPixelCenterMap {
     return switch (subpx_map) {
-        @intFromEnum(cam.SubPixelCenterMap.full_in_mem) => .full_in_mem,
-        @intFromEnum(cam.SubPixelCenterMap.per_tile) => .per_tile,
+        @intFromEnum(cameratypes.SubPixelCenterMap.full_in_mem) => .full_in_mem,
+        @intFromEnum(cameratypes.SubPixelCenterMap.per_tile) => .per_tile,
         else => error.InvalidSubPixelCenterMap,
     };
 }
@@ -595,10 +676,10 @@ fn validateInputFromC(
     };
 }
 
-fn coordSysFromC(coord_sys: u32) !cam.CameraCoordSys {
+fn coordSysFromC(coord_sys: u32) !cameratypes.CameraCoordSys {
     return switch (coord_sys) {
-        @intFromEnum(cam.CameraCoordSys.opengl) => .opengl,
-        @intFromEnum(cam.CameraCoordSys.opencv) => .opencv,
+        @intFromEnum(cameratypes.CameraCoordSys.opengl) => .opengl,
+        @intFromEnum(cameratypes.CameraCoordSys.opencv) => .opencv,
         else => error.InvalidCoordSys,
     };
 }
@@ -747,27 +828,27 @@ fn texSampleModeFromC(
     };
 }
 
-fn scaleOverFromC(scale_over: u32) !shaderops.ScaleOver {
+fn scaleOverFromC(scale_over: u32) !shadertypes.ScaleOver {
     return switch (scale_over) {
-        @intFromEnum(shaderops.ScaleOver.within_frames) => .within_frames,
-        @intFromEnum(shaderops.ScaleOver.over_frames) => .over_frames,
+        @intFromEnum(shadertypes.ScaleOver.within_frames) => .within_frames,
+        @intFromEnum(shadertypes.ScaleOver.over_frames) => .over_frames,
         else => error.InvalidScaleOver,
     };
 }
 
 fn funcShaderBuiltinFromC(
     func_shader_builtin: u32,
-) !shaderops.FuncShaderBuiltin {
-    const lambertian = shaderops.FuncShaderBuiltin.lambertian_normal_z;
-    const eggbox = shaderops.FuncShaderBuiltin.eggbox;
+) !shadertypes.FuncShaderBuiltin {
+    const lambertian = shadertypes.FuncShaderBuiltin.lambertian_normal_z;
+    const eggbox = shadertypes.FuncShaderBuiltin.eggbox;
     return switch (func_shader_builtin) {
-        @intFromEnum(shaderops.FuncShaderBuiltin.constant) => .constant,
-        @intFromEnum(shaderops.FuncShaderBuiltin.linear) => .linear,
-        @intFromEnum(shaderops.FuncShaderBuiltin.quadratic) => .quadratic,
-        @intFromEnum(shaderops.FuncShaderBuiltin.sinusoidal) => .sinusoidal,
-        @intFromEnum(shaderops.FuncShaderBuiltin.sinusoidal_approx) => .sinusoidal_approx,
-        @intFromEnum(shaderops.FuncShaderBuiltin.checker) => .checker,
-        @intFromEnum(shaderops.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
+        @intFromEnum(shadertypes.FuncShaderBuiltin.constant) => .constant,
+        @intFromEnum(shadertypes.FuncShaderBuiltin.linear) => .linear,
+        @intFromEnum(shadertypes.FuncShaderBuiltin.quadratic) => .quadratic,
+        @intFromEnum(shadertypes.FuncShaderBuiltin.sinusoidal) => .sinusoidal,
+        @intFromEnum(shadertypes.FuncShaderBuiltin.sinusoidal_approx) => .sinusoidal_approx,
+        @intFromEnum(shadertypes.FuncShaderBuiltin.checker) => .checker,
+        @intFromEnum(shadertypes.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
         @intFromEnum(lambertian) => .lambertian_normal_z,
         @intFromEnum(eggbox) => .eggbox,
         else => error.InvalidFuncShaderBuiltin,
@@ -776,29 +857,29 @@ fn funcShaderBuiltinFromC(
 
 fn funcCoordModeFromC(
     coord_mode: u32,
-) !shaderops.FuncCoordMode {
+) !shadertypes.FuncCoordMode {
     return switch (coord_mode) {
-        @intFromEnum(shaderops.FuncCoordMode.uv) => .uv,
-        @intFromEnum(shaderops.FuncCoordMode.para) => .para,
-        @intFromEnum(shaderops.FuncCoordMode.world_reference) => .world_reference,
-        @intFromEnum(shaderops.FuncCoordMode.world_deformed) => .world_deformed,
+        @intFromEnum(shadertypes.FuncCoordMode.uv) => .uv,
+        @intFromEnum(shadertypes.FuncCoordMode.para) => .para,
+        @intFromEnum(shadertypes.FuncCoordMode.world_reference) => .world_reference,
+        @intFromEnum(shadertypes.FuncCoordMode.world_deformed) => .world_deformed,
         else => error.InvalidFuncCoordMode,
     };
 }
 
-fn normalTypeFromC(normal_type: u32) !shaderops.NormalType {
+fn normalTypeFromC(normal_type: u32) !normals.NormalType {
     return switch (normal_type) {
-        @intFromEnum(shaderops.NormalType.none) => .none,
-        @intFromEnum(shaderops.NormalType.exact) => .exact,
-        @intFromEnum(shaderops.NormalType.avg) => .avg,
+        @intFromEnum(normals.NormalType.none) => .none,
+        @intFromEnum(normals.NormalType.exact) => .exact,
+        @intFromEnum(normals.NormalType.avg) => .avg,
         else => error.InvalidNormalType,
     };
 }
 
 fn funcShaderParamsFromC(
-    builtin: shaderops.FuncShaderBuiltin,
+    builtin: shadertypes.FuncShaderBuiltin,
     in_params: CFuncShaderParams,
-) shaderops.FuncShaderParams {
+) shadertypes.FuncShaderParams {
     return .{
         .coord_scale = .{
             in_params.coord_scale_0,
@@ -808,8 +889,6 @@ fn funcShaderParamsFromC(
             in_params.coord_offset_0,
             in_params.coord_offset_1,
         },
-        .output_scale = in_params.output_scale,
-        .output_offset = in_params.output_offset,
         .settings = switch (builtin) {
             .constant => .{
                 .constant = .{
@@ -1134,8 +1213,52 @@ fn buildOptionalFieldFromC(
 }
 
 fn buildCameraInput(
+    allocator: std.mem.Allocator,
     in_camera: *const CCameraInput,
-) !cam.CameraInput {
+) !cameratypes.CameraInput {
+    const render_format: shadertypes.RenderFormat = switch (in_camera.render_format_tag) {
+        0 => .mono,
+        1 => .rgb,
+        2 => .ir,
+        3 => .{
+            .multifield = if (in_camera.render_channels >= 1 and
+                in_camera.render_channels <= 8)
+                @intCast(in_camera.render_channels)
+            else
+                return error.InvalidRenderChannels,
+        },
+        else => return error.InvalidRenderFormat,
+    };
+
+    var output_files: []const iio.ImageSaveOpts = &default_image_save_opts;
+    if (in_camera.output_files_len > 0) {
+        const c_files = try cConstSlice(
+            CImageSaveOpts,
+            in_camera.output_files,
+            in_camera.output_files_len,
+        );
+        const files = try allocator.alloc(iio.ImageSaveOpts, c_files.len);
+        for (c_files, files) |c_opt, *opt| {
+            opt.* = .{
+                .format = try imageFormatFromC(c_opt.format),
+                .file_bits = try bitsFromC(c_opt.file_bits),
+                .adc_bits = try bitsFromC(c_opt.adc_bits),
+                .scaling = try scaleStrategyFromC(
+                    c_opt.scaling_tag,
+                    c_opt.scaling_min,
+                    c_opt.scaling_max,
+                ),
+                .packing = switch (c_opt.packing) {
+                    0 => .spread,
+                    1 => .lower,
+                    2 => .upper,
+                    else => return error.InvalidCodePacking,
+                },
+            };
+        }
+        output_files = files;
+    }
+
     return .{
         .pixels_num = .{
             in_camera.pixels_num.x,
@@ -1157,54 +1280,140 @@ fn buildCameraInput(
         .distort = try distortFromC(&in_camera.distort),
         .psf = try psfFromC(&in_camera.psf),
         .coord_sys = try coordSysFromC(in_camera.coord_sys),
+        .render_format = render_format,
+        .output_files = output_files,
         .subpixel_center_map = try subpxCenterMapFromC(
             in_camera.subpixel_center_map,
         ),
     };
 }
 
-fn buildMeshInput(
-    allocator: std.mem.Allocator,
-    in_mesh: *const CMeshInput,
-) !MeshInputBuilt {
-    const mesh_type = try meshTypeFromC(in_mesh.mesh_type);
-    const nodes_per_elem = mesh_type.getNodesNum();
-
-    if (in_mesh.coords.cols_num != 3) {
-        return error.InvalidCoordsShape;
-    }
-    if (in_mesh.connect.cols_num != nodes_per_elem) {
-        return error.InvalidConnectShape;
-    }
-
-    const coords = try buildCoordsFromC(&in_mesh.coords);
-    const connect = try buildConnectFromC(&in_mesh.connect);
-
-    var built = MeshInputBuilt{
-        .mesh_input = .{
-            .mesh_type = mesh_type,
-            .coords = coords,
-            .connect = connect,
-            .disp = null,
-            .shader = undefined,
+fn pipeSlotFromC(in_slot: CSlot) !shaderpipe.Slot {
+    if (in_slot.index >= shaderpipe.max_slots) return error.InvalidPipeSlot;
+    return .{
+        .kind = switch (in_slot.kind) {
+            0 => .channel,
+            1 => .field,
+            2 => .parameter,
+            3 => .constant,
+            else => return error.InvalidPipeSlot,
         },
+        .index = @intCast(in_slot.index),
     };
+}
 
-    const disp_built = try buildOptionalFieldFromC(
-        allocator,
-        &in_mesh.disp,
-    );
-    built.mesh_input.disp = disp_built.field;
-    built.disp_array = disp_built.array;
+fn pipeSlotsFromC(
+    allocator: std.mem.Allocator,
+    slots: [*c]const CSlot,
+    count: usize,
+) ![]shaderpipe.Slot {
+    const input = try cConstSlice(CSlot, slots, count);
+    const output = try allocator.alloc(shaderpipe.Slot, count);
+    for (input, output) |slot, *dest| {
+        dest.* = try pipeSlotFromC(slot);
+    }
+    return output;
+}
 
-    const in_shader = &in_mesh.shader;
-    const bits = try bitsFromC(in_shader.bits);
+fn lookupFromC(input: CLookup) !shaderpipe.Lookup {
+    return .{
+        .first = input.first,
+        .step = input.step,
+        .values = try cConstSlice(F, input.values, input.values_len),
+    };
+}
+
+fn resolverFromC(
+    allocator: std.mem.Allocator,
+    input: CResolver,
+    constants: []const F,
+) !shaderpipe.Resolver {
+    const slots = try pipeSlotsFromC(allocator, input.slots, input.slots_len);
+    return switch (input.tag) {
+        0 => .{ .identity = slots },
+        1 => .{ .sum = slots },
+        2 => .{ .modulate = .{
+            .sources = slots,
+            .factor = try pipeSlotFromC(input.factor),
+            .ambient = input.ambient,
+            .gain = input.gain,
+        } },
+        3 => .{ .weighted_sum = .{
+            .sources = slots,
+            .weights = try cConstSlice(F, input.weights, input.weights_len),
+        } },
+        4 => .{ .greybody_bolometric = .{
+            .temperature = try pipeSlotFromC(input.temperature),
+            .emissivity = try pipeSlotFromC(input.emissivity),
+        } },
+        5 => .{ .greybody_band = .{
+            .temperature = try pipeSlotFromC(input.temperature),
+            .emissivity = try pipeSlotFromC(input.emissivity),
+            .radiance = try lookupFromC(input.lookup),
+        } },
+        7 => .{ .greybody_band_apparent_c = .{
+            .temperature = try pipeSlotFromC(input.temperature),
+            .emissivity = try pipeSlotFromC(input.emissivity),
+            .radiance = try lookupFromC(input.lookup),
+            .ambient_k = input.ambient,
+        } },
+        6 => blk: {
+            const input_ops = try cConstSlice(
+                COperation,
+                input.operations,
+                input.operations_len,
+            );
+            const ops = try allocator.alloc(shaderpipe.Op, input_ops.len);
+            for (input_ops, ops) |op, *dest| {
+                dest.* = switch (op.tag) {
+                    0 => .{ .load = try pipeSlotFromC(op.slot) },
+                    1 => .add,
+                    2 => .subtract,
+                    3 => .multiply,
+                    4 => .divide,
+                    5 => .power4,
+                    6 => .clamp01,
+                    7 => .{ .clamp = .{ .lower = op.lower, .upper = op.upper } },
+                    8 => if (op.slot.index < 1)
+                        .{ .lut = 0 }
+                    else
+                        return error.InvalidPipeOperation,
+                    9 => if (op.slot.index < shaderpipe.max_channels)
+                        .{ .store = @intCast(op.slot.index) }
+                    else
+                        return error.InvalidPipeOperation,
+                    else => return error.InvalidPipeOperation,
+                };
+            }
+            const lookups = if (input.lookup.values_len > 0)
+                try allocator.dupe(
+                    shaderpipe.Lookup,
+                    &.{try lookupFromC(input.lookup)},
+                )
+            else
+                &.{};
+            break :blk .{ .expression = .{
+                .operations = ops,
+                .constants = constants,
+                .lookups = lookups,
+            } };
+        },
+        else => error.InvalidPipeResolver,
+    };
+}
+
+fn buildShaderDirectInput(
+    allocator: std.mem.Allocator,
+    in_shader: *const CShaderInput,
+) !ShaderDirectBuilt {
+    var built = ShaderDirectBuilt{
+        .shader = undefined,
+    };
     const scaling = try scaleStrategyFromC(
         in_shader.scaling_tag,
         in_shader.scaling_min,
         in_shader.scaling_max,
     );
-    const normal_type = try normalTypeFromC(in_shader.normal_type);
     if (in_shader.texture_storage > 2) return error.InvalidTextureStorage;
 
     switch (in_shader.shader_tag) {
@@ -1236,33 +1445,33 @@ fn buildMeshInput(
                     1,
                 );
                 errdefer tex_array.deinit(allocator);
-                built.mesh_input.shader = .{ .tex_u16 = .{
+                built.shader = .{ .tex_u16 = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(u16, 1){
+                    .tex = texops.TexDataFix(u16, 1){
                         .array = tex_array,
                         .rows_num = in_shader.tex_u16.dim1,
                         .cols_num = in_shader.tex_u16.dim2,
                     },
                     .samp_cfg = samp_cfg,
-                    .bits = bits,
+                    .output_gain = in_shader.output_gain,
+                    .output_offset = in_shader.output_offset,
                     .scaling = scaling,
-                    .normal_type = normal_type,
                 } };
                 built.tex_array_u16 = tex_array;
             } else if (in_shader.texture_storage == 2) {
                 var tex_array = try buildTexArray(F, allocator, &in_shader.tex, 1);
                 errdefer tex_array.deinit(allocator);
-                built.mesh_input.shader = .{ .tex_f = .{
+                built.shader = .{ .tex_f = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(F, 1){
+                    .tex = texops.TexDataFix(F, 1){
                         .array = tex_array,
                         .rows_num = in_shader.tex.dim1,
                         .cols_num = in_shader.tex.dim2,
                     },
                     .samp_cfg = samp_cfg,
-                    .bits = bits,
+                    .output_gain = in_shader.output_gain,
+                    .output_offset = in_shader.output_offset,
                     .scaling = scaling,
-                    .normal_type = normal_type,
                 } };
                 built.tex_array_f = tex_array;
             } else {
@@ -1273,17 +1482,17 @@ fn buildMeshInput(
                     1,
                 );
                 errdefer tex_array.deinit(allocator);
-                built.mesh_input.shader = .{ .tex_u8 = .{
+                built.shader = .{ .tex_u8 = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(u8, 1){
+                    .tex = texops.TexDataFix(u8, 1){
                         .array = tex_array,
                         .rows_num = in_shader.tex_u8.dim1,
                         .cols_num = in_shader.tex_u8.dim2,
                     },
                     .samp_cfg = samp_cfg,
-                    .bits = bits,
+                    .output_gain = in_shader.output_gain,
+                    .output_offset = in_shader.output_offset,
                     .scaling = scaling,
-                    .normal_type = normal_type,
                 } };
                 built.tex_array_u8 = tex_array;
             }
@@ -1316,33 +1525,33 @@ fn buildMeshInput(
                     3,
                 );
                 errdefer tex_array.deinit(allocator);
-                built.mesh_input.shader = .{ .tex_rgb_u16 = .{
+                built.shader = .{ .tex_rgb_u16 = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(u16, 3){
+                    .tex = texops.TexDataFix(u16, 3){
                         .array = tex_array,
                         .rows_num = in_shader.tex_u16.dim1,
                         .cols_num = in_shader.tex_u16.dim2,
                     },
                     .samp_cfg = samp_cfg,
-                    .bits = bits,
+                    .output_gain = in_shader.output_gain,
+                    .output_offset = in_shader.output_offset,
                     .scaling = scaling,
-                    .normal_type = normal_type,
                 } };
                 built.tex_array_u16 = tex_array;
             } else if (in_shader.texture_storage == 2) {
                 var tex_array = try buildTexArray(F, allocator, &in_shader.tex, 3);
                 errdefer tex_array.deinit(allocator);
-                built.mesh_input.shader = .{ .tex_rgb_f = .{
+                built.shader = .{ .tex_rgb_f = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(F, 3){
+                    .tex = texops.TexDataFix(F, 3){
                         .array = tex_array,
                         .rows_num = in_shader.tex.dim1,
                         .cols_num = in_shader.tex.dim2,
                     },
                     .samp_cfg = samp_cfg,
-                    .bits = bits,
+                    .output_gain = in_shader.output_gain,
+                    .output_offset = in_shader.output_offset,
                     .scaling = scaling,
-                    .normal_type = normal_type,
                 } };
                 built.tex_array_f = tex_array;
             } else {
@@ -1353,22 +1562,22 @@ fn buildMeshInput(
                     3,
                 );
                 errdefer tex_array.deinit(allocator);
-                built.mesh_input.shader = .{ .tex_rgb_u8 = .{
+                built.shader = .{ .tex_rgb_u8 = .{
                     .uvs = uvs_array,
-                    .tex = texops.Tex(u8, 3){
+                    .tex = texops.TexDataFix(u8, 3){
                         .array = tex_array,
                         .rows_num = in_shader.tex_u8.dim1,
                         .cols_num = in_shader.tex_u8.dim2,
                     },
                     .samp_cfg = samp_cfg,
-                    .bits = bits,
+                    .output_gain = in_shader.output_gain,
+                    .output_offset = in_shader.output_offset,
                     .scaling = scaling,
-                    .normal_type = normal_type,
                 } };
                 built.tex_array_u8 = tex_array;
             }
         },
-        2 => {
+        2, 5 => {
             const nodal_built = try buildOptionalFieldFromC(
                 allocator,
                 &in_shader.nodal_field,
@@ -1376,32 +1585,15 @@ fn buildMeshInput(
             if (nodal_built.field == null or nodal_built.array == null) {
                 return error.MissingNodalField;
             }
-            built.mesh_input.shader = .{ .nodal = .{
-                .field = nodal_built.field.?,
-                .bits = bits,
-                .scaling = scaling,
-                .scale_over = try scaleOverFromC(in_shader.scale_over),
-                .normal_type = normal_type,
-            } };
-            built.nodal_field_array = nodal_built.array;
-        },
-        5 => {
-            const nodal_built = try buildOptionalFieldFromC(
-                allocator,
-                &in_shader.nodal_field,
-            );
-            if (nodal_built.field == null or nodal_built.array == null) {
-                return error.MissingNodalField;
-            }
-            if (nodal_built.field.?.getFieldsN() != 3) {
+            if (in_shader.shader_tag == 5 and nodal_built.field.?.getFieldsN() != 3) {
                 return error.InvalidNodalRgbFieldCount;
             }
-            built.mesh_input.shader = .{ .nodal = .{
+            built.shader = .{ .nodal = .{
                 .field = nodal_built.field.?,
-                .bits = bits,
+                .output_gain = in_shader.output_gain,
+                .output_offset = in_shader.output_offset,
                 .scaling = scaling,
                 .scale_over = try scaleOverFromC(in_shader.scale_over),
-                .normal_type = normal_type,
             } };
             built.nodal_field_array = nodal_built.array;
         },
@@ -1421,7 +1613,7 @@ fn buildMeshInput(
             const builtin = try funcShaderBuiltinFromC(
                 in_shader.func_shader_builtin,
             );
-            built.mesh_input.shader = .{ .func = .{
+            built.shader = .{ .func = .{ .mono = .{
                 .uvs = uvs_array_opt,
                 .coord_mode = try funcCoordModeFromC(
                     in_shader.func_shader_coord_mode,
@@ -1431,10 +1623,10 @@ fn buildMeshInput(
                     builtin,
                     in_shader.func_shader_params,
                 ),
-                .bits = bits,
+                .output_gain = in_shader.output_gain,
+                .output_offset = in_shader.output_offset,
                 .scaling = scaling,
-                .normal_type = normal_type,
-            } };
+            } } };
             built.uvs_array = uvs_array_opt;
         },
         4 => {
@@ -1453,7 +1645,7 @@ fn buildMeshInput(
             const builtin = try funcShaderBuiltinFromC(
                 in_shader.func_shader_builtin,
             );
-            built.mesh_input.shader = .{ .func_rgb = .{
+            built.shader = .{ .func = .{ .rgb = .{
                 .uvs = uvs_array_opt,
                 .coord_mode = try funcCoordModeFromC(
                     in_shader.func_shader_coord_mode,
@@ -1463,13 +1655,382 @@ fn buildMeshInput(
                     builtin,
                     in_shader.func_shader_params,
                 ),
-                .bits = bits,
+                .output_gain = in_shader.output_gain,
+                .output_offset = in_shader.output_offset,
                 .scaling = scaling,
-                .normal_type = normal_type,
-            } };
+            } } };
             built.uvs_array = uvs_array_opt;
         },
         else => return error.InvalidShaderTag,
+    }
+
+    return built;
+}
+
+fn pipeSourceToMono(source: shadertypes.PipeSourceInput) !shadertypes.ShaderMonoInput {
+    return switch (source) {
+        .tex_u8 => |tex_shader| .{ .tex_u8 = tex_shader },
+        .tex_u16 => |tex_shader| .{ .tex_u16 = tex_shader },
+        .tex_f => |tex_shader| .{ .tex_f = tex_shader },
+        .nodal => |nodal_shader| blk: {
+            if (nodal_shader.field.getFieldsN() != 1) return error.UnsuppedImageModeFieldCount;
+            break :blk .{ .nodal = nodal_shader };
+        },
+        .func => |func_source| switch (func_source) {
+            .mono => |func_shader| .{ .func = func_shader },
+            else => return error.UnsuppedImageModeFieldCount,
+        },
+        else => return error.UnsuppedImageModeFieldCount,
+    };
+}
+
+fn pipeSourceChannels(source: shadertypes.PipeSourceInput) u8 {
+    return switch (source) {
+        .nodal => |s| s.field.getFieldsN(),
+        .tex_u8, .tex_u16, .tex_f => 1,
+        .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
+        .tex_multi_u8 => |t| @intCast(t.tex.array.dims[0]),
+        .tex_multi_u16 => |t| @intCast(t.tex.array.dims[0]),
+        .tex_multi_f => |t| @intCast(t.tex.array.dims[0]),
+        .func => |f| switch (f) {
+            .mono => 1,
+            .rgb => 3,
+            .multi => |multi| @intCast(multi.channels.len),
+        },
+    };
+}
+
+fn buildPipeInput(
+    allocator: std.mem.Allocator,
+    pipe: *const CPipe,
+    pipe_sources: []ShaderDirectBuilt,
+    pipe_stages: [][]shadertypes.ShaderPipeStageInput,
+    pipe_inputs: []shadertypes.ShaderPipeInput,
+    source_idx: *usize,
+    pipe_idx: *usize,
+) !shadertypes.ShaderPipeInput {
+    const input_stages = try cConstSlice(
+        CPipeStage,
+        pipe.stages,
+        pipe.stages_len,
+    );
+    const stages = try allocator.alloc(
+        shadertypes.ShaderPipeStageInput,
+        input_stages.len,
+    );
+    pipe_stages[pipe_idx.*] = stages;
+    for (input_stages, stages) |input_stage, *stage| {
+        stage.* = switch (input_stage.tag) {
+            0 => sblk: {
+                if (input_stage.shader == null) return error.NullPointer;
+                pipe_sources[source_idx.*] = try buildShaderDirectInput(
+                    allocator,
+                    input_stage.shader,
+                );
+                const src_shader = pipe_sources[source_idx.*].shader;
+                source_idx.* += 1;
+                break :sblk .{ .source = .{
+                    .shader = src_shader,
+                    .destination = try pipeSlotFromC(input_stage.destination),
+                } };
+            },
+            1 => .{ .grey_to_emissivity = .{
+                .source = try pipeSlotFromC(input_stage.source),
+                .destination = try pipeSlotFromC(input_stage.destination),
+                .black = input_stage.black,
+                .white = input_stage.white,
+                .grey_black = input_stage.lower,
+                .grey_white = input_stage.upper,
+            } },
+            2 => .{ .clamp = .{
+                .source = try pipeSlotFromC(input_stage.source),
+                .destination = try pipeSlotFromC(input_stage.destination),
+                .lower = input_stage.lower,
+                .upper = input_stage.upper,
+            } },
+            3 => .{ .affine_map = .{
+                .source = try pipeSlotFromC(input_stage.source),
+                .destination = try pipeSlotFromC(input_stage.destination),
+                .gain = input_stage.gain,
+                .offset = input_stage.offset,
+            } },
+            4 => .{ .lut_map = .{
+                .source = try pipeSlotFromC(input_stage.source),
+                .destination = try pipeSlotFromC(input_stage.destination),
+                .lookup = try lookupFromC(input_stage.lookup),
+            } },
+            5 => .{ .blend = .{
+                .a = try pipeSlotFromC(input_stage.source),
+                .b = try pipeSlotFromC(input_stage.source_b),
+                .destination = try pipeSlotFromC(input_stage.destination),
+                .alpha = if (input_stage.alpha_from_slot == 0)
+                    .{ .fixed = input_stage.alpha }
+                else if (input_stage.alpha_from_slot == 1)
+                    .{ .slot = try pipeSlotFromC(input_stage.alpha_slot) }
+                else
+                    return error.InvalidPipeStage,
+            } },
+            6 => .{ .normalise = .{
+                .source = try pipeSlotFromC(input_stage.source),
+                .destination = try pipeSlotFromC(input_stage.destination),
+                .components = if (input_stage.components <= 3)
+                    @intCast(input_stage.components)
+                else
+                    return error.InvalidPipeStage,
+            } },
+            else => return error.InvalidPipeStage,
+        };
+    }
+    const constants = try cConstSlice(F, pipe.constants, pipe.constants_len);
+    pipe_inputs[pipe_idx.*] = .{
+        .stages = stages,
+        .resolver = try resolverFromC(allocator, pipe.resolver, constants),
+        .constants = constants,
+    };
+    const result = pipe_inputs[pipe_idx.*];
+    pipe_idx.* += 1;
+    return result;
+}
+
+fn buildMeshInput(
+    allocator: std.mem.Allocator,
+    in_mesh: *const CMeshInput,
+) !MeshInputBuilt {
+    const mesh_type = try meshTypeFromC(in_mesh.mesh_type);
+    const nodes_per_elem = mesh_type.getNodesNum();
+
+    if (in_mesh.coords.cols_num != 3) {
+        return error.InvalidCoordsShape;
+    }
+    if (in_mesh.connect.cols_num != nodes_per_elem) {
+        return error.InvalidConnectShape;
+    }
+
+    const coords = try buildCoordsFromC(&in_mesh.coords);
+    const connect = try buildConnectFromC(&in_mesh.connect);
+
+    var built = MeshInputBuilt{
+        .mesh_input = .{
+            .mesh_type = mesh_type,
+            .normal_type = try normalTypeFromC(in_mesh.normal_type),
+            .coords = coords,
+            .connect = connect,
+            .disp = null,
+            .shaders = .{},
+        },
+    };
+
+    const disp_built = try buildOptionalFieldFromC(
+        allocator,
+        &in_mesh.disp,
+    );
+    built.mesh_input.disp = disp_built.field;
+    built.disp_array = disp_built.array;
+
+    if (in_mesh.shaders_len == 0 or in_mesh.shaders_len > 4) {
+        return error.InvalidShaderCount;
+    }
+
+    const in_entries = try cConstSlice(
+        CShaderEntry,
+        in_mesh.shaders,
+        in_mesh.shaders_len,
+    );
+
+    var direct_mono_count: usize = 0;
+    var pipe_count: usize = 0;
+    var pipe_source_count: usize = 0;
+
+    for (in_entries) |entry| {
+        switch (entry.execution_tag) {
+            0 => {
+                if (entry.format_tag == 0 or entry.format_tag == 2) {
+                    direct_mono_count += 1;
+                } else if (entry.format_tag == 1 or entry.format_tag == 3) {
+                    pipe_count += 1;
+                    pipe_source_count += 1;
+                } else {
+                    return error.InvalidRenderFormatTag;
+                }
+            },
+            1 => {
+                pipe_count += 1;
+                if (entry.pipe.stages_len == 0 or entry.pipe.stages_len > 8) {
+                    return error.InvalidPipeStageCount;
+                }
+                const stages = try cConstSlice(
+                    CPipeStage,
+                    entry.pipe.stages,
+                    entry.pipe.stages_len,
+                );
+                for (stages) |stage| {
+                    if (stage.tag == 0) pipe_source_count += 1;
+                }
+            },
+            else => return error.InvalidExecutionTag,
+        }
+    }
+
+    built.direct_shaders = try allocator.alloc(ShaderDirectBuilt, direct_mono_count);
+    built.pipe_sources = try allocator.alloc(ShaderDirectBuilt, pipe_source_count);
+    built.pipe_stages = try allocator.alloc(
+        []shadertypes.ShaderPipeStageInput,
+        pipe_count,
+    );
+    built.pipe_inputs = try allocator.alloc(
+        shadertypes.ShaderPipeInput,
+        pipe_count,
+    );
+
+    var direct_idx: usize = 0;
+    var pipe_idx: usize = 0;
+    var source_idx: usize = 0;
+
+    for (in_entries) |entry| {
+        switch (entry.format_tag) {
+            0 => {
+                if ((built.mesh_input.shaders.mono_direct != null or built.mesh_input.shaders.mono_pipe != null)) return error.DuplicateRole;
+                switch (entry.execution_tag) {
+                    0 => {
+                        built.direct_shaders[direct_idx] = try buildShaderDirectInput(
+                            allocator,
+                            &entry.direct_shader,
+                        );
+                        const shader = try pipeSourceToMono(
+                            built.direct_shaders[direct_idx].shader,
+                        );
+                        direct_idx += 1;
+                        built.mesh_input.shaders.mono_direct = shader;
+                    },
+                    1 => {
+                        const pipe_in = try buildPipeInput(
+                            allocator,
+                            &entry.pipe,
+                            built.pipe_sources,
+                            built.pipe_stages,
+                            built.pipe_inputs,
+                            &source_idx,
+                            &pipe_idx,
+                        );
+                        built.mesh_input.shaders.mono_pipe = pipe_in;
+                    },
+                    else => return error.InvalidExecutionTag,
+                }
+            },
+            1 => {
+                if (built.mesh_input.shaders.rgb_pipe != null) return error.DuplicateRole;
+                switch (entry.execution_tag) {
+                    0 => {
+                        built.pipe_sources[source_idx] = try buildShaderDirectInput(
+                            allocator,
+                            &entry.direct_shader,
+                        );
+                        const src_shader = built.pipe_sources[source_idx].shader;
+                        source_idx += 1;
+                        const stages = try allocator.alloc(
+                            shadertypes.ShaderPipeStageInput,
+                            1,
+                        );
+                        built.pipe_stages[pipe_idx] = stages;
+                        stages[0] = shaderops.stageSource(src_shader);
+                        built.pipe_inputs[pipe_idx] = .{
+                            .stages = stages,
+                            .resolver = .{
+                                .identity = shaderpipe.identity_channels_3[0..3],
+                            },
+                        };
+                        built.mesh_input.shaders.rgb_pipe = built.pipe_inputs[pipe_idx];
+                        pipe_idx += 1;
+                    },
+                    1 => {
+                        const pipe_in = try buildPipeInput(
+                            allocator,
+                            &entry.pipe,
+                            built.pipe_sources,
+                            built.pipe_stages,
+                            built.pipe_inputs,
+                            &source_idx,
+                            &pipe_idx,
+                        );
+                        built.mesh_input.shaders.rgb_pipe = pipe_in;
+                    },
+                    else => return error.InvalidExecutionTag,
+                }
+            },
+            2 => {
+                if ((built.mesh_input.shaders.ir_direct != null or built.mesh_input.shaders.ir_pipe != null)) return error.DuplicateRole;
+                switch (entry.execution_tag) {
+                    0 => {
+                        built.direct_shaders[direct_idx] = try buildShaderDirectInput(
+                            allocator,
+                            &entry.direct_shader,
+                        );
+                        const shader = try pipeSourceToMono(
+                            built.direct_shaders[direct_idx].shader,
+                        );
+                        direct_idx += 1;
+                        built.mesh_input.shaders.ir_direct = shader;
+                    },
+                    1 => {
+                        const pipe_in = try buildPipeInput(
+                            allocator,
+                            &entry.pipe,
+                            built.pipe_sources,
+                            built.pipe_stages,
+                            built.pipe_inputs,
+                            &source_idx,
+                            &pipe_idx,
+                        );
+                        built.mesh_input.shaders.ir_pipe = pipe_in;
+                    },
+                    else => return error.InvalidExecutionTag,
+                }
+            },
+            3 => {
+                if (built.mesh_input.shaders.multifield_pipe != null) {
+                    return error.DuplicateRole;
+                }
+                switch (entry.execution_tag) {
+                    0 => {
+                        built.pipe_sources[source_idx] = try buildShaderDirectInput(
+                            allocator,
+                            &entry.direct_shader,
+                        );
+                        const src_shader = built.pipe_sources[source_idx].shader;
+                        source_idx += 1;
+                        const count = pipeSourceChannels(src_shader);
+                        const stages = try allocator.alloc(
+                            shadertypes.ShaderPipeStageInput,
+                            1,
+                        );
+                        built.pipe_stages[pipe_idx] = stages;
+                        stages[0] = shaderops.stageSource(src_shader);
+                        built.pipe_inputs[pipe_idx] = .{
+                            .stages = stages,
+                            .resolver = .{
+                                .identity = shaderpipe.identity_channels_8[0..count],
+                            },
+                        };
+                        built.mesh_input.shaders.multifield_pipe = built.pipe_inputs[pipe_idx];
+                        pipe_idx += 1;
+                    },
+                    1 => {
+                        const pipe_in = try buildPipeInput(
+                            allocator,
+                            &entry.pipe,
+                            built.pipe_sources,
+                            built.pipe_stages,
+                            built.pipe_inputs,
+                            &source_idx,
+                            &pipe_idx,
+                        );
+                        built.mesh_input.shaders.multifield_pipe = pipe_in;
+                    },
+                    else => return error.InvalidExecutionTag,
+                }
+            },
+            else => return error.InvalidRenderFormatTag,
+        }
     }
 
     return built;
@@ -1479,15 +2040,15 @@ fn buildCameraInputSlice(
     allocator: std.mem.Allocator,
     in_cameras: [*c]const CCameraInput,
     cameras_len: usize,
-) ![]cam.CameraInput {
+) ![]cameratypes.CameraInput {
     const cameras_slice = try cConstSlice(
         CCameraInput,
         in_cameras,
         cameras_len,
     );
-    const cameras_out = try allocator.alloc(cam.CameraInput, cameras_len);
+    const cameras_out = try allocator.alloc(cameratypes.CameraInput, cameras_len);
     for (cameras_slice, 0..) |camera_in, nn| {
-        cameras_out[nn] = try buildCameraInput(&camera_in);
+        cameras_out[nn] = try buildCameraInput(allocator, &camera_in);
     }
     return cameras_out;
 }
@@ -1519,8 +2080,8 @@ fn buildMeshInputSlice(
 fn extractMeshInputs(
     allocator: std.mem.Allocator,
     built_meshes: []const MeshInputBuilt,
-) ![]meshpipe.MeshInput {
-    const mesh_inputs = try allocator.alloc(meshpipe.MeshInput, built_meshes.len);
+) ![]meshtypes.MeshInput {
+    const mesh_inputs = try allocator.alloc(meshtypes.MeshInput, built_meshes.len);
     for (built_meshes, 0..) |built_mesh, nn| {
         mesh_inputs[nn] = built_mesh.mesh_input;
     }
@@ -1538,7 +2099,6 @@ fn deinitMeshInputSlice(
 }
 
 fn buildRasterConfig(
-    allocator: std.mem.Allocator,
     in_config: *const CRasterConfig,
 ) !riley.RasterConfig {
     var config = riley.RasterConfig{};
@@ -1553,7 +2113,6 @@ fn buildRasterConfig(
         else => return error.InvalidParallelMode,
     };
     config.save_strategy = try saveStrategyFromC(in_config.save_strategy);
-    config.output.image_save_mode = try imageSaveModeFromC(in_config.image_save_mode);
     config.advanced.solver.oneroot.hull_mode = try hullModeFromC(
         in_config.oneroot_hull_mode,
     );
@@ -1575,7 +2134,9 @@ fn buildRasterConfig(
     config.validation = try validateInputFromC(
         in_config.validate_input,
     );
-    config.report.mode = try reportModeFromC(in_config.report);
+    const rep_mode = try reportModeFromC(in_config.report);
+    config.report_perf = rep_mode;
+    config.report_console = (rep_mode != .off);
     config.advanced.raster.buffer_mode = try bufferModeFromC(in_config.buffer_mode);
     config.advanced.distortion.edge_spacing_px = in_config.edge_spacing_px;
     config.advanced.raster.tile_size_min = if (in_config.tile_size_min == 0)
@@ -1631,38 +2192,9 @@ fn buildRasterConfig(
         config.output.save_frame_buff_count = in_config.save_frame_buff_count;
     }
 
-    const save_opts = try allocator.alloc(iio.ImageSaveOpts, 1);
-    save_opts[0] = .{
-        .format = try imageFormatFromC(in_config.save_format),
-        .bits = if (in_config.save_bits == 0)
-            null
-        else
-            @as(u8, @intCast(in_config.save_bits)),
-        .scaling = try scaleStrategyFromC(
-            in_config.save_scaling,
-            in_config.save_scaling_min,
-            in_config.save_scaling_max,
-        ),
-    };
-    config.output.image_save_opts = save_opts;
     if (in_config.output_name_format) |format| {
         config.output_name_format = std.mem.span(format);
     }
-    config.report.full_stats_opts = .{
-        .save_solver_csv = in_config.full_stats_save_solver_csv != 0,
-        .save_iter_map = in_config.full_stats_save_iter_map != 0,
-        .save_xi_map = in_config.full_stats_save_xi_map != 0,
-        .save_eta_map = in_config.full_stats_save_eta_map != 0,
-        .save_conv_map = in_config.full_stats_save_conv_map != 0,
-        .save_jac_det_map = in_config.full_stats_save_jac_det_map != 0,
-        .save_tile_timing_map = in_config.full_stats_save_tile_timing_map != 0,
-        .save_tile_density_map = in_config.full_stats_save_tile_density_map != 0,
-        .save_tile_occupancy_map = in_config.full_stats_save_tile_occupancy_map != 0,
-        .save_depth_map = in_config.full_stats_save_depth_map != 0,
-        .save_earlyout_map = in_config.full_stats_save_earlyout_map != 0,
-        .save_pixel_occupancy_map = in_config.full_stats_save_pixel_occupancy_map != 0,
-        .save_normals_map = in_config.full_stats_save_normals_map != 0,
-    };
 
     return config;
 }
@@ -1706,7 +2238,7 @@ fn initThreadedIo(
     });
 }
 
-fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
+fn cameraInputToC(in_camera: cameratypes.CameraInput) CCameraInput {
     var out_camera = CCameraInput{
         .pixels_num = .{
             .x = in_camera.pixels_num[0],
@@ -1725,6 +2257,19 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
         .roi_cent_world = vec3ToCVec3(in_camera.roi_cent_world),
         .focal_length = in_camera.focal_length,
         .sub_sample = in_camera.sub_sample,
+        .render_format_tag = switch (in_camera.render_format) {
+            .mono => 0,
+            .rgb => 1,
+            .ir => 2,
+            .multifield => 3,
+        },
+        .render_channels = switch (in_camera.render_format) {
+            .mono, .ir => 1,
+            .rgb => 3,
+            .multifield => |channels_num| channels_num,
+        },
+        .output_files = null,
+        .output_files_len = 0,
         .distort = .{
             .distort_model = 0,
             .distort_k1 = 0.0,
@@ -1883,7 +2428,7 @@ fn rasterSceneInternal(
     );
     defer allocator.free(camera_inputs);
 
-    const raster_config = try buildRasterConfig(allocator, in_config);
+    const raster_config = try buildRasterConfig(in_config);
 
     var image_arr_opt: ?ndarray.NDArray(F) = null;
     if (out_image) |image_buff| {
@@ -2066,7 +2611,7 @@ pub export fn rileyPosFrameCoords(
         rot_world.y,
         rot_world.z,
     );
-    const fit_enum: cameraops.FrameFitMode = @enumFromInt(fit_mode);
+    const fit_enum: cameratypes.FrameFitMode = @enumFromInt(fit_mode);
     const cam_pos = cameraops.posFrameCoords(
         &coords,
         .{ pixels_num.x, pixels_num.y },
@@ -2103,7 +2648,7 @@ pub export fn rileyPosFrameCoordsTarg(
         rot_world.z,
     );
     const targ = cVec3ToVec3(targ_world);
-    const fit_enum: cameraops.FrameFitMode = @enumFromInt(fit_mode);
+    const fit_enum: cameratypes.FrameFitMode = @enumFromInt(fit_mode);
     const cam_pos = cameraops.posFrameCoordsTarg(
         &coords,
         targ,
@@ -2155,7 +2700,7 @@ pub export fn rileyPosFrameMeshes(
         rot_world.y,
         rot_world.z,
     );
-    const fit_enum: cameraops.FrameFitMode = @enumFromInt(fit_mode);
+    const fit_enum: cameratypes.FrameFitMode = @enumFromInt(fit_mode);
     const cam_pos = cameraops.posFrameMeshes(
         mesh_inputs,
         .{ pixels_num.x, pixels_num.y },
@@ -2208,7 +2753,7 @@ pub export fn rileyPosFrameMeshesTarg(
         rot_world.z,
     );
     const targ = cVec3ToVec3(targ_world);
-    const fit_enum: cameraops.FrameFitMode = @enumFromInt(fit_mode);
+    const fit_enum: cameratypes.FrameFitMode = @enumFromInt(fit_mode);
     const cam_pos = cameraops.posFrameMeshesTarg(
         mesh_inputs,
         targ,
@@ -2295,7 +2840,9 @@ pub export fn rileyCalcPixelResolution(
     out_res: *F,
 ) c_int {
     clearLastError();
-    const cam_input = buildCameraInput(in_camera) catch |err| {
+    var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
+    defer arena.deinit();
+    const cam_input = buildCameraInput(arena.allocator(), in_camera) catch |err| {
         setLastError(err);
         return 1;
     };
@@ -2341,7 +2888,7 @@ pub export fn rileyCalcOutputDimsScene(
         return 1;
     };
 
-    const raster_config = buildRasterConfig(aa, in_config) catch |err| {
+    const raster_config = buildRasterConfig(in_config) catch |err| {
         setLastError(err);
         return 1;
     };
@@ -2366,7 +2913,10 @@ pub export fn rileySaveCamera(
 ) c_int {
     clearLastError();
 
-    const camera = buildCameraInput(camera_in) catch |err| {
+    var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
+    defer arena.deinit();
+
+    const camera = buildCameraInput(arena.allocator(), camera_in) catch |err| {
         setLastError(err);
         return 1;
     };
@@ -2408,7 +2958,7 @@ pub export fn rileySaveCamera(
 /// Null buffer with zero capacity queries metadata/count without returning
 /// a borrowed pointer.
 fn copyLoadedCamera(
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
     coeffs: [*c]F,
     capacity: usize,
     out: *CCameraInput,
@@ -2485,11 +3035,11 @@ pub export fn rileySaveStereoPair(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const cam0 = buildCameraInput(cam0_in) catch |err| {
+    const cam0 = buildCameraInput(aa, cam0_in) catch |err| {
         setLastError(err);
         return 1;
     };
-    const cam1 = buildCameraInput(cam1_in) catch |err| {
+    const cam1 = buildCameraInput(aa, cam1_in) catch |err| {
         setLastError(err);
         return 1;
     };
@@ -2521,7 +3071,6 @@ pub export fn rileySaveStereoPair(
         std.mem.span(stereo_file_name),
         .{ .cameras = .{ cam0, cam1 } },
     ) catch |err| {
-        _ = aa;
         setLastError(err);
         return 1;
     };
