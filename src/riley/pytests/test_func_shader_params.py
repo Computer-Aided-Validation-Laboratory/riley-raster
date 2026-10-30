@@ -107,6 +107,9 @@ def test_speckle_params_render_in_memory(
     shader.params.seed = 8
     reseeded = _render(speckle_mesh)
     assert not np.array_equal(image, reseeded)
+    if pattern == riley.SpecklePattern.perlin:
+        shader.params.occupancy = 0.0
+        np.testing.assert_array_equal(reseeded, _render(speckle_mesh))
 
 
 @pytest.mark.parametrize("pattern", list(riley.SpecklePattern))
@@ -346,6 +349,12 @@ def test_mixed_shader_deformation_matches_static_frame_references(
             id="cells-exceed-coordinate-limit",
         ),
         pytest.param(riley.Speckle2DParams(occupancy=-0.1), id="occupancy-negative"),
+        pytest.param(riley.Speckle2DParams(occupancy=0.0), id="disk-occupancy-zero"),
+        pytest.param(
+            riley.Speckle2DParams(pattern=riley.SpecklePattern.gaussian, occupancy=0.0),
+            id="gaussian-occupancy-zero",
+        ),
+        pytest.param(riley.Speckle2DParams(foreground=0.5, background=0.5), id="equal-colors"),
         pytest.param(riley.Speckle2DParams(radius_mean=0.0), id="radius-zero"),
         pytest.param(
             riley.Speckle2DParams(radius_jitter=0.5), id="jitter-exceeds-radius",

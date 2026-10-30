@@ -946,8 +946,21 @@ test "speckle metadata validates shapes and parameters without scanning UV paylo
         shader.params.cells_per_uv[0] = invalid;
         try std.testing.expectError(error.InvalidSpeckleShaderParams, checkShaderMetadata(.{ .speckle = shader }, 3));
     }
+    for ([_][2]F{ .{ 0, 0 }, .{ -0.0, 0 }, .{ 0.375, 0.375 }, .{ 1, 1 } }) |colors| {
+        var shader = valid;
+        shader.params.foreground = colors[0];
+        shader.params.background = colors[1];
+        try std.testing.expectError(error.InvalidSpeckleShaderParams, checkShaderMetadata(.{ .speckle = shader }, 3));
+    }
     var shader = valid;
+    shader.params.foreground = 0.375;
+    shader.params.background = std.math.nextAfter(F, 0.375, 1);
+    try checkShaderMetadata(.{ .speckle = shader }, 3);
+    shader = valid;
     shader.params.cells_per_uv[0] = 0;
+    try std.testing.expectError(error.InvalidSpeckleShaderParams, checkShaderMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.params.occupancy = 0;
     try std.testing.expectError(error.InvalidSpeckleShaderParams, checkShaderMetadata(.{ .speckle = shader }, 3));
     shader = valid;
     shader.params.foreground = 1.1;

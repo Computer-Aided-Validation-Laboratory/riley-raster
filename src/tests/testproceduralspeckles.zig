@@ -17,6 +17,7 @@ const meshpipeline = @import("../riley/zig/meshpipeline.zig");
 const speckleconfig = @import("../riley/zig/speckleconfig.zig");
 const speckleops = @import("../riley/zig/speckleops.zig");
 const ndarray = @import("../riley/zig/ndarray.zig");
+const textureops = @import("../riley/zig/textureops.zig");
 
 const F = buildconfig.F;
 const Params = speckleops.Speckle2DParams;
@@ -79,6 +80,49 @@ test "speckle BMP matches an independently calculated mock gradient" {
             try std.testing.expectEqualSlices(u8, &.{ expected, expected, expected }, row[cc * 3 ..][0..3]);
         }
         for (row[cols * 3 ..]) |byte| try std.testing.expectEqual(@as(u8, 0), byte);
+    }
+}
+
+test "constant low-level speckles match a uniform texture across evaluator configurations" {
+    const cases = [_]struct { occupancy: F = 0.9, foreground: F, background: F }{
+        .{ .foreground = 0, .background = 0 },
+        .{ .foreground = 0.375, .background = 0.375 },
+        .{ .foreground = 1, .background = 1 },
+        .{ .occupancy = 0, .foreground = 1, .background = 0 },
+        .{ .occupancy = 0, .foreground = 0, .background = 0.375 },
+        .{ .occupancy = 0, .foreground = 0, .background = 1 },
+    };
+    var texture = try textureops.Tex(F, 1).init(std.testing.allocator, 2, 3);
+    defer texture.deinit(std.testing.allocator);
+    for (speckleconfig.generationConfigs(buildconfig.enable_all_evaluators)) |config| {
+        const evaluator = std.meta.activeTag(config);
+        if (evaluator == .mock) continue; // Mock ignores colors and returns a UV gradient.
+        for (cases) |case| {
+            if (case.occupancy == 0 and config.pattern() == .perlin) continue;
+            @memset(texture.array.slice, case.background);
+            var params: Params = .{
+                .pattern = config.pattern() orelse .disk,
+                .cells_per_uv = .{ 3.25, 2.5 },
+                .occupancy = case.occupancy,
+                .edge_softness = if (config.edges() == .soft) 0.035 else 0,
+                .foreground = case.foreground,
+                .background = case.background,
+            };
+            if (buildconfig.enable_all_evaluators) {
+                params.evaluator = evaluator;
+                params.neighbor_count = config.neighborhood();
+            }
+            var resources = try speckleops.Resources.init(std.testing.allocator, params);
+            defer resources.deinit(std.testing.allocator);
+            for ([_]F{ -0.25, 0, 0.37, 1, 1.25 }) |u| {
+                const v = 1 - u;
+                const texel = textureops.sampScal(1, .{ .sample = .nearest }, &texture, u, v)[0];
+                try std.testing.expectEqual(case.background, texel);
+                try std.testing.expectEqual(texel, speckleops.sampleScal(u, v, params, &resources));
+                const values: [buildconfig.SimdWidth]F = speckleops.sampleSIMD(@splat(u), @splat(v), @splat(true), params, &resources);
+                for (values) |value| try std.testing.expectEqual(texel, value);
+            }
+        }
     }
 }
 

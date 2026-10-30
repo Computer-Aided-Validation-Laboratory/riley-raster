@@ -243,7 +243,7 @@ pub fn printProceduralConfig(
     );
     std.debug.print("  pattern (runtime): {s}\n", .{@tagName(params.pattern)});
     if (resolved.neighborhood()) |neighbors| {
-        std.debug.print("  neighbor count (resolved): {d}\n", .{@intFromEnum(neighbors)});
+        std.debug.print("  neighbor count (resolved): {d}\n", .{@backingInt(neighbors)});
     } else {
         std.debug.print("  neighbor count (resolved): not used\n", .{});
     }
@@ -379,7 +379,7 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\
         \\Value constraints:
         \\  Cell counts must be positive and finite; seed is an unsigned 32-bit integer.
-        \\  Disk/Gaussian: size > 0, 0 <= jitter <= size, 0 <= occupancy <= 1 (all finite).
+        \\  Disk/Gaussian: size > 0, 0 <= jitter <= size, 0 < occupancy <= 1 (all finite).
         \\  Size + jitter + softness <= 0.5 for one neighbor, or <= 1 otherwise.
         \\  Hard disks exclude their circumference; zero-radius draws are empty.
         \\  Softness must be finite and nonnegative; positive values enable soft disks.
@@ -430,10 +430,10 @@ test "demo arguments start from spec defaults and apply overrides" {
     try std.testing.expectEqual([2]u32{ 32, 32 }, defaults.pixels_num);
 
     const args = (try parseDemoArgs(&[_][*:0]const u8{
-        "demo", "--cells-u", "32", "--occupancy", "0", "--width", "13", "--height", "7",
+        "demo", "--cells-u", "32", "--occupancy", "0.25", "--width", "13", "--height", "7",
     }, spec)).?;
     try std.testing.expectEqual([2]F{ 32, 64 }, args.params.cells_per_uv);
-    try std.testing.expectEqual(@as(F, 0), args.params.occupancy);
+    try std.testing.expectEqual(@as(F, 0.25), args.params.occupancy);
     try std.testing.expectEqual([2]u32{ 13, 7 }, args.pixels_num);
 }
 
@@ -442,6 +442,7 @@ test "demo arguments reject malformed and invalid runtime settings" {
         .{ .args = &.{ "demo", "--pattern", "unknown" }, .err = error.InvalidSpecklePattern },
         .{ .args = &.{ "demo", "--evaluator", "unknown" }, .err = error.InvalidSpeckleEvaluator },
         .{ .args = &.{ "demo", "--cells-v", "nan" }, .err = error.InvalidSpeckleCellsPerUV },
+        .{ .args = &.{ "demo", "--occupancy", "0" }, .err = error.InvalidSpeckleOccupancy },
         .{ .args = &.{ "demo", "--width", "0" }, .err = error.InvalidPixelDimension },
         .{ .args = &.{ "demo", "--unknown", "value" }, .err = error.UnknownArgument },
         .{ .args = &.{ "demo", "--pattern" }, .err = error.MissingArgumentValue },

@@ -105,8 +105,8 @@ class Speckle2DParams:
         Noninteger values are supported. Defaults to ``(192.0, 160.0)``.
     occupancy : float, optional
         Probability of placing a disk or Gaussian blob in each cell, finite
-        and in ``[0, 1]``. This is not the image coverage fraction. Ignored
-        for Perlin. Defaults to ``0.9``.
+        and in ``(0, 1]`` for user input. This is not the image coverage
+        fraction. Ignored for Perlin. Defaults to ``0.9``.
     radius_mean : float, optional
         Positive finite disk radius or Gaussian support radius in cell units.
         Gaussian support is truncated at three standard deviations. Ignored
@@ -129,10 +129,12 @@ class Speckle2DParams:
         disks and Gaussian blobs. Defaults to ``0.12``.
     foreground : float, optional
         Speckle intensity, finite and in ``[0, 1]`` for every shape, before
-        speckle-shader output scaling. Defaults to ``0.0``.
+        speckle-shader output scaling. Must differ from ``background``.
+        Defaults to ``0.0``.
     background : float, optional
         Uncovered intensity, finite and in ``[0, 1]`` for every shape, before
-        speckle-shader output scaling. Defaults to ``1.0``.
+        speckle-shader output scaling. Must differ from ``foreground``;
+        use a uniform texture for a constant field. Defaults to ``1.0``.
     pattern : SpecklePattern, optional
         Runtime choice of ``disk``, ``gaussian``, or ``perlin``. Defaults to
         ``SpecklePattern.disk``. Each mesh keeps its selected pattern across

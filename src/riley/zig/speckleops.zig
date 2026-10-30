@@ -48,7 +48,8 @@ pub const Speckle2DParams = struct {
     seed: u32 = 0xa511e9b3,
     /// Positive cell counts per UV unit along each axis; noninteger values are supported.
     cells_per_uv: [2]F = .{ 192.0, 160.0 },
-    /// Active-cell probability in [0, 1], not image coverage; ignored by Perlin.
+    /// Active-cell probability in [0, 1], not image coverage; ignored by Perlin/mock.
+    /// User-facing disk/Gaussian requests require a strictly positive value.
     occupancy: F = 0.9,
     /// Positive disk radius or Gaussian three-sigma support, in cell units; ignored by Perlin.
     radius_mean: F = 0.45,
@@ -64,11 +65,13 @@ pub const Speckle2DParams = struct {
     /// Ignored by disk/Gaussian shapes.
     perlin_coverage_transition_width: F = 0.12,
     /// Foreground intensity in [0, 1], before renderer output scaling.
+    /// User-facing requests must use a value different from background.
     foreground: F = 0.0,
     /// Background intensity in [0, 1], before renderer output scaling.
     background: F = 1.0,
 
-    /// Resolve one immutable generation configuration and validate before allocating.
+    /// Resolve a generation configuration and validate numerical constraints before allocating.
+    /// Equal colors and zero occupancy are supported here; validate() adds user-facing policy.
     pub fn resolve(self: Speckle2DParams) !speckleconfig.Config {
         if (!std.math.isFinite(self.edge_softness) or self.edge_softness < 0.0) {
             return error.InvalidSpeckleEdgeSoftness;
@@ -84,8 +87,14 @@ pub const Speckle2DParams = struct {
         return config;
     }
 
+    /// Validate user input, including nonzero contrast and positive disk/Gaussian occupancy.
+    /// Low-level preparation uses resolve() and allows constant/empty reference patterns.
     pub fn validate(self: Speckle2DParams) !void {
-        _ = try self.resolve();
+        const config = try self.resolve();
+        if (self.foreground == self.background) return error.SpeckleColorsMustDiffer;
+        if (config.pattern()) |pattern| {
+            if (pattern != .perlin and self.occupancy == 0.0) return error.InvalidSpeckleOccupancy;
+        }
     }
 
     // Per-configuration numeric checks, run by resolve() after its softness check.
@@ -1124,7 +1133,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         fn evalStripSpeckleList2DSpecialized(comptime soft_edges: bool, comptime fixed_radius: bool, u: F, v: F, speckles: StripSpeckleList2D) F {
             const uv = [2]F{ u, v };
             const params = speckles.params;
-            if (params.foreground == params.background) return params.background;
             const proc_x = @max(0.0, @min(1.0, uv[0])) * params.cells_per_uv[0];
             const proc_y = @max(0.0, @min(1.0, uv[1])) * params.cells_per_uv[1];
             const cell_x_f = @floor(proc_x);
@@ -2008,7 +2016,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             };
 
             const empty_pattern = speckle_shape != .perlin and params.occupancy == 0.0;
-            if (empty_pattern or params.foreground == params.background) {
+            if (empty_pattern) {
                 return .{
                     .bits = try allocator.alloc(u8, 0),
                     .dims = dims,
@@ -2071,7 +2079,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 
         inline fn evalSpeckleMask2D(uv: [2]F, mask: SpeckleMask2D) F {
             const params = mask.params;
-            // Generation stores no bits for empty patterns or equal colors.
+            // Empty patterns have no payload to index.
             if (mask.bits.len == 0) return params.background;
             const texel_x: usize = @intFromFloat(
                 @max(0.0, @min(1.0, uv[0])) * mask.uv_to_texel[0] + 0.5,
@@ -2111,8 +2119,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             direct: DirectFixedSpeckle2D,
         ) F {
             const params = direct.params;
-            if (params.foreground == params.background) return params.background;
-
             const proc_x = @max(0.0, @min(1.0, uv[0])) * params.cells_per_uv[0];
             const proc_y = @max(0.0, @min(1.0, uv[1])) * params.cells_per_uv[1];
             const cell_x: i64 = @intFromFloat(@floor(proc_x));
@@ -2142,9 +2148,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         ) F {
             const uv = [2]F{ u, v };
             const params = speckles.params;
-            if (speckles.disks.len == 0 or params.foreground == params.background) {
-                return params.background;
-            }
             const proc_x = @max(0.0, @min(1.0, uv[0])) * params.cells_per_uv[0];
             const proc_y = @max(0.0, @min(1.0, uv[1])) * params.cells_per_uv[1];
             const edge_softness = if (soft_edges) params.edge_softness else 0.0;
@@ -2178,8 +2181,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             classified: ClassifiedIndexedSpeckle2D,
         ) F {
             const params = classified.speckles.params;
-            const empty = classified.speckles.recordCount() == 0;
-            if (empty or params.foreground == params.background) return params.background;
             const proc: [2]F = .{
                 @max(0.0, @min(1.0, uv[0])) * params.cells_per_uv[0],
                 @max(0.0, @min(1.0, uv[1])) * params.cells_per_uv[1],
@@ -2210,9 +2211,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             if (comptime evaluator == .mock) return 0.5 * (u + v);
             const uv = [2]F{ u, v };
             if (comptime speckle_shape == .perlin) return evalPerlinSpeckle2D(uv, params);
-            if (params.occupancy == 0.0 or params.foreground == params.background) {
-                return params.background;
-            }
 
             const proc_x = @max(0.0, @min(1.0, uv[0])) * params.cells_per_uv[0];
             const proc_y = @max(0.0, @min(1.0, uv[1])) * params.cells_per_uv[1];
@@ -2314,12 +2312,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             const foreground = 512;
             const params = classified.speckles.params;
             const v_background: VecSF = @splat(params.background);
-            const empty = classified.speckles.recordCount() == 0;
-            if (empty or
-                params.foreground == params.background)
-            {
-                return v_background;
-            }
 
             const v_zero: VecSF = @splat(0.0);
             const v_proc_x = @max(v_zero, @min(@as(VecSF, @splat(1.0)), u)) * @as(VecSF, @splat(params.cells_per_uv[0]));
@@ -2373,9 +2365,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         ) VecSF {
             const params = direct.params;
             const v_background: VecSF = @splat(params.background);
-            if (params.foreground == params.background) {
-                return v_background;
-            }
 
             const v_zero: VecSF = @splat(0.0);
             const v_one: VecSF = @splat(1.0);
@@ -3151,12 +3140,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             }
         }
 
-        test "procedural speckle equal-colour fast path is exact" {
-            if (comptime evaluator == .mock) return;
-            const params: Speckle2DParams = .{ .foreground = 0.375, .background = 0.375 };
-            try testing.expectEqual(params.background, evalSpeckle2D(.{ 0.37, 0.61 }, params));
-        }
-
         fn speckleMaskTestParams() Speckle2DParams {
             return .{
                 .seed = 0x85ebca6b,
@@ -3233,10 +3216,12 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 if (equal_colour) params.foreground = params.background;
                 const mask = try generateSpeckleMask2D(testing.allocator, params);
                 defer deinitTestResources(.{ .data = .{ .mask = mask } });
-                if (speckle_shape == .perlin and !equal_colour) {
+                if (speckle_shape == .perlin or equal_colour) {
                     try testing.expect(mask.bits.len > 0);
                 } else {
                     try testing.expectEqual(@as(usize, 0), mask.bits.len);
+                }
+                if (equal_colour or speckle_shape != .perlin) {
                     try testing.expectEqual(params.background, evalSpeckleMask2D(.{ 0.37, 0.61 }, mask));
                 }
             }
@@ -3611,6 +3596,25 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 comptime {
     if (@import("builtin").is_test) {
         for (generation_configs) |config| std.testing.refAllDecls(Implementation(config));
+    }
+}
+
+test "user validation requires positive occupancy only for disk and Gaussian" {
+    for ([_]speckleconfig.Pattern{ .disk, .gaussian }) |pattern| {
+        for ([_]F{ 0.0, -0.0 }) |occupancy| {
+            var params: Speckle2DParams = .{
+                .pattern = pattern,
+                .occupancy = occupancy,
+            };
+            try std.testing.expectError(error.InvalidSpeckleOccupancy, params.validate());
+
+            params.occupancy = std.math.floatMin(F);
+            try params.validate();
+        }
+    }
+    try (Speckle2DParams{ .pattern = .perlin, .occupancy = 0 }).validate();
+    if (comptime buildconfig.enable_all_evaluators) {
+        try (Speckle2DParams{ .evaluator = .mock, .occupancy = 0 }).validate();
     }
 }
 

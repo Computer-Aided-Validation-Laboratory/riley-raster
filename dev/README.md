@@ -185,9 +185,13 @@ not in `Resources`. UVs clamp to `[0,1]` before procedural scaling.
 
 Input validation happens before render allocations: fast validation checks
 metadata, shapes, and parameters; full validation additionally scans array
-payloads, including UV finiteness and connectivity indices. Resource initialization
-is itself a checked preparation boundary for direct low-level callers, and the only
-one inside `speckleops`: generators and samplers rely on its validated parameters.
+payloads, including UV finiteness and connectivity indices. `Speckle2DParams.validate()`
+rejects equal foreground/background values and zero disk/Gaussian occupancy at
+user-input boundaries; use a uniform texture for a constant field. Perlin and mock
+ignore occupancy. Low-level `resolve()` and `Resources.init()` validate numerical
+constraints but allow zero occupancy and equal colors for reference calculations
+and tests. Equal colors produce uniform output except for mock, which ignores
+colors. Generators and prepared samplers rely on these checks.
 Samplers do not recheck UV finiteness. The clamp keeps any UV, including NaN
 (which clamps to 1) and infinities, inside the prepared grids, so out-of-contract
 UVs stay memory-safe without per-sample checks.
