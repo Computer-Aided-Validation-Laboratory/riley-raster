@@ -6,9 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const fullcase_shader = @import("../tests/fullcase_shader.zig");
 const fullfixtures = @import("../dev_support/fullfixtures.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
@@ -23,8 +26,8 @@ const normals = @import("../riley/zig/normals.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 pub const FullNodalCase = fullcase_shader.FullNodalCase;
 pub const FullTexCase = fullcase_shader.FullTexCase;
@@ -104,7 +107,7 @@ pub fn generateAllFullShaderCases(
         .exact,
     };
     const bool_values = [_]bool{ false, true };
-    const builtins = [_]shaderops.FuncShaderBuiltin{
+    const builtins = [_]shadertypes.FuncShaderBuiltin{
         .constant,
         .linear,
         .quadratic,
@@ -115,7 +118,7 @@ pub fn generateAllFullShaderCases(
         .lambertian_normal_z,
         .eggbox,
     };
-    const coord_modes = [_]shaderops.FuncCoordMode{
+    const coord_modes = [_]shadertypes.FuncCoordMode{
         .para,
         .uv,
         .world_reference,

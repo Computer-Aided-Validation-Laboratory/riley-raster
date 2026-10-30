@@ -6,9 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const matslice = @import("../riley/zig/matslice.zig");
@@ -23,8 +25,8 @@ const valarr = @import("../riley/zig/validatearrays.zig");
 const valinp = @import("../riley/zig/validateinput.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 const RenderGroup = riley.RenderGroup;
 const RasterConfig = rastcfg.RasterConfig;
 const NDArray = ndarray.NDArray(F);

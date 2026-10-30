@@ -15,8 +15,8 @@ const meshio = @import("riley/zig/meshio.zig");
 const uvio = @import("riley/zig/uvio.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
-const camera = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
@@ -71,7 +71,7 @@ pub fn main(init: std.process.Init) !void {
         "texture/speckle_mono.bmp",
         .bmp,
     );
-    const mesh = meshpipe.MeshInput{
+    const mesh = riley.MeshInput{
         .mesh_type = .tri6,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
@@ -106,7 +106,7 @@ pub fn main(init: std.process.Init) !void {
         1.0,
     );
 
-    const camera_input = camera.CameraInput{
+    const camera_input = riley.CameraInput{
         .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }},
         .pixels_num = pixels_num,
         .pixels_size = pixel_size,

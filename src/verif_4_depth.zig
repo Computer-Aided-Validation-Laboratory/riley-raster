@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameratypes = @import("riley/zig/cameratypes.zig");
+const meshtypes = @import("riley/zig/meshtypes.zig");
 const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
@@ -13,8 +15,8 @@ const F = buildconfig.F;
 const benchcommon = @import("dev_support/benchcommon.zig");
 const orch = @import("dev_support/orchestration.zig");
 const tcfg = @import("dev_support/testconfig.zig");
-const cammod = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const cammod = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const mo = @import("riley/zig/meshpipeline.zig");
@@ -25,7 +27,7 @@ const NDArray = @import("riley/zig/ndarray.zig").NDArray;
 const sceneops = @import("riley/zig/sceneops.zig");
 
 const CameraPrepared = cammod.CameraPrepared;
-const MeshInput = mo.MeshInput;
+const MeshInput = meshtypes.MeshInput;
 
 const Separation = enum {
     far,
@@ -153,7 +155,7 @@ fn calcDiffImage(
 fn renderSingle(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    camera_input: cammod.CameraInput,
+    camera_input: cameratypes.CameraInput,
     meshes: []const MeshInput,
 ) !NDArray(F) {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
@@ -171,7 +173,7 @@ fn renderSingle(
     const result = (try riley.raster(
         local_alloc,
         io,
-        &[_]cammod.CameraInput{camera_input},
+        &[_]cameratypes.CameraInput{camera_input},
         mesh_copies,
         config,
         null,
@@ -326,7 +328,7 @@ fn runCase(
         },
     );
     defer camera.deinit(aa);
-    const camera_input = cammod.CameraInput{
+    const camera_input = cameratypes.CameraInput{
         .pixels_num = camera.pixels_num,
         .pixels_size = camera.pixels_size,
         .pos_world = camera.pos_world,

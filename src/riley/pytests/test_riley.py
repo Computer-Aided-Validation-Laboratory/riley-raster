@@ -91,6 +91,13 @@ STANDARD_DEMO_CASES = (
         "out_riley_py/demo6_featurezoo",
         None,
     ),
+    (
+        "shaderpipe_quickstart",
+        [str(PYTHON_EXE), "-m", "riley", "demo7_shaderpipe_quickstart"],
+        "out/demo7_shaderpipe_quickstart",
+        "out_riley_py/demo7_shaderpipe_quickstart",
+        None,
+    ),
 )
 
 EXODUS_DEMO_CASE = (

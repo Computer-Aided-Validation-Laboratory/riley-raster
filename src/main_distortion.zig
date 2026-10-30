@@ -6,6 +6,9 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameratypes = @import("riley/zig/cameratypes.zig");
+const meshtypes = @import("riley/zig/meshtypes.zig");
+const shadertypes = @import("riley/zig/shadertypes.zig");
 const std = @import("std");
 
 const riley = @import("riley/zig/riley.zig");
@@ -16,19 +19,19 @@ const mo = @import("riley/zig/meshpipeline.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
-const camera_mod = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera_mod = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
-const MeshInput = mo.MeshInput;
+const MeshInput = meshtypes.MeshInput;
 const MeshType = gk.MeshType;
-const CameraInput = camera_mod.CameraInput;
+const CameraInput = cameratypes.CameraInput;
 const DistortModel = camera_mod.DistortParams;
 const BrownCon = camera_mod.BrownCon;
 const PointSpreadFunc = camera_mod.PointSpreadFunc;
-const FuncShaderBuiltin = shaderops.FuncShaderBuiltin;
-const FuncShaderParams = shaderops.FuncShaderParams;
+const FuncShaderBuiltin = shadertypes.FuncShaderBuiltin;
+const FuncShaderParams = shadertypes.FuncShaderParams;
 
 const OUT_DIR_ROOT = "./out/distortion";
 const PIXELS_NUM = [2]u32{ 1600, 1000 };

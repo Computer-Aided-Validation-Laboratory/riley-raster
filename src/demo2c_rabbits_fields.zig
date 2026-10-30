@@ -8,8 +8,8 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const cam = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
@@ -74,7 +74,7 @@ pub fn main(init: std.process.Init) !void {
         rot,
         fov_scale,
     );
-    const camera_input = cam.CameraInput{
+    const camera_input = riley.CameraInput{
         .render_format = .{ .multifield = 3 },
         .pixels_num = pixel_num,
         .pixels_size = default_pixel_size,

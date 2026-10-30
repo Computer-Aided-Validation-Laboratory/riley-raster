@@ -6,15 +6,18 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 
 const benchcommon = @import("../dev_support/benchcommon.zig");
 const orch = @import("../dev_support/orchestration.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const rotation = @import("../riley/zig/rotation.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const cameraops = @import("../riley/zig/cameraops.zig");
+const cameraops = @import("../riley/zig/cameraframops.zig");
 const iio = @import("../riley/zig/imageio.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
@@ -24,7 +27,7 @@ const riley = @import("../riley/zig/riley.zig");
 const shaderops = @import("../riley/zig/shaderops.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
+const CameraInput = cameratypes.CameraInput;
 const Rotation = rotation.Rotation;
 const NDArray = ndarray.NDArray;
 
@@ -44,8 +47,8 @@ const ImageDiffStats = struct {
 };
 
 fn sinusoidalParams(
-    builtin: shaderops.FuncShaderBuiltin,
-) shaderops.FuncShaderParams {
+    builtin: shadertypes.FuncShaderBuiltin,
+) shadertypes.FuncShaderParams {
     const wave_num = 2.0 * std.math.pi * wave_oscillations;
     return switch (builtin) {
         .sinusoidal => .{
@@ -71,8 +74,8 @@ fn sinusoidalParams(
 fn loadFuncMeshInput(
     allocator: std.mem.Allocator,
     io: std.Io,
-    builtin: shaderops.FuncShaderBuiltin,
-) !mo.MeshInput {
+    builtin: shadertypes.FuncShaderBuiltin,
+) !meshtypes.MeshInput {
     const coord_path = try std.fs.path.join(
         allocator,
         &[_][]const u8{ data_dir, "coords.csv" },
@@ -112,7 +115,7 @@ fn loadFuncMeshInput(
 fn renderSinImage(
     allocator: std.mem.Allocator,
     io: std.Io,
-    builtin: shaderops.FuncShaderBuiltin,
+    builtin: shadertypes.FuncShaderBuiltin,
 ) !NDArray(F) {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -146,7 +149,7 @@ fn renderSinImage(
         aa,
         io,
         &[_]CameraInput{camera_input},
-        &[_]mo.MeshInput{mesh_input},
+        &[_]meshtypes.MeshInput{mesh_input},
         config,
         null,
     )) orelse return error.NoResult;

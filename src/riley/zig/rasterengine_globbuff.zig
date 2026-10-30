@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const meshtypes = @import("meshtypes.zig");
 const std = @import("std");
 const F = @import("buildconfig.zig").F;
 const frontend = @import("rasterfrontend.zig");
@@ -15,7 +16,7 @@ const ReportMode = report.ReportMode;
 const scalingpolicy = @import("scalingpolicy.zig");
 const pce = @import("parachunkexec.zig");
 const meshpipe = @import("meshpipeline.zig");
-const MeshPrepared = meshpipe.MeshPrepared;
+const MeshPrepared = meshtypes.MeshPrepared;
 const NDArray = @import("ndarray.zig").NDArray;
 const Timestamp = std.Io.Clock.Timestamp;
 const rasterreport = @import("rasterreport.zig");
@@ -40,7 +41,7 @@ pub fn rasterSceneGlobBuff(
     requested_workers: u16,
     tiling: elemtilebin.TileElemOverlaps,
     meshes: []const MeshPrepared,
-    mesh_hulls: meshpipe.MeshHulls,
+    mesh_hulls: meshtypes.MeshHulls,
     target: *subpxframe.SubpxTarget,
     image_out_arr: *NDArray(F),
 ) !usize {
@@ -70,7 +71,7 @@ fn rasterSceneGlobBuffImpl(
     requested_workers: u16,
     tiling: elemtilebin.TileElemOverlaps,
     meshes: []const MeshPrepared,
-    mesh_hulls: meshpipe.MeshHulls,
+    mesh_hulls: meshtypes.MeshHulls,
     target: *subpxframe.SubpxTarget,
     image_out_arr: *NDArray(F),
 ) !usize {
@@ -83,7 +84,7 @@ fn rasterSceneGlobBuffImpl(
         shared_log: *report.LogType(report_mode),
         tiling: elemtilebin.TileElemOverlaps,
         meshes: []const MeshPrepared,
-        mesh_hulls: meshpipe.MeshHulls,
+        mesh_hulls: meshtypes.MeshHulls,
         target: *subpxframe.SubpxTarget,
         worker_states: []WorkerState,
         subpx_tile_size: usize,

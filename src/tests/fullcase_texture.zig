@@ -6,9 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
@@ -17,8 +20,8 @@ const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const texops = @import("../riley/zig/textureops.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 pub const FullTexSamplingCase = struct {
     is_rgb: bool,
@@ -78,7 +81,7 @@ pub fn buildTexSamplingCaseMeshes(
     case: FullTexSamplingCase,
 ) ![2]MeshInput {
     if (case.is_rgb) {
-        const sphere_source: shaderops.PipeSourceInput = switch (case.dtype) {
+        const sphere_source: shadertypes.PipeSourceInput = switch (case.dtype) {
             .u8 => .{
                 .tex_rgb_u8 = .{
                     .uvs = prep.sphere_uvs.array,
@@ -102,7 +105,7 @@ pub fn buildTexSamplingCaseMeshes(
             },
         };
 
-        const cyl_source: shaderops.PipeSourceInput = switch (case.dtype) {
+        const cyl_source: shadertypes.PipeSourceInput = switch (case.dtype) {
             .u8 => .{
                 .tex_rgb_u8 = .{
                     .uvs = prep.cylinder_uvs.array,
@@ -126,9 +129,9 @@ pub fn buildTexSamplingCaseMeshes(
             },
         };
 
-        const s1_stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        const s1_stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
         s1_stages[0] = shaderops.stageSource(sphere_source);
-        const s2_stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        const s2_stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
         s2_stages[0] = shaderops.stageSource(cyl_source);
 
         return [_]MeshInput{
@@ -158,7 +161,7 @@ pub fn buildTexSamplingCaseMeshes(
             },
         };
     } else {
-        const sphere_mono: shaderops.ShaderMonoInput = switch (case.dtype) {
+        const sphere_mono: shadertypes.ShaderMonoInput = switch (case.dtype) {
             .u8 => .{
                 .tex_u8 = .{
                     .uvs = prep.sphere_uvs.array,
@@ -182,7 +185,7 @@ pub fn buildTexSamplingCaseMeshes(
             },
         };
 
-        const cyl_mono: shaderops.ShaderMonoInput = switch (case.dtype) {
+        const cyl_mono: shadertypes.ShaderMonoInput = switch (case.dtype) {
             .u8 => .{
                 .tex_u8 = .{
                     .uvs = prep.cylinder_uvs.array,

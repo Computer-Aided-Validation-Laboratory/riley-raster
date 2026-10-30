@@ -33,13 +33,13 @@ selects the input type, so callers do not need to spell out `TexInput(...)`:
 
 ```zig
 const mono_tex = try texops.TexDataFix(u8, 1).init(allocator, rows, cols);
-const mono_shader: shaderops.ShaderDirectInput = .{ .tex_u8 = .{
+const mono_shader: riley.ShaderMonoInput = .{ .tex_u8 = .{
     .uvs = uvs,
     .tex = mono_tex,
 } };
 
 const fields_tex = try texops.TexDataDyn(F).init(allocator, 4, rows, cols);
-const fields_shader: shaderops.ShaderDirectInput = .{ .tex_multi_f = .{
+const fields_source: riley.PipeSourceInput = .{ .tex_multi_f = .{
     .uvs = uvs,
     .tex = fields_tex,
 } };

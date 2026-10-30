@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const shadertypes = @import("shadertypes.zig");
 const cfg = @import("buildconfig.zig").config;
 const comm = @import("shaderops_common.zig");
 const scal = @import("shaderops_scalar.zig");
@@ -15,58 +16,8 @@ const simd_impl = @import("shaderops_simd.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const ScaleOver = comm.ScaleOver;
-pub const FuncCoordMode = comm.FuncCoordMode;
-pub const FuncShaderBuiltin = comm.FuncShaderBuiltin;
-pub const FuncShaderParams = comm.FuncShaderParams;
-pub const LocalShaderBuff = comm.LocalShaderBuff;
-pub const NodalInput = comm.NodalInput;
-pub const NodalPrepared = comm.NodalPrepared;
-pub const TexInput = comm.TexInput;
-pub const TexPrepared = comm.TexPrepared;
-pub const TexMultiPrepared = comm.TexMultiPrepared;
-pub const TexMultiStatic = comm.TexMultiStatic;
-pub const concreteTexture = comm.concreteTexture;
-pub const FuncInput = comm.FuncInput;
-pub const FuncMultiInput = comm.FuncMultiInput;
-pub const FuncChannel = comm.FuncChannel;
-pub const FuncPrepared = comm.FuncPrepared;
-pub const FuncChannelPrepared = comm.FuncChannelPrepared;
-pub const ShadeContext = comm.ShadeContext;
-pub const ShaderMonoInput = comm.ShaderMonoInput;
-pub const ShaderMonoStatic = comm.ShaderMonoStatic;
-pub const ShaderMonoPrepared = comm.ShaderMonoPrepared;
-pub const ShaderMonoExecutionStatic = comm.ShaderMonoExecutionStatic;
-pub const ShaderMonoExecutionPrepared = comm.ShaderMonoExecutionPrepared;
-pub const PipeSourceInput = comm.PipeSourceInput;
-pub const PipeSourceStatic = comm.PipeSourceStatic;
-pub const PipeSourcePrepared = comm.PipeSourcePrepared;
-pub const FuncSourceInput = comm.FuncSourceInput;
-pub const FuncSourceStatic = comm.FuncSourceStatic;
-pub const FuncSourcePrepared = comm.FuncSourcePrepared;
-pub const RenderFormat = comm.RenderFormat;
-pub const ShaderExecutionStatic = comm.ShaderExecutionStatic;
-pub const ShaderExecutionPrepared = comm.ShaderExecutionPrepared;
-pub const MeshShaderSetInput = comm.MeshShaderSetInput;
-pub const ShaderPipeInput = comm.ShaderPipeInput;
-pub const ShaderPipeStageInput = comm.ShaderPipeStageInput;
-pub const normFuncShaderParams = comm.normFuncShaderParams;
-pub const NodalStatic = comm.NodalStatic;
-pub const TexStatic = comm.TexStatic;
-pub const FuncStatic = comm.FuncStatic;
-pub const MeshShaderSetStatic = comm.MeshShaderSetStatic;
-pub const MeshShaderSetPrepared = comm.MeshShaderSetPrepared;
-pub const ShaderPipeStatic = comm.ShaderPipeStatic;
-pub const ShaderPipeStageStatic = comm.ShaderPipeStageStatic;
-pub const ShaderPipePrepared = comm.ShaderPipePrepared;
-pub const ShaderPipeStagePrepared = comm.ShaderPipeStagePrepared;
-pub const GreyToEmissivityStage = comm.GreyToEmissivityStage;
-pub const ClampStage = comm.ClampStage;
-pub const AffineMapStage = comm.AffineMapStage;
-pub const LUTMapStage = comm.LUTMapStage;
-pub const BlendStage = comm.BlendStage;
-pub const NormaliseStage = comm.NormaliseStage;
-pub const SelectedShader = comm.SelectedShader;
+pub const concreteTexture = shadertypes.concreteTexture;
+pub const normFuncShaderParams = shadertypes.normFuncShaderParams;
 pub const hasShader = comm.hasShader;
 pub const selectShader = comm.selectShader;
 pub const stageSource = comm.stageSource;

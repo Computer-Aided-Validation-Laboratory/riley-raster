@@ -6,13 +6,16 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameratypes = @import("cameratypes.zig");
+const meshtypes = @import("meshtypes.zig");
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
-const cam = @import("camera.zig");
+const cam = @import("cameraprojops.zig");
 const cameraio = @import("cameraio.zig");
-const cameraops = @import("cameraops.zig");
+const cameraops = @import("cameraframops.zig");
 const gk = @import("geometrykernels.zig");
 const iio = @import("imageio.zig");
 const imageops = @import("imageops.zig");
@@ -403,7 +406,7 @@ pub const CRasterConfig = extern struct {
 };
 
 const ShaderDirectBuilt = struct {
-    shader: shaderops.PipeSourceInput,
+    shader: shadertypes.PipeSourceInput,
     uvs_array: ?ndarray.NDArray(F) = null,
     tex_array_u8: ?ndarray.NDArray(u8) = null,
     tex_array_u16: ?ndarray.NDArray(u16) = null,
@@ -430,12 +433,12 @@ const ShaderDirectBuilt = struct {
 };
 
 const MeshInputBuilt = struct {
-    mesh_input: meshpipe.MeshInput,
+    mesh_input: meshtypes.MeshInput,
     disp_array: ?ndarray.NDArray(F) = null,
     direct_shaders: []ShaderDirectBuilt = &.{},
     pipe_sources: []ShaderDirectBuilt = &.{},
-    pipe_stages: [][]shaderops.ShaderPipeStageInput = &.{},
-    pipe_inputs: []shaderops.ShaderPipeInput = &.{},
+    pipe_stages: [][]shadertypes.ShaderPipeStageInput = &.{},
+    pipe_inputs: []shadertypes.ShaderPipeInput = &.{},
 
     fn deinit(self: *MeshInputBuilt, allocator: std.mem.Allocator) void {
         if (self.disp_array) |*disp_array| {
@@ -606,10 +609,10 @@ fn bufferModeFromC(buffer_mode: u32) !rastcfg.BufferMode {
     };
 }
 
-fn subpxCenterMapFromC(subpx_map: u32) !cam.SubPixelCenterMap {
+fn subpxCenterMapFromC(subpx_map: u32) !cameratypes.SubPixelCenterMap {
     return switch (subpx_map) {
-        @intFromEnum(cam.SubPixelCenterMap.full_in_mem) => .full_in_mem,
-        @intFromEnum(cam.SubPixelCenterMap.per_tile) => .per_tile,
+        @intFromEnum(cameratypes.SubPixelCenterMap.full_in_mem) => .full_in_mem,
+        @intFromEnum(cameratypes.SubPixelCenterMap.per_tile) => .per_tile,
         else => error.InvalidSubPixelCenterMap,
     };
 }
@@ -673,10 +676,10 @@ fn validateInputFromC(
     };
 }
 
-fn coordSysFromC(coord_sys: u32) !cam.CameraCoordSys {
+fn coordSysFromC(coord_sys: u32) !cameratypes.CameraCoordSys {
     return switch (coord_sys) {
-        @intFromEnum(cam.CameraCoordSys.opengl) => .opengl,
-        @intFromEnum(cam.CameraCoordSys.opencv) => .opencv,
+        @intFromEnum(cameratypes.CameraCoordSys.opengl) => .opengl,
+        @intFromEnum(cameratypes.CameraCoordSys.opencv) => .opencv,
         else => error.InvalidCoordSys,
     };
 }
@@ -825,27 +828,27 @@ fn texSampleModeFromC(
     };
 }
 
-fn scaleOverFromC(scale_over: u32) !shaderops.ScaleOver {
+fn scaleOverFromC(scale_over: u32) !shadertypes.ScaleOver {
     return switch (scale_over) {
-        @intFromEnum(shaderops.ScaleOver.within_frames) => .within_frames,
-        @intFromEnum(shaderops.ScaleOver.over_frames) => .over_frames,
+        @intFromEnum(shadertypes.ScaleOver.within_frames) => .within_frames,
+        @intFromEnum(shadertypes.ScaleOver.over_frames) => .over_frames,
         else => error.InvalidScaleOver,
     };
 }
 
 fn funcShaderBuiltinFromC(
     func_shader_builtin: u32,
-) !shaderops.FuncShaderBuiltin {
-    const lambertian = shaderops.FuncShaderBuiltin.lambertian_normal_z;
-    const eggbox = shaderops.FuncShaderBuiltin.eggbox;
+) !shadertypes.FuncShaderBuiltin {
+    const lambertian = shadertypes.FuncShaderBuiltin.lambertian_normal_z;
+    const eggbox = shadertypes.FuncShaderBuiltin.eggbox;
     return switch (func_shader_builtin) {
-        @intFromEnum(shaderops.FuncShaderBuiltin.constant) => .constant,
-        @intFromEnum(shaderops.FuncShaderBuiltin.linear) => .linear,
-        @intFromEnum(shaderops.FuncShaderBuiltin.quadratic) => .quadratic,
-        @intFromEnum(shaderops.FuncShaderBuiltin.sinusoidal) => .sinusoidal,
-        @intFromEnum(shaderops.FuncShaderBuiltin.sinusoidal_approx) => .sinusoidal_approx,
-        @intFromEnum(shaderops.FuncShaderBuiltin.checker) => .checker,
-        @intFromEnum(shaderops.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
+        @intFromEnum(shadertypes.FuncShaderBuiltin.constant) => .constant,
+        @intFromEnum(shadertypes.FuncShaderBuiltin.linear) => .linear,
+        @intFromEnum(shadertypes.FuncShaderBuiltin.quadratic) => .quadratic,
+        @intFromEnum(shadertypes.FuncShaderBuiltin.sinusoidal) => .sinusoidal,
+        @intFromEnum(shadertypes.FuncShaderBuiltin.sinusoidal_approx) => .sinusoidal_approx,
+        @intFromEnum(shadertypes.FuncShaderBuiltin.checker) => .checker,
+        @intFromEnum(shadertypes.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
         @intFromEnum(lambertian) => .lambertian_normal_z,
         @intFromEnum(eggbox) => .eggbox,
         else => error.InvalidFuncShaderBuiltin,
@@ -854,12 +857,12 @@ fn funcShaderBuiltinFromC(
 
 fn funcCoordModeFromC(
     coord_mode: u32,
-) !shaderops.FuncCoordMode {
+) !shadertypes.FuncCoordMode {
     return switch (coord_mode) {
-        @intFromEnum(shaderops.FuncCoordMode.uv) => .uv,
-        @intFromEnum(shaderops.FuncCoordMode.para) => .para,
-        @intFromEnum(shaderops.FuncCoordMode.world_reference) => .world_reference,
-        @intFromEnum(shaderops.FuncCoordMode.world_deformed) => .world_deformed,
+        @intFromEnum(shadertypes.FuncCoordMode.uv) => .uv,
+        @intFromEnum(shadertypes.FuncCoordMode.para) => .para,
+        @intFromEnum(shadertypes.FuncCoordMode.world_reference) => .world_reference,
+        @intFromEnum(shadertypes.FuncCoordMode.world_deformed) => .world_deformed,
         else => error.InvalidFuncCoordMode,
     };
 }
@@ -874,9 +877,9 @@ fn normalTypeFromC(normal_type: u32) !normals.NormalType {
 }
 
 fn funcShaderParamsFromC(
-    builtin: shaderops.FuncShaderBuiltin,
+    builtin: shadertypes.FuncShaderBuiltin,
     in_params: CFuncShaderParams,
-) shaderops.FuncShaderParams {
+) shadertypes.FuncShaderParams {
     return .{
         .coord_scale = .{
             in_params.coord_scale_0,
@@ -1212,8 +1215,8 @@ fn buildOptionalFieldFromC(
 fn buildCameraInput(
     allocator: std.mem.Allocator,
     in_camera: *const CCameraInput,
-) !cam.CameraInput {
-    const render_format: shaderops.RenderFormat = switch (in_camera.render_format_tag) {
+) !cameratypes.CameraInput {
+    const render_format: shadertypes.RenderFormat = switch (in_camera.render_format_tag) {
         0 => .mono,
         1 => .rgb,
         2 => .ir,
@@ -1664,7 +1667,7 @@ fn buildShaderDirectInput(
     return built;
 }
 
-fn pipeSourceToMono(source: shaderops.PipeSourceInput) !shaderops.ShaderMonoInput {
+fn pipeSourceToMono(source: shadertypes.PipeSourceInput) !shadertypes.ShaderMonoInput {
     return switch (source) {
         .tex_u8 => |tex_shader| .{ .tex_u8 = tex_shader },
         .tex_u16 => |tex_shader| .{ .tex_u16 = tex_shader },
@@ -1681,7 +1684,7 @@ fn pipeSourceToMono(source: shaderops.PipeSourceInput) !shaderops.ShaderMonoInpu
     };
 }
 
-fn pipeSourceChannels(source: shaderops.PipeSourceInput) u8 {
+fn pipeSourceChannels(source: shadertypes.PipeSourceInput) u8 {
     return switch (source) {
         .nodal => |s| s.field.getFieldsN(),
         .tex_u8, .tex_u16, .tex_f => 1,
@@ -1701,18 +1704,18 @@ fn buildPipeInput(
     allocator: std.mem.Allocator,
     pipe: *const CPipe,
     pipe_sources: []ShaderDirectBuilt,
-    pipe_stages: [][]shaderops.ShaderPipeStageInput,
-    pipe_inputs: []shaderops.ShaderPipeInput,
+    pipe_stages: [][]shadertypes.ShaderPipeStageInput,
+    pipe_inputs: []shadertypes.ShaderPipeInput,
     source_idx: *usize,
     pipe_idx: *usize,
-) !shaderops.ShaderPipeInput {
+) !shadertypes.ShaderPipeInput {
     const input_stages = try cConstSlice(
         CPipeStage,
         pipe.stages,
         pipe.stages_len,
     );
     const stages = try allocator.alloc(
-        shaderops.ShaderPipeStageInput,
+        shadertypes.ShaderPipeStageInput,
         input_stages.len,
     );
     pipe_stages[pipe_idx.*] = stages;
@@ -1871,11 +1874,11 @@ fn buildMeshInput(
     built.direct_shaders = try allocator.alloc(ShaderDirectBuilt, direct_mono_count);
     built.pipe_sources = try allocator.alloc(ShaderDirectBuilt, pipe_source_count);
     built.pipe_stages = try allocator.alloc(
-        []shaderops.ShaderPipeStageInput,
+        []shadertypes.ShaderPipeStageInput,
         pipe_count,
     );
     built.pipe_inputs = try allocator.alloc(
-        shaderops.ShaderPipeInput,
+        shadertypes.ShaderPipeInput,
         pipe_count,
     );
 
@@ -1925,7 +1928,7 @@ fn buildMeshInput(
                         const src_shader = built.pipe_sources[source_idx].shader;
                         source_idx += 1;
                         const stages = try allocator.alloc(
-                            shaderops.ShaderPipeStageInput,
+                            shadertypes.ShaderPipeStageInput,
                             1,
                         );
                         built.pipe_stages[pipe_idx] = stages;
@@ -1997,7 +2000,7 @@ fn buildMeshInput(
                         source_idx += 1;
                         const count = pipeSourceChannels(src_shader);
                         const stages = try allocator.alloc(
-                            shaderops.ShaderPipeStageInput,
+                            shadertypes.ShaderPipeStageInput,
                             1,
                         );
                         built.pipe_stages[pipe_idx] = stages;
@@ -2037,13 +2040,13 @@ fn buildCameraInputSlice(
     allocator: std.mem.Allocator,
     in_cameras: [*c]const CCameraInput,
     cameras_len: usize,
-) ![]cam.CameraInput {
+) ![]cameratypes.CameraInput {
     const cameras_slice = try cConstSlice(
         CCameraInput,
         in_cameras,
         cameras_len,
     );
-    const cameras_out = try allocator.alloc(cam.CameraInput, cameras_len);
+    const cameras_out = try allocator.alloc(cameratypes.CameraInput, cameras_len);
     for (cameras_slice, 0..) |camera_in, nn| {
         cameras_out[nn] = try buildCameraInput(allocator, &camera_in);
     }
@@ -2077,8 +2080,8 @@ fn buildMeshInputSlice(
 fn extractMeshInputs(
     allocator: std.mem.Allocator,
     built_meshes: []const MeshInputBuilt,
-) ![]meshpipe.MeshInput {
-    const mesh_inputs = try allocator.alloc(meshpipe.MeshInput, built_meshes.len);
+) ![]meshtypes.MeshInput {
+    const mesh_inputs = try allocator.alloc(meshtypes.MeshInput, built_meshes.len);
     for (built_meshes, 0..) |built_mesh, nn| {
         mesh_inputs[nn] = built_mesh.mesh_input;
     }
@@ -2235,7 +2238,7 @@ fn initThreadedIo(
     });
 }
 
-fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
+fn cameraInputToC(in_camera: cameratypes.CameraInput) CCameraInput {
     var out_camera = CCameraInput{
         .pixels_num = .{
             .x = in_camera.pixels_num[0],
@@ -2608,7 +2611,7 @@ pub export fn rileyPosFrameCoords(
         rot_world.y,
         rot_world.z,
     );
-    const fit_enum: cameraops.FrameFitMode = @enumFromInt(fit_mode);
+    const fit_enum: cameratypes.FrameFitMode = @enumFromInt(fit_mode);
     const cam_pos = cameraops.posFrameCoords(
         &coords,
         .{ pixels_num.x, pixels_num.y },
@@ -2645,7 +2648,7 @@ pub export fn rileyPosFrameCoordsTarg(
         rot_world.z,
     );
     const targ = cVec3ToVec3(targ_world);
-    const fit_enum: cameraops.FrameFitMode = @enumFromInt(fit_mode);
+    const fit_enum: cameratypes.FrameFitMode = @enumFromInt(fit_mode);
     const cam_pos = cameraops.posFrameCoordsTarg(
         &coords,
         targ,
@@ -2697,7 +2700,7 @@ pub export fn rileyPosFrameMeshes(
         rot_world.y,
         rot_world.z,
     );
-    const fit_enum: cameraops.FrameFitMode = @enumFromInt(fit_mode);
+    const fit_enum: cameratypes.FrameFitMode = @enumFromInt(fit_mode);
     const cam_pos = cameraops.posFrameMeshes(
         mesh_inputs,
         .{ pixels_num.x, pixels_num.y },
@@ -2750,7 +2753,7 @@ pub export fn rileyPosFrameMeshesTarg(
         rot_world.z,
     );
     const targ = cVec3ToVec3(targ_world);
-    const fit_enum: cameraops.FrameFitMode = @enumFromInt(fit_mode);
+    const fit_enum: cameratypes.FrameFitMode = @enumFromInt(fit_mode);
     const cam_pos = cameraops.posFrameMeshesTarg(
         mesh_inputs,
         targ,
@@ -2955,7 +2958,7 @@ pub export fn rileySaveCamera(
 /// Null buffer with zero capacity queries metadata/count without returning
 /// a borrowed pointer.
 fn copyLoadedCamera(
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
     coeffs: [*c]F,
     capacity: usize,
     out: *CCameraInput,

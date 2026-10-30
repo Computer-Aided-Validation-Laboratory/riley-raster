@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameratypes = @import("../riley/zig/cameratypes.zig");
+const meshtypes = @import("../riley/zig/meshtypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
@@ -19,15 +21,15 @@ const iio = @import("../riley/zig/imageio.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const texops = @import("../riley/zig/textureops.zig");
-const camera_mod = @import("../riley/zig/camera.zig");
-const cameraops = @import("../riley/zig/cameraops.zig");
+const camera_mod = @import("../riley/zig/cameraprojops.zig");
+const cameraops = @import("../riley/zig/cameraframops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const sceneops = @import("../riley/zig/sceneops.zig");
 const report = @import("../riley/zig/report.zig");
 const tcfg = @import("testconfig.zig");
 
-const CameraInput = camera_mod.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 pub const PreparedDicuqBenchmark = struct {
     mesh_input: MeshInput,

@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
@@ -34,7 +35,7 @@ pub const fillNodalPerspScal = scal.fillNodalPerspScal;
 inline fn storeShadeSIMD(
     subpx_vals: []F,
     start_u: usize,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_vals: VecSF,
 ) void {
@@ -58,7 +59,7 @@ inline fn storeShadeSIMD(
 }
 
 pub const ImageSink = struct {
-    ctx: comm.ShadeContext,
+    ctx: shadertypes.ShadeContext,
     scratch: *MatSlice(F),
 
     pub inline fn store(self: *@This(), channel: usize, mask: VecSB, value: VecSF) void {
@@ -80,10 +81,10 @@ pub fn VectorSink(comptime C: usize) type {
 
 pub inline fn fillNodalClipSIMD(
     comptime N: usize,
-    ctx_shade: comm.ShadeContext,
-    shader_buf: *const comm.LocalShaderBuff(N),
+    ctx_shade: shadertypes.ShadeContext,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
     v_weights: [N]VecSF,
-    shader: *const comm.NodalPrepared,
+    shader: *const shadertypes.NodalPrepared,
     sink: anytype,
 ) void {
     const v_splat_mul: VecSF = @splat(shader.scale_mul);
@@ -106,12 +107,12 @@ pub inline fn fillNodalClipSIMD(
 
 pub inline fn fillNodalPerspSIMD(
     comptime N: usize,
-    ctx_shade: comm.ShadeContext,
-    shader_buf: *const comm.LocalShaderBuff(N),
+    ctx_shade: shadertypes.ShadeContext,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
     v_weights: [N]VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    shader: *const comm.NodalPrepared,
+    shader: *const shadertypes.NodalPrepared,
     sink: anytype,
 ) void {
     const v_splat_mul: VecSF = @splat(shader.scale_mul);
@@ -155,11 +156,11 @@ pub inline fn fillTexClipSIMD(
     comptime T: type,
     comptime C: usize,
     comptime samp_cfg: TexSampConfig,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.TexPrepared(T, C),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.TexPrepared(T, C),
     sink: anytype,
 ) void {
     _ = ctx_shade;
@@ -202,13 +203,13 @@ pub inline fn fillTexPerspSIMD(
     comptime T: type,
     comptime C: usize,
     comptime samp_cfg: TexSampConfig,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.TexPrepared(T, C),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.TexPrepared(T, C),
     sink: anytype,
 ) void {
     _ = ctx_shade;
@@ -273,11 +274,11 @@ pub const fillFuncClipScal = scal.fillFuncClipScal;
 pub const fillFuncPerspScal = scal.fillFuncPerspScal;
 
 pub inline fn evalFuncShaderGreyNormSIMD(
-    builtin: comm.FuncShaderBuiltin,
-    coord: comm.FuncCoordSIMD,
-    params: comm.FuncShaderParams,
+    builtin: shadertypes.FuncShaderBuiltin,
+    coord: shadertypes.FuncCoordSIMD,
+    params: shadertypes.FuncShaderParams,
 ) VecSF {
-    const eval_coord = comm.applyFuncShaderCoordParamsSIMD(coord, params);
+    const eval_coord = shadertypes.applyFuncShaderCoordParamsSIMD(coord, params);
     const v_value = switch (builtin) {
         .constant => blk: {
             const p = params.settings.constant;
@@ -354,7 +355,7 @@ pub inline fn evalFuncShaderGreyNormSIMD(
                 v_half * @sin(v_freq_pi * eval_coord.coord_0);
             const v_phase_y = v_half +
                 v_half * @sin(v_freq_pi * eval_coord.coord_1);
-            break :blk comm.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
+            break :blk shadertypes.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
         },
         .lambertian_normal_z => blk: {
             const p = params.settings.lambertian_normal_z;
@@ -382,11 +383,11 @@ pub inline fn evalFuncShaderGreyNormSIMD(
 }
 
 pub inline fn evalFuncShaderRGBNormSIMD(
-    builtin: comm.FuncShaderBuiltin,
-    coord: comm.FuncCoordSIMD,
-    params: comm.FuncShaderParams,
+    builtin: shadertypes.FuncShaderBuiltin,
+    coord: shadertypes.FuncCoordSIMD,
+    params: shadertypes.FuncShaderParams,
 ) [3]VecSF {
-    const eval_coord = comm.applyFuncShaderCoordParamsSIMD(coord, params);
+    const eval_coord = shadertypes.applyFuncShaderCoordParamsSIMD(coord, params);
 
     const v_vals = switch (builtin) {
         .constant => blk: {
@@ -516,11 +517,11 @@ pub inline fn evalFuncShaderRGBNormSIMD(
 
             const v_phase_x = v_half + v_half * @sin(v_freq_pi * eval_coord.coord_0);
             const v_phase_y = v_half + v_half * @sin(v_freq_pi * eval_coord.coord_1);
-            const v_base = comm.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
+            const v_base = shadertypes.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
 
             break :blk .{
                 v_base,
-                comm.cubicSmoothStepSIMD(v_one - v_base),
+                shadertypes.cubicSmoothStepSIMD(v_one - v_base),
                 v_half + v_half * @sin(v_two_pi * v_base),
             };
         },
@@ -568,7 +569,7 @@ pub inline fn evalFuncShaderRGBNormSIMD(
 fn calcNormalLaneVecs(
     comptime N: usize,
     has_normals: bool,
-    shader_buf: *const comm.LocalShaderBuff(N),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
     v_weights: [N]VecSF,
 ) [3]VecSF {
     var normal_vecs = [3]VecSF{ @splat(0.0), @splat(0.0), @splat(0.0) };
@@ -594,14 +595,14 @@ fn calcNormalLaneVecs(
 pub inline fn fillFuncClipSIMD(
     comptime N: usize,
     comptime C: usize,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
     v_xi: VecSF,
     v_eta: VecSF,
     hit: meshhit.MeshHitGeomSIMD,
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.FuncPrepared,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.FuncPrepared,
     sink: anytype,
 ) void {
     _ = ctx_shade;
@@ -641,7 +642,7 @@ pub inline fn fillFuncClipSIMD(
             v_weights,
         );
 
-    const coord = comm.FuncCoordSIMD{
+    const coord = shadertypes.FuncCoordSIMD{
         .coord_0 = v_coord_0,
         .coord_1 = v_coord_1,
         .normal_x = normal_vecs[0],
@@ -689,7 +690,7 @@ pub inline fn fillFuncClipSIMD(
 pub inline fn fillFuncPerspSIMD(
     comptime N: usize,
     comptime C: usize,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
     v_xi: VecSF,
@@ -697,8 +698,8 @@ pub inline fn fillFuncPerspSIMD(
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
     hit: meshhit.MeshHitGeomSIMD,
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.FuncPrepared,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.FuncPrepared,
     sink: anytype,
 ) void {
     _ = ctx_shade;
@@ -743,7 +744,7 @@ pub inline fn fillFuncPerspSIMD(
             v_weights,
         );
 
-    const coord = comm.FuncCoordSIMD{
+    const coord = shadertypes.FuncCoordSIMD{
         .coord_0 = v_coord_0,
         .coord_1 = v_coord_1,
         .normal_x = normal_vecs[0],

@@ -6,9 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const common_test = @import("../dev_support/tests.zig");
 const fullcase_shader = @import("fullcase_shader.zig");
@@ -23,8 +26,8 @@ const normals = @import("../riley/zig/normals.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 const Timestamp = std.Io.Clock.Timestamp;
 const FullShaderCase = fullcase_shader.FullShaderCase;
 const FullNodalCase = fullcase_shader.FullNodalCase;
@@ -213,7 +216,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
         .exact,
     };
     const bool_values = [_]bool{ false, true };
-    const builtins = [_]shaderops.FuncShaderBuiltin{
+    const builtins = [_]shadertypes.FuncShaderBuiltin{
         .constant,
         .linear,
         .quadratic,
@@ -224,7 +227,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
         .lambertian_normal_z,
         .eggbox,
     };
-    const coord_modes = [_]shaderops.FuncCoordMode{
+    const coord_modes = [_]shadertypes.FuncCoordMode{
         .para,
         .uv,
         .world_reference,

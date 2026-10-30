@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
 const std = @import("std");
 const Timestamp = std.Io.Clock.Timestamp;
 
@@ -14,13 +15,13 @@ const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
 const MatSlice = @import("../riley/zig/matslice.zig").MatSlice;
 
 const meshio = @import("../riley/zig/meshio.zig");
-const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
-const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
+const CameraPrepared = @import("../riley/zig/cameraprojops.zig").CameraPrepared;
+const CameraInput = @import("../riley/zig/cameraprojops.zig").CameraInput;
 
 const gk = @import("../riley/zig/geometrykernels.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const MeshType = gk.MeshType;
-const MeshInput = mo.MeshInput;
+const MeshInput = meshtypes.MeshInput;
 
 const riley = @import("../riley/zig/riley.zig");
 const iio = @import("../riley/zig/imageio.zig");

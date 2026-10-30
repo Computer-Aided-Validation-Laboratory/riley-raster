@@ -1,3 +1,5 @@
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const fixture = @import("../dev_support/fullfixtures.zig");
@@ -32,7 +34,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         defer arena.deinit();
         const aa = arena.allocator();
 
-        const sphere_stages = [_]shaderops.ShaderPipeStageInput{
+        const sphere_stages = [_]shadertypes.ShaderPipeStageInput{
             .{ .source = .{ .shader = .{ .tex_u8 = .{
                 .uvs = scene.sphere_uvs.array,
                 .tex = textures.tex_u8_mono,
@@ -49,7 +51,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                 },
             } } }, .destination = .{ .kind = .parameter, .index = 0 } } },
         };
-        const cylinder_stages = [_]shaderops.ShaderPipeStageInput{
+        const cylinder_stages = [_]shadertypes.ShaderPipeStageInput{
             .{ .source = .{ .shader = .{ .tex_u8 = .{
                 .uvs = scene.cylinder_uvs.array,
                 .tex = textures.tex_u8_mono,
@@ -71,15 +73,15 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             .sources = &channel_slots,
             .factor = .{ .kind = .parameter, .index = 0 },
         } };
-        const sphere_pipes = [_]shaderops.ShaderPipeInput{.{
+        const sphere_pipes = [_]shadertypes.ShaderPipeInput{.{
             .stages = &sphere_stages,
             .resolver = resolver,
         }};
-        const cylinder_pipes = [_]shaderops.ShaderPipeInput{.{
+        const cylinder_pipes = [_]shadertypes.ShaderPipeInput{.{
             .stages = &cylinder_stages,
             .resolver = resolver,
         }};
-        const meshes = [_]meshpipe.MeshInput{
+        const meshes = [_]meshtypes.MeshInput{
             .{
                 .mesh_type = mesh_type,
                 .coords = scene.sphere_coords,
@@ -181,11 +183,11 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             const expression_resolver: shaderpipe.Resolver = .{
                 .expression = .{ .operations = &operations },
             };
-            const sphere_expr = [_]shaderops.ShaderPipeInput{.{
+            const sphere_expr = [_]shadertypes.ShaderPipeInput{.{
                 .stages = &sphere_stages,
                 .resolver = expression_resolver,
             }};
-            const cylinder_expr = [_]shaderops.ShaderPipeInput{.{
+            const cylinder_expr = [_]shadertypes.ShaderPipeInput{.{
                 .stages = &cylinder_stages,
                 .resolver = expression_resolver,
             }};

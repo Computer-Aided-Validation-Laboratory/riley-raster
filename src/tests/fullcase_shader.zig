@@ -6,9 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const imageops = @import("../riley/zig/imageops.zig");
@@ -19,13 +22,13 @@ const normals = @import("../riley/zig/normals.zig");
 const texops = @import("../riley/zig/textureops.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 pub const FullNodalCase = struct {
     is_rgb: bool,
     scaling: imageops.ScaleStrategy,
-    scale_over: shaderops.ScaleOver,
+    scale_over: shadertypes.ScaleOver,
     normal_type: normals.NormalType = .none,
 };
 
@@ -37,8 +40,8 @@ pub const FullTexCase = struct {
 
 pub const FullFuncCase = struct {
     is_rgb: bool,
-    builtin: shaderops.FuncShaderBuiltin,
-    coord: shaderops.FuncCoordMode,
+    builtin: shadertypes.FuncShaderBuiltin,
+    coord: shadertypes.FuncCoordMode,
     normal_type: normals.NormalType = .none,
 };
 
@@ -127,15 +130,15 @@ pub const FullShaderCase = union(enum) {
 fn createShaders(
     allocator: std.mem.Allocator,
     is_rgb: bool,
-    sphere_source: shaderops.PipeSourceInput,
-    cyl_source: shaderops.PipeSourceInput,
-    sphere_mono: shaderops.ShaderMonoInput,
-    cyl_mono: shaderops.ShaderMonoInput,
-) !struct { shaderops.MeshShaderSetInput, shaderops.MeshShaderSetInput } {
+    sphere_source: shadertypes.PipeSourceInput,
+    cyl_source: shadertypes.PipeSourceInput,
+    sphere_mono: shadertypes.ShaderMonoInput,
+    cyl_mono: shadertypes.ShaderMonoInput,
+) !struct { shadertypes.MeshShaderSetInput, shadertypes.MeshShaderSetInput } {
     if (is_rgb) {
-        const s1_stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        const s1_stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
         s1_stages[0] = shaderops.stageSource(sphere_source);
-        const s2_stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        const s2_stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
         s2_stages[0] = shaderops.stageSource(cyl_source);
         return .{
             .{ .rgb_pipe = .{
@@ -173,23 +176,23 @@ pub fn buildShaderCaseMeshes(
             else
                 prep.cylinder_temp;
 
-            const sphere_input = shaderops.NodalInput{
+            const sphere_input = shadertypes.NodalInput{
                 .field = sphere_field,
                 .output_gain = if (n.scaling == .none) 1.0 else 255.0,
                 .scaling = n.scaling,
                 .scale_over = n.scale_over,
             };
-            const cyl_input = shaderops.NodalInput{
+            const cyl_input = shadertypes.NodalInput{
                 .field = cyl_field,
                 .output_gain = if (n.scaling == .none) 1.0 else 255.0,
                 .scaling = n.scaling,
                 .scale_over = n.scale_over,
             };
 
-            const sphere_source: shaderops.PipeSourceInput = .{ .nodal = sphere_input };
-            const cyl_source: shaderops.PipeSourceInput = .{ .nodal = cyl_input };
-            const sphere_mono: shaderops.ShaderMonoInput = .{ .nodal = sphere_input };
-            const cyl_mono: shaderops.ShaderMonoInput = .{ .nodal = cyl_input };
+            const sphere_source: shadertypes.PipeSourceInput = .{ .nodal = sphere_input };
+            const cyl_source: shadertypes.PipeSourceInput = .{ .nodal = cyl_input };
+            const sphere_mono: shadertypes.ShaderMonoInput = .{ .nodal = sphere_input };
+            const cyl_mono: shadertypes.ShaderMonoInput = .{ .nodal = cyl_input };
 
             const shaders = try createShaders(
                 allocator,
@@ -225,7 +228,7 @@ pub fn buildShaderCaseMeshes(
                 .mode = .direct,
             };
 
-            const sphere_source: shaderops.PipeSourceInput = switch (t.dtype) {
+            const sphere_source: shadertypes.PipeSourceInput = switch (t.dtype) {
                 .u8 => .{ .tex_rgb_u8 = .{
                     .uvs = prep.sphere_uvs.array,
                     .tex = textures.tex_u8_rgb,
@@ -242,7 +245,7 @@ pub fn buildShaderCaseMeshes(
                     .samp_cfg = samp_cfg,
                 } },
             };
-            const cyl_source: shaderops.PipeSourceInput = switch (t.dtype) {
+            const cyl_source: shadertypes.PipeSourceInput = switch (t.dtype) {
                 .u8 => .{ .tex_rgb_u8 = .{
                     .uvs = prep.cylinder_uvs.array,
                     .tex = textures.tex_u8_rgb,
@@ -260,7 +263,7 @@ pub fn buildShaderCaseMeshes(
                 } },
             };
 
-            const sphere_mono: shaderops.ShaderMonoInput = switch (t.dtype) {
+            const sphere_mono: shadertypes.ShaderMonoInput = switch (t.dtype) {
                 .u8 => .{ .tex_u8 = .{
                     .uvs = prep.sphere_uvs.array,
                     .tex = textures.tex_u8_mono,
@@ -277,7 +280,7 @@ pub fn buildShaderCaseMeshes(
                     .samp_cfg = samp_cfg,
                 } },
             };
-            const cyl_mono: shaderops.ShaderMonoInput = switch (t.dtype) {
+            const cyl_mono: shadertypes.ShaderMonoInput = switch (t.dtype) {
                 .u8 => .{ .tex_u8 = .{
                     .uvs = prep.cylinder_uvs.array,
                     .tex = textures.tex_u8_mono,
@@ -324,7 +327,7 @@ pub fn buildShaderCaseMeshes(
             };
         },
         .func => |f| {
-            const params = shaderops.FuncShaderParams{
+            const params = shadertypes.FuncShaderParams{
                 .settings = switch (f.builtin) {
                     .constant => .{ .constant = .{} },
                     .linear => .{ .linear = .{} },
@@ -342,7 +345,7 @@ pub fn buildShaderCaseMeshes(
                 prep.sphere_uvs.array
             else
                 null;
-            const sphere_func_input = shaderops.FuncInput{
+            const sphere_func_input = shadertypes.FuncInput{
                 .uvs = sphere_uvs,
                 .coord_mode = f.coord,
                 .builtin = f.builtin,
@@ -352,23 +355,23 @@ pub fn buildShaderCaseMeshes(
                 prep.cylinder_uvs.array
             else
                 null;
-            const cyl_func_input = shaderops.FuncInput{
+            const cyl_func_input = shadertypes.FuncInput{
                 .uvs = cyl_uvs,
                 .coord_mode = f.coord,
                 .builtin = f.builtin,
                 .params = params,
             };
 
-            const sphere_source: shaderops.PipeSourceInput = .{
+            const sphere_source: shadertypes.PipeSourceInput = .{
                 .func = .{ .rgb = sphere_func_input },
             };
-            const cyl_source: shaderops.PipeSourceInput = .{
+            const cyl_source: shadertypes.PipeSourceInput = .{
                 .func = .{ .rgb = cyl_func_input },
             };
-            const sphere_mono: shaderops.ShaderMonoInput = .{
+            const sphere_mono: shadertypes.ShaderMonoInput = .{
                 .func = sphere_func_input,
             };
-            const cyl_mono: shaderops.ShaderMonoInput = .{
+            const cyl_mono: shadertypes.ShaderMonoInput = .{
                 .func = cyl_func_input,
             };
 

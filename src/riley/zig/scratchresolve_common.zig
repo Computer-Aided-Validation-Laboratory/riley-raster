@@ -140,7 +140,7 @@ pub fn resolveTileWithPSF(
     spx_stride: usize,
     fields_num: u8,
     background_value: F,
-    prep_psf: @import("camera.zig").PreparedPSF,
+    prep_psf: @import("cameraprojops.zig").PreparedPSF,
     scratch_geom: ScratchTileGeometry,
     spx_image_scratch: *matslice.MatSlice(F),
     filter_tmp: *matslice.MatSlice(F),

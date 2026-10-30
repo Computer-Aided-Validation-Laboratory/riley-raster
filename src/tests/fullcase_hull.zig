@@ -7,7 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
 

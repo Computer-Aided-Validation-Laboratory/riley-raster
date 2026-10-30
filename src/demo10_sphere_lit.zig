@@ -9,8 +9,8 @@
 const std = @import("std");
 
 const buildconfig = @import("riley/zig/buildconfig.zig");
-const camera = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const imageio = @import("riley/zig/imageio.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
@@ -66,7 +66,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 2. Define shaders: direct speckle, direct lambertian, and shader pipe
     // -------------------------------------------------------------------------
-    const speckle_shader: shaderops.ShaderMonoInput = .{
+    const speckle_shader: riley.ShaderMonoInput = .{
         .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
@@ -79,7 +79,7 @@ pub fn main(init: std.process.Init) !void {
         },
     };
 
-    const lambertian_shader: shaderops.ShaderMonoInput = .{
+    const lambertian_shader: riley.ShaderMonoInput = .{
         .func = .{
             .builtin = .lambertian_normal_z,
             .params = .{
@@ -98,7 +98,7 @@ pub fn main(init: std.process.Init) !void {
     const param_slot = shaderpipe.Slot{ .kind = .parameter, .index = 0 };
     const channel_slots = [_]shaderpipe.Slot{channel_slot};
 
-    const lit_stages = [_]shaderops.ShaderPipeStageInput{
+    const lit_stages = [_]riley.ShaderPipeStageInput{
         .{
             .source = .{
                 .shader = shaderops.monoToPipeSource(speckle_shader),
@@ -143,7 +143,7 @@ pub fn main(init: std.process.Init) !void {
         fov_scale_factor,
     );
 
-    var camera_input = camera.CameraInput{
+    var camera_input = riley.CameraInput{
         .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }},
         .pixels_num = pixels_num,
         .pixels_size = pixels_size,
@@ -168,7 +168,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     std.debug.print("Rendering sphere demo images to {s}/...\n", .{out_dir_root});
 
-    var mesh = meshpipe.MeshInput{
+    var mesh = riley.MeshInput{
         .mesh_type = .tri6,
         .coords = sim_data.coords,
         .connect = sim_data.connect,

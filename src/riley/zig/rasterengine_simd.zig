@@ -6,8 +6,10 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const meshtypes = @import("meshtypes.zig");
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
-const cam = @import("camera.zig");
+const cam = @import("cameraprojops.zig");
 const CameraPrepared = cam.CameraPrepared;
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -41,12 +43,12 @@ const simdops = @import("simdops.zig");
 
 const spec = @import("riley.zig");
 const meshpipe = @import("meshpipeline.zig");
-const MeshPrepared = meshpipe.MeshPrepared;
+const MeshPrepared = meshtypes.MeshPrepared;
 const MeshType = meshpipe.MeshType;
 const Shader = meshpipe.Shader;
 const shaderops = @import("shaderops.zig");
-const NodalPrepared = shaderops.NodalPrepared;
-const TexPrepared = shaderops.TexPrepared;
+const NodalPrepared = shadertypes.NodalPrepared;
+const TexPrepared = shadertypes.TexPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const newton = @import("newton.zig");
 const shadekerns = @import("shaderkernels.zig");
@@ -217,7 +219,7 @@ pub fn RasterEngine(
     @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
     return struct {
         pub const HullType = if (root_class == .multi_root)
-            *const meshpipe.MultiRootHulls
+            *const meshtypes.MultiRootHulls
         else
             ?*const NDArray(F);
 
@@ -400,7 +402,7 @@ pub fn RasterEngine(
             ctx_report: report.ReportContext(report_mode),
             tile: elemtilebin.ActiveTile,
             overlap: elemtilebin.OverlapBBox,
-            hull_multiroot: *const meshpipe.MultiRootHulls,
+            hull_multiroot: *const meshtypes.MultiRootHulls,
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
             nodes_coords: Vec3Slices(F),
@@ -537,7 +539,7 @@ fn rasterDirectSIMDImpl(
             const v_hit_count = @select(u8, v_depth_mask, v_hit_one, v_hit_zero);
             shaded_px += @intCast(@reduce(.Add, v_hit_count));
 
-            const ctx_shade = shaderops.ShadeContext{
+            const ctx_shade = shadertypes.ShadeContext{
                 .frame_idx = ctx_rast.frame_idx,
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
@@ -590,7 +592,7 @@ fn rasterNewtonMultiSIMDImpl(
     ctx_report: report.ReportContext(report_mode),
     tile: elemtilebin.ActiveTile,
     overlap: elemtilebin.OverlapBBox,
-    hull_multiroot: *const meshpipe.MultiRootHulls,
+    hull_multiroot: *const meshtypes.MultiRootHulls,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
@@ -839,7 +841,7 @@ fn rasterNewtonMultiSIMDImpl(
 
             shaded_px += 1;
 
-            const ctx_shade = shaderops.ShadeContext{
+            const ctx_shade = shadertypes.ShadeContext{
                 .frame_idx = ctx_rast.frame_idx,
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
@@ -1433,7 +1435,7 @@ fn rasterNewtonSIMDImpl(
             const v_hit_count = @select(u8, v_depth_mask, v_hit_one, v_hit_zero);
             shaded_px += @intCast(@reduce(.Add, v_hit_count));
 
-            const ctx_shade = shaderops.ShadeContext{
+            const ctx_shade = shadertypes.ShadeContext{
                 .frame_idx = ctx_rast.frame_idx,
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
@@ -1715,7 +1717,7 @@ fn rasterSteppedSIMDFixP(
             const v_hit_count = @select(u8, v_depth_mask, v_hit_one, v_hit_zero);
             shaded_px += @intCast(@reduce(.Add, v_hit_count));
 
-            const ctx_shade = shaderops.ShadeContext{
+            const ctx_shade = shadertypes.ShadeContext{
                 .frame_idx = ctx_rast.frame_idx,
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
@@ -1967,7 +1969,7 @@ fn rasterSteppedSIMDFloat(
             const v_hit_count = @select(u8, v_depth_mask, v_hit_one, v_hit_zero);
             shaded_px += @intCast(@reduce(.Add, v_hit_count));
 
-            const ctx_shade = shaderops.ShadeContext{
+            const ctx_shade = shadertypes.ShadeContext{
                 .frame_idx = ctx_rast.frame_idx,
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,

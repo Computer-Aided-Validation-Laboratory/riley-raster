@@ -6,10 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
-const cameraops = @import("../riley/zig/cameraops.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
+const cameraops = @import("../riley/zig/cameraframops.zig");
 const common = @import("../dev_support/tests.zig");
 const gengold_twoshapes = @import("../gengold/gen_gold_twoshapes.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
@@ -25,8 +27,8 @@ const tcfg = @import("../dev_support/testconfig.zig");
 const texops = @import("../riley/zig/textureops.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 const Timestamp = std.Io.Clock.Timestamp;
 const TwoShapesShaderKind = gengold_twoshapes.TwoShapesShaderKind;
 

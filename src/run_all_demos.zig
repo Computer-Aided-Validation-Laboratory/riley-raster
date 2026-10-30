@@ -9,6 +9,7 @@ const demo3_dicuq = @import("demo3_dicuq.zig");
 const demo4_stereocal = @import("demo4_stereocal.zig");
 const demo5_cameramodels = @import("demo5_cameramodels.zig");
 const demo6_featurezoo = @import("demo6_featurezoo.zig");
+const demo7_shaderpipe_quickstart = @import("demo7_shaderpipe_quickstart.zig");
 
 pub fn main(init: std.process.Init) !void {
     try demo0_quickstart.main(init);
@@ -20,4 +21,5 @@ pub fn main(init: std.process.Init) !void {
     try demo4_stereocal.main(init);
     try demo5_cameramodels.main(init);
     try demo6_featurezoo.main(init);
+    try demo7_shaderpipe_quickstart.main(init);
 }

@@ -6,6 +6,9 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameratypes = @import("riley/zig/cameratypes.zig");
+const meshtypes = @import("riley/zig/meshtypes.zig");
+const shadertypes = @import("riley/zig/shadertypes.zig");
 const std = @import("std");
 
 const benchstats = @import("dev_support/benchstats.zig");
@@ -15,8 +18,8 @@ const orch = @import("dev_support/orchestration.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const riley = @import("riley/zig/riley.zig");
-const cam = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshio = @import("riley/zig/meshio.zig");
@@ -178,7 +181,7 @@ pub const BenchDistPsfArgs = struct {
     total_threads: u16 = 1,
     max_raster_workers_per_job: u16 = 1,
     hull_mode: rastcfg.HullMode = .on_convex_fallback,
-    subpixel_center_map: cam.SubPixelCenterMap = .per_tile,
+    subpixel_center_map: cameratypes.SubPixelCenterMap = .per_tile,
     save_strategy: rastcfg.SaveStrategy = .memory,
 };
 
@@ -272,7 +275,7 @@ fn parseDistPsfArgs(args: anytype) !BenchDistPsfArgs {
                     result.subpixel_center_map = .per_tile;
                 } else {
                     result.subpixel_center_map = std.meta.stringToEnum(
-                        cam.SubPixelCenterMap,
+                        cameratypes.SubPixelCenterMap,
                         val,
                     ) orelse return error.InvalidSubpixelCenterMap;
                 }
@@ -552,7 +555,7 @@ pub fn main(init: std.process.Init) !void {
                     const distort_params = createDistortModel(distort_case);
                     const psf_params = createPSF(psf_case);
 
-                    const cam_input = cam.CameraInput{
+                    const cam_input = cameratypes.CameraInput{
                         .pixels_num = DEFAULT_PIXELS_NUM,
                         .pixels_size = DEFAULT_PIXEL_SIZE,
                         .pos_world = cam_pos,
@@ -566,7 +569,7 @@ pub fn main(init: std.process.Init) !void {
                     };
 
                     // Function shader: eggbox grid with 5 pixels per period (0.1 world units)
-                    const shader_input = shaderops.ShaderMonoInput{
+                    const shader_input = shadertypes.ShaderMonoInput{
                         .func = .{
                             .builtin = .eggbox,
                             .coord_mode = .world_reference,
@@ -596,7 +599,7 @@ pub fn main(init: std.process.Init) !void {
                     }
                     defer if (disp_field) |*df| df.deinit(local_alloc);
 
-                    const mesh_input = meshpipe.MeshInput{
+                    const mesh_input = meshtypes.MeshInput{
                         .mesh_type = mt,
                         .coords = sim_data.coords,
                         .connect = sim_data.connect,
@@ -609,8 +612,8 @@ pub fn main(init: std.process.Init) !void {
                     var image_arr: ?NDArray(F) = null;
                     if (needs_images_arr) {
                         const dims = try riley.calcAllFramesImageDims(
-                            &[_]cam.CameraInput{cam_input},
-                            &[_]meshpipe.MeshInput{mesh_input},
+                            &[_]cameratypes.CameraInput{cam_input},
+                            &[_]meshtypes.MeshInput{mesh_input},
                             base_raster_config,
                         );
                         image_arr = try NDArray(F).initFlat(
@@ -660,8 +663,8 @@ pub fn main(init: std.process.Init) !void {
                         try riley.rasterAdvancedInto(
                             local_alloc,
                             io,
-                            &[_]cam.CameraInput{cam_input},
-                            &[_]meshpipe.MeshInput{mesh_input},
+                            &[_]cameratypes.CameraInput{cam_input},
+                            &[_]meshtypes.MeshInput{mesh_input},
                             base_raster_config,
                             out_img_path,
                             if (image_arr) |*arr| arr else null,

@@ -6,10 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const meshtypes = @import("meshtypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const cam = @import("camera.zig");
+const cam = @import("cameraprojops.zig");
 const meshpipe = @import("meshpipeline.zig");
 const rastcfg = @import("rasterconfig.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
@@ -276,7 +277,7 @@ pub fn publishFrameResults(
     total_nodes_num: usize,
     total_elems_num: usize,
     total_elems_in_image: usize,
-    prep_meshes: []const meshpipe.MeshPrepared,
+    prep_meshes: []const meshtypes.MeshPrepared,
 ) !void {
     const nodes_per_elem = meshpipe.calcNodesPerElem(prep_meshes);
     try publishFrameResultsWithNodesPerElem(

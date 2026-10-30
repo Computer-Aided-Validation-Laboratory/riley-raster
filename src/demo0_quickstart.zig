@@ -9,8 +9,8 @@
 const std = @import("std");
 
 const riley = @import("riley/zig/riley.zig");
-const camera = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
@@ -34,7 +34,7 @@ pub fn main(init: std.process.Init) !void {
     const coords = meshio.Coords.init(&coord_values, 3);
     const connect = meshio.Connect.init(&connect_values, 1, 3);
 
-    const checker: shaderops.ShaderMonoInput = .{ .func = .{
+    const checker: riley.ShaderMonoInput = .{ .func = .{
         .coord_mode = .world_reference,
         .builtin = .checker,
         .params = .{
@@ -44,7 +44,7 @@ pub fn main(init: std.process.Init) !void {
         .scaling = .auto,
     } };
 
-    const mesh_input = meshpipe.MeshInput{
+    const mesh_input = riley.MeshInput{
         .mesh_type = .tri3opt,
         .coords = coords,
         .connect = connect,
@@ -72,7 +72,7 @@ pub fn main(init: std.process.Init) !void {
         1.0,
     );
 
-    const camera_input = camera.CameraInput{
+    const camera_input = riley.CameraInput{
         .pixels_num = pixels_num,
         .pixels_size = pixels_size,
         .pos_world = position,

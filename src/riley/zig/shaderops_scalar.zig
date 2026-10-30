@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const shadertypes = @import("shadertypes.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const matslice = @import("matslice.zig");
@@ -19,10 +20,10 @@ const meshhit = @import("meshhit.zig");
 
 pub inline fn fillNodalClipScal(
     comptime N: usize,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.NodalPrepared,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.NodalPrepared,
     spx_img_scratch: *matslice.MatSlice(F),
 ) void {
     for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
@@ -34,10 +35,10 @@ pub inline fn fillNodalClipScal(
 
 pub inline fn fillNodalPerspScal(
     comptime N: usize,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.NodalPrepared,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.NodalPrepared,
     spx_img_scratch: *matslice.MatSlice(F),
 ) void {
     for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
@@ -64,10 +65,10 @@ pub inline fn fillTexClipScal(
     comptime T: type,
     comptime C: usize,
     comptime samp_cfg: texops.TexSampConfig,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.TexPrepared(T, C),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.TexPrepared(T, C),
     spx_img_scratch: *matslice.MatSlice(F),
 ) void {
     var tex_u: F = 0.0;
@@ -96,10 +97,10 @@ pub inline fn fillTexPerspScal(
     comptime T: type,
     comptime C: usize,
     comptime samp_cfg: texops.TexSampConfig,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.TexPrepared(T, C),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.TexPrepared(T, C),
     spx_img_scratch: *matslice.MatSlice(F),
 ) void {
     var tex_u: F = 0.0;
@@ -131,9 +132,9 @@ pub inline fn fillTexPerspScal(
 inline fn getFuncCoord(
     comptime N: usize,
     interp: meshhit.MeshHit(N),
-    shader_buf: *const comm.LocalShaderBuff(N),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
     needs_normal: bool,
-) comm.FuncCoord {
+) shadertypes.FuncCoord {
     if (needs_normal) {
         const normal = interp.surf_norm orelse shader_buf.interpNormal(interp.weights);
         return .{
@@ -155,7 +156,7 @@ inline fn getFuncCoord(
 }
 
 inline fn setCoordValues(
-    coord: *comm.FuncCoord,
+    coord: *shadertypes.FuncCoord,
     coord_0: F,
     coord_1: F,
 ) void {
@@ -166,8 +167,8 @@ inline fn setCoordValues(
 inline fn resolveFuncCoordsClip(
     comptime N: usize,
     interp: meshhit.MeshHit(N),
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.FuncPrepared,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.FuncPrepared,
 ) struct { coord_0: F, coord_1: F } {
     return switch (shader.coord_mode) {
         .uv => .{
@@ -198,8 +199,8 @@ inline fn resolveFuncCoordsClip(
 inline fn resolveFuncCoordsPersp(
     comptime N: usize,
     interp: meshhit.MeshHit(N),
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.FuncPrepared,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.FuncPrepared,
 ) struct { coord_0: F, coord_1: F } {
     const shared_coords = switch (shader.coord_mode) {
         .world_reference => interp.coords_ref,
@@ -235,10 +236,10 @@ inline fn resolveFuncCoordsPersp(
 pub inline fn fillFuncClipScal(
     comptime N: usize,
     comptime C: usize,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.MeshHit(N),
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.FuncPrepared,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.FuncPrepared,
     spx_img_scratch: *matslice.MatSlice(F),
 ) void {
     var coord = getFuncCoord(N, interp, shader_buf, shader.needs_normal);
@@ -248,7 +249,7 @@ pub inline fn fillFuncClipScal(
 
     if (comptime C == 0) {
         for (shader.channels, 0..) |channel, ch| {
-            const value = comm.evalFuncShaderBuiltinGreyNorm(
+            const value = shadertypes.evalFuncShaderBuiltinGreyNorm(
                 channel.builtin,
                 coord,
                 channel.params,
@@ -257,7 +258,7 @@ pub inline fn fillFuncClipScal(
             spx_img_scratch.slice[idx] = value * channel.scale_mul + channel.scale_add;
         }
     } else if (comptime C == 1) {
-        const value = comm.evalFuncShaderBuiltinGreyNorm(
+        const value = shadertypes.evalFuncShaderBuiltinGreyNorm(
             shader.builtin,
             coord,
             params,
@@ -266,7 +267,7 @@ pub inline fn fillFuncClipScal(
         spx_img_scratch.slice[ctx_shade.scratch_idx] =
             value * shader.scale_mul + shader.scale_add;
     } else {
-        const vals = comm.evalFuncShaderBuiltinRGBNorm(
+        const vals = shadertypes.evalFuncShaderBuiltinRGBNorm(
             shader.builtin,
             coord,
             params,
@@ -282,10 +283,10 @@ pub inline fn fillFuncClipScal(
 pub inline fn fillFuncPerspScal(
     comptime N: usize,
     comptime C: usize,
-    ctx_shade: comm.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.MeshHit(N),
-    shader_buf: *const comm.LocalShaderBuff(N),
-    shader: *const comm.FuncPrepared,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.FuncPrepared,
     spx_img_scratch: *matslice.MatSlice(F),
 ) void {
     var coord = getFuncCoord(N, interp, shader_buf, shader.needs_normal);
@@ -295,7 +296,7 @@ pub inline fn fillFuncPerspScal(
 
     if (comptime C == 0) {
         for (shader.channels, 0..) |channel, ch| {
-            const value = comm.evalFuncShaderBuiltinGreyNorm(
+            const value = shadertypes.evalFuncShaderBuiltinGreyNorm(
                 channel.builtin,
                 coord,
                 channel.params,
@@ -304,7 +305,7 @@ pub inline fn fillFuncPerspScal(
             spx_img_scratch.slice[idx] = value * channel.scale_mul + channel.scale_add;
         }
     } else if (comptime C == 1) {
-        const value = comm.evalFuncShaderBuiltinGreyNorm(
+        const value = shadertypes.evalFuncShaderBuiltinGreyNorm(
             shader.builtin,
             coord,
             params,
@@ -313,7 +314,7 @@ pub inline fn fillFuncPerspScal(
         spx_img_scratch.slice[ctx_shade.scratch_idx] =
             value * shader.scale_mul + shader.scale_add;
     } else {
-        const vals = comm.evalFuncShaderBuiltinRGBNorm(
+        const vals = shadertypes.evalFuncShaderBuiltinRGBNorm(
             shader.builtin,
             coord,
             params,

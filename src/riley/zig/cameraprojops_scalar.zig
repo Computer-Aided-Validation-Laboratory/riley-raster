@@ -6,16 +6,17 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameratypes = @import("cameratypes.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cm = @import("cameramodels.zig");
-const common = @import("camera_common.zig");
+const common = @import("cameraprojops_common.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const CameraPrepared = common.CameraPreparedType(@This());
+pub const CameraPrepared = cameratypes.CameraPreparedType(@This());
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -43,7 +44,7 @@ pub fn fillTileIdealCentersPerTile(
     const step = 1.0 / @as(F, @floatFromInt(camera.sub_sample));
     const off = 0.5 / @as(F, @floatFromInt(camera.sub_sample));
 
-    if (common.isNoDistort(camera.distort)) {
+    if (cameratypes.isNoDistort(camera.distort)) {
         for (0..tile_h) |jj| {
             const global_y = start_y + @as(i32, @intCast(jj));
             const observed_y = @as(F, @floatFromInt(global_y)) * step + off;

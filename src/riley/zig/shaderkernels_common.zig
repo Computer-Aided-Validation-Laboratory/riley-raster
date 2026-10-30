@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -26,10 +27,10 @@ const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 pub inline fn shadeNodalScalComm(
     comptime N: usize,
     comptime coord_space: CoordSpace,
-    ctx_shade: shaderops.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
-    shader_buf: *const shaderops.LocalShaderBuff(N),
-    shader: *const shaderops.NodalPrepared,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.NodalPrepared,
     ctx_report: anytype,
     spx_img_scratch: *MatSlice(F),
 ) void {
@@ -66,10 +67,10 @@ pub inline fn shadeTexScalComm(
     comptime T: type,
     comptime C: usize,
     comptime coord_space: CoordSpace,
-    ctx_shade: shaderops.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
-    shader_buf: *const shaderops.LocalShaderBuff(N),
-    shader: *const shaderops.TexPrepared(T, C),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.TexPrepared(T, C),
     ctx_report: anytype,
     spx_img_scratch: *MatSlice(F),
 ) void {
@@ -96,10 +97,10 @@ inline fn shadeTexScalDispatchSample(
     comptime C: usize,
     comptime coord_space: CoordSpace,
     samp_cfg: TexSampConfig,
-    ctx_shade: shaderops.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
-    shader_buf: *const shaderops.LocalShaderBuff(N),
-    shader: *const shaderops.TexPrepared(T, C),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.TexPrepared(T, C),
     spx_img_scratch: *MatSlice(F),
 ) void {
     @setEvalBranchQuota(eval_branch_quota);
@@ -127,10 +128,10 @@ inline fn shadeTexScalDispatchMode(
     comptime coord_space: CoordSpace,
     comptime samp_type: texops.TexSamp,
     mode: texops.TexSampMode,
-    ctx_shade: shaderops.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
-    shader_buf: *const shaderops.LocalShaderBuff(N),
-    shader: *const shaderops.TexPrepared(T, C),
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.TexPrepared(T, C),
     spx_img_scratch: *MatSlice(F),
 ) void {
     switch (mode) {
@@ -177,8 +178,8 @@ pub inline fn completeFuncHit(
     comptime N: usize,
     comptime coord_space: CoordSpace,
     base: meshhit.MeshHit(N),
-    shader_buf: *const shaderops.LocalShaderBuff(N),
-    shader: *const shaderops.FuncPrepared,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.FuncPrepared,
 ) meshhit.MeshHit(N) {
     const selection = shader.hit_geometry.selection;
     if (selection.count() == 0) return base;
@@ -202,8 +203,8 @@ pub inline fn completeFuncHitSIMD(
     weights: [N]VecSF,
     nodes_inv_z: [N]VecSF,
     subpx_z: VecSF,
-    shader_buf: *const shaderops.LocalShaderBuff(N),
-    shader: *const shaderops.FuncPrepared,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.FuncPrepared,
 ) meshhit.MeshHitGeomSIMD {
     const selection = shader.hit_geometry.selection;
     if (selection.count() == 0) return .{};
@@ -248,10 +249,10 @@ pub inline fn shadeFuncScalComm(
     comptime N: usize,
     comptime C: usize,
     comptime coord_space: CoordSpace,
-    ctx_shade: shaderops.ShadeContext,
+    ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.MeshHit(N),
-    shader_buf: *const shaderops.LocalShaderBuff(N),
-    shader: *const shaderops.FuncPrepared,
+    shader_buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.FuncPrepared,
     ctx_report: anytype,
     spx_img_scratch: *MatSlice(F),
 ) void {
@@ -284,13 +285,13 @@ pub inline fn shadeFuncScalComm(
 test "direct function hit completion shares world coordinates and normals" {
     const N = 3;
     const tol: F = if (F == f32) 1e-5 else 1e-12;
-    var buf: shaderops.LocalShaderBuff(N) = .{};
+    var buf: shadertypes.LocalShaderBuff(N) = .{};
     buf.func_coords = .{ 1, 3, 5, 2, 4, 6, 7, 8, 9 };
     buf.normals = .{ 0, 0, 0, 0, 0, 0, 1, 0, 1 };
     var selection = meshhit.MeshHitSelection.initEmpty();
     selection.insert(.coords_ref);
     selection.insert(.surf_norm);
-    const shader = shaderops.FuncPrepared{
+    const shader = shadertypes.FuncPrepared{
         .elem_uvs = null,
         .hit_geometry = .{ .selection = selection },
         .coord_mode = .world_reference,

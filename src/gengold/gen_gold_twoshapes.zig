@@ -6,10 +6,13 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
-const cameraops = @import("../riley/zig/cameraops.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
+const cameraops = @import("../riley/zig/cameraframops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const iio = @import("../riley/zig/imageio.zig");
 const meshio = @import("../riley/zig/meshio.zig");
@@ -27,8 +30,8 @@ const texops = @import("../riley/zig/textureops.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 const pixel_num_twoshapes = [_]u32{ 160, 100 };
 const pixel_size_twoshapes = [2]F{ @floatCast(5.3e-6), @floatCast(5.3e-6) };
@@ -150,8 +153,8 @@ fn loadShapeMesh(
     const temp = try sliceFieldToSingleFrame(allocator, raw_temp);
     const disp = try sliceFieldToSingleFrame(allocator, raw_disp);
 
-    const shaders: shaderops.MeshShaderSetInput = if (shader_kind.isRgb()) blk: {
-        const pipe_source: shaderops.PipeSourceInput = switch (shader_kind) {
+    const shaders: shadertypes.MeshShaderSetInput = if (shader_kind.isRgb()) blk: {
+        const pipe_source: shadertypes.PipeSourceInput = switch (shader_kind) {
             .nodal_rgb => .{ .nodal = .{
                 .field = try buildRgbField(allocator, temp, disp),
                 .output_gain = 255.0,
@@ -178,7 +181,7 @@ fn loadShapeMesh(
             } } },
             else => unreachable,
         };
-        const stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        const stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
         stages[0] = shaderops.stageSource(pipe_source);
         break :blk .{
             .rgb_pipe = .{
@@ -187,7 +190,7 @@ fn loadShapeMesh(
             },
         };
     } else blk: {
-        const mono_shader: shaderops.ShaderMonoInput = switch (shader_kind) {
+        const mono_shader: shadertypes.ShaderMonoInput = switch (shader_kind) {
             .nodal_grey => .{ .nodal = .{
                 .field = temp,
                 .output_gain = 255.0,

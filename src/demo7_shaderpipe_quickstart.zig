@@ -13,8 +13,8 @@ const meshio = @import("riley/zig/meshio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
 const shaderpipe = @import("riley/zig/shaderpipe.zig");
-const camera = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -33,7 +33,7 @@ pub fn main(init: std.process.Init) !void {
     const coords = meshio.Coords.init(&coord_values, 3);
     const connect = meshio.Connect.init(&connect_values, 1, 3);
 
-    const checker: shaderops.PipeSourceInput = .{
+    const checker: riley.PipeSourceInput = .{
         .func = .{
             .mono = .{
                 .coord_mode = .world_reference,
@@ -50,7 +50,7 @@ pub fn main(init: std.process.Init) !void {
     const channel = shaderpipe.Slot{ .kind = .channel, .index = 0 };
     const parameter = shaderpipe.Slot{ .kind = .parameter, .index = 0 };
 
-    const stages = [_]shaderops.ShaderPipeStageInput{
+    const stages = [_]riley.ShaderPipeStageInput{
         .{
             .source = .{
                 .shader = checker,
@@ -81,7 +81,7 @@ pub fn main(init: std.process.Init) !void {
     };
     const sources = [_]shaderpipe.Slot{channel};
 
-    const mesh = meshpipe.MeshInput{
+    const mesh = riley.MeshInput{
         .mesh_type = .tri3opt,
         .coords = coords,
         .connect = connect,
@@ -116,7 +116,7 @@ pub fn main(init: std.process.Init) !void {
         1.0,
     );
 
-    const direct_camera = camera.CameraInput{
+    const direct_camera = riley.CameraInput{
         .pixels_num = pixels_num,
         .pixels_size = pixels_size,
         .pos_world = position,
@@ -125,6 +125,7 @@ pub fn main(init: std.process.Init) !void {
         .focal_length = 1.0,
         .sub_sample = 4,
         .render_format = .mono,
+        .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .{ .fixed = .{ 0, 1 } } }},
     };
 
     var lit_camera = direct_camera;

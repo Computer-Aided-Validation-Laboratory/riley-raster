@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameratypes = @import("riley/zig/cameratypes.zig");
+const meshtypes = @import("riley/zig/meshtypes.zig");
 const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
@@ -21,14 +23,14 @@ const iio = @import("riley/zig/imageio.zig");
 const imageops = @import("riley/zig/imageops.zig");
 const matslice = @import("riley/zig/matslice.zig");
 const ndarray = @import("riley/zig/ndarray.zig");
-const camera_mod = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera_mod = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
 
-const MeshInput = mo.MeshInput;
+const MeshInput = meshtypes.MeshInput;
 const CameraPrepared = camera_mod.CameraPrepared;
-const CameraInput = camera_mod.CameraInput;
+const CameraInput = cameratypes.CameraInput;
 const NDArrayOps = ndarray.NDArrayOps(F);
 const MatSlice = matslice.MatSlice(F);
 

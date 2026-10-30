@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const meshtypes = @import("meshtypes.zig");
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -14,7 +16,7 @@ const tol = cfg.tol;
 const SimdWidth = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 const rastcfg = @import("rasterconfig.zig");
-const cam = @import("camera.zig");
+const cam = @import("cameraprojops.zig");
 const ReportMode = rastcfg.ReportMode;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
@@ -28,11 +30,11 @@ const scratchresolve = @import("scratchresolve.zig");
 const subpxframe = @import("subpxframe_globbuff.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 const meshpipe = @import("meshpipeline.zig");
-const MeshPrepared = meshpipe.MeshPrepared;
+const MeshPrepared = meshtypes.MeshPrepared;
 const shaderops = @import("shaderops.zig");
-const NodalPrepared = shaderops.NodalPrepared;
-const TexPrepared = shaderops.TexPrepared;
-const FuncPrepared = shaderops.FuncPrepared;
+const NodalPrepared = shadertypes.NodalPrepared;
+const TexPrepared = shadertypes.TexPrepared;
+const FuncPrepared = shadertypes.FuncPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
 const pipekerns = @import("shaderpipekernels.zig");
@@ -315,7 +317,7 @@ pub fn rasterTileCore(
     tile: elemtilebin.ActiveTile,
     overlaps_all: []const elemtilebin.OverlapBBox,
     meshes: []const MeshPrepared,
-    mesh_hulls: meshpipe.MeshHulls,
+    mesh_hulls: meshtypes.MeshHulls,
     subpx_scratch: *RasterBackend.SubpxScratchBuffs,
     subpx_tile_size: usize,
 ) !TileCoreResult {
@@ -342,8 +344,8 @@ pub fn rasterTileCore(
             const mesh_ptr = &meshes[mesh_idx];
             std.debug.assert(mesh_ptr.mesh_type == geom_tag);
             const selected = shaderops.selectShader(
-                shaderops.ShaderMonoPrepared,
-                shaderops.ShaderPipePrepared,
+                shadertypes.ShaderMonoPrepared,
+                shadertypes.ShaderPipePrepared,
                 &mesh_ptr.shaders,
                 ctx_rast.camera.render_format,
             ) orelse continue;
@@ -413,7 +415,7 @@ pub fn rasterTileCore(
                         shaded_px += try RasterBackend.RasterEngine(
                             GK,
                             SK,
-                            shaderops.ShaderPipePrepared,
+                            shadertypes.ShaderPipePrepared,
                             root_class,
                         ).rasterElemInTile(
                             report_mode,
@@ -431,7 +433,7 @@ pub fn rasterTileCore(
                     .direct => |direct| switch (direct.*) {
                         .nodal => |*shader| {
                             const SK = shadekerns.NodalKernel(N);
-                            var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                            var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
                             const start_idx = if (shader.elem_field.dims.len == 3)
                                 shader.elem_field.getFlatIdx(
                                     &[_]usize{ ov.elem_idx, 0, 0 },
@@ -472,7 +474,7 @@ pub fn rasterTileCore(
                         },
                         .tex_u8 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u8, 1);
-                            var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                            var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
                             local_shader_buf.load(
                                 shader.elem_uvs,
                                 ov.elem_idx * 2 * N,
@@ -499,7 +501,7 @@ pub fn rasterTileCore(
                         },
                         .tex_u16 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u16, 1);
-                            var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                            var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
                             local_shader_buf.load(
                                 shader.elem_uvs,
                                 ov.elem_idx * 2 * N,
@@ -526,7 +528,7 @@ pub fn rasterTileCore(
                         },
                         .tex_f => |*shader| {
                             const SK = shadekerns.TexKernel(N, F, 1);
-                            var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                            var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
                             local_shader_buf.load(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
                             shaded_px += try RasterBackend.RasterEngine(
                                 GK,
@@ -548,7 +550,7 @@ pub fn rasterTileCore(
                         },
                         .func => |*shader| {
                             const SK = shadekerns.FuncKernel(N, 1);
-                            var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                            var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
                             switch (shader.coord_mode) {
                                 .uv => {
                                     local_shader_buf.loadFuncCoords(

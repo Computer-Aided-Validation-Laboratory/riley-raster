@@ -6,9 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameratypes = @import("cameratypes.zig");
+const meshtypes = @import("meshtypes.zig");
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
-const cam = @import("camera.zig");
+const cam = @import("cameraprojops.zig");
 const geomkerns = @import("geometrykernels.zig");
 const imageops = @import("imageops.zig");
 const imageio = @import("imageio.zig");
@@ -119,8 +122,8 @@ pub const RenderSummary = ValidSummary;
 /// without scanning large array payloads. Returns a summary of scene dimensions.
 pub fn checkRenderInps(
     render_groups: anytype,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const meshpipe.MeshInput,
+    cam_inps: []const cameratypes.CameraInput,
+    meshes: []const meshtypes.MeshInput,
     config: rastcfg.RasterConfig,
     imgs_arr: ?*ndarray.NDArray(F),
     require_out_buff: bool,
@@ -185,15 +188,15 @@ pub fn checkRenderInps(
 }
 
 fn checkPipeCompatibility(
-    cameras: []const cam.CameraInput,
-    meshes: []const meshpipe.MeshInput,
+    cameras: []const cameratypes.CameraInput,
+    meshes: []const meshtypes.MeshInput,
 ) InputValidationError!void {
     for (cameras) |camera| {
         var compatible = false;
         for (meshes) |mesh| {
             const selected = shaderops.selectShader(
-                shaderops.ShaderMonoInput,
-                shaderops.ShaderPipeInput,
+                shadertypes.ShaderMonoInput,
+                shadertypes.ShaderPipeInput,
                 &mesh.shaders,
                 camera.render_format,
             ) orelse continue;
@@ -216,8 +219,8 @@ fn checkPipeCompatibility(
 
 /// Computes metadata needed for allocations in `.off` mode without executing validation.
 pub fn summariseRenderInpsAssumeValid(
-    cam_inps: []const cam.CameraInput,
-    meshes: []const meshpipe.MeshInput,
+    cam_inps: []const cameratypes.CameraInput,
+    meshes: []const meshtypes.MeshInput,
     config: rastcfg.RasterConfig,
 ) ValidSummary {
     const num_time = if (meshes.len > 0) meshpipe.countFrames(meshes, cam_inps) else 1;
@@ -334,8 +337,8 @@ fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
 // --------------------------------------------------------------------------------------
 
 fn checkMeshesMetadata(
-    meshes: []const meshpipe.MeshInput,
-    cam_inps: []const cam.CameraInput,
+    meshes: []const meshtypes.MeshInput,
+    cam_inps: []const cameratypes.CameraInput,
 ) InputValidationError!void {
     if (meshes.len == 0) {
         return error.NoMeshes;
@@ -410,7 +413,7 @@ fn checkMeshesMetadata(
     }
 }
 
-fn pipeSourceChannels(source: shaderops.PipeSourceInput) u8 {
+fn pipeSourceChannels(source: shadertypes.PipeSourceInput) u8 {
     return switch (source) {
         .nodal => |s| s.field.getFieldsN(),
         .tex_u8, .tex_u16, .tex_f => 1,
@@ -431,7 +434,7 @@ fn pipeSourceChannels(source: shaderops.PipeSourceInput) u8 {
 // --------------------------------------------------------------------------------------
 
 fn checkCameras(
-    cam_inps: []const cam.CameraInput,
+    cam_inps: []const cameratypes.CameraInput,
     config: rastcfg.RasterConfig,
 ) InputValidationError!void {
     if (cam_inps.len == 0) {
@@ -467,7 +470,7 @@ fn checkCameras(
     }
 }
 
-fn checkCamInp(cam_inp: cam.CameraInput) InputValidationError!void {
+fn checkCamInp(cam_inp: cameratypes.CameraInput) InputValidationError!void {
     if (cam_inp.render_format == .multifield and
         (cam_inp.render_format.multifield == 0 or
             cam_inp.render_format.multifield > 8))
@@ -589,7 +592,7 @@ fn checkGlobalSubpxAlignment(
 // --------------------------------------------------------------------------------------
 
 fn checkPipeMetadata(
-    pipe: shaderops.ShaderPipeInput,
+    pipe: shadertypes.ShaderPipeInput,
     coords_num: usize,
     channels: u8,
 ) InputValidationError!void {
@@ -678,7 +681,7 @@ fn checkPipeMetadata(
 }
 
 fn checkShaderMonoMetadata(
-    shader: shaderops.ShaderMonoInput,
+    shader: shadertypes.ShaderMonoInput,
     coords_num: usize,
 ) InputValidationError!void {
     switch (shader) {
@@ -694,7 +697,7 @@ fn checkShaderMonoMetadata(
 }
 
 fn checkPipeSourceMetadata(
-    source: shaderops.PipeSourceInput,
+    source: shadertypes.PipeSourceInput,
     coords_num: usize,
 ) InputValidationError!void {
     switch (source) {
@@ -730,7 +733,7 @@ fn checkTexShaderMetadata(
 }
 
 fn checkNodalShaderMetadata(
-    nodal_shader: shaderops.NodalInput,
+    nodal_shader: shadertypes.NodalInput,
     coords_num: usize,
 ) InputValidationError!void {
     const field_dims = nodal_shader.field.array.dims;
@@ -760,7 +763,7 @@ fn checkFuncShaderMetadata(
 }
 
 fn checkFuncMultiShaderMetadata(
-    multi: shaderops.FuncMultiInput,
+    multi: shadertypes.FuncMultiInput,
     coords_num: usize,
 ) InputValidationError!void {
     if (multi.channels.len == 0 or multi.channels.len > 8)
@@ -857,8 +860,8 @@ fn checkScaling(scaling: imageops.ScaleStrategy) InputValidationError!void {
 }
 
 fn checkFuncParams(
-    builtin: shaderops.FuncShaderBuiltin,
-    params: shaderops.FuncShaderParams,
+    builtin: shadertypes.FuncShaderBuiltin,
+    params: shadertypes.FuncShaderParams,
 ) InputValidationError!void {
     if (!isFiniteSlice(&params.coord_scale) or
         params.coord_scale[0] == 0.0 or
@@ -933,7 +936,7 @@ fn checkFuncParams(
 // --------------------------------------------------------------------------------------
 
 fn calcAllFramesImgDims(
-    cam_inps: []const cam.CameraInput,
+    cam_inps: []const cameratypes.CameraInput,
     num_time: usize,
     out_num_fields: u8,
 ) [5]usize {
@@ -1115,7 +1118,7 @@ test "generic pipe stages validate ordered reads and single writers" {
     const f2 = shaderpipe.Slot{ .kind = .field, .index = 2 };
     const p0 = shaderpipe.Slot{ .kind = .parameter, .index = 0 };
     const table = [_]F{ 0, 1, 2 };
-    const original = [_]shaderops.ShaderPipeStageInput{
+    const original = [_]shadertypes.ShaderPipeStageInput{
         .{
             .source = .{
                 .shader = .{ .func = .{ .rgb = .{ .builtin = .constant } } },
@@ -1129,7 +1132,7 @@ test "generic pipe stages validate ordered reads and single writers" {
     };
     const result = [_]shaderpipe.Slot{ch0};
     var stages = original;
-    const pipe = shaderops.ShaderPipeInput{
+    const pipe = shadertypes.ShaderPipeInput{
         .stages = &stages,
         .resolver = .{ .identity = &result },
     };

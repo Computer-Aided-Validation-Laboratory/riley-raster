@@ -6,6 +6,9 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameratypes = @import("cameratypes.zig");
+const meshtypes = @import("meshtypes.zig");
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const Timestamp = std.Io.Clock.Timestamp;
 const matslice = @import("matslice.zig");
@@ -16,8 +19,8 @@ const rotation = @import("rotation.zig");
 
 const sliceops = @import("sliceops.zig");
 
-const cam = @import("camera.zig");
-const camops = @import("cameraops.zig");
+const cam = @import("cameraprojops.zig");
+const camops = @import("cameraprepops.zig");
 const frontend = @import("rasterfrontend.zig");
 const elemtilebin = @import("elemtilebinning.zig");
 const globbuffbins = @import("elemtilebinning_globbuff.zig");
@@ -46,6 +49,20 @@ const RenderParallelPlan = scalingpolicy.RenderParallelPlan;
 const ParallelWorkload = scalingpolicy.ParallelWorkload;
 const FrameReportStorage = report.FrameReportStorage;
 const F = buildconfig.F;
+
+pub const MeshInput = @import("meshtypes.zig").MeshInput;
+pub const CameraInput = @import("cameratypes.zig").CameraInput;
+pub const StereoPairInput = @import("cameratypes.zig").StereoPairInput;
+pub const MeshShaderSetInput = @import("shadertypes.zig").MeshShaderSetInput;
+pub const ShaderMonoInput = @import("shadertypes.zig").ShaderMonoInput;
+pub const ShaderPipeInput = @import("shadertypes.zig").ShaderPipeInput;
+pub const ShaderPipeStageInput = @import("shadertypes.zig").ShaderPipeStageInput;
+pub const PipeSourceInput = @import("shadertypes.zig").PipeSourceInput;
+pub const FuncSourceInput = @import("shadertypes.zig").FuncSourceInput;
+pub const NodalInput = @import("shadertypes.zig").NodalInput;
+pub const FuncInput = @import("shadertypes.zig").FuncInput;
+pub const FuncMultiInput = @import("shadertypes.zig").FuncMultiInput;
+pub const TexInput = @import("shadertypes.zig").TexInput;
 
 pub const RasterConfig = rastcfg.RasterConfig;
 pub const ParallelConfig = rastcfg.ParallelConfig;
@@ -86,8 +103,8 @@ pub const RasterAdvancedOptions = struct {
 pub fn raster(
     outer_alloc: std.mem.Allocator,
     user_io: std.Io,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const meshpipe.MeshInput,
+    cam_inps: []const cameratypes.CameraInput,
+    meshes: []const meshtypes.MeshInput,
     config: RasterConfig,
     out_dir_path: ?[]const u8,
 ) !?ndarray.NDArray(F) {
@@ -105,8 +122,8 @@ pub fn raster(
 pub fn rasterInto(
     outer_alloc: std.mem.Allocator,
     user_io: std.Io,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const meshpipe.MeshInput,
+    cam_inps: []const cameratypes.CameraInput,
+    meshes: []const meshtypes.MeshInput,
     config: RasterConfig,
     out_dir_path: ?[]const u8,
     images_arr: ?*ndarray.NDArray(F),
@@ -126,8 +143,8 @@ pub fn rasterInto(
 pub fn rasterAdvanced(
     outer_alloc: std.mem.Allocator,
     user_io: std.Io,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const meshpipe.MeshInput,
+    cam_inps: []const cameratypes.CameraInput,
+    meshes: []const meshtypes.MeshInput,
     config: RasterConfig,
     out_dir_path: ?[]const u8,
     options: RasterAdvancedOptions,
@@ -193,8 +210,8 @@ pub fn rasterAdvanced(
 pub fn rasterAdvancedInto(
     outer_alloc: std.mem.Allocator,
     user_io: std.Io,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const meshpipe.MeshInput,
+    cam_inps: []const cameratypes.CameraInput,
+    meshes: []const meshtypes.MeshInput,
     config: RasterConfig,
     out_dir_path: ?[]const u8,
     images_arr: ?*ndarray.NDArray(F),
@@ -262,8 +279,8 @@ pub fn getThreadedIo(
 }
 
 pub fn calcAllFramesImageDims(
-    cam_inps: []const cam.CameraInput,
-    meshes: []const meshpipe.MeshInput,
+    cam_inps: []const cameratypes.CameraInput,
+    meshes: []const meshtypes.MeshInput,
     config: RasterConfig,
 ) ![5]usize {
     std.debug.assert(cam_inps.len > 0);
@@ -304,8 +321,8 @@ pub fn calcAllFramesImageDims(
 // --------------------------------------------------------------------------------------
 
 fn resolveRenderParallelPlan(
-    cam_inps: []const cam.CameraInput,
-    meshes: []const meshpipe.MeshInput,
+    cam_inps: []const cameratypes.CameraInput,
+    meshes: []const meshtypes.MeshInput,
     config: RasterConfig,
 ) RenderParallelPlan {
     const num_time = meshpipe.countFrames(meshes, cam_inps);
@@ -328,8 +345,8 @@ fn rasterIntoValidated(
     outer_alloc: std.mem.Allocator,
     user_io: std.Io,
     render_groups: []const RenderGroup,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const meshpipe.MeshInput,
+    cam_inps: []const cameratypes.CameraInput,
+    meshes: []const meshtypes.MeshInput,
     config: RasterConfig,
     out_dir_path: ?[]const u8,
     images_arr: ?*ndarray.NDArray(F),
@@ -446,8 +463,8 @@ fn rasterIntoValidated(
 
 fn validateAndSummarise(
     render_groups: []const RenderGroup,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const meshpipe.MeshInput,
+    cam_inps: []const cameratypes.CameraInput,
+    meshes: []const meshtypes.MeshInput,
     config: RasterConfig,
     imgs_arr: ?*ndarray.NDArray(F),
     require_out_buff: bool,
@@ -514,7 +531,7 @@ const OfflineDispatchShared = struct {
     out_dir_path: ?[]const u8,
     num_time: usize,
     num_fields: u8,
-    camera_meshes: []const []const meshpipe.MeshStatic,
+    camera_meshes: []const []const meshtypes.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
@@ -533,7 +550,7 @@ fn dispatchFrameJobsOffline(
     out_dir_path: ?[]const u8,
     num_time: usize,
     num_fields: u8,
-    camera_meshes: []const []const meshpipe.MeshStatic,
+    camera_meshes: []const []const meshtypes.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
@@ -673,7 +690,7 @@ const InOrderDispatchShared = struct {
     out_dir_path: ?[]const u8,
     frame_idx: usize,
     num_fields: u8,
-    camera_meshes: []const []const meshpipe.MeshStatic,
+    camera_meshes: []const []const meshtypes.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
@@ -693,7 +710,7 @@ fn dispatchFrameJobsInOrder(
     out_dir_path: ?[]const u8,
     num_time: usize,
     num_fields: u8,
-    camera_meshes: []const []const meshpipe.MeshStatic,
+    camera_meshes: []const []const meshtypes.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
@@ -843,7 +860,7 @@ fn prepareJobBatch(
     out_dir: ?std.Io.Dir,
     out_dir_path: ?[]const u8,
     num_fields: u8,
-    camera_meshes: []const []const meshpipe.MeshStatic,
+    camera_meshes: []const []const meshtypes.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
@@ -1127,7 +1144,7 @@ fn runGeometryStage(
 
     var chunk_exec = pce.ParaChunkExecutor.init(io, geom_workers);
 
-    var timing = meshpipe.GeomTimes{};
+    var timing = meshtypes.GeomTimes{};
     const geo_res = try meshpipe.prepMeshFrames(
         arena_alloc,
         &chunk_exec,
@@ -1349,7 +1366,7 @@ fn getFrameReportPtr(
 
 fn initNodalGlobalScaling(
     outer_alloc: std.mem.Allocator,
-    meshes: []const meshpipe.MeshInput,
+    meshes: []const meshtypes.MeshInput,
 ) ![]?imageops.ScalingParams {
     var nodal_global_scaling = try outer_alloc.alloc(?imageops.ScalingParams, meshes.len);
 
@@ -1374,9 +1391,9 @@ fn initNodalGlobalScaling(
 
 fn initMeshStaticSlice(
     allocator: std.mem.Allocator,
-    meshes: []const meshpipe.MeshInput,
-) ![]meshpipe.MeshStatic {
-    const mesh_static = try allocator.alloc(meshpipe.MeshStatic, meshes.len);
+    meshes: []const meshtypes.MeshInput,
+) ![]meshtypes.MeshStatic {
+    const mesh_static = try allocator.alloc(meshtypes.MeshStatic, meshes.len);
 
     for (meshes, 0..) |mesh, ii| {
         mesh_static[ii] = try meshpipe.initMeshStatic(allocator, &mesh);
@@ -1389,10 +1406,10 @@ fn initMeshStaticSlice(
 fn initCameraMeshSelections(
     allocator: std.mem.Allocator,
     cameras: []const cam.CameraPrepared,
-    mesh_static: []const meshpipe.MeshStatic,
-) ![]const []const meshpipe.MeshStatic {
+    mesh_static: []const meshtypes.MeshStatic,
+) ![]const []const meshtypes.MeshStatic {
     const camera_meshes = try allocator.alloc(
-        []const meshpipe.MeshStatic,
+        []const meshtypes.MeshStatic,
         cameras.len,
     );
 
@@ -1416,7 +1433,7 @@ fn initCameraMeshSelections(
                 continue;
             }
 
-            const selected = try allocator.alloc(meshpipe.MeshStatic, count);
+            const selected = try allocator.alloc(meshtypes.MeshStatic, count);
             var nn: usize = 0;
             for (mesh_static) |*mesh| {
                 if (!shaderops.hasShader(mesh.shaders, camera.render_format)) {
@@ -1432,7 +1449,7 @@ fn initCameraMeshSelections(
     return camera_meshes;
 }
 
-fn maxCameraMeshElems(camera_meshes: []const []const meshpipe.MeshStatic) usize {
+fn maxCameraMeshElems(camera_meshes: []const []const meshtypes.MeshStatic) usize {
     var max_elems: usize = 0;
     for (camera_meshes) |meshes| {
         max_elems = @max(max_elems, meshpipe.countStaticMeshElems(meshes));
@@ -1495,7 +1512,7 @@ const FrameJobDesc = struct {
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     out_dir_path: ?[]const u8,
-    mesh_static: []const meshpipe.MeshStatic,
+    mesh_static: []const meshtypes.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
@@ -1505,15 +1522,15 @@ const FrameJobDesc = struct {
 };
 
 const FrameContext = struct {
-    frame_meshes: []meshpipe.MeshFrame = &.{},
-    prep_meshes: []meshpipe.MeshPrepared = &.{},
+    frame_meshes: []meshtypes.MeshFrame = &.{},
+    prep_meshes: []meshtypes.MeshPrepared = &.{},
     elem_bboxes_by_mesh: [][]frontend.ElemBBox = &.{},
     elem_float_bboxes_by_mesh: []?[]distbounds.DistortBounds = &.{},
     root_classes_by_mesh: [][]frontend.ElemRootClass = &.{},
     mesh_types: []geomkerns.MeshType = &.{},
     elems_in_image_by_mesh: []usize = &.{},
     hull_adaptive_by_mesh: []?ndarray.NDArray(F) = &.{},
-    hull_multiroot_by_mesh: []?meshpipe.MultiRootHulls = &.{},
+    hull_multiroot_by_mesh: []?meshtypes.MultiRootHulls = &.{},
     tiling: ?elemtilebin.TileElemOverlaps = null,
     total_nodes_num: usize = 0,
     total_elems_num: usize = 0,
@@ -1558,15 +1575,15 @@ fn prepareFrameContext(
     ctx.report_storage = initFrameReportStorage(input.config);
 
     const mesh_n = input.mesh_static.len;
-    ctx.frame_meshes = try outer_alloc.alloc(meshpipe.MeshFrame, mesh_n);
-    ctx.prep_meshes = try outer_alloc.alloc(meshpipe.MeshPrepared, mesh_n);
+    ctx.frame_meshes = try outer_alloc.alloc(meshtypes.MeshFrame, mesh_n);
+    ctx.prep_meshes = try outer_alloc.alloc(meshtypes.MeshPrepared, mesh_n);
     ctx.elem_bboxes_by_mesh = try outer_alloc.alloc([]frontend.ElemBBox, mesh_n);
     ctx.elem_float_bboxes_by_mesh = try outer_alloc.alloc(?[]distbounds.DistortBounds, mesh_n);
     ctx.root_classes_by_mesh = try outer_alloc.alloc([]frontend.ElemRootClass, mesh_n);
     ctx.mesh_types = try outer_alloc.alloc(geomkerns.MeshType, mesh_n);
     ctx.elems_in_image_by_mesh = try outer_alloc.alloc(usize, mesh_n);
     ctx.hull_adaptive_by_mesh = try outer_alloc.alloc(?ndarray.NDArray(F), mesh_n);
-    ctx.hull_multiroot_by_mesh = try outer_alloc.alloc(?meshpipe.MultiRootHulls, mesh_n);
+    ctx.hull_multiroot_by_mesh = try outer_alloc.alloc(?meshtypes.MultiRootHulls, mesh_n);
 }
 
 fn prepareFrameBuff(
@@ -1684,7 +1701,7 @@ fn rasterFrameTileLoc(
         raster_workers,
         ctx.tiling.?,
         ctx.prep_meshes,
-        meshpipe.MeshHulls{
+        meshtypes.MeshHulls{
             .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
             .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
         },
@@ -1757,7 +1774,7 @@ fn rasterFrameGlobBuffFull(
         raster_workers,
         ctx.tiling.?,
         ctx.prep_meshes,
-        meshpipe.MeshHulls{
+        meshtypes.MeshHulls{
             .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
             .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
         },
@@ -1908,7 +1925,7 @@ fn rasterFrameGlobBuffStripe(
             raster_workers,
             stripe_tiling,
             ctx.prep_meshes,
-            meshpipe.MeshHulls{
+            meshtypes.MeshHulls{
                 .hull_adaptive_by_mesh = ctx.hull_adaptive_by_mesh,
                 .hull_multiroot_by_mesh = ctx.hull_multiroot_by_mesh,
             },
@@ -2090,7 +2107,7 @@ test "render group save I/O prefers the supplied override" {
 
 test "ideal sensor bounds are prepared once per camera with effective halo" {
     const outer_alloc = std.testing.allocator;
-    const base_input = cam.CameraInput{
+    const base_input = cameratypes.CameraInput{
         .pixels_num = .{ 8, 6 },
         .pixels_size = .{ 0.01, 0.01 },
         .pos_world = vecstack.Vec3F.initSlice(&.{ 0.0, 0.0, 1.0 }),
@@ -2103,7 +2120,7 @@ test "ideal sensor bounds are prepared once per camera with effective halo" {
     defer undistorted.deinit(outer_alloc);
     try std.testing.expect(undistorted.ideal_sensor_bounds == null);
 
-    for ([_]cam.SubPixelCenterMap{ .full_in_mem, .per_tile }) |map_mode| {
+    for ([_]cameratypes.SubPixelCenterMap{ .full_in_mem, .per_tile }) |map_mode| {
         for ([_]?u16{ null, 0, 3 }) |halo_override| {
             var distorted_input = base_input;
             distorted_input.subpixel_center_map = map_mode;

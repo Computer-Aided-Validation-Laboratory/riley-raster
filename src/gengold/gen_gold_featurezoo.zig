@@ -6,11 +6,14 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
 const std = @import("std");
 const imageops = @import("../riley/zig/imageops.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
-const cameraops = @import("../riley/zig/cameraops.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
+const cameraops = @import("../riley/zig/cameraframops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const iio = @import("../riley/zig/imageio.zig");
 const meshio = @import("../riley/zig/meshio.zig");
@@ -29,8 +32,8 @@ const texops = @import("../riley/zig/textureops.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 const pixel_size_zoo = [2]F{ @floatCast(5.3e-6), @floatCast(5.3e-6) };
 const focal_length_zoo: F = @floatCast(50.0e-3);
@@ -114,12 +117,12 @@ fn textureShaderMono(
     uvs: uvio.UVMap,
     comptime bits: u8,
     linear: bool,
-) shaderops.ShaderMonoInput {
+) shadertypes.ShaderMonoInput {
     const samp_cfg = texops.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
     };
-    const input = shaderops.TexInput(texops.TexDataFix(u8, 1)){
+    const input = shadertypes.TexInput(texops.TexDataFix(u8, 1)){
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = samp_cfg,
@@ -134,12 +137,12 @@ fn textureShaderRGB(
     uvs: uvio.UVMap,
     comptime bits: u8,
     linear: bool,
-) shaderops.PipeSourceInput {
+) shadertypes.PipeSourceInput {
     const samp_cfg = texops.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
     };
-    const input = shaderops.TexInput(texops.TexDataFix(u8, 3)){
+    const input = shadertypes.TexInput(texops.TexDataFix(u8, 3)){
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = samp_cfg,
@@ -197,8 +200,8 @@ fn loadZooMesh(
         else => .avg,
     };
 
-    const shaders: shaderops.MeshShaderSetInput = if (C == 3) blk: {
-        const pipe_source: shaderops.PipeSourceInput = switch (case_index) {
+    const shaders: shadertypes.MeshShaderSetInput = if (C == 3) blk: {
+        const pipe_source: shadertypes.PipeSourceInput = switch (case_index) {
             0, 2 => textureShaderRGB(
                 texture,
                 uvs,
@@ -216,18 +219,18 @@ fn loadZooMesh(
             } },
             3, 4 => blk_fn: {
                 const params = if (case_index == 3)
-                    shaderops.FuncShaderParams{
+                    shadertypes.FuncShaderParams{
                         .coord_scale = .{ 1000.0, 1000.0 },
                         .settings = .{ .checker = .{} },
                     }
                 else
-                    shaderops.FuncShaderParams{
+                    shadertypes.FuncShaderParams{
                         .coord_scale = .{ 1.0, 1.0 },
                         .settings = .{ .eggbox = .{
                             .pitch = .{ 0.005, 0.005 },
                         } },
                     };
-                const input = shaderops.FuncInput{
+                const input = shadertypes.FuncInput{
                     .coord_mode = if (case_index == 3)
                         .world_reference
                     else
@@ -241,7 +244,7 @@ fn loadZooMesh(
             },
             else => unreachable,
         };
-        const stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        const stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
         stages[0] = shaderops.stageSource(pipe_source);
         break :blk .{
             .rgb_pipe = .{
@@ -250,7 +253,7 @@ fn loadZooMesh(
             },
         };
     } else blk: {
-        const mono_shader: shaderops.ShaderMonoInput = switch (case_index) {
+        const mono_shader: shadertypes.ShaderMonoInput = switch (case_index) {
             0, 2 => textureShaderMono(
                 texture,
                 uvs,
@@ -268,18 +271,18 @@ fn loadZooMesh(
             } },
             3, 4 => blk_fn: {
                 const params = if (case_index == 3)
-                    shaderops.FuncShaderParams{
+                    shadertypes.FuncShaderParams{
                         .coord_scale = .{ 1000.0, 1000.0 },
                         .settings = .{ .checker = .{} },
                     }
                 else
-                    shaderops.FuncShaderParams{
+                    shadertypes.FuncShaderParams{
                         .coord_scale = .{ 1.0, 1.0 },
                         .settings = .{ .eggbox = .{
                             .pitch = .{ 0.005, 0.005 },
                         } },
                     };
-                const input = shaderops.FuncInput{
+                const input = shadertypes.FuncInput{
                     .coord_mode = if (case_index == 3)
                         .world_reference
                     else
@@ -343,7 +346,7 @@ fn makeZooCamera(
     sub_sample: u32,
     distort: camera.DistortParams,
     psf: camera.PointSpreadFunc,
-) camera.CameraInput {
+) cameratypes.CameraInput {
     const target = sceneops.boundsCenterOverMeshes(meshes);
     return .{
         .pixels_num = pixels_num,
@@ -366,7 +369,7 @@ fn makeZooCamera(
     };
 }
 
-pub fn buildAllZooCameras(meshes: []MeshInput) [6]camera.CameraInput {
+pub fn buildAllZooCameras(meshes: []MeshInput) [6]cameratypes.CameraInput {
     const deg = std.math.degreesToRadians;
     const brown: camera.DistortParams = .{ .brown_con = .{
         .k1 = -0.12,

@@ -6,13 +6,14 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const shadertypes = @import("riley/zig/shadertypes.zig");
 const std = @import("std");
 const imageops = @import("riley/zig/imageops.zig");
 const demo_common = @import("demo_common.zig");
 
 const buildconfig = @import("riley/zig/buildconfig.zig");
-const camera = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshio = @import("riley/zig/meshio.zig");
@@ -27,7 +28,7 @@ const texops = @import("riley/zig/textureops.zig");
 const uvio = @import("riley/zig/uvio.zig");
 
 const F = buildconfig.F;
-const MeshInput = meshpipe.MeshInput;
+const MeshInput = riley.MeshInput;
 
 const MeshShape = struct {
     shape: []const u8,
@@ -67,12 +68,12 @@ fn textureShaderMono(
     uvs: uvio.UVMap,
     comptime bits: u8,
     linear: bool,
-) shaderops.ShaderMonoInput {
+) riley.ShaderMonoInput {
     const samp_cfg = texops.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
     };
-    const input = shaderops.TexInput(@TypeOf(texture)){
+    const input = riley.TexInput(@TypeOf(texture)){
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = samp_cfg,
@@ -90,12 +91,12 @@ fn textureShaderRGB(
     uvs: uvio.UVMap,
     comptime bits: u8,
     linear: bool,
-) shaderops.PipeSourceInput {
+) riley.PipeSourceInput {
     const samp_cfg = texops.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
     };
-    const input = shaderops.TexInput(@TypeOf(texture)){
+    const input = riley.TexInput(@TypeOf(texture)){
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = samp_cfg,
@@ -155,8 +156,8 @@ fn loadMesh(
         else => .avg,
     };
 
-    const shaders: shaderops.MeshShaderSetInput = if (C == 3) blk: {
-        const pipe_source: shaderops.PipeSourceInput = switch (mesh_index) {
+    const shaders: riley.MeshShaderSetInput = if (C == 3) blk: {
+        const pipe_source: riley.PipeSourceInput = switch (mesh_index) {
             0, 2 => textureShaderRGB(
                 T,
                 texture,
@@ -175,18 +176,18 @@ fn loadMesh(
             } },
             3, 4 => blk_fn: {
                 const params = if (mesh_index == 3)
-                    shaderops.FuncShaderParams{
+                    shadertypes.FuncShaderParams{
                         .coord_scale = .{ 1000.0, 1000.0 },
                         .settings = .{ .checker = .{} },
                     }
                 else
-                    shaderops.FuncShaderParams{
+                    shadertypes.FuncShaderParams{
                         .coord_scale = .{ 1.0, 1.0 },
                         .settings = .{ .eggbox = .{
                             .pitch = .{ 0.005, 0.005 },
                         } },
                     };
-                const input = shaderops.FuncInput{
+                const input = riley.FuncInput{
                     .coord_mode = if (mesh_index == 3)
                         .world_reference
                     else
@@ -200,7 +201,7 @@ fn loadMesh(
             },
             else => unreachable,
         };
-        const stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        const stages = try allocator.alloc(riley.ShaderPipeStageInput, 1);
         stages[0] = shaderops.stageSource(pipe_source);
         break :blk .{
             .rgb_pipe = .{
@@ -209,7 +210,7 @@ fn loadMesh(
             },
         };
     } else blk: {
-        const mono_shader: shaderops.ShaderMonoInput = switch (mesh_index) {
+        const mono_shader: riley.ShaderMonoInput = switch (mesh_index) {
             0, 2 => textureShaderMono(
                 T,
                 texture,
@@ -228,18 +229,18 @@ fn loadMesh(
             } },
             3, 4 => blk_fn: {
                 const params = if (mesh_index == 3)
-                    shaderops.FuncShaderParams{
+                    shadertypes.FuncShaderParams{
                         .coord_scale = .{ 1000.0, 1000.0 },
                         .settings = .{ .checker = .{} },
                     }
                 else
-                    shaderops.FuncShaderParams{
+                    shadertypes.FuncShaderParams{
                         .coord_scale = .{ 1.0, 1.0 },
                         .settings = .{ .eggbox = .{
                             .pitch = .{ 0.005, 0.005 },
                         } },
                     };
-                const input = shaderops.FuncInput{
+                const input = riley.FuncInput{
                     .coord_mode = if (mesh_index == 3)
                         .world_reference
                     else
@@ -307,7 +308,7 @@ fn makeCamera(
     sub_sample: u32,
     distort: camera.DistortParams,
     psf: camera.PointSpreadFunc,
-) camera.CameraInput {
+) riley.CameraInput {
     const target = sceneops.boundsCenterOverMeshes(meshes);
     return .{
         .pixels_num = pixels_num,
@@ -330,7 +331,7 @@ fn makeCamera(
     };
 }
 
-fn buildCameras(meshes: []MeshInput, options: DemoOptions) [6]camera.CameraInput {
+fn buildCameras(meshes: []MeshInput, options: DemoOptions) [6]riley.CameraInput {
     const deg = std.math.degreesToRadians;
     const brown: camera.DistortParams = .{ .brown_con = .{
         .k1 = -0.12,

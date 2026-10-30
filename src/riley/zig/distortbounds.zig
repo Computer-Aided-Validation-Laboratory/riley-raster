@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
-const camera = @import("camera.zig");
+const camera = @import("cameraprojops.zig");
 
 const cfg = buildconfig.config;
 const F = buildconfig.F;
@@ -21,7 +21,7 @@ const VecSF = buildconfig.VecSF;
 // Distortion-aware bounds: engineering assumptions and required accuracy.
 //
 // NOTE: the distortion aware front end is an intentional engineering realism approximation.
-// It is not intended to be mathematically exact! It is intended to be performant for 
+// It is not intended to be mathematically exact! It is intended to be performant for
 // realistic distortion fields.
 //
 // The caller first bounds the projected element in ideal raster coordinates (from
@@ -117,7 +117,6 @@ pub fn idealSensorBounds(
     cam: *const camera.CameraPrepared,
     halo_px: u16,
 ) !DistortBounds {
-
     var bounds = DistortBounds.initEmpty();
 
     if (cam.subpixel_center_map == .full_in_mem) {
@@ -153,7 +152,6 @@ pub fn idealSensorBounds(
             const ideal = try cam.calcPinholeRasterPoint(x, y);
             bounds.include(ideal[0], ideal[1]);
         }
-
     }
 
     bounds.x_min -= sensor_distort_bound_tol_px;

@@ -6,6 +6,9 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("riley/zig/meshtypes.zig");
+const cameratypes = @import("riley/zig/cameratypes.zig");
+const shadertypes = @import("riley/zig/shadertypes.zig");
 const std = @import("std");
 const benchargs = @import("dev_support/benchargs.zig");
 const common = @import("dev_support/benchcommon.zig");
@@ -19,8 +22,8 @@ const texops = @import("riley/zig/textureops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const meshio = @import("riley/zig/meshio.zig");
 const mo = @import("riley/zig/meshpipeline.zig");
-const cam = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const report = @import("riley/zig/report.zig");
 const NDArray = @import("riley/zig/ndarray.zig").NDArray;
@@ -68,9 +71,9 @@ const RunTiming = struct {
 
 fn duplicateMeshInput(
     allocator: std.mem.Allocator,
-    base_mesh: mo.MeshInput,
+    base_mesh: meshtypes.MeshInput,
     copies_num: usize,
-    out_mesh: *mo.MeshInput,
+    out_mesh: *meshtypes.MeshInput,
 ) !void {
     const base_coords_num = base_mesh.coords.mat.rows_num;
     const new_coords_num = base_coords_num * copies_num;
@@ -124,7 +127,7 @@ fn duplicateMeshInput(
         }
     }
 
-    var new_shader: shaderops.ShaderMonoInput = undefined;
+    var new_shader: shadertypes.ShaderMonoInput = undefined;
     switch (base_mesh.shaders.mono_direct.?) {
         .func => |base_func| {
             var new_uvs: ?NDArray(F) = null;
@@ -197,8 +200,8 @@ fn runAndRecord(
     size_str: []const u8,
     copies_num: usize,
     config: rastcfg.RasterConfig,
-    base_mesh: mo.MeshInput,
-    base_camera: cam.CameraInput,
+    base_mesh: meshtypes.MeshInput,
+    base_camera: cameratypes.CameraInput,
     out_timing: *RunTiming,
 ) !void {
     _ = etype;
@@ -208,14 +211,14 @@ fn runAndRecord(
     defer run_arena.deinit();
     const ra = run_arena.allocator();
 
-    var duplicated_mesh: mo.MeshInput = undefined;
+    var duplicated_mesh: meshtypes.MeshInput = undefined;
     try duplicateMeshInput(ra, base_mesh, copies_num, &duplicated_mesh);
 
     const num_coords = duplicated_mesh.coords.mat.rows_num;
     const disp_field = try meshio.Field.initAlloc(ra, 64, num_coords, 3);
     duplicated_mesh.disp = disp_field;
 
-    const camera_inputs = try ra.alloc(cam.CameraInput, 64);
+    const camera_inputs = try ra.alloc(cameratypes.CameraInput, 64);
     @memset(camera_inputs, base_camera);
 
     const bench_capture = try ra.alloc(report.FrameBenchCapture, 64);
@@ -239,7 +242,7 @@ fn runAndRecord(
         ra,
         io,
         camera_inputs[0..1],
-        &[_]mo.MeshInput{duplicated_mesh},
+        &[_]meshtypes.MeshInput{duplicated_mesh},
         config,
         out_path,
         .{ .bench_capture = bench_capture },
@@ -472,7 +475,7 @@ pub fn main(init: std.process.Init) !void {
                         .sub_sample = render_defaults.sub_sample,
                     },
                 );
-                const base_camera = cam.CameraInput{
+                const base_camera = cameratypes.CameraInput{
                     .pixels_num = camera.pixels_num,
                     .pixels_size = camera.pixels_size,
                     .pos_world = camera.pos_world,

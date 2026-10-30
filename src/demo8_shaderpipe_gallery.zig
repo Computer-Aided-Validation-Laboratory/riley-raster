@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const shadertypes = @import("riley/zig/shadertypes.zig");
 const std = @import("std");
 
 const riley = @import("riley/zig/riley.zig");
@@ -13,15 +14,15 @@ const meshio = @import("riley/zig/meshio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
 const shaderpipe = @import("riley/zig/shaderpipe.zig");
-const camera = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const iio = @import("riley/zig/imageio.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 
-fn linear(x: F, y: F) shaderops.PipeSourceInput {
+fn linear(x: F, y: F) riley.PipeSourceInput {
     return .{
         .func = .{
             .mono = .{
@@ -42,9 +43,9 @@ fn linear(x: F, y: F) shaderops.PipeSourceInput {
 fn render(
     allocator: std.mem.Allocator,
     io: std.Io,
-    mesh: meshpipe.MeshInput,
-    base_camera: camera.CameraInput,
-    role: shaderops.RenderFormat,
+    mesh: riley.MeshInput,
+    base_camera: riley.CameraInput,
+    role: shadertypes.RenderFormat,
     path: []const u8,
 ) !void {
     var selected_camera = base_camera;
@@ -92,7 +93,7 @@ pub fn main(init: std.process.Init) !void {
     const coords = meshio.Coords.init(&coord_values, 3);
     const connect = meshio.Connect.init(&connect_values, 1, 3);
 
-    var mesh = meshpipe.MeshInput{
+    var mesh = riley.MeshInput{
         .mesh_type = .tri3opt,
         .coords = coords,
         .connect = connect,
@@ -114,7 +115,7 @@ pub fn main(init: std.process.Init) !void {
         1.0,
     );
 
-    const base_camera = camera.CameraInput{
+    const base_camera = riley.CameraInput{
         .pixels_num = pixels_num,
         .pixels_size = pixels_size,
         .pos_world = position,
@@ -131,7 +132,7 @@ pub fn main(init: std.process.Init) !void {
     const field0 = shaderpipe.Slot{ .kind = .field, .index = 0 };
     const field1 = shaderpipe.Slot{ .kind = .field, .index = 1 };
 
-    const checker: shaderops.PipeSourceInput = .{
+    const checker: riley.PipeSourceInput = .{
         .func = .{
             .mono = .{
                 .builtin = .checker,
@@ -149,7 +150,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 2. Composition A: Spatially modulated illumination
     // -------------------------------------------------------------------------
-    const mod_stages = [_]shaderops.ShaderPipeStageInput{
+    const mod_stages = [_]riley.ShaderPipeStageInput{
         .{
             .source = .{
                 .shader = checker,
@@ -201,7 +202,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 3. Composition B: Multi-channel RGB gradient composition
     // -------------------------------------------------------------------------
-    const rgb_stages = [_]shaderops.ShaderPipeStageInput{
+    const rgb_stages = [_]riley.ShaderPipeStageInput{
         .{
             .source = .{
                 .shader = linear(0.5, 0.0),
@@ -240,7 +241,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 4. Composition C: Bounded expression blend
     // -------------------------------------------------------------------------
-    const expr_stages = [_]shaderops.ShaderPipeStageInput{
+    const expr_stages = [_]riley.ShaderPipeStageInput{
         .{
             .source = .{
                 .shader = linear(0.5, 0.0),
@@ -288,7 +289,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 5. Composition D: Emissivity material parameter mapping
     // -------------------------------------------------------------------------
-    const emissivity_stages = [_]shaderops.ShaderPipeStageInput{
+    const emissivity_stages = [_]riley.ShaderPipeStageInput{
         .{
             .source = .{
                 .shader = checker,

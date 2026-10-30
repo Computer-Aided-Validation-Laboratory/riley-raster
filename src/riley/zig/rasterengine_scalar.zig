@@ -6,11 +6,13 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const meshtypes = @import("meshtypes.zig");
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const tol = buildconfig.config.tol;
-const cam = @import("camera.zig");
+const cam = @import("cameraprojops.zig");
 const CameraPrepared = cam.CameraPrepared;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
@@ -29,12 +31,12 @@ const Timestamp = std.Io.Clock.Timestamp;
 const comm = @import("rasterengine_common.zig");
 
 const meshpipe = @import("meshpipeline.zig");
-const MeshPrepared = meshpipe.MeshPrepared;
+const MeshPrepared = meshtypes.MeshPrepared;
 const MeshType = meshpipe.MeshType;
 const Shader = meshpipe.Shader;
 const shaderops = @import("shaderops.zig");
-const NodalPrepared = shaderops.NodalPrepared;
-const TexPrepared = shaderops.TexPrepared;
+const NodalPrepared = shadertypes.NodalPrepared;
+const TexPrepared = shadertypes.TexPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const newton = @import("newton.zig");
 const shadekerns = @import("shaderkernels.zig");
@@ -138,7 +140,7 @@ pub fn RasterEngine(
 ) type {
     return struct {
         pub const HullType = if (root_class == .multi_root)
-            *const meshpipe.MultiRootHulls
+            *const meshtypes.MultiRootHulls
         else
             ?*const NDArray(F);
 
@@ -397,7 +399,7 @@ pub fn rasterDirectScalComm(
 
             ShaderKern.shade(
                 GeomKern.coord_space,
-                shaderops.ShadeContext{
+                shadertypes.ShadeContext{
                     .frame_idx = ctx_rast.frame_idx,
                     .elem_idx = overlap.elem_idx,
                     .fields_num = fields_num,
@@ -643,7 +645,7 @@ fn rasterNewtonImpl(
             const subpx_z = 1.0 / inv_z;
             shaded_px += 1;
 
-            const ctx_shade = shaderops.ShadeContext{
+            const ctx_shade = shadertypes.ShadeContext{
                 .frame_idx = ctx_rast.frame_idx,
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
@@ -772,7 +774,7 @@ fn rasterNewtonMultiImpl(
     ctx_report: report.ReportContext(report_mode),
     tile: elemtilebin.ActiveTile,
     overlap: elemtilebin.OverlapBBox,
-    hull_multiroot: *const meshpipe.MultiRootHulls,
+    hull_multiroot: *const meshtypes.MultiRootHulls,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
@@ -913,7 +915,7 @@ fn rasterNewtonMultiImpl(
                 @max(subpx_scratch.touched_max_x[scratch_y], scratch_x);
             shaded_px += 1;
 
-            const ctx_shade = shaderops.ShadeContext{
+            const ctx_shade = shadertypes.ShadeContext{
                 .frame_idx = ctx_rast.frame_idx,
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
@@ -1137,7 +1139,7 @@ fn rasterSteppedScalFixP(
                     else
                         @mulAdd(F, weights[2], inv_z_node[2], 0.0) / inv_z;
 
-                    const ctx_shade = shaderops.ShadeContext{
+                    const ctx_shade = shadertypes.ShadeContext{
                         .frame_idx = ctx_rast.frame_idx,
                         .elem_idx = overlap.elem_idx,
                         .fields_num = fields_num,
@@ -1335,7 +1337,7 @@ fn rasterSteppedScalFloat(
                     else
                         @mulAdd(F, weights[2], inv_z_node[2], 0.0) / inv_z;
 
-                    const ctx_shade = shaderops.ShadeContext{
+                    const ctx_shade = shadertypes.ShadeContext{
                         .frame_idx = ctx_rast.frame_idx,
                         .elem_idx = overlap.elem_idx,
                         .fields_num = fields_num,

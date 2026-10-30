@@ -1,5 +1,6 @@
 // Sample-domain shader pipe. Source shaders reuse the existing FE, texture and
 // function kernels; the tiny stage scratch stays on the worker stack.
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -17,14 +18,14 @@ const MatSlice = @import("matslice.zig").MatSlice;
 
 pub fn LocalPipeBuff(comptime N: usize) type {
     return struct {
-        stages: [8]shaderops.LocalShaderBuff(N) = undefined,
+        stages: [8]shadertypes.LocalShaderBuff(N) = undefined,
         coords_ref: [3 * N]F = undefined,
         coords_def: [3 * N]F = undefined,
         surf_norm: [3 * N]F = undefined,
 
         pub fn load(
             self: *@This(),
-            pipe: *const shaderops.ShaderPipePrepared,
+            pipe: *const shadertypes.ShaderPipePrepared,
             elem_idx: usize,
             frame_idx: usize,
         ) void {
@@ -168,10 +169,10 @@ pub fn PipeKernel(comptime N: usize) type {
 
         pub fn shade(
             comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
+            ctx_shade: shadertypes.ShadeContext,
             interp: meshhit.MeshHit(N),
             pipe_buf: *const LocalBuff,
-            pipe: *const shaderops.ShaderPipePrepared,
+            pipe: *const shadertypes.ShaderPipePrepared,
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
@@ -232,7 +233,7 @@ pub fn PipeKernel(comptime N: usize) type {
 
         pub fn shadeSIMD(
             comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
+            ctx_shade: shadertypes.ShadeContext,
             ctx_report: anytype,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
@@ -241,7 +242,7 @@ pub fn PipeKernel(comptime N: usize) type {
             v_nodes_inv_z: [N]VecSF,
             v_subpx_z: VecSF,
             pipe_buf: *const LocalBuff,
-            pipe: *const shaderops.ShaderPipePrepared,
+            pipe: *const shadertypes.ShaderPipePrepared,
             spx_image_scratch: *MatSlice(F),
         ) void {
             const hit = pipe_buf.completeHitSIMD(
@@ -329,7 +330,7 @@ pub fn PipeKernel(comptime N: usize) type {
     };
 }
 
-fn sourceChannels(source: shaderops.PipeSourcePrepared) u8 {
+fn sourceChannels(source: shadertypes.PipeSourcePrepared) u8 {
     return switch (source) {
         .nodal => |n| if (n.elem_field.dims.len == 3)
             @intCast(n.elem_field.dims[1])
@@ -349,10 +350,10 @@ fn sourceChannels(source: shaderops.PipeSourcePrepared) u8 {
 fn shadeSource(
     comptime N: usize,
     comptime coord_space: CoordSpace,
-    ctx: shaderops.ShadeContext,
+    ctx: shadertypes.ShadeContext,
     interp: meshhit.MeshHit(N),
-    buf: *const shaderops.LocalShaderBuff(N),
-    source: *const shaderops.PipeSourcePrepared,
+    buf: *const shadertypes.LocalShaderBuff(N),
+    source: *const shadertypes.PipeSourcePrepared,
     ctx_report: anytype,
     scratch: *MatSlice(F),
 ) void {
@@ -486,7 +487,7 @@ fn shadeSource(
 fn shadeSourceSIMD(
     comptime N: usize,
     comptime coord_space: CoordSpace,
-    ctx: shaderops.ShadeContext,
+    ctx: shadertypes.ShadeContext,
     ctx_report: anytype,
     mask: VecSB,
     weights: [N]VecSF,
@@ -495,8 +496,8 @@ fn shadeSourceSIMD(
     inv_z: [N]VecSF,
     subpx_z: VecSF,
     hit: meshhit.MeshHitGeomSIMD,
-    buf: *const shaderops.LocalShaderBuff(N),
-    source: *const shaderops.PipeSourcePrepared,
+    buf: *const shadertypes.LocalShaderBuff(N),
+    source: *const shadertypes.PipeSourcePrepared,
     sink: anytype,
 ) void {
     switch (source.*) {

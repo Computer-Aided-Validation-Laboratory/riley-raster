@@ -6,7 +6,9 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const shadertypes = @import("riley/zig/shadertypes.zig");
 const std = @import("std");
+const riley = @import("riley/zig/riley.zig");
 
 const gk = @import("riley/zig/geometrykernels.zig");
 const meshio = @import("riley/zig/meshio.zig");
@@ -18,9 +20,9 @@ const texops = @import("riley/zig/textureops.zig");
 const uvio = @import("riley/zig/uvio.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 
-const MeshInput = meshpipe.MeshInput;
-const FuncShaderBuiltin = shaderops.FuncShaderBuiltin;
-const FuncShaderParams = shaderops.FuncShaderParams;
+const MeshInput = riley.MeshInput;
+const FuncShaderBuiltin = shadertypes.FuncShaderBuiltin;
+const FuncShaderParams = shadertypes.FuncShaderParams;
 const F = buildconfig.F;
 
 pub const SceneOptions = struct {
@@ -226,8 +228,8 @@ fn makeMeshInput(
     const sim_data = try loadStaticMesh(outer_alloc, io, data_dir);
     const uvs = try loadRabbitUvMap(outer_alloc, io, data_dir);
 
-    const shaders: shaderops.MeshShaderSetInput = if (C == 1) blk: {
-        const mono_shader: shaderops.ShaderMonoInput = switch (shader_mode) {
+    const shaders: riley.MeshShaderSetInput = if (C == 1) blk: {
+        const mono_shader: riley.ShaderMonoInput = switch (shader_mode) {
             .tex => .{
                 .tex_u8 = .{
                     .uvs = uvs.array,
@@ -266,7 +268,7 @@ fn makeMeshInput(
         };
         break :blk .{ .mono_direct = mono_shader };
     } else blk: {
-        const pipe_source: shaderops.PipeSourceInput = switch (shader_mode) {
+        const pipe_source: riley.PipeSourceInput = switch (shader_mode) {
             .tex => .{
                 .tex_rgb_u8 = .{
                     .uvs = uvs.array,
@@ -305,9 +307,9 @@ fn makeMeshInput(
                 },
             },
         };
-        const stages = try outer_alloc.alloc(shaderops.ShaderPipeStageInput, 1);
+        const stages = try outer_alloc.alloc(riley.ShaderPipeStageInput, 1);
         stages[0] = shaderops.stageSource(pipe_source);
-        const pipe: shaderops.ShaderPipeInput = .{
+        const pipe: riley.ShaderPipeInput = .{
             .stages = stages,
             .resolver = .{ .identity = shaderpipe.identity_channels_3 },
         };

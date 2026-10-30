@@ -6,11 +6,14 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
 const std = @import("std");
 const imageops = @import("../riley/zig/imageops.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
-const cameraops = @import("../riley/zig/cameraops.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
+const cameraops = @import("../riley/zig/cameraframops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const iio = @import("../riley/zig/imageio.zig");
 const meshio = @import("../riley/zig/meshio.zig");
@@ -24,8 +27,8 @@ const uvio = @import("../riley/zig/uvio.zig");
 const vec = @import("../riley/zig/vecstack.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 pub const pixel_num_scene0 = [_]u32{ 160, 100 };
 pub const pixel_size_scene0 = [2]F{ @floatCast(5.3e-6), @floatCast(5.3e-6) };
@@ -651,7 +654,7 @@ pub fn buildScene2Meshes(
     prep: *const Scene2Prepared,
     textures: *const FullTextures,
 ) [2]MeshInput {
-    const sphere1_shader = shaderops.ShaderMonoInput{
+    const sphere1_shader = shadertypes.ShaderMonoInput{
         .func = .{
             .uvs = prep.sphere1_uvs.array,
             .builtin = .checker,
@@ -666,7 +669,7 @@ pub fn buildScene2Meshes(
         },
     };
 
-    const sphere2_shader = shaderops.ShaderMonoInput{
+    const sphere2_shader = shadertypes.ShaderMonoInput{
         .tex_u8 = .{
             .uvs = prep.sphere2_uvs.array,
             .tex = textures.tex_u8_mono,
@@ -1086,7 +1089,7 @@ pub fn buildScene3Meshes(
 
     for (0..16) |ii| {
         const shader_idx = ii % 8;
-        const shader: shaderops.ShaderMonoInput = switch (shader_idx) {
+        const shader: shadertypes.ShaderMonoInput = switch (shader_idx) {
             0 => .{
                 .nodal = .{
                     .field = prep.meshes[ii].field.?,
@@ -1372,7 +1375,7 @@ pub fn buildScene2ImageOutputMeshes(
 ) ![2]MeshInput {
     const bits: ?u8 = if (is_u16) 16 else 8;
     if (is_rgb) {
-        const sphere1_source: shaderops.PipeSourceInput = .{
+        const sphere1_source: shadertypes.PipeSourceInput = .{
             .func = .{
                 .rgb = .{
                     .uvs = prep.sphere1_uvs.array,
@@ -1393,7 +1396,7 @@ pub fn buildScene2ImageOutputMeshes(
                 },
             },
         };
-        const sphere2_source: shaderops.PipeSourceInput = if (is_u16)
+        const sphere2_source: shadertypes.PipeSourceInput = if (is_u16)
             .{
                 .tex_rgb_u16 = .{
                     .uvs = prep.sphere2_uvs.array,
@@ -1420,9 +1423,9 @@ pub fn buildScene2ImageOutputMeshes(
                 },
             };
 
-        const s1_stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        const s1_stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
         s1_stages[0] = shaderops.stageSource(sphere1_source);
-        const s2_stages = try allocator.alloc(shaderops.ShaderPipeStageInput, 1);
+        const s2_stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
         s2_stages[0] = shaderops.stageSource(sphere2_source);
 
         return [_]MeshInput{
@@ -1452,7 +1455,7 @@ pub fn buildScene2ImageOutputMeshes(
             },
         };
     } else {
-        const sphere1_mono: shaderops.ShaderMonoInput = .{
+        const sphere1_mono: shadertypes.ShaderMonoInput = .{
             .func = .{
                 .uvs = prep.sphere1_uvs.array,
                 .builtin = .checker,
@@ -1466,7 +1469,7 @@ pub fn buildScene2ImageOutputMeshes(
                 .scaling = .auto,
             },
         };
-        const sphere2_mono: shaderops.ShaderMonoInput = if (is_u16)
+        const sphere2_mono: shadertypes.ShaderMonoInput = if (is_u16)
             .{
                 .tex_u16 = .{
                     .uvs = prep.sphere2_uvs.array,

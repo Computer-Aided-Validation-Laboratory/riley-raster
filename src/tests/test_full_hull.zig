@@ -6,10 +6,13 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
-const cameraops = @import("../riley/zig/cameraops.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
+const cameraops = @import("../riley/zig/cameraframops.zig");
 const common = @import("../dev_support/tests.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const fullcase_hull = @import("fullcase_hull.zig");
@@ -23,8 +26,8 @@ const shaderops = @import("../riley/zig/shaderops.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 const Timestamp = std.Io.Clock.Timestamp;
 
 const HullStatusCase = fullcase_hull.HullStatusCase;
@@ -88,7 +91,7 @@ fn runOneElemHullCaseTest(
         );
     }
 
-    const shader_params = shaderops.FuncShaderParams{
+    const shader_params = shadertypes.FuncShaderParams{
         .coord_scale = .{ 4.0, 4.0 },
         .settings = .{ .checker = .{} },
     };

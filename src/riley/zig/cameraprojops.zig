@@ -6,11 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameratypes = @import("cameratypes.zig");
 const buildconfig = @import("buildconfig.zig");
-const common = @import("camera_common.zig");
+const common = @import("cameraprojops_common.zig");
 const cm = @import("cameramodels.zig");
-const camera_scalar = @import("camera_scalar.zig");
-const camera_simd = @import("camera_simd.zig");
+const camera_scalar = @import("cameraprojops_scalar.zig");
+const camera_simd = @import("cameraprojops_simd.zig");
 
 const cfg = buildconfig.config;
 const F = cfg.precision;
@@ -50,15 +51,9 @@ pub const PointSpreadFunc = cm.PointSpreadFunc;
 pub const PreparedPSFMode = cm.PreparedPSFMode;
 pub const PreparedPSF = cm.PreparedPSF;
 
-pub const CameraCoordSys = common.CameraCoordSys;
-pub const SubPixelCenterMap = common.SubPixelCenterMap;
-pub const CameraInput = common.CameraInput;
-pub const StereoPairInput = common.StereoPairInput;
-pub const FOVScaling = common.FOVScaling;
-
 pub const CameraPrepared = camera_impl.CameraPrepared;
 pub const allCamerasSharePixels = common.allCamerasSharePixels;
-pub const isNoDistort = common.isNoDistort;
+pub const isNoDistort = cameratypes.isNoDistort;
 pub const calcPixelCenterCoord = common.calcPixelCenterCoord;
 pub const storeIdealPairScratch = common.storeIdealPairScratch;
 pub const getIdealXPlaneScratch = common.getIdealXPlaneScratch;

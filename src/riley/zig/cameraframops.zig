@@ -6,10 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameratypes = @import("cameratypes.zig");
+const meshtypes = @import("meshtypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 
-const cam = @import("camera.zig");
+const cam = @import("cameraprojops.zig");
 const meshio = @import("meshio.zig");
 const meshpipe = @import("meshpipeline.zig");
 const sceneops = @import("sceneops.zig");
@@ -23,59 +25,16 @@ const F = buildconfig.F;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const FrameFitMode = enum(u32) {
-    contain = 0,
-    cover = 1,
-    horizontal = 2,
-    vertical = 3,
-};
-
-pub const OrbitCam = struct {
-    pos: vec.Vec3F,
-    rot: rotation.Rotation,
-};
-
-pub const StereoPairPosRot = struct {
-    cam0_pos: vec.Vec3F,
-    cam0_rot: rotation.Rotation,
-    cam1_pos: vec.Vec3F,
-    cam1_rot: rotation.Rotation,
-};
-
-pub const CameraPlaneMetrics = struct {
-    sensor_size: [2]F,
-    focal_px: [2]F,
-    principal_point_px: [2]F,
-    roi_plane_dist: F,
-    roi_plane_size: [2]F,
-    avg_leng_per_pixel: F,
-    avg_pixel_per_leng: F,
-};
+const FrameFitMode = cameratypes.FrameFitMode;
+const OrbitCam = cameratypes.OrbitCam;
+const StereoPairPosRot = cameratypes.StereoPairPosRot;
+const CameraPlaneMetrics = cameratypes.CameraPlaneMetrics;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub fn prepareCameraSlice(
-    allocator: std.mem.Allocator,
-    camera_inputs: []const cam.CameraInput,
-) ![]cam.CameraPrepared {
-    const cameras = try allocator.alloc(cam.CameraPrepared, camera_inputs.len);
-    for (camera_inputs, 0..) |camera_input, cc| {
-        cameras[cc] = cam.CameraPrepared.init(
-            allocator,
-            camera_input,
-        ) catch |err| {
-            for (0..cc) |pp| cameras[pp].deinit(allocator);
-            allocator.free(cameras);
-            return err;
-        };
-    }
-
-    return cameras;
-}
-
-pub fn toOpenGLInput(input: cam.CameraInput) cam.CameraInput {
+pub fn toOpenGLInput(input: cameratypes.CameraInput) cameratypes.CameraInput {
     if (input.coord_sys == .opengl) return input;
     var opengl_input = input;
     const r_opencv = input.rot_world.matrix;
@@ -99,7 +58,7 @@ pub fn toOpenGLInput(input: cam.CameraInput) cam.CameraInput {
     return opengl_input;
 }
 
-pub fn calcPlaneMetrics(camera_input: cam.CameraInput) CameraPlaneMetrics {
+pub fn calcPlaneMetrics(camera_input: cameratypes.CameraInput) CameraPlaneMetrics {
     const opengl_input = toOpenGLInput(camera_input);
     const scaling = calcFOVScaling(
         opengl_input,
@@ -143,7 +102,7 @@ pub fn fovFromCamRot(
 
 pub fn fovFromCamRotOverMeshes(
     cam_rot: rotation.Rotation,
-    meshes: []const meshpipe.MeshInput,
+    meshes: []const meshtypes.MeshInput,
 ) [2]F {
     return sceneops.extentInRotatedFrameOverMeshes(cam_rot, meshes);
 }
@@ -175,9 +134,9 @@ pub fn imageDistFromFov(
 }
 
 pub fn calcFOVScaling(
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
     plane_cent_world: vec.Vec3F,
-) cam.FOVScaling {
+) cameratypes.FOVScaling {
     const cam_z_axis = camera_input.rot_world.matrix.getColVec(2);
     const plane_vec = (&camera_input.pos_world).sub(plane_cent_world);
     const plane_dist = @abs(plane_vec.dot(cam_z_axis));
@@ -297,7 +256,7 @@ pub fn imageDistFrameCoordsTarg(
 }
 
 pub fn imageDistFrameMeshes(
-    meshes: []const meshpipe.MeshInput,
+    meshes: []const meshtypes.MeshInput,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
@@ -319,7 +278,7 @@ pub fn imageDistFrameMeshes(
 }
 
 pub fn imageDistFrameMeshesTarg(
-    meshes: []const meshpipe.MeshInput,
+    meshes: []const meshtypes.MeshInput,
     targ_world: vec.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,
@@ -411,7 +370,7 @@ pub fn posFrameCoordsTarg(
 }
 
 pub fn posFrameMesh(
-    mesh: meshpipe.MeshInput,
+    mesh: meshtypes.MeshInput,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
@@ -431,7 +390,7 @@ pub fn posFrameMesh(
 }
 
 pub fn posFrameMeshes(
-    meshes: []const meshpipe.MeshInput,
+    meshes: []const meshtypes.MeshInput,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
@@ -456,7 +415,7 @@ pub fn posFrameMeshes(
 }
 
 pub fn posFrameMeshesTarg(
-    meshes: []const meshpipe.MeshInput,
+    meshes: []const meshtypes.MeshInput,
     targ_world: vec.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,
@@ -527,7 +486,7 @@ pub fn posStereoPair(
 }
 
 pub fn calcPixelResolution(
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
     targ_world: vec.Vec3F,
 ) F {
     const opengl_input = toOpenGLInput(camera_input);
@@ -599,7 +558,7 @@ pub fn posFillFrameFromRotAndTarg(
 }
 
 pub fn posFillFrameFromRotOverMeshes(
-    meshes: []const meshpipe.MeshInput,
+    meshes: []const meshtypes.MeshInput,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
@@ -618,7 +577,7 @@ pub fn posFillFrameFromRotOverMeshes(
 }
 
 pub fn posFillFrameFromRotOverMeshesAndTarg(
-    meshes: []const meshpipe.MeshInput,
+    meshes: []const meshtypes.MeshInput,
     targ_world: vec.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,

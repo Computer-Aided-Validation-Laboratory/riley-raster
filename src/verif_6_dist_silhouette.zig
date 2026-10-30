@@ -6,11 +6,13 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("riley/zig/meshtypes.zig");
+const cameratypes = @import("riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
-const cam = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const iio = @import("riley/zig/imageio.zig");
 const matrix = @import("riley/zig/matstack.zig");
 const meshio = @import("riley/zig/meshio.zig");
@@ -115,7 +117,7 @@ fn extractScalarMap(
 }
 
 fn calcCentroidStats(
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
     rows_num: usize,
     cols_num: usize,
     vals: []const F,
@@ -268,7 +270,7 @@ fn writeStatsCsv(
     distort_case: vconst.CameraDistortCase,
     stats: CentroidStats,
     centroid_world: vector.Vec3F,
-    scaling: cam.FOVScaling,
+    scaling: cameratypes.FOVScaling,
     pinhole_camera: *const cam.CameraPrepared,
     distorted_camera: *const cam.CameraPrepared,
     frame_coords: *const meshio.Coords,
@@ -365,11 +367,11 @@ fn renderScalarMap(
     case_spec: vconst.DistortCase,
     connect: meshio.Connect,
     frame_coords: meshio.Coords,
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
     config: @TypeOf(tcfg.getRasterConfig(.preview)),
     out_dir_path: []const u8,
 ) !ScalarMap {
-    const mesh_input = mo.MeshInput{
+    const mesh_input = meshtypes.MeshInput{
         .mesh_type = case_spec.mesh_type,
         .coords = frame_coords,
         .connect = connect,
@@ -386,8 +388,8 @@ fn renderScalarMap(
     const result = (try riley.raster(
         render_allocator,
         io,
-        &[_]cam.CameraInput{camera_input},
-        &[_]mo.MeshInput{mesh_input},
+        &[_]cameratypes.CameraInput{camera_input},
+        &[_]meshtypes.MeshInput{mesh_input},
         config,
         out_dir_path,
     )) orelse return error.NoResult;
@@ -395,7 +397,7 @@ fn renderScalarMap(
     return try extractScalarMap(out_allocator, &result);
 }
 
-fn buildCentroidCameraInput(ref_coords: *const meshio.Coords) cam.CameraInput {
+fn buildCentroidCameraInput(ref_coords: *const meshio.Coords) cameratypes.CameraInput {
     const initial_rot = orch.defaultRotation();
     const roi_cent_world = sceneops.meanCenter(ref_coords);
     const pos_world = cameraops.posFillFrameFromRotAndTarget(
@@ -424,7 +426,7 @@ fn buildCentroidCameraInputOverFrames(
     allocator: std.mem.Allocator,
     sim_data: *const meshio.SimData,
     mesh_type: @TypeOf(vconst.distort_cases[0].mesh_type),
-) !cam.CameraInput {
+) !cameratypes.CameraInput {
     const initial_rot = orch.defaultRotation();
     const roi_cent_world = sceneops.meanCenter(&sim_data.coords);
     const time_steps = if (sim_data.field) |field| field.getTimeN() else 1;
@@ -433,7 +435,7 @@ fn buildCentroidCameraInputOverFrames(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const frame_meshes = try aa.alloc(mo.MeshInput, time_steps);
+    const frame_meshes = try aa.alloc(meshtypes.MeshInput, time_steps);
     for (0..time_steps) |frame_idx| {
         const frame_coords = try buildFrameCoords(aa, sim_data, frame_idx);
         frame_meshes[frame_idx] = .{

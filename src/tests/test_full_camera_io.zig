@@ -6,11 +6,13 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameratypes = @import("../riley/zig/cameratypes.zig");
+const meshtypes = @import("../riley/zig/meshtypes.zig");
 const std = @import("std");
 const riley = @import("../riley/zig/riley.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const meshpipe = @import("../riley/zig/meshpipeline.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const cameraio = @import("../riley/zig/cameraio.zig");
 const vecstack = @import("../riley/zig/vecstack.zig");
 const rotation = @import("../riley/zig/rotation.zig");
@@ -43,7 +45,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     connect.table_mem[1] = 1;
     connect.table_mem[2] = 2;
 
-    const mesh = meshpipe.MeshInput{
+    const mesh = meshtypes.MeshInput{
         .mesh_type = .tri3,
         .coords = coords,
         .connect = connect,
@@ -55,14 +57,14 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
             .scaling = .none,
         } } },
     };
-    const modes = [_]camera.SubPixelCenterMap{ .full_in_mem, .per_tile };
+    const modes = [_]cameratypes.SubPixelCenterMap{ .full_in_mem, .per_tile };
     const buffers = [_]riley.BufferMode{ .tile_local, .global_subpx_full };
     const samples = [_]u32{ 1, 2, 4 };
 
     for (modes) |subpx_mode| {
         for (buffers) |buffer_mode| {
             for (samples) |sub_sample| {
-                const camera_input = camera.CameraInput{
+                const camera_input = cameratypes.CameraInput{
                     .pixels_num = .{ 200, 200 },
                     .pixels_size = .{ 0.01, 0.01 },
                     .pos_world = vecstack.Vec3F.initSlice(&.{ 0.0, 0.0, 1.0 }),

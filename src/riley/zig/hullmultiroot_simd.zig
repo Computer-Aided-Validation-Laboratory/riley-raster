@@ -16,7 +16,7 @@ const edgeops = @import("hulledge.zig");
 const HullEdge = @import("hulledge.zig").HullEdge;
 const EdgeFunMode = @import("rasterconfig.zig").EdgeFunMode;
 const hullcommon = @import("hullmultiroot_common.zig");
-const cam = @import("camera.zig");
+const cam = @import("cameraprojops.zig");
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const S = cfg.simd_vec_width;
@@ -336,4 +336,3 @@ test "multi-root SIMD child masks match scalar with inactive lanes" {
         try std.testing.expectEqual(expected, masks_fly[lane]);
     }
 }
-

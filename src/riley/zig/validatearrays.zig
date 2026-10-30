@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const meshtypes = @import("meshtypes.zig");
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const geomkerns = @import("geometrykernels.zig");
@@ -38,7 +40,7 @@ pub const InputArrayError = error{
 /// Scans full mesh array payloads (connectivity bounds and uniqueness, floating coordinates,
 /// displacements, nodal fields, UVs, and floating textures for non-finite values).
 /// Assumes structural and metadata validity checks from `checkRenderInps()` have passed.
-pub fn checkRenderArrs(meshes: []const meshpipe.MeshInput) InputArrayError!void {
+pub fn checkRenderArrs(meshes: []const meshtypes.MeshInput) InputArrayError!void {
     for (meshes) |mesh| {
         try checkMeshConnectivity(mesh);
         try checkMeshCoordinates(mesh);
@@ -51,7 +53,7 @@ pub fn checkRenderArrs(meshes: []const meshpipe.MeshInput) InputArrayError!void 
 // Connectivity Scans
 // --------------------------------------------------------------------------------------
 
-fn checkMeshConnectivity(mesh: meshpipe.MeshInput) InputArrayError!void {
+fn checkMeshConnectivity(mesh: meshtypes.MeshInput) InputArrayError!void {
     const coords_num = mesh.coords.mat.rows_num;
     const elems_num = mesh.connect.table.rows_num;
     const nodes_per_elem = mesh.connect.table.cols_num;
@@ -81,13 +83,13 @@ fn checkMeshConnectivity(mesh: meshpipe.MeshInput) InputArrayError!void {
 // Coordinate and Displacement Scans
 // --------------------------------------------------------------------------------------
 
-fn checkMeshCoordinates(mesh: meshpipe.MeshInput) InputArrayError!void {
+fn checkMeshCoordinates(mesh: meshtypes.MeshInput) InputArrayError!void {
     if (!isFiniteSlice(mesh.coords.mem)) {
         return error.NonFiniteCoordinates;
     }
 }
 
-fn checkMeshDisplacements(mesh: meshpipe.MeshInput) InputArrayError!void {
+fn checkMeshDisplacements(mesh: meshtypes.MeshInput) InputArrayError!void {
     if (mesh.disp) |disp_field| {
         if (!isFiniteSlice(disp_field.array_mem)) {
             return error.NonFiniteDisplacements;
@@ -99,7 +101,7 @@ fn checkMeshDisplacements(mesh: meshpipe.MeshInput) InputArrayError!void {
 // Shader Payload Scans (Nodal Fields, UVs, Floating Textures)
 // --------------------------------------------------------------------------------------
 
-fn checkMeshShaderArrays(mesh: meshpipe.MeshInput) InputArrayError!void {
+fn checkMeshShaderArrays(mesh: meshtypes.MeshInput) InputArrayError!void {
     if (mesh.shaders.mono_direct) |shader| try checkShaderMonoArrays(shader);
     if (mesh.shaders.mono_pipe) |pipe| try checkPipeArrays(pipe);
     if (mesh.shaders.ir_direct) |shader| try checkShaderMonoArrays(shader);
@@ -108,7 +110,7 @@ fn checkMeshShaderArrays(mesh: meshpipe.MeshInput) InputArrayError!void {
     if (mesh.shaders.multifield_pipe) |pipe| try checkPipeArrays(pipe);
 }
 
-fn checkPipeArrays(pipe: shaderops.ShaderPipeInput) InputArrayError!void {
+fn checkPipeArrays(pipe: shadertypes.ShaderPipeInput) InputArrayError!void {
     for (pipe.stages) |stage| {
         switch (stage) {
             .source => |src| try checkPipeSourceArrays(src.shader),
@@ -123,7 +125,7 @@ fn checkTexUvArrays(slice: []const f64) InputArrayError!void {
     }
 }
 
-fn checkShaderMonoArrays(shader: shaderops.ShaderMonoInput) InputArrayError!void {
+fn checkShaderMonoArrays(shader: shadertypes.ShaderMonoInput) InputArrayError!void {
     switch (shader) {
         .tex_u8 => |t| try checkTexUvArrays(t.uvs.slice),
         .tex_u16 => |t| try checkTexUvArrays(t.uvs.slice),
@@ -140,7 +142,7 @@ fn checkShaderMonoArrays(shader: shaderops.ShaderMonoInput) InputArrayError!void
     }
 }
 
-fn checkPipeSourceArrays(source: shaderops.PipeSourceInput) InputArrayError!void {
+fn checkPipeSourceArrays(source: shadertypes.PipeSourceInput) InputArrayError!void {
     switch (source) {
         .tex_u8 => |t| try checkTexUvArrays(t.uvs.slice),
         .tex_u16 => |t| try checkTexUvArrays(t.uvs.slice),

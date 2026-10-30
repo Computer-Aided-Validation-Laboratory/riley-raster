@@ -6,13 +6,14 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const meshtypes = @import("meshtypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
 const Timestamp = std.Io.Clock.Timestamp;
 const ndarray = @import("ndarray.zig");
-const cam = @import("camera.zig");
+const cam = @import("cameraprojops.zig");
 const meshpipe = @import("meshpipeline.zig");
 const iio = @import("imageio.zig");
 const rastcfg = @import("rasterconfig.zig");
@@ -187,7 +188,7 @@ pub const SaveOverlap = struct {
         slot: *SaveSlot,
         meta: RenderedFrameMeta,
         report_storage: *FrameReportStorage,
-        prep_meshes: []const meshpipe.MeshPrepared,
+        prep_meshes: []const meshtypes.MeshPrepared,
     ) !void {
         const coordinator = self.coordinator orelse unreachable;
         try publishRenderedSlot(
@@ -345,7 +346,7 @@ pub fn publishRenderedSlot(
     slot: *SaveSlot,
     meta: RenderedFrameMeta,
     report_storage: *FrameReportStorage,
-    prep_meshes: []const meshpipe.MeshPrepared,
+    prep_meshes: []const meshtypes.MeshPrepared,
 ) !void {
     slot.camera = meta.camera;
     slot.camera_idx = meta.camera_idx;

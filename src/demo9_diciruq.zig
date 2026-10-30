@@ -17,8 +17,8 @@ const meshpipe = @import("riley/zig/meshpipeline.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
 const shaderpipe = @import("riley/zig/shaderpipe.zig");
 const texops = @import("riley/zig/textureops.zig");
-const camera = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframops.zig");
 const cameraio = @import("riley/zig/cameraio.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
@@ -110,7 +110,7 @@ pub fn main(init: std.process.Init) !void {
         .bmp,
     );
 
-    const speckle_tex = shaderops.TexInput(texops.TexDataFix(u8, 1)){
+    const speckle_tex = riley.TexInput(texops.TexDataFix(u8, 1)){
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = .{
@@ -120,14 +120,14 @@ pub fn main(init: std.process.Init) !void {
 
         .scaling = .none,
     };
-    const speckle_source: shaderops.PipeSourceInput = .{ .tex_u8 = speckle_tex };
-    const speckle_mono: shaderops.ShaderMonoInput = .{ .tex_u8 = speckle_tex };
+    const speckle_source: riley.PipeSourceInput = .{ .tex_u8 = speckle_tex };
+    const speckle_mono: riley.ShaderMonoInput = .{ .tex_u8 = speckle_tex };
 
     const channel = shaderpipe.Slot{ .kind = .channel, .index = 0 };
     const field = shaderpipe.Slot{ .kind = .field, .index = 0 };
     const parameter = shaderpipe.Slot{ .kind = .parameter, .index = 0 };
 
-    const stages = [_]shaderops.ShaderPipeStageInput{
+    const stages = [_]riley.ShaderPipeStageInput{
         .{
             .source = .{
                 .shader = speckle_source,
@@ -175,7 +175,7 @@ pub fn main(init: std.process.Init) !void {
         0.25,
     );
 
-    const mesh = meshpipe.MeshInput{
+    const mesh = riley.MeshInput{
         .mesh_type = .quad8,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
@@ -236,7 +236,7 @@ pub fn main(init: std.process.Init) !void {
         left_rot,
         0.65,
     );
-    const left = camera.CameraInput{
+    const left = riley.CameraInput{
         .output_files = &.{.{ .format = .tiff, .file_bits = 16, .adc_bits = 12, .scaling = .{ .fixed = .{ 0, 255 } }, .packing = .upper }},
         .pixels_num = dic_pixels,
         .pixels_size = dic_pitch,
@@ -257,7 +257,7 @@ pub fn main(init: std.process.Init) !void {
         ir_rot,
         0.65,
     );
-    const ir = camera.CameraInput{
+    const ir = riley.CameraInput{
         .output_files = &.{.{ .format = .tiff, .file_bits = 16, .scaling = .{ .fixed = .{ 0, 250 } } }},
         .pixels_num = ir_pixels,
         .pixels_size = ir_pitch,

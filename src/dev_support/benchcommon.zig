@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const shadertypes = @import("../riley/zig/shadertypes.zig");
+const meshtypes = @import("../riley/zig/meshtypes.zig");
 const std = @import("std");
 const riley = @import("../riley/zig/riley.zig");
 const meshio = @import("../riley/zig/meshio.zig");
@@ -17,11 +19,11 @@ const mo = @import("../riley/zig/meshpipeline.zig");
 const so = @import("../riley/zig/shaderops.zig");
 const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
-const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
-const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
-const DistortParams = @import("../riley/zig/camera.zig").DistortParams;
-const SubPixelCenterMap = @import("../riley/zig/camera.zig").SubPixelCenterMap;
-const cameraops = @import("../riley/zig/cameraops.zig");
+const CameraPrepared = @import("../riley/zig/cameraprojops.zig").CameraPrepared;
+const CameraInput = @import("../riley/zig/cameraprojops.zig").CameraInput;
+const DistortParams = @import("../riley/zig/cameraprojops.zig").DistortParams;
+const SubPixelCenterMap = @import("../riley/zig/cameraprojops.zig").SubPixelCenterMap;
+const cameraops = @import("../riley/zig/cameraframops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const report = @import("../riley/zig/report.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
@@ -443,7 +445,7 @@ pub const ShaderType = enum {
 const TextureSampleConfig = @import("../riley/zig/textureops.zig").TextureSampleConfig;
 pub const TexFuncCoordMode = enum { uv, param, world_reference };
 pub const TexFuncCase = struct {
-    builtin: so.FuncShaderBuiltin,
+    builtin: shadertypes.FuncShaderBuiltin,
     coord_mode: TexFuncCoordMode,
 };
 
@@ -636,7 +638,7 @@ pub fn loadBenchmarkMeshInput(
     data_dir: []const u8,
     texture_grey: texops.TexDataFix(T, 1),
     texture_rgb: texops.TexDataFix(T, 3),
-) !mo.MeshInput {
+) !meshtypes.MeshInput {
     const coord_path = try std.fs.path.join(allocator, &[_][]const u8{
         data_dir,
         "coords.csv",
@@ -663,8 +665,8 @@ pub fn loadBenchmarkMeshInput(
         null,
     );
     const is_rgb = (calcOutputChannels(shader_type) == 3);
-    const shaders: so.MeshShaderSetInput = if (is_rgb) blk: {
-        const pipe_source: so.PipeSourceInput = switch (shader_type) {
+    const shaders: shadertypes.MeshShaderSetInput = if (is_rgb) blk: {
+        const pipe_source: shadertypes.PipeSourceInput = switch (shader_type) {
             .nodal_rgb => blk_n: {
                 const field_raw = try loadNDArrayFromCSV(
                     allocator,
@@ -728,7 +730,7 @@ pub fn loadBenchmarkMeshInput(
             },
             else => unreachable,
         };
-        const stages = try allocator.alloc(so.ShaderPipeStageInput, 1);
+        const stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
         stages[0] = so.stageSource(pipe_source);
         break :blk .{
             .rgb_pipe = .{
@@ -737,7 +739,7 @@ pub fn loadBenchmarkMeshInput(
             },
         };
     } else blk: {
-        const mono_shader: so.ShaderMonoInput = switch (shader_type) {
+        const mono_shader: shadertypes.ShaderMonoInput = switch (shader_type) {
             .nodal_grey => blk_n: {
                 const field_raw = try loadNDArrayFromCSV(
                     allocator,
@@ -984,13 +986,13 @@ fn runBenchmarkInternal(
         texture_grey,
         texture_rgb,
     );
-    const base_source: so.PipeSourceInput = if (calcOutputChannels(shader_type) == 3)
+    const base_source: shadertypes.PipeSourceInput = if (calcOutputChannels(shader_type) == 3)
         mesh_input.shaders.rgb_pipe.?.stages[0].source.shader
     else
         so.monoToPipeSource(mesh_input.shaders.mono_direct.?);
 
     const output_slot: shaderpipe.Slot = .{ .kind = .channel, .index = 0 };
-    const pipe_stages = [_]so.ShaderPipeStageInput{.{ .source = .{
+    const pipe_stages = [_]shadertypes.ShaderPipeStageInput{.{ .source = .{
         .shader = base_source,
         .destination = output_slot,
     } }};
@@ -1000,7 +1002,7 @@ fn runBenchmarkInternal(
         std.debug.assert(deformed_source == .func and deformed_source.func == .mono);
         deformed_source.func.mono.coord_mode = .world_deformed;
     }
-    const multi_stages = [_]so.ShaderPipeStageInput{
+    const multi_stages = [_]shadertypes.ShaderPipeStageInput{
         .{ .source = .{
             .shader = base_source,
             .destination = .{ .kind = .channel, .index = 0 },
@@ -1107,7 +1109,7 @@ fn runBenchmarkInternal(
     if (needs_images_arr) {
         const dims = try riley.calcAllFramesImageDims(
             &[_]CameraInput{camera_input},
-            &[_]mo.MeshInput{mesh_input},
+            &[_]meshtypes.MeshInput{mesh_input},
             config_run,
         );
         image_arr = try NDArray(F).initFlat(
@@ -1121,7 +1123,7 @@ fn runBenchmarkInternal(
         outer_alloc,
         io,
         &[_]CameraInput{camera_input},
-        &[_]mo.MeshInput{mesh_input},
+        &[_]meshtypes.MeshInput{mesh_input},
         config_run,
         out_path,
         if (image_arr) |*arr| arr else null,
@@ -1234,7 +1236,7 @@ fn printPaddedSafe(writer: anytype, text: []const u8, width: usize) !void {
     }
 }
 
-fn calcTexFuncParams(tex_func_case: TexFuncCase) so.FuncShaderParams {
+fn calcTexFuncParams(tex_func_case: TexFuncCase) shadertypes.FuncShaderParams {
     const pi: F = std.math.pi;
     const oscillations: F = if (tex_func_case.coord_mode == .param)
         2.0
