@@ -414,6 +414,23 @@ def test_speckle_render_rejects_invalid_params(
         _render(speckle_mesh)
 
 
+@pytest.mark.parametrize("pattern,error", [
+    (riley.SpecklePattern.disk, "SpeckleClassificationTooLarge"),
+    (riley.SpecklePattern.gaussian, "SpeckleCellBinsTooLarge"),
+    (riley.SpecklePattern.perlin, "SpecklePerlinLatticeTooLarge"),
+])
+def test_unrepresentable_speckle_storage_returns_a_native_error(
+    speckle_mesh: riley.Mesh,
+    pattern: riley.SpecklePattern,
+    error: str,
+) -> None:
+    speckle_mesh.shader.params.pattern = pattern
+    # Numerically valid f64 coordinates, but a grid product larger than usize.
+    speckle_mesh.shader.params.cells_per_uv = (2.0**45 - 1, 2.0**45 - 1)
+    with pytest.raises(RuntimeError, match=error):
+        _render(speckle_mesh)
+
+
 @pytest.mark.parametrize("pattern", list(riley.SpecklePattern))
 @pytest.mark.parametrize("softness", [-0.1, float("nan")])
 def test_every_pattern_rejects_negative_or_nonfinite_softness(

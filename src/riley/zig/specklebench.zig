@@ -439,9 +439,10 @@ test "speckle benchmark accumulator masks lanes and reduces deterministically" {
 test "speckle benchmark sink UV interpolation matches production grayscale shader" {
     const MatSlice = @import("matslice.zig").MatSlice;
     // Test this benchmark's interpolation/output boundary, not the evaluator accuracy matrix.
+    const params: speckle.Speckle2DParams = .{ .pattern = .gaussian, .cells_per_uv = .{ 3.25, 2.75 } };
+    const default_config = comptime params.resolve() catch unreachable;
     inline for (speckle.kernel_configs, 0..) |cfg, index| {
-        if (comptime cfg.pattern() == .gaussian and std.meta.activeTag(cfg) == .list_indexed and cfg.neighborhood() == .nine) {
-            const params: speckle.Speckle2DParams = .{ .pattern = .gaussian, .cells_per_uv = .{ 3.25, 2.75 } };
+        if (comptime std.meta.eql(cfg, default_config)) {
             var resources = try speckle.Resources.init(std.testing.allocator, params);
             defer resources.deinit(std.testing.allocator);
             const shader: shaderops.SpecklePrepared = .{ .elem_uvs = undefined, .resources = &resources, .params = params, .bits = null };

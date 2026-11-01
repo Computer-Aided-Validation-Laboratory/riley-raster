@@ -243,7 +243,7 @@ pub fn printProceduralConfig(
     );
     std.debug.print("  pattern (runtime): {s}\n", .{@tagName(params.pattern)});
     if (resolved.neighborhood()) |neighbors| {
-        std.debug.print("  neighbor count (resolved): {d}\n", .{@backingInt(neighbors)});
+        std.debug.print("  neighbor count (resolved): {d}\n", .{@intFromEnum(neighbors)});
     } else {
         std.debug.print("  neighbor count (resolved): not used\n", .{});
     }
@@ -370,7 +370,7 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\  --help                Show this help
         \\
         \\Experimental native overrides (require -Denable-all-evaluators=true):
-        \\  --evaluator <name>    cell-hash, list-naive, list-indexed,
+        \\  --evaluator <name>    cell-hash, list-naive, list-indexed, cell-binned,
         \\                        classified-indexed, direct-fixed, mask-1bit, mask-u8,
         \\                        gradient-lattice, or mock
         \\  --neighbors <count>   1, 4, or 9 (Perlin: mock only)
@@ -386,8 +386,9 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\  Gaussian/Perlin, classified-indexed, direct-fixed and mask-1bit
         \\  require softness 0. Classified-indexed requires disk/9 neighbors; direct-fixed
         \\  requires disk/1, zero jitter and hard edges; mask-1bit requires hard disks.
-        \\  Defaults: classified-indexed for hard disks, list-indexed for soft disks
-        \\  and Gaussians, gradient-lattice for Perlin; all evaluate analytic coverage.
+        \\  Defaults: classified-indexed for hard disks, cell-binned for soft disks
+        \\  and Gaussians (list-indexed with 1/4 neighbors), gradient-lattice for Perlin.
+        \\  All defaults evaluate analytic coverage.
         \\  Perlin supports gradient-lattice, cell-hash, mask-u8 or mock.
         \\  Masks use approximate nearest-grid coverage. Threshold is finite;
         \\  transition is finite and >= 0.

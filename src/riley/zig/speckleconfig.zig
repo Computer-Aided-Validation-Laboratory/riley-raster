@@ -15,6 +15,7 @@ pub const Evaluator = enum(u8) {
     gradient_lattice,
     list_naive,
     list_indexed,
+    cell_binned,
     classified_indexed, // Owner-aligned classification with exact masked hard-disk fallback.
     direct_fixed,
     mask_1bit,
@@ -36,6 +37,7 @@ pub const Config = union(Evaluator) {
     gradient_lattice: void,
     list_naive: Shape,
     list_indexed: Shape,
+    cell_binned: Shape,
     classified_indexed: void,
     direct_fixed: void,
     mask_1bit: Neighborhood,
@@ -45,7 +47,7 @@ pub const Config = union(Evaluator) {
     pub fn pattern(self: Config) ?Pattern {
         return switch (self) {
             .cell_hash, .mask_u8 => |field| std.meta.activeTag(field),
-            .list_naive, .list_indexed => |shape| switch (shape) {
+            .list_naive, .list_indexed, .cell_binned => |shape| switch (shape) {
                 .disk => .disk,
                 .gaussian => .gaussian,
             },
@@ -62,7 +64,7 @@ pub const Config = union(Evaluator) {
                 .gaussian => |neighbors| neighbors,
                 .perlin => null,
             },
-            .list_naive, .list_indexed => |shape| switch (shape) {
+            .list_naive, .list_indexed, .cell_binned => |shape| switch (shape) {
                 .disk => |disk| disk.neighborhood,
                 .gaussian => |neighbors| neighbors,
             },
@@ -79,7 +81,7 @@ pub const Config = union(Evaluator) {
                 .disk => |disk| disk.edges,
                 .gaussian, .perlin => null,
             },
-            .list_naive, .list_indexed => |shape| switch (shape) {
+            .list_naive, .list_indexed, .cell_binned => |shape| switch (shape) {
                 .disk => |disk| disk.edges,
                 .gaussian => null,
             },
@@ -93,7 +95,7 @@ pub const Config = union(Evaluator) {
     pub fn supportsSoftEdges(self: Config) bool {
         return switch (self) {
             .cell_hash, .mask_u8 => |field| field == .disk,
-            .list_naive, .list_indexed => |shape| shape == .disk,
+            .list_naive, .list_indexed, .cell_binned => |shape| shape == .disk,
             .mock => true,
             else => false,
         };
@@ -129,6 +131,7 @@ pub fn evaluatorName(evaluator: Evaluator) []const u8 {
         .gradient_lattice => "gradient-lattice",
         .list_naive => "list-naive",
         .list_indexed => "list-indexed",
+        .cell_binned => "cell-binned",
         .classified_indexed => "classified-indexed",
         .direct_fixed => "direct-fixed",
         .mask_1bit => "mask-1bit",
@@ -153,11 +156,13 @@ pub fn resolve(
     const neighbors = neighbor_count orelse
         if (evaluator == .direct_fixed) .one else default_neighborhood;
     const selected = evaluator orelse switch (pattern) {
-        .disk => if (edges == .hard and neighbors == .nine)
+        .disk => if (neighbors != .nine)
+            Evaluator.list_indexed
+        else if (edges == .hard)
             Evaluator.classified_indexed
         else
-            Evaluator.list_indexed,
-        .gaussian => Evaluator.list_indexed,
+            Evaluator.cell_binned,
+        .gaussian => if (neighbors == .nine) Evaluator.cell_binned else Evaluator.list_indexed,
         .perlin => Evaluator.gradient_lattice,
     };
     if (pattern == .perlin and selected != .gradient_lattice and selected != .cell_hash and
@@ -188,13 +193,18 @@ pub fn resolve(
             };
             break :blk if (selected == .cell_hash) .{ .cell_hash = field } else .{ .mask_u8 = field };
         },
-        .list_naive, .list_indexed => blk: {
+        .list_naive, .list_indexed, .cell_binned => blk: {
             const shape: Shape = switch (pattern) {
                 .disk => .{ .disk = .{ .neighborhood = neighbors, .edges = edges } },
                 .gaussian => .{ .gaussian = neighbors },
                 .perlin => unreachable,
             };
-            break :blk if (selected == .list_naive) .{ .list_naive = shape } else .{ .list_indexed = shape };
+            break :blk switch (selected) {
+                .list_naive => .{ .list_naive = shape },
+                .list_indexed => .{ .list_indexed = shape },
+                .cell_binned => .{ .cell_binned = shape },
+                else => unreachable,
+            };
         },
         .gradient_lattice => .gradient_lattice,
         .classified_indexed => .classified_indexed,
@@ -213,18 +223,22 @@ pub fn canonicalizeSampleConfig(config: Config) Config {
             .disk => |disk| .{ .disk = .{ .neighborhood = .nine, .edges = disk.edges } },
             .gaussian => .{ .gaussian = .nine },
         } },
+        .cell_binned => |shape| .{ .cell_binned = switch (shape) {
+            .disk => |disk| .{ .disk = .{ .neighborhood = .nine, .edges = disk.edges } },
+            .gaussian => .{ .gaussian = .nine },
+        } },
         else => config,
     };
 }
 
 const default_configs = [_]Config{
     .classified_indexed,
-    .{ .list_indexed = .{ .disk = .{ .neighborhood = .nine, .edges = .soft } } },
-    .{ .list_indexed = .{ .gaussian = .nine } },
+    .{ .cell_binned = .{ .disk = .{ .neighborhood = .nine, .edges = .soft } } },
+    .{ .cell_binned = .{ .gaussian = .nine } },
     .gradient_lattice,
 };
 const Catalogue = struct {
-    configs: [45]Config = undefined,
+    configs: [54]Config = undefined,
     len: usize = 0,
 
     fn appendUnique(self: *Catalogue, config: Config) void {
@@ -261,7 +275,7 @@ fn enumerateGenerationConfigs() Catalogue {
         result.appendUnique(@unionInit(Config, @tagName(evaluator), Field.perlin));
     for (std.enums.values(Neighborhood)) |neighbors| {
         result.appendUnique(.{ .mask_1bit = neighbors });
-        inline for (.{ Evaluator.cell_hash, Evaluator.mask_u8, Evaluator.list_naive, Evaluator.list_indexed }) |evaluator| {
+        inline for (.{ Evaluator.cell_hash, Evaluator.mask_u8, Evaluator.list_naive, Evaluator.list_indexed, Evaluator.cell_binned }) |evaluator| {
             const Payload = if (evaluator == .cell_hash or evaluator == .mask_u8) Field else Shape;
             result.appendUnique(@unionInit(Config, @tagName(evaluator), Payload{ .gaussian = neighbors }));
             for (std.enums.values(Edges)) |edges| {
@@ -300,22 +314,22 @@ test "enum boundary conversions and pattern/evaluator spellings" {
         try std.testing.expectEqual(evaluator, parseEvaluator(evaluatorName(evaluator)).?);
         if (evaluator != .mock) try std.testing.expectEqual(null, parseEvaluator(@tagName(evaluator)));
     }
-    for ([_][]const u8{ "", "Cell-hash", " mask-u8", "mask", "MASK-U8", "list-indexed-2", "classified-indexed-99" }) |name|
+    for ([_][]const u8{ "", "Cell-hash", " mask-u8", "mask", "MASK-U8", "unknown-evaluator" }) |name|
         try std.testing.expectEqual(null, parseEvaluator(name));
 }
 
 test "exhaustive external controls preserve acceptance errors and resolved semantics" {
     inline for (.{ false, true }) |enabled| {
         for (std.enums.values(Pattern)) |pattern| {
-            for (0..10) |choice| {
-                const evaluator: ?Evaluator = if (choice == 9) null else @enumFromInt(choice);
+            for (0..std.enums.values(Evaluator).len + 1) |choice| {
+                const evaluator: ?Evaluator = if (choice == std.enums.values(Evaluator).len) null else @enumFromInt(choice);
                 for ([_]?Neighborhood{ null, .one, .four, .nine }) |neighbors| {
                     for (std.enums.values(Edges)) |edges| {
                         // Independent raw-tuple oracle: original validation order, before erasure.
                         const n: u8 = if (neighbors) |value| @intFromEnum(value) else if (evaluator == .direct_fixed) 1 else 9;
                         const selected = evaluator orelse switch (pattern) {
-                            .disk => if (edges == .hard and n == 9) Evaluator.classified_indexed else Evaluator.list_indexed,
-                            .gaussian => Evaluator.list_indexed,
+                            .disk => if (n != 9) Evaluator.list_indexed else if (edges == .hard) Evaluator.classified_indexed else Evaluator.cell_binned,
+                            .gaussian => if (n == 9) Evaluator.cell_binned else Evaluator.list_indexed,
                             .perlin => Evaluator.gradient_lattice,
                         };
                         const err: ?ResolveError = blk: {
@@ -340,7 +354,7 @@ test "exhaustive external controls preserve acceptance errors and resolved seman
                         try std.testing.expectEqual(if (selected == .mock) null else pattern, config.pattern());
                         try std.testing.expectEqual(if (selected == .mock or pattern == .perlin) null else std.enums.fromInt(Neighborhood, n), config.neighborhood());
                         try std.testing.expectEqual(if (selected == .mock or pattern != .disk) null else edges, config.edges());
-                        const capable = selected == .mock or (pattern == .disk and (selected == .cell_hash or selected == .list_naive or selected == .list_indexed or selected == .mask_u8));
+                        const capable = selected == .mock or (pattern == .disk and (selected == .cell_hash or selected == .list_naive or selected == .list_indexed or selected == .cell_binned or selected == .mask_u8));
                         try std.testing.expectEqual(capable, config.supportsSoftEdges());
                         var matches: usize = 0;
                         for (generationConfigs(enabled)) |candidate| matches += @intFromBool(std.meta.eql(config, candidate));
@@ -353,8 +367,8 @@ test "exhaustive external controls preserve acceptance errors and resolved seman
 }
 
 test "catalogues contain exactly the valid policies and canonical sampler behaviors" {
-    try std.testing.expectEqual(45, generationConfigs(true).len);
-    try std.testing.expectEqual(28, sampleConfigs(true).len);
+    try std.testing.expectEqual(54, generationConfigs(true).len);
+    try std.testing.expectEqual(31, sampleConfigs(true).len);
     try std.testing.expectEqual(4, generationConfigs(false).len);
     try std.testing.expectEqual(4, sampleConfigs(false).len);
     inline for (.{ false, true }) |enabled| {

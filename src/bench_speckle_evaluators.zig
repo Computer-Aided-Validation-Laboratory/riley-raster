@@ -174,6 +174,9 @@ pub fn main(init: std.process.Init) !void {
     var combined_ns: i96 = 0;
     var result: bench.Result = .{};
     var image_samples: usize = 0;
+    // Null means not collected, rather than a measured zero.
+    var resource_bytes: ?usize = null;
+    var duplicated_disk_records: ?usize = null;
     if (opts.mode == .evaluation) {
         const config = opts.rasterConfig();
         const cam = try camera.CameraPrepared.init(alloc, cameraInput(scene.sim, opts));
@@ -188,6 +191,15 @@ pub fn main(init: std.process.Init) !void {
         const eval_start = std.Io.Timestamp.now(io, .awake);
         if (prepared) |shader| try evaluation.evaluateTexture(shader, opts.frames) else try evaluation.evaluate(params, &resources, opts.frames);
         render_ns = eval_start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
+        // Inspect backing storage only after sampling, without warming one evaluator's counts.
+        switch (resources.data) {
+            .cell_binned => |binned| {
+                resource_bytes = binned.byteSize();
+                duplicated_disk_records = binned.recordCount();
+            },
+            .strip_list => |strip| resource_bytes = strip.centers.len * @sizeOf([2]F) + strip.disks.len * @sizeOf(speckle.SpeckleDisk2D),
+            else => {},
+        }
         combined_ns = resource_ns + render_ns;
         result = evaluation.result();
     } else {
@@ -231,6 +243,8 @@ pub fn main(init: std.process.Init) !void {
         .texture = opts.texture,
         .texture_filter = @tagName(opts.texture_filter),
         .texture_mode = @tagName(opts.textureConfig().mode),
+        .resource_bytes = resource_bytes,
+        .duplicated_disk_records = duplicated_disk_records,
         .resource_ns = resource_ns,
         .render_ns = render_ns,
         .combined_ns = combined_ns,

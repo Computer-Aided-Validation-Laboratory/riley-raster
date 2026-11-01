@@ -108,7 +108,7 @@ shader = riley.SpeckleShader(
 ```
 
 Evaluators are selected automatically; see the
-[developer notes](./dev/README.md#procedural-generation-options) for native experiments.
+[developer notes](./dev/README.md#procedural-generation) for native experiments.
 
 For a standalone image of the whole field, without mesh data, UV files, a camera, or
 supersampling, run the direct pattern demo:

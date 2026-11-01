@@ -31,8 +31,8 @@ const fixture_params: Params = .{
 };
 
 test "speckle catalogues contain distinct generation and sampling variants" {
-    try std.testing.expectEqual(@as(usize, 45), speckleconfig.generationConfigs(true).len);
-    try std.testing.expectEqual(@as(usize, 28), speckleconfig.sampleConfigs(true).len);
+    try std.testing.expectEqual(@as(usize, 54), speckleconfig.generationConfigs(true).len);
+    try std.testing.expectEqual(@as(usize, 31), speckleconfig.sampleConfigs(true).len);
     for (speckleconfig.generationConfigs(true), 0..) |config, index| {
         for (speckleconfig.generationConfigs(true)[0..index]) |previous| {
             try std.testing.expect(!std.meta.eql(previous, config));
@@ -153,8 +153,8 @@ test "runtime speckle patterns prepare their production resources" {
         evaluator: Evaluator,
     }{
         .{ .pattern = .disk, .evaluator = .classified_indexed },
-        .{ .pattern = .disk, .softness = 0.03, .evaluator = .list_indexed },
-        .{ .pattern = .gaussian, .evaluator = .list_indexed },
+        .{ .pattern = .disk, .softness = 0.03, .evaluator = .cell_binned },
+        .{ .pattern = .gaussian, .evaluator = .cell_binned },
         .{ .pattern = .perlin, .evaluator = .gradient_lattice },
     };
     for (automatic) |case| {
@@ -216,6 +216,7 @@ fn expectPreparedResources(
         .gradient_lattice => .perlin,
         .list_naive => .list,
         .list_indexed => .strip_list,
+        .cell_binned => .cell_binned,
         .classified_indexed => .classified,
         .direct_fixed => .direct_fixed,
         .mask_1bit, .mask_u8 => .mask,
