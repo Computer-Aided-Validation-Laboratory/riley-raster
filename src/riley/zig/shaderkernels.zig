@@ -19,3 +19,4 @@ else
 pub const NodalKernel = impl.NodalKernel;
 pub const TexKernel = impl.TexKernel;
 pub const FuncKernel = impl.FuncKernel;
+pub const SpeckleKernel = impl.SpeckleKernel;

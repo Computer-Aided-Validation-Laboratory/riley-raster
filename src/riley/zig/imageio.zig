@@ -22,6 +22,7 @@ const csvio = @import("csvio.zig");
 
 const temp_test_root_dir = "temp-tests";
 const temp_test_dir = "temp-tests/imageio";
+const bmp_header_size: u32 = 14 + 40;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -467,6 +468,14 @@ pub fn saveBMP(
     start_field: usize,
     opts: ImageSaveOpts,
 ) !void {
+    const bits = opts.bits orelse 8;
+    const is_16bit = (bits == 16);
+    const bpp: u16 = if (is_16bit) 48 else 24;
+
+    const rows = image_arr.dims[1];
+    const cols = image_arr.dims[2];
+    const data_size = try bmpDataSize(cols, rows, bits);
+
     const file = try out_dir.createFile(io, file_name, .{});
     defer file.close(io);
 
@@ -474,28 +483,18 @@ pub fn saveBMP(
     var file_writer = file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    const bits = opts.bits orelse 8;
-    const is_16bit = (bits == 16);
-    const bpp: u16 = if (is_16bit) 48 else 24;
-
-    const rows = image_arr.dims[1];
-    const cols = image_arr.dims[2];
-
     const width = @as(u32, @intCast(cols));
     const height = @as(u32, @intCast(rows));
     const bytes_per_px: u32 = if (is_16bit) 6 else 3;
     const row_padding = (4 - (width * bytes_per_px) % 4) % 4;
-    const row_size = width * bytes_per_px + row_padding;
-    const data_size = row_size * height;
-    const header_size: u32 = 14 + 40;
-    const file_size = header_size + data_size;
+    const file_size = bmp_header_size + data_size;
 
     // Bitmap File Header (14 bytes)
     try writer.writeAll("BM");
     try writer.writeInt(u32, file_size, .little);
     try writer.writeInt(u16, 0, .little);
     try writer.writeInt(u16, 0, .little);
-    try writer.writeInt(u32, header_size, .little);
+    try writer.writeInt(u32, bmp_header_size, .little);
 
     // DIB Header (BITMAPINFOHEADER - 40 bytes)
     try writer.writeInt(u32, 40, .little);
@@ -547,6 +546,20 @@ pub fn saveBMP(
     }
     try writer.flush();
 }
+
+/// Check that a BMP fits its signed 32-bit dimensions and 32-bit file size fields.
+/// Returns the padded pixel-data size; callers may check before allocating images.
+pub fn bmpDataSize(cols: usize, rows: usize, bits: u8) error{ImageTooLarge}!u32 {
+    const max_dim: usize = std.math.maxInt(i32);
+    if (cols > max_dim or rows > max_dim) return error.ImageTooLarge;
+    const bytes_per_px: u32 = if (bits == 16) 6 else 3;
+    const row_bytes = std.math.mul(u32, @intCast(cols), bytes_per_px) catch return error.ImageTooLarge;
+    const row_size = (std.math.add(u32, row_bytes, 3) catch return error.ImageTooLarge) & ~@as(u32, 3);
+    const data_size = std.math.mul(u32, row_size, @intCast(rows)) catch return error.ImageTooLarge;
+    _ = std.math.add(u32, bmp_header_size, data_size) catch return error.ImageTooLarge;
+    return data_size;
+}
+
 pub fn saveTIFF(
     io: std.Io,
     out_dir: std.Io.Dir,
@@ -1525,4 +1538,15 @@ test "FIMG Save and Load Roundtrip" {
             }
         }
     }
+}
+
+test "BMP data size includes row padding and rejects header overflow" {
+    try std.testing.expectEqual(@as(u32, 4), try bmpDataSize(1, 1, 8));
+    try std.testing.expectEqual(@as(u32, 8), try bmpDataSize(1, 1, 16));
+    try std.testing.expectEqual(@as(u32, 3 * 1024 * 1024), try bmpDataSize(1024, 1024, 8));
+    try std.testing.expectError(error.ImageTooLarge, bmpDataSize(40_000, 40_000, 8));
+    try std.testing.expectError(
+        error.ImageTooLarge,
+        bmpDataSize(@as(usize, std.math.maxInt(i32)) + 1, 1, 8),
+    );
 }

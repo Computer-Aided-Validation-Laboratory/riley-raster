@@ -2,14 +2,16 @@
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2026 James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const cfg = @import("buildconfig.zig").config;
 const comm = @import("shaderops_common.zig");
 const scal = @import("shaderops_scalar.zig");
 const simd_impl = @import("shaderops_simd.zig");
+const speckle = @import("speckleops.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -20,6 +22,15 @@ pub const NormalType = comm.NormalType;
 pub const FuncCoordMode = comm.FuncCoordMode;
 pub const FuncShaderBuiltin = comm.FuncShaderBuiltin;
 pub const FuncShaderParams = comm.FuncShaderParams;
+pub const Speckle2DParams = speckle.Speckle2DParams;
+pub const SpeckleDisk2D = speckle.SpeckleDisk2D;
+pub const SpeckleList2D = speckle.SpeckleList2D;
+pub const SpeckleClassificationState = speckle.SpeckleClassificationState;
+pub const ClassifiedIndexedSpeckle2D = speckle.ClassifiedIndexedSpeckle2D;
+pub const DirectFixedSpeckleCell2D = speckle.DirectFixedSpeckleCell2D;
+pub const DirectFixedSpeckle2D = speckle.DirectFixedSpeckle2D;
+pub const SpeckleMask2D = speckle.SpeckleMask2D;
+
 pub const LocalShaderBuff = comm.LocalShaderBuff;
 pub const NodalInput = comm.NodalInput;
 pub const NodalPrepared = comm.NodalPrepared;
@@ -27,6 +38,9 @@ pub const TexInput = comm.TexInput;
 pub const TexPrepared = comm.TexPrepared;
 pub const FuncInput = comm.FuncInput;
 pub const FuncPrepared = comm.FuncPrepared;
+pub const SpeckleInput = comm.SpeckleInput;
+pub const SpeckleStatic = comm.SpeckleStatic;
+pub const SpecklePrepared = comm.SpecklePrepared;
 pub const ShadeContext = comm.ShadeContext;
 pub const InterpData = comm.InterpData;
 pub const ShaderInput = comm.ShaderInput;
@@ -59,3 +73,5 @@ pub const fillTexClipSIMD = simd_impl.fillTexClipSIMD;
 pub const fillTexPerspSIMD = simd_impl.fillTexPerspSIMD;
 pub const fillFuncClipSIMD = simd_impl.fillFuncClipSIMD;
 pub const fillFuncPerspSIMD = simd_impl.fillFuncPerspSIMD;
+pub const fillSpeckleScal = scal.fillSpeckleScal;
+pub const fillSpeckleSIMD = simd_impl.fillSpeckleSIMD;
