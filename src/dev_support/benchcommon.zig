@@ -23,7 +23,7 @@ const CameraPrepared = @import("../riley/zig/cameraprojops.zig").CameraPrepared;
 const CameraInput = @import("../riley/zig/cameraprojops.zig").CameraInput;
 const DistortParams = @import("../riley/zig/cameraprojops.zig").DistortParams;
 const SubPixelCenterMap = @import("../riley/zig/cameraprojops.zig").SubPixelCenterMap;
-const cameraops = @import("../riley/zig/cameraframops.zig");
+const cameraops = @import("../riley/zig/cameraframeops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const report = @import("../riley/zig/report.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
@@ -716,7 +716,7 @@ pub fn loadBenchmarkMeshInput(
                     )
                 else
                     null;
-                break :blk_f .{ .func = .{ .rgb = .{
+                break :blk_f .{ .func_rgb = .{
                     .uvs = tex_func_uvs,
                     .coord_mode = switch (tex_case.coord_mode) {
                         .uv => .uv,
@@ -726,7 +726,7 @@ pub fn loadBenchmarkMeshInput(
                     .builtin = tex_case.builtin,
                     .params = calcTexFuncParams(tex_case),
                     .scaling = .none,
-                } } };
+                } };
             },
             else => unreachable,
         };

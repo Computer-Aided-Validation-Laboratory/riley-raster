@@ -13,7 +13,7 @@ const std = @import("std");
 const imageops = @import("../riley/zig/imageops.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const camera = @import("../riley/zig/cameraprojops.zig");
-const cameraops = @import("../riley/zig/cameraframops.zig");
+const cameraops = @import("../riley/zig/cameraframeops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const iio = @import("../riley/zig/imageio.zig");
 const meshio = @import("../riley/zig/meshio.zig");
@@ -646,6 +646,7 @@ pub fn createScene2Camera(
         .roi_cent_world = vec.initVec3(F, 0.0, 0.0, 0.0),
         .focal_length = focal_length_scene0,
         .sub_sample = sub_sample,
+        .background_value = 127.5,
         .distort = .none,
     };
 }
@@ -1361,6 +1362,7 @@ pub fn createScene2ImageOutputCamera(meshes: []const MeshInput) CameraInput {
         .roi_cent_world = target,
         .focal_length = focal_length_scene0,
         .sub_sample = 2,
+        .background_value = 127.5,
         .distort = .none,
         .render_format = if (meshes[0].shaders.rgb_pipe != null) .rgb else .mono,
     };
@@ -1376,24 +1378,22 @@ pub fn buildScene2ImageOutputMeshes(
     const bits: ?u8 = if (is_u16) 16 else 8;
     if (is_rgb) {
         const sphere1_source: shadertypes.PipeSourceInput = .{
-            .func = .{
-                .rgb = .{
-                    .uvs = prep.sphere1_uvs.array,
-                    .builtin = .checker,
-                    .params = .{
-                        .coord_scale = .{ 10.0, 10.0 },
-                        .coord_offset = .{ 0.0, 0.0 },
-                        .settings = .{ .checker = .{
-                            .levels_rgb = .{
-                                .{ 0.0, 0.0, 1.0 },
-                                .{ 0.0, 1.0, 0.0 },
-                            },
-                        } },
-                    },
-                    .coord_mode = .uv,
-                    .output_gain = imageops.getScaleMax(bits),
-                    .scaling = .auto,
+            .func_rgb = .{
+                .uvs = prep.sphere1_uvs.array,
+                .builtin = .checker,
+                .params = .{
+                    .coord_scale = .{ 10.0, 10.0 },
+                    .coord_offset = .{ 0.0, 0.0 },
+                    .settings = .{ .checker = .{
+                        .levels_rgb = .{
+                            .{ 0.0, 0.0, 1.0 },
+                            .{ 0.0, 1.0, 0.0 },
+                        },
+                    } },
                 },
+                .coord_mode = .uv,
+                .output_gain = imageops.getScaleMax(bits),
+                .scaling = .auto,
             },
         };
         const sphere2_source: shadertypes.PipeSourceInput = if (is_u16)

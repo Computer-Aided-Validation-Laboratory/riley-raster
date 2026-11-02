@@ -12,7 +12,7 @@ const shadertypes = @import("../riley/zig/shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const camera = @import("../riley/zig/cameraprojops.zig");
-const cameraops = @import("../riley/zig/cameraframops.zig");
+const cameraops = @import("../riley/zig/cameraframeops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const iio = @import("../riley/zig/imageio.zig");
 const meshio = @import("../riley/zig/meshio.zig");
@@ -168,7 +168,7 @@ fn loadShapeMesh(
                 .output_gain = 255.0,
                 .scaling = .auto,
             } },
-            .func_rgb_checker_uvs => .{ .func = .{ .rgb = .{
+            .func_rgb_checker_uvs => .{ .func_rgb = .{
                 .uvs = uvs.array,
                 .coord_mode = .uv,
                 .builtin = .checker,
@@ -178,7 +178,7 @@ fn loadShapeMesh(
                 },
                 .output_gain = 255.0,
                 .scaling = .auto,
-            } } },
+            } },
             else => unreachable,
         };
         const stages = try allocator.alloc(shadertypes.ShaderPipeStageInput, 1);
@@ -410,12 +410,12 @@ pub fn generateTwoShapesCase(
         .roi_cent_world = target,
         .focal_length = focal_length_twoshapes,
         .sub_sample = 2,
+        .background_value = 127.5,
         .distort = .none,
     };
 
     var run_config = config;
     run_config.save_strategy = .disk;
-    run_config.background_value = 127.5;
 
     const result = try riley.raster(
         aa,

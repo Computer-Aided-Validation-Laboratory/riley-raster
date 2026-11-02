@@ -66,34 +66,34 @@ pub const arrangeMeshGroupsRadial = @import("../sceneops.zig").arrangeMeshGroups
 // Camera Framing Operations
 // --------------------------------------------------------------------------------------
 
-pub const toOpenGLInput = @import("../cameraframops.zig").toOpenGLInput;
-pub const calcPlaneMetrics = @import("../cameraframops.zig").calcPlaneMetrics;
-pub const coverageToFovScale = @import("../cameraframops.zig").coverageToFovScale;
-pub const fovScaleToCoverage = @import("../cameraframops.zig").fovScaleToCoverage;
-pub const fovFromCamRot = @import("../cameraframops.zig").fovFromCamRot;
-pub const fovFromCamRotOverMeshes = @import("../cameraframops.zig").fovFromCamRotOverMeshes;
-pub const calcSensorSize = @import("../cameraframops.zig").calcSensorSize;
-pub const imageDistFromFov = @import("../cameraframops.zig").imageDistFromFov;
-pub const calcFOVScaling = @import("../cameraframops.zig").calcFOVScaling;
-pub const calcCamPos = @import("../cameraframops.zig").calcCamPos;
-pub const lookAtPoint = @import("../cameraframops.zig").lookAtPoint;
-pub const imageDistFrameCoords = @import("../cameraframops.zig").imageDistFrameCoords;
-pub const imageDistFrameCoordsTarg = @import("../cameraframops.zig").imageDistFrameCoordsTarg;
-pub const imageDistFrameMeshes = @import("../cameraframops.zig").imageDistFrameMeshes;
-pub const imageDistFrameMeshesTarg = @import("../cameraframops.zig").imageDistFrameMeshesTarg;
-pub const posFrameCoords = @import("../cameraframops.zig").posFrameCoords;
-pub const posFrameCoordsTarg = @import("../cameraframops.zig").posFrameCoordsTarg;
-pub const posFrameMesh = @import("../cameraframops.zig").posFrameMesh;
-pub const posFrameMeshes = @import("../cameraframops.zig").posFrameMeshes;
-pub const posFrameMeshesTarg = @import("../cameraframops.zig").posFrameMeshesTarg;
-pub const posOrbitCam = @import("../cameraframops.zig").posOrbitCam;
-pub const posStereoPair = @import("../cameraframops.zig").posStereoPair;
-pub const calcPixelResolution = @import("../cameraframops.zig").calcPixelResolution;
-pub const imageDistFillFrameFromRot = @import("../cameraframops.zig").imageDistFillFrameFromRot;
-pub const posFillFrameFromRot = @import("../cameraframops.zig").posFillFrameFromRot;
-pub const posFillFrameFromRotAndTarg = @import("../cameraframops.zig").posFillFrameFromRotAndTarg;
-pub const posFillFrameFromRotOverMeshes = @import("../cameraframops.zig").posFillFrameFromRotOverMeshes;
-pub const posFillFrameFromRotOverMeshesAndTarg = @import("../cameraframops.zig").posFillFrameFromRotOverMeshesAndTarg;
+pub const toOpenGLInput = @import("../cameraframeops.zig").toOpenGLInput;
+pub const calcPlaneMetrics = @import("../cameraframeops.zig").calcPlaneMetrics;
+pub const coverageToFovScale = @import("../cameraframeops.zig").coverageToFovScale;
+pub const fovScaleToCoverage = @import("../cameraframeops.zig").fovScaleToCoverage;
+pub const fovFromCamRot = @import("../cameraframeops.zig").fovFromCamRot;
+pub const fovFromCamRotOverMeshes = @import("../cameraframeops.zig").fovFromCamRotOverMeshes;
+pub const calcSensorSize = @import("../cameraframeops.zig").calcSensorSize;
+pub const imageDistFromFov = @import("../cameraframeops.zig").imageDistFromFov;
+pub const calcFOVScaling = @import("../cameraframeops.zig").calcFOVScaling;
+pub const calcCamPos = @import("../cameraframeops.zig").calcCamPos;
+pub const lookAtPoint = @import("../cameraframeops.zig").lookAtPoint;
+pub const imageDistFrameCoords = @import("../cameraframeops.zig").imageDistFrameCoords;
+pub const imageDistFrameCoordsTarg = @import("../cameraframeops.zig").imageDistFrameCoordsTarg;
+pub const imageDistFrameMeshes = @import("../cameraframeops.zig").imageDistFrameMeshes;
+pub const imageDistFrameMeshesTarg = @import("../cameraframeops.zig").imageDistFrameMeshesTarg;
+pub const posFrameCoords = @import("../cameraframeops.zig").posFrameCoords;
+pub const posFrameCoordsTarg = @import("../cameraframeops.zig").posFrameCoordsTarg;
+pub const posFrameMesh = @import("../cameraframeops.zig").posFrameMesh;
+pub const posFrameMeshes = @import("../cameraframeops.zig").posFrameMeshes;
+pub const posFrameMeshesTarg = @import("../cameraframeops.zig").posFrameMeshesTarg;
+pub const posOrbitCam = @import("../cameraframeops.zig").posOrbitCam;
+pub const posStereoPair = @import("../cameraframeops.zig").posStereoPair;
+pub const calcPixelResolution = @import("../cameraframeops.zig").calcPixelResolution;
+pub const imageDistFillFrameFromRot = @import("../cameraframeops.zig").imageDistFillFrameFromRot;
+pub const posFillFrameFromRot = @import("../cameraframeops.zig").posFillFrameFromRot;
+pub const posFillFrameFromRotAndTarg = @import("../cameraframeops.zig").posFillFrameFromRotAndTarg;
+pub const posFillFrameFromRotOverMeshes = @import("../cameraframeops.zig").posFillFrameFromRotOverMeshes;
+pub const posFillFrameFromRotOverMeshesAndTarg = @import("../cameraframeops.zig").posFillFrameFromRotOverMeshesAndTarg;
 
 // --------------------------------------------------------------------------------------
 // Mesh Preparation Operations

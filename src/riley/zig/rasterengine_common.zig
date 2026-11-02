@@ -322,8 +322,7 @@ pub fn rasterTileCore(
     subpx_tile_size: usize,
 ) !TileCoreResult {
     var shaded_px: u64 = 0;
-    // Report aggregate worker-time for the overlap loop. Camera fill is timed
-    // separately and removed below so all three raster phases share one basis.
+
     const time_elem_start: ?Timestamp =
         if (comptime report_mode != .off)
             Timestamp.now(io, .awake)
@@ -339,6 +338,7 @@ pub fn rasterTileCore(
         const root_class = comptime elemtilebin.binRootClass(bin_tag);
         const range = tile.bins[@intFromEnum(bin_tag)];
         const overlaps = overlaps_all[range.start .. range.start + range.count];
+
         for (overlaps) |ov| {
             const mesh_idx: usize = ov.mesh_idx;
             const mesh_ptr = &meshes[mesh_idx];

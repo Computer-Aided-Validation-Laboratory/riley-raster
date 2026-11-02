@@ -324,9 +324,6 @@ fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
             return error.InvalidGlobalSubpxStripeSizeOverride;
         }
     }
-    if (!std.math.isFinite(config.background_value)) {
-        return error.InvalidBackgroundValue;
-    }
     if (config.output.save_frame_buff_count == 0) {
         return error.InvalidSaveFrameBuffCount;
     }
@@ -421,11 +418,9 @@ fn pipeSourceChannels(source: shadertypes.PipeSourceInput) u8 {
         .tex_multi_u8 => |t| @intCast(t.tex.array.dims[0]),
         .tex_multi_u16 => |t| @intCast(t.tex.array.dims[0]),
         .tex_multi_f => |t| @intCast(t.tex.array.dims[0]),
-        .func => |f| switch (f) {
-            .mono => 1,
-            .rgb => 3,
-            .multi => |multi| @intCast(multi.channels.len),
-        },
+        .func => 1,
+        .func_rgb => 3,
+        .func_multi => |f| @intCast(f.channels.len),
     };
 }
 
@@ -493,6 +488,9 @@ fn checkCamInp(cam_inp: cameratypes.CameraInput) InputValidationError!void {
     }
     if (cam_inp.sub_sample == 0) {
         return error.InvalidCameraSubSample;
+    }
+    if (!std.math.isFinite(cam_inp.background_value)) {
+        return error.InvalidBackgroundValue;
     }
     if (!isFiniteVec3(cam_inp.pos_world) or
         !isFiniteVec3(cam_inp.roi_cent_world))
@@ -711,11 +709,8 @@ fn checkPipeSourceMetadata(
         .tex_multi_u16 => |t| try checkTexMultiMetadata(t, coords_num),
         .tex_multi_f => |t| try checkTexMultiMetadata(t, coords_num),
         .nodal => |nodal_shader| try checkNodalShaderMetadata(nodal_shader, coords_num),
-        .func => |func_source| switch (func_source) {
-            .mono => |func_shader| try checkFuncShaderMetadata(func_shader, coords_num),
-            .rgb => |func_shader| try checkFuncShaderMetadata(func_shader, coords_num),
-            .multi => |multi| try checkFuncMultiShaderMetadata(multi, coords_num),
-        },
+        .func, .func_rgb => |func_shader| try checkFuncShaderMetadata(func_shader, coords_num),
+        .func_multi => |multi| try checkFuncMultiShaderMetadata(multi, coords_num),
     }
 }
 
@@ -1121,7 +1116,7 @@ test "generic pipe stages validate ordered reads and single writers" {
     const original = [_]shadertypes.ShaderPipeStageInput{
         .{
             .source = .{
-                .shader = .{ .func = .{ .rgb = .{ .builtin = .constant } } },
+                .shader = .{ .func_rgb = .{ .builtin = .constant } },
                 .destination = ch0,
             },
         },

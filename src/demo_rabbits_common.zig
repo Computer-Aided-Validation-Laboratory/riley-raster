@@ -276,21 +276,19 @@ fn makeMeshInput(
                 },
             },
             .func => .{
-                .func = .{
-                    .rgb = .{
-                        .uvs = uvs.array,
-                        .coord_mode = .uv,
-                        .builtin = riley.FuncShaderBuiltin.checker,
-                        .params = riley.FuncShaderParams{
-                            .coord_scale = .{
-                                checker_squares_per_axis,
-                                checker_squares_per_axis,
-                            },
-                            .settings = .{ .checker = .{} },
+                .func_rgb = .{
+                    .uvs = uvs.array,
+                    .coord_mode = .uv,
+                    .builtin = riley.FuncShaderBuiltin.checker,
+                    .params = riley.FuncShaderParams{
+                        .coord_scale = .{
+                            checker_squares_per_axis,
+                            checker_squares_per_axis,
                         },
-                        .output_gain = 255.0,
-                        .scaling = .auto,
+                        .settings = .{ .checker = .{} },
                     },
+                    .output_gain = 255.0,
+                    .scaling = .auto,
                 },
             },
         };

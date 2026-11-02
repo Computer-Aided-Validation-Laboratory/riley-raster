@@ -23,7 +23,7 @@ const uvio = @import("../riley/zig/uvio.zig");
 const shaderops = @import("../riley/zig/shaderops.zig");
 const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const CameraPrepared = @import("../riley/zig/cameraprojops.zig").CameraPrepared;
-const cameraops = @import("../riley/zig/cameraframops.zig");
+const cameraops = @import("../riley/zig/cameraframeops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const policy = @import("testpolicy.zig");
 

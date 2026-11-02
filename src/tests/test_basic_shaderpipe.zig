@@ -54,18 +54,18 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     );
 
     const stages = [_]shadertypes.ShaderPipeStageInput{
-        .{ .source = .{ .shader = .{ .func = .{ .mono = .{
+        .{ .source = .{ .shader = .{ .func = .{
             .builtin = .checker,
             .params = .{ .coord_scale = .{ 4, 4 }, .settings = .{ .checker = .{} } },
 
             .scaling = .none,
-        } } }, .destination = .{ .kind = .channel, .index = 0 } } },
-        .{ .source = .{ .shader = .{ .func = .{ .mono = .{
+        } }, .destination = .{ .kind = .channel, .index = 0 } } },
+        .{ .source = .{ .shader = .{ .func = .{
             .builtin = .constant,
             .params = .{ .settings = .{ .constant = .{ .value = 0.25 } } },
 
             .scaling = .none,
-        } } }, .destination = .{ .kind = .channel, .index = 1 } } },
+        } }, .destination = .{ .kind = .channel, .index = 1 } } },
     };
     const sum_slots = [_]shaderpipe.Slot{
         .{ .kind = .channel, .index = 0 },
@@ -94,17 +94,16 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     };
     var config = tcfg.getRasterConfig(.testing);
     config.save_strategy = if (generate_gold) .both else .memory;
-    config.background_value = 0;
 
     const generic_stages = [_]shadertypes.ShaderPipeStageInput{
-        .{ .source = .{ .shader = .{ .func = .{ .rgb = .{
+        .{ .source = .{ .shader = .{ .func_rgb = .{
             .builtin = .constant,
             .params = .{ .settings = .{ .constant = .{
                 .value_rgb = .{ 0.3, 0.4, 0 },
             } } },
 
             .scaling = .none,
-        } } }, .destination = .{ .kind = .field, .index = 0 } } },
+        } }, .destination = .{ .kind = .field, .index = 0 } } },
         .{ .normalise = .{ .source = .{ .kind = .field, .index = 0 }, .destination = .{ .kind = .channel, .index = 0 }, .components = 3 } },
         .{ .affine_map = .{ .source = .{ .kind = .channel, .index = 0 }, .destination = .{ .kind = .field, .index = 3 }, .gain = 2, .offset = 0.1 } },
         .{ .lut_map = .{ .source = .{ .kind = .field, .index = 3 }, .destination = .{ .kind = .field, .index = 4 }, .lookup = .{ .first = 0, .step = 1, .values = &.{ 0, 10, 20 } } } },
@@ -239,9 +238,9 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         .{ .builtin = .linear, .params = .{ .settings = .{ .linear = .{ .coeffs = .{ 0.4, 0, 0 } } } } },
         .{ .builtin = .eggbox, .params = .{ .settings = .{ .eggbox = .{ .mean = 0.5, .contrast = 0 } } } },
     };
-    const function_source: shadertypes.PipeSourceInput = .{ .func = .{ .multi = .{
+    const function_source: shadertypes.PipeSourceInput = .{ .func_multi = .{
         .channels = &function_channels,
-    } } };
+    } };
     var multifield_cam = cam_in;
     multifield_cam.render_format = .{ .multifield = 4 };
     const function_stages = [_]shadertypes.ShaderPipeStageInput{.{ .source = .{
@@ -658,12 +657,12 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         }
     }
     const rgb_stages = [_]shadertypes.ShaderPipeStageInput{.{ .source = .{
-        .shader = .{ .func = .{ .rgb = .{
+        .shader = .{ .func_rgb = .{
             .builtin = .constant,
             .params = .{ .settings = .{ .constant = .{ .value_rgb = .{ 0.2, 0.5, 0.8 } } } },
 
             .scaling = .none,
-        } } },
+        } },
         .destination = .{ .kind = .channel, .index = 0 },
     } }};
     const multi_stages = [_]shadertypes.ShaderPipeStageInput{.{ .source = .{
@@ -842,23 +841,23 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     const expr_stages = [_]shadertypes.ShaderPipeStageInput{
         rgb_stages[0],
         .{ .source = .{
-            .shader = .{ .func = .{ .rgb = .{
+            .shader = .{ .func_rgb = .{
                 .builtin = .constant,
                 .params = .{ .settings = .{ .constant = .{
                     .value_rgb = .{ 0.1, 0.2, 0.3 },
                 } } },
 
                 .scaling = .none,
-            } } },
+            } },
             .destination = .{ .kind = .parameter, .index = 0 },
         } },
         .{ .source = .{
-            .shader = .{ .func = .{ .mono = .{
+            .shader = .{ .func = .{
                 .builtin = .constant,
                 .params = .{ .settings = .{ .constant = .{ .value = 2 } } },
 
                 .scaling = .none,
-            } } },
+            } },
             .destination = .{ .kind = .field, .index = 0 },
         } },
     };
@@ -1043,8 +1042,8 @@ fn runSharedWorldGeometryCase(
 
         .scaling = .none,
     } };
-    const ref_source: shadertypes.PipeSourceInput = .{ .func = .{ .mono = ref_shader.func } };
-    const def_source: shadertypes.PipeSourceInput = .{ .func = .{ .mono = def_shader.func } };
+    const ref_source: shadertypes.PipeSourceInput = .{ .func = ref_shader.func };
+    const def_source: shadertypes.PipeSourceInput = .{ .func = def_shader.func };
     var direct_camera = camera_mono;
     direct_camera.render_format = .mono;
     var direct_mesh = mesh;

@@ -28,32 +28,28 @@ pub fn main(init: std.process.Init) !void {
 
     const checker: riley.PipeSourceInput = .{
         .func = .{
-            .mono = .{
-                .coord_mode = .world_reference,
-                .builtin = .checker,
-                .params = .{
-                    .coord_scale = .{ 4.0, 4.0 },
-                    .settings = .{ .checker = .{} },
-                },
-                .scaling = .auto,
+            .coord_mode = .world_reference,
+            .builtin = .checker,
+            .params = .{
+                .coord_scale = .{ 4.0, 4.0 },
+                .settings = .{ .checker = .{} },
             },
+            .scaling = .auto,
         },
     };
 
     const linear_source: riley.PipeSourceInput = .{
         .func = .{
-            .mono = .{
-                .coord_mode = .world_reference,
-                .builtin = .linear,
-                // x in [-1,1]: illumination rises from 0.25 to 1.0.
-                .params = .{
-                    .settings = .{
-                        .linear = .{ .coeffs = .{ 0.625, 0.375, 0.0 } },
-                    },
+            .coord_mode = .world_reference,
+            .builtin = .linear,
+            // x in [-1,1]: illumination rises from 0.25 to 1.0.
+            .params = .{
+                .settings = .{
+                    .linear = .{ .coeffs = .{ 0.625, 0.375, 0.0 } },
                 },
-
-                .scaling = .none,
             },
+
+            .scaling = .none,
         },
     };
 

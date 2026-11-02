@@ -78,6 +78,7 @@ class Camera:
     roi_cent_world: tuple[float, float, float]
     focal_length: float
     sub_sample: int
+    background_value: float = 0.0
     distort_model: int = 0
     distort_k1: float = 0.0
     distort_k2: float = 0.0
@@ -263,7 +264,6 @@ class RasterConfig:
     report: int = 1
     tile_size_min: int = 1
     tile_size_max: int = 256
-    background_value: float = 0.0
     disk_save_overlap: bool = False
     tile_size_override: int = 0
     global_subpx_tile_size_min: int = 64
@@ -796,6 +796,7 @@ def _make_camera_input(
     camera_out.roi_cent_world = _make_cvec3(camera.roi_cent_world)
     camera_out.focal_length = float(camera.focal_length)
     camera_out.sub_sample = int(camera.sub_sample)
+    camera_out.background_value = float(camera.background_value)
     camera_out.distort.distort_model = int(camera.distort_model)
     camera_out.distort.distort_k1 = float(camera.distort_k1)
     camera_out.distort.distort_k2 = float(camera.distort_k2)
@@ -924,6 +925,7 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
         ),
         focal_length=camera_in.focal_length,
         sub_sample=camera_in.sub_sample,
+        background_value=camera_in.background_value,
         distort_model=camera_in.distort.distort_model,
         distort_k1=camera_in.distort.distort_k1,
         distort_k2=camera_in.distort.distort_k2,
@@ -980,7 +982,6 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
     config_out.report = int(config.report)
     config_out.tile_size_min = int(config.tile_size_min)
     config_out.tile_size_max = int(config.tile_size_max)
-    config_out.background_value = float(config.background_value)
     config_out.disk_save_overlap = 1 if config.disk_save_overlap else 0
     config_out.tile_size_override = int(config.tile_size_override)
     config_out.global_subpx_tile_size_min = int(

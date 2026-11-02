@@ -72,6 +72,7 @@ def main() -> None:
         target,
         1.0,
         4,
+        render_format=riley.RenderFormat.mono,
     )
 
     config = riley.RasterConfig(

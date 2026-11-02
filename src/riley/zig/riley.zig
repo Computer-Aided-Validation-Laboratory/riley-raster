@@ -58,7 +58,6 @@ pub const ShaderMonoInput = @import("shadertypes.zig").ShaderMonoInput;
 pub const ShaderPipeInput = @import("shadertypes.zig").ShaderPipeInput;
 pub const ShaderPipeStageInput = @import("shadertypes.zig").ShaderPipeStageInput;
 pub const PipeSourceInput = @import("shadertypes.zig").PipeSourceInput;
-pub const FuncSourceInput = @import("shadertypes.zig").FuncSourceInput;
 pub const NodalInput = @import("shadertypes.zig").NodalInput;
 pub const FuncInput = @import("shadertypes.zig").FuncInput;
 pub const FuncMultiInput = @import("shadertypes.zig").FuncMultiInput;
@@ -1408,6 +1407,7 @@ fn initCameraMeshSelections(
     cameras: []const cam.CameraPrepared,
     mesh_static: []const meshtypes.MeshStatic,
 ) ![]const []const meshtypes.MeshStatic {
+    // Return Shape: [camera_idx][compatible_mesh_idx]
     const camera_meshes = try allocator.alloc(
         []const meshtypes.MeshStatic,
         cameras.len,
@@ -1607,7 +1607,7 @@ fn prepareFrameBuff(
                 std.debug.assert(ctx.frame_arr.dims[ii] == dim);
             }
         }
-        @memset(ctx.frame_arr.slice, input.config.background_value);
+        @memset(ctx.frame_arr.slice, input.camera.background_value);
         return;
     }
 
@@ -1630,7 +1630,7 @@ fn prepareFrameBuff(
     for (dims, 0..) |dim, ii| {
         std.debug.assert(ctx.frame_arr.dims[ii] == dim);
     }
-    @memset(ctx.frame_arr.slice, input.config.background_value);
+    @memset(ctx.frame_arr.slice, input.camera.background_value);
 }
 
 fn copyFrameToImageBatch(
@@ -1749,7 +1749,7 @@ fn rasterFrameGlobBuffFull(
         domain,
         -@as(i32, @intCast(halo_subpx)),
         -@as(i32, @intCast(halo_subpx)),
-        frame_job.config.background_value,
+        frame_job.camera.background_value,
     );
     defer target.deinit(outer_alloc);
 
@@ -1793,7 +1793,7 @@ fn rasterFrameGlobBuffFull(
         io,
         &target,
         frame_job.camera,
-        frame_job.config.background_value,
+        frame_job.camera.background_value,
         &ctx.frame_arr,
         raster_workers,
     );
@@ -1846,7 +1846,7 @@ fn rasterFrameGlobBuffStripe(
         @intCast(first_core_suby_max),
         halo_subpx,
         halo_subpx,
-        frame_job.config.background_value,
+        frame_job.camera.background_value,
     );
     defer stripe.deinit(outer_alloc);
 
@@ -1866,7 +1866,7 @@ fn rasterFrameGlobBuffStripe(
             @intCast(core_suby_min),
             @intCast(core_suby_max),
             halo_subpx,
-            frame_job.config.background_value,
+            frame_job.camera.background_value,
         );
 
         var stripe_tiling: elemtilebin.TileElemOverlaps = undefined;
@@ -1949,7 +1949,7 @@ fn rasterFrameGlobBuffStripe(
             io,
             &stripe.target,
             frame_job.camera,
-            frame_job.config.background_value,
+            frame_job.camera.background_value,
             &ctx.frame_arr,
             core_suby_min / sub_samp,
             core_suby_max / sub_samp,
@@ -2069,7 +2069,7 @@ fn saveFrame(
     {
         const images_arr = input.images_arr orelse return error.NoResult;
         copyFrameToImageBatch(
-            input.config.background_value,
+            input.camera.background_value,
             images_arr,
             input.camera_idx,
             input.frame_idx,

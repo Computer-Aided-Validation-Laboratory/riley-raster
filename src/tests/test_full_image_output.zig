@@ -512,8 +512,7 @@ fn runEntryPointEquivalence(
 }
 
 pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
-    var config = tcfg.getRasterConfig(.testing);
-    config.background_value = 127.5;
+    const config = tcfg.getRasterConfig(.testing);
     const gold_dir_root = policy.goldRoot(.full_image_output);
 
     var textures = try common_full.FullTextures.init(allocator, io);
@@ -641,7 +640,7 @@ fn runMixedCameraOutput(
         for (0..saved.dims[3]) |row| {
             for (0..saved.dims[4]) |col| {
                 try std.testing.expectEqual(
-                    base_config.background_value,
+                    mono_camera.background_value,
                     saved.get(&.{ 0, 0, ch, row, col }),
                 );
             }

@@ -84,7 +84,6 @@ pub const ShaderMonoInput = @import("../shadertypes.zig").ShaderMonoInput;
 pub const ShaderPipeInput = @import("../shadertypes.zig").ShaderPipeInput;
 pub const ShaderPipeStageInput = @import("../shadertypes.zig").ShaderPipeStageInput;
 pub const PipeSourceInput = @import("../shadertypes.zig").PipeSourceInput;
-pub const FuncSourceInput = @import("../shadertypes.zig").FuncSourceInput;
 pub const NodalInput = @import("../shadertypes.zig").NodalInput;
 pub const FuncInput = @import("../shadertypes.zig").FuncInput;
 pub const FuncMultiInput = @import("../shadertypes.zig").FuncMultiInput;

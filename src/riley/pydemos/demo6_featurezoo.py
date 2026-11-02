@@ -208,6 +208,7 @@ def build_cameras(
         roi_cent_world=target,
         focal_length=options.focal_length,
         sub_sample=1,
+        render_format=riley.RenderFormat.mono,
     )
 
     cameras = []
@@ -277,6 +278,7 @@ def render_case(channels: int, bits: int, options: DemoOptions) -> None:
         )
     )
     for cam in cameras:
+        cam.background_value = 0.5 * (2**bits - 1)
         cam.render_format = (
             riley.RenderFormat.mono
             if channels == 1
@@ -294,7 +296,7 @@ def render_case(channels: int, bits: int, options: DemoOptions) -> None:
         parallel=4,
         save_strategy=riley.SaveStrategy.disk,
     )
-    config.background_value = 0.5 * (2**bits - 1)
+
 
     # --------------------------------------------------------------------------
     # 3. Render the multi-mesh multi-camera case

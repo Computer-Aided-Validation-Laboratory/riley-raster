@@ -40,7 +40,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                 .tex = textures.tex_u8_mono,
                 .samp_cfg = .{ .sample = .linear, .mode = .direct },
             } }, .destination = .{ .kind = .channel, .index = 0 } } },
-            .{ .source = .{ .shader = .{ .func = .{ .mono = .{
+            .{ .source = .{ .shader = .{ .func = .{
                 .builtin = .lambertian_normal_z,
                 .params = .{
                     .settings = .{
@@ -49,7 +49,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                         },
                     },
                 },
-            } } }, .destination = .{ .kind = .parameter, .index = 0 } } },
+            } }, .destination = .{ .kind = .parameter, .index = 0 } } },
         };
         const cylinder_stages = [_]shadertypes.ShaderPipeStageInput{
             .{ .source = .{ .shader = .{ .tex_u8 = .{
@@ -57,7 +57,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                 .tex = textures.tex_u8_mono,
                 .samp_cfg = .{ .sample = .linear, .mode = .direct },
             } }, .destination = .{ .kind = .channel, .index = 0 } } },
-            .{ .source = .{ .shader = .{ .func = .{ .mono = .{
+            .{ .source = .{ .shader = .{ .func = .{
                 .builtin = .lambertian_normal_z,
                 .params = .{
                     .settings = .{
@@ -66,7 +66,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                         },
                     },
                 },
-            } } }, .destination = .{ .kind = .parameter, .index = 0 } } },
+            } }, .destination = .{ .kind = .parameter, .index = 0 } } },
         };
         const channel_slots = [_]shaderpipe.Slot{.{ .kind = .channel, .index = 0 }};
         const resolver: shaderpipe.Resolver = .{ .modulate = .{

@@ -123,12 +123,6 @@ pub const ShaderMonoInput = union(enum) {
     func: FuncInput,
 };
 
-pub const FuncSourceInput = union(enum) {
-    mono: FuncInput,
-    rgb: FuncInput,
-    multi: FuncMultiInput,
-};
-
 pub const PipeSourceInput = union(enum) {
     nodal: NodalInput,
     tex_u8: TexInput(texops.TexDataFix(u8, 1)),
@@ -140,7 +134,9 @@ pub const PipeSourceInput = union(enum) {
     tex_multi_u8: TexInput(texops.TexDataDyn(u8)),
     tex_multi_u16: TexInput(texops.TexDataDyn(u16)),
     tex_multi_f: TexInput(texops.TexDataDyn(F)),
-    func: FuncSourceInput,
+    func: FuncInput,
+    func_rgb: FuncInput,
+    func_multi: FuncMultiInput,
 };
 
 pub const ShaderPipeStageInput = union(enum) {
@@ -219,12 +215,6 @@ pub const ShaderMonoStatic = union(enum) {
     func: FuncStatic,
 };
 
-pub const FuncSourceStatic = union(enum) {
-    mono: FuncStatic,
-    rgb: FuncStatic,
-    multi: FuncStatic,
-};
-
 pub const PipeSourceStatic = union(enum) {
     nodal: NodalStatic,
     tex_u8: TexStatic(u8, 1),
@@ -234,7 +224,9 @@ pub const PipeSourceStatic = union(enum) {
     tex_rgb_u16: TexStatic(u16, 3),
     tex_rgb_f: TexStatic(F, 3),
     tex_multi_f: TexMultiStatic(F),
-    func: FuncSourceStatic,
+    func: FuncStatic,
+    func_rgb: FuncStatic,
+    func_multi: FuncStatic,
 };
 
 pub const ShaderPipeStageStatic = union(enum) {
@@ -257,16 +249,14 @@ pub const ShaderPipeStatic = struct {
     constants: []const F,
 };
 
-pub const ShaderMonoExecutionStatic = union(enum) {
+pub const ShaderExecutionStatic = union(enum) {
     direct: ShaderMonoStatic,
     pipe: ShaderPipeStatic,
 };
 
-pub const ShaderExecutionStatic = ShaderMonoExecutionStatic;
-
 pub const MeshShaderSetStatic = struct {
-    mono: ?ShaderMonoExecutionStatic = null,
-    ir: ?ShaderMonoExecutionStatic = null,
+    mono: ?ShaderExecutionStatic = null,
+    ir: ?ShaderExecutionStatic = null,
     rgb: ?ShaderPipeStatic = null,
     multifield: ?ShaderPipeStatic = null,
 };
@@ -356,12 +346,6 @@ pub const ShaderMonoPrepared = union(enum) {
     func: FuncPrepared,
 };
 
-pub const FuncSourcePrepared = union(enum) {
-    mono: FuncPrepared,
-    rgb: FuncPrepared,
-    multi: FuncPrepared,
-};
-
 pub const PipeSourcePrepared = union(enum) {
     nodal: NodalPrepared,
     tex_u8: TexPrepared(u8, 1),
@@ -371,7 +355,9 @@ pub const PipeSourcePrepared = union(enum) {
     tex_rgb_u16: TexPrepared(u16, 3),
     tex_rgb_f: TexPrepared(F, 3),
     tex_multi_f: TexMultiPrepared(F),
-    func: FuncSourcePrepared,
+    func: FuncPrepared,
+    func_rgb: FuncPrepared,
+    func_multi: FuncPrepared,
 };
 
 pub const ShaderPipeStagePrepared = union(enum) {
@@ -392,16 +378,14 @@ pub const ShaderPipePrepared = struct {
     hit_geometry: meshhit.MeshHitGeomPrepared = .{},
 };
 
-pub const ShaderMonoExecutionPrepared = union(enum) {
+pub const ShaderExecutionPrepared = union(enum) {
     direct: ShaderMonoPrepared,
     pipe: ShaderPipePrepared,
 };
 
-pub const ShaderExecutionPrepared = ShaderMonoExecutionPrepared;
-
 pub const MeshShaderSetPrepared = struct {
-    mono: ?ShaderMonoExecutionPrepared = null,
-    ir: ?ShaderMonoExecutionPrepared = null,
+    mono: ?ShaderExecutionPrepared = null,
+    ir: ?ShaderExecutionPrepared = null,
     rgb: ?ShaderPipePrepared = null,
     multifield: ?ShaderPipePrepared = null,
 };

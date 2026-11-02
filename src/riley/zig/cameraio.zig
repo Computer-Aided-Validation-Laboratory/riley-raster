@@ -11,7 +11,7 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 
 const cam = @import("cameraprojops.zig");
-const cameraops = @import("cameraframops.zig");
+const cameraops = @import("cameraframeops.zig");
 const rotation = @import("rotation.zig");
 const vec = @import("vecstack.zig");
 const F = buildconfig.F;

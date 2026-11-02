@@ -236,6 +236,7 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = target,
         .focal_length = 0.05,
         .sub_sample = 4,
+        .render_format = .mono,
         .distort = distort,
     };
 
@@ -279,7 +280,6 @@ pub fn main(init: std.process.Init) !void {
         .render_mode = .offline,
         .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
-        .background_value = 0.0,
     };
 
     var out_dir = try demo_common.resetOutputDir(io, out_path);

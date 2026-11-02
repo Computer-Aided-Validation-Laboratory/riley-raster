@@ -134,7 +134,8 @@ pub fn runZooCase(
         .mono => |tex| try gengold_zoo.buildZooScene(u8, 1, 8, local_alloc, io, tex),
         .rgb => |tex| try gengold_zoo.buildZooScene(u8, 3, 8, local_alloc, io, tex),
     };
-    const all_cameras = gengold_zoo.buildAllZooCameras(meshes);
+    var all_cameras = gengold_zoo.buildAllZooCameras(meshes);
+    for (&all_cameras) |*cam| cam.background_value = 127.5;
 
     var rgb_cams_buf: [2]CameraInput = undefined;
     const cameras: []const CameraInput = switch (zoo_inp) {
@@ -168,7 +169,6 @@ pub fn runZooCase(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.background_value = 127.5;
     run_config.render_mode = case.render_mode;
     run_config.advanced.raster.buffer_mode = case.buffer_mode;
     run_config.parallel = if (total_workers_count > 1)

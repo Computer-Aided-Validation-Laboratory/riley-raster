@@ -64,15 +64,14 @@ pub fn generateCase(
         );
     }
 
-    var case_config = config;
-    case_config.background_value = fullcase_dist_frontend.default_bg_value;
+    camera_input.background_value = fullcase_dist_frontend.default_bg_value;
 
     const images = try riley.raster(
         allocator,
         io,
         &[_]CameraInput{camera_input},
         &meshes,
-        case_config,
+        config,
         out_dir_path,
     );
 

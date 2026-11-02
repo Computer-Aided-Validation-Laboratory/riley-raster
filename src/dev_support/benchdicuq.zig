@@ -22,7 +22,7 @@ const mo = @import("../riley/zig/meshpipeline.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const texops = @import("../riley/zig/textureops.zig");
 const camera_mod = @import("../riley/zig/cameraprojops.zig");
-const cameraops = @import("../riley/zig/cameraframops.zig");
+const cameraops = @import("../riley/zig/cameraframeops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const sceneops = @import("../riley/zig/sceneops.zig");
 const report = @import("../riley/zig/report.zig");
@@ -162,7 +162,6 @@ pub fn getBaseRasterConfig() riley.RasterConfig {
     base_raster_config.save_strategy = .disk;
     base_raster_config.advanced.raster.tile_size_min = 8;
     base_raster_config.advanced.raster.tile_size_max = 128;
-    base_raster_config.background_value = 128.0;
     return base_raster_config;
 }
 
@@ -299,6 +298,7 @@ pub fn prepareBenchmark(
                 .roi_cent_world = roi_pos,
                 .focal_length = focal_length,
                 .sub_sample = defaults.sub_sample,
+                .background_value = 128.0,
             },
             .{
                 .pixels_num = defaults.pixels_num,
@@ -308,6 +308,7 @@ pub fn prepareBenchmark(
                 .roi_cent_world = roi_pos,
                 .focal_length = focal_length,
                 .sub_sample = defaults.sub_sample,
+                .background_value = 128.0,
             },
         },
         .samp_cfg = samp_cfg,

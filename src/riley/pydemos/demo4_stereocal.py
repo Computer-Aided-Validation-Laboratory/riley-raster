@@ -50,6 +50,7 @@ def create_stereo_cameras(
         roi_cent_world=tuple(roi_pos),
         focal_length=focal_length,
         sub_sample=sub_sample,
+        render_format=riley.RenderFormat.mono,
         **distort_model,
     )
 
@@ -134,6 +135,8 @@ def main() -> None:
     )
 
     for cam in (camera_0, camera_1):
+        cam.render_format = riley.RenderFormat.mono
+        cam.background_value = 128.0
         cam.output_files = [
             riley.ImageSaveOpts(
                 format=riley.ImageFormat.bmp,
@@ -146,7 +149,7 @@ def main() -> None:
         parallel=total_threads,
         save_strategy=riley.SaveStrategy.disk,
     )
-    config.background_value = 128.0
+
 
     # --------------------------------------------------------------------------
     # 5. Render stereocal poses

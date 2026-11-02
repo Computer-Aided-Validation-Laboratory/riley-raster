@@ -80,7 +80,8 @@ fn runTilingCaseTest(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const cam_inp = common_full.createScene2Camera(pixel_num, ssaa);
+    var cam_inp = common_full.createScene2Camera(pixel_num, ssaa);
+    cam_inp.background_value = 127.5;
 
     const ref_gold_dir_name = try gengold_tiling.formatTilingGoldDirName(
         aa,
@@ -185,8 +186,7 @@ fn runTilingCaseTest(
 }
 
 pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
-    var config = tcfg.getRasterConfig(.testing);
-    config.background_value = 127.5;
+    const config = tcfg.getRasterConfig(.testing);
     const gold_dir_root = policy.goldRoot(.full_tiling);
 
     var textures = try common_full.FullTextures.init(allocator, io);

@@ -26,7 +26,6 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
     config.render_mode = .in_order;
-    config.background_value = 32767.5;
 
     const gold_dir_root = policy.goldRoot(.full_scene_camera_threads);
 
@@ -37,7 +36,8 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
     defer prep.deinit(allocator);
 
     const meshes = fullfixtures.buildScene3Meshes(&prep, &textures);
-    const cameras = fullfixtures.createScene3Cameras();
+    var cameras = fullfixtures.createScene3Cameras();
+    for (&cameras) |*cam| cam.background_value = 32767.5;
 
     for (cameras, 0..) |cam_inp, cc| {
         const cam_dir_name = try std.fmt.allocPrint(

@@ -63,7 +63,6 @@ pub const ShaderMonoInput = core.ShaderMonoInput;
 pub const ShaderPipeInput = core.ShaderPipeInput;
 pub const ShaderPipeStageInput = core.ShaderPipeStageInput;
 pub const PipeSourceInput = core.PipeSourceInput;
-pub const FuncSourceInput = core.FuncSourceInput;
 pub const NodalInput = core.NodalInput;
 pub const FuncInput = core.FuncInput;
 pub const FuncMultiInput = core.FuncMultiInput;

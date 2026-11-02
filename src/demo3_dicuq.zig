@@ -64,7 +64,6 @@ pub fn main(init: std.process.Init) !void {
         .render_mode = .offline,
         .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
-        .background_value = 128.0,
         .report_perf = .bench,
         .report_console = true,
     };
@@ -176,6 +175,8 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = roi_pos,
         .focal_length = focal_length,
         .sub_sample = sub_sample,
+        .background_value = 128.0,
+        .render_format = .mono,
         .distort = distort,
     };
 

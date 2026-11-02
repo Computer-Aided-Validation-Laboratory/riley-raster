@@ -109,6 +109,7 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = roi_cent_world,
         .focal_length = focal_length,
         .sub_sample = 4,
+        .render_format = .mono,
     };
 
     // -------------------------------------------------------------------------

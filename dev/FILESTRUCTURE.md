@@ -14,7 +14,7 @@
   numerical, and operation namespaces are assembled in `api/dataio.zig`,
   `api/maths.zig`, and `api/ops.zig`. Do not add `usingnamespace` or duplicate
   implementation types in the public API.
-- Camera framing and placement helpers live in `cameraframops.zig`; camera
+- Camera framing and placement helpers live in `cameraframeops.zig`; camera
   preparation and projection live in `cameraprepops.zig` and
   `cameraprojops*.zig`.
 - Use the kernel suffix for files defining structs containing only comptime known constants and inline functions e.g. geometrykernels

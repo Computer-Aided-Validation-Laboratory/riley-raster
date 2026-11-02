@@ -181,7 +181,7 @@ fn loadMesh(
                     .output_gain = ops.getScaleMax(bits),
                     .scaling = .auto,
                 };
-                break :blk_fn .{ .func = .{ .rgb = input } };
+                break :blk_fn .{ .func_rgb = input };
             },
             else => unreachable,
         };
@@ -310,6 +310,7 @@ fn makeCamera(
         .roi_cent_world = target,
         .focal_length = options.focal_length,
         .sub_sample = sub_sample,
+        .render_format = .mono,
         .distort = distort,
         .psf = psf,
     };
@@ -441,6 +442,7 @@ fn renderCase(
     var cameras = buildCameras(meshes, options);
     for (&cameras) |*camera_input| {
         camera_input.render_format = if (C == 1) .mono else .rgb;
+        camera_input.background_value = 0.5 * (@as(maths.F, @floatFromInt((@as(u32, 1) << bits) - 1)));
         camera_input.output_files = &.{.{
             .format = if (bits == 8) .bmp else if (C == 1) .tiff else .ppm,
             .file_bits = bits,
@@ -460,7 +462,6 @@ fn renderCase(
         .render_mode = .offline,
         .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
-        .background_value = 0.5 * (@as(maths.F, @floatFromInt((@as(u32, 1) << bits) - 1))),
     };
 
     // -------------------------------------------------------------------------

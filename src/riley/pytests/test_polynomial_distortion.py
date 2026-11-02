@@ -254,7 +254,6 @@ def test_flat_plate_bc_poly_render_equivalence(
         save_strategy=riley.SaveStrategy.memory,
     )
     config.report = riley.ReportMode.off
-    config.background_value = 0
     config.save_scaling = riley.ScaleStrategy.none
     brown_image = riley.raster(mesh, camera, config)
     poly_image = riley.raster(mesh, poly_camera, config)

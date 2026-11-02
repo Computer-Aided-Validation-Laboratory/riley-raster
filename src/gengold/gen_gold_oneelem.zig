@@ -96,12 +96,12 @@ pub fn generateOneElemCase(
         .roi_cent_world = prepared.camera.roi_cent_world,
         .focal_length = prepared.camera.focal_length,
         .sub_sample = 1,
+        .background_value = 127.5,
         .distort = .none,
     };
 
     var run_config = config;
     run_config.save_strategy = .disk;
-    run_config.background_value = 127.5;
 
     const result = try riley.raster(
         aa,

@@ -41,7 +41,6 @@ pub const base_cases = [_]ImageOutputBaseCase{
 pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.background_value = 127.5;
     config.render_mode = .in_order;
     config.parallel = .{ .threads = 1 };
 
@@ -65,7 +64,8 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
             bc.is_rgb,
             bc.is_u16,
         );
-        const cam_inp = fullfixtures.createScene2ImageOutputCamera(&meshes);
+        var cam_inp = fullfixtures.createScene2ImageOutputCamera(&meshes);
+        cam_inp.background_value = 127.5;
 
         const run_config = config;
 

@@ -20,7 +20,6 @@ pub const RasterConfig = struct {
 
     // Core rendering behaviour.
     render_mode: RenderMode = .offline,
-    background_value: F = 0.0,
 
     // Common parallel resource control.
     parallel: ParallelConfig = .auto,

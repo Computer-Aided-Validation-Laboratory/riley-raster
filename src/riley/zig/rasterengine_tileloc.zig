@@ -209,7 +209,7 @@ fn rasterTileLoc(
     RasterBackend.resetSubpxScratch(
         subpx_scratch,
         subpx_tile_size,
-        ctx_rast.config.background_value,
+        ctx_rast.camera.background_value,
     );
 
     const result = try common.rasterTileCore(
@@ -235,7 +235,7 @@ fn rasterTileLoc(
             sub_samp,
             subpx_tile_size,
             fields_num,
-            ctx_rast.config.background_value,
+            ctx_rast.camera.background_value,
             ctx_rast.camera.prep_psf,
             scratch_geom,
             &subpx_scratch.image,

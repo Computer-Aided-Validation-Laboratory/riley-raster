@@ -54,7 +54,6 @@ def test_distorted_triangle_interior_survives_tile_culling(
     )
     config.report = riley.ReportMode.off
     config.buffer_mode = buffer_mode
-    config.background_value = 0.0
     config.save_scaling = riley.ScaleStrategy.none
     config.edge_spacing_px = 1.0
 

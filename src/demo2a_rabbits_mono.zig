@@ -64,7 +64,7 @@ pub fn main(init: std.process.Init) !void {
         fov_scale,
     );
 
-    const camera_input = riley.CameraInput{
+    var camera_input = riley.CameraInput{
         .pixels_num = pixel_num,
         .pixels_size = default_pixel_size,
         .pos_world = cam_pos,
@@ -72,6 +72,7 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = roi_pos,
         .focal_length = default_focal_length,
         .sub_sample = 4,
+        .render_format = .mono,
     };
 
     // -------------------------------------------------------------------------
@@ -79,10 +80,10 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const background_value: maths.F = 0.5 * @as(maths.F, std.math.maxInt(u8));
 
+    camera_input.background_value = background_value;
     const config = riley.RasterConfig{
         .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
-        .background_value = background_value,
     };
 
     // -------------------------------------------------------------------------

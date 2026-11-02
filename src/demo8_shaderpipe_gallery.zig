@@ -16,17 +16,15 @@ const ops = riley.ops;
 fn linear(x: maths.F, y: maths.F) riley.PipeSourceInput {
     return .{
         .func = .{
-            .mono = .{
-                .builtin = .linear,
-                .coord_mode = .world_reference,
-                .params = .{
-                    .settings = .{
-                        .linear = .{ .coeffs = .{ 0.5, x, y } },
-                    },
+            .builtin = .linear,
+            .coord_mode = .world_reference,
+            .params = .{
+                .settings = .{
+                    .linear = .{ .coeffs = .{ 0.5, x, y } },
                 },
-
-                .scaling = .none,
             },
+
+            .scaling = .none,
         },
     };
 }
@@ -106,6 +104,7 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = target,
         .focal_length = 1.0,
         .sub_sample = 4,
+        .render_format = .mono,
     };
 
     const ch0 = riley.Slot{ .kind = .channel, .index = 0 };
@@ -117,32 +116,28 @@ pub fn main(init: std.process.Init) !void {
 
     const checker: riley.PipeSourceInput = .{
         .func = .{
-            .mono = .{
-                .builtin = .checker,
-                .coord_mode = .world_reference,
-                .params = .{
-                    .coord_scale = .{ 4.0, 4.0 },
-                    .settings = .{ .checker = .{} },
-                },
-
-                .scaling = .none,
+            .builtin = .checker,
+            .coord_mode = .world_reference,
+            .params = .{
+                .coord_scale = .{ 4.0, 4.0 },
+                .settings = .{ .checker = .{} },
             },
+
+            .scaling = .none,
         },
     };
 
     const mod_linear_source: riley.PipeSourceInput = .{
         .func = .{
-            .mono = .{
-                .builtin = .linear,
-                .coord_mode = .world_reference,
-                .params = .{
-                    .settings = .{
-                        .linear = .{ .coeffs = .{ 0.625, 0.375, 0.0 } },
-                    },
+            .builtin = .linear,
+            .coord_mode = .world_reference,
+            .params = .{
+                .settings = .{
+                    .linear = .{ .coeffs = .{ 0.625, 0.375, 0.0 } },
                 },
-
-                .scaling = .none,
             },
+
+            .scaling = .none,
         },
     };
 

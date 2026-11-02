@@ -62,10 +62,10 @@ pub fn runFullSsaaPxmapCaseTest(
     camera_input.distort = dist_case.distort;
     camera_input.psf = psf_case.psf;
     camera_input.subpixel_center_map = pxmap_case.map_mode;
+    camera_input.background_value = common_full.grey_background_scene1;
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.background_value = common_full.grey_background_scene1;
 
     const start_time = Timestamp.now(io, .awake);
 
@@ -205,10 +205,10 @@ fn runPxmapEquivalenceTests(
         cam_input.distort = .none;
         cam_input.psf = .{ .pixel_box = .{} };
         cam_input.subpixel_center_map = mode;
+        cam_input.background_value = common_full.grey_background_scene1;
 
         var run_config = config;
         run_config.save_strategy = .memory;
-        run_config.background_value = common_full.grey_background_scene1;
 
         const result = try riley.raster(
             aa,

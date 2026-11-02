@@ -82,12 +82,12 @@ def main() -> None:
         render_channels=channels,
     )
 
-    background_value = 127.5
+    camera.background_value = 127.5
     config = riley.RasterConfig(
         parallel=4,
         save_strategy=riley.SaveStrategy.disk,
     )
-    config.background_value = background_value
+
 
     # --------------------------------------------------------------------------
     # 5. Render rabbit multi-mesh scene

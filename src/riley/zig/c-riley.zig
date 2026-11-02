@@ -15,7 +15,7 @@ const F = buildconfig.F;
 
 const cam = @import("cameraprojops.zig");
 const cameraio = @import("cameraio.zig");
-const cameraops = @import("cameraframops.zig");
+const cameraops = @import("cameraframeops.zig");
 const gk = @import("geometrykernels.zig");
 const iio = @import("imageio.zig");
 const imageops = @import("imageops.zig");
@@ -178,6 +178,7 @@ pub const CCameraInput = extern struct {
     roi_cent_world: CVec3F64,
     focal_length: F,
     sub_sample: u32,
+    background_value: F,
     distort: CDistort,
     psf: CPSF,
     coord_sys: u32,
@@ -377,7 +378,6 @@ pub const CRasterConfig = extern struct {
     report: u32,
     tile_size_min: u16,
     tile_size_max: u16,
-    background_value: F,
     disk_save_overlap: u8,
     tile_size_override: u16,
     global_subpx_tile_size_min: u16,
@@ -1277,6 +1277,7 @@ fn buildCameraInput(
         .roi_cent_world = cVec3ToVec3(in_camera.roi_cent_world),
         .focal_length = in_camera.focal_length,
         .sub_sample = in_camera.sub_sample,
+        .background_value = in_camera.background_value,
         .distort = try distortFromC(&in_camera.distort),
         .psf = try psfFromC(&in_camera.psf),
         .coord_sys = try coordSysFromC(in_camera.coord_sys),
@@ -1613,7 +1614,7 @@ fn buildShaderDirectInput(
             const builtin = try funcShaderBuiltinFromC(
                 in_shader.func_shader_builtin,
             );
-            built.shader = .{ .func = .{ .mono = .{
+            built.shader = .{ .func = .{
                 .uvs = uvs_array_opt,
                 .coord_mode = try funcCoordModeFromC(
                     in_shader.func_shader_coord_mode,
@@ -1626,7 +1627,7 @@ fn buildShaderDirectInput(
                 .output_gain = in_shader.output_gain,
                 .output_offset = in_shader.output_offset,
                 .scaling = scaling,
-            } } };
+            } };
             built.uvs_array = uvs_array_opt;
         },
         4 => {
@@ -1645,7 +1646,7 @@ fn buildShaderDirectInput(
             const builtin = try funcShaderBuiltinFromC(
                 in_shader.func_shader_builtin,
             );
-            built.shader = .{ .func = .{ .rgb = .{
+            built.shader = .{ .func_rgb = .{
                 .uvs = uvs_array_opt,
                 .coord_mode = try funcCoordModeFromC(
                     in_shader.func_shader_coord_mode,
@@ -1658,7 +1659,7 @@ fn buildShaderDirectInput(
                 .output_gain = in_shader.output_gain,
                 .output_offset = in_shader.output_offset,
                 .scaling = scaling,
-            } } };
+            } };
             built.uvs_array = uvs_array_opt;
         },
         else => return error.InvalidShaderTag,
@@ -1676,10 +1677,8 @@ fn pipeSourceToMono(source: shadertypes.PipeSourceInput) !shadertypes.ShaderMono
             if (nodal_shader.field.getFieldsN() != 1) return error.UnsuppedImageModeFieldCount;
             break :blk .{ .nodal = nodal_shader };
         },
-        .func => |func_source| switch (func_source) {
-            .mono => |func_shader| .{ .func = func_shader },
-            else => return error.UnsuppedImageModeFieldCount,
-        },
+        .func => |func_shader| .{ .func = func_shader },
+        .func_rgb, .func_multi => return error.UnsuppedImageModeFieldCount,
         else => return error.UnsuppedImageModeFieldCount,
     };
 }
@@ -1692,11 +1691,9 @@ fn pipeSourceChannels(source: shadertypes.PipeSourceInput) u8 {
         .tex_multi_u8 => |t| @intCast(t.tex.array.dims[0]),
         .tex_multi_u16 => |t| @intCast(t.tex.array.dims[0]),
         .tex_multi_f => |t| @intCast(t.tex.array.dims[0]),
-        .func => |f| switch (f) {
-            .mono => 1,
-            .rgb => 3,
-            .multi => |multi| @intCast(multi.channels.len),
-        },
+        .func => 1,
+        .func_rgb => 3,
+        .func_multi => |f| @intCast(f.channels.len),
     };
 }
 
@@ -2147,7 +2144,6 @@ fn buildRasterConfig(
         config.advanced.raster.tile_size_max
     else
         in_config.tile_size_max;
-    config.background_value = in_config.background_value;
     config.output.disk_save_overlap = in_config.disk_save_overlap != 0;
     config.advanced.raster.tile_size_override = if (in_config.tile_size_override == 0)
         null
@@ -2257,6 +2253,7 @@ fn cameraInputToC(in_camera: cameratypes.CameraInput) CCameraInput {
         .roi_cent_world = vec3ToCVec3(in_camera.roi_cent_world),
         .focal_length = in_camera.focal_length,
         .sub_sample = in_camera.sub_sample,
+        .background_value = in_camera.background_value,
         .render_format_tag = switch (in_camera.render_format) {
             .mono => 0,
             .rgb => 1,

@@ -363,10 +363,10 @@ pub fn buildShaderCaseMeshes(
             };
 
             const sphere_source: shadertypes.PipeSourceInput = .{
-                .func = .{ .rgb = sphere_func_input },
+                .func_rgb = sphere_func_input,
             };
             const cyl_source: shadertypes.PipeSourceInput = .{
-                .func = .{ .rgb = cyl_func_input },
+                .func_rgb = cyl_func_input,
             };
             const sphere_mono: shadertypes.ShaderMonoInput = .{
                 .func = sphere_func_input,

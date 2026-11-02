@@ -163,6 +163,7 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = roi_pos,
         .focal_length = focal_length,
         .sub_sample = sub_sample,
+        .render_format = .mono,
         .distort = distort,
         .coord_sys = coord_sys,
     };
@@ -187,6 +188,8 @@ pub fn main(init: std.process.Init) !void {
     defer loaded_stereo.deinit(local_alloc);
     stereo_pair = loaded_stereo.stereo_pair;
     for (&stereo_pair.cameras) |*camera_input| {
+        camera_input.background_value = 128.0;
+        camera_input.render_format = .mono;
         camera_input.output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }};
     }
 
@@ -216,7 +219,6 @@ pub fn main(init: std.process.Init) !void {
         .render_mode = .offline,
         .parallel = .{ .threads = total_threads },
         .save_strategy = .disk,
-        .background_value = 128.0,
         .report_perf = .bench,
         .report_console = true,
     };

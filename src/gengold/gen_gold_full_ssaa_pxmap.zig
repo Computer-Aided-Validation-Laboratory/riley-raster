@@ -71,16 +71,14 @@ pub fn generateSsaaPxmapCase(
     camera_input.distort = dist_case.distort;
     camera_input.psf = psf_case.psf;
     camera_input.subpixel_center_map = pxmap_case.map_mode;
-
-    var case_config = config;
-    case_config.background_value = fullfixtures.grey_background_scene1;
+    camera_input.background_value = fullfixtures.grey_background_scene1;
 
     const images = try riley.raster(
         allocator,
         io,
         &[_]CameraInput{camera_input},
         &meshes,
-        case_config,
+        config,
         out_dir_path,
     );
 
@@ -127,7 +125,6 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.background_value = fullfixtures.grey_background_scene1;
 
     const gold_dir_root = policy.goldRoot(.full_ssaa_pxmap);
     try generateAllFullSsaaPxmapCases(allocator, io, gold_dir_root, config);

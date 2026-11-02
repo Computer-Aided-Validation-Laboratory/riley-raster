@@ -165,10 +165,11 @@ fn checkPipeSourceArrays(source: shadertypes.PipeSourceInput) InputArrayError!vo
         .nodal => |n| {
             if (!isFiniteSlice(n.field.array_mem)) return error.NonFiniteNodalFields;
         },
-        .func => |f| switch (f) {
-            .mono => |m| if (m.uvs) |uvs| try checkTexUvArrays(uvs.slice),
-            .rgb => |r| if (r.uvs) |uvs| try checkTexUvArrays(uvs.slice),
-            .multi => |m| if (m.uvs) |uvs| try checkTexUvArrays(uvs.slice),
+        .func, .func_rgb => |f| {
+            if (f.uvs) |uvs| try checkTexUvArrays(uvs.slice);
+        },
+        .func_multi => |f| {
+            if (f.uvs) |uvs| try checkTexUvArrays(uvs.slice);
         },
     }
 }

@@ -101,6 +101,8 @@ def main() -> None:
         roi_cent_world=roi_pos,
         focal_length=focal_length,
         sub_sample=sub_sample,
+        render_format=riley.RenderFormat.mono,
+        background_value=128.0,
         **distort_model,
     )
 
@@ -125,7 +127,7 @@ def main() -> None:
         parallel=total_threads,
         save_strategy=riley.SaveStrategy.disk,
     )
-    config.background_value = 128.0
+
 
     start_time = perf_counter()
     riley.raster([mesh], [camera_0, camera_1], config, out_dir=str(out_dir))

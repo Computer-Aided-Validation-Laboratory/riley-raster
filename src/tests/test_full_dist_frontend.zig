@@ -65,9 +65,10 @@ pub fn runFullDistFrontendCaseTest(
         );
     }
 
+    camera_input.background_value = fullcase_dist_frontend.default_bg_value;
+
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.background_value = fullcase_dist_frontend.default_bg_value;
 
     const start_time = Timestamp.now(io, .awake);
     const result = try riley.raster(
@@ -191,7 +192,6 @@ pub fn testOffscreenDistortedOn(
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.background_value = fullcase_dist_frontend.default_bg_value;
 
     const case_name = try fullcase_dist_frontend.formatOntoScreenCaseName(
         aa,
@@ -219,6 +219,7 @@ pub fn testOffscreenDistortedOn(
         dist_case.distort,
     );
     camera_input.pos_world.set(0, target_cam_x);
+    camera_input.background_value = fullcase_dist_frontend.default_bg_value;
 
     const result = try riley.raster(
         aa,

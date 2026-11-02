@@ -46,7 +46,6 @@ pub fn formatTilingGoldDirName(
 pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.background_value = 127.5;
 
     const gold_dir_root = policy.goldRoot(.full_tiling);
 
@@ -64,7 +63,8 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
             defer arena.deinit();
             const aa = arena.allocator();
 
-            const cam_inp = fullfixtures.createScene2Camera(pixel_num, ssaa);
+            var cam_inp = fullfixtures.createScene2Camera(pixel_num, ssaa);
+            cam_inp.background_value = 127.5;
             const case_dir_name = try formatTilingGoldDirName(aa, pixel_num, ssaa);
             const gold_dir = try std.fmt.allocPrint(
                 aa,

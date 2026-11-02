@@ -24,7 +24,7 @@ const imageops = @import("riley/zig/imageops.zig");
 const matslice = @import("riley/zig/matslice.zig");
 const ndarray = @import("riley/zig/ndarray.zig");
 const camera_mod = @import("riley/zig/cameraprojops.zig");
-const cameraops = @import("riley/zig/cameraframops.zig");
+const cameraops = @import("riley/zig/cameraframeops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
 

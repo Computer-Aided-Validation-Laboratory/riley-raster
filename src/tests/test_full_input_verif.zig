@@ -45,7 +45,6 @@ const BaselineFixture = struct {
 
         var config = tcfg.getRasterConfig(.testing);
         config.save_strategy = .memory;
-        config.background_value = 0.5;
 
         return .{
             .prep = prep,
@@ -447,9 +446,9 @@ fn testInvalidBackgroundValue(
     fixture: *const BaselineFixture,
 ) !void {
     _ = allocator;
-    var config = fixture.config;
-    config.background_value = std.math.nan(F);
-    try expectConfigError(io, fixture, config, error.InvalidBackgroundValue);
+    var cam_inps = common_full.createScene3Cameras();
+    cam_inps[0].background_value = std.math.nan(F);
+    try expectCameraError(io, fixture, &cam_inps, error.InvalidBackgroundValue);
 }
 
 fn testInvalidSaveFrameBuffCount(
@@ -1211,7 +1210,6 @@ fn testMixedCaseMultipleConfigErrors(
     var config = fixture.config;
     config.parallel = .{ .threads = 0 };
     config.advanced.raster.tile_size_min = 0;
-    config.background_value = std.math.nan(F);
 
     // Should return the first validation error encountered
     try expectConfigError(io, fixture, config, error.InvalidTotalThreads);

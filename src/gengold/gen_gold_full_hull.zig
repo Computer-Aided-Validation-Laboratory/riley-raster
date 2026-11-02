@@ -12,7 +12,7 @@ const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const camera = @import("../riley/zig/cameraprojops.zig");
-const cameraops = @import("../riley/zig/cameraframops.zig");
+const cameraops = @import("../riley/zig/cameraframeops.zig");
 const fullcase_hull = @import("../tests/fullcase_hull.zig");
 const fullfixtures = @import("../dev_support/fullfixtures.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
@@ -167,6 +167,7 @@ fn runScene2HullCase(
     const aa = arena.allocator();
 
     var cam_inp = fullfixtures.createScene2Camera(pixel_num_hull, 2);
+    cam_inp.background_value = 127.5;
     cam_inp.psf = psf_case.psf;
 
     const meshes = fullfixtures.buildScene2Meshes(prep, textures);
@@ -207,7 +208,6 @@ fn runScene2HullCase(
 pub fn generate(allocator: std.mem.Allocator, io: std.Io) !void {
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.background_value = 127.5;
 
     const gold_dir_root = policy.goldRoot(.full_hull);
     const data_dir_root = "data/edge";

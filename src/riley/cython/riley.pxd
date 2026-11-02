@@ -109,6 +109,7 @@ cdef extern from "riley.h":
         CVec3F64 roi_cent_world
         double focal_length
         uint32_t sub_sample
+        double background_value
         CDistort distort
         CPSF psf
         uint32_t coord_sys
@@ -306,7 +307,6 @@ cdef extern from "riley.h":
         uint32_t report
         uint16_t tile_size_min
         uint16_t tile_size_max
-        double background_value
         uint8_t disk_save_overlap
         uint16_t tile_size_override
         uint16_t global_subpx_tile_size_min

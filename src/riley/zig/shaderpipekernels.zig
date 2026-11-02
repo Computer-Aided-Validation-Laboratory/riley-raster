@@ -72,12 +72,7 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                         => |shader| {
                             buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
                         },
-                        .func => |func_src| {
-                            const shader = switch (func_src) {
-                                .mono => |s| s,
-                                .rgb => |s| s,
-                                .multi => |s| s,
-                            };
+                        .func, .func_rgb, .func_multi => |shader| {
                             switch (shader.coord_mode) {
                                 .uv => buf.loadFuncCoords(
                                     shader.elem_uvs.?,
@@ -338,11 +333,9 @@ fn sourceChannels(source: shadertypes.PipeSourcePrepared) u8 {
             @intCast(n.elem_field.dims[2]),
         .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
         .tex_multi_f => |multi| @intCast(multi.tex.array.dims[0]),
-        .func => |func_src| switch (func_src) {
-            .mono => 1,
-            .rgb => 3,
-            .multi => |multi| @intCast(multi.channels.len),
-        },
+        .func => 1,
+        .func_rgb => 3,
+        .func_multi => |multi| @intCast(multi.channels.len),
         else => 1,
     };
 }
@@ -446,40 +439,38 @@ fn shadeSource(
                 scratch,
             );
         },
-        .func => |*func_src| switch (func_src.*) {
-            .mono => |*s| {
-                shadekerns.FuncKernel(N, 1).shade(
-                    coord_space,
-                    ctx,
-                    interp,
-                    buf,
-                    s,
-                    ctx_report,
-                    scratch,
-                );
-            },
-            .multi => |*s| {
-                shadekerns.FuncKernel(N, 0).shade(
-                    coord_space,
-                    ctx,
-                    interp,
-                    buf,
-                    s,
-                    ctx_report,
-                    scratch,
-                );
-            },
-            .rgb => |*s| {
-                shadekerns.FuncKernel(N, 3).shade(
-                    coord_space,
-                    ctx,
-                    interp,
-                    buf,
-                    s,
-                    ctx_report,
-                    scratch,
-                );
-            },
+        .func => |*s| {
+            shadekerns.FuncKernel(N, 1).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                ctx_report,
+                scratch,
+            );
+        },
+        .func_rgb => |*s| {
+            shadekerns.FuncKernel(N, 3).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                ctx_report,
+                scratch,
+            );
+        },
+        .func_multi => |*s| {
+            shadekerns.FuncKernel(N, 0).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                ctx_report,
+                scratch,
+            );
         },
     }
 }
@@ -629,58 +620,56 @@ fn shadeSourceSIMD(
                 sink,
             );
         },
-        .func => |*func_src| switch (func_src.*) {
-            .mono => |*s| {
-                shadekerns.FuncKernel(N, 1).shadeSIMDToHit(
-                    coord_space,
-                    ctx,
-                    ctx_report,
-                    mask,
-                    weights,
-                    xi,
-                    eta,
-                    inv_z,
-                    subpx_z,
-                    hit,
-                    buf,
-                    s,
-                    sink,
-                );
-            },
-            .multi => |*s| {
-                shadekerns.FuncKernel(N, 0).shadeSIMDToHit(
-                    coord_space,
-                    ctx,
-                    ctx_report,
-                    mask,
-                    weights,
-                    xi,
-                    eta,
-                    inv_z,
-                    subpx_z,
-                    hit,
-                    buf,
-                    s,
-                    sink,
-                );
-            },
-            .rgb => |*s| {
-                shadekerns.FuncKernel(N, 3).shadeSIMDToHit(
-                    coord_space,
-                    ctx,
-                    ctx_report,
-                    mask,
-                    weights,
-                    xi,
-                    eta,
-                    inv_z,
-                    subpx_z,
-                    hit,
-                    buf,
-                    s,
-                    sink,
-                );
-            },
+        .func => |*s| {
+            shadekerns.FuncKernel(N, 1).shadeSIMDToHit(
+                coord_space,
+                ctx,
+                ctx_report,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                hit,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .func_rgb => |*s| {
+            shadekerns.FuncKernel(N, 3).shadeSIMDToHit(
+                coord_space,
+                ctx,
+                ctx_report,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                hit,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .func_multi => |*s| {
+            shadekerns.FuncKernel(N, 0).shadeSIMDToHit(
+                coord_space,
+                ctx,
+                ctx_report,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                hit,
+                buf,
+                s,
+                sink,
+            );
         },
     }
 }

@@ -20,7 +20,7 @@ const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
 const camera_mod = @import("riley/zig/cameraprojops.zig");
-const cameraops = @import("riley/zig/cameraframops.zig");
+const cameraops = @import("riley/zig/cameraframeops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 

@@ -40,7 +40,6 @@ def scene() -> tuple[riley.Mesh, riley.Camera, riley.RasterConfig]:
         image_save_mode=riley.ImageSaveMode.grey,
         report=riley.ReportMode.off,
     )
-    config.background_value = 0
     config.save_scaling = riley.ScaleStrategy.none
     return mesh, camera, config
 

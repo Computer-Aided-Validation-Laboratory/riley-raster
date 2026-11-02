@@ -154,6 +154,7 @@ def main() -> None:
         roi_cent_world=target,
         focal_length=dic_focal,
         sub_sample=4,
+        render_format=riley.RenderFormat.mono,
         distort_model=1,
         distort_k1=-0.2,
         distort_k2=0.1,

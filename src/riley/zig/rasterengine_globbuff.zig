@@ -114,7 +114,7 @@ fn rasterSceneGlobBuffImpl(
                 RasterBackend.resetSubpxScratch(
                     &worker_state.subpx_scratch,
                     tile_rng_ctx.subpx_tile_size,
-                    tile_rng_ctx.ctx_rast.config.background_value,
+                    tile_rng_ctx.ctx_rast.camera.background_value,
                 );
                 const result = try common.rasterTileCore(
                     RasterBackend,

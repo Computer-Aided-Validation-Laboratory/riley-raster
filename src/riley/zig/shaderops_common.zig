@@ -71,7 +71,6 @@ const FuncInput = shadertypes.FuncInput;
 const FuncChannel = shadertypes.FuncChannel;
 const FuncMultiInput = shadertypes.FuncMultiInput;
 const ShaderMonoInput = shadertypes.ShaderMonoInput;
-const FuncSourceInput = shadertypes.FuncSourceInput;
 const PipeSourceInput = shadertypes.PipeSourceInput;
 const ShaderPipeStageInput = shadertypes.ShaderPipeStageInput;
 const ShaderPipeInput = shadertypes.ShaderPipeInput;
@@ -115,7 +114,7 @@ pub fn monoToPipeSource(mono: ShaderMonoInput) PipeSourceInput {
         .tex_u16 => |t| .{ .tex_u16 = t },
         .tex_f => |t| .{ .tex_f = t },
         .nodal => |n| .{ .nodal = n },
-        .func => |f| .{ .func = .{ .mono = f } },
+        .func => |f| .{ .func = f },
     };
 }
 
@@ -125,10 +124,9 @@ pub fn pipeSourceToMono(source: PipeSourceInput) !ShaderMonoInput {
         .tex_u16 => |t| .{ .tex_u16 = t },
         .tex_f => |t| .{ .tex_f = t },
         .nodal => |n| .{ .nodal = n },
-        .func => |f| switch (f) {
-            .mono => |m| .{ .func = m },
-            .rgb => error.DirectMonoFuncRequiresMono,
-        },
+        .func => |f| .{ .func = f },
+        .func_rgb => error.DirectMonoFuncRequiresMono,
+        .func_multi => error.DirectMonoFuncRequiresMono,
         else => error.DirectMonoShaderExpectedMono,
     };
 }
@@ -145,11 +143,9 @@ const TexStatic = shadertypes.TexStatic;
 const TexMultiStatic = shadertypes.TexMultiStatic;
 const FuncStatic = shadertypes.FuncStatic;
 const ShaderMonoStatic = shadertypes.ShaderMonoStatic;
-const FuncSourceStatic = shadertypes.FuncSourceStatic;
 const PipeSourceStatic = shadertypes.PipeSourceStatic;
 const ShaderPipeStageStatic = shadertypes.ShaderPipeStageStatic;
 const ShaderPipeStatic = shadertypes.ShaderPipeStatic;
-const ShaderMonoExecutionStatic = shadertypes.ShaderMonoExecutionStatic;
 const ShaderExecutionStatic = shadertypes.ShaderExecutionStatic;
 const MeshShaderSetStatic = shadertypes.MeshShaderSetStatic;
 
@@ -168,11 +164,9 @@ const concreteTexture = shadertypes.concreteTexture;
 const FuncPrepared = shadertypes.FuncPrepared;
 const FuncChannelPrepared = shadertypes.FuncChannelPrepared;
 const ShaderMonoPrepared = shadertypes.ShaderMonoPrepared;
-const FuncSourcePrepared = shadertypes.FuncSourcePrepared;
 const PipeSourcePrepared = shadertypes.PipeSourcePrepared;
 const ShaderPipeStagePrepared = shadertypes.ShaderPipeStagePrepared;
 const ShaderPipePrepared = shadertypes.ShaderPipePrepared;
-const ShaderMonoExecutionPrepared = shadertypes.ShaderMonoExecutionPrepared;
 const ShaderExecutionPrepared = shadertypes.ShaderExecutionPrepared;
 const MeshShaderSetPrepared = shadertypes.MeshShaderSetPrepared;
 

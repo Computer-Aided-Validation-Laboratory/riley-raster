@@ -13,7 +13,7 @@ const std = @import("std");
 const imageops = @import("../riley/zig/imageops.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const camera = @import("../riley/zig/cameraprojops.zig");
-const cameraops = @import("../riley/zig/cameraframops.zig");
+const cameraops = @import("../riley/zig/cameraframeops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const iio = @import("../riley/zig/imageio.zig");
 const meshio = @import("../riley/zig/meshio.zig");
@@ -240,7 +240,7 @@ fn loadZooMesh(
                     .output_gain = imageops.getScaleMax(bits),
                     .scaling = .auto,
                 };
-                break :blk_fn .{ .func = .{ .rgb = input } };
+                break :blk_fn .{ .func_rgb = input };
             },
             else => unreachable,
         };
@@ -457,7 +457,8 @@ pub fn generateZooMonoGold(
     const aa = arena.allocator();
 
     const meshes = try buildZooScene(u8, 1, 8, aa, io, texture_grey);
-    const cameras = buildAllZooCameras(meshes);
+    var cameras = buildAllZooCameras(meshes);
+    for (&cameras) |*cam| cam.background_value = 127.5;
 
     const gold_dir = try std.fmt.allocPrint(
         aa,
@@ -470,7 +471,6 @@ pub fn generateZooMonoGold(
 
     var run_config = config;
     run_config.save_strategy = .disk;
-    run_config.background_value = 127.5;
 
     const result = try riley.raster(
         aa,
@@ -502,7 +502,10 @@ pub fn generateZooRgbGold(
     const meshes = try buildZooScene(u8, 3, 8, aa, io, texture_rgb);
     const all_cameras = buildAllZooCameras(meshes);
     var rgb_cameras = [_]CameraInput{ all_cameras[0], all_cameras[1] };
-    for (&rgb_cameras) |*camera_input| camera_input.render_format = .rgb;
+    for (&rgb_cameras) |*camera_input| {
+        camera_input.render_format = .rgb;
+        camera_input.background_value = 127.5;
+    }
 
     const gold_dir = try std.fmt.allocPrint(
         aa,
@@ -515,7 +518,6 @@ pub fn generateZooRgbGold(
 
     var run_config = config;
     run_config.save_strategy = .disk;
-    run_config.background_value = 127.5;
 
     const result = try riley.raster(
         aa,

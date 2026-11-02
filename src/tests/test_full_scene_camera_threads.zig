@@ -198,7 +198,6 @@ fn assertImagesDiffer(
 pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     var config = tcfg.getRasterConfig(.testing);
     config.save_strategy = .memory;
-    config.background_value = 32767.5;
 
     const gold_dir_root = policy.goldRoot(.full_scene_camera_threads);
 
@@ -209,7 +208,8 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     defer prep.deinit(allocator);
 
     const meshes = common_full.buildScene3Meshes(&prep, &textures);
-    const cameras = common_full.createScene3Cameras();
+    var cameras = common_full.createScene3Cameras();
+    for (&cameras) |*cam| cam.background_value = 32767.5;
 
     // ----------------------------------------------------------------------
     // 1. Render Reference (1 thread, in_order, tile_local) for all 8 cameras
@@ -443,7 +443,8 @@ fn runAdditionalSceneCameraThreadTests(
 
     const meshes = common_full.buildScene3Meshes(&prep, textures);
     const cameras = common_full.createScene3Cameras();
-    const cam_inp = cameras[0];
+    var cam_inp = cameras[0];
+    cam_inp.background_value = 32767.5;
 
     // 1. Frame batch size per group sweeps (1, 2, 4) in offline and in_order modes
     const batch_sizes = [_]u16{ 1, 2, 4 };

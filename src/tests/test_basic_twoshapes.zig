@@ -11,7 +11,7 @@ const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const camera = @import("../riley/zig/cameraprojops.zig");
-const cameraops = @import("../riley/zig/cameraframops.zig");
+const cameraops = @import("../riley/zig/cameraframeops.zig");
 const common = @import("../dev_support/tests.zig");
 const gengold_twoshapes = @import("../gengold/gen_gold_twoshapes.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
@@ -100,12 +100,12 @@ pub fn runTwoShapesCaseTest(
         .roi_cent_world = target,
         .focal_length = focal_length_twoshapes,
         .sub_sample = 2,
+        .background_value = 127.5,
         .distort = .none,
     };
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.background_value = 127.5;
 
     const start_time = Timestamp.now(io, .awake);
     const result = try riley.raster(
