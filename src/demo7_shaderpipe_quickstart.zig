@@ -47,6 +47,23 @@ pub fn main(init: std.process.Init) !void {
         },
     };
 
+    const linear_source: riley.PipeSourceInput = .{
+        .func = .{
+            .mono = .{
+                .coord_mode = .world_reference,
+                .builtin = .linear,
+                // x in [-1,1]: illumination rises from 0.25 to 1.0.
+                .params = .{
+                    .settings = .{
+                        .linear = .{ .coeffs = .{ 0.625, 0.375, 0.0 } },
+                    },
+                },
+
+                .scaling = .none,
+            },
+        },
+    };
+
     const channel = shaderpipe.Slot{ .kind = .channel, .index = 0 };
     const parameter = shaderpipe.Slot{ .kind = .parameter, .index = 0 };
 
@@ -59,44 +76,28 @@ pub fn main(init: std.process.Init) !void {
         },
         .{
             .source = .{
-                .shader = .{
-                    .func = .{
-                        .mono = .{
-                            .coord_mode = .world_reference,
-                            .builtin = .linear,
-                            // x in [-1,1]: illumination rises from 0.25 to 1.0.
-                            .params = .{
-                                .settings = .{
-                                    .linear = .{ .coeffs = .{ 0.625, 0.375, 0.0 } },
-                                },
-                            },
-
-                            .scaling = .none,
-                        },
-                    },
-                },
+                .shader = linear_source,
                 .destination = parameter,
             },
         },
     };
     const sources = [_]shaderpipe.Slot{channel};
+    const pipe_shader: riley.ShaderPipeInput = .{
+        .stages = &stages,
+        .resolver = .{
+            .modulate = .{
+                .sources = &sources,
+                .factor = parameter,
+            },
+        },
+    };
 
     const mesh = riley.MeshInput{
         .mesh_type = .tri3opt,
         .coords = coords,
         .connect = connect,
         .disp = null,
-        .shaders = .{
-            .mono_pipe = .{
-                .stages = &stages,
-                .resolver = .{
-                    .modulate = .{
-                        .sources = &sources,
-                        .factor = parameter,
-                    },
-                },
-            },
-        },
+        .shaders = .{ .mono_pipe = pipe_shader },
     };
 
     // -------------------------------------------------------------------------

@@ -41,8 +41,6 @@ pub fn main(init: std.process.Init) !void {
     const data_dir = "data/min/tri6_sphere200/";
     const out_dir_root = "./out/demo1_sphere";
 
-    const total_threads: u16 = 4;
-
     // -------------------------------------------------------------------------
     // 2. Load mesh data and texture shader
     // -------------------------------------------------------------------------
@@ -72,21 +70,23 @@ pub fn main(init: std.process.Init) !void {
         .bmp,
     );
 
+    const speckle_shader: riley.ShaderMonoInput = .{ .tex_u8 = .{
+        .uvs = uvs.array,
+        .tex = texture,
+        .samp_cfg = .{
+            .sample = .cubic_catmull_rom,
+            .mode = .direct,
+        },
+        .scaling = .none,
+    } };
+
     std.debug.print("Preparing mesh input...\n", .{});
     const mesh_input = MeshInput{
         .mesh_type = .tri6,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shaders = .{ .mono_direct = .{ .tex_u8 = .{
-            .uvs = uvs.array,
-            .tex = texture,
-            .samp_cfg = .{
-                .sample = .cubic_catmull_rom,
-                .mode = .direct,
-            },
-            .scaling = .none,
-        } } },
+        .shaders = .{ .mono_direct = speckle_shader },
     };
 
     // -------------------------------------------------------------------------
@@ -129,7 +129,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const config = RasterConfig{
         .save_strategy = .disk,
-        .parallel = .{ .threads = total_threads },
+        .parallel = .{ .threads = 4 },
         .report_perf = .bench,
         .report_console = true,
     };

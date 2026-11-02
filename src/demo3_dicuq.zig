@@ -136,22 +136,24 @@ pub fn main(init: std.process.Init) !void {
         .bmp,
     );
 
+    const speckle_shader: riley.ShaderMonoInput = .{ .tex_u8 = .{
+        .uvs = uvs.array,
+        .tex = texture,
+        .samp_cfg = .{
+            .sample = .cubic_catmull_rom,
+            .mode = .direct,
+        },
+
+        .scaling = .none,
+    } };
+
     std.debug.print("Preparing mesh input...\n", .{});
     const mesh_input = MeshInput{
         .mesh_type = .quad8,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = selected_disp,
-        .shaders = .{ .mono_direct = .{ .tex_u8 = .{
-            .uvs = uvs.array,
-            .tex = texture,
-            .samp_cfg = .{
-                .sample = .cubic_catmull_rom,
-                .mode = .direct,
-            },
-
-            .scaling = .none,
-        } } },
+        .shaders = .{ .mono_direct = speckle_shader },
     };
 
     // -------------------------------------------------------------------------

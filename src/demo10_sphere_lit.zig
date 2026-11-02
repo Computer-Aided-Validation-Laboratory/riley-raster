@@ -120,6 +120,11 @@ pub fn main(init: std.process.Init) !void {
         },
     };
 
+    const lit_shader: riley.ShaderPipeInput = .{
+        .stages = &lit_stages,
+        .resolver = lit_resolver,
+    };
+
     // -------------------------------------------------------------------------
     // 3. Position and frame the camera
     // -------------------------------------------------------------------------
@@ -213,12 +218,7 @@ pub fn main(init: std.process.Init) !void {
 
     // 3) Combined speckle texture and lambertian shader via shader pipe
     std.debug.print("3/3: Rendering combined lit speckle sphere...\n", .{});
-    mesh.shaders = .{
-        .mono_pipe = .{
-            .stages = &lit_stages,
-            .resolver = lit_resolver,
-        },
-    };
+    mesh.shaders = .{ .mono_pipe = lit_shader };
     camera_input.render_format = .mono;
     config.output_name_format = "demo10_3_combined_lit";
     images = try riley.raster(

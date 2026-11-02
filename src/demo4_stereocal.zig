@@ -210,21 +210,23 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 4. Build mesh and raster configuration
     // -------------------------------------------------------------------------
+    const speckle_shader: riley.ShaderMonoInput = .{ .tex_u8 = .{
+        .uvs = uvs.array,
+        .tex = texture,
+        .samp_cfg = .{
+            .sample = .cubic_catmull_rom,
+            .mode = .direct,
+        },
+
+        .scaling = .none,
+    } };
+
     const mesh_input = MeshInput{
         .mesh_type = .tri3,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = selected_disp,
-        .shaders = .{ .mono_direct = .{ .tex_u8 = .{
-            .uvs = uvs.array,
-            .tex = texture,
-            .samp_cfg = .{
-                .sample = .cubic_catmull_rom,
-                .mode = .direct,
-            },
-
-            .scaling = .none,
-        } } },
+        .shaders = .{ .mono_direct = speckle_shader },
     };
 
     const config = RasterConfig{

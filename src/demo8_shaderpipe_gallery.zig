@@ -93,14 +93,6 @@ pub fn main(init: std.process.Init) !void {
     const coords = meshio.Coords.init(&coord_values, 3);
     const connect = meshio.Connect.init(&connect_values, 1, 3);
 
-    var mesh = riley.MeshInput{
-        .mesh_type = .tri3opt,
-        .coords = coords,
-        .connect = connect,
-        .disp = null,
-        .shaders = .{},
-    };
-
     const pixels_num = [2]u32{ 512, 512 };
     const pixels_size = [2]F{ 0.02, 0.02 };
     const target = sceneops.boundsCenter(&coords);
@@ -147,6 +139,22 @@ pub fn main(init: std.process.Init) !void {
         },
     };
 
+    const mod_linear_source: riley.PipeSourceInput = .{
+        .func = .{
+            .mono = .{
+                .builtin = .linear,
+                .coord_mode = .world_reference,
+                .params = .{
+                    .settings = .{
+                        .linear = .{ .coeffs = .{ 0.625, 0.375, 0.0 } },
+                    },
+                },
+
+                .scaling = .none,
+            },
+        },
+    };
+
     // -------------------------------------------------------------------------
     // 2. Composition A: Spatially modulated illumination
     // -------------------------------------------------------------------------
@@ -159,36 +167,28 @@ pub fn main(init: std.process.Init) !void {
         },
         .{
             .source = .{
-                .shader = .{
-                    .func = .{
-                        .mono = .{
-                            .builtin = .linear,
-                            .coord_mode = .world_reference,
-                            .params = .{
-                                .settings = .{
-                                    .linear = .{ .coeffs = .{ 0.625, 0.375, 0.0 } },
-                                },
-                            },
-
-                            .scaling = .none,
-                        },
-                    },
-                },
+                .shader = mod_linear_source,
                 .destination = param0,
             },
         },
     };
     const mod_sources = [_]shaderpipe.Slot{ch0};
-    mesh.shaders = .{
-        .mono_pipe = .{
-            .stages = &mod_stages,
-            .resolver = .{
-                .modulate = .{
-                    .sources = &mod_sources,
-                    .factor = param0,
-                },
+    const mod_pipe: riley.ShaderPipeInput = .{
+        .stages = &mod_stages,
+        .resolver = .{
+            .modulate = .{
+                .sources = &mod_sources,
+                .factor = param0,
             },
         },
+    };
+
+    var mesh = riley.MeshInput{
+        .mesh_type = .tri3opt,
+        .coords = coords,
+        .connect = connect,
+        .disp = null,
+        .shaders = .{ .mono_pipe = mod_pipe },
     };
     try render(
         init.gpa,
@@ -223,12 +223,11 @@ pub fn main(init: std.process.Init) !void {
         },
     };
     const rgb_slots = [_]shaderpipe.Slot{ ch0, ch1, ch2 };
-    mesh.shaders = .{
-        .rgb_pipe = .{
-            .stages = &rgb_stages,
-            .resolver = .{ .identity = &rgb_slots },
-        },
+    const rgb_pipe: riley.ShaderPipeInput = .{
+        .stages = &rgb_stages,
+        .resolver = .{ .identity = &rgb_slots },
     };
+    mesh.shaders = .{ .rgb_pipe = rgb_pipe };
     try render(
         init.gpa,
         init.io,
@@ -266,17 +265,16 @@ pub fn main(init: std.process.Init) !void {
         .clamp01,
         .{ .store = 0 },
     };
-    mesh.shaders = .{
-        .mono_pipe = .{
-            .stages = &expr_stages,
-            .resolver = .{
-                .expression = .{
-                    .operations = &expr_ops,
-                    .constants = &.{ 0.65, 0.35 },
-                },
+    const expr_pipe: riley.ShaderPipeInput = .{
+        .stages = &expr_stages,
+        .resolver = .{
+            .expression = .{
+                .operations = &expr_ops,
+                .constants = &.{ 0.65, 0.35 },
             },
         },
     };
+    mesh.shaders = .{ .mono_pipe = expr_pipe };
     try render(
         init.gpa,
         init.io,
@@ -314,17 +312,16 @@ pub fn main(init: std.process.Init) !void {
         .clamp01,
         .{ .store = 0 },
     };
-    mesh.shaders = .{
-        .mono_pipe = .{
-            .stages = &emissivity_stages,
-            .resolver = .{
-                .expression = .{
-                    .operations = &emissivity_ops,
-                    .constants = &.{ 0.90, 1.0 / 0.06 },
-                },
+    const emissivity_pipe: riley.ShaderPipeInput = .{
+        .stages = &emissivity_stages,
+        .resolver = .{
+            .expression = .{
+                .operations = &emissivity_ops,
+                .constants = &.{ 0.90, 1.0 / 0.06 },
             },
         },
     };
+    mesh.shaders = .{ .mono_pipe = emissivity_pipe };
     try render(
         init.gpa,
         init.io,

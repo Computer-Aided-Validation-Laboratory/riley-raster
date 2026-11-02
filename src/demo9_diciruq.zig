@@ -175,6 +175,18 @@ pub fn main(init: std.process.Init) !void {
         0.25,
     );
 
+    const ir_shader: riley.ShaderPipeInput = .{
+        .stages = &stages,
+        .resolver = .{
+            .greybody_band_apparent_c = .{
+                .temperature = field,
+                .emissivity = parameter,
+                .radiance = radiance,
+                .ambient_k = 293.15,
+            },
+        },
+    };
+
     const mesh = riley.MeshInput{
         .mesh_type = .quad8,
         .coords = sim_data.coords,
@@ -182,17 +194,7 @@ pub fn main(init: std.process.Init) !void {
         .disp = selected_disp,
         .shaders = .{
             .mono_direct = speckle_mono,
-            .ir_pipe = .{
-                .stages = &stages,
-                .resolver = .{
-                    .greybody_band_apparent_c = .{
-                        .temperature = field,
-                        .emissivity = parameter,
-                        .radiance = radiance,
-                        .ambient_k = 293.15,
-                    },
-                },
-            },
+            .ir_pipe = ir_shader,
         },
     };
 
