@@ -48,11 +48,18 @@ pub fn build(b: *std.Build) void {
         newton_solver,
         simd_vector_width,
     );
+    const riley_module = b.addModule("riley", .{
+        .root_source_file = b.path("src/riley/zig/api.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
     const shared_lib = addRileySharedLibrary(
         b,
         target,
         optimize,
         build_options_module,
+        riley_module,
     );
     shared_lib.installHeader(
         b.path("src/riley/cython/riley.h"),
@@ -81,6 +88,11 @@ pub fn build(b: *std.Build) void {
             .description = "Run the focused analytic verification suite",
             .source_path = "src/test_verif.zig",
         },
+        .{
+            .step_name = "test-public-api",
+            .description = "Compile-check the public Riley Zig API",
+            .source_path = "src/test_public_api.zig",
+        },
     };
 
     for (tests) |entry| {
@@ -90,6 +102,7 @@ pub fn build(b: *std.Build) void {
             target,
             optimize,
             build_options_module,
+            riley_module,
             entry,
         );
         test_step.dependOn(&test_run.step);
@@ -104,6 +117,7 @@ pub fn build(b: *std.Build) void {
         target,
         optimize,
         build_options_module,
+        riley_module,
         .{
             .step_name = "diag-badjac",
             .description = "Run warning-only invalid-Jacobian render diagnostics",
@@ -188,11 +202,30 @@ pub fn build(b: *std.Build) void {
             target,
             optimize,
             build_options_module,
+            riley_module,
             entry,
         );
         run_step.dependOn(&run_artifact.step);
         demos_step.dependOn(&run_artifact.step);
     }
+
+    const run_all_demos_step = b.step(
+        "run-all-demos",
+        "Run all demos sequentially through the public API module",
+    );
+    const run_all_demos_artifact = addRunStep(
+        b,
+        target,
+        optimize,
+        build_options_module,
+        riley_module,
+        .{
+            .step_name = "run-all-demos",
+            .description = "Run all demos sequentially through the public API module",
+            .source_path = "src/run_all_demos.zig",
+        },
+    );
+    run_all_demos_step.dependOn(&run_all_demos_artifact.step);
 
     const generators = [_]RunEntry{
         .{
@@ -225,6 +258,7 @@ pub fn build(b: *std.Build) void {
             target,
             optimize,
             build_options_module,
+            riley_module,
             entry,
         );
         if (std.mem.eql(u8, entry.step_name, "gen-gold-failed-distortion")) {
@@ -245,6 +279,7 @@ pub fn build(b: *std.Build) void {
         target,
         optimize,
         build_options_module,
+        riley_module,
         .{
             .step_name = "gen-gold-verif-zig-internal",
             .description = "Generate verification oracle inputs",
@@ -323,6 +358,7 @@ pub fn build(b: *std.Build) void {
             target,
             optimize,
             build_options_module,
+            riley_module,
             entry,
         );
         run_step.dependOn(&run_artifact.step);
@@ -337,6 +373,7 @@ pub fn build(b: *std.Build) void {
             target,
             optimize,
             build_options_module,
+            riley_module,
             entry,
             precision,
             simd,
@@ -354,7 +391,7 @@ pub fn build(b: *std.Build) void {
     const docs_obj = b.addObject(.{
         .name = "riley",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/riley/zig/riley.zig"),
+            .root_source_file = b.path("src/riley/zig/api.zig"),
             .target = target,
             .optimize = optimize,
             .link_libc = true,
@@ -376,6 +413,7 @@ fn addRileySharedLibrary(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
+    riley_module: *std.Build.Module,
 ) *std.Build.Step.Compile {
     const shared_lib = b.addLibrary(.{
         .linkage = .dynamic,
@@ -389,6 +427,7 @@ fn addRileySharedLibrary(
             target,
             optimize,
             build_options_module,
+            riley_module,
             "src/riley/zig/c-riley.zig",
             true,
             .library,
@@ -403,6 +442,7 @@ fn addTestRunStep(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
+    riley_module: *std.Build.Module,
     entry: TestEntry,
 ) *std.Build.Step.Run {
     const test_module = b.createModule(.{
@@ -412,6 +452,7 @@ fn addTestRunStep(
         .link_libc = true,
     });
     test_module.addImport("build_options", build_options_module);
+    test_module.addImport("riley", riley_module);
     const default_runner_path = b.graph.zig_lib_directory.join(
         b.allocator,
         &.{ "compiler", "test_runner.zig" },
@@ -445,6 +486,7 @@ fn addRunStep(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
+    riley_module: *std.Build.Module,
     entry: RunEntry,
 ) *std.Build.Step.Run {
     const executable = b.addExecutable(.{
@@ -454,6 +496,7 @@ fn addRunStep(
             target,
             optimize,
             build_options_module,
+            riley_module,
             entry.source_path,
             false,
             .executable,
@@ -467,6 +510,7 @@ fn addBenchInstallStep(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
+    riley_module: *std.Build.Module,
     entry: RunEntry,
     precision: []const u8,
     simd: []const u8,
@@ -487,6 +531,7 @@ fn addBenchInstallStep(
             target,
             optimize,
             build_options_module,
+            riley_module,
             entry.source_path,
             false,
             .executable,
@@ -517,6 +562,7 @@ fn createRootModule(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
+    riley_module: *std.Build.Module,
     source_path: []const u8,
     link_libc: bool,
     wrapper_kind: WrapperKind,
@@ -532,6 +578,7 @@ fn createRootModule(
         target,
         optimize,
         build_options_module,
+        riley_module,
         source_path,
         link_libc,
     );
@@ -578,6 +625,7 @@ fn buildWrapperImports(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
+    riley_module: *std.Build.Module,
     source_path: []const u8,
     link_libc: bool,
 ) []const std.Build.Module.Import {
@@ -587,14 +635,16 @@ fn buildWrapperImports(
         .module = build_options_module,
     }) catch @panic("OOM building imports.");
 
+    const entry_source = b.createModule(.{
+        .root_source_file = b.path(source_path),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = link_libc,
+    });
+    entry_source.addImport("riley", riley_module);
     imports.append(b.allocator, .{
         .name = "entry_source",
-        .module = b.createModule(.{
-            .root_source_file = b.path(source_path),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = link_libc,
-        }),
+        .module = entry_source,
     }) catch @panic("OOM building entry source import.");
     return imports.items;
 }

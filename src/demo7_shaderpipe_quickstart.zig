@@ -8,30 +8,22 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const riley = @import("riley/zig/riley.zig");
-const meshio = @import("riley/zig/meshio.zig");
-const meshpipe = @import("riley/zig/meshpipeline.zig");
-const shaderops = @import("riley/zig/shaderops.zig");
-const shaderpipe = @import("riley/zig/shaderpipe.zig");
-const camera = @import("riley/zig/cameraprojops.zig");
-const cameraops = @import("riley/zig/cameraframops.zig");
-const sceneops = @import("riley/zig/sceneops.zig");
-const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const buildconfig = @import("riley/zig/buildconfig.zig");
-const F = buildconfig.F;
-
+const riley = @import("riley");
+const maths = riley.maths;
+const datio = riley.dataio;
+const ops = riley.ops;
 pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 1. Create the mesh geometry and shaders
     // -------------------------------------------------------------------------
-    var coord_values = [_]F{
+    var coord_values = [_]maths.F{
         -1.0, -1.0, 0.0,
         1.0,  -1.0, 0.0,
         0.0,  1.0,  0.0,
     };
     var connect_values = [_]usize{ 0, 1, 2 };
-    const coords = meshio.Coords.init(&coord_values, 3);
-    const connect = meshio.Connect.init(&connect_values, 1, 3);
+    const coords = riley.Coords.init(&coord_values, 3);
+    const connect = riley.Connect.init(&connect_values, 1, 3);
 
     const checker: riley.PipeSourceInput = .{
         .func = .{
@@ -64,8 +56,8 @@ pub fn main(init: std.process.Init) !void {
         },
     };
 
-    const channel = shaderpipe.Slot{ .kind = .channel, .index = 0 };
-    const parameter = shaderpipe.Slot{ .kind = .parameter, .index = 0 };
+    const channel = riley.Slot{ .kind = .channel, .index = 0 };
+    const parameter = riley.Slot{ .kind = .parameter, .index = 0 };
 
     const stages = [_]riley.ShaderPipeStageInput{
         .{
@@ -81,7 +73,7 @@ pub fn main(init: std.process.Init) !void {
             },
         },
     };
-    const sources = [_]shaderpipe.Slot{channel};
+    const sources = [_]riley.Slot{channel};
     const pipe_shader: riley.ShaderPipeInput = .{
         .stages = &stages,
         .resolver = .{
@@ -104,10 +96,10 @@ pub fn main(init: std.process.Init) !void {
     // 2. Configure and frame the direct and lit cameras
     // -------------------------------------------------------------------------
     const pixels_num = [2]u32{ 512, 512 };
-    const pixels_size = [2]F{ 0.02, 0.02 };
-    const target = sceneops.boundsCenter(&coords);
-    const rotation = Rotation.init(0.0, 0.0, 0.0);
-    const position = cameraops.posFillFrameFromRotAndTarg(
+    const pixels_size = [2]maths.F{ 0.02, 0.02 };
+    const target = ops.boundsCenter(&coords);
+    const rotation = maths.Rotation.init(0.0, 0.0, 0.0);
+    const position = ops.posFillFrameFromRotAndTarg(
         &coords,
         target,
         pixels_num,

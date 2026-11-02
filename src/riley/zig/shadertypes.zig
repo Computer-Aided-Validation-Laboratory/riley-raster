@@ -19,7 +19,7 @@ const matslice = @import("matslice.zig");
 
 const imageops = @import("imageops.zig");
 const texops = @import("textureops.zig");
-const meshio = @import("meshio.zig");
+const fieldtypes = @import("fieldtypes.zig");
 const shaderpipe = @import("shaderpipe.zig");
 const meshhit = @import("meshhit.zig");
 pub const shaderfunc = @import("shaderfunc.zig");
@@ -70,7 +70,7 @@ pub const evalFuncShaderBuiltinGreyNorm = shaderfunc.evalFuncShaderBuiltinGreyNo
 pub const evalFuncShaderBuiltinRGBNorm = shaderfunc.evalFuncShaderBuiltinRGBNorm;
 
 pub const NodalInput = struct {
-    field: meshio.Field,
+    field: fieldtypes.Field,
     output_gain: F = 1.0,
     output_offset: F = 0.0,
     scaling: imageops.ScaleStrategy = .none,
@@ -169,7 +169,7 @@ pub const MeshShaderSetInput = struct {
 };
 
 pub const NodalStatic = struct {
-    field: meshio.Field,
+    field: fieldtypes.Field,
     output_gain: F = 1.0,
     output_offset: F = 0.0,
     scaling: imageops.ScaleStrategy = .none,

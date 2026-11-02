@@ -8,21 +8,10 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const buildconfig = @import("riley/zig/buildconfig.zig");
-const camera = @import("riley/zig/cameraprojops.zig");
-const cameraops = @import("riley/zig/cameraframops.zig");
-const imageio = @import("riley/zig/imageio.zig");
-const meshio = @import("riley/zig/meshio.zig");
-const meshpipe = @import("riley/zig/meshpipeline.zig");
-const riley = @import("riley/zig/riley.zig");
-const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const sceneops = @import("riley/zig/sceneops.zig");
-const shaderops = @import("riley/zig/shaderops.zig");
-const shaderpipe = @import("riley/zig/shaderpipe.zig");
-const uvio = @import("riley/zig/uvio.zig");
-
-const F = buildconfig.F;
-
+const riley = @import("riley");
+const maths = riley.maths;
+const datio = riley.dataio;
+const ops = riley.ops;
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
     const io = init.io;
@@ -40,7 +29,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Loading sphere simulation data from {s}...\n", .{data_dir});
     const coord_path = data_dir ++ "coords.csv";
     const conn_path = data_dir ++ "connect.csv";
-    const sim_data = try meshio.loadSimData(
+    const sim_data = try datio.loadSimData(
         local_alloc,
         io,
         coord_path,
@@ -51,10 +40,10 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("Loading UV map...\n", .{});
     const uv_path = data_dir ++ "uvs.csv";
-    const uvs = try uvio.loadUVMap(local_alloc, io, uv_path);
+    const uvs = try datio.loadUVMap(local_alloc, io, uv_path);
 
     std.debug.print("Loading speckle texture...\n", .{});
-    const texture = try imageio.loadImage(
+    const texture = try datio.loadImage(
         u8,
         1,
         local_alloc,
@@ -94,26 +83,26 @@ pub fn main(init: std.process.Init) !void {
         },
     };
 
-    const channel_slot = shaderpipe.Slot{ .kind = .channel, .index = 0 };
-    const param_slot = shaderpipe.Slot{ .kind = .parameter, .index = 0 };
-    const channel_slots = [_]shaderpipe.Slot{channel_slot};
+    const channel_slot = riley.Slot{ .kind = .channel, .index = 0 };
+    const param_slot = riley.Slot{ .kind = .parameter, .index = 0 };
+    const channel_slots = [_]riley.Slot{channel_slot};
 
     const lit_stages = [_]riley.ShaderPipeStageInput{
         .{
             .source = .{
-                .shader = shaderops.monoToPipeSource(speckle_shader),
+                .shader = ops.monoToPipeSource(speckle_shader),
                 .destination = channel_slot,
             },
         },
         .{
             .source = .{
-                .shader = shaderops.monoToPipeSource(lambertian_shader),
+                .shader = ops.monoToPipeSource(lambertian_shader),
                 .destination = param_slot,
             },
         },
     };
 
-    const lit_resolver: shaderpipe.Resolver = .{
+    const lit_resolver: riley.Resolver = .{
         .modulate = .{
             .sources = &channel_slots,
             .factor = param_slot,
@@ -130,16 +119,16 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     std.debug.print("Setting up camera...\n", .{});
     const pixels_num = [_]u32{ 800, 500 };
-    const pixels_size = [_]F{
+    const pixels_size = [_]maths.F{
         5.3e-6,
         5.3e-6,
     };
-    const focal_leng: F = 50.0e-3;
-    const rot = Rotation.init(0, 0, 0);
-    const fov_scale_factor: F = 1.0;
+    const focal_leng: maths.F = 50.0e-3;
+    const rot = maths.Rotation.init(0, 0, 0);
+    const fov_scale_factor: maths.F = 1.0;
 
-    const roi_pos = sceneops.boundsCenter(&sim_data.coords);
-    const cam_pos = cameraops.posFillFrameFromRot(
+    const roi_pos = ops.boundsCenter(&sim_data.coords);
+    const cam_pos = ops.posFillFrameFromRot(
         &sim_data.coords,
         pixels_num,
         pixels_size,

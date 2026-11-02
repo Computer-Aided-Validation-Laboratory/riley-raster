@@ -9,29 +9,17 @@
 const std = @import("std");
 
 const demo_common = @import("demo_common.zig");
-const riley = @import("riley/zig/riley.zig");
-const meshio = @import("riley/zig/meshio.zig");
-const uvio = @import("riley/zig/uvio.zig");
-const imageio = @import("riley/zig/imageio.zig");
-const meshpipe = @import("riley/zig/meshpipeline.zig");
-const shaderops = @import("riley/zig/shaderops.zig");
-const shaderpipe = @import("riley/zig/shaderpipe.zig");
-const texops = @import("riley/zig/textureops.zig");
-const camera = @import("riley/zig/cameraprojops.zig");
-const cameraops = @import("riley/zig/cameraframops.zig");
-const cameraio = @import("riley/zig/cameraio.zig");
-const sceneops = @import("riley/zig/sceneops.zig");
-const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const buildconfig = @import("riley/zig/buildconfig.zig");
-const F = buildconfig.F;
-
+const riley = @import("riley");
+const maths = riley.maths;
+const datio = riley.dataio;
+const ops = riley.ops;
 fn buildTemperatureField(
     allocator: std.mem.Allocator,
-    coords: meshio.Coords,
+    coords: riley.Coords,
     frames: usize,
-) !meshio.Field {
-    var min_y: F = std.math.inf(F);
-    var max_y: F = -std.math.inf(F);
+) !riley.Field {
+    var min_y: maths.F = std.math.inf(maths.F);
+    var max_y: maths.F = -std.math.inf(maths.F);
     for (0..coords.mat.rows_num) |node| {
         const y = coords.mat.get(node, 1); // FE plate vertical axis is world y.
         min_y = @min(min_y, y);
@@ -40,7 +28,7 @@ fn buildTemperatureField(
 
     if (max_y <= min_y) return error.DegenerateVerticalExtent;
 
-    var field = try meshio.Field.initAlloc(allocator, frames, coords.mat.rows_num, 1);
+    var field = try riley.Field.initAlloc(allocator, frames, coords.mat.rows_num, 1);
 
     for (0..frames) |frame| {
         for (0..coords.mat.rows_num) |node| {
@@ -72,7 +60,7 @@ pub fn main(init: std.process.Init) !void {
         data_dir ++ "field_disp_y.csv",
         data_dir ++ "field_disp_z.csv",
     };
-    const sim_data = try meshio.loadSimData(
+    const sim_data = try datio.loadSimData(
         allocator,
         io,
         data_dir ++ "coords.csv",
@@ -81,11 +69,11 @@ pub fn main(init: std.process.Init) !void {
         &disp_files,
     );
     const disp = sim_data.disp orelse return error.MissingDisplacement;
-    const frame_indices = try sceneops.selectFirstLastFrameIndices(
+    const frame_indices = try ops.selectFirstLastFrameIndices(
         allocator,
         disp.getTimeN(),
     );
-    const selected_disp = try sceneops.selectFieldFrames(
+    const selected_disp = try ops.selectFieldFrames(
         allocator,
         &disp,
         frame_indices,
@@ -99,9 +87,9 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 3. Setup shaders, pipe stages, and radiance lookup
     // -------------------------------------------------------------------------
-    const uvs = try uvio.loadUVMap(allocator, io, data_dir ++ "uvs.csv");
+    const uvs = try datio.loadUVMap(allocator, io, data_dir ++ "uvs.csv");
 
-    const texture = try imageio.loadImage(
+    const texture = try datio.loadImage(
         u8,
         1,
         allocator,
@@ -110,7 +98,7 @@ pub fn main(init: std.process.Init) !void {
         .bmp,
     );
 
-    const speckle_tex = riley.TexInput(texops.TexDataFix(u8, 1)){
+    const speckle_tex = riley.TexInput(riley.TexDataFix(u8, 1)){
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = .{
@@ -123,9 +111,9 @@ pub fn main(init: std.process.Init) !void {
     const speckle_source: riley.PipeSourceInput = .{ .tex_u8 = speckle_tex };
     const speckle_mono: riley.ShaderMonoInput = .{ .tex_u8 = speckle_tex };
 
-    const channel = shaderpipe.Slot{ .kind = .channel, .index = 0 };
-    const field = shaderpipe.Slot{ .kind = .field, .index = 0 };
-    const parameter = shaderpipe.Slot{ .kind = .parameter, .index = 0 };
+    const channel = riley.Slot{ .kind = .channel, .index = 0 };
+    const field = riley.Slot{ .kind = .field, .index = 0 };
+    const parameter = riley.Slot{ .kind = .parameter, .index = 0 };
 
     const stages = [_]riley.ShaderPipeStageInput{
         .{
@@ -158,13 +146,13 @@ pub fn main(init: std.process.Init) !void {
     };
 
     // Unit, flat 8–14 µm response; the lookup stores integrated spectral radiance.
-    var wavelengths: [25]F = undefined;
-    const response: [25]F = @splat(1.0);
+    var wavelengths: [25]maths.F = undefined;
+    const response: [25]maths.F = @splat(1.0);
     for (&wavelengths, 0..) |*lambda, ii| {
-        lambda.* = (8.0 + 0.25 * @as(F, @floatFromInt(ii))) * 1e-6;
+        lambda.* = (8.0 + 0.25 * @as(maths.F, @floatFromInt(ii))) * 1e-6;
     }
 
-    const band_resp = shaderpipe.BandResponse{
+    const band_resp = riley.BandResponse{
         .wavelengths_m = &wavelengths,
         .response = &response,
     };
@@ -201,26 +189,26 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 4. Configure stereo DIC and IR cameras
     // -------------------------------------------------------------------------
-    const target = sceneops.boundsCenter(&sim_data.coords);
+    const target = ops.boundsCenter(&sim_data.coords);
     const dic_pixels = [2]u32{ 2464, 2056 };
-    const dic_pitch = [2]F{ 3.45e-6, 3.45e-6 };
+    const dic_pitch = [2]maths.F{ 3.45e-6, 3.45e-6 };
     const ir_pixels = [2]u32{ 640, 480 };
-    const ir_pitch = [2]F{ 17e-6, 17e-6 };
+    const ir_pitch = [2]maths.F{ 17e-6, 17e-6 };
 
-    const left_rot = Rotation.init(
+    const left_rot = maths.Rotation.init(
         0.0,
-        std.math.degreesToRadians(@as(F, -10.0)),
+        std.math.degreesToRadians(@as(maths.F, -10.0)),
         0.0,
     );
-    const right_rot = Rotation.init(
+    const right_rot = maths.Rotation.init(
         0.0,
-        std.math.degreesToRadians(@as(F, 10.0)),
+        std.math.degreesToRadians(@as(maths.F, 10.0)),
         0.0,
     );
-    const ir_rot = Rotation.init(0.0, 0.0, 0.0);
+    const ir_rot = maths.Rotation.init(0.0, 0.0, 0.0);
 
-    const distort: camera.DistortParams = .{
-        .brown_con = camera.BrownCon.Params{
+    const distort: riley.DistortParams = .{
+        .brown_con = riley.BrownCon.Params{
             .k1 = -0.2,
             .k2 = 0.1,
             .k3 = 0.0,
@@ -229,7 +217,7 @@ pub fn main(init: std.process.Init) !void {
         },
     };
 
-    const left_pos = cameraops.posFillFrameFromRotAndTarg(
+    const left_pos = ops.posFillFrameFromRotAndTarg(
         &sim_data.coords,
         target,
         dic_pixels,
@@ -250,7 +238,7 @@ pub fn main(init: std.process.Init) !void {
         .distort = distort,
     };
 
-    const ir_pos = cameraops.posFillFrameFromRotAndTarg(
+    const ir_pos = ops.posFillFrameFromRotAndTarg(
         &sim_data.coords,
         target,
         ir_pixels,
@@ -273,7 +261,7 @@ pub fn main(init: std.process.Init) !void {
 
     var right = left;
     right.rot_world = right_rot;
-    right.pos_world = cameraops.posFillFrameFromRotAndTarg(
+    right.pos_world = ops.posFillFrameFromRotAndTarg(
         &sim_data.coords,
         target,
         dic_pixels,
@@ -312,7 +300,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 6. Save calibration data and acquisition metadata
     // -------------------------------------------------------------------------
-    try cameraio.saveStereoPair(
+    try datio.saveStereoPair(
         io,
         out_dir,
         "stereo_data_opengl.csv",

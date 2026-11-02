@@ -6,12 +6,14 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
+const Vec3F = @import("vecstack.zig").Vec3F;
 const vecslice = @import("vecslice.zig");
-const meshio = @import("meshio.zig");
+const fieldtypes = @import("fieldtypes.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
 const shadertypes = @import("shadertypes.zig");
@@ -20,28 +22,123 @@ const distbounds = @import("distortbounds.zig");
 const meshhit = @import("meshhit.zig");
 const HullMultiRoot = @import("hullmultiroot.zig").HullMultiRoot;
 
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
+
+pub const Coords = struct {
+    mat: matslice.MatSlice(F),
+    mem: []F,
+
+    const Self: type = @This();
+
+    pub fn init(mem: []F, coords_num: usize) Self {
+        std.debug.assert(mem.len == coords_num * 3);
+        const mat_coords = matslice.MatSlice(F).init(mem, coords_num, 3);
+
+        return .{
+            .mat = mat_coords,
+            .mem = mem,
+        };
+    }
+
+    pub fn initAlloc(outer_alloc: std.mem.Allocator, coords_num: usize) !Self {
+        const mat_mem = try outer_alloc.alloc(F, coords_num * 3);
+
+        return init(mat_mem, coords_num);
+    }
+
+    pub inline fn x(self: *const Self, ind: usize) F {
+        return self.mat.get(ind, 0);
+    }
+
+    pub inline fn y(self: *const Self, ind: usize) F {
+        return self.mat.get(ind, 1);
+    }
+
+    pub inline fn z(self: *const Self, ind: usize) F {
+        return self.mat.get(ind, 2);
+    }
+
+    pub fn getVecSlice(self: *const Self, ind: usize) []F {
+        return self.mat.getSlice(ind);
+    }
+
+    pub fn getVec3(self: *const Coords, ind: usize) Vec3F {
+        const vec_slice = self.mat.getSlice(ind);
+        const vec = Vec3F.initSlice(vec_slice);
+        return vec;
+    }
+};
+
+pub const Connect = struct {
+    table: matslice.MatSlice(usize),
+    table_mem: []usize,
+
+    const Self: type = @This();
+
+    pub fn init(mem: []usize, elems_num: usize, nodes_per_elem: usize) Self {
+        std.debug.assert(mem.len == elems_num * nodes_per_elem);
+
+        const mat_table = matslice.MatSlice(usize).init(mem, elems_num, nodes_per_elem);
+
+        return .{
+            .table = mat_table,
+            .table_mem = mem,
+        };
+    }
+
+    pub fn initAlloc(
+        outer_alloc: std.mem.Allocator,
+        elems_num: usize,
+        nodes_per_elem: usize,
+    ) !Self {
+        const mat_mem = try outer_alloc.alloc(usize, elems_num * nodes_per_elem);
+
+        return init(mat_mem, elems_num, nodes_per_elem);
+    }
+
+    pub inline fn getElemsNum(self: Self) usize {
+        return self.table.rows_num;
+    }
+
+    pub inline fn getNodesPerElem(self: Self) usize {
+        return self.table.cols_num;
+    }
+
+    pub fn deinit(self: *Self, outer_alloc: std.mem.Allocator) void {
+        outer_alloc.free(self.table_mem);
+    }
+
+    pub fn getElem(self: *const Self, elem_num: usize) []usize {
+        const ind_start: usize = elem_num * self.getNodesPerElem();
+        const ind_end: usize = ind_start + self.getNodesPerElem();
+        return self.table_mem[ind_start..ind_end];
+    }
+};
+
 // Input: Raw user data for all frames.
-// meshio.Coords/Fields: Node-order [total_nodes, ...]
-// meshio.Connect: Connectivity table links nodes to elems.
+// Coords/Fields: Node-order [total_nodes, ...]
+// Connect: Connectivity table links nodes to elems.
 pub const MeshInput = struct {
     mesh_type: geomkerns.MeshType,
     normal_type: normals.NormalType = .exact,
-    coords: meshio.Coords,
-    connect: meshio.Connect,
-    disp: ?meshio.Field,
+    coords: Coords,
+    connect: Connect,
+    disp: ?fieldtypes.Field,
     shaders: shadertypes.MeshShaderSetInput,
 };
 
 // Static: Persistent multi-frame resources in the engine's memory.
-// meshio.Coords/Fields: Node-order [total_nodes, ...]
+// Coords/Fields: Node-order [total_nodes, ...]
 // Shader UVs: Elem-order (gathered during static init as they are usually static).
 pub const MeshStatic = struct {
     scene_mesh_idx: usize = 0,
     mesh_type: geomkerns.MeshType,
     normal_type: normals.NormalType = .exact,
-    coords_orig: meshio.Coords,
-    connect: meshio.Connect,
-    disp: ?meshio.Field,
+    coords_orig: Coords,
+    connect: Connect,
+    disp: ?fieldtypes.Field,
     shaders: shadertypes.MeshShaderSetStatic,
 };
 
@@ -61,11 +158,11 @@ pub const MeshHulls = struct {
 };
 
 // Workspace: Temporary node-order working area for the geometry pipeline.
-// meshio.Coords: Node-order [total_nodes, 3]. Holds coords for a single frame after
+// Coords: Node-order [total_nodes, 3]. Holds coords for a single frame after
 // displacement.
 pub const MeshFrameWorkspace = struct {
-    coords_nodes: meshio.Coords,
-    coords_nodes_def_world: ?meshio.Coords,
+    coords_nodes: Coords,
+    coords_nodes_def_world: ?Coords,
     vis_orig_elem_inds: []usize,
     elem_bboxes: []frontend.ElemBBox,
     root_classes: []frontend.ElemRootClass,

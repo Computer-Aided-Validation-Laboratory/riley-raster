@@ -6,52 +6,35 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
-const shadertypes = @import("riley/zig/shadertypes.zig");
 const std = @import("std");
-const imageops = @import("riley/zig/imageops.zig");
 const demo_common = @import("demo_common.zig");
 
-const buildconfig = @import("riley/zig/buildconfig.zig");
-const camera = @import("riley/zig/cameraprojops.zig");
-const cameraops = @import("riley/zig/cameraframops.zig");
-const gk = @import("riley/zig/geometrykernels.zig");
-const iio = @import("riley/zig/imageio.zig");
-const meshio = @import("riley/zig/meshio.zig");
-const meshpipe = @import("riley/zig/meshpipeline.zig");
-const riley = @import("riley/zig/riley.zig");
-const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const sceneops = @import("riley/zig/sceneops.zig");
-const shaderops = @import("riley/zig/shaderops.zig");
-const shaderpipe = @import("riley/zig/shaderpipe.zig");
-const normals = @import("riley/zig/normals.zig");
-const texops = @import("riley/zig/textureops.zig");
-const uvio = @import("riley/zig/uvio.zig");
-
-const F = buildconfig.F;
-const MeshInput = riley.MeshInput;
-
+const riley = @import("riley");
+const maths = riley.maths;
+const datio = riley.dataio;
+const ops = riley.ops;
 const MeshShape = struct {
     shape: []const u8,
     elem: []const u8,
-    mesh_type: gk.MeshType,
+    mesh_type: riley.MeshType,
 };
 
 const DemoOptions = struct {
     out_dir_root: []const u8,
-    pixel_size: [2]F,
-    focal_length: F,
+    pixel_size: [2]maths.F,
+    focal_length: maths.F,
     mesh_shapes: []const MeshShape,
-    mesh_centers: []const [3]F,
+    mesh_centers: []const [3]maths.F,
 };
 
 fn buildRgbField(
     allocator: std.mem.Allocator,
-    temp: meshio.Field,
-    disp: meshio.Field,
-) !meshio.Field {
+    temp: riley.Field,
+    disp: riley.Field,
+) !riley.Field {
     const time_n = temp.getTimeN();
     const node_n = temp.getCoordN();
-    var field = try meshio.Field.initAlloc(allocator, time_n, node_n, 3);
+    var field = try riley.Field.initAlloc(allocator, time_n, node_n, 3);
     for (0..time_n) |tt| {
         for (0..node_n) |nn| {
             field.array.set(&.{ tt, nn, 0 }, temp.array.get(&.{ tt, nn, 0 }));
@@ -64,12 +47,12 @@ fn buildRgbField(
 
 fn textureShaderMono(
     comptime T: type,
-    texture: texops.TexDataFix(T, 1),
-    uvs: uvio.UVMap,
+    texture: riley.TexDataFix(T, 1),
+    uvs: datio.UVMap,
     comptime bits: u8,
     linear: bool,
 ) riley.ShaderMonoInput {
-    const samp_cfg = texops.TexSampConfig{
+    const samp_cfg = riley.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
     };
@@ -77,7 +60,7 @@ fn textureShaderMono(
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = samp_cfg,
-        .output_gain = imageops.getScaleMax(bits),
+        .output_gain = ops.getScaleMax(bits),
         .scaling = .auto,
     };
     if (T == u8) return .{ .tex_u8 = input };
@@ -87,12 +70,12 @@ fn textureShaderMono(
 
 fn textureShaderRGB(
     comptime T: type,
-    texture: texops.TexDataFix(T, 3),
-    uvs: uvio.UVMap,
+    texture: riley.TexDataFix(T, 3),
+    uvs: datio.UVMap,
     comptime bits: u8,
     linear: bool,
 ) riley.PipeSourceInput {
-    const samp_cfg = texops.TexSampConfig{
+    const samp_cfg = riley.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
     };
@@ -100,7 +83,7 @@ fn textureShaderRGB(
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = samp_cfg,
-        .output_gain = imageops.getScaleMax(bits),
+        .output_gain = ops.getScaleMax(bits),
         .scaling = .auto,
     };
     if (T == u8) return .{ .tex_rgb_u8 = input };
@@ -116,8 +99,8 @@ fn loadMesh(
     io: std.Io,
     mesh_shape: MeshShape,
     mesh_index: usize,
-    texture: texops.TexDataFix(T, C),
-) !MeshInput {
+    texture: riley.TexDataFix(T, C),
+) !riley.MeshInput {
     const dir = try std.fmt.allocPrint(
         allocator,
         "data/shapes/{s}/{s}/",
@@ -134,7 +117,7 @@ fn loadMesh(
         try std.fmt.allocPrint(allocator, "{s}disp_z.csv", .{dir}),
     };
 
-    const sim = try meshio.loadSimData(
+    const sim = try datio.loadSimData(
         allocator,
         io,
         try std.fmt.allocPrint(allocator, "{s}coords.csv", .{dir}),
@@ -142,7 +125,7 @@ fn loadMesh(
         temp_files,
         disp_files,
     );
-    const uvs = try uvio.loadUVMap(
+    const uvs = try datio.loadUVMap(
         allocator,
         io,
         try std.fmt.allocPrint(allocator, "{s}uvs.csv", .{dir}),
@@ -150,7 +133,7 @@ fn loadMesh(
 
     const temp = sim.field orelse return error.MissingTemperature;
     const disp = sim.disp orelse return error.MissingDisplacement;
-    const normal_type: normals.NormalType = switch (mesh_index % 3) {
+    const normal_type: riley.NormalType = switch (mesh_index % 3) {
         0 => .none,
         1 => .exact,
         else => .avg,
@@ -167,7 +150,7 @@ fn loadMesh(
             ),
             1, 5 => .{ .nodal = .{
                 .field = try buildRgbField(allocator, temp, disp),
-                .output_gain = imageops.getScaleMax(bits),
+                .output_gain = ops.getScaleMax(bits),
                 .scaling = .auto,
                 .scale_over = if (mesh_index == 1)
                     .over_frames
@@ -176,12 +159,12 @@ fn loadMesh(
             } },
             3, 4 => blk_fn: {
                 const params = if (mesh_index == 3)
-                    shadertypes.FuncShaderParams{
+                    riley.FuncShaderParams{
                         .coord_scale = .{ 1000.0, 1000.0 },
                         .settings = .{ .checker = .{} },
                     }
                 else
-                    shadertypes.FuncShaderParams{
+                    riley.FuncShaderParams{
                         .coord_scale = .{ 1.0, 1.0 },
                         .settings = .{ .eggbox = .{
                             .pitch = .{ 0.005, 0.005 },
@@ -194,7 +177,7 @@ fn loadMesh(
                         .world_deformed,
                     .builtin = if (mesh_index == 3) .checker else .eggbox,
                     .params = params,
-                    .output_gain = imageops.getScaleMax(bits),
+                    .output_gain = ops.getScaleMax(bits),
                     .scaling = .auto,
                 };
                 break :blk_fn .{ .func = .{ .rgb = input } };
@@ -202,11 +185,11 @@ fn loadMesh(
             else => unreachable,
         };
         const stages = try allocator.alloc(riley.ShaderPipeStageInput, 1);
-        stages[0] = shaderops.stageSource(pipe_source);
+        stages[0] = ops.stageSource(pipe_source);
         break :blk .{
             .rgb_pipe = .{
                 .stages = stages,
-                .resolver = .{ .identity = shaderpipe.identity_channels_3 },
+                .resolver = .{ .identity = ops.identity_channels_3 },
             },
         };
     } else blk: {
@@ -220,7 +203,7 @@ fn loadMesh(
             ),
             1, 5 => .{ .nodal = .{
                 .field = temp,
-                .output_gain = imageops.getScaleMax(bits),
+                .output_gain = ops.getScaleMax(bits),
                 .scaling = .auto,
                 .scale_over = if (mesh_index == 1)
                     .over_frames
@@ -229,12 +212,12 @@ fn loadMesh(
             } },
             3, 4 => blk_fn: {
                 const params = if (mesh_index == 3)
-                    shadertypes.FuncShaderParams{
+                    riley.FuncShaderParams{
                         .coord_scale = .{ 1000.0, 1000.0 },
                         .settings = .{ .checker = .{} },
                     }
                 else
-                    shadertypes.FuncShaderParams{
+                    riley.FuncShaderParams{
                         .coord_scale = .{ 1.0, 1.0 },
                         .settings = .{ .eggbox = .{
                             .pitch = .{ 0.005, 0.005 },
@@ -247,7 +230,7 @@ fn loadMesh(
                         .world_deformed,
                     .builtin = if (mesh_index == 3) .checker else .eggbox,
                     .params = params,
-                    .output_gain = imageops.getScaleMax(bits),
+                    .output_gain = ops.getScaleMax(bits),
                     .scaling = .auto,
                 };
                 break :blk_fn .{ .func = input };
@@ -275,17 +258,17 @@ fn buildScene(
     comptime bits: u8,
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture: texops.TexDataFix(T, C),
+    texture: riley.TexDataFix(T, C),
     options: DemoOptions,
-) ![]MeshInput {
-    var meshes = std.ArrayList(MeshInput).empty;
-    var groups = std.ArrayList(sceneops.MeshGroup).empty;
+) ![]riley.MeshInput {
+    var meshes = std.ArrayList(riley.MeshInput).empty;
+    var groups = std.ArrayList(ops.MeshGroup).empty;
     for (options.mesh_shapes, 0..) |mesh_shape, mesh_index| {
         try meshes.append(
             allocator,
             try loadMesh(T, C, bits, allocator, io, mesh_shape, mesh_index, texture),
         );
-        try groups.append(allocator, sceneops.meshGroupSingle(mesh_index));
+        try groups.append(allocator, ops.meshGroupSingle(mesh_index));
     }
     const plate = &meshes.items[5];
     for (0..plate.coords.mat.rows_num) |node| {
@@ -295,25 +278,25 @@ fn buildScene(
         plate.coords.mat.set(node, 1, x);
     }
     for (groups.items, options.mesh_centers) |group, center| {
-        sceneops.centerMeshGroupAt(meshes.items, group, center);
+        ops.centerMeshGroupAt(meshes.items, group, center);
     }
     return try meshes.toOwnedSlice(allocator);
 }
 
 fn makeCamera(
-    meshes: []MeshInput,
+    meshes: []riley.MeshInput,
     options: DemoOptions,
     pixels_num: [2]u32,
-    rot: Rotation,
+    rot: maths.Rotation,
     sub_sample: u32,
-    distort: camera.DistortParams,
-    psf: camera.PointSpreadFunc,
+    distort: riley.DistortParams,
+    psf: riley.PointSpreadFunc,
 ) riley.CameraInput {
-    const target = sceneops.boundsCenterOverMeshes(meshes);
+    const target = ops.boundsCenterOverMeshes(meshes);
     return .{
         .pixels_num = pixels_num,
         .pixels_size = options.pixel_size,
-        .pos_world = cameraops.posFillFrameFromRotOverMeshesAndTarg(
+        .pos_world = ops.posFillFrameFromRotOverMeshesAndTarg(
             meshes,
             target,
             pixels_num,
@@ -331,15 +314,15 @@ fn makeCamera(
     };
 }
 
-fn buildCameras(meshes: []MeshInput, options: DemoOptions) [6]riley.CameraInput {
+fn buildCameras(meshes: []riley.MeshInput, options: DemoOptions) [6]riley.CameraInput {
     const deg = std.math.degreesToRadians;
-    const brown: camera.DistortParams = .{ .brown_con = .{
+    const brown: riley.DistortParams = .{ .brown_con = .{
         .k1 = -0.12,
         .k2 = 0.035,
         .p1 = 0.0002,
         .p2 = -0.0001,
     } };
-    const gaussian: camera.PointSpreadFunc = .{ .gaussian = .{
+    const gaussian: riley.PointSpreadFunc = .{ .gaussian = .{
         .sigma_px = 0.65,
         .supp_rad_px = 2.0,
     } };
@@ -348,7 +331,7 @@ fn buildCameras(meshes: []MeshInput, options: DemoOptions) [6]riley.CameraInput 
             meshes,
             options,
             .{ 1024, 1024 },
-            Rotation.init(0, 0, 0),
+            maths.Rotation.init(0, 0, 0),
             1,
             .none,
             .{ .pixel_box = .{} },
@@ -357,7 +340,7 @@ fn buildCameras(meshes: []MeshInput, options: DemoOptions) [6]riley.CameraInput 
             meshes,
             options,
             .{ 1024, 1024 },
-            Rotation.init(0, deg(25.0), 0),
+            maths.Rotation.init(0, deg(25.0), 0),
             4,
             brown,
             .{ .pixel_box = .{} },
@@ -366,7 +349,7 @@ fn buildCameras(meshes: []MeshInput, options: DemoOptions) [6]riley.CameraInput 
             meshes,
             options,
             .{ 1024, 1229 },
-            Rotation.init(0, deg(-28.0), 0),
+            maths.Rotation.init(0, deg(-28.0), 0),
             4,
             .none,
             gaussian,
@@ -375,7 +358,7 @@ fn buildCameras(meshes: []MeshInput, options: DemoOptions) [6]riley.CameraInput 
             meshes,
             options,
             .{ 1229, 1024 },
-            Rotation.init(deg(90.0), deg(25.0), 0),
+            maths.Rotation.init(deg(90.0), deg(25.0), 0),
             4,
             brown,
             gaussian,
@@ -384,7 +367,7 @@ fn buildCameras(meshes: []MeshInput, options: DemoOptions) [6]riley.CameraInput 
             meshes,
             options,
             .{ 1024, 1024 },
-            Rotation.init(deg(18.0), deg(38.0), deg(26.0)),
+            maths.Rotation.init(deg(18.0), deg(38.0), deg(26.0)),
             4,
             .none,
             .{ .anisotropic_gaussian = .{
@@ -398,7 +381,7 @@ fn buildCameras(meshes: []MeshInput, options: DemoOptions) [6]riley.CameraInput 
             meshes,
             options,
             .{ 1229, 1024 },
-            Rotation.init(deg(-90.0), deg(-20.0), deg(5.0)),
+            maths.Rotation.init(deg(-90.0), deg(-20.0), deg(5.0)),
             4,
             brown,
             .{ .pixel_box = .{} },
@@ -420,8 +403,8 @@ fn renderCase(
     // -------------------------------------------------------------------------
     // 1. Build scene meshes and cameras
     // -------------------------------------------------------------------------
-    const texture: texops.TexDataFix(T, C) = if (T == u16 and C == 3) blk: {
-        const tex_u8 = try iio.loadImage(
+    const texture: riley.TexDataFix(T, C) = if (T == u16 and C == 3) blk: {
+        const tex_u8 = try datio.loadImage(
             u8,
             3,
             local_alloc,
@@ -431,7 +414,7 @@ fn renderCase(
         );
         defer tex_u8.deinit(local_alloc);
 
-        var tex_u16 = try texops.TexDataFix(u16, 3).init(
+        var tex_u16 = try riley.TexDataFix(u16, 3).init(
             local_alloc,
             tex_u8.rows_num,
             tex_u8.cols_num,
@@ -441,7 +424,7 @@ fn renderCase(
         }
         break :blk tex_u16;
     } else blk: {
-        break :blk try iio.loadImage(
+        break :blk try datio.loadImage(
             T,
             C,
             local_alloc,
@@ -476,7 +459,7 @@ fn renderCase(
         .render_mode = .offline,
         .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
-        .background_value = 0.5 * (@as(F, @floatFromInt((@as(u32, 1) << bits) - 1))),
+        .background_value = 0.5 * (@as(maths.F, @floatFromInt((@as(u32, 1) << bits) - 1))),
     };
 
     // -------------------------------------------------------------------------
@@ -506,8 +489,8 @@ pub fn main(init: std.process.Init) !void {
 
     const out_dir_root = "./out/demo6_featurezoo";
 
-    const pixel_size = [2]F{ 5.3e-6, 5.3e-6 };
-    const focal_length: F = 50.0e-3;
+    const pixel_size = [2]maths.F{ 5.3e-6, 5.3e-6 };
+    const focal_length: maths.F = 50.0e-3;
 
     const mesh_shapes = [_]MeshShape{
         .{ .shape = "cube_surf", .elem = "quad9", .mesh_type = .quad9 },
@@ -518,7 +501,7 @@ pub fn main(init: std.process.Init) !void {
         .{ .shape = "platewithhole_surf", .elem = "tri3", .mesh_type = .tri3 },
     };
 
-    const mesh_centers = [mesh_shapes.len][3]F{
+    const mesh_centers = [mesh_shapes.len][3]maths.F{
         .{ -0.015, 0.0075, 0.0 },
         .{ 0.0, 0.0075, 0.0 },
         .{ 0.015, 0.0075, 0.0 },

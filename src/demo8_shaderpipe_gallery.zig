@@ -6,23 +6,13 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
-const shadertypes = @import("riley/zig/shadertypes.zig");
 const std = @import("std");
 
-const riley = @import("riley/zig/riley.zig");
-const meshio = @import("riley/zig/meshio.zig");
-const meshpipe = @import("riley/zig/meshpipeline.zig");
-const shaderops = @import("riley/zig/shaderops.zig");
-const shaderpipe = @import("riley/zig/shaderpipe.zig");
-const camera = @import("riley/zig/cameraprojops.zig");
-const cameraops = @import("riley/zig/cameraframops.zig");
-const iio = @import("riley/zig/imageio.zig");
-const sceneops = @import("riley/zig/sceneops.zig");
-const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const buildconfig = @import("riley/zig/buildconfig.zig");
-const F = buildconfig.F;
-
-fn linear(x: F, y: F) riley.PipeSourceInput {
+const riley = @import("riley");
+const maths = riley.maths;
+const datio = riley.dataio;
+const ops = riley.ops;
+fn linear(x: maths.F, y: maths.F) riley.PipeSourceInput {
     return .{
         .func = .{
             .mono = .{
@@ -45,19 +35,19 @@ fn render(
     io: std.Io,
     mesh: riley.MeshInput,
     base_camera: riley.CameraInput,
-    role: shadertypes.RenderFormat,
+    role: riley.RenderFormat,
     path: []const u8,
 ) !void {
     var selected_camera = base_camera;
     selected_camera.render_format = role;
     const save_opts = if (role == .rgb)
-        iio.ImageSaveOpts{
+        datio.ImageSaveOpts{
             .format = .bmp,
             .file_bits = 8,
             .scaling = .{ .fixed = .{ 0.0, 1.0 } },
         }
     else
-        iio.ImageSaveOpts{
+        datio.ImageSaveOpts{
             .format = .tiff,
             .file_bits = 16,
             .scaling = .{ .fixed = .{ 0.0, 1.0 } },
@@ -84,20 +74,20 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 1. Create base mesh and shared camera
     // -------------------------------------------------------------------------
-    var coord_values = [_]F{
+    var coord_values = [_]maths.F{
         -1.0, -1.0, 0.0,
         1.0,  -1.0, 0.0,
         0.0,  1.0,  0.0,
     };
     var connect_values = [_]usize{ 0, 1, 2 };
-    const coords = meshio.Coords.init(&coord_values, 3);
-    const connect = meshio.Connect.init(&connect_values, 1, 3);
+    const coords = riley.Coords.init(&coord_values, 3);
+    const connect = riley.Connect.init(&connect_values, 1, 3);
 
     const pixels_num = [2]u32{ 512, 512 };
-    const pixels_size = [2]F{ 0.02, 0.02 };
-    const target = sceneops.boundsCenter(&coords);
-    const rotation = Rotation.init(0.0, 0.0, 0.0);
-    const position = cameraops.posFillFrameFromRotAndTarg(
+    const pixels_size = [2]maths.F{ 0.02, 0.02 };
+    const target = ops.boundsCenter(&coords);
+    const rotation = maths.Rotation.init(0.0, 0.0, 0.0);
+    const position = ops.posFillFrameFromRotAndTarg(
         &coords,
         target,
         pixels_num,
@@ -117,12 +107,12 @@ pub fn main(init: std.process.Init) !void {
         .sub_sample = 4,
     };
 
-    const ch0 = shaderpipe.Slot{ .kind = .channel, .index = 0 };
-    const ch1 = shaderpipe.Slot{ .kind = .channel, .index = 1 };
-    const ch2 = shaderpipe.Slot{ .kind = .channel, .index = 2 };
-    const param0 = shaderpipe.Slot{ .kind = .parameter, .index = 0 };
-    const field0 = shaderpipe.Slot{ .kind = .field, .index = 0 };
-    const field1 = shaderpipe.Slot{ .kind = .field, .index = 1 };
+    const ch0 = riley.Slot{ .kind = .channel, .index = 0 };
+    const ch1 = riley.Slot{ .kind = .channel, .index = 1 };
+    const ch2 = riley.Slot{ .kind = .channel, .index = 2 };
+    const param0 = riley.Slot{ .kind = .parameter, .index = 0 };
+    const field0 = riley.Slot{ .kind = .field, .index = 0 };
+    const field1 = riley.Slot{ .kind = .field, .index = 1 };
 
     const checker: riley.PipeSourceInput = .{
         .func = .{
@@ -172,7 +162,7 @@ pub fn main(init: std.process.Init) !void {
             },
         },
     };
-    const mod_sources = [_]shaderpipe.Slot{ch0};
+    const mod_sources = [_]riley.Slot{ch0};
     const mod_pipe: riley.ShaderPipeInput = .{
         .stages = &mod_stages,
         .resolver = .{
@@ -222,7 +212,7 @@ pub fn main(init: std.process.Init) !void {
             },
         },
     };
-    const rgb_slots = [_]shaderpipe.Slot{ ch0, ch1, ch2 };
+    const rgb_slots = [_]riley.Slot{ ch0, ch1, ch2 };
     const rgb_pipe: riley.ShaderPipeInput = .{
         .stages = &rgb_stages,
         .resolver = .{ .identity = &rgb_slots },
@@ -254,7 +244,7 @@ pub fn main(init: std.process.Init) !void {
             },
         },
     };
-    const expr_ops = [_]shaderpipe.Op{
+    const expr_ops = [_]riley.Op{
         .{ .load = field0 },
         .{ .load = .{ .kind = .constant, .index = 0 } },
         .multiply,
@@ -303,7 +293,7 @@ pub fn main(init: std.process.Init) !void {
             },
         },
     };
-    const emissivity_ops = [_]shaderpipe.Op{
+    const emissivity_ops = [_]riley.Op{
         .{ .load = param0 },
         .{ .load = .{ .kind = .constant, .index = 0 } },
         .subtract,

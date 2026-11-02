@@ -8,19 +8,10 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const cam = @import("riley/zig/cameraprojops.zig");
-const cameraops = @import("riley/zig/cameraframops.zig");
-const gk = @import("riley/zig/geometrykernels.zig");
-const iio = @import("riley/zig/imageio.zig");
-const meshpipe = @import("riley/zig/meshpipeline.zig");
-const rastcfg = @import("riley/zig/rasterconfig.zig");
-const riley = @import("riley/zig/riley.zig");
-const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const sceneops = @import("riley/zig/sceneops.zig");
-const buildconfig = @import("riley/zig/buildconfig.zig");
-
-const F = buildconfig.F;
-
+const riley = @import("riley");
+const maths = riley.maths;
+const datio = riley.dataio;
+const ops = riley.ops;
 const common = @import("demo_rabbits_common.zig");
 
 pub fn main(init: std.process.Init) !void {
@@ -33,10 +24,10 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 1. Setup paths, texture, and meshes
     // -------------------------------------------------------------------------
-    const rabbit_mesh_types = [_]gk.MeshType{ .tri3, .tri6, .quad4, .quad8, .quad9 };
-    const overlap_frac_xy = [2]F{ 0.85, 0.8 };
-    const checker_squares_per_axis: F = 36.0;
-    const texture = try iio.loadImage(
+    const rabbit_mesh_types = [_]riley.MeshType{ .tri3, .tri6, .quad4, .quad8, .quad9 };
+    const overlap_frac_xy = [2]maths.F{ 0.85, 0.8 };
+    const checker_squares_per_axis: maths.F = 36.0;
+    const texture = try datio.loadImage(
         u8,
         3,
         local_alloc,
@@ -56,15 +47,15 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 2. Position and configure camera
     // -------------------------------------------------------------------------
-    const default_pixel_size = [2]F{ 5.3e-6, 5.3e-6 };
-    const default_focal_length: F = 50.0e-3;
+    const default_pixel_size = [2]maths.F{ 5.3e-6, 5.3e-6 };
+    const default_focal_length: maths.F = 50.0e-3;
 
     const pixel_num = [2]u32{ 1600, 800 };
-    const fov_scale: F = 1.01;
-    const rot = Rotation.init(0.0, 0.0, 0.0);
+    const fov_scale: maths.F = 1.01;
+    const rot = maths.Rotation.init(0.0, 0.0, 0.0);
 
-    const roi_pos = sceneops.boundsCenterOverMeshes(mesh_inputs);
-    const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
+    const roi_pos = ops.boundsCenterOverMeshes(mesh_inputs);
+    const cam_pos = ops.posFillFrameFromRotOverMeshes(
         mesh_inputs,
         pixel_num,
         default_pixel_size,
@@ -87,9 +78,9 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 3. Configure raster engine
     // -------------------------------------------------------------------------
-    const background_value: F = 0.5 * @as(F, std.math.maxInt(u8));
+    const background_value: maths.F = 0.5 * @as(maths.F, std.math.maxInt(u8));
 
-    const config = rastcfg.RasterConfig{
+    const config = riley.RasterConfig{
         .parallel = .{ .threads = 4 },
         .save_strategy = .disk,
         .background_value = background_value,

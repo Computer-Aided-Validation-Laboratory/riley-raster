@@ -8,31 +8,22 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const riley = @import("riley/zig/riley.zig");
-const camera = @import("riley/zig/cameraprojops.zig");
-const cameraops = @import("riley/zig/cameraframops.zig");
-const iio = @import("riley/zig/imageio.zig");
-const meshio = @import("riley/zig/meshio.zig");
-const meshpipe = @import("riley/zig/meshpipeline.zig");
-const shaderops = @import("riley/zig/shaderops.zig");
-const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const sceneops = @import("riley/zig/sceneops.zig");
-
-const buildconfig = @import("riley/zig/buildconfig.zig");
-const F = buildconfig.F;
-
+const riley = @import("riley");
+const maths = riley.maths;
+const datio = riley.dataio;
+const ops = riley.ops;
 pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 1. Create the mesh geometry and shader
     // -------------------------------------------------------------------------
-    var coord_values = [_]F{
+    var coord_values = [_]maths.F{
         -1.0, -1.0, 0.0,
         1.0,  -1.0, 0.0,
         0.0,  1.0,  0.0,
     };
     var connect_values = [_]usize{ 0, 1, 2 };
-    const coords = meshio.Coords.init(&coord_values, 3);
-    const connect = meshio.Connect.init(&connect_values, 1, 3);
+    const coords = riley.Coords.init(&coord_values, 3);
+    const connect = riley.Connect.init(&connect_values, 1, 3);
 
     const checker: riley.ShaderMonoInput = .{ .func = .{
         .coord_mode = .world_reference,
@@ -56,13 +47,13 @@ pub fn main(init: std.process.Init) !void {
     // 2. Configure and frame the camera
     // -------------------------------------------------------------------------
     const pixels_num = [2]u32{ 512, 512 };
-    const pixels_size = [2]F{ 0.02, 0.02 };
-    const focal_length: F = 1.0;
-    const rotation = Rotation.init(0.0, 0.0, 0.0);
+    const pixels_size = [2]maths.F{ 0.02, 0.02 };
+    const focal_length: maths.F = 1.0;
+    const rotation = maths.Rotation.init(0.0, 0.0, 0.0);
 
-    const target = sceneops.boundsCenter(&coords);
+    const target = ops.boundsCenter(&coords);
 
-    const position = cameraops.posFillFrameFromRotAndTarg(
+    const position = ops.posFillFrameFromRotAndTarg(
         &coords,
         target,
         pixels_num,

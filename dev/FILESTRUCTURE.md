@@ -5,9 +5,15 @@
 - Use io as a suffix for files that contain operations for reading and writing to disk e.g. imageio.zig
 - Use ops as a suffix for collections of utility/data operation functions e.g. meshops.zig
 - Mesh, camera, and shader input/static/prepared declarations live in
-  `meshtypes.zig`, `cameratypes.zig`, and `shadertypes.zig`. Internal code imports
-  declarations from those owners. `riley.zig` reexports user-facing `*Input`
-  types directly.
+  `meshtypes.zig`, `cameratypes.zig`, and `shadertypes.zig`. Canonical mesh
+  coordinate, connectivity, and field declarations live in `meshtypes.zig` and
+  `fieldtypes.zig`. Internal code imports declarations from those owners.
+- The public Zig API is assembled explicitly in `api/core.zig` and exposed
+  through `api.zig`, which is registered as the `riley` module root so relative
+  imports from `api/core.zig` remain inside the module path. Public load/save,
+  numerical, and operation namespaces are assembled in `api/dataio.zig`,
+  `api/maths.zig`, and `api/ops.zig`. Do not add `usingnamespace` or duplicate
+  implementation types in the public API.
 - Camera framing and placement helpers live in `cameraframops.zig`; camera
   preparation and projection live in `cameraprepops.zig` and
   `cameraprojops*.zig`.

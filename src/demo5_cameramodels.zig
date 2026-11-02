@@ -9,19 +9,10 @@
 const std = @import("std");
 const demo_common = @import("demo_common.zig");
 
-const buildconfig = @import("riley/zig/buildconfig.zig");
-const riley = @import("riley/zig/riley.zig");
-const meshio = @import("riley/zig/meshio.zig");
-const uvio = @import("riley/zig/uvio.zig");
-const iio = @import("riley/zig/imageio.zig");
-const meshpipe = @import("riley/zig/meshpipeline.zig");
-const camera = @import("riley/zig/cameraprojops.zig");
-const cameraops = @import("riley/zig/cameraframops.zig");
-const sceneops = @import("riley/zig/sceneops.zig");
-const Rotation = @import("riley/zig/rotation.zig").Rotation;
-
-const F = buildconfig.F;
-
+const riley = @import("riley");
+const maths = riley.maths;
+const datio = riley.dataio;
+const ops = riley.ops;
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
     const io = init.io;
@@ -52,7 +43,7 @@ pub fn main(init: std.process.Init) !void {
         .{data_dir},
     );
 
-    const sim_data = try meshio.loadSimData(
+    const sim_data = try datio.loadSimData(
         local_alloc,
         io,
         data_dir ++ "coords.csv",
@@ -61,9 +52,9 @@ pub fn main(init: std.process.Init) !void {
         null,
     );
 
-    const uvs = try uvio.loadUVMap(local_alloc, io, data_dir ++ "uvs.csv");
+    const uvs = try datio.loadUVMap(local_alloc, io, data_dir ++ "uvs.csv");
 
-    const texture = try iio.loadImage(
+    const texture = try datio.loadImage(
         u8,
         1,
         local_alloc,
@@ -94,12 +85,12 @@ pub fn main(init: std.process.Init) !void {
     // 3. Position the base camera
     // -------------------------------------------------------------------------
     const pixels_num = [_]u32{ 800, 500 };
-    const pixel_size = [_]F{ 5.3e-6, 5.3e-6 };
-    const focal_length: F = 50.0e-3;
-    const rotation = Rotation.init(0, 0, 0);
-    const roi_cent_world = sceneops.boundsCenter(&sim_data.coords);
+    const pixel_size = [_]maths.F{ 5.3e-6, 5.3e-6 };
+    const focal_length: maths.F = 50.0e-3;
+    const rotation = maths.Rotation.init(0, 0, 0);
+    const roi_cent_world = ops.boundsCenter(&sim_data.coords);
 
-    const pos_world = cameraops.posFillFrameFromRot(
+    const pos_world = ops.posFillFrameFromRot(
         &sim_data.coords,
         pixels_num,
         pixel_size,
@@ -122,7 +113,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 4. Compare every distortion family and PSF path across buffer modes
     // -------------------------------------------------------------------------
-    const poly = camera.PolyMap{
+    const poly = riley.PolyMap{
         .degree = 2,
         .mode = .displacement,
         .coeffs = &.{
@@ -131,14 +122,14 @@ pub fn main(init: std.process.Init) !void {
         },
     };
 
-    const brown = camera.BrownCon.Params{
+    const brown = riley.BrownCon.Params{
         .k1 = -0.12,
         .k2 = 0.035,
         .p1 = 0.0002,
         .p2 = -0.0001,
     };
 
-    const brown_ext = camera.BrownConExt.Params{
+    const brown_ext = riley.BrownConExt.Params{
         .k1 = brown.k1,
         .k2 = brown.k2,
         .k4 = -0.04,
@@ -151,7 +142,7 @@ pub fn main(init: std.process.Init) !void {
         .tau_y = -0.003,
     };
 
-    const distorts = [_]camera.DistortParams{
+    const distorts = [_]riley.DistortParams{
         .none,
         .{ .brown_con = brown },
         .{ .brown_con_ext = brown_ext },
@@ -183,7 +174,7 @@ pub fn main(init: std.process.Init) !void {
         "anisotropic_rotated",
     };
 
-    const psfs = [_]camera.PointSpreadFunc{
+    const psfs = [_]riley.PointSpreadFunc{
         .{ .pixel_box = .{} },
         .{ .gaussian = .{ .sigma_px = 1.0, .supp_rad_px = 3.0, .separable = .yes } },
         .{ .gaussian = .{ .sigma_px = 1.0, .supp_rad_px = 3.0, .separable = .no } },

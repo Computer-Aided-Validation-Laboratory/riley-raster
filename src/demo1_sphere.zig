@@ -6,27 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
-const cameratypes = @import("riley/zig/cameratypes.zig");
 const std = @import("std");
 
-const buildconfig = @import("riley/zig/buildconfig.zig");
-const riley = @import("riley/zig/riley.zig");
-const RasterConfig = riley.RasterConfig;
-const meshio = @import("riley/zig/meshio.zig");
-const uvio = @import("riley/zig/uvio.zig");
-const iio = @import("riley/zig/imageio.zig");
-const meshpipe = @import("riley/zig/meshpipeline.zig");
-const MeshInput = riley.MeshInput;
-const gk = @import("riley/zig/geometrykernels.zig");
-const MeshType = gk.MeshType;
-const camera_mod = @import("riley/zig/cameraprojops.zig");
-const cameraops = @import("riley/zig/cameraframops.zig");
-const sceneops = @import("riley/zig/sceneops.zig");
-const CameraInput = cameratypes.CameraInput;
-const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
-const F = buildconfig.F;
-
+const riley = @import("riley");
+const maths = riley.maths;
+const datio = riley.dataio;
+const ops = riley.ops;
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
     const io = init.io;
@@ -47,7 +32,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Loading sphere simulation data from {s}...\n", .{data_dir});
     const coord_path = data_dir ++ "coords.csv";
     const conn_path = data_dir ++ "connect.csv";
-    const sim_data = try meshio.loadSimData(
+    const sim_data = try datio.loadSimData(
         local_alloc,
         io,
         coord_path,
@@ -58,10 +43,10 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("Loading UV map...\n", .{});
     const uv_path = data_dir ++ "uvs.csv";
-    const uvs = try uvio.loadUVMap(local_alloc, io, uv_path);
+    const uvs = try datio.loadUVMap(local_alloc, io, uv_path);
 
     std.debug.print("Loading speckle texture...\n", .{});
-    const texture = try iio.loadImage(
+    const texture = try datio.loadImage(
         u8,
         1,
         local_alloc,
@@ -81,7 +66,7 @@ pub fn main(init: std.process.Init) !void {
     } };
 
     std.debug.print("Preparing mesh input...\n", .{});
-    const mesh_input = MeshInput{
+    const mesh_input = riley.MeshInput{
         .mesh_type = .tri6,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
@@ -95,16 +80,16 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Setting up camera...\n", .{});
 
     const pixels_num = [_]u32{ 800, 500 };
-    const pixels_size = [_]F{
+    const pixels_size = [_]maths.F{
         5.3e-6,
         5.3e-6,
     };
-    const focal_leng: F = 50.0e-3;
-    const rot = Rotation.init(0, 0, 0);
-    const fov_scale_factor: F = 1.0;
+    const focal_leng: maths.F = 50.0e-3;
+    const rot = maths.Rotation.init(0, 0, 0);
+    const fov_scale_factor: maths.F = 1.0;
 
-    const roi_pos = sceneops.boundsCenter(&sim_data.coords);
-    const cam_pos = cameraops.posFillFrameFromRot(
+    const roi_pos = ops.boundsCenter(&sim_data.coords);
+    const cam_pos = ops.posFillFrameFromRot(
         &sim_data.coords,
         pixels_num,
         pixels_size,
@@ -113,7 +98,7 @@ pub fn main(init: std.process.Init) !void {
         fov_scale_factor,
     );
 
-    const camera_input = CameraInput{
+    const camera_input = riley.CameraInput{
         .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }},
         .pixels_num = pixels_num,
         .pixels_size = pixels_size,
@@ -127,7 +112,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 4. Configure raster engine
     // -------------------------------------------------------------------------
-    const config = RasterConfig{
+    const config = riley.RasterConfig{
         .save_strategy = .disk,
         .parallel = .{ .threads = 4 },
         .report_perf = .bench,

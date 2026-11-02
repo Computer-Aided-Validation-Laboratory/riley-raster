@@ -6,48 +6,30 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
-const cameratypes = @import("riley/zig/cameratypes.zig");
 const std = @import("std");
 const demo_common = @import("demo_common.zig");
 
-const buildconfig = @import("riley/zig/buildconfig.zig");
-const riley = @import("riley/zig/riley.zig");
-const RasterConfig = riley.RasterConfig;
-const meshio = @import("riley/zig/meshio.zig");
-const uvio = @import("riley/zig/uvio.zig");
-const iio = @import("riley/zig/imageio.zig");
-const meshpipe = @import("riley/zig/meshpipeline.zig");
-const MeshInput = riley.MeshInput;
-const camera_mod = @import("riley/zig/cameraprojops.zig");
-const CameraInput = cameratypes.CameraInput;
-const cameraio = @import("riley/zig/cameraio.zig");
-const cameraops = @import("riley/zig/cameraframops.zig");
-const sceneops = @import("riley/zig/sceneops.zig");
-const vecstack = @import("riley/zig/vecstack.zig");
-const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const DistortModel = camera_mod.DistortParams;
-const BrownCon = camera_mod.BrownCon;
-const BrownConExt = camera_mod.BrownConExt;
-const StereoPairInput = cameratypes.StereoPairInput;
-const F = buildconfig.F;
-
+const riley = @import("riley");
+const maths = riley.maths;
+const datio = riley.dataio;
+const ops = riley.ops;
 const DistortCase = enum {
     none,
     brown_con,
     brown_con_ext,
 };
 
-fn buildDistort(distort_case: DistortCase) DistortModel {
+fn buildDistort(distort_case: DistortCase) riley.DistortParams {
     return switch (distort_case) {
         .none => .none,
-        .brown_con => .{ .brown_con = BrownCon.Params{
+        .brown_con => .{ .brown_con = riley.BrownCon.Params{
             .k1 = -0.2,
             .k2 = 0.1,
             .k3 = 0.0,
             .p1 = 0.0001,
             .p2 = -0.0001,
         } },
-        .brown_con_ext => .{ .brown_con_ext = BrownConExt.Params{
+        .brown_con_ext => .{ .brown_con_ext = riley.BrownConExt.Params{
             .k1 = -0.2,
             .k2 = 0.1,
             .k3 = -0.01,
@@ -92,7 +74,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 2. Load calibration plate mesh, sample frames, and apply texture
     // -------------------------------------------------------------------------
-    var sim_data = try meshio.loadSimData(
+    var sim_data = try datio.loadSimData(
         local_alloc,
         io,
         coord_path,
@@ -105,23 +87,23 @@ pub fn main(init: std.process.Init) !void {
     const disp_source = sim_data.disp orelse return error.MissingDisplacement;
 
     const frames_max: usize = 8;
-    const frame_indices = try sceneops.selectEvenlySpacedFrameIndices(
+    const frame_indices = try ops.selectEvenlySpacedFrameIndices(
         local_alloc,
         disp_source.getTimeN(),
         frames_max,
     );
 
-    var selected_disp = try sceneops.selectFieldFrames(
+    var selected_disp = try ops.selectFieldFrames(
         local_alloc,
         &disp_source,
         frame_indices,
     );
     defer selected_disp.deinit(local_alloc);
 
-    var uvs = try uvio.loadUVMap(local_alloc, io, uv_path);
+    var uvs = try datio.loadUVMap(local_alloc, io, uv_path);
     defer uvs.deinit(local_alloc);
 
-    var texture = try iio.loadImage(
+    var texture = try datio.loadImage(
         u8,
         1,
         local_alloc,
@@ -134,45 +116,45 @@ pub fn main(init: std.process.Init) !void {
     const distort_case: DistortCase = .brown_con;
     const distort = buildDistort(distort_case);
 
-    const matched_roi = [3]F{ 0.0125, 0.0175, 0.0005 };
+    const matched_roi = [3]maths.F{ 0.0125, 0.0175, 0.0005 };
 
-    const target_roi = vecstack.Vec3F.initSlice(matched_roi[0..]);
-    sceneops.centerCoordsAt(&sim_data.coords, target_roi.vec);
-    const roi_pos = sceneops.boundsCenter(&sim_data.coords);
+    const target_roi = maths.Vec3F.initSlice(matched_roi[0..]);
+    ops.centerCoordsAt(&sim_data.coords, target_roi.vec);
+    const roi_pos = ops.boundsCenter(&sim_data.coords);
 
     // -------------------------------------------------------------------------
     // 3. Create, save, and reload stereo camera pair
     // -------------------------------------------------------------------------
-    const coord_sys = cameratypes.CameraCoordSys.opengl;
+    const coord_sys = riley.CameraCoordSys.opengl;
     const stereo_file_name = if (coord_sys == .opencv)
         "stereo_data_opencv.csv"
     else
         "stereo_data_opengl.csv";
 
     const pixels_num = [2]u32{ 2464, 2056 };
-    const pixels_size = [2]F{ 3.45e-6, 3.45e-6 };
-    const focal_length: F = 50.0e-3;
-    const stereo_angle_deg: F = 20.0;
+    const pixels_size = [2]maths.F{ 3.45e-6, 3.45e-6 };
+    const focal_length: maths.F = 50.0e-3;
+    const stereo_angle_deg: maths.F = 20.0;
     const sub_sample: u32 = 4;
-    const matched_cam0_pos = [3]F{ 0.0125, 0.0175, 0.160864856482 };
-    const matched_cam1_pos = [3]F{ 0.067348011198, 0.0175, 0.151193672270 };
+    const matched_cam0_pos = [3]maths.F{ 0.0125, 0.0175, 0.160864856482 };
+    const matched_cam1_pos = [3]maths.F{ 0.067348011198, 0.0175, 0.151193672270 };
 
-    const cam0_rot = Rotation.init(
+    const cam0_rot = maths.Rotation.init(
         std.math.degreesToRadians(0.0),
         std.math.degreesToRadians(0.0),
         std.math.degreesToRadians(0.0),
     );
 
-    const cam1_rot = Rotation.init(
+    const cam1_rot = maths.Rotation.init(
         std.math.degreesToRadians(0.0),
         std.math.degreesToRadians(stereo_angle_deg),
         std.math.degreesToRadians(0.0),
     );
 
-    const cam0_pos = vecstack.Vec3F.initSlice(matched_cam0_pos[0..]);
-    const cam1_pos = vecstack.Vec3F.initSlice(matched_cam1_pos[0..]);
+    const cam0_pos = maths.Vec3F.initSlice(matched_cam0_pos[0..]);
+    const cam1_pos = maths.Vec3F.initSlice(matched_cam1_pos[0..]);
 
-    const cam0_in = CameraInput{
+    const cam0_in = riley.CameraInput{
         .pixels_num = pixels_num,
         .pixels_size = pixels_size,
         .pos_world = cam0_pos,
@@ -187,15 +169,15 @@ pub fn main(init: std.process.Init) !void {
     cam1_in.rot_world = cam1_rot;
     cam1_in.pos_world = cam1_pos;
 
-    var stereo_pair = StereoPairInput{
+    var stereo_pair = riley.StereoPairInput{
         .cameras = .{ cam0_in, cam1_in },
     };
 
     // Save stereo pair to output directory
-    try cameraio.saveStereoPair(io, out_dir, stereo_file_name, stereo_pair);
+    try datio.saveStereoPair(io, out_dir, stereo_file_name, stereo_pair);
 
     // Load stereo pair back from output directory (standalone test)
-    const loaded_stereo = try cameraio.LoadedStereoPair.init(
+    const loaded_stereo = try datio.LoadedStereoPair.init(
         local_alloc,
         io,
         out_dir,
@@ -221,7 +203,7 @@ pub fn main(init: std.process.Init) !void {
         .scaling = .none,
     } };
 
-    const mesh_input = MeshInput{
+    const mesh_input = riley.MeshInput{
         .mesh_type = .tri3,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
@@ -229,7 +211,7 @@ pub fn main(init: std.process.Init) !void {
         .shaders = .{ .mono_direct = speckle_shader },
     };
 
-    const config = RasterConfig{
+    const config = riley.RasterConfig{
         .render_mode = .offline,
         .parallel = .{ .threads = total_threads },
         .save_strategy = .disk,

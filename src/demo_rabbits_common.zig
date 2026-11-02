@@ -6,30 +6,17 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
-const shadertypes = @import("riley/zig/shadertypes.zig");
 const std = @import("std");
-const riley = @import("riley/zig/riley.zig");
-
-const gk = @import("riley/zig/geometrykernels.zig");
-const meshio = @import("riley/zig/meshio.zig");
-const meshpipe = @import("riley/zig/meshpipeline.zig");
-const sceneops = @import("riley/zig/sceneops.zig");
-const shaderops = @import("riley/zig/shaderops.zig");
-const shaderpipe = @import("riley/zig/shaderpipe.zig");
-const texops = @import("riley/zig/textureops.zig");
-const uvio = @import("riley/zig/uvio.zig");
-const buildconfig = @import("riley/zig/buildconfig.zig");
-
-const MeshInput = riley.MeshInput;
-const FuncShaderBuiltin = shadertypes.FuncShaderBuiltin;
-const FuncShaderParams = shadertypes.FuncShaderParams;
-const F = buildconfig.F;
+const riley = @import("riley");
+const maths = riley.maths;
+const datio = riley.dataio;
+const ops = riley.ops;
 
 pub const SceneOptions = struct {
-    mesh_types: []const gk.MeshType,
-    overlap_frac_xy: [2]F,
-    checker_squares_per_axis: F,
-    gap: [3]F,
+    mesh_types: []const riley.MeshType,
+    overlap_frac_xy: [2]maths.F,
+    checker_squares_per_axis: maths.F,
+    gap: [3]maths.F,
     max_divs: [3]usize,
     render_as_multifield: bool = false,
 };
@@ -40,15 +27,15 @@ pub fn buildRabbitPairScene(
     comptime C: usize,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    texture: texops.TexDataFix(u8, C),
+    texture: riley.TexDataFix(u8, C),
     options: SceneOptions,
-) ![]MeshInput {
+) ![]riley.MeshInput {
     // -------------------------------------------------------------------------
     // 1. Build and overlap rabbit mesh pairs
     // -------------------------------------------------------------------------
-    var mesh_list = std.ArrayList(MeshInput).empty;
+    var mesh_list = std.ArrayList(riley.MeshInput).empty;
     defer mesh_list.deinit(outer_alloc);
-    var group_list = std.ArrayList(sceneops.MeshGroup).empty;
+    var group_list = std.ArrayList(ops.MeshGroup).empty;
     defer group_list.deinit(outer_alloc);
 
     for (options.mesh_types) |mesh_type| {
@@ -78,9 +65,9 @@ pub fn buildRabbitPairScene(
             options.render_as_multifield,
         ));
 
-        const front_group = sceneops.meshGroupSingle(pair_start);
-        const back_group = sceneops.meshGroupSingle(pair_start + 1);
-        sceneops.overlapMeshGroupBounds(
+        const front_group = ops.meshGroupSingle(pair_start);
+        const back_group = ops.meshGroupSingle(pair_start + 1);
+        ops.overlapMeshGroupBounds(
             mesh_list.items,
             front_group,
             back_group,
@@ -95,13 +82,13 @@ pub fn buildRabbitPairScene(
             },
         );
 
-        try group_list.append(outer_alloc, sceneops.meshGroupSpan(pair_start, 2));
+        try group_list.append(outer_alloc, ops.meshGroupSpan(pair_start, 2));
     }
 
     // -------------------------------------------------------------------------
     // 2. Arrange rabbit groups in grid layout
     // -------------------------------------------------------------------------
-    sceneops.arrangeMeshGroupsGrid(
+    ops.arrangeMeshGroupsGrid(
         mesh_list.items,
         group_list.items,
         .{
@@ -126,7 +113,7 @@ fn shaderModeForMeshIndex(mesh_idx: usize) ShaderMode {
     };
 }
 
-fn meshDataName(mesh_type: gk.MeshType) []const u8 {
+fn meshDataName(mesh_type: riley.MeshType) []const u8 {
     return switch (mesh_type) {
         .tri3, .tri3opt => "tri3",
         .tri6 => "tri6",
@@ -139,7 +126,7 @@ fn meshDataName(mesh_type: gk.MeshType) []const u8 {
 fn buildRabbitDir(
     outer_alloc: std.mem.Allocator,
     rabbit_name: []const u8,
-    mesh_type: gk.MeshType,
+    mesh_type: riley.MeshType,
 ) ![]const u8 {
     return try std.fmt.allocPrint(
         outer_alloc,
@@ -152,7 +139,7 @@ fn loadStaticMesh(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     data_dir: []const u8,
-) !meshio.SimData {
+) !datio.SimData {
     const coords_path = try std.fmt.allocPrint(
         outer_alloc,
         "{s}/coords.csv",
@@ -165,7 +152,7 @@ fn loadStaticMesh(
         .{data_dir},
     );
     defer outer_alloc.free(connect_path);
-    return try meshio.loadSimData(
+    return try datio.loadSimData(
         outer_alloc,
         io,
         coords_path,
@@ -179,23 +166,23 @@ fn loadRabbitUvMap(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     data_dir: []const u8,
-) !uvio.UVMap {
+) !datio.UVMap {
     const uv_path = try std.fmt.allocPrint(
         outer_alloc,
         "{s}/uvs.csv",
         .{data_dir},
     );
     defer outer_alloc.free(uv_path);
-    return try uvio.loadUVMap(outer_alloc, io, uv_path);
+    return try datio.loadUVMap(outer_alloc, io, uv_path);
 }
 
 fn buildUvField(
     comptime C: usize,
     outer_alloc: std.mem.Allocator,
-    uvs: uvio.UVMap,
-) !meshio.Field {
+    uvs: datio.UVMap,
+) !riley.Field {
     const node_num = uvs.array.dims[0];
-    var field = try meshio.Field.initAlloc(outer_alloc, 1, node_num, C);
+    var field = try riley.Field.initAlloc(outer_alloc, 1, node_num, C);
 
     for (0..node_num) |nn| {
         const uu = uvs.array.get(&[_]usize{ nn, 0 });
@@ -217,12 +204,12 @@ fn makeMeshInput(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     rabbit_name: []const u8,
-    mesh_type: gk.MeshType,
+    mesh_type: riley.MeshType,
     shader_mode: ShaderMode,
-    texture: texops.TexDataFix(u8, C),
-    checker_squares_per_axis: F,
+    texture: riley.TexDataFix(u8, C),
+    checker_squares_per_axis: maths.F,
     render_as_multifield: bool,
-) !MeshInput {
+) !riley.MeshInput {
     const data_dir = try buildRabbitDir(outer_alloc, rabbit_name, mesh_type);
     defer outer_alloc.free(data_dir);
     const sim_data = try loadStaticMesh(outer_alloc, io, data_dir);
@@ -253,8 +240,8 @@ fn makeMeshInput(
                 .func = .{
                     .uvs = uvs.array,
                     .coord_mode = .uv,
-                    .builtin = FuncShaderBuiltin.checker,
-                    .params = FuncShaderParams{
+                    .builtin = riley.FuncShaderBuiltin.checker,
+                    .params = riley.FuncShaderParams{
                         .coord_scale = .{
                             checker_squares_per_axis,
                             checker_squares_per_axis,
@@ -293,8 +280,8 @@ fn makeMeshInput(
                     .rgb = .{
                         .uvs = uvs.array,
                         .coord_mode = .uv,
-                        .builtin = FuncShaderBuiltin.checker,
-                        .params = FuncShaderParams{
+                        .builtin = riley.FuncShaderBuiltin.checker,
+                        .params = riley.FuncShaderParams{
                             .coord_scale = .{
                                 checker_squares_per_axis,
                                 checker_squares_per_axis,
@@ -308,10 +295,10 @@ fn makeMeshInput(
             },
         };
         const stages = try outer_alloc.alloc(riley.ShaderPipeStageInput, 1);
-        stages[0] = shaderops.stageSource(pipe_source);
+        stages[0] = ops.stageSource(pipe_source);
         const pipe: riley.ShaderPipeInput = .{
             .stages = stages,
-            .resolver = .{ .identity = shaderpipe.identity_channels_3 },
+            .resolver = .{ .identity = ops.identity_channels_3 },
         };
         if (render_as_multifield) {
             break :blk .{ .multifield_pipe = pipe };
@@ -331,7 +318,7 @@ fn makeMeshInput(
 
 test "rabbit UV fields preserve mono and RGB channel values" {
     const alloc = std.testing.allocator;
-    var uvs = try uvio.UVMap.init(alloc, 1);
+    var uvs = try datio.UVMap.init(alloc, 1);
     defer uvs.deinit(alloc);
     uvs.array.set(&.{ 0, 0 }, 0.2);
     uvs.array.set(&.{ 0, 1 }, 0.6);
@@ -339,10 +326,10 @@ test "rabbit UV fields preserve mono and RGB channel values" {
     defer mono.deinit(alloc);
     var rgb = try buildUvField(3, alloc, uvs);
     defer rgb.deinit(alloc);
-    try std.testing.expectApproxEqAbs(@as(F, 0.4), mono.array.get(&.{ 0, 0, 0 }), 1e-6);
-    try std.testing.expectApproxEqAbs(@as(F, 0.2), rgb.array.get(&.{ 0, 0, 0 }), 1e-6);
-    try std.testing.expectApproxEqAbs(@as(F, 0.6), rgb.array.get(&.{ 0, 0, 1 }), 1e-6);
-    try std.testing.expectApproxEqAbs(@as(F, 0.4), rgb.array.get(&.{ 0, 0, 2 }), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(maths.F, 0.4), mono.array.get(&.{ 0, 0, 0 }), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(maths.F, 0.2), rgb.array.get(&.{ 0, 0, 0 }), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(maths.F, 0.6), rgb.array.get(&.{ 0, 0, 1 }), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(maths.F, 0.4), rgb.array.get(&.{ 0, 0, 2 }), 1e-6);
 }
 
 test "rabbit shaders cycle across texture nodal and function modes" {

@@ -156,7 +156,7 @@ def _get_zig_run_cmd() -> list[str]:
     zig_bin = shutil.which("zig") or shutil.which("zig.exe")
     base_cmd = [zig_bin] if zig_bin else [str(PYTHON_EXE), "-m", "ziglang"]
     cmd = list(base_cmd)
-    cmd.extend(["run", "-lc", "-O", "ReleaseFast"])
+    cmd.extend(["build", "run-all-demos", "-Doptimize=ReleaseFast"])
     if platform.system().lower() == "windows":
         arch = platform.machine().lower()
         if arch in ("amd64", "x86_64"):
@@ -165,8 +165,7 @@ def _get_zig_run_cmd() -> list[str]:
             target_triple = "aarch64-windows-msvc"
         else:
             target_triple = "i386-windows-msvc"
-        cmd.extend(["-target", target_triple])
-    cmd.append(str(PROJECT_ROOT / "src" / "run_all_demos.zig"))
+        cmd.append(f"-Dtarget={target_triple}")
     return cmd
 
 

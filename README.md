@@ -116,13 +116,26 @@ Stereo calibration target renders using the DIC UQ camera setup.
 | :---: | :---: |
 | <img src="https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/cal_cam0_frame0_field0.png" alt="Calibration camera 0" width="400"> | <img src="https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/cal_cam1_frame0_field0.png" alt="Calibration camera 1" width="400"> |
 
+## Zig API
+Applications consume Riley through the public `riley` module registered by `build.zig`:
+
+```zig
+const riley = @import("riley");
+const datio = riley.dataio;
+const maths = riley.maths;
+const ops = riley.ops;
+```
+
+Rendering entry points, input/config types, and camera/shader types are available directly from `riley` (for example `riley.raster(...)`, `riley.MeshInput`, and `riley.RasterConfig`). File loading and saving live under `riley.dataio`, numerical primitives under `riley.maths`, and reusable scene, camera, mesh, shader, image, texture, and normal operations under `riley.ops`.
+
 ## Project Layout
 The main Zig entry point for the rendering pipeline is the `raster(...)` family in `./src/riley/zig/riley.zig`.
 
 Useful top-level locations:
 
 - `src/`: Zig demos, tests, benchmarks and the core Riley source
-- `src/riley/zig/`: core Zig raster pipeling implementation
+- `src/riley/zig/`: core Zig raster pipeline implementation
+- `src/riley/zig/api/`: public Zig API assembly (`riley`, `riley.dataio`, `riley.maths`, `riley.ops`)
 - `src/riley/cython/`: Cython->Python bindings for Riley
 - `src/riley/python/`: Python utilities for setup and mesh manipulation
 - `src/riley/pydemos/`: packaged Python demos
