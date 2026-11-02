@@ -13,6 +13,7 @@ const riley = @import("riley");
 const maths = riley.maths;
 const datio = riley.dataio;
 const ops = riley.ops;
+
 fn buildTemperatureField(
     allocator: std.mem.Allocator,
     coords: riley.Coords,

@@ -13,6 +13,7 @@ const riley = @import("riley");
 const maths = riley.maths;
 const datio = riley.dataio;
 const ops = riley.ops;
+
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
     const io = init.io;

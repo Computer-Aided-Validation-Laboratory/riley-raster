@@ -14,6 +14,7 @@ const riley = @import("riley");
 const maths = riley.maths;
 const datio = riley.dataio;
 const ops = riley.ops;
+
 const DistortCase = enum {
     none,
     brown_con,

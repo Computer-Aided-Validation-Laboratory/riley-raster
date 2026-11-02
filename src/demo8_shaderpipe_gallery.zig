@@ -12,6 +12,7 @@ const riley = @import("riley");
 const maths = riley.maths;
 const datio = riley.dataio;
 const ops = riley.ops;
+
 fn linear(x: maths.F, y: maths.F) riley.PipeSourceInput {
     return .{
         .func = .{

@@ -12,6 +12,7 @@ const riley = @import("riley");
 const maths = riley.maths;
 const datio = riley.dataio;
 const ops = riley.ops;
+
 pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 1. Create the mesh geometry and shader
