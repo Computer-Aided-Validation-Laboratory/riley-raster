@@ -111,7 +111,7 @@ def render_check(
         config.save_bits = 8
         config.save_format = riley.ImageFormat.bmp
         config.save_scaling = riley.ScaleStrategy.none
-        config.background_value = 0.5 * (2**8 - 1)
+        camera.background_value = 0.5 * (2**8 - 1)
         riley.raster(
             mesh,
             camera,

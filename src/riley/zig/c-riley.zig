@@ -271,6 +271,16 @@ pub const CFuncShaderParams = extern struct {
     extra_3: F,
 };
 
+pub const CFuncChannel = extern struct {
+    builtin: u32,
+    params: CFuncShaderParams,
+    output_gain: F,
+    output_offset: F,
+    scaling_tag: u32,
+    scaling_min: F,
+    scaling_max: F,
+};
+
 pub const CShaderInput = extern struct {
     shader_tag: u32,
     uvs: CArray2DF64,
@@ -290,6 +300,8 @@ pub const CShaderInput = extern struct {
     func_shader_builtin: u32,
     func_shader_coord_mode: u32,
     func_shader_params: CFuncShaderParams,
+    func_channels: [*c]const CFuncChannel,
+    func_channels_len: usize,
 };
 
 pub const CSlot = extern struct { kind: u32, index: u32 };
@@ -412,8 +424,10 @@ const ShaderDirectBuilt = struct {
     tex_array_u16: ?ndarray.NDArray(u16) = null,
     tex_array_f: ?ndarray.NDArray(F) = null,
     nodal_field_array: ?ndarray.NDArray(F) = null,
+    func_channels: []shadertypes.FuncChannel = &.{},
 
     fn deinit(self: *ShaderDirectBuilt, allocator: std.mem.Allocator) void {
+        allocator.free(self.func_channels);
         if (self.uvs_array) |*uvs_array| {
             uvs_array.deinit(allocator);
         }
@@ -1661,6 +1675,36 @@ fn buildShaderDirectInput(
                 .scaling = scaling,
             } };
             built.uvs_array = uvs_array_opt;
+        },
+        6 => {
+            if (in_shader.func_channels_len < 1 or
+                in_shader.func_channels_len > buildconfig.config.max_nodal_fields)
+                return error.InvalidFuncChannelCount;
+            const inputs = try cConstSlice(CFuncChannel, in_shader.func_channels, in_shader.func_channels_len);
+            const channels = try allocator.alloc(shadertypes.FuncChannel, inputs.len);
+            errdefer allocator.free(channels);
+            for (inputs, channels) |input, *channel| {
+                const builtin = try funcShaderBuiltinFromC(input.builtin);
+                channel.* = .{
+                    .builtin = builtin,
+                    .params = funcShaderParamsFromC(builtin, input.params),
+                    .output_gain = input.output_gain,
+                    .output_offset = input.output_offset,
+                    .scaling = try scaleStrategyFromC(input.scaling_tag, input.scaling_min, input.scaling_max),
+                };
+            }
+            var uvs: ?ndarray.NDArray(F) = null;
+            if (in_shader.uvs.rows_num > 0 and in_shader.uvs.cols_num > 0) {
+                uvs = try buildArray2DF64(allocator, &in_shader.uvs, 2);
+            }
+            errdefer if (uvs) |*array| array.deinit(allocator);
+            built.shader = .{ .func_multi = .{
+                .uvs = uvs,
+                .coord_mode = try funcCoordModeFromC(in_shader.func_shader_coord_mode),
+                .channels = channels,
+            } };
+            built.uvs_array = uvs;
+            built.func_channels = channels;
         },
         else => return error.InvalidShaderTag,
     }

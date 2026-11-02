@@ -201,6 +201,15 @@ cdef extern from "riley.h":
         double extra_3
 
 
+    ctypedef struct CFuncChannel:
+        uint32_t builtin
+        CFuncShaderParams params
+        double output_gain
+        double output_offset
+        uint32_t scaling_tag
+        double scaling_min
+        double scaling_max
+
     ctypedef struct CShaderInput:
         uint32_t shader_tag
         CArray2DF64 uvs
@@ -220,6 +229,8 @@ cdef extern from "riley.h":
         uint32_t func_shader_builtin
         uint32_t func_shader_coord_mode
         CFuncShaderParams func_shader_params
+        const CFuncChannel* func_channels
+        size_t func_channels_len
 
     ctypedef struct CSlot:
         uint32_t kind

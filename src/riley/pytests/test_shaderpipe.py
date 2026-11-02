@@ -380,3 +380,72 @@ def test_python_sphere_lit_modulates_speckle_and_lambertian() -> None:
     img_no_normals = riley.raster(mesh_lit, camera, config)
     np.testing.assert_allclose(img_no_normals, img_direct, atol=1e-9)
 
+
+
+@pytest.mark.parametrize("buffer_mode", list(riley.BufferMode))
+def test_camera_backgrounds_are_independent(buffer_mode) -> None:
+    mesh, camera, config = scene()
+    config.buffer_mode = buffer_mode
+    config.parallel = 4
+    cameras = [replace(camera, background_value=value) for value in (7.25, 19.5)]
+    image = riley.raster(mesh, cameras, config)
+    for index, value in enumerate((7.25, 19.5)):
+        assert image[index, 0, 0, 0, 0] == value
+        assert image[index, 0, 0, 16, 16] == 0.25
+    assert not hasattr(config, "background_value")
+
+
+@pytest.mark.parametrize("count", [1, 2, 3, 8])
+def test_independent_function_channels_cross_native_boundary(count: int) -> None:
+    mesh, camera, config = scene()
+    channels = tuple(
+        riley.FunctionChannel(
+            builtin=riley.FuncShaderBuiltin.constant,
+            params=riley.FuncShaderParams(constant_value=0.25 * (index + 1)),
+            output_gain=2.0, output_offset=0.125,
+        ) for index in range(count)
+    )
+    slots = tuple(riley.Slot(riley.SlotKind.channel, index) for index in range(count))
+    mesh.shaders = riley.MeshShaderSet(multifield=riley.ShaderPipe(
+        stages=(riley.ShaderSource(riley.FunctionMultiShader(channels), slots[0]),),
+        resolver=riley.ShaderResolver(riley.ResolverKind.identity, slots=slots),
+    ))
+    convention = riley.ConnectConvention(
+        riley.EElemType.TRI3, riley.EConnectAxis.ROW, 0, riley.ENodeOrder.RILEY,
+    )
+    mesh = riley.create_mesh(convention, riley.MeshType.tri3,
+                             mesh.coords, mesh.connect, mesh.shaders)
+    camera = replace(camera, shader_selection=None,
+                     render_format=riley.RenderFormat.multifield, render_channels=count)
+    image = riley.raster(mesh, camera, config)
+    assert image.shape == (1, 1, count, 32, 32)
+    np.testing.assert_array_equal(image[0, 0, :, 16, 16],
+                                  [0.5 * (index + 1) + 0.125 for index in range(count)])
+
+
+@pytest.mark.parametrize("count", [0, 9])
+def test_invalid_function_channel_count_is_rejected(count: int) -> None:
+    mesh, camera, config = scene()
+    channel = riley.FunctionChannel(builtin=riley.FuncShaderBuiltin.constant)
+    slot = riley.Slot(riley.SlotKind.channel, 0)
+    mesh.shaders = riley.MeshShaderSet(mono=riley.ShaderPipe(
+        stages=(riley.ShaderSource(riley.FunctionMultiShader((channel,) * count), slot),),
+        resolver=riley.ShaderResolver(riley.ResolverKind.identity, slots=(slot,)),
+    ))
+    with pytest.raises(ValueError, match="between one and eight"):
+        riley.raster(mesh, camera, config)
+
+
+@pytest.mark.parametrize("background", [float("nan"), float("inf")])
+def test_invalid_camera_background_is_rejected(background: float) -> None:
+    mesh, camera, config = scene()
+    camera.background_value = background
+    with pytest.raises((ValueError, RuntimeError), match="InvalidBackgroundValue"):
+        riley.raster(mesh, camera, config)
+
+
+def test_function_shader_does_not_silently_drop_requested_channels() -> None:
+    mesh, camera, config = scene()
+    mesh.shaders.mono.channels = 2
+    with pytest.raises(ValueError, match="FunctionShader.channels must be 1 or 3"):
+        riley.raster(mesh, camera, config)

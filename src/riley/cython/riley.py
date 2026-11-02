@@ -324,6 +324,7 @@ class ShaderType(IntEnum):
     func = 3
     func_rgb = 4
     nodal_rgb = 5
+    func_multi = 6
 
 
 class TextureStorage(IntEnum):
@@ -507,6 +508,28 @@ class FunctionShader:
     scaling_max: float = 0.0
 
 
+@dataclass(slots=True)
+class FunctionChannel:
+    """One independently configured scalar channel of a function source."""
+
+    builtin: FuncShaderBuiltin
+    params: FuncShaderParams = field(default_factory=FuncShaderParams)
+    output_gain: float = 1.0
+    output_offset: float = 0.0
+    scaling_type: ScaleStrategy = ScaleStrategy.none
+    scaling_min: float = 0.0
+    scaling_max: float = 0.0
+
+
+@dataclass(slots=True)
+class FunctionMultiShader:
+    """A pipe source with one to eight independently configured channels."""
+
+    channels: tuple[FunctionChannel, ...] | list[FunctionChannel]
+    coord_mode: FuncCoordMode = FuncCoordMode.parametric
+    uvs: np.ndarray | None = None
+
+
 class CameraShaderSelection(IntEnum):
     direct = 0
     mono = 1
@@ -578,7 +601,7 @@ class ShaderResolver:
 
 @dataclass(slots=True)
 class ShaderSource:
-    shader: TextureShader | NodalShader | FunctionShader
+    shader: TextureShader | NodalShader | FunctionShader | FunctionMultiShader
     destination: Slot
 
 
@@ -643,7 +666,7 @@ class ShaderPipe:
     constants: tuple[float, ...] = ()
 
 
-RileyShader = TextureShader | NodalShader | FunctionShader
+RileyShader = TextureShader | NodalShader | FunctionShader | FunctionMultiShader
 Shader = RileyShader
 
 
@@ -1519,6 +1542,7 @@ def _fill_shader_input(
     shader: Any,
     out_shader: cython.pointer[cr.CShaderInput],
     keepalive: list[Any],
+    allocations: list[int],
 ) -> None:
     texture_channels = 0
     texture_storage = int(TextureStorage.u8)
@@ -1540,7 +1564,11 @@ def _fill_shader_input(
             ShaderType.nodal_rgb if is_rgb else ShaderType.nodal
         )
         texture_storage = int(TextureStorage.u8)
+    elif isinstance(shader, FunctionMultiShader):
+        shader_tag = int(ShaderType.func_multi)
     elif isinstance(shader, FunctionShader):
+        if shader.channels not in (1, 3):
+            raise ValueError("FunctionShader.channels must be 1 or 3; use FunctionMultiShader for independent channels")
         is_rgb = (shader.channels == 3)
         shader_tag = int(
             ShaderType.func_rgb if is_rgb else ShaderType.func
@@ -1551,13 +1579,38 @@ def _fill_shader_input(
             "shader must be a TextureShader, NodalShader, or FunctionShader"
         )
 
+    out_shader.func_channels = cython.NULL
+    out_shader.func_channels_len = 0
+    if isinstance(shader, FunctionMultiShader):
+        count: cython.size_t = len(shader.channels)
+        if not 1 <= count <= 8:
+            raise ValueError("function source requires between one and eight channels")
+        channels = cython.cast(cython.pointer[cr.CFuncChannel], malloc(count * cython.sizeof(cr.CFuncChannel)))
+        if channels == cython.NULL:
+            raise MemoryError()
+        allocations.append(cython.cast(cython.size_t, channels))
+        out_shader.func_channels = channels
+        out_shader.func_channels_len = count
+        ci: cython.size_t
+        for ci in range(count):
+            channel = shader.channels[ci]
+            if not isinstance(channel, FunctionChannel):
+                raise TypeError("function source channels must be FunctionChannel objects")
+            channels[ci].builtin = int(channel.builtin)
+            channels[ci].params = _make_func_params(channel.params)
+            channels[ci].output_gain = float(channel.output_gain)
+            channels[ci].output_offset = float(channel.output_offset)
+            channels[ci].scaling_tag = int(channel.scaling_type)
+            channels[ci].scaling_min = float(channel.scaling_min)
+            channels[ci].scaling_max = float(channel.scaling_max)
+
     out_shader.shader_tag = shader_tag
     out_shader.texture_storage = texture_storage
     out_shader.sample = int(getattr(shader, "sample", 0))
     out_shader.sample_mode = int(getattr(shader, "sample_mode", 0))
 
     gain = float(getattr(shader, "output_gain", 1.0))
-    scaling_tag = int(shader.scaling_type)
+    scaling_tag = int(getattr(shader, "scaling_type", ScaleStrategy.none))
     if gain == 1.0 and scaling_tag != int(ScaleStrategy.none):
         bits_val = getattr(shader, "bits", None)
         if bits_val is not None:
@@ -1565,8 +1618,8 @@ def _fill_shader_input(
     out_shader.output_gain = gain
     out_shader.output_offset = float(getattr(shader, "output_offset", 0.0))
     out_shader.scaling_tag = scaling_tag
-    out_shader.scaling_min = float(shader.scaling_min)
-    out_shader.scaling_max = float(shader.scaling_max)
+    out_shader.scaling_min = float(getattr(shader, "scaling_min", 0.0))
+    out_shader.scaling_max = float(getattr(shader, "scaling_max", 0.0))
     out_shader.scale_over = int(
         getattr(shader, "scale_over", ScaleOver.over_frames)
     )
@@ -1683,7 +1736,7 @@ def _fill_pipe_single(
         stages[si].black = 0.0
         stages[si].white = 0.0
         if isinstance(stage, ShaderSource):
-            valid_shaders = (TextureShader, NodalShader, FunctionShader)
+            valid_shaders = (TextureShader, NodalShader, FunctionShader, FunctionMultiShader)
             if not isinstance(stage.shader, valid_shaders):
                 raise TypeError(
                     "source stage requires a texture, nodal, or function"
@@ -1698,7 +1751,7 @@ def _fill_pipe_single(
             if source == cython.NULL:
                 raise MemoryError()
             allocations.append(cython.cast(cython.size_t, source))
-            _fill_shader_input(stage.shader, source, keepalive)
+            _fill_shader_input(stage.shader, source, keepalive, allocations)
             stages[si].shader = source
         elif isinstance(stage, GreyToEmissivity):
             stages[si].tag = 1
@@ -1914,13 +1967,14 @@ def _fill_mesh_array(
                     allocations,
                 )
             elif isinstance(
-                entry, (TextureShader, NodalShader, FunctionShader)
+                entry, (TextureShader, NodalShader, FunctionShader, FunctionMultiShader)
             ):
                 shaders[si].execution_tag = 0
                 _fill_shader_input(
                     entry,
                     cython.address(shaders[si].direct_shader),
                     keepalive,
+                    allocations,
                 )
             else:
                 raise TypeError(
@@ -2390,6 +2444,8 @@ __all__ = [
     "FuncShaderBuiltin",
     "FuncCoordMode",
     "FuncShaderParams",
+    "FunctionChannel",
+    "FunctionMultiShader",
     "TextureSample",
     "TextureSampleMode",
     "PsfType",

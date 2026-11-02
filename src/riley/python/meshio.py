@@ -9,6 +9,7 @@ import numpy.typing as npt
 
 from riley.cython.riley import (
     FunctionShader,
+    FunctionMultiShader,
     MeshShaderSet,
     ShaderPipe,
     ShaderSource,
@@ -359,6 +360,16 @@ def _prepare_shader(
                 scaling_min=shader.scaling_min,
                 scaling_max=shader.scaling_max,
                 scale_over=shader.scale_over,
+            )
+
+        case FunctionMultiShader():
+            uvs_out = None
+            if shader.uvs is not None:
+                uvs_out = _prepare_uvs(shader.uvs, nodes_num, source_node_idxs)
+            return FunctionMultiShader(
+                channels=tuple(shader.channels),
+                coord_mode=shader.coord_mode,
+                uvs=uvs_out,
             )
 
         case FunctionShader():

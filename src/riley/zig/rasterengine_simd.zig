@@ -57,7 +57,7 @@ const shadekerns = @import("shaderkernels.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 pub const SubpxScratchBuffs = struct {
-    pub const exclusive_subpx_target = false;
+    pub const simd_full_vector_store_safe = true;
 
     stride_subpx: usize,
     inv_z: []align(64) F,
@@ -560,7 +560,7 @@ fn rasterDirectSIMDImpl(
                     scratch_y_u,
                 ),
                 .v_mask_active = v_depth_mask,
-                .exclusive_subpx_target = ScratchBuffs.exclusive_subpx_target,
+                .simd_full_vector_store_safe = ScratchBuffs.simd_full_vector_store_safe,
             };
 
             ShaderKern.shadeSIMD(
@@ -1456,7 +1456,7 @@ fn rasterNewtonSIMDImpl(
                     scratch_y_u,
                 ),
                 .v_mask_active = v_depth_mask,
-                .exclusive_subpx_target = ScratchBuffs.exclusive_subpx_target,
+                .simd_full_vector_store_safe = ScratchBuffs.simd_full_vector_store_safe,
             };
 
             ShaderKern.shadeSIMD(
@@ -1738,7 +1738,7 @@ fn rasterSteppedSIMDFixP(
                     scratch_y_u,
                 ),
                 .v_mask_active = v_depth_mask,
-                .exclusive_subpx_target = ScratchBuffs.exclusive_subpx_target,
+                .simd_full_vector_store_safe = ScratchBuffs.simd_full_vector_store_safe,
             };
 
             const v_weights = [3]VecSF{ v_w0, v_w1, v_w2 };
@@ -1990,7 +1990,7 @@ fn rasterSteppedSIMDFloat(
                     scratch_y_u,
                 ),
                 .v_mask_active = v_depth_mask,
-                .exclusive_subpx_target = ScratchBuffs.exclusive_subpx_target,
+                .simd_full_vector_store_safe = ScratchBuffs.simd_full_vector_store_safe,
             };
 
             ShaderKern.shadeSIMD(

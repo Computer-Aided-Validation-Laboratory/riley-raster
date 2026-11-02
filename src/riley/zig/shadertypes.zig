@@ -493,5 +493,6 @@ pub const ShadeContext = struct {
     global_subx: usize,
     global_suby: usize,
     v_mask_active: ?VecSB = null,
-    exclusive_subpx_target: bool = false,
+    // Full-vector stores rewrite inactive lanes; safe only when those lanes are private.
+    simd_full_vector_store_safe: bool = true,
 };

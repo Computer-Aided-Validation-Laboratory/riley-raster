@@ -201,7 +201,7 @@ fn rasterSceneGlobBuffImpl(
 // Scalar global-buffer scratch and kernel binding
 // --------------------------------------------------------------------------------------
 const GlobalSubpxBuffsScalar = struct {
-    pub const exclusive_subpx_target = true;
+    pub const simd_full_vector_store_safe = false;
 
     stride_subpx: usize,
     inv_z: []F,
@@ -306,7 +306,7 @@ pub const GlobalBackendScalar = struct {
 // Simd global-buffer scratch and kernel binding
 // --------------------------------------------------------------------------------------
 pub const GlobalSubpxBuffsSIMD = struct {
-    pub const exclusive_subpx_target = true;
+    pub const simd_full_vector_store_safe = false;
 
     stride_subpx: usize,
     inv_z: []align(64) F,

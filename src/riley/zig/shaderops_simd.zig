@@ -39,7 +39,7 @@ inline fn storeShadeSIMD(
     v_mask_active: VecSB,
     v_vals: VecSF,
 ) void {
-    if (!ctx_shade.exclusive_subpx_target) {
+    if (ctx_shade.simd_full_vector_store_safe) {
         simdops.storeMaskedVecSF(
             subpx_vals,
             start_u,

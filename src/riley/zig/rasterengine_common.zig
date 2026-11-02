@@ -336,6 +336,7 @@ pub fn rasterTileCore(
         const bin_tag = @field(elemtilebin.ElemBin, bin_field.name);
         const geom_tag = comptime elemtilebin.binMeshType(bin_tag);
         const root_class = comptime elemtilebin.binRootClass(bin_tag);
+
         const range = tile.bins[@intFromEnum(bin_tag)];
         const overlaps = overlaps_all[range.start .. range.start + range.count];
 
@@ -343,13 +344,16 @@ pub fn rasterTileCore(
             const mesh_idx: usize = ov.mesh_idx;
             const mesh_ptr = &meshes[mesh_idx];
             std.debug.assert(mesh_ptr.mesh_type == geom_tag);
+            
             const selected = shaderops.selectShader(
                 shadertypes.ShaderMonoPrepared,
                 shadertypes.ShaderPipePrepared,
                 &mesh_ptr.shaders,
                 ctx_rast.camera.render_format,
             ) orelse continue;
+
             const coords = &mesh_ptr.coords;
+
             const hull = if (comptime root_class == .multi_root) blk: {
                 std.debug.assert(mesh_idx < mesh_hulls.hull_multiroot_by_mesh.len);
                 if (mesh_hulls.hull_multiroot_by_mesh[mesh_idx]) |*hulls| {
@@ -410,8 +414,10 @@ pub fn rasterTileCore(
                 switch (selected) {
                     .pipe => |pipe| {
                         const SK = pipekerns.PipeKernel(N);
+
                         var local_buf: SK.LocalBuff = .{};
                         local_buf.load(pipe, ov.elem_idx, ctx_rast.frame_idx);
+
                         shaded_px += try RasterBackend.RasterEngine(
                             GK,
                             SK,
@@ -434,6 +440,7 @@ pub fn rasterTileCore(
                         .nodal => |*shader| {
                             const SK = shadekerns.NodalKernel(N);
                             var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
+
                             const start_idx = if (shader.elem_field.dims.len == 3)
                                 shader.elem_field.getFlatIdx(
                                     &[_]usize{ ov.elem_idx, 0, 0 },
@@ -474,6 +481,7 @@ pub fn rasterTileCore(
                         },
                         .tex_u8 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u8, 1);
+
                             var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
                             local_shader_buf.load(
                                 shader.elem_uvs,
@@ -501,6 +509,7 @@ pub fn rasterTileCore(
                         },
                         .tex_u16 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u16, 1);
+
                             var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
                             local_shader_buf.load(
                                 shader.elem_uvs,
@@ -528,8 +537,10 @@ pub fn rasterTileCore(
                         },
                         .tex_f => |*shader| {
                             const SK = shadekerns.TexKernel(N, F, 1);
+
                             var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
                             local_shader_buf.load(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
+
                             shaded_px += try RasterBackend.RasterEngine(
                                 GK,
                                 SK,

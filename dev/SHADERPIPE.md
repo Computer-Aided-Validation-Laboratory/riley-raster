@@ -49,6 +49,32 @@ The dynamic texture stores its actual channel count in `array.dims[0]`.
 Preparation validates the supported 2–8 channel range and converts integer
 multifield textures to floating-point storage once before rendering.
 
+### Function sources
+
+`PipeSourceInput`, `PipeSourceStatic`, and `PipeSourcePrepared` use flat
+`func`, `func_rgb`, and `func_multi` tags. The first two evaluate a scalar or
+RGB builtin; `func_multi` evaluates one to eight independent scalar channels.
+Python exposes these as `FunctionShader(channels=1)`,
+`FunctionShader(channels=3)`, and `FunctionMultiShader`, respectively:
+
+```python
+source = riley.FunctionMultiShader(channels=(
+    riley.FunctionChannel(
+        builtin=riley.FuncShaderBuiltin.constant,
+        params=riley.FuncShaderParams(constant_value=0.25),
+    ),
+    riley.FunctionChannel(
+        builtin=riley.FuncShaderBuiltin.constant,
+        params=riley.FuncShaderParams(constant_value=0.75),
+    ),
+))
+```
+
+A `FunctionMultiShader` is a pipe source. Its shared `coord_mode` and optional
+`uvs` select the coordinates; each channel owns its builtin, parameters, scaling,
+and output gain/offset. The C ABI uses shader tag `6` and a `CFuncChannel` slice
+in `CShaderInput`. Channel descriptors are copied during native input preparation.
+
 ## Shader Pipes and Resolvers
 
 A `ShaderPipe` evaluates ordered source and transform stages at each covered surface sample:
@@ -74,6 +100,10 @@ A `ShaderPipe` evaluates ordered source and transform stages at each covered sur
 Pipes are validated prior to rendering. There are no Python callbacks or dynamic allocations during rasterisation.
 
 ## Camera Output and Digitisation
+
+Each camera owns `background_value` (default `0.0`), used for uncovered samples
+in all buffer modes. It is also preserved by camera CSV save/load.
+`RasterConfig` does not define a background value.
 
 Each camera owns `output_files: []const ImageSaveOpts`. Every file has its own:
 - `format`: `.bmp`, `.tiff`, `.ppm`, `.fimg`, `.csv`.

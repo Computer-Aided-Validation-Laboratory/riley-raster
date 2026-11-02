@@ -54,6 +54,7 @@ pub fn saveCamera(
         camera_input.focal_length,
     });
     try writer.print("{s},{d}\n", .{ "sub_sample", camera_input.sub_sample });
+    try writer.print("{s},{e}\n", .{ "background_value", camera_input.background_value });
     var pos_val = camera_input.pos_world;
     var rot_val = camera_input.rot_world;
 
@@ -213,6 +214,7 @@ pub const LoadedCamera = struct {
                 try requireValue(&kv, "sub_sample"),
                 10,
             ),
+            .background_value = try parseOptionalFloatValue(&kv, "background_value", 0.0),
             .distort = try loadDistort(&kv, poly),
             .coord_sys = coord_sys,
         };

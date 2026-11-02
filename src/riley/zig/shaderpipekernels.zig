@@ -177,7 +177,7 @@ pub fn PipeKernel(comptime N: usize) type {
             var temp_mat = MatSlice(F).init(&temporary, cfg.max_nodal_fields, 1);
             var stage_ctx = ctx_shade;
             stage_ctx.scratch_idx = 0;
-            stage_ctx.exclusive_subpx_target = true;
+            stage_ctx.simd_full_vector_store_safe = false;
 
             for (pipe.stages, 0..) |*stage, si| switch (stage.*) {
                 .source => |*src| {
@@ -306,7 +306,7 @@ pub fn PipeKernel(comptime N: usize) type {
             pipe.resolver.evaluate(&outputs, pipe.constants, pipe.channels, &resolved);
             for (0..pipe.channels) |ch| {
                 const idx = ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx;
-                if (ctx_shade.exclusive_subpx_target) {
+                if (!ctx_shade.simd_full_vector_store_safe) {
                     const lanes: [S]F = resolved[ch];
                     const mask: [S]bool = v_mask_active;
                     inline for (0..S) |lane| if (mask[lane]) {

@@ -19,6 +19,7 @@ def test_extended_distort_camera_io_roundtrip(tmp_path: Path) -> None:
         roi_cent_world=(0.0, 0.0, 0.0),
         focal_length=0.05,
         sub_sample=1,
+        background_value=37.125,
         distort_model=2,
         distort_s1=1.1e-3,
         distort_s2=-1.2e-3,
@@ -30,6 +31,7 @@ def test_extended_distort_camera_io_roundtrip(tmp_path: Path) -> None:
     riley.save_camera(str(tmp_path), "camera.csv", 0, camera)
     loaded = riley.load_camera(str(tmp_path), "camera.csv")
 
+    assert loaded.background_value == camera.background_value
     assert loaded.distort_s1 == pytest.approx(camera.distort_s1)
     assert loaded.distort_s2 == pytest.approx(camera.distort_s2)
     assert loaded.distort_s3 == pytest.approx(camera.distort_s3)
@@ -50,7 +52,9 @@ def test_stereo_camera_io_reports_physical_opencv_baseline(
         focal_length=0.05,
         sub_sample=2,
     )
+    cam0.background_value = 11.25
     cam1 = copy.deepcopy(cam0)
+    cam1.background_value = 23.5
     cam1.pos_world = (0.0675, 0.0175, 0.1500)
     cam1.rot_world = (0.0, 0.35, 0.0)
 
@@ -89,6 +93,8 @@ def test_stereo_camera_io_reports_physical_opencv_baseline(
         str(tmp_path),
         "stereo_data_opencv.csv",
     )
+    assert loaded_cam0.background_value == cam0.background_value
+    assert loaded_cam1.background_value == cam1.background_value
     np.testing.assert_allclose(loaded_cam0.pos_world, cam0.pos_world, atol=1.0e-12)
     np.testing.assert_allclose(loaded_cam1.pos_world, cam1.pos_world, atol=1.0e-12)
 
