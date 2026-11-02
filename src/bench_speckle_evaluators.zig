@@ -130,7 +130,7 @@ fn recordNeighbors(opts: Options, resolved: policy.Config) ?u8 {
         opts.neighbors orelse policy.default_neighborhood
     else
         resolved.neighborhood() orelse return null;
-    return @backingInt(neighbors);
+    return @intFromEnum(neighbors);
 }
 
 fn listEvaluators() void {
@@ -143,7 +143,7 @@ fn listEvaluators() void {
         std.debug.print("{s}{{\"evaluator\":\"{s}\",\"pattern\":", .{ if (i == 0) "" else ",", policy.evaluatorName(std.meta.activeTag(cfg)) });
         if (cfg.pattern()) |pattern| std.debug.print("\"{s}\"", .{@tagName(pattern)}) else std.debug.print("null", .{});
         std.debug.print(",\"neighbors\":", .{});
-        if (cfg.neighborhood()) |neighbors| std.debug.print("{d}", .{@backingInt(neighbors)}) else std.debug.print("null", .{});
+        if (cfg.neighborhood()) |neighbors| std.debug.print("{d}", .{@intFromEnum(neighbors)}) else std.debug.print("null", .{});
         std.debug.print(",\"soft_edges\":", .{});
         if (cfg.edges()) |edges| std.debug.print("{}", .{edges == .soft}) else std.debug.print("null", .{});
         std.debug.print("}}", .{});
@@ -369,7 +369,7 @@ test "speckle benchmark rejects occluded samples but keeps closer depth updates"
     tiles[0].overlap_start = 0;
     tiles[0].overlap_count = 1;
     tiles[0].bins = @splat(.{});
-    const one_root_bin = @backingInt(@import("riley/zig/elemtilebinning.zig").ElemBin.tri6_one_root);
+    const one_root_bin = @intFromEnum(@import("riley/zig/elemtilebinning.zig").ElemBin.tri6_one_root);
     tiles[0].bins[one_root_bin] = .{ .start = 0, .count = 1 };
     var overlaps = [_]@import("riley/zig/elemtilebinning.zig").OverlapBBox{ overlap, overlap };
     overlaps[0].elem_idx = 0;
@@ -402,7 +402,7 @@ test "speckle benchmark root bins preserve production facing and multi-root slot
     const fixture = try TestFixture.init(arena.allocator(), opts, 8);
     for (fixture.geometry.tiling.active_tiles) |tile| {
         inline for (.{ bins.ElemBin.tri6_one_root, bins.ElemBin.tri6_multi_root }) |bin| {
-            const range = tile.bins[@backingInt(bin)];
+            const range = tile.bins[@intFromEnum(bin)];
             for (fixture.geometry.tiling.overlaps[range.start .. range.start + range.count]) |overlap| {
                 const nodes = try frontend.loadElemVec3Slices(6, F, &fixture.geometry.coords, overlap.elem_idx);
                 var projected: frontend.RasterCoords2D(6) = undefined;

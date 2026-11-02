@@ -866,14 +866,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     else
                         values;
                 },
-                .list_naive => evalSpeckleSIMDImpl(
-                    soft_edges,
-                    evalSpeckleList2DNaiveImpl,
-                    u,
-                    v,
-                    resources.data.list,
-                    resources.data.list.params.background,
-                ),
+                .list_naive => evalSpeckleListNaiveSIMDImpl(soft_edges, u, v, resources.data.list),
                 .list_indexed => blk: {
                     const strip = resources.data.strip_list;
                     if (strip.centers.len != 0) break :blk evalSpeckleSIMDImpl(soft_edges, evalFixedStripSpeckleList2DImpl, u, v, strip, strip.params.background);
@@ -882,9 +875,9 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 .cell_binned => blk: {
                     const binned = resources.data.cell_binned;
                     break :blk switch (binned.records) {
-                        .disks => evalSpeckleSIMDImpl(soft_edges, evalFullCellBinnedSpeckle2D, u, v, binned, binned.params.background),
-                        .strided => evalSpeckleSIMDImpl(soft_edges, evalStridedCellBinnedSpeckle2D, u, v, binned, binned.params.background),
-                        .gaussian => evalSpeckleSIMDImpl(soft_edges, evalGaussianCellBinnedSpeckle2D, u, v, binned, binned.params.background),
+                        .disks => evalCellBinnedSpeckleSIMDImpl(soft_edges, .disks, u, v, binned),
+                        .strided => evalCellBinnedSpeckleSIMDImpl(soft_edges, .strided, u, v, binned),
+                        .gaussian => evalCellBinnedSpeckleSIMDImpl(soft_edges, .gaussian, u, v, binned),
                     };
                 },
                 .classified_indexed => evalClassifiedIndexedSpeckleSIMDImpl(u, v, active, &resources.data.classified),
@@ -2565,6 +2558,175 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         // SIMD Evaluation
         // --------------------------------------------------------------------------------------
 
+        fn speckleDiskMaskSIMD(comptime soft_edges: bool, distance2: VecSF, radius: VecSF, edge: F) VecSF {
+            const zero: VecSF = @splat(0);
+            const one: VecSF = @splat(1);
+            const outer = if (speckle_shape == .disk and soft_edges) radius + @as(VecSF, @splat(edge)) else radius;
+            const outer2 = outer * outer;
+            const mask = if (comptime speckle_shape == .gaussian) blk: {
+                if (!@reduce(.Or, distance2 < outer2)) return zero;
+                const sigma = radius / @as(VecSF, @splat(3));
+                break :blk @exp(@as(VecSF, @splat(-0.5)) * distance2 / (sigma * sigma));
+            } else if (comptime !soft_edges) one else blk: {
+                const inner = @max(zero, radius - @as(VecSF, @splat(edge)));
+                const inner2 = inner * inner;
+                const t = @max(zero, @min(one, (distance2 - inner2) / (outer2 - inner2)));
+                const smooth = one - t * t * (@as(VecSF, @splat(3)) - @as(VecSF, @splat(2)) * t);
+                break :blk @select(F, distance2 <= inner2, one, smooth);
+            };
+            return @select(F, distance2 < outer2, mask, zero);
+        }
+
+        fn evalSpeckleListNaiveVariableGaussianSIMDImpl(u: VecSF, v: VecSF, speckles: SpeckleList2D) VecSF {
+            const p = speckles.params;
+            const background: VecSF = @splat(p.background);
+            if (speckles.disks.len == 0 or p.foreground == p.background) return background;
+            const finite = (@abs(u) < @as(VecSF, @splat(std.math.inf(F)))) & (@abs(v) < @as(VecSF, @splat(std.math.inf(F))));
+            const zero: VecSF = @splat(0);
+            const one: VecSF = @splat(1);
+            const px = @max(zero, @min(one, @select(F, finite, u, zero))) * @as(VecSF, @splat(p.cells_per_uv[0]));
+            const py = @max(zero, @min(one, @select(F, finite, v, zero))) * @as(VecSF, @splat(p.cells_per_uv[1]));
+            // Exp is monotone on supported nonpositive exponents, so only the
+            // strongest one needs evaluating. Min ignores NaNs from underflowed
+            // sigma² just as the scalar coverage max ignores their NaN masks.
+            var nearest: VecSF = @splat(std.math.inf(F));
+            for (speckles.disks) |disk| {
+                const dx = px - @as(VecSF, @splat(disk.center[0]));
+                const dy = py - @as(VecSF, @splat(disk.center[1]));
+                const d2 = dx * dx + dy * dy;
+                const sigma = disk.radius / 3;
+                const exponent = @as(VecSF, @splat(-0.5)) * d2 / @as(VecSF, @splat(sigma * sigma));
+                nearest = @min(nearest, -@select(F, d2 < @as(VecSF, @splat(disk.radius * disk.radius)), exponent, @as(VecSF, @splat(-std.math.inf(F)))));
+            }
+            const coverage = @exp(-nearest);
+            return @select(F, finite, background + coverage * @as(VecSF, @splat(p.foreground - p.background)), background);
+        }
+
+        fn evalSpeckleListNaiveSIMDImpl(comptime soft_edges: bool, u: VecSF, v: VecSF, speckles: SpeckleList2D) VecSF {
+            const p = speckles.params;
+            if (comptime speckle_shape == .gaussian) {
+                if (p.radius_jitter != 0) return evalSpeckleListNaiveVariableGaussianSIMDImpl(u, v, speckles);
+            }
+            const background: VecSF = @splat(p.background);
+            if (speckles.disks.len == 0 or p.foreground == p.background) return background;
+            const finite = (@abs(u) < @as(VecSF, @splat(std.math.inf(F)))) & (@abs(v) < @as(VecSF, @splat(std.math.inf(F))));
+            const zero: VecSF = @splat(0);
+            const one: VecSF = @splat(1);
+            const px = @max(zero, @min(one, @select(F, finite, u, zero))) * @as(VecSF, @splat(p.cells_per_uv[0]));
+            const py = @max(zero, @min(one, @select(F, finite, v, zero))) * @as(VecSF, @splat(p.cells_per_uv[1]));
+            var coverage = zero;
+            var nearest: VecSF = @splat(std.math.inf(F));
+            for (speckles.disks) |disk| {
+                const dx = px - @as(VecSF, @splat(disk.center[0]));
+                const dy = py - @as(VecSF, @splat(disk.center[1]));
+                if (comptime speckle_shape == .gaussian) {
+                    nearest = @min(nearest, dx * dx + dy * dy);
+                } else {
+                    coverage = @max(coverage, speckleDiskMaskSIMD(soft_edges, dx * dx + dy * dy, @splat(disk.radius), if (soft_edges) p.edge_softness else 0));
+                    if (@reduce(.And, coverage == one)) break;
+                }
+            }
+            if (comptime speckle_shape == .gaussian) coverage = @max(zero, speckleDiskMaskSIMD(soft_edges, nearest, @splat(p.radius_mean), 0));
+            return @select(F, finite, background + coverage * @as(VecSF, @splat(p.foreground - p.background)), background);
+        }
+
+        fn evalCellBinnedSpeckleSIMDImpl(comptime soft_edges: bool, comptime layout: CellBinnedLayout, u: VecSF, v: VecSF, binned: CellBinnedSpeckle2D) VecSF {
+            const p = binned.params;
+            const background: VecSF = @splat(p.background);
+            if (p.foreground == p.background) return background;
+            const finite = (@abs(u) < @as(VecSF, @splat(std.math.inf(F)))) & (@abs(v) < @as(VecSF, @splat(std.math.inf(F))));
+            const zero: VecSF = @splat(0);
+            const one: VecSF = @splat(1);
+            const px = @max(zero, @min(one, @select(F, finite, u, zero))) * @as(VecSF, @splat(p.cells_per_uv[0]));
+            const py = @max(zero, @min(one, @select(F, finite, v, zero))) * @as(VecSF, @splat(p.cells_per_uv[1]));
+            // Sanitized, clamped procedural coordinates are nonnegative; truncation is floor.
+            const cx: [S]usize = @as(@Vector(S, usize), @intFromFloat(px));
+            const cy: [S]usize = @as(@Vector(S, usize), @intFromFloat(py));
+            const first_cell = cy[0] * binned.dims[0] + cx[0];
+            var coherent = true;
+            for (1..S) |lane| coherent = coherent and cy[lane] * binned.dims[0] + cx[lane] == first_cell;
+            if (layout != .gaussian and coherent) {
+                const range: [2]usize = if (layout == .strided) .{ first_cell * 9, first_cell * 9 + binned.records.strided.counts[first_cell] } else .{ binned.offsets[first_cell], binned.offsets[first_cell + 1] };
+                var coverage = zero;
+                var nearest: VecSF = @splat(std.math.inf(F));
+                for (range[0]..range[1]) |index| {
+                    const disk = if (layout == .strided) SpeckleDisk2D{ .center = .{ binned.records.strided.coordinates[index], binned.records.strided.coordinates[binned.records.strided.coordinates.len / 2 + index] }, .radius = p.radius_mean } else binned.records.disks[index];
+                    const dx = px - @as(VecSF, @splat(disk.center[0]));
+                    const dy = py - @as(VecSF, @splat(disk.center[1]));
+                    if (comptime layout == .strided and speckle_shape == .gaussian) {
+                        nearest = @min(nearest, dx * dx + dy * dy);
+                    } else {
+                        coverage = @max(coverage, speckleDiskMaskSIMD(soft_edges, dx * dx + dy * dy, @splat(disk.radius), if (soft_edges) p.edge_softness else 0));
+                    }
+                }
+                if (comptime layout == .strided and speckle_shape == .gaussian) coverage = @max(zero, speckleDiskMaskSIMD(soft_edges, nearest, @splat(p.radius_mean), 0));
+                return @select(F, finite, background + coverage * @as(VecSF, @splat(p.foreground - p.background)), background);
+            }
+            var starts: [S]usize = undefined;
+            var counts: [S]usize = undefined;
+            var max_count: usize = 0;
+            for (0..S) |lane| {
+                const cell = cy[lane] * binned.dims[0] + cx[lane];
+                const range: [2]usize = if (layout == .strided) .{ cell * 9, cell * 9 + binned.records.strided.counts[cell] } else .{ binned.offsets[cell], binned.offsets[cell + 1] };
+                starts[lane] = range[0];
+                counts[lane] = range[1] - range[0];
+                max_count = @max(max_count, counts[lane]);
+            }
+            var coverage = zero;
+            var nearest: VecSF = @splat(std.math.inf(F));
+            for (0..max_count) |ii| {
+                var xs: [S]F = @splat(std.math.inf(F));
+                var ys: [S]F = @splat(0);
+                var rs: [S]F = @splat(p.radius_mean);
+                var outer: [S]F = @splat(0);
+                var sigma: [S]F = @splat(1);
+                for (0..S) |lane| {
+                    // Strided cells have nine slots with infinity-padded absent records.
+                    if (layout != .strided and ii >= counts[lane]) continue;
+                    const index = starts[lane] + ii;
+                    switch (layout) {
+                        .strided => {
+                            xs[lane] = binned.records.strided.coordinates[index];
+                            ys[lane] = binned.records.strided.coordinates[binned.records.strided.coordinates.len / 2 + index];
+                        },
+                        .disks => {
+                            const disk = binned.records.disks[index];
+                            xs[lane] = disk.center[0];
+                            ys[lane] = disk.center[1];
+                            rs[lane] = disk.radius;
+                        },
+                        .gaussian => {
+                            const disk = binned.records.gaussian[index];
+                            xs[lane] = disk.center[0];
+                            ys[lane] = disk.center[1];
+                            outer[lane] = disk.outer2;
+                            sigma[lane] = disk.sigma2;
+                        },
+                    }
+                }
+                const dx = px - @as(VecSF, xs);
+                const dy = py - @as(VecSF, ys);
+                const d2 = dx * dx + dy * dy;
+                if (comptime layout == .strided and speckle_shape == .gaussian) {
+                    nearest = @min(nearest, d2);
+                } else {
+                    const mask = if (layout == .gaussian) blk: {
+                        const distances: [S]F = d2;
+                        var masks: [S]F = @splat(0);
+                        for (0..S) |lane| {
+                            if (distances[lane] < outer[lane]) masks[lane] = @exp(-0.5 * distances[lane] / sigma[lane]);
+                        }
+                        break :blk @as(VecSF, masks);
+                    } else speckleDiskMaskSIMD(soft_edges, d2, rs, if (soft_edges) p.edge_softness else 0);
+                    coverage = @max(coverage, mask);
+                }
+            }
+            if (comptime layout == .strided and speckle_shape == .gaussian) coverage = @max(zero, speckleDiskMaskSIMD(soft_edges, nearest, @splat(p.radius_mean), 0));
+            return @select(F, finite, background + coverage * @as(VecSF, @splat(p.foreground - p.background)), background);
+        }
+
+        // Finite inactive lanes still sample normally in the raw packet API.
+        // Check the packet once, then keep the common scalar lane loop unchecked.
         inline fn evalSpeckleSIMDImpl(
             comptime soft_edges: bool,
             comptime eval: anytype,
@@ -2573,15 +2735,16 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             input: anytype,
             background: F,
         ) VecSF {
+            const finite = (@abs(u) < @as(VecSF, @splat(std.math.inf(F)))) &
+                (@abs(v) < @as(VecSF, @splat(std.math.inf(F))));
             const coord_0: [S]F = u;
             const coord_1: [S]F = v;
             var values: [S]F = undefined;
-            for (0..S) |lane| {
-                values[lane] = if (std.math.isFinite(coord_0[lane]) and
-                    std.math.isFinite(coord_1[lane]))
-                    eval(soft_edges, coord_0[lane], coord_1[lane], input)
-                else
-                    background;
+            if (@reduce(.And, finite)) {
+                for (0..S) |lane| values[lane] = eval(soft_edges, coord_0[lane], coord_1[lane], input);
+            } else {
+                const valid: [S]bool = finite;
+                for (0..S) |lane| values[lane] = if (valid[lane]) eval(soft_edges, coord_0[lane], coord_1[lane], input) else background;
             }
             return values;
         }
@@ -4541,6 +4704,118 @@ test "cell binned review independent exhaustive field reference" {
                 try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(sampleScal(uv[0], uv[1], p, &resources))));
                 const lanes: [S]F = sampleSIMD(@splat(uv[0]), @splat(uv[1]), @splat(false), p, &resources);
                 for (lanes) |actual| try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(actual)));
+            }
+        }
+    }
+}
+
+test "Gaussian packets match independent fields at centers overlaps and underflowed sigma squared" {
+    @setEvalBranchQuota(100_000);
+    if (comptime !buildconfig.enable_all_evaluators) return;
+    const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
+    inline for (generation_configs) |config| {
+        const tag = comptime std.meta.activeTag(config);
+        if (comptime (tag != .list_naive and tag != .cell_binned) or config.pattern() != .gaussian) continue;
+        for (0..6) |variation| {
+            const tiny = @sqrt(std.math.floatMin(F) * std.math.floatEps(F)) * 1.5;
+            const radius: F = if (variation == 2 or variation == 3) tiny else if (config.neighborhood() == .one) 0.4 else 0.6;
+            const p: Speckle2DParams = .{
+                .evaluator = tag,
+                .pattern = .gaussian,
+                .neighbor_count = config.neighborhood(),
+                .cells_per_uv = .{ 1, 1 },
+                .radius_mean = radius,
+                .radius_jitter = if (variation == 3) tiny * 0.25 else if (variation == 1 or variation == 5) 0.08 else 0,
+                .occupancy = if (variation == 4) 0 else if (variation == 5) 0.7 else 1,
+                .foreground = if (variation == 5) -0.0 else 0.91,
+                .background = if (variation == 5) 0.83 else -0.0,
+            };
+            var resources = try Resources.init(std.testing.allocator, p);
+            defer resources.deinit(std.testing.allocator);
+            var points: [80][2]F = undefined;
+            var count: usize = 0;
+            for (0..5) |yy| {
+                for (0..5) |xx| {
+                    points[count] = .{ @as(F, @floatFromInt(xx)) / 4, @as(F, @floatFromInt(yy)) / 4 };
+                    count += 1;
+                }
+            }
+            for (0..2) |yy| {
+                for (0..2) |xx| {
+                    const disk = CellBinnedIndependentReference.disk(p, @intCast(xx), @intCast(yy)) orelse continue;
+                    for ([_]F{ -disk.radius, 0, disk.radius }) |offset| {
+                        const x = disk.xy[0] + offset;
+                        points[count] = .{ std.math.nextAfter(F, x, -std.math.inf(F)), disk.xy[1] };
+                        points[count + 1] = .{ x, disk.xy[1] };
+                        points[count + 2] = .{ std.math.nextAfter(F, x, std.math.inf(F)), disk.xy[1] };
+                        count += 3;
+                    }
+                }
+            }
+            var first: usize = 0;
+            while (first < count) : (first += S) {
+                var us: [S]F = undefined;
+                var vs: [S]F = undefined;
+                var active: [S]bool = undefined;
+                for (0..S) |lane| {
+                    const point = points[@min(first + lane, count - 1)];
+                    us[lane] = point[0];
+                    vs[lane] = point[1];
+                    active[lane] = lane % 2 == 0;
+                }
+                const values: [S]F = sampleSIMD(us, vs, active, p, &resources);
+                for (values, us, vs) |value, u, v| {
+                    const expected = if (comptime tag == .list_naive) blk: {
+                        if (resources.data.list.disks.len == 0) break :blk p.background;
+                        break :blk CellBinnedIndependentReference.sample(p, u, v);
+                    } else CellBinnedIndependentReference.sample(p, u, v);
+                    try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(value)));
+                }
+            }
+        }
+    }
+}
+
+test "packet adapters preserve finite inactive and nonfinite lane contracts bitwise" {
+    @setEvalBranchQuota(100_000);
+    if (comptime !buildconfig.enable_all_evaluators) return;
+    const Bits = std.meta.Int(.unsigned, @bitSizeOf(F));
+    inline for (kernel_configs, 0..) |config, index| {
+        const tag = comptime std.meta.activeTag(config);
+        if (comptime tag != .cell_hash and tag != .list_naive and tag != .list_indexed and tag != .cell_binned) continue;
+        for ([_]F{ 0, 0.08 }) |jitter| {
+            for ([_]F{ 0, 0.7, 1 }) |occupancy| {
+                const params: Speckle2DParams = .{
+                    .evaluator = tag,
+                    .pattern = config.pattern().?,
+                    .neighbor_count = config.neighborhood(),
+                    .edge_softness = if (config.edges() == .soft) 0.04 else 0,
+                    .cells_per_uv = .{ 3.17, 2.31 },
+                    .radius_mean = 0.35,
+                    .radius_jitter = jitter,
+                    .occupancy = occupancy,
+                    .background = -0.0,
+                    .foreground = 0.9,
+                };
+                var resources = try Resources.init(std.testing.allocator, params);
+                defer resources.deinit(std.testing.allocator);
+                const coords = [_]F{ -1, -0.0, 0, 0.17, 0.5, 1, 2, std.math.nan(F), std.math.inf(F), -std.math.inf(F) };
+                for (0..coords.len * coords.len) |batch| {
+                    var us: [S]F = undefined;
+                    var vs: [S]F = undefined;
+                    var active: [S]bool = undefined;
+                    for (0..S) |lane| {
+                        us[lane] = coords[(batch + lane) % coords.len];
+                        vs[lane] = coords[(batch / coords.len + lane * 3) % coords.len];
+                        active[lane] = (batch + lane) % 3 == 0;
+                    }
+                    const values: [S]F = Kernel(index).sampleSIMD(us, vs, active, params, &resources);
+                    for (values, us, vs, active) |value, u, v, enabled| {
+                        const finite = std.math.isFinite(u) and std.math.isFinite(v);
+                        const expected = if (finite and (config.pattern() != .perlin or enabled)) Kernel(index).sampleScal(u, v, params, &resources) else params.background;
+                        try std.testing.expectEqual(@as(Bits, @bitCast(expected)), @as(Bits, @bitCast(value)));
+                    }
+                }
             }
         }
     }
