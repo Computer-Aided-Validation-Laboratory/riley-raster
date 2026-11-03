@@ -27,7 +27,6 @@ pub const SpeckleDisk2D = speckle.SpeckleDisk2D;
 pub const SpeckleList2D = speckle.SpeckleList2D;
 pub const SpeckleClassificationState = speckle.SpeckleClassificationState;
 pub const ClassifiedIndexedSpeckle2D = speckle.ClassifiedIndexedSpeckle2D;
-pub const DirectFixedSpeckleCell2D = speckle.DirectFixedSpeckleCell2D;
 pub const DirectFixedSpeckle2D = speckle.DirectFixedSpeckle2D;
 pub const SpeckleMask2D = speckle.SpeckleMask2D;
 

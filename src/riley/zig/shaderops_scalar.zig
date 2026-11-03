@@ -839,8 +839,8 @@ test "direct fixed scalar handles active inactive cells and scaling" {
     inline for (speckle.kernel_configs, 0..) |config, kernel_index| {
         if (comptime std.meta.activeTag(config) != .direct_fixed) continue;
 
-        const inactive: speckle.DirectFixedSpeckleCell2D = 0;
-        const cells = [_]speckle.DirectFixedSpeckleCell2D{
+        const inactive: u64 = 0;
+        const cells = [_]u64{
             0x0000_8000_8000_0001,
             inactive,
             inactive,

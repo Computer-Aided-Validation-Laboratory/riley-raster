@@ -211,11 +211,10 @@ pub const ClassifiedIndexedSpeckle2D = struct {
     dims: [2]usize,
 };
 
-pub const DirectFixedSpeckleCell2D = u64;
-
 pub const DirectFixedSpeckle2D = struct {
     params: Speckle2DParams,
-    cells: []const DirectFixedSpeckleCell2D,
+    /// Packed descriptors; zero denotes an inactive cell.
+    cells: []const u64,
     cell_origin: [2]i64,
     cell_dims: [2]usize,
     radius2: F,
@@ -1274,10 +1273,10 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             params: Speckle2DParams,
         ) !DirectFixedSpeckle2D {
             const cell_bounds = speckleProceduralCellBounds(params, 0) orelse return error.DirectFixedSpeckleTooLarge;
-            _ = std.math.mul(usize, cell_bounds.count, @sizeOf(DirectFixedSpeckleCell2D)) catch
+            _ = std.math.mul(usize, cell_bounds.count, @sizeOf(u64)) catch
                 return error.DirectFixedSpeckleTooLarge;
 
-            const cells = try allocator.alloc(DirectFixedSpeckleCell2D, cell_bounds.count);
+            const cells = try allocator.alloc(u64, cell_bounds.count);
             errdefer allocator.free(cells);
             @memset(cells, 0);
             if (params.occupancy != 0.0) {
@@ -3072,8 +3071,6 @@ fn ImplementationTests(comptime config: speckleconfig.Config) type {
             const inactive = try Impl.generateDirectFixedSpeckle2D(testing.allocator, inactive_params);
             defer deinitTestResources(.{ .data = .{ .direct_fixed = inactive } });
             for (inactive.cells) |descriptor| try testing.expectEqual(@as(u64, 0), descriptor);
-
-            try testing.expectEqual(@as(usize, 8), @sizeOf(DirectFixedSpeckleCell2D));
             try testing.expect(first.cell_dims[0] != first.cell_dims[1]);
             try testing.expectEqual(params.radius_mean * params.radius_mean, first.radius2);
             for (first.cells, 0..) |descriptor, index| {
@@ -3627,7 +3624,7 @@ fn ImplementationTests(comptime config: speckleconfig.Config) type {
         test "direct fixed prepared SIMD handles active and inactive lanes" {
             if (comptime Impl.evaluator != .direct_fixed) return;
 
-            const cells = [_]DirectFixedSpeckleCell2D{
+            const cells = [_]u64{
                 0x0000_8000_8000_0001,
                 0,
                 0,
