@@ -566,7 +566,6 @@ fn rasterDirectSIMDImpl(
             ShaderKern.shadeSIMD(
                 GeomKern.coord_space,
                 ctx_shade,
-                ctx_report,
                 v_depth_mask,
                 res.v_weights,
                 v_xi,
@@ -877,7 +876,6 @@ fn rasterNewtonMultiSIMDImpl(
                 interp_data,
                 shader_buf,
                 shader,
-                ctx_report,
                 &subpx_scratch.image,
             );
         }
@@ -1462,7 +1460,6 @@ fn rasterNewtonSIMDImpl(
             ShaderKern.shadeSIMD(
                 GeomKern.coord_space,
                 ctx_shade,
-                ctx_report,
                 v_depth_mask,
                 v_weights,
                 v_xi,
@@ -1746,7 +1743,6 @@ fn rasterSteppedSIMDFixP(
             ShaderKern.shadeSIMD(
                 GeomKern.coord_space,
                 ctx_shade,
-                ctx_report,
                 v_depth_mask,
                 v_weights,
                 v_xi,
@@ -1996,7 +1992,6 @@ fn rasterSteppedSIMDFloat(
             ShaderKern.shadeSIMD(
                 GeomKern.coord_space,
                 ctx_shade,
-                ctx_report,
                 v_depth_mask,
                 v_w,
                 v_xi,

@@ -118,7 +118,7 @@ def main() -> None:
         riley.MeshType.quad8,
         coords,
         connect,
-        riley.MeshShaderSet(direct=speckle, ir=ir_pipe),
+        riley.MeshShaderSet(mono=speckle, ir=ir_pipe),
         disp=disp,
     )
 

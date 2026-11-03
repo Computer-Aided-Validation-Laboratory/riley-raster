@@ -24,14 +24,14 @@ const DistortCase = enum {
 fn buildDistort(distort_case: DistortCase) riley.DistortParams {
     return switch (distort_case) {
         .none => .none,
-        .brown_con => .{ .brown_con = riley.BrownCon.Params{
+        .brown_con => .{ .brown_con = riley.BrownConParams{
             .k1 = -0.2,
             .k2 = 0.1,
             .k3 = 0.0,
             .p1 = 0.0001,
             .p2 = -0.0001,
         } },
-        .brown_con_ext => .{ .brown_con_ext = riley.BrownConExt.Params{
+        .brown_con_ext => .{ .brown_con_ext = riley.BrownConExtParams{
             .k1 = -0.2,
             .k2 = 0.1,
             .k3 = -0.01,

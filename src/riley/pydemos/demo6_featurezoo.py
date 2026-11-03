@@ -182,7 +182,7 @@ def build_scene(
                 mesh_type,
                 coords,
                 connect,
-                riley.MeshShaderSet(direct=shader),
+                riley.MeshShaderSet(mono=shader),
                 disp=disp if index % 2 else None,
                 normal_type=(
                     riley.NormalType.none,

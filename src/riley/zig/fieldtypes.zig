@@ -15,6 +15,8 @@ const NDArray = @import("ndarray.zig").NDArray;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+// NOTE: this has to be in a separate file from meshtypes to avoid a circular dependency 
+// as shadertypes need access as well.
 pub const Field = struct {
     array: NDArray(F),
     array_mem: []F,

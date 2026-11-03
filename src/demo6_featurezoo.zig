@@ -190,7 +190,7 @@ fn loadMesh(
         break :blk .{
             .rgb_pipe = .{
                 .stages = stages,
-                .resolver = .{ .identity = ops.identity_channels_3 },
+                .resolver = ops.resolverIdentity(3),
             },
         };
     } else blk: {

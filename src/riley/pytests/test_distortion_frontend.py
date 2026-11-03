@@ -34,7 +34,7 @@ def test_distorted_triangle_interior_survives_tile_culling(
         riley.MeshType.tri3,
         coords,
         connect,
-        riley.MeshShaderSet(direct=shader),
+        riley.MeshShaderSet(mono=shader),
     )
     camera = riley.Camera(
         pixels_num=(200, 200),
@@ -52,9 +52,9 @@ def test_distorted_triangle_interior_survives_tile_culling(
         parallel=1,
         save_strategy=riley.SaveStrategy.memory,
     )
-    config.report = riley.ReportMode.off
+    config.report_perf = riley.ReportMode.off
     config.buffer_mode = buffer_mode
-    config.save_scaling = riley.ScaleStrategy.none
+
     config.edge_spacing_px = 1.0
 
     image = np.squeeze(riley.raster(mesh, camera, config))

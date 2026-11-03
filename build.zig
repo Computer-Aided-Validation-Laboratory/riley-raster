@@ -67,6 +67,21 @@ pub fn build(b: *std.Build) void {
     );
     b.installArtifact(shared_lib);
 
+    const abi_module = b.createModule(.{
+        .root_source_file = b.path("src/test_c_abi.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    abi_module.addIncludePath(b.path("src/riley/cython"));
+    abi_module.addCSourceFile(.{
+        .file = b.path("src/tests/c_abi_layout.c"),
+        .flags = &.{"-std=c11"},
+    });
+    const abi_test = b.addTest(.{ .root_module = abi_module, .use_llvm = true });
+    const abi_step = b.step("test-c-abi", "Check every public C descriptor against the C compiler layout");
+    abi_step.dependOn(&b.addRunArtifact(abi_test).step);
+
     const tests = [_]TestEntry{
         .{
             .step_name = "test-verif-basic",

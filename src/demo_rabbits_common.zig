@@ -296,7 +296,7 @@ fn makeMeshInput(
         stages[0] = ops.stageSource(pipe_source);
         const pipe: riley.ShaderPipeInput = .{
             .stages = stages,
-            .resolver = .{ .identity = ops.identity_channels_3 },
+            .resolver = ops.resolverIdentity(3),
         };
         if (render_as_multifield) {
             break :blk .{ .multifield_pipe = pipe };

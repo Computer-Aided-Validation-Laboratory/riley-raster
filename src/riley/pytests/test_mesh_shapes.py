@@ -506,7 +506,7 @@ def test_shape_create_mesh_end_to_end(
         MeshType.tri3,
         coords,
         connect,
-        riley.MeshShaderSet(direct=shader),
+        riley.MeshShaderSet(mono=shader),
         disp=(disp_x, disp_y, disp_z),
     )
     assert mesh.mesh_type == MeshType.tri3
@@ -514,7 +514,7 @@ def test_shape_create_mesh_end_to_end(
     assert mesh.connect.shape[1] == 3
     assert mesh.disp is not None
     assert mesh.disp.shape == (4, mesh.coords.shape[0], 3)
-    assert mesh.shaders.direct is not None
+    assert mesh.shaders.mono is not None
 
     for ii in range(mesh.coords.shape[0]):
         c = mesh.coords[ii]
@@ -526,7 +526,7 @@ def test_shape_create_mesh_end_to_end(
             assert np.isclose(mesh.disp[tt, ii, 1], disp_y[orig_idx, tt])
             assert np.isclose(mesh.disp[tt, ii, 2], disp_z[orig_idx, tt])
             assert np.isclose(
-                mesh.shaders.direct.field[tt, ii, 0],
+                mesh.shaders.mono.field[tt, ii, 0],
                 temp[orig_idx, tt],
             )
 
@@ -687,7 +687,7 @@ def test_platewithhole2d_riley_mesh_field_mapping(
         mesh_type_tri,
         coords,
         connect,
-        riley.MeshShaderSet(direct=shader),
+        riley.MeshShaderSet(mono=shader),
         disp=(disp_x, disp_y, disp_z),
     )
     assert mesh.mesh_type == MeshType.tri3
@@ -695,7 +695,7 @@ def test_platewithhole2d_riley_mesh_field_mapping(
     assert mesh.connect.shape[1] == 3
     assert mesh.disp is not None
     assert mesh.disp.shape == (4, mesh.coords.shape[0], 3)
-    assert mesh.shaders.direct is not None
+    assert mesh.shaders.mono is not None
 
     for ii in range(mesh.coords.shape[0]):
         c = mesh.coords[ii]
@@ -707,5 +707,5 @@ def test_platewithhole2d_riley_mesh_field_mapping(
             assert np.isclose(mesh.disp[tt, ii, 1], disp_y[orig_idx, tt])
             assert np.isclose(mesh.disp[tt, ii, 2], disp_z[orig_idx, tt])
             assert np.isclose(
-                mesh.shaders.direct.field[tt, ii, 0], temp[orig_idx, tt]
+                mesh.shaders.mono.field[tt, ii, 0], temp[orig_idx, tt]
             )

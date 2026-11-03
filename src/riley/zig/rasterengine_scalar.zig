@@ -421,7 +421,6 @@ pub fn rasterDirectScalComm(
                 },
                 shader_buf,
                 shader,
-                ctx_report,
                 &subpx_scratch.image,
             );
 
@@ -672,7 +671,6 @@ fn rasterNewtonImpl(
                 interp_data,
                 shader_buf,
                 shader,
-                ctx_report,
                 &subpx_scratch.image,
             );
         }
@@ -943,7 +941,6 @@ fn rasterNewtonMultiImpl(
                 interp_data,
                 shader_buf,
                 shader,
-                ctx_report,
                 &subpx_scratch.image,
             );
         }
@@ -1167,7 +1164,6 @@ fn rasterSteppedScalFixP(
                         interp_data,
                         shader_buf,
                         shader,
-                        ctx_report,
                         &subpx_scratch.image,
                     );
                 }
@@ -1364,7 +1360,6 @@ fn rasterSteppedScalFloat(
                         interp_data,
                         shader_buf,
                         shader,
-                        ctx_report,
                         &subpx_scratch.image,
                     );
                 }

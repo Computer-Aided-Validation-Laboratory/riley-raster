@@ -217,7 +217,7 @@ def test_flat_plate_bc_poly_render_equivalence(
         riley.MeshType.tri3,
         coords,
         connect,
-        riley.MeshShaderSet(direct=shader),
+        riley.MeshShaderSet(mono=shader),
     )
     camera = riley.Camera(
         pixels_num=(65, 49),
@@ -253,8 +253,8 @@ def test_flat_plate_bc_poly_render_equivalence(
         parallel=threads,
         save_strategy=riley.SaveStrategy.memory,
     )
-    config.report = riley.ReportMode.off
-    config.save_scaling = riley.ScaleStrategy.none
+    config.report_perf = riley.ReportMode.off
+
     brown_image = riley.raster(mesh, camera, config)
     poly_image = riley.raster(mesh, poly_camera, config)
     assert np.count_nonzero(brown_image) > 100

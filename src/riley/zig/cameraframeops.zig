@@ -102,7 +102,7 @@ pub fn fovFromCamRot(
 
 pub fn fovFromCamRotOverMeshes(
     cam_rot: rotation.Rotation,
-    meshes: []const meshtypes.MeshInput,
+    meshes: anytype,
 ) [2]F {
     return sceneops.extentInRotatedFrameOverMeshes(cam_rot, meshes);
 }
@@ -256,7 +256,7 @@ pub fn imageDistFrameCoordsTarg(
 }
 
 pub fn imageDistFrameMeshes(
-    meshes: []const meshtypes.MeshInput,
+    meshes: anytype,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
@@ -278,7 +278,7 @@ pub fn imageDistFrameMeshes(
 }
 
 pub fn imageDistFrameMeshesTarg(
-    meshes: []const meshtypes.MeshInput,
+    meshes: anytype,
     targ_world: vec.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,
@@ -390,7 +390,7 @@ pub fn posFrameMesh(
 }
 
 pub fn posFrameMeshes(
-    meshes: []const meshtypes.MeshInput,
+    meshes: anytype,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
@@ -415,7 +415,7 @@ pub fn posFrameMeshes(
 }
 
 pub fn posFrameMeshesTarg(
-    meshes: []const meshtypes.MeshInput,
+    meshes: anytype,
     targ_world: vec.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,
@@ -558,7 +558,7 @@ pub fn posFillFrameFromRotAndTarg(
 }
 
 pub fn posFillFrameFromRotOverMeshes(
-    meshes: []const meshtypes.MeshInput,
+    meshes: anytype,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
@@ -577,7 +577,7 @@ pub fn posFillFrameFromRotOverMeshes(
 }
 
 pub fn posFillFrameFromRotOverMeshesAndTarg(
-    meshes: []const meshtypes.MeshInput,
+    meshes: anytype,
     targ_world: vec.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,

@@ -19,21 +19,13 @@ pub const ops = @import("ops.zig");
 
 pub const raster = @import("../riley.zig").raster;
 pub const rasterInto = @import("../riley.zig").rasterInto;
-pub const rasterAdvanced = @import("../riley.zig").rasterAdvanced;
-pub const rasterAdvancedInto = @import("../riley.zig").rasterAdvancedInto;
 pub const calcAllFramesImageDims = @import("../riley.zig").calcAllFramesImageDims;
-pub const getThreadedIo = @import("../riley.zig").getThreadedIo;
-pub const RasterAdvancedOptions = @import("../riley.zig").RasterAdvancedOptions;
-pub const RenderGroup = @import("../riley.zig").RenderGroup;
-pub const ManagedRenderGroups = @import("../riley.zig").ManagedRenderGroups;
-pub const FrameBenchCapture = @import("../report.zig").FrameBenchCapture;
 
 // --------------------------------------------------------------------------------------
 // Mesh Types
 // --------------------------------------------------------------------------------------
 
 pub const MeshInput = @import("../meshtypes.zig").MeshInput;
-pub const MeshStatic = @import("../meshtypes.zig").MeshStatic;
 pub const MeshType = @import("../geometrykernels.zig").MeshType;
 pub const NormalType = @import("../normals.zig").NormalType;
 pub const Coords = @import("../meshtypes.zig").Coords;
@@ -58,17 +50,13 @@ pub const CameraPlaneMetrics = @import("../cameratypes.zig").CameraPlaneMetrics;
 // Camera Models
 // --------------------------------------------------------------------------------------
 
-pub const BrownCon = @import("../cameramodels.zig").BrownCon;
-pub const BrownConExt = @import("../cameramodels.zig").BrownConExt;
 pub const BrownConParams = @import("../cameramodels.zig").BrownConParams;
 pub const BrownConExtParams = @import("../cameramodels.zig").BrownConExtParams;
 pub const BrownConPoly = @import("../cameramodels.zig").BrownConPoly;
-pub const BrownConExtPoly = @import("../cameramodels.zig").BrownConExtPoly;
 pub const BrownConExtPolyParams = @import("../cameramodels.zig").BrownConExtPolyParams;
 pub const PolyMap = @import("../cameramodels.zig").PolyMap;
 pub const PolyMode = @import("../cameramodels.zig").PolyMode;
 pub const DistortParams = @import("../cameramodels.zig").DistortParams;
-pub const DistortModel = @import("../cameramodels.zig").DistortModel;
 pub const PointSpreadFunc = @import("../cameramodels.zig").PointSpreadFunc;
 pub const SeparablePSF = @import("../cameramodels.zig").SeparablePSF;
 pub const PixelBoxPSF = @import("../cameramodels.zig").PixelBoxPSF;
@@ -132,4 +120,16 @@ pub const SaveStrategy = @import("../rasterconfig.zig").SaveStrategy;
 pub const RenderMode = @import("../rasterconfig.zig").RenderMode;
 pub const ReportMode = @import("../rasterconfig.zig").ReportMode;
 pub const ValidateInput = @import("../rasterconfig.zig").ValidateInput;
-pub const GeometrySchedulingMode = @import("../rasterconfig.zig").GeometrySchedulingMode;
+
+// Input types used by scene builders and language adapters.
+pub const ScaleStrategy = @import("../imageops.zig").ScaleStrategy;
+pub const FuncCoordMode = @import("../shadertypes.zig").FuncCoordMode;
+pub const FuncChannel = @import("../shadertypes.zig").FuncChannel;
+pub const Lookup = @import("../shaderpipe.zig").Lookup;
+pub const HullMode = @import("../rasterconfig.zig").HullMode;
+pub const EdgeFunMode = @import("../rasterconfig.zig").EdgeFunMode;
+pub const NewtonSeedMode = @import("../rasterconfig.zig").NewtonSeedMode;
+pub const NewtonSeedReuse = @import("../rasterconfig.zig").NewtonSeedReuse;
+
+pub const max_channels = @import("../shaderpipe.zig").max_channels;
+pub const max_slots = @import("../shaderpipe.zig").max_slots;

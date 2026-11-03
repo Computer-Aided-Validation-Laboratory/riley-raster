@@ -29,14 +29,12 @@ def test_raster_config_accepts_validation_mode() -> None:
     assert config.validate_input is riley.ValidateInput.full
 
 
-def test_raster_config_exposes_explicit_image_save_modes() -> None:
-    assert tuple(riley.ImageSaveMode) == (
-        riley.ImageSaveMode.grey,
-        riley.ImageSaveMode.rgb,
-        riley.ImageSaveMode.multifield,
-        riley.ImageSaveMode.rgb_to_grey,
-        riley.ImageSaveMode.grey_to_rgb,
-    )
+def test_raster_config_has_no_obsolete_output_or_statistics_settings() -> None:
+    config = riley.RasterConfig()
+    assert not hasattr(config, "image_save_mode")
+    assert not hasattr(config, "save_bits")
+    assert not hasattr(config, "full_stats_save_iter_map")
+    assert not hasattr(riley.ReportMode, "full_stats")
 
 
 def test_raster_config_exposes_edge_fun_mode_and_halo() -> None:

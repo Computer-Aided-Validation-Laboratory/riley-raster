@@ -124,13 +124,13 @@ def main() -> None:
         mesh_type=riley.MeshType.tri6,
         coords=coords,
         connect=connect,
-        shaders=riley.MeshShaderSet(direct=speckle),
+        shaders=riley.MeshShaderSet(mono=speckle),
     )
     config.output_name_format = "demo10_1_direct_speckle"
     riley.raster(mesh, camera, config, out_dir=str(out_dir))
 
     # 2) Direct lambertian function shader
-    mesh.shaders = riley.MeshShaderSet(direct=lambertian)
+    mesh.shaders = riley.MeshShaderSet(mono=lambertian)
     config.output_name_format = "demo10_2_direct_lambertian"
     riley.raster(mesh, camera, config, out_dir=str(out_dir))
 

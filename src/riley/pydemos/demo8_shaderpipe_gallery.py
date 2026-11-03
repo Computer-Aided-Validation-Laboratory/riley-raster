@@ -54,7 +54,7 @@ def main() -> None:
         riley.MeshType.tri3opt,
         coords,
         connect,
-        riley.MeshShaderSet(direct=linear(0.0, 0.0)),
+        riley.MeshShaderSet(mono=linear(0.0, 0.0)),
     )
     position = riley.pos_frame_mesh(
         base_mesh,

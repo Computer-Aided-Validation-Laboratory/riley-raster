@@ -54,7 +54,7 @@ def main() -> None:
         coords=coords,
         connect=connect,
         shaders=riley.MeshShaderSet(
-            direct=riley.TextureShader(uvs=uvs, texture=texture),
+            mono=riley.TextureShader(uvs=uvs, texture=texture),
         ),
     )
 

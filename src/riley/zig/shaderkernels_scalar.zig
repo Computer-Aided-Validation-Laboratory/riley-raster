@@ -30,7 +30,6 @@ pub fn NodalKernel(comptime N: usize) type {
             interp: meshhit.RasterHit(N),
             shader_buf: *const shadertypes.LocalShaderBuff(N),
             shader: *const shadertypes.NodalPrepared,
-            ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
             comm.shadeNodalScalComm(
@@ -40,7 +39,6 @@ pub fn NodalKernel(comptime N: usize) type {
                 interp,
                 shader_buf,
                 shader,
-                ctx_report,
                 spx_image_scratch,
             );
         }
@@ -66,7 +64,6 @@ pub fn TexKernel(
             interp: meshhit.RasterHit(N),
             shader_buf: *const shadertypes.LocalShaderBuff(N),
             shader: *const shadertypes.TexPrepared(T, C),
-            ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
             comm.shadeTexScalComm(
@@ -78,7 +75,6 @@ pub fn TexKernel(
                 interp,
                 shader_buf,
                 shader,
-                ctx_report,
                 spx_image_scratch,
             );
         }
@@ -96,7 +92,6 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
             interp: meshhit.RasterHit(N),
             shader_buf: *const shadertypes.LocalShaderBuff(N),
             shader: *const shadertypes.TexMultiPrepared(T),
-            ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
             inline for (1..9) |C| {
@@ -108,7 +103,6 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
                         interp,
                         shader_buf,
                         &concrete,
-                        ctx_report,
                         spx_image_scratch,
                     );
                     return;
@@ -137,7 +131,6 @@ pub fn FuncKernel(
             interp: meshhit.MeshHit(N),
             shader_buf: *const shadertypes.LocalShaderBuff(N),
             shader: *const shadertypes.FuncPrepared,
-            ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
             const hit = comm.completeFuncHit(N, coord_space, interp, shader_buf, shader);
@@ -149,7 +142,6 @@ pub fn FuncKernel(
                 hit,
                 shader_buf,
                 shader,
-                ctx_report,
                 spx_image_scratch,
             );
         }

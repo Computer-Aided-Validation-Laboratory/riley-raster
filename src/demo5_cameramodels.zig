@@ -124,14 +124,14 @@ pub fn main(init: std.process.Init) !void {
         },
     };
 
-    const brown = riley.BrownCon.Params{
+    const brown = riley.BrownConParams{
         .k1 = -0.12,
         .k2 = 0.035,
         .p1 = 0.0002,
         .p2 = -0.0001,
     };
 
-    const brown_ext = riley.BrownConExt.Params{
+    const brown_ext = riley.BrownConExtParams{
         .k1 = brown.k1,
         .k2 = brown.k2,
         .k4 = -0.04,

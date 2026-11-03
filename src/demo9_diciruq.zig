@@ -209,7 +209,7 @@ pub fn main(init: std.process.Init) !void {
     const ir_rot = maths.Rotation.init(0.0, 0.0, 0.0);
 
     const distort: riley.DistortParams = .{
-        .brown_con = riley.BrownCon.Params{
+        .brown_con = riley.BrownConParams{
             .k1 = -0.2,
             .k2 = 0.1,
             .k3 = 0.0,

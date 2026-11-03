@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 
-from riley.cython.riley import (
+from riley.types import (
     FunctionShader,
     FunctionMultiShader,
     MeshShaderSet,
@@ -296,11 +296,11 @@ def _prepare_shader(
                 np.dtype(np.float32), np.dtype(np.float64),
             )
 
-            valid_shape = texture.ndim == 3 and texture.shape[0] in (1, 3)
+            valid_shape = texture.ndim == 3 and 1 <= texture.shape[0] <= 8
 
             if not valid_shape or not valid_dtype:
                 raise ValueError(
-                    "texture must be a supported dtype with 1 or 3 channels."
+                    "texture must be a supported dtype with one to eight channels."
                 )
 
             if np.issubdtype(texture.dtype, np.floating):
@@ -515,11 +515,6 @@ def _prepare_shader_set(
         return _prepare_shader(entry, nodes_num, source_node_idxs)
 
     return MeshShaderSet(
-        direct=(
-            _prepare_shader(shaders.direct, nodes_num, source_node_idxs)
-            if shaders.direct is not None
-            else None
-        ),
         mono=prepare_entry(shaders.mono),
         rgb=prepare_entry(shaders.rgb),
         ir=prepare_entry(shaders.ir),

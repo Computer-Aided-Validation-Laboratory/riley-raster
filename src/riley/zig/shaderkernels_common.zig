@@ -31,12 +31,8 @@ pub inline fn shadeNodalScalComm(
     interp: meshhit.RasterHit(N),
     shader_buf: *const shadertypes.LocalShaderBuff(N),
     shader: *const shadertypes.NodalPrepared,
-    ctx_report: anytype,
     spx_img_scratch: *MatSlice(F),
 ) void {
-    _ = ctx_report;
-    _ = ctx_report;
-
     if (comptime coord_space == CoordSpace.clip_px_leng) {
         shaderops.fillNodalClipScal(
             N,
@@ -71,12 +67,8 @@ pub inline fn shadeTexScalComm(
     interp: meshhit.RasterHit(N),
     shader_buf: *const shadertypes.LocalShaderBuff(N),
     shader: *const shadertypes.TexPrepared(T, C),
-    ctx_report: anytype,
     spx_img_scratch: *MatSlice(F),
 ) void {
-    _ = ctx_report;
-    _ = ctx_report;
-
     shadeTexScalDispatchSample(
         N,
         T,
@@ -182,14 +174,18 @@ pub inline fn completeFuncHit(
     shader: *const shadertypes.FuncPrepared,
 ) meshhit.MeshHit(N) {
     const selection = shader.hit_geometry.selection;
+
     if (selection.count() == 0) return base;
+
     var hit = base;
     if (selection.contains(.coords_ref)) {
         hit.coords_ref = meshhit.interpCoords(N, coord_space, &shader_buf.func_coords, base);
     }
+
     if (selection.contains(.coords_def)) {
         hit.coords_def = meshhit.interpCoords(N, coord_space, &shader_buf.func_coords, base);
     }
+
     if (selection.contains(.surf_norm)) {
         hit.surf_norm = meshhit.interpCoords(N, .clip_px_leng, &shader_buf.normals, base);
     }
@@ -207,7 +203,9 @@ pub inline fn completeFuncHitSIMD(
     shader: *const shadertypes.FuncPrepared,
 ) meshhit.MeshHitGeomSIMD {
     const selection = shader.hit_geometry.selection;
+
     if (selection.count() == 0) return .{};
+
     var hit: meshhit.MeshHitGeomSIMD = .{};
     if (selection.contains(.coords_ref)) {
         hit.coords_ref = meshhit.interpCoordsSIMD(
@@ -220,6 +218,7 @@ pub inline fn completeFuncHitSIMD(
             subpx_z,
         );
     }
+
     if (selection.contains(.coords_def)) {
         hit.coords_def = meshhit.interpCoordsSIMD(
             N,
@@ -231,6 +230,7 @@ pub inline fn completeFuncHitSIMD(
             subpx_z,
         );
     }
+
     if (selection.contains(.surf_norm)) {
         hit.surf_norm = meshhit.interpCoordsSIMD(
             N,
@@ -253,12 +253,8 @@ pub inline fn shadeFuncScalComm(
     interp: meshhit.MeshHit(N),
     shader_buf: *const shadertypes.LocalShaderBuff(N),
     shader: *const shadertypes.FuncPrepared,
-    ctx_report: anytype,
     spx_img_scratch: *MatSlice(F),
 ) void {
-    _ = ctx_report;
-    _ = ctx_report;
-
     if (comptime coord_space == CoordSpace.clip_px_leng) {
         shaderops.fillFuncClipScal(
             N,

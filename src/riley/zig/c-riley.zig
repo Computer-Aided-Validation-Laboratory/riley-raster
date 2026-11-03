@@ -6,31 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
-const cameratypes = @import("cameratypes.zig");
-const meshtypes = @import("meshtypes.zig");
-const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
-const buildconfig = @import("buildconfig.zig");
-const F = buildconfig.F;
-
-const cam = @import("cameraprojops.zig");
-const cameraio = @import("cameraio.zig");
-const cameraops = @import("cameraframeops.zig");
-const gk = @import("geometrykernels.zig");
-const iio = @import("imageio.zig");
-const imageops = @import("imageops.zig");
-const meshio = @import("meshio.zig");
-const meshpipe = @import("meshpipeline.zig");
-const ndarray = @import("ndarray.zig");
-const riley = @import("riley.zig");
-const rotation = @import("rotation.zig");
-const rastcfg = @import("rasterconfig.zig");
-const sceneops = @import("sceneops.zig");
-const shaderops = @import("shaderops.zig");
-const normals = @import("normals.zig");
-const shaderpipe = @import("shaderpipe.zig");
-const texops = @import("textureops.zig");
-const vec = @import("vecstack.zig");
+const riley = @import("api.zig");
+const maths = riley.maths;
+const ops = riley.ops;
+const dataio = riley.dataio;
+const F = maths.F;
 
 // --------------------------------------------------------------------------
 // Public C ABI Contract
@@ -44,16 +25,11 @@ const vec = @import("vecstack.zig");
 // entry points rather than this public C interface.
 // --------------------------------------------------------------------------
 comptime {
-    if (buildconfig.default_precision != f64) {
-        @compileError("The public Riley C ABI must be built with f64.");
-    }
-    if (buildconfig.default_simd != .on) {
-        @compileError("The public Riley C ABI must be built with SIMD on.");
-    }
+    if (F != f64) @compileError("The public Riley C ABI must be built with f64.");
 }
 
 const error_buf_len: usize = 512;
-const default_image_save_opts = [_]iio.ImageSaveOpts{
+const default_image_save_opts = [_]dataio.ImageSaveOpts{
     .{
         .format = .bmp,
         .file_bits = 8,
@@ -190,85 +166,28 @@ pub const CCameraInput = extern struct {
 };
 
 pub const CFuncShaderParams = extern struct {
-    coord_scale_0: F,
-    coord_scale_1: F,
-    coord_offset_0: F,
-    coord_offset_1: F,
+    coord_scale: [2]F,
+    coord_offset: [2]F,
     constant_value: F,
-    constant_value_rgb_0: F,
-    constant_value_rgb_1: F,
-    constant_value_rgb_2: F,
-    linear_coeff_0: F,
-    linear_coeff_1: F,
-    linear_coeff_2: F,
-    linear_coeff_rgb_00: F,
-    linear_coeff_rgb_01: F,
-    linear_coeff_rgb_02: F,
-    linear_coeff_rgb_10: F,
-    linear_coeff_rgb_11: F,
-    linear_coeff_rgb_12: F,
-    linear_coeff_rgb_20: F,
-    linear_coeff_rgb_21: F,
-    linear_coeff_rgb_22: F,
-    quadratic_coeff_0: F,
-    quadratic_coeff_1: F,
-    quadratic_coeff_2: F,
-    quadratic_coeff_3: F,
-    quadratic_coeff_4: F,
-    quadratic_coeff_5: F,
-    quadratic_coeff_rgb_00: F,
-    quadratic_coeff_rgb_01: F,
-    quadratic_coeff_rgb_02: F,
-    quadratic_coeff_rgb_03: F,
-    quadratic_coeff_rgb_04: F,
-    quadratic_coeff_rgb_05: F,
-    quadratic_coeff_rgb_10: F,
-    quadratic_coeff_rgb_11: F,
-    quadratic_coeff_rgb_12: F,
-    quadratic_coeff_rgb_13: F,
-    quadratic_coeff_rgb_14: F,
-    quadratic_coeff_rgb_15: F,
-    quadratic_coeff_rgb_20: F,
-    quadratic_coeff_rgb_21: F,
-    quadratic_coeff_rgb_22: F,
-    quadratic_coeff_rgb_23: F,
-    quadratic_coeff_rgb_24: F,
-    quadratic_coeff_rgb_25: F,
-    wave_num_scalar_0: F,
-    wave_num_scalar_1: F,
-    wave_num_rgb_0: F,
-    wave_num_rgb_1: F,
-    wave_num_rgb_2: F,
+    constant_value_rgb: [3]F,
+    linear_coeff: [3]F,
+    linear_coeff_rgb: [3][3]F,
+    quadratic_coeff: [6]F,
+    quadratic_coeff_rgb: [3][6]F,
+    wave_num_scalar: [2]F,
+    wave_num_rgb: [3]F,
     sinusoidal_bias: F,
-    sinusoidal_amp_0: F,
-    sinusoidal_amp_1: F,
-    sinusoidal_bias_rgb_0: F,
-    sinusoidal_bias_rgb_1: F,
-    sinusoidal_bias_rgb_2: F,
-    sinusoidal_amp_rgb_0: F,
-    sinusoidal_amp_rgb_1: F,
-    sinusoidal_amp_rgb_2: F,
-    checker_level_0: F,
-    checker_level_1: F,
+    sinusoidal_amp: [2]F,
+    sinusoidal_bias_rgb: [3]F,
+    sinusoidal_amp_rgb: [3]F,
+    checker_level: [2]F,
     checker_smooth_frequency: F,
-    lambertian_coeff_0: F,
-    lambertian_coeff_1: F,
-    lambertian_coeff_rgb_00: F,
-    lambertian_coeff_rgb_01: F,
-    lambertian_coeff_rgb_10: F,
-    lambertian_coeff_rgb_11: F,
-    lambertian_coeff_rgb_20: F,
-    lambertian_coeff_rgb_21: F,
+    lambertian_coeff: [2]F,
+    lambertian_coeff_rgb: [3][2]F,
     eggbox_mean: F,
     eggbox_contrast: F,
-    eggbox_pitch_0: F,
-    eggbox_pitch_1: F,
-    eggbox_phase_0: F,
-    eggbox_phase_1: F,
-    extra_0: F,
-    extra_1: F,
-    extra_2: F,
-    extra_3: F,
+    eggbox_pitch: [2]F,
+    eggbox_phase: [2]F,
 };
 
 pub const CFuncChannel = extern struct {
@@ -281,27 +200,48 @@ pub const CFuncChannel = extern struct {
     scaling_max: F,
 };
 
-pub const CShaderInput = extern struct {
-    shader_tag: u32,
+pub const CTextureData = extern union {
+    f: CArray3DF64,
+    u8: CArray3DU8,
+    u16: CArray3DU16,
+};
+
+pub const CTextureInput = extern struct {
     uvs: CArray2DF64,
-    tex: CArray3DF64,
-    tex_u8: CArray3DU8,
-    tex_u16: CArray3DU16,
-    texture_storage: u32,
+    data: CTextureData,
+    storage: u32,
     sample: u32,
     sample_mode: u32,
+};
+
+pub const CNodalInput = extern struct {
+    field: CArray3DF64,
+    scale_over: u32,
+};
+
+pub const CFunctionInput = extern struct {
+    uvs: CArray2DF64,
+    builtin: u32,
+    coord_mode: u32,
+    params: CFuncShaderParams,
+    channels: [*c]const CFuncChannel,
+    channels_len: usize,
+};
+
+pub const CShaderPayload = extern union {
+    texture: CTextureInput,
+    nodal: CNodalInput,
+    func: CFunctionInput,
+};
+
+pub const CShaderInput = extern struct {
+    shader_tag: u32,
     output_gain: F,
     output_offset: F,
     scaling_tag: u32,
     scaling_min: F,
     scaling_max: F,
-    nodal_field: CArray3DF64,
-    scale_over: u32,
-    func_shader_builtin: u32,
-    func_shader_coord_mode: u32,
-    func_shader_params: CFuncShaderParams,
-    func_channels: [*c]const CFuncChannel,
-    func_channels_len: usize,
+    value: CShaderPayload,
 };
 
 pub const CSlot = extern struct { kind: u32, index: u32 };
@@ -358,11 +298,15 @@ pub const CPipe = extern struct {
     constants_len: usize,
 };
 
+pub const CShaderExecution = extern union {
+    direct: CShaderInput,
+    pipe: CPipe,
+};
+
 pub const CShaderEntry = extern struct {
     format_tag: u32,
     execution_tag: u32,
-    direct_shader: CShaderInput,
-    pipe: CPipe,
+    value: CShaderExecution,
 };
 
 pub const CMeshInput = extern struct {
@@ -387,7 +331,8 @@ pub const CRasterConfig = extern struct {
     multiroot_mode: u32,
     multiroot_edge_fun_mode: u32,
     validate_input: u32,
-    report: u32,
+    report_perf: u32,
+    report_console: u8,
     tile_size_min: u16,
     tile_size_max: u16,
     disk_save_overlap: u8,
@@ -400,74 +345,9 @@ pub const CRasterConfig = extern struct {
     global_subpx_stripe_size_override: u16,
     raster_halo_px_override: u16,
     save_frame_buff_count: usize,
-    full_stats_save_solver_csv: u8,
-    full_stats_save_iter_map: u8,
-    full_stats_save_xi_map: u8,
-    full_stats_save_eta_map: u8,
-    full_stats_save_conv_map: u8,
-    full_stats_save_jac_det_map: u8,
-    full_stats_save_tile_timing_map: u8,
-    full_stats_save_tile_density_map: u8,
-    full_stats_save_tile_occupancy_map: u8,
-    full_stats_save_depth_map: u8,
-    full_stats_save_earlyout_map: u8,
-    full_stats_save_pixel_occupancy_map: u8,
     buffer_mode: u32,
     output_name_format: ?[*:0]const u8,
     edge_spacing_px: F,
-};
-
-const ShaderDirectBuilt = struct {
-    shader: shadertypes.PipeSourceInput,
-    uvs_array: ?ndarray.NDArray(F) = null,
-    tex_array_u8: ?ndarray.NDArray(u8) = null,
-    tex_array_u16: ?ndarray.NDArray(u16) = null,
-    tex_array_f: ?ndarray.NDArray(F) = null,
-    nodal_field_array: ?ndarray.NDArray(F) = null,
-    func_channels: []shadertypes.FuncChannel = &.{},
-
-    fn deinit(self: *ShaderDirectBuilt, allocator: std.mem.Allocator) void {
-        allocator.free(self.func_channels);
-        if (self.uvs_array) |*uvs_array| {
-            uvs_array.deinit(allocator);
-        }
-        if (self.tex_array_u8) |*tex_array| {
-            tex_array.deinit(allocator);
-        }
-        if (self.tex_array_u16) |*tex_array| {
-            tex_array.deinit(allocator);
-        }
-        if (self.tex_array_f) |*tex_array| {
-            tex_array.deinit(allocator);
-        }
-        if (self.nodal_field_array) |*nodal_field_array| {
-            nodal_field_array.deinit(allocator);
-        }
-    }
-};
-
-const MeshInputBuilt = struct {
-    mesh_input: meshtypes.MeshInput,
-    disp_array: ?ndarray.NDArray(F) = null,
-    direct_shaders: []ShaderDirectBuilt = &.{},
-    pipe_sources: []ShaderDirectBuilt = &.{},
-    pipe_stages: [][]shadertypes.ShaderPipeStageInput = &.{},
-    pipe_inputs: []shadertypes.ShaderPipeInput = &.{},
-
-    fn deinit(self: *MeshInputBuilt, allocator: std.mem.Allocator) void {
-        if (self.disp_array) |*disp_array| {
-            disp_array.deinit(allocator);
-        }
-        for (self.direct_shaders) |*direct_shader| {
-            direct_shader.deinit(allocator);
-        }
-        if (self.direct_shaders.len > 0) allocator.free(self.direct_shaders);
-        for (self.pipe_sources) |*source| source.deinit(allocator);
-        if (self.pipe_sources.len > 0) allocator.free(self.pipe_sources);
-        for (self.pipe_stages) |stages| allocator.free(stages);
-        if (self.pipe_stages.len > 0) allocator.free(self.pipe_stages);
-        if (self.pipe_inputs.len > 0) allocator.free(self.pipe_inputs);
-    }
 };
 
 fn clearLastError() void {
@@ -509,16 +389,11 @@ pub export fn rileyGetLastError(
     return copy_len;
 }
 
-fn cVec3ToVec3(in_vec: CVec3F64) vec.Vec3F {
-    return vec.initVec3(
-        F,
-        in_vec.x,
-        in_vec.y,
-        in_vec.z,
-    );
+fn cVec3ToVec3(in_vec: CVec3F64) maths.Vec3F {
+    return maths.Vec3F.initSlice(&.{ in_vec.x, in_vec.y, in_vec.z });
 }
 
-fn vec3ToCVec3(in_vec: vec.Vec3F) CVec3F64 {
+fn vec3ToCVec3(in_vec: maths.Vec3F) CVec3F64 {
     return .{
         .x = in_vec.get(0),
         .y = in_vec.get(1),
@@ -576,14 +451,14 @@ fn cMutSlice(
     return ptr[0..len];
 }
 
-fn meshTypeFromC(mesh_type: u32) !gk.MeshType {
+fn meshTypeFromC(mesh_type: u32) !riley.MeshType {
     return switch (mesh_type) {
-        @intFromEnum(gk.MeshType.tri3) => .tri3,
-        @intFromEnum(gk.MeshType.tri3opt) => .tri3opt,
-        @intFromEnum(gk.MeshType.tri6) => .tri6,
-        @intFromEnum(gk.MeshType.quad4) => .quad4,
-        @intFromEnum(gk.MeshType.quad8) => .quad8,
-        @intFromEnum(gk.MeshType.quad9) => .quad9,
+        @intFromEnum(riley.MeshType.tri3) => .tri3,
+        @intFromEnum(riley.MeshType.tri3opt) => .tri3opt,
+        @intFromEnum(riley.MeshType.tri6) => .tri6,
+        @intFromEnum(riley.MeshType.quad4) => .quad4,
+        @intFromEnum(riley.MeshType.quad8) => .quad8,
+        @intFromEnum(riley.MeshType.quad9) => .quad9,
         else => error.InvalidMeshType,
     };
 }
@@ -609,96 +484,96 @@ fn saveStrategyFromC(save_strategy: u32) !riley.SaveStrategy {
 fn reportModeFromC(report_mode: u32) !riley.ReportMode {
     return switch (report_mode) {
         0 => .off,
-        1, 2 => .bench,
+        1 => .bench,
         else => error.InvalidReportMode,
     };
 }
 
-fn bufferModeFromC(buffer_mode: u32) !rastcfg.BufferMode {
+fn bufferModeFromC(buffer_mode: u32) !riley.BufferMode {
     return switch (buffer_mode) {
-        @intFromEnum(rastcfg.BufferMode.tile_local) => .tile_local,
-        @intFromEnum(rastcfg.BufferMode.global_subpx_full) => .global_subpx_full,
-        @intFromEnum(rastcfg.BufferMode.global_subpx_stripe) => .global_subpx_stripe,
+        @intFromEnum(riley.BufferMode.tile_local) => .tile_local,
+        @intFromEnum(riley.BufferMode.global_subpx_full) => .global_subpx_full,
+        @intFromEnum(riley.BufferMode.global_subpx_stripe) => .global_subpx_stripe,
         else => error.InvalidBufferMode,
     };
 }
 
-fn subpxCenterMapFromC(subpx_map: u32) !cameratypes.SubPixelCenterMap {
+fn subpxCenterMapFromC(subpx_map: u32) !riley.SubPixelCenterMap {
     return switch (subpx_map) {
-        @intFromEnum(cameratypes.SubPixelCenterMap.full_in_mem) => .full_in_mem,
-        @intFromEnum(cameratypes.SubPixelCenterMap.per_tile) => .per_tile,
+        @intFromEnum(riley.SubPixelCenterMap.full_in_mem) => .full_in_mem,
+        @intFromEnum(riley.SubPixelCenterMap.per_tile) => .per_tile,
         else => error.InvalidSubPixelCenterMap,
     };
 }
 
-fn hullModeFromC(hull_mode: u32) !rastcfg.HullMode {
+fn hullModeFromC(hull_mode: u32) !riley.HullMode {
     return switch (hull_mode) {
-        @intFromEnum(rastcfg.HullMode.on_no_fallback) => .on_no_fallback,
-        @intFromEnum(rastcfg.HullMode.on_convex_fallback) => .on_convex_fallback,
+        @intFromEnum(riley.HullMode.on_no_fallback) => .on_no_fallback,
+        @intFromEnum(riley.HullMode.on_convex_fallback) => .on_convex_fallback,
         else => error.InvalidHullMode,
     };
 }
 
 fn newtonSeedModeFromC(
     seed_mode: u32,
-) !rastcfg.NewtonSeedMode {
+) !riley.NewtonSeedMode {
     return switch (seed_mode) {
-        @intFromEnum(rastcfg.NewtonSeedMode.centroid) => .centroid,
-        @intFromEnum(rastcfg.NewtonSeedMode.hull) => .hull,
+        @intFromEnum(riley.NewtonSeedMode.centroid) => .centroid,
+        @intFromEnum(riley.NewtonSeedMode.hull) => .hull,
         else => error.InvalidNewtonSeedMode,
     };
 }
 
 fn newtonSeedReuseFromC(
     seed_reuse: u32,
-) !rastcfg.NewtonSeedReuse {
+) !riley.NewtonSeedReuse {
     return switch (seed_reuse) {
-        @intFromEnum(rastcfg.NewtonSeedReuse.off) => .off,
-        @intFromEnum(rastcfg.NewtonSeedReuse.last_conv) => .last_conv,
+        @intFromEnum(riley.NewtonSeedReuse.off) => .off,
+        @intFromEnum(riley.NewtonSeedReuse.last_conv) => .last_conv,
         else => error.InvalidNewtonSeedReuse,
     };
 }
 
 fn multirootModeFromC(
     mode: u32,
-) !rastcfg.MultirootSolverMode {
+) !riley.MultirootSolverMode {
     return switch (mode) {
-        @intFromEnum(rastcfg.MultirootSolverMode.fast) => .fast,
-        @intFromEnum(rastcfg.MultirootSolverMode.robust) => .robust,
+        @intFromEnum(riley.MultirootSolverMode.fast) => .fast,
+        @intFromEnum(riley.MultirootSolverMode.robust) => .robust,
         else => error.InvalidMultirootSolverMode,
     };
 }
 
 fn edgeFunModeFromC(
     mode: u32,
-) !rastcfg.EdgeFunMode {
+) !riley.EdgeFunMode {
     return switch (mode) {
-        @intFromEnum(rastcfg.EdgeFunMode.on_the_fly) => .on_the_fly,
-        @intFromEnum(rastcfg.EdgeFunMode.pre_calc) => .pre_calc,
+        @intFromEnum(riley.EdgeFunMode.on_the_fly) => .on_the_fly,
+        @intFromEnum(riley.EdgeFunMode.pre_calc) => .pre_calc,
         else => error.InvalidEdgeFunMode,
     };
 }
 
 fn validateInputFromC(
     validate_input: u32,
-) !rastcfg.ValidateInput {
+) !riley.ValidateInput {
     return switch (validate_input) {
-        @intFromEnum(rastcfg.ValidateInput.off) => .off,
-        @intFromEnum(rastcfg.ValidateInput.fast) => .fast,
-        @intFromEnum(rastcfg.ValidateInput.full) => .full,
+        @intFromEnum(riley.ValidateInput.off) => .off,
+        @intFromEnum(riley.ValidateInput.fast) => .fast,
+        @intFromEnum(riley.ValidateInput.full) => .full,
         else => error.InvalidValidateInputMode,
     };
 }
 
-fn coordSysFromC(coord_sys: u32) !cameratypes.CameraCoordSys {
+fn coordSysFromC(coord_sys: u32) !riley.CameraCoordSys {
     return switch (coord_sys) {
-        @intFromEnum(cameratypes.CameraCoordSys.opengl) => .opengl,
-        @intFromEnum(cameratypes.CameraCoordSys.opencv) => .opencv,
+        @intFromEnum(riley.CameraCoordSys.opengl) => .opengl,
+        @intFromEnum(riley.CameraCoordSys.opencv) => .opencv,
         else => error.InvalidCoordSys,
     };
 }
 
-fn imageFormatFromC(format_tag: u32) !iio.ImageFormat {
+fn imageFormatFromC(format_tag: u32) !dataio.ImageFormat {
     return switch (format_tag) {
         0 => .csv,
         1 => .fimg,
@@ -709,7 +584,7 @@ fn imageFormatFromC(format_tag: u32) !iio.ImageFormat {
     };
 }
 
-fn psfSeparableFromC(sep_tag: u32) !cam.SeparablePSF {
+fn psfSeparableFromC(sep_tag: u32) !riley.SeparablePSF {
     return switch (sep_tag) {
         0 => .no,
         1 => .yes,
@@ -717,7 +592,7 @@ fn psfSeparableFromC(sep_tag: u32) !cam.SeparablePSF {
     };
 }
 
-fn psfFromC(in_camera: *const CPSF) !cam.PointSpreadFunc {
+fn psfFromC(in_camera: *const CPSF) !riley.PointSpreadFunc {
     return switch (in_camera.psf_type) {
         0 => .{ .pixel_box = .{} },
         1 => .{ .gaussian = .{
@@ -736,21 +611,21 @@ fn psfFromC(in_camera: *const CPSF) !cam.PointSpreadFunc {
     };
 }
 
-fn distortFromC(in_camera: *const CDistort) !cam.DistortParams {
-    var poly = cam.PolyMap{};
+fn distortFromC(in_camera: *const CDistort) !riley.DistortParams {
+    var poly = riley.PolyMap{};
     if (in_camera.distort_model >= 3 and in_camera.distort_model <= 5) {
         const degree = std.math.cast(u8, in_camera.distort_poly_degree) orelse
             return error.InvalidPolyDegree;
-        const mode: cam.PolyMode = switch (in_camera.distort_poly_mode) {
+        const mode: riley.PolyMode = switch (in_camera.distort_poly_mode) {
             0 => .coordinate,
             1 => .displacement,
             else => return error.InvalidPolyMode,
         };
-        if (degree < 1 or degree > cam.POLY_MAX_DEGREE) return error.InvalidPolyDegree;
-        if (in_camera.distort_poly_coeffs_len != 2 * cam.polyTermCount(degree))
+        if (degree < 1 or degree > 7) return error.InvalidPolyDegree;
+        if (in_camera.distort_poly_coeffs_len != 2 * ((@as(usize, degree) + 1) * (@as(usize, degree) + 2) / 2))
             return error.InvalidPolyCoeffCount;
         if (in_camera.distort_poly_coeffs == null) return error.NullPointer;
-        poly = try cam.PolyMap.init(
+        poly = try riley.PolyMap.init(
             degree,
             mode,
             in_camera.distort_poly_coeffs[0..in_camera.distort_poly_coeffs_len],
@@ -816,53 +691,53 @@ fn distortFromC(in_camera: *const CDistort) !cam.DistortParams {
     };
 }
 
-fn texSampleFromC(sample: u32) !texops.TexSamp {
-    const mitchell = texops.TexSamp.cubic_mitchell_netravali;
+fn texSampleFromC(sample: u32) !riley.TexSamp {
+    const mitchell = riley.TexSamp.cubic_mitchell_netravali;
     return switch (sample) {
-        @intFromEnum(texops.TexSamp.nearest) => .nearest,
-        @intFromEnum(texops.TexSamp.linear) => .linear,
-        @intFromEnum(texops.TexSamp.cubic_catmull_rom) => .cubic_catmull_rom,
+        @intFromEnum(riley.TexSamp.nearest) => .nearest,
+        @intFromEnum(riley.TexSamp.linear) => .linear,
+        @intFromEnum(riley.TexSamp.cubic_catmull_rom) => .cubic_catmull_rom,
         @intFromEnum(mitchell) => .cubic_mitchell_netravali,
-        @intFromEnum(texops.TexSamp.lanczos3) => .lanczos3,
-        @intFromEnum(texops.TexSamp.cubic_bspline) => .cubic_bspline,
-        @intFromEnum(texops.TexSamp.quintic_bspline) => .quintic_bspline,
-        @intFromEnum(texops.TexSamp.lanczos2) => .lanczos2,
+        @intFromEnum(riley.TexSamp.lanczos3) => .lanczos3,
+        @intFromEnum(riley.TexSamp.cubic_bspline) => .cubic_bspline,
+        @intFromEnum(riley.TexSamp.quintic_bspline) => .quintic_bspline,
+        @intFromEnum(riley.TexSamp.lanczos2) => .lanczos2,
         else => error.InvalidTexSample,
     };
 }
 
 fn texSampleModeFromC(
     sample_mode: u32,
-) !texops.TexSampMode {
+) !riley.TexSampMode {
     return switch (sample_mode) {
-        @intFromEnum(texops.TexSampMode.direct) => .direct,
-        @intFromEnum(texops.TexSampMode.lut) => .lut,
-        @intFromEnum(texops.TexSampMode.lut_lerp) => .lut_lerp,
+        @intFromEnum(riley.TexSampMode.direct) => .direct,
+        @intFromEnum(riley.TexSampMode.lut) => .lut,
+        @intFromEnum(riley.TexSampMode.lut_lerp) => .lut_lerp,
         else => error.InvalidTexSampleMode,
     };
 }
 
-fn scaleOverFromC(scale_over: u32) !shadertypes.ScaleOver {
+fn scaleOverFromC(scale_over: u32) !riley.ScaleOver {
     return switch (scale_over) {
-        @intFromEnum(shadertypes.ScaleOver.within_frames) => .within_frames,
-        @intFromEnum(shadertypes.ScaleOver.over_frames) => .over_frames,
+        @intFromEnum(riley.ScaleOver.within_frames) => .within_frames,
+        @intFromEnum(riley.ScaleOver.over_frames) => .over_frames,
         else => error.InvalidScaleOver,
     };
 }
 
 fn funcShaderBuiltinFromC(
     func_shader_builtin: u32,
-) !shadertypes.FuncShaderBuiltin {
-    const lambertian = shadertypes.FuncShaderBuiltin.lambertian_normal_z;
-    const eggbox = shadertypes.FuncShaderBuiltin.eggbox;
+) !riley.FuncShaderBuiltin {
+    const lambertian = riley.FuncShaderBuiltin.lambertian_normal_z;
+    const eggbox = riley.FuncShaderBuiltin.eggbox;
     return switch (func_shader_builtin) {
-        @intFromEnum(shadertypes.FuncShaderBuiltin.constant) => .constant,
-        @intFromEnum(shadertypes.FuncShaderBuiltin.linear) => .linear,
-        @intFromEnum(shadertypes.FuncShaderBuiltin.quadratic) => .quadratic,
-        @intFromEnum(shadertypes.FuncShaderBuiltin.sinusoidal) => .sinusoidal,
-        @intFromEnum(shadertypes.FuncShaderBuiltin.sinusoidal_approx) => .sinusoidal_approx,
-        @intFromEnum(shadertypes.FuncShaderBuiltin.checker) => .checker,
-        @intFromEnum(shadertypes.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
+        @intFromEnum(riley.FuncShaderBuiltin.constant) => .constant,
+        @intFromEnum(riley.FuncShaderBuiltin.linear) => .linear,
+        @intFromEnum(riley.FuncShaderBuiltin.quadratic) => .quadratic,
+        @intFromEnum(riley.FuncShaderBuiltin.sinusoidal) => .sinusoidal,
+        @intFromEnum(riley.FuncShaderBuiltin.sinusoidal_approx) => .sinusoidal_approx,
+        @intFromEnum(riley.FuncShaderBuiltin.checker) => .checker,
+        @intFromEnum(riley.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
         @intFromEnum(lambertian) => .lambertian_normal_z,
         @intFromEnum(eggbox) => .eggbox,
         else => error.InvalidFuncShaderBuiltin,
@@ -871,71 +746,71 @@ fn funcShaderBuiltinFromC(
 
 fn funcCoordModeFromC(
     coord_mode: u32,
-) !shadertypes.FuncCoordMode {
+) !riley.FuncCoordMode {
     return switch (coord_mode) {
-        @intFromEnum(shadertypes.FuncCoordMode.uv) => .uv,
-        @intFromEnum(shadertypes.FuncCoordMode.para) => .para,
-        @intFromEnum(shadertypes.FuncCoordMode.world_reference) => .world_reference,
-        @intFromEnum(shadertypes.FuncCoordMode.world_deformed) => .world_deformed,
+        @intFromEnum(riley.FuncCoordMode.uv) => .uv,
+        @intFromEnum(riley.FuncCoordMode.para) => .para,
+        @intFromEnum(riley.FuncCoordMode.world_reference) => .world_reference,
+        @intFromEnum(riley.FuncCoordMode.world_deformed) => .world_deformed,
         else => error.InvalidFuncCoordMode,
     };
 }
 
-fn normalTypeFromC(normal_type: u32) !normals.NormalType {
+fn normalTypeFromC(normal_type: u32) !riley.NormalType {
     return switch (normal_type) {
-        @intFromEnum(normals.NormalType.none) => .none,
-        @intFromEnum(normals.NormalType.exact) => .exact,
-        @intFromEnum(normals.NormalType.avg) => .avg,
+        @intFromEnum(riley.NormalType.none) => .none,
+        @intFromEnum(riley.NormalType.exact) => .exact,
+        @intFromEnum(riley.NormalType.avg) => .avg,
         else => error.InvalidNormalType,
     };
 }
 
 fn funcShaderParamsFromC(
-    builtin: shadertypes.FuncShaderBuiltin,
+    builtin: riley.FuncShaderBuiltin,
     in_params: CFuncShaderParams,
-) shadertypes.FuncShaderParams {
+) riley.FuncShaderParams {
     return .{
         .coord_scale = .{
-            in_params.coord_scale_0,
-            in_params.coord_scale_1,
+            in_params.coord_scale[0],
+            in_params.coord_scale[1],
         },
         .coord_offset = .{
-            in_params.coord_offset_0,
-            in_params.coord_offset_1,
+            in_params.coord_offset[0],
+            in_params.coord_offset[1],
         },
         .settings = switch (builtin) {
             .constant => .{
                 .constant = .{
                     .value = in_params.constant_value,
                     .value_rgb = .{
-                        in_params.constant_value_rgb_0,
-                        in_params.constant_value_rgb_1,
-                        in_params.constant_value_rgb_2,
+                        in_params.constant_value_rgb[0],
+                        in_params.constant_value_rgb[1],
+                        in_params.constant_value_rgb[2],
                     },
                 },
             },
             .linear => .{
                 .linear = .{
                     .coeffs = .{
-                        in_params.linear_coeff_0,
-                        in_params.linear_coeff_1,
-                        in_params.linear_coeff_2,
+                        in_params.linear_coeff[0],
+                        in_params.linear_coeff[1],
+                        in_params.linear_coeff[2],
                     },
                     .coeffs_rgb = .{
                         .{
-                            in_params.linear_coeff_rgb_00,
-                            in_params.linear_coeff_rgb_01,
-                            in_params.linear_coeff_rgb_02,
+                            in_params.linear_coeff_rgb[0][0],
+                            in_params.linear_coeff_rgb[0][1],
+                            in_params.linear_coeff_rgb[0][2],
                         },
                         .{
-                            in_params.linear_coeff_rgb_10,
-                            in_params.linear_coeff_rgb_11,
-                            in_params.linear_coeff_rgb_12,
+                            in_params.linear_coeff_rgb[1][0],
+                            in_params.linear_coeff_rgb[1][1],
+                            in_params.linear_coeff_rgb[1][2],
                         },
                         .{
-                            in_params.linear_coeff_rgb_20,
-                            in_params.linear_coeff_rgb_21,
-                            in_params.linear_coeff_rgb_22,
+                            in_params.linear_coeff_rgb[2][0],
+                            in_params.linear_coeff_rgb[2][1],
+                            in_params.linear_coeff_rgb[2][2],
                         },
                     },
                 },
@@ -943,37 +818,37 @@ fn funcShaderParamsFromC(
             .quadratic => .{
                 .quadratic = .{
                     .coeffs = .{
-                        in_params.quadratic_coeff_0,
-                        in_params.quadratic_coeff_1,
-                        in_params.quadratic_coeff_2,
-                        in_params.quadratic_coeff_3,
-                        in_params.quadratic_coeff_4,
-                        in_params.quadratic_coeff_5,
+                        in_params.quadratic_coeff[0],
+                        in_params.quadratic_coeff[1],
+                        in_params.quadratic_coeff[2],
+                        in_params.quadratic_coeff[3],
+                        in_params.quadratic_coeff[4],
+                        in_params.quadratic_coeff[5],
                     },
                     .coeffs_rgb = .{
                         .{
-                            in_params.quadratic_coeff_rgb_00,
-                            in_params.quadratic_coeff_rgb_01,
-                            in_params.quadratic_coeff_rgb_02,
-                            in_params.quadratic_coeff_rgb_03,
-                            in_params.quadratic_coeff_rgb_04,
-                            in_params.quadratic_coeff_rgb_05,
+                            in_params.quadratic_coeff_rgb[0][0],
+                            in_params.quadratic_coeff_rgb[0][1],
+                            in_params.quadratic_coeff_rgb[0][2],
+                            in_params.quadratic_coeff_rgb[0][3],
+                            in_params.quadratic_coeff_rgb[0][4],
+                            in_params.quadratic_coeff_rgb[0][5],
                         },
                         .{
-                            in_params.quadratic_coeff_rgb_10,
-                            in_params.quadratic_coeff_rgb_11,
-                            in_params.quadratic_coeff_rgb_12,
-                            in_params.quadratic_coeff_rgb_13,
-                            in_params.quadratic_coeff_rgb_14,
-                            in_params.quadratic_coeff_rgb_15,
+                            in_params.quadratic_coeff_rgb[1][0],
+                            in_params.quadratic_coeff_rgb[1][1],
+                            in_params.quadratic_coeff_rgb[1][2],
+                            in_params.quadratic_coeff_rgb[1][3],
+                            in_params.quadratic_coeff_rgb[1][4],
+                            in_params.quadratic_coeff_rgb[1][5],
                         },
                         .{
-                            in_params.quadratic_coeff_rgb_20,
-                            in_params.quadratic_coeff_rgb_21,
-                            in_params.quadratic_coeff_rgb_22,
-                            in_params.quadratic_coeff_rgb_23,
-                            in_params.quadratic_coeff_rgb_24,
-                            in_params.quadratic_coeff_rgb_25,
+                            in_params.quadratic_coeff_rgb[2][0],
+                            in_params.quadratic_coeff_rgb[2][1],
+                            in_params.quadratic_coeff_rgb[2][2],
+                            in_params.quadratic_coeff_rgb[2][3],
+                            in_params.quadratic_coeff_rgb[2][4],
+                            in_params.quadratic_coeff_rgb[2][5],
                         },
                     },
                 },
@@ -981,64 +856,64 @@ fn funcShaderParamsFromC(
             .sinusoidal => .{
                 .sinusoidal = .{
                     .wave_num_scalar = .{
-                        in_params.wave_num_scalar_0,
-                        in_params.wave_num_scalar_1,
+                        in_params.wave_num_scalar[0],
+                        in_params.wave_num_scalar[1],
                     },
                     .wave_num_rgb = .{
-                        in_params.wave_num_rgb_0,
-                        in_params.wave_num_rgb_1,
-                        in_params.wave_num_rgb_2,
+                        in_params.wave_num_rgb[0],
+                        in_params.wave_num_rgb[1],
+                        in_params.wave_num_rgb[2],
                     },
                     .bias = in_params.sinusoidal_bias,
                     .amplitudes = .{
-                        in_params.sinusoidal_amp_0,
-                        in_params.sinusoidal_amp_1,
+                        in_params.sinusoidal_amp[0],
+                        in_params.sinusoidal_amp[1],
                     },
                     .bias_rgb = .{
-                        in_params.sinusoidal_bias_rgb_0,
-                        in_params.sinusoidal_bias_rgb_1,
-                        in_params.sinusoidal_bias_rgb_2,
+                        in_params.sinusoidal_bias_rgb[0],
+                        in_params.sinusoidal_bias_rgb[1],
+                        in_params.sinusoidal_bias_rgb[2],
                     },
                     .amplitudes_rgb = .{
-                        in_params.sinusoidal_amp_rgb_0,
-                        in_params.sinusoidal_amp_rgb_1,
-                        in_params.sinusoidal_amp_rgb_2,
+                        in_params.sinusoidal_amp_rgb[0],
+                        in_params.sinusoidal_amp_rgb[1],
+                        in_params.sinusoidal_amp_rgb[2],
                     },
                 },
             },
             .sinusoidal_approx => .{
                 .sinusoidal_approx = .{
                     .wave_num_scalar = .{
-                        in_params.wave_num_scalar_0,
-                        in_params.wave_num_scalar_1,
+                        in_params.wave_num_scalar[0],
+                        in_params.wave_num_scalar[1],
                     },
                     .wave_num_rgb = .{
-                        in_params.wave_num_rgb_0,
-                        in_params.wave_num_rgb_1,
-                        in_params.wave_num_rgb_2,
+                        in_params.wave_num_rgb[0],
+                        in_params.wave_num_rgb[1],
+                        in_params.wave_num_rgb[2],
                     },
                     .bias = in_params.sinusoidal_bias,
                     .amplitudes = .{
-                        in_params.sinusoidal_amp_0,
-                        in_params.sinusoidal_amp_1,
+                        in_params.sinusoidal_amp[0],
+                        in_params.sinusoidal_amp[1],
                     },
                     .bias_rgb = .{
-                        in_params.sinusoidal_bias_rgb_0,
-                        in_params.sinusoidal_bias_rgb_1,
-                        in_params.sinusoidal_bias_rgb_2,
+                        in_params.sinusoidal_bias_rgb[0],
+                        in_params.sinusoidal_bias_rgb[1],
+                        in_params.sinusoidal_bias_rgb[2],
                     },
                     .amplitudes_rgb = .{
-                        in_params.sinusoidal_amp_rgb_0,
-                        in_params.sinusoidal_amp_rgb_1,
-                        in_params.sinusoidal_amp_rgb_2,
+                        in_params.sinusoidal_amp_rgb[0],
+                        in_params.sinusoidal_amp_rgb[1],
+                        in_params.sinusoidal_amp_rgb[2],
                     },
                 },
             },
             .checker => .{
                 .checker = .{
                     .levels = .{
-                        in_params.checker_level_0,
-                        in_params.checker_level_1,
+                        in_params.checker_level[0],
+                        in_params.checker_level[1],
                     },
                 },
             },
@@ -1050,21 +925,21 @@ fn funcShaderParamsFromC(
             .lambertian_normal_z => .{
                 .lambertian_normal_z = .{
                     .coeffs = .{
-                        in_params.lambertian_coeff_0,
-                        in_params.lambertian_coeff_1,
+                        in_params.lambertian_coeff[0],
+                        in_params.lambertian_coeff[1],
                     },
                     .coeffs_rgb = .{
                         .{
-                            in_params.lambertian_coeff_rgb_00,
-                            in_params.lambertian_coeff_rgb_01,
+                            in_params.lambertian_coeff_rgb[0][0],
+                            in_params.lambertian_coeff_rgb[0][1],
                         },
                         .{
-                            in_params.lambertian_coeff_rgb_10,
-                            in_params.lambertian_coeff_rgb_11,
+                            in_params.lambertian_coeff_rgb[1][0],
+                            in_params.lambertian_coeff_rgb[1][1],
                         },
                         .{
-                            in_params.lambertian_coeff_rgb_20,
-                            in_params.lambertian_coeff_rgb_21,
+                            in_params.lambertian_coeff_rgb[2][0],
+                            in_params.lambertian_coeff_rgb[2][1],
                         },
                     },
                 },
@@ -1074,12 +949,12 @@ fn funcShaderParamsFromC(
                     .mean = in_params.eggbox_mean,
                     .contrast = in_params.eggbox_contrast,
                     .pitch = .{
-                        in_params.eggbox_pitch_0,
-                        in_params.eggbox_pitch_1,
+                        in_params.eggbox_pitch[0],
+                        in_params.eggbox_pitch[1],
                     },
                     .phase = .{
-                        in_params.eggbox_phase_0,
-                        in_params.eggbox_phase_1,
+                        in_params.eggbox_phase[0],
+                        in_params.eggbox_phase[1],
                     },
                 },
             },
@@ -1101,7 +976,7 @@ fn scaleStrategyFromC(
     scaling_tag: u32,
     scaling_min: F,
     scaling_max: F,
-) !imageops.ScaleStrategy {
+) !riley.ScaleStrategy {
     return switch (scaling_tag) {
         0 => .none,
         1 => .auto,
@@ -1111,8 +986,8 @@ fn scaleStrategyFromC(
     };
 }
 
-fn buildCoordsFromC(in_coords: *const CArray2DF64) !meshio.Coords {
-    if (in_coords.cols_num != 3) {
+fn buildCoordsFromC(in_coords: *const CArray2DF64) !riley.Coords {
+    if (in_coords.cols_num != 3 or in_coords.rows_num == 0) {
         return error.InvalidCoordsShape;
     }
     const coords_slice = try cConstSlice(
@@ -1120,7 +995,7 @@ fn buildCoordsFromC(in_coords: *const CArray2DF64) !meshio.Coords {
         in_coords.elems,
         in_coords.rows_num * in_coords.cols_num,
     );
-    return meshio.Coords.init(
+    return riley.Coords.init(
         @constCast(coords_slice),
         in_coords.rows_num,
     );
@@ -1128,13 +1003,13 @@ fn buildCoordsFromC(in_coords: *const CArray2DF64) !meshio.Coords {
 
 fn buildConnectFromC(
     in_connect: *const CArray2DUsize,
-) !meshio.Connect {
+) !riley.Connect {
     const connect_slice = try cConstSlice(
         usize,
         in_connect.elems,
         in_connect.rows_num * in_connect.cols_num,
     );
-    return meshio.Connect.init(
+    return riley.Connect.init(
         @constCast(connect_slice),
         in_connect.rows_num,
         in_connect.cols_num,
@@ -1145,7 +1020,7 @@ fn buildArray2DF64(
     allocator: std.mem.Allocator,
     in_array: *const CArray2DF64,
     cols_num_expected: ?usize,
-) !ndarray.NDArray(F) {
+) !maths.NDArray(F) {
     if (cols_num_expected) |expected_cols_num| {
         if (in_array.cols_num != expected_cols_num) {
             return error.InvalidArray2DShape;
@@ -1160,7 +1035,7 @@ fn buildArray2DF64(
         in_array.rows_num,
         in_array.cols_num,
     };
-    return try ndarray.NDArray(F).init(
+    return try maths.NDArray(F).init(
         allocator,
         @constCast(slice_in),
         dims[0..],
@@ -1170,7 +1045,7 @@ fn buildArray2DF64(
 fn buildArray3DF64(
     allocator: std.mem.Allocator,
     in_array: *const CArray3DF64,
-) !ndarray.NDArray(F) {
+) !maths.NDArray(F) {
     const dims = array3ToDims(in_array.*);
     const elems_num = dims[0] * dims[1] * dims[2];
     const slice_in = try cConstSlice(
@@ -1179,7 +1054,7 @@ fn buildArray3DF64(
         elems_num,
     );
     var dims_mut = dims;
-    return try ndarray.NDArray(F).init(
+    return try maths.NDArray(F).init(
         allocator,
         @constCast(slice_in),
         dims_mut[0..],
@@ -1191,7 +1066,7 @@ fn buildTexArray(
     allocator: std.mem.Allocator,
     in_array: anytype,
     channels_num: usize,
-) !ndarray.NDArray(T) {
+) !maths.NDArray(T) {
     const dims = array3ToDims(in_array.*);
     if (dims[0] != channels_num or dims[1] == 0 or dims[2] == 0) {
         return error.InvalidTexShape;
@@ -1199,15 +1074,15 @@ fn buildTexArray(
     const elems_num = dims[0] * dims[1] * dims[2];
     const slice_in = try cConstSlice(T, in_array.elems, elems_num);
     var dims_mut = dims;
-    return try ndarray.NDArray(T).init(allocator, @constCast(slice_in), dims_mut[0..]);
+    return try maths.NDArray(T).init(allocator, @constCast(slice_in), dims_mut[0..]);
 }
 
 fn buildOptionalFieldFromC(
     allocator: std.mem.Allocator,
     in_array: *const CArray3DF64,
 ) !struct {
-    field: ?meshio.Field,
-    array: ?ndarray.NDArray(F),
+    field: ?riley.Field,
+    array: ?maths.NDArray(F),
 } {
     const dims = array3ToDims(in_array.*);
     if (dims[0] == 0 or dims[1] == 0 or dims[2] == 0) {
@@ -1229,8 +1104,8 @@ fn buildOptionalFieldFromC(
 fn buildCameraInput(
     allocator: std.mem.Allocator,
     in_camera: *const CCameraInput,
-) !cameratypes.CameraInput {
-    const render_format: shadertypes.RenderFormat = switch (in_camera.render_format_tag) {
+) !riley.CameraInput {
+    const render_format: riley.RenderFormat = switch (in_camera.render_format_tag) {
         0 => .mono,
         1 => .rgb,
         2 => .ir,
@@ -1244,14 +1119,14 @@ fn buildCameraInput(
         else => return error.InvalidRenderFormat,
     };
 
-    var output_files: []const iio.ImageSaveOpts = &default_image_save_opts;
+    var output_files: []const dataio.ImageSaveOpts = &default_image_save_opts;
     if (in_camera.output_files_len > 0) {
         const c_files = try cConstSlice(
             CImageSaveOpts,
             in_camera.output_files,
             in_camera.output_files_len,
         );
-        const files = try allocator.alloc(iio.ImageSaveOpts, c_files.len);
+        const files = try allocator.alloc(dataio.ImageSaveOpts, c_files.len);
         for (c_files, files) |c_opt, *opt| {
             opt.* = .{
                 .format = try imageFormatFromC(c_opt.format),
@@ -1283,7 +1158,7 @@ fn buildCameraInput(
             in_camera.pixels_size.y,
         },
         .pos_world = cVec3ToVec3(in_camera.pos_world),
-        .rot_world = rotation.Rotation.init(
+        .rot_world = maths.Rotation.init(
             in_camera.rot_world.x,
             in_camera.rot_world.y,
             in_camera.rot_world.z,
@@ -1303,8 +1178,8 @@ fn buildCameraInput(
     };
 }
 
-fn pipeSlotFromC(in_slot: CSlot) !shaderpipe.Slot {
-    if (in_slot.index >= shaderpipe.max_slots) return error.InvalidPipeSlot;
+fn pipeSlotFromC(in_slot: CSlot) !riley.Slot {
+    if (in_slot.index >= riley.max_slots) return error.InvalidPipeSlot;
     return .{
         .kind = switch (in_slot.kind) {
             0 => .channel,
@@ -1321,16 +1196,16 @@ fn pipeSlotsFromC(
     allocator: std.mem.Allocator,
     slots: [*c]const CSlot,
     count: usize,
-) ![]shaderpipe.Slot {
+) ![]riley.Slot {
     const input = try cConstSlice(CSlot, slots, count);
-    const output = try allocator.alloc(shaderpipe.Slot, count);
+    const output = try allocator.alloc(riley.Slot, count);
     for (input, output) |slot, *dest| {
         dest.* = try pipeSlotFromC(slot);
     }
     return output;
 }
 
-fn lookupFromC(input: CLookup) !shaderpipe.Lookup {
+fn lookupFromC(input: CLookup) !riley.Lookup {
     return .{
         .first = input.first,
         .step = input.step,
@@ -1342,7 +1217,7 @@ fn resolverFromC(
     allocator: std.mem.Allocator,
     input: CResolver,
     constants: []const F,
-) !shaderpipe.Resolver {
+) !riley.Resolver {
     const slots = try pipeSlotsFromC(allocator, input.slots, input.slots_len);
     return switch (input.tag) {
         0 => .{ .identity = slots },
@@ -1378,8 +1253,8 @@ fn resolverFromC(
                 input.operations,
                 input.operations_len,
             );
-            const ops = try allocator.alloc(shaderpipe.Op, input_ops.len);
-            for (input_ops, ops) |op, *dest| {
+            const operations = try allocator.alloc(riley.Op, input_ops.len);
+            for (input_ops, operations) |op, *dest| {
                 dest.* = switch (op.tag) {
                     0 => .{ .load = try pipeSlotFromC(op.slot) },
                     1 => .add,
@@ -1393,7 +1268,7 @@ fn resolverFromC(
                         .{ .lut = 0 }
                     else
                         return error.InvalidPipeOperation,
-                    9 => if (op.slot.index < shaderpipe.max_channels)
+                    9 => if (op.slot.index < riley.max_channels)
                         .{ .store = @intCast(op.slot.index) }
                     else
                         return error.InvalidPipeOperation,
@@ -1402,13 +1277,13 @@ fn resolverFromC(
             }
             const lookups = if (input.lookup.values_len > 0)
                 try allocator.dupe(
-                    shaderpipe.Lookup,
+                    riley.Lookup,
                     &.{try lookupFromC(input.lookup)},
                 )
             else
                 &.{};
             break :blk .{ .expression = .{
-                .operations = ops,
+                .operations = operations,
                 .constants = constants,
                 .lookups = lookups,
             } };
@@ -1420,182 +1295,174 @@ fn resolverFromC(
 fn buildShaderDirectInput(
     allocator: std.mem.Allocator,
     in_shader: *const CShaderInput,
-) !ShaderDirectBuilt {
-    var built = ShaderDirectBuilt{
-        .shader = undefined,
-    };
+) !riley.PipeSourceInput {
     const scaling = try scaleStrategyFromC(
         in_shader.scaling_tag,
         in_shader.scaling_min,
         in_shader.scaling_max,
     );
-    if (in_shader.texture_storage > 2) return error.InvalidTextureStorage;
 
     switch (in_shader.shader_tag) {
         0 => {
-            if (in_shader.uvs.cols_num != 2) {
+            if (in_shader.value.texture.storage > 2) return error.InvalidTextureStorage;
+            if (in_shader.value.texture.uvs.cols_num != 2) {
                 return error.InvalidUVShape;
             }
 
             var uvs_array = try buildArray2DF64(
                 allocator,
-                &in_shader.uvs,
+                &in_shader.value.texture.uvs,
                 2,
             );
             errdefer uvs_array.deinit(allocator);
 
-            const samp_cfg = texops.TexSampConfig{
-                .sample = try texSampleFromC(in_shader.sample),
-                .mode = try texSampleModeFromC(in_shader.sample_mode),
+            const samp_cfg = riley.TexSampConfig{
+                .sample = try texSampleFromC(in_shader.value.texture.sample),
+                .mode = try texSampleModeFromC(in_shader.value.texture.sample_mode),
             };
             if (!samp_cfg.isValid()) {
                 return error.InvalidTexSampleConfig;
             }
-            built.uvs_array = uvs_array;
-            if (in_shader.texture_storage == 1) {
+
+            if (in_shader.value.texture.storage == 1) {
                 var tex_array = try buildTexArray(
                     u16,
                     allocator,
-                    &in_shader.tex_u16,
+                    &in_shader.value.texture.data.u16,
                     1,
                 );
                 errdefer tex_array.deinit(allocator);
-                built.shader = .{ .tex_u16 = .{
+                return .{ .tex_u16 = .{
                     .uvs = uvs_array,
-                    .tex = texops.TexDataFix(u16, 1){
+                    .tex = riley.TexDataFix(u16, 1){
                         .array = tex_array,
-                        .rows_num = in_shader.tex_u16.dim1,
-                        .cols_num = in_shader.tex_u16.dim2,
+                        .rows_num = in_shader.value.texture.data.u16.dim1,
+                        .cols_num = in_shader.value.texture.data.u16.dim2,
                     },
                     .samp_cfg = samp_cfg,
                     .output_gain = in_shader.output_gain,
                     .output_offset = in_shader.output_offset,
                     .scaling = scaling,
                 } };
-                built.tex_array_u16 = tex_array;
-            } else if (in_shader.texture_storage == 2) {
-                var tex_array = try buildTexArray(F, allocator, &in_shader.tex, 1);
+            } else if (in_shader.value.texture.storage == 2) {
+                var tex_array = try buildTexArray(F, allocator, &in_shader.value.texture.data.f, 1);
                 errdefer tex_array.deinit(allocator);
-                built.shader = .{ .tex_f = .{
+                return .{ .tex_f = .{
                     .uvs = uvs_array,
-                    .tex = texops.TexDataFix(F, 1){
+                    .tex = riley.TexDataFix(F, 1){
                         .array = tex_array,
-                        .rows_num = in_shader.tex.dim1,
-                        .cols_num = in_shader.tex.dim2,
+                        .rows_num = in_shader.value.texture.data.f.dim1,
+                        .cols_num = in_shader.value.texture.data.f.dim2,
                     },
                     .samp_cfg = samp_cfg,
                     .output_gain = in_shader.output_gain,
                     .output_offset = in_shader.output_offset,
                     .scaling = scaling,
                 } };
-                built.tex_array_f = tex_array;
             } else {
                 var tex_array = try buildTexArray(
                     u8,
                     allocator,
-                    &in_shader.tex_u8,
+                    &in_shader.value.texture.data.u8,
                     1,
                 );
                 errdefer tex_array.deinit(allocator);
-                built.shader = .{ .tex_u8 = .{
+                return .{ .tex_u8 = .{
                     .uvs = uvs_array,
-                    .tex = texops.TexDataFix(u8, 1){
+                    .tex = riley.TexDataFix(u8, 1){
                         .array = tex_array,
-                        .rows_num = in_shader.tex_u8.dim1,
-                        .cols_num = in_shader.tex_u8.dim2,
+                        .rows_num = in_shader.value.texture.data.u8.dim1,
+                        .cols_num = in_shader.value.texture.data.u8.dim2,
                     },
                     .samp_cfg = samp_cfg,
                     .output_gain = in_shader.output_gain,
                     .output_offset = in_shader.output_offset,
                     .scaling = scaling,
                 } };
-                built.tex_array_u8 = tex_array;
             }
         },
         1 => {
-            if (in_shader.uvs.cols_num != 2) {
+            if (in_shader.value.texture.storage > 2) return error.InvalidTextureStorage;
+            if (in_shader.value.texture.uvs.cols_num != 2) {
                 return error.InvalidUVShape;
             }
 
             var uvs_array = try buildArray2DF64(
                 allocator,
-                &in_shader.uvs,
+                &in_shader.value.texture.uvs,
                 2,
             );
             errdefer uvs_array.deinit(allocator);
 
-            const samp_cfg = texops.TexSampConfig{
-                .sample = try texSampleFromC(in_shader.sample),
-                .mode = try texSampleModeFromC(in_shader.sample_mode),
+            const samp_cfg = riley.TexSampConfig{
+                .sample = try texSampleFromC(in_shader.value.texture.sample),
+                .mode = try texSampleModeFromC(in_shader.value.texture.sample_mode),
             };
             if (!samp_cfg.isValid()) {
                 return error.InvalidTexSampleConfig;
             }
-            built.uvs_array = uvs_array;
-            if (in_shader.texture_storage == 1) {
+
+            if (in_shader.value.texture.storage == 1) {
                 var tex_array = try buildTexArray(
                     u16,
                     allocator,
-                    &in_shader.tex_u16,
+                    &in_shader.value.texture.data.u16,
                     3,
                 );
                 errdefer tex_array.deinit(allocator);
-                built.shader = .{ .tex_rgb_u16 = .{
+                return .{ .tex_rgb_u16 = .{
                     .uvs = uvs_array,
-                    .tex = texops.TexDataFix(u16, 3){
+                    .tex = riley.TexDataFix(u16, 3){
                         .array = tex_array,
-                        .rows_num = in_shader.tex_u16.dim1,
-                        .cols_num = in_shader.tex_u16.dim2,
+                        .rows_num = in_shader.value.texture.data.u16.dim1,
+                        .cols_num = in_shader.value.texture.data.u16.dim2,
                     },
                     .samp_cfg = samp_cfg,
                     .output_gain = in_shader.output_gain,
                     .output_offset = in_shader.output_offset,
                     .scaling = scaling,
                 } };
-                built.tex_array_u16 = tex_array;
-            } else if (in_shader.texture_storage == 2) {
-                var tex_array = try buildTexArray(F, allocator, &in_shader.tex, 3);
+            } else if (in_shader.value.texture.storage == 2) {
+                var tex_array = try buildTexArray(F, allocator, &in_shader.value.texture.data.f, 3);
                 errdefer tex_array.deinit(allocator);
-                built.shader = .{ .tex_rgb_f = .{
+                return .{ .tex_rgb_f = .{
                     .uvs = uvs_array,
-                    .tex = texops.TexDataFix(F, 3){
+                    .tex = riley.TexDataFix(F, 3){
                         .array = tex_array,
-                        .rows_num = in_shader.tex.dim1,
-                        .cols_num = in_shader.tex.dim2,
+                        .rows_num = in_shader.value.texture.data.f.dim1,
+                        .cols_num = in_shader.value.texture.data.f.dim2,
                     },
                     .samp_cfg = samp_cfg,
                     .output_gain = in_shader.output_gain,
                     .output_offset = in_shader.output_offset,
                     .scaling = scaling,
                 } };
-                built.tex_array_f = tex_array;
             } else {
                 var tex_array = try buildTexArray(
                     u8,
                     allocator,
-                    &in_shader.tex_u8,
+                    &in_shader.value.texture.data.u8,
                     3,
                 );
                 errdefer tex_array.deinit(allocator);
-                built.shader = .{ .tex_rgb_u8 = .{
+                return .{ .tex_rgb_u8 = .{
                     .uvs = uvs_array,
-                    .tex = texops.TexDataFix(u8, 3){
+                    .tex = riley.TexDataFix(u8, 3){
                         .array = tex_array,
-                        .rows_num = in_shader.tex_u8.dim1,
-                        .cols_num = in_shader.tex_u8.dim2,
+                        .rows_num = in_shader.value.texture.data.u8.dim1,
+                        .cols_num = in_shader.value.texture.data.u8.dim2,
                     },
                     .samp_cfg = samp_cfg,
                     .output_gain = in_shader.output_gain,
                     .output_offset = in_shader.output_offset,
                     .scaling = scaling,
                 } };
-                built.tex_array_u8 = tex_array;
             }
         },
         2, 5 => {
             const nodal_built = try buildOptionalFieldFromC(
                 allocator,
-                &in_shader.nodal_field,
+                &in_shader.value.nodal.field,
             );
             if (nodal_built.field == null or nodal_built.array == null) {
                 return error.MissingNodalField;
@@ -1603,21 +1470,20 @@ fn buildShaderDirectInput(
             if (in_shader.shader_tag == 5 and nodal_built.field.?.getFieldsN() != 3) {
                 return error.InvalidNodalRgbFieldCount;
             }
-            built.shader = .{ .nodal = .{
+            return .{ .nodal = .{
                 .field = nodal_built.field.?,
                 .output_gain = in_shader.output_gain,
                 .output_offset = in_shader.output_offset,
                 .scaling = scaling,
-                .scale_over = try scaleOverFromC(in_shader.scale_over),
+                .scale_over = try scaleOverFromC(in_shader.value.nodal.scale_over),
             } };
-            built.nodal_field_array = nodal_built.array;
         },
         3 => {
-            var uvs_array_opt: ?ndarray.NDArray(F) = null;
-            if (in_shader.uvs.rows_num > 0 and in_shader.uvs.cols_num > 0) {
+            var uvs_array_opt: ?maths.NDArray(F) = null;
+            if (in_shader.value.func.uvs.rows_num > 0 and in_shader.value.func.uvs.cols_num > 0) {
                 uvs_array_opt = try buildArray2DF64(
                     allocator,
-                    &in_shader.uvs,
+                    &in_shader.value.func.uvs,
                     2,
                 );
             }
@@ -1626,30 +1492,29 @@ fn buildShaderDirectInput(
             };
 
             const builtin = try funcShaderBuiltinFromC(
-                in_shader.func_shader_builtin,
+                in_shader.value.func.builtin,
             );
-            built.shader = .{ .func = .{
+            return .{ .func = .{
                 .uvs = uvs_array_opt,
                 .coord_mode = try funcCoordModeFromC(
-                    in_shader.func_shader_coord_mode,
+                    in_shader.value.func.coord_mode,
                 ),
                 .builtin = builtin,
                 .params = funcShaderParamsFromC(
                     builtin,
-                    in_shader.func_shader_params,
+                    in_shader.value.func.params,
                 ),
                 .output_gain = in_shader.output_gain,
                 .output_offset = in_shader.output_offset,
                 .scaling = scaling,
             } };
-            built.uvs_array = uvs_array_opt;
         },
         4 => {
-            var uvs_array_opt: ?ndarray.NDArray(F) = null;
-            if (in_shader.uvs.rows_num > 0 and in_shader.uvs.cols_num > 0) {
+            var uvs_array_opt: ?maths.NDArray(F) = null;
+            if (in_shader.value.func.uvs.rows_num > 0 and in_shader.value.func.uvs.cols_num > 0) {
                 uvs_array_opt = try buildArray2DF64(
                     allocator,
-                    &in_shader.uvs,
+                    &in_shader.value.func.uvs,
                     2,
                 );
             }
@@ -1658,30 +1523,29 @@ fn buildShaderDirectInput(
             };
 
             const builtin = try funcShaderBuiltinFromC(
-                in_shader.func_shader_builtin,
+                in_shader.value.func.builtin,
             );
-            built.shader = .{ .func_rgb = .{
+            return .{ .func_rgb = .{
                 .uvs = uvs_array_opt,
                 .coord_mode = try funcCoordModeFromC(
-                    in_shader.func_shader_coord_mode,
+                    in_shader.value.func.coord_mode,
                 ),
                 .builtin = builtin,
                 .params = funcShaderParamsFromC(
                     builtin,
-                    in_shader.func_shader_params,
+                    in_shader.value.func.params,
                 ),
                 .output_gain = in_shader.output_gain,
                 .output_offset = in_shader.output_offset,
                 .scaling = scaling,
             } };
-            built.uvs_array = uvs_array_opt;
         },
         6 => {
-            if (in_shader.func_channels_len < 1 or
-                in_shader.func_channels_len > buildconfig.config.max_nodal_fields)
+            if (in_shader.value.func.channels_len < 1 or
+                in_shader.value.func.channels_len > riley.max_channels)
                 return error.InvalidFuncChannelCount;
-            const inputs = try cConstSlice(CFuncChannel, in_shader.func_channels, in_shader.func_channels_len);
-            const channels = try allocator.alloc(shadertypes.FuncChannel, inputs.len);
+            const inputs = try cConstSlice(CFuncChannel, in_shader.value.func.channels, in_shader.value.func.channels_len);
+            const channels = try allocator.alloc(riley.FuncChannel, inputs.len);
             errdefer allocator.free(channels);
             for (inputs, channels) |input, *channel| {
                 const builtin = try funcShaderBuiltinFromC(input.builtin);
@@ -1693,26 +1557,70 @@ fn buildShaderDirectInput(
                     .scaling = try scaleStrategyFromC(input.scaling_tag, input.scaling_min, input.scaling_max),
                 };
             }
-            var uvs: ?ndarray.NDArray(F) = null;
-            if (in_shader.uvs.rows_num > 0 and in_shader.uvs.cols_num > 0) {
-                uvs = try buildArray2DF64(allocator, &in_shader.uvs, 2);
+            var uvs: ?maths.NDArray(F) = null;
+            if (in_shader.value.func.uvs.rows_num > 0 and in_shader.value.func.uvs.cols_num > 0) {
+                uvs = try buildArray2DF64(allocator, &in_shader.value.func.uvs, 2);
             }
             errdefer if (uvs) |*array| array.deinit(allocator);
-            built.shader = .{ .func_multi = .{
+            return .{ .func_multi = .{
                 .uvs = uvs,
-                .coord_mode = try funcCoordModeFromC(in_shader.func_shader_coord_mode),
+                .coord_mode = try funcCoordModeFromC(in_shader.value.func.coord_mode),
                 .channels = channels,
             } };
-            built.uvs_array = uvs;
-            built.func_channels = channels;
+        },
+        7 => {
+            const texture = in_shader.value.texture;
+            const uvs = try buildArray2DF64(allocator, &texture.uvs, 2);
+            const sampling: riley.TexSampConfig = .{
+                .sample = try texSampleFromC(texture.sample),
+                .mode = try texSampleModeFromC(texture.sample_mode),
+            };
+            if (!sampling.isValid()) return error.InvalidTexSampleConfig;
+            switch (texture.storage) {
+                0 => {
+                    const data = texture.data.u8;
+                    if (data.dim0 < 2 or data.dim0 > riley.max_channels) return error.InvalidTexShape;
+                    return .{ .tex_multi_u8 = .{
+                        .uvs = uvs,
+                        .tex = .{ .array = try buildTexArray(u8, allocator, &data, data.dim0), .rows_num = data.dim1, .cols_num = data.dim2 },
+                        .samp_cfg = sampling,
+                        .output_gain = in_shader.output_gain,
+                        .output_offset = in_shader.output_offset,
+                        .scaling = scaling,
+                    } };
+                },
+                1 => {
+                    const data = texture.data.u16;
+                    if (data.dim0 < 2 or data.dim0 > riley.max_channels) return error.InvalidTexShape;
+                    return .{ .tex_multi_u16 = .{
+                        .uvs = uvs,
+                        .tex = .{ .array = try buildTexArray(u16, allocator, &data, data.dim0), .rows_num = data.dim1, .cols_num = data.dim2 },
+                        .samp_cfg = sampling,
+                        .output_gain = in_shader.output_gain,
+                        .output_offset = in_shader.output_offset,
+                        .scaling = scaling,
+                    } };
+                },
+                2 => {
+                    const data = texture.data.f;
+                    if (data.dim0 < 2 or data.dim0 > riley.max_channels) return error.InvalidTexShape;
+                    return .{ .tex_multi_f = .{
+                        .uvs = uvs,
+                        .tex = .{ .array = try buildTexArray(F, allocator, &data, data.dim0), .rows_num = data.dim1, .cols_num = data.dim2 },
+                        .samp_cfg = sampling,
+                        .output_gain = in_shader.output_gain,
+                        .output_offset = in_shader.output_offset,
+                        .scaling = scaling,
+                    } };
+                },
+                else => return error.InvalidTextureStorage,
+            }
         },
         else => return error.InvalidShaderTag,
     }
-
-    return built;
 }
 
-fn pipeSourceToMono(source: shadertypes.PipeSourceInput) !shadertypes.ShaderMonoInput {
+fn pipeSourceToMono(source: riley.PipeSourceInput) !riley.ShaderMonoInput {
     return switch (source) {
         .tex_u8 => |tex_shader| .{ .tex_u8 = tex_shader },
         .tex_u16 => |tex_shader| .{ .tex_u16 = tex_shader },
@@ -1727,61 +1635,25 @@ fn pipeSourceToMono(source: shadertypes.PipeSourceInput) !shadertypes.ShaderMono
     };
 }
 
-fn pipeSourceChannels(source: shadertypes.PipeSourceInput) u8 {
-    return switch (source) {
-        .nodal => |s| s.field.getFieldsN(),
-        .tex_u8, .tex_u16, .tex_f => 1,
-        .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
-        .tex_multi_u8 => |t| @intCast(t.tex.array.dims[0]),
-        .tex_multi_u16 => |t| @intCast(t.tex.array.dims[0]),
-        .tex_multi_f => |t| @intCast(t.tex.array.dims[0]),
-        .func => 1,
-        .func_rgb => 3,
-        .func_multi => |f| @intCast(f.channels.len),
-    };
-}
-
-fn buildPipeInput(
-    allocator: std.mem.Allocator,
-    pipe: *const CPipe,
-    pipe_sources: []ShaderDirectBuilt,
-    pipe_stages: [][]shadertypes.ShaderPipeStageInput,
-    pipe_inputs: []shadertypes.ShaderPipeInput,
-    source_idx: *usize,
-    pipe_idx: *usize,
-) !shadertypes.ShaderPipeInput {
-    const input_stages = try cConstSlice(
-        CPipeStage,
-        pipe.stages,
-        pipe.stages_len,
-    );
-    const stages = try allocator.alloc(
-        shadertypes.ShaderPipeStageInput,
-        input_stages.len,
-    );
-    pipe_stages[pipe_idx.*] = stages;
+fn buildPipeInput(allocator: std.mem.Allocator, pipe: *const CPipe) !riley.ShaderPipeInput {
+    const input_stages = try cConstSlice(CPipeStage, pipe.stages, pipe.stages_len);
+    const stages = try allocator.alloc(riley.ShaderPipeStageInput, input_stages.len);
     for (input_stages, stages) |input_stage, *stage| {
         stage.* = switch (input_stage.tag) {
-            0 => sblk: {
-                if (input_stage.shader == null) return error.NullPointer;
-                pipe_sources[source_idx.*] = try buildShaderDirectInput(
-                    allocator,
-                    input_stage.shader,
-                );
-                const src_shader = pipe_sources[source_idx.*].shader;
-                source_idx.* += 1;
-                break :sblk .{ .source = .{
-                    .shader = src_shader,
-                    .destination = try pipeSlotFromC(input_stage.destination),
-                } };
-            },
+            0 => .{ .source = .{
+                .shader = if (input_stage.shader != null)
+                    try buildShaderDirectInput(allocator, input_stage.shader)
+                else
+                    return error.NullPointer,
+                .destination = try pipeSlotFromC(input_stage.destination),
+            } },
             1 => .{ .grey_to_emissivity = .{
                 .source = try pipeSlotFromC(input_stage.source),
                 .destination = try pipeSlotFromC(input_stage.destination),
-                .black = input_stage.black,
-                .white = input_stage.white,
                 .grey_black = input_stage.lower,
                 .grey_white = input_stage.upper,
+                .black = input_stage.black,
+                .white = input_stage.white,
             } },
             2 => .{ .clamp = .{
                 .source = try pipeSlotFromC(input_stage.source),
@@ -1804,339 +1676,96 @@ fn buildPipeInput(
                 .a = try pipeSlotFromC(input_stage.source),
                 .b = try pipeSlotFromC(input_stage.source_b),
                 .destination = try pipeSlotFromC(input_stage.destination),
-                .alpha = if (input_stage.alpha_from_slot == 0)
-                    .{ .fixed = input_stage.alpha }
-                else if (input_stage.alpha_from_slot == 1)
+                .alpha = if (input_stage.alpha_from_slot != 0)
                     .{ .slot = try pipeSlotFromC(input_stage.alpha_slot) }
                 else
-                    return error.InvalidPipeStage,
+                    .{ .fixed = input_stage.alpha },
             } },
             6 => .{ .normalise = .{
                 .source = try pipeSlotFromC(input_stage.source),
                 .destination = try pipeSlotFromC(input_stage.destination),
-                .components = if (input_stage.components <= 3)
-                    @intCast(input_stage.components)
-                else
-                    return error.InvalidPipeStage,
+                .components = std.math.cast(u8, input_stage.components) orelse return error.InvalidPipeStage,
             } },
             else => return error.InvalidPipeStage,
         };
     }
     const constants = try cConstSlice(F, pipe.constants, pipe.constants_len);
-    pipe_inputs[pipe_idx.*] = .{
+    return .{
         .stages = stages,
         .resolver = try resolverFromC(allocator, pipe.resolver, constants),
         .constants = constants,
     };
-    const result = pipe_inputs[pipe_idx.*];
-    pipe_idx.* += 1;
-    return result;
 }
 
-fn buildMeshInput(
-    allocator: std.mem.Allocator,
-    in_mesh: *const CMeshInput,
-) !MeshInputBuilt {
+fn buildMeshInput(allocator: std.mem.Allocator, in_mesh: *const CMeshInput) !riley.MeshInput {
     const mesh_type = try meshTypeFromC(in_mesh.mesh_type);
-    const nodes_per_elem = mesh_type.getNodesNum();
-
-    if (in_mesh.coords.cols_num != 3) {
-        return error.InvalidCoordsShape;
-    }
-    if (in_mesh.connect.cols_num != nodes_per_elem) {
-        return error.InvalidConnectShape;
-    }
-
-    const coords = try buildCoordsFromC(&in_mesh.coords);
-    const connect = try buildConnectFromC(&in_mesh.connect);
-
-    var built = MeshInputBuilt{
-        .mesh_input = .{
-            .mesh_type = mesh_type,
-            .normal_type = try normalTypeFromC(in_mesh.normal_type),
-            .coords = coords,
-            .connect = connect,
-            .disp = null,
-            .shaders = .{},
-        },
+    if (in_mesh.connect.cols_num != mesh_type.getNodesNum()) return error.InvalidConnectShape;
+    const disp = try buildOptionalFieldFromC(allocator, &in_mesh.disp);
+    var mesh: riley.MeshInput = .{
+        .mesh_type = mesh_type,
+        .normal_type = try normalTypeFromC(in_mesh.normal_type),
+        .coords = try buildCoordsFromC(&in_mesh.coords),
+        .connect = try buildConnectFromC(&in_mesh.connect),
+        .disp = disp.field,
+        .shaders = .{},
     };
-
-    const disp_built = try buildOptionalFieldFromC(
-        allocator,
-        &in_mesh.disp,
-    );
-    built.mesh_input.disp = disp_built.field;
-    built.disp_array = disp_built.array;
-
-    if (in_mesh.shaders_len == 0 or in_mesh.shaders_len > 4) {
-        return error.InvalidShaderCount;
-    }
-
-    const in_entries = try cConstSlice(
-        CShaderEntry,
-        in_mesh.shaders,
-        in_mesh.shaders_len,
-    );
-
-    var direct_mono_count: usize = 0;
-    var pipe_count: usize = 0;
-    var pipe_source_count: usize = 0;
-
-    for (in_entries) |entry| {
+    if (in_mesh.shaders_len == 0 or in_mesh.shaders_len > 4) return error.InvalidShaderCount;
+    const entries = try cConstSlice(CShaderEntry, in_mesh.shaders, in_mesh.shaders_len);
+    for (entries) |*entry| {
+        var direct: ?riley.ShaderMonoInput = null;
+        var pipe: ?riley.ShaderPipeInput = null;
         switch (entry.execution_tag) {
-            0 => {
-                if (entry.format_tag == 0 or entry.format_tag == 2) {
-                    direct_mono_count += 1;
-                } else if (entry.format_tag == 1 or entry.format_tag == 3) {
-                    pipe_count += 1;
-                    pipe_source_count += 1;
-                } else {
-                    return error.InvalidRenderFormatTag;
-                }
-            },
-            1 => {
-                pipe_count += 1;
-                if (entry.pipe.stages_len == 0 or entry.pipe.stages_len > 8) {
-                    return error.InvalidPipeStageCount;
-                }
-                const stages = try cConstSlice(
-                    CPipeStage,
-                    entry.pipe.stages,
-                    entry.pipe.stages_len,
-                );
-                for (stages) |stage| {
-                    if (stage.tag == 0) pipe_source_count += 1;
-                }
-            },
+            0 => direct = try pipeSourceToMono(try buildShaderDirectInput(allocator, &entry.value.direct)),
+            1 => pipe = try buildPipeInput(allocator, &entry.value.pipe),
             else => return error.InvalidExecutionTag,
         }
-    }
-
-    built.direct_shaders = try allocator.alloc(ShaderDirectBuilt, direct_mono_count);
-    built.pipe_sources = try allocator.alloc(ShaderDirectBuilt, pipe_source_count);
-    built.pipe_stages = try allocator.alloc(
-        []shadertypes.ShaderPipeStageInput,
-        pipe_count,
-    );
-    built.pipe_inputs = try allocator.alloc(
-        shadertypes.ShaderPipeInput,
-        pipe_count,
-    );
-
-    var direct_idx: usize = 0;
-    var pipe_idx: usize = 0;
-    var source_idx: usize = 0;
-
-    for (in_entries) |entry| {
         switch (entry.format_tag) {
             0 => {
-                if ((built.mesh_input.shaders.mono_direct != null or built.mesh_input.shaders.mono_pipe != null)) return error.DuplicateRole;
-                switch (entry.execution_tag) {
-                    0 => {
-                        built.direct_shaders[direct_idx] = try buildShaderDirectInput(
-                            allocator,
-                            &entry.direct_shader,
-                        );
-                        const shader = try pipeSourceToMono(
-                            built.direct_shaders[direct_idx].shader,
-                        );
-                        direct_idx += 1;
-                        built.mesh_input.shaders.mono_direct = shader;
-                    },
-                    1 => {
-                        const pipe_in = try buildPipeInput(
-                            allocator,
-                            &entry.pipe,
-                            built.pipe_sources,
-                            built.pipe_stages,
-                            built.pipe_inputs,
-                            &source_idx,
-                            &pipe_idx,
-                        );
-                        built.mesh_input.shaders.mono_pipe = pipe_in;
-                    },
-                    else => return error.InvalidExecutionTag,
-                }
+                if (mesh.shaders.mono_direct != null or mesh.shaders.mono_pipe != null) return error.DuplicateRole;
+                mesh.shaders.mono_direct = direct;
+                mesh.shaders.mono_pipe = pipe;
             },
             1 => {
-                if (built.mesh_input.shaders.rgb_pipe != null) return error.DuplicateRole;
-                switch (entry.execution_tag) {
-                    0 => {
-                        built.pipe_sources[source_idx] = try buildShaderDirectInput(
-                            allocator,
-                            &entry.direct_shader,
-                        );
-                        const src_shader = built.pipe_sources[source_idx].shader;
-                        source_idx += 1;
-                        const stages = try allocator.alloc(
-                            shadertypes.ShaderPipeStageInput,
-                            1,
-                        );
-                        built.pipe_stages[pipe_idx] = stages;
-                        stages[0] = shaderops.stageSource(src_shader);
-                        built.pipe_inputs[pipe_idx] = .{
-                            .stages = stages,
-                            .resolver = .{
-                                .identity = shaderpipe.identity_channels_3[0..3],
-                            },
-                        };
-                        built.mesh_input.shaders.rgb_pipe = built.pipe_inputs[pipe_idx];
-                        pipe_idx += 1;
-                    },
-                    1 => {
-                        const pipe_in = try buildPipeInput(
-                            allocator,
-                            &entry.pipe,
-                            built.pipe_sources,
-                            built.pipe_stages,
-                            built.pipe_inputs,
-                            &source_idx,
-                            &pipe_idx,
-                        );
-                        built.mesh_input.shaders.rgb_pipe = pipe_in;
-                    },
-                    else => return error.InvalidExecutionTag,
-                }
+                if (mesh.shaders.rgb_pipe != null) return error.DuplicateRole;
+                mesh.shaders.rgb_pipe = pipe orelse return error.InvalidExecutionTag;
             },
             2 => {
-                if ((built.mesh_input.shaders.ir_direct != null or built.mesh_input.shaders.ir_pipe != null)) return error.DuplicateRole;
-                switch (entry.execution_tag) {
-                    0 => {
-                        built.direct_shaders[direct_idx] = try buildShaderDirectInput(
-                            allocator,
-                            &entry.direct_shader,
-                        );
-                        const shader = try pipeSourceToMono(
-                            built.direct_shaders[direct_idx].shader,
-                        );
-                        direct_idx += 1;
-                        built.mesh_input.shaders.ir_direct = shader;
-                    },
-                    1 => {
-                        const pipe_in = try buildPipeInput(
-                            allocator,
-                            &entry.pipe,
-                            built.pipe_sources,
-                            built.pipe_stages,
-                            built.pipe_inputs,
-                            &source_idx,
-                            &pipe_idx,
-                        );
-                        built.mesh_input.shaders.ir_pipe = pipe_in;
-                    },
-                    else => return error.InvalidExecutionTag,
-                }
+                if (mesh.shaders.ir_direct != null or mesh.shaders.ir_pipe != null) return error.DuplicateRole;
+                mesh.shaders.ir_direct = direct;
+                mesh.shaders.ir_pipe = pipe;
             },
             3 => {
-                if (built.mesh_input.shaders.multifield_pipe != null) {
-                    return error.DuplicateRole;
-                }
-                switch (entry.execution_tag) {
-                    0 => {
-                        built.pipe_sources[source_idx] = try buildShaderDirectInput(
-                            allocator,
-                            &entry.direct_shader,
-                        );
-                        const src_shader = built.pipe_sources[source_idx].shader;
-                        source_idx += 1;
-                        const count = pipeSourceChannels(src_shader);
-                        const stages = try allocator.alloc(
-                            shadertypes.ShaderPipeStageInput,
-                            1,
-                        );
-                        built.pipe_stages[pipe_idx] = stages;
-                        stages[0] = shaderops.stageSource(src_shader);
-                        built.pipe_inputs[pipe_idx] = .{
-                            .stages = stages,
-                            .resolver = .{
-                                .identity = shaderpipe.identity_channels_8[0..count],
-                            },
-                        };
-                        built.mesh_input.shaders.multifield_pipe = built.pipe_inputs[pipe_idx];
-                        pipe_idx += 1;
-                    },
-                    1 => {
-                        const pipe_in = try buildPipeInput(
-                            allocator,
-                            &entry.pipe,
-                            built.pipe_sources,
-                            built.pipe_stages,
-                            built.pipe_inputs,
-                            &source_idx,
-                            &pipe_idx,
-                        );
-                        built.mesh_input.shaders.multifield_pipe = pipe_in;
-                    },
-                    else => return error.InvalidExecutionTag,
-                }
+                if (mesh.shaders.multifield_pipe != null) return error.DuplicateRole;
+                mesh.shaders.multifield_pipe = pipe orelse return error.InvalidExecutionTag;
             },
             else => return error.InvalidRenderFormatTag,
         }
     }
-
-    return built;
+    return mesh;
 }
 
 fn buildCameraInputSlice(
     allocator: std.mem.Allocator,
     in_cameras: [*c]const CCameraInput,
     cameras_len: usize,
-) ![]cameratypes.CameraInput {
+) ![]riley.CameraInput {
     const cameras_slice = try cConstSlice(
         CCameraInput,
         in_cameras,
         cameras_len,
     );
-    const cameras_out = try allocator.alloc(cameratypes.CameraInput, cameras_len);
+    const cameras_out = try allocator.alloc(riley.CameraInput, cameras_len);
     for (cameras_slice, 0..) |camera_in, nn| {
         cameras_out[nn] = try buildCameraInput(allocator, &camera_in);
     }
     return cameras_out;
 }
 
-fn buildMeshInputSlice(
-    allocator: std.mem.Allocator,
-    in_meshes: [*c]const CMeshInput,
-    meshes_len: usize,
-) ![]MeshInputBuilt {
-    const meshes_in = try cConstSlice(
-        CMeshInput,
-        in_meshes,
-        meshes_len,
-    );
-    const meshes_out = try allocator.alloc(MeshInputBuilt, meshes_len);
-    errdefer allocator.free(meshes_out);
-
-    for (meshes_in, 0..) |mesh_in, nn| {
-        meshes_out[nn] = buildMeshInput(allocator, &mesh_in) catch |err| {
-            for (0..nn) |mm| {
-                meshes_out[mm].deinit(allocator);
-            }
-            return err;
-        };
-    }
-    return meshes_out;
-}
-
-fn extractMeshInputs(
-    allocator: std.mem.Allocator,
-    built_meshes: []const MeshInputBuilt,
-) ![]meshtypes.MeshInput {
-    const mesh_inputs = try allocator.alloc(meshtypes.MeshInput, built_meshes.len);
-    for (built_meshes, 0..) |built_mesh, nn| {
-        mesh_inputs[nn] = built_mesh.mesh_input;
-    }
-    return mesh_inputs;
-}
-
-fn deinitMeshInputSlice(
-    allocator: std.mem.Allocator,
-    built_meshes: []MeshInputBuilt,
-) void {
-    for (built_meshes) |*built_mesh| {
-        built_mesh.deinit(allocator);
-    }
-    allocator.free(built_meshes);
+fn buildMeshInputSlice(allocator: std.mem.Allocator, in_meshes: [*c]const CMeshInput, count: usize) ![]riley.MeshInput {
+    const inputs = try cConstSlice(CMeshInput, in_meshes, count);
+    const meshes = try allocator.alloc(riley.MeshInput, count);
+    for (inputs, meshes) |*input, *mesh| mesh.* = try buildMeshInput(allocator, input);
+    return meshes;
 }
 
 fn buildRasterConfig(
@@ -2175,9 +1804,8 @@ fn buildRasterConfig(
     config.validation = try validateInputFromC(
         in_config.validate_input,
     );
-    const rep_mode = try reportModeFromC(in_config.report);
-    config.report_perf = rep_mode;
-    config.report_console = (rep_mode != .off);
+    config.report_perf = try reportModeFromC(in_config.report_perf);
+    config.report_console = in_config.report_console != 0;
     config.advanced.raster.buffer_mode = try bufferModeFromC(in_config.buffer_mode);
     config.advanced.distortion.edge_spacing_px = in_config.edge_spacing_px;
     config.advanced.raster.tile_size_min = if (in_config.tile_size_min == 0)
@@ -2242,7 +1870,7 @@ fn buildRasterConfig(
 fn buildImageBuff(
     allocator: std.mem.Allocator,
     in_buff: *const CImageBuffF64,
-) !ndarray.NDArray(F) {
+) !maths.NDArray(F) {
     const dims = dimsToArray(in_buff.dims);
     var elems_num: usize = 1;
     for (dims) |dim| {
@@ -2253,7 +1881,7 @@ fn buildImageBuff(
         in_buff.elems,
         elems_num,
     );
-    return try ndarray.NDArray(F).init(
+    return try maths.NDArray(F).init(
         allocator,
         image_slice,
         dims[0..],
@@ -2278,7 +1906,7 @@ fn initThreadedIo(
     });
 }
 
-fn cameraInputToC(in_camera: cameratypes.CameraInput) CCameraInput {
+fn cameraInputToC(in_camera: riley.CameraInput) CCameraInput {
     var out_camera = CCameraInput{
         .pixels_num = .{
             .x = in_camera.pixels_num[0],
@@ -2452,15 +2080,11 @@ fn rasterSceneInternal(
     out_dir_path: ?[*:0]const u8,
     out_image: ?*CImageBuffF64,
 ) !void {
-    const built_meshes = try buildMeshInputSlice(
+    const mesh_inputs = try buildMeshInputSlice(
         allocator,
         in_meshes,
         meshes_len,
     );
-    defer deinitMeshInputSlice(allocator, built_meshes);
-
-    const mesh_inputs = try extractMeshInputs(allocator, built_meshes);
-    defer allocator.free(mesh_inputs);
 
     const camera_inputs = try buildCameraInputSlice(
         allocator,
@@ -2471,7 +2095,7 @@ fn rasterSceneInternal(
 
     const raster_config = try buildRasterConfig(in_config);
 
-    var image_arr_opt: ?ndarray.NDArray(F) = null;
+    var image_arr_opt: ?maths.NDArray(F) = null;
     if (out_image) |image_buff| {
         image_arr_opt = try buildImageBuff(allocator, image_buff);
     }
@@ -2515,119 +2139,30 @@ pub export fn rileyRoiCentFromCoords(
         setLastError(err);
         return 1;
     };
-    const roi_cent = sceneops.boundsCenter(&coords);
+    const roi_cent = ops.boundsCenter(&coords);
     out_cent.* = vec3ToCVec3(roi_cent);
     return 0;
 }
 
-pub export fn rileyPosFillFrameFromRot(
-    in_coords: *const CArray2DF64,
-    pixels_num: CVec2U32,
-    pixels_size: CVec2F64,
-    focal_length: F,
-    rot_world: CVec3F64,
-    frame_fill: F,
-    out_pos: *CVec3F64,
-) c_int {
-    clearLastError();
+const GeometryInput = struct { coords: riley.Coords };
 
-    const coords = buildCoordsFromC(in_coords) catch |err| {
-        setLastError(err);
-        return 1;
-    };
-    const rot = rotation.Rotation.init(
-        rot_world.x,
-        rot_world.y,
-        rot_world.z,
-    );
-    const cam_pos = cameraops.posFillFrameFromRot(
-        &coords,
-        .{ pixels_num.x, pixels_num.y },
-        .{ pixels_size.x, pixels_size.y },
-        focal_length,
-        rot,
-        frame_fill,
-    );
-    out_pos.* = vec3ToCVec3(cam_pos);
-    return 0;
+fn buildGeometry(allocator: std.mem.Allocator, inputs: [*c]const CArray2DF64, count: usize) ![]GeometryInput {
+    if (count == 0) return error.EmptyGeometry;
+    const coords = try cConstSlice(CArray2DF64, inputs, count);
+    const geometry = try allocator.alloc(GeometryInput, count);
+    for (coords, geometry) |*input, *item| item.coords = try buildCoordsFromC(input);
+    return geometry;
 }
 
-pub export fn rileyRoiCentOverMeshes(
-    in_meshes: [*c]const CMeshInput,
-    meshes_len: usize,
-    out_cent: *CVec3F64,
-) c_int {
+pub export fn rileyRoiCentOverMeshes(in_coords: [*c]const CArray2DF64, coords_len: usize, out_cent: *CVec3F64) c_int {
     clearLastError();
-
     var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
     defer arena.deinit();
-    const aa = arena.allocator();
-
-    const built_meshes = buildMeshInputSlice(
-        aa,
-        in_meshes,
-        meshes_len,
-    ) catch |err| {
+    const geometry = buildGeometry(arena.allocator(), in_coords, coords_len) catch |err| {
         setLastError(err);
         return 1;
     };
-    defer deinitMeshInputSlice(aa, built_meshes);
-
-    const mesh_inputs = extractMeshInputs(aa, built_meshes) catch |err| {
-        setLastError(err);
-        return 1;
-    };
-
-    const roi_cent = sceneops.boundsCenterOverMeshes(mesh_inputs);
-    out_cent.* = vec3ToCVec3(roi_cent);
-    return 0;
-}
-
-pub export fn rileyPosFillFrameFromRotOverMeshes(
-    in_meshes: [*c]const CMeshInput,
-    meshes_len: usize,
-    pixels_num: CVec2U32,
-    pixels_size: CVec2F64,
-    focal_length: F,
-    rot_world: CVec3F64,
-    frame_fill: F,
-    out_pos: *CVec3F64,
-) c_int {
-    clearLastError();
-
-    var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
-    defer arena.deinit();
-    const aa = arena.allocator();
-
-    const built_meshes = buildMeshInputSlice(
-        aa,
-        in_meshes,
-        meshes_len,
-    ) catch |err| {
-        setLastError(err);
-        return 1;
-    };
-    defer deinitMeshInputSlice(aa, built_meshes);
-
-    const mesh_inputs = extractMeshInputs(aa, built_meshes) catch |err| {
-        setLastError(err);
-        return 1;
-    };
-
-    const rot = rotation.Rotation.init(
-        rot_world.x,
-        rot_world.y,
-        rot_world.z,
-    );
-    const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
-        mesh_inputs,
-        .{ pixels_num.x, pixels_num.y },
-        .{ pixels_size.x, pixels_size.y },
-        focal_length,
-        rot,
-        frame_fill,
-    );
-    out_pos.* = vec3ToCVec3(cam_pos);
+    out_cent.* = vec3ToCVec3(ops.boundsCenterOverMeshes(geometry));
     return 0;
 }
 
@@ -2639,182 +2174,81 @@ pub export fn rileyPosFrameCoords(
     rot_world: CVec3F64,
     fov_scale: F,
     fit_mode: u32,
+    target: [*c]const CVec3F64,
     out_pos: *CVec3F64,
 ) c_int {
     clearLastError();
-
-    const coords = buildCoordsFromC(in_coords) catch |err| {
+    const geometry = buildCoordsFromC(in_coords) catch |err| {
         setLastError(err);
         return 1;
     };
-    const rot = rotation.Rotation.init(
-        rot_world.x,
-        rot_world.y,
-        rot_world.z,
-    );
-    const fit_enum: cameratypes.FrameFitMode = @enumFromInt(fit_mode);
-    const cam_pos = cameraops.posFrameCoords(
-        &coords,
-        .{ pixels_num.x, pixels_num.y },
-        .{ pixels_size.x, pixels_size.y },
-        focal_length,
-        rot,
-        fov_scale,
-        fit_enum,
-    );
-    out_pos.* = vec3ToCVec3(cam_pos);
-    return 0;
-}
-
-pub export fn rileyPosFrameCoordsTarg(
-    in_coords: *const CArray2DF64,
-    targ_world: CVec3F64,
-    pixels_num: CVec2U32,
-    pixels_size: CVec2F64,
-    focal_length: F,
-    rot_world: CVec3F64,
-    fov_scale: F,
-    fit_mode: u32,
-    out_pos: *CVec3F64,
-) c_int {
-    clearLastError();
-
-    const coords = buildCoordsFromC(in_coords) catch |err| {
-        setLastError(err);
-        return 1;
+    const fit: riley.FrameFitMode = switch (fit_mode) {
+        0 => .contain,
+        1 => .cover,
+        2 => .horizontal,
+        3 => .vertical,
+        else => {
+            setLastError(error.InvalidFrameFitMode);
+            return 1;
+        },
     };
-    const rot = rotation.Rotation.init(
-        rot_world.x,
-        rot_world.y,
-        rot_world.z,
-    );
-    const targ = cVec3ToVec3(targ_world);
-    const fit_enum: cameratypes.FrameFitMode = @enumFromInt(fit_mode);
-    const cam_pos = cameraops.posFrameCoordsTarg(
-        &coords,
-        targ,
-        .{ pixels_num.x, pixels_num.y },
-        .{ pixels_size.x, pixels_size.y },
-        focal_length,
-        rot,
-        fov_scale,
-        fit_enum,
-    );
-    out_pos.* = vec3ToCVec3(cam_pos);
+    const rot = maths.Rotation.init(rot_world.x, rot_world.y, rot_world.z);
+    const pixels = [2]u32{ pixels_num.x, pixels_num.y };
+    const pitch = [2]F{ pixels_size.x, pixels_size.y };
+    const pos = if (target != null)
+        ops.posFrameCoordsTarg(&geometry, cVec3ToVec3(target[0]), pixels, pitch, focal_length, rot, fov_scale, fit)
+    else
+        ops.posFrameCoords(&geometry, pixels, pitch, focal_length, rot, fov_scale, fit);
+    out_pos.* = vec3ToCVec3(pos);
     return 0;
 }
 
 pub export fn rileyPosFrameMeshes(
-    in_meshes: [*c]const CMeshInput,
-    meshes_len: usize,
+    in_coords: [*c]const CArray2DF64,
+    coords_len: usize,
     pixels_num: CVec2U32,
     pixels_size: CVec2F64,
     focal_length: F,
     rot_world: CVec3F64,
     fov_scale: F,
     fit_mode: u32,
+    target: [*c]const CVec3F64,
     out_pos: *CVec3F64,
 ) c_int {
     clearLastError();
-
     var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
     defer arena.deinit();
-    const aa = arena.allocator();
-
-    const built_meshes = buildMeshInputSlice(
-        aa,
-        in_meshes,
-        meshes_len,
-    ) catch |err| {
+    const geometry = buildGeometry(arena.allocator(), in_coords, coords_len) catch |err| {
         setLastError(err);
         return 1;
     };
-    defer deinitMeshInputSlice(aa, built_meshes);
-
-    const mesh_inputs = extractMeshInputs(aa, built_meshes) catch |err| {
-        setLastError(err);
-        return 1;
+    const fit: riley.FrameFitMode = switch (fit_mode) {
+        0 => .contain,
+        1 => .cover,
+        2 => .horizontal,
+        3 => .vertical,
+        else => {
+            setLastError(error.InvalidFrameFitMode);
+            return 1;
+        },
     };
-
-    const rot = rotation.Rotation.init(
-        rot_world.x,
-        rot_world.y,
-        rot_world.z,
-    );
-    const fit_enum: cameratypes.FrameFitMode = @enumFromInt(fit_mode);
-    const cam_pos = cameraops.posFrameMeshes(
-        mesh_inputs,
-        .{ pixels_num.x, pixels_num.y },
-        .{ pixels_size.x, pixels_size.y },
-        focal_length,
-        rot,
-        fov_scale,
-        fit_enum,
-    );
-    out_pos.* = vec3ToCVec3(cam_pos);
-    return 0;
-}
-
-pub export fn rileyPosFrameMeshesTarg(
-    in_meshes: [*c]const CMeshInput,
-    meshes_len: usize,
-    targ_world: CVec3F64,
-    pixels_num: CVec2U32,
-    pixels_size: CVec2F64,
-    focal_length: F,
-    rot_world: CVec3F64,
-    fov_scale: F,
-    fit_mode: u32,
-    out_pos: *CVec3F64,
-) c_int {
-    clearLastError();
-
-    var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
-    defer arena.deinit();
-    const aa = arena.allocator();
-
-    const built_meshes = buildMeshInputSlice(
-        aa,
-        in_meshes,
-        meshes_len,
-    ) catch |err| {
-        setLastError(err);
-        return 1;
-    };
-    defer deinitMeshInputSlice(aa, built_meshes);
-
-    const mesh_inputs = extractMeshInputs(aa, built_meshes) catch |err| {
-        setLastError(err);
-        return 1;
-    };
-
-    const rot = rotation.Rotation.init(
-        rot_world.x,
-        rot_world.y,
-        rot_world.z,
-    );
-    const targ = cVec3ToVec3(targ_world);
-    const fit_enum: cameratypes.FrameFitMode = @enumFromInt(fit_mode);
-    const cam_pos = cameraops.posFrameMeshesTarg(
-        mesh_inputs,
-        targ,
-        .{ pixels_num.x, pixels_num.y },
-        .{ pixels_size.x, pixels_size.y },
-        focal_length,
-        rot,
-        fov_scale,
-        fit_enum,
-    );
-    out_pos.* = vec3ToCVec3(cam_pos);
+    const rot = maths.Rotation.init(rot_world.x, rot_world.y, rot_world.z);
+    const pixels = [2]u32{ pixels_num.x, pixels_num.y };
+    const pitch = [2]F{ pixels_size.x, pixels_size.y };
+    const pos = if (target != null)
+        ops.posFrameMeshesTarg(geometry, cVec3ToVec3(target[0]), pixels, pitch, focal_length, rot, fov_scale, fit)
+    else
+        ops.posFrameMeshes(geometry, pixels, pitch, focal_length, rot, fov_scale, fit);
+    out_pos.* = vec3ToCVec3(pos);
     return 0;
 }
 
 pub export fn rileyCoverageToFovScale(coverage: F) F {
-    return cameraops.coverageToFovScale(coverage);
+    return ops.coverageToFovScale(coverage);
 }
 
 pub export fn rileyFovScaleToCoverage(fov_scale: F) F {
-    return cameraops.fovScaleToCoverage(fov_scale);
+    return ops.fovScaleToCoverage(fov_scale);
 }
 
 pub export fn rileyPosOrbitCam(
@@ -2827,7 +2261,7 @@ pub export fn rileyPosOrbitCam(
 ) c_int {
     clearLastError();
     const targ = cVec3ToVec3(targ_world);
-    const orbit = cameraops.posOrbitCam(
+    const orbit = ops.posOrbitCam(
         targ,
         azimuth_rad,
         elevation_rad,
@@ -2854,7 +2288,7 @@ pub export fn rileyPosStereoPair(
 ) c_int {
     clearLastError();
     const targ = cVec3ToVec3(targ_world);
-    const stereo = cameraops.posStereoPair(
+    const stereo = ops.posStereoPair(
         targ,
         dist,
         stereo_angle_rad,
@@ -2888,7 +2322,7 @@ pub export fn rileyCalcPixelResolution(
         return 1;
     };
     const targ = cVec3ToVec3(targ_world);
-    out_res.* = cameraops.calcPixelResolution(cam_input, targ);
+    out_res.* = ops.calcPixelResolution(cam_input, targ);
     return 0;
 }
 
@@ -2906,7 +2340,7 @@ pub export fn rileyCalcOutputDimsScene(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const built_meshes = buildMeshInputSlice(
+    const mesh_inputs = buildMeshInputSlice(
         aa,
         in_meshes,
         meshes_len,
@@ -2914,12 +2348,7 @@ pub export fn rileyCalcOutputDimsScene(
         setLastError(err);
         return 1;
     };
-    defer deinitMeshInputSlice(aa, built_meshes);
 
-    const mesh_inputs = extractMeshInputs(aa, built_meshes) catch |err| {
-        setLastError(err);
-        return 1;
-    };
     const camera_inputs = buildCameraInputSlice(
         aa,
         in_cameras,
@@ -2983,7 +2412,7 @@ pub export fn rileySaveCamera(
     };
     defer out_dir.close(io);
 
-    cameraio.saveCamera(
+    dataio.saveCamera(
         io,
         out_dir,
         std.mem.span(file_name),
@@ -2999,7 +2428,7 @@ pub export fn rileySaveCamera(
 /// Null buffer with zero capacity queries metadata/count without returning
 /// a borrowed pointer.
 fn copyLoadedCamera(
-    camera_input: cameratypes.CameraInput,
+    camera_input: riley.CameraInput,
     coeffs: [*c]F,
     capacity: usize,
     out: *CCameraInput,
@@ -3047,7 +2476,7 @@ pub export fn rileyLoadCamera(
     };
     defer dir.close(io);
 
-    const loaded = cameraio.LoadedCamera.init(
+    const loaded = dataio.LoadedCamera.init(
         arena.allocator(),
         io,
         dir,
@@ -3106,7 +2535,7 @@ pub export fn rileySaveStereoPair(
     };
     defer out_dir.close(io);
 
-    cameraio.saveStereoPair(
+    dataio.saveStereoPair(
         io,
         out_dir,
         std.mem.span(stereo_file_name),
@@ -3149,7 +2578,7 @@ pub export fn rileyLoadStereoPair(
     };
     defer dir.close(io);
 
-    const loaded = cameraio.LoadedStereoPair.init(
+    const loaded = dataio.LoadedStereoPair.init(
         aa,
         io,
         dir,

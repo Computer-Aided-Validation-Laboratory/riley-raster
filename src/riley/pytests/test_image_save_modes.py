@@ -70,7 +70,7 @@ def render_memory(mesh: riley.Mesh, camera: riley.Camera) -> np.ndarray:
     config = riley.RasterConfig(
         parallel=1,
         save_strategy=riley.SaveStrategy.memory,
-        report=riley.ReportMode.off,
+        report_perf=riley.ReportMode.off,
     )
     image = riley.raster(mesh, camera, config)
     assert image is not None
@@ -119,7 +119,7 @@ def test_disk_save_overlap_matches_synchronous_output(
             parallel=1,
             save_strategy=riley.SaveStrategy.disk,
             disk_save_overlap=overlap,
-            report=riley.ReportMode.off,
+            report_perf=riley.ReportMode.off,
         )
         out_dir = tmp_path / ("overlap" if overlap else "synchronous")
         riley.raster(mesh, camera, config, out_dir=str(out_dir))
@@ -150,7 +150,7 @@ def test_float_csv_and_packed_tiff_from_one_camera(tmp_path: Path) -> None:
     config = riley.RasterConfig(
         parallel=1,
         save_strategy=riley.SaveStrategy.both,
-        report=riley.ReportMode.off,
+        report_perf=riley.ReportMode.off,
     )
     image = riley.raster(mesh, camera, config, out_dir=str(tmp_path))
     assert image is not None

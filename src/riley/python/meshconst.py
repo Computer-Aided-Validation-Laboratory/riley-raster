@@ -6,7 +6,7 @@ from enum import Enum
 
 import numpy as np
 
-from riley.cython.riley import MeshType
+from riley.types import MeshType
 
 # --------------------------------------------------------------------------
 # Sources for Elem Topology

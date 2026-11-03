@@ -14,6 +14,7 @@ import numpy
 
 DIST_NAME = "riley-raster"
 PROJECT_ROOT = Path(__file__).resolve().parent
+subprocess.check_call([sys.executable, str(PROJECT_ROOT / "scripts" / "gen_c_abi.py"), "--check"])
 
 # -----------------------------------------------------------------------------
 # Platform-specific utilities
@@ -138,7 +139,10 @@ class MultiBuildExt(build_ext):
 
         if (
             zig_lib_output.is_file()
-            and zig_lib_output.stat().st_mtime >= zig_source.stat().st_mtime
+            and zig_lib_output.stat().st_mtime >= max(
+                path.stat().st_mtime
+                for path in (PROJECT_ROOT / "src" / "riley" / "zig").rglob("*.zig")
+            )
         ):
             print(80 * "-")
             print("Zig: Shared Library is up to date, skipping rebuild.")

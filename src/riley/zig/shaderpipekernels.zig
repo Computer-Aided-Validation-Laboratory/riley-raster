@@ -1,5 +1,12 @@
-// Sample-domain shader pipe. Source shaders reuse the existing FE, texture and
-// function kernels; the tiny stage scratch stays on the worker stack.
+// --------------------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: scepticalrabbit (Lloyd Fletcher)
+// --------------------------------------------------------------------------------------
+
 const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
@@ -7,7 +14,6 @@ const F = buildconfig.F;
 const S = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 const VecSB = buildconfig.VecSB;
-const cfg = buildconfig.config;
 const shaderops = @import("shaderops.zig");
 const meshhit = @import("meshhit.zig");
 const shaderpipe = @import("shaderpipe.zig");
@@ -33,59 +39,73 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                 const start = elem_idx * 3 * N;
                 @memcpy(self.coords_ref[0 .. 3 * N], array.slice[start .. start + 3 * N]);
             }
+
             if (pipe.hit_geometry.coords_def) |array| {
                 const start = elem_idx * 3 * N;
                 @memcpy(self.coords_def[0 .. 3 * N], array.slice[start .. start + 3 * N]);
             }
+
             if (pipe.hit_geometry.surf_norm) |normals| {
                 const start = normals.map[elem_idx] * 3 * N;
                 @memcpy(self.surf_norm[0 .. 3 * N], normals.array.slice[start .. start + 3 * N]);
             }
-            for (pipe.stages, 0..) |stage, si| switch (stage) {
-                .source => |src| {
-                    const buf = &self.stages[si];
-                    switch (src.shader) {
-                        .nodal => |shader| {
-                            const count: u8 = if (shader.elem_field.dims.len == 3)
-                                @intCast(shader.elem_field.dims[1])
-                            else
-                                @intCast(shader.elem_field.dims[2]);
-                            const frame_dim = shader.elem_field.dims[0] - 1;
-                            const idx = if (shader.elem_field.dims.len == 3)
-                                shader.elem_field.getFlatIdx(&.{ elem_idx, 0, 0 })
-                            else
-                                shader.elem_field.getFlatIdx(&.{
-                                    @min(frame_idx, frame_dim),
-                                    elem_idx,
-                                    0,
-                                    0,
-                                });
-                            buf.load(shader.elem_field, idx, count);
-                        },
-                        inline .tex_u8,
-                        .tex_u16,
-                        .tex_f,
-                        .tex_rgb_u8,
-                        .tex_rgb_u16,
-                        .tex_rgb_f,
-                        .tex_multi_f,
-                        => |shader| {
-                            buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
-                        },
-                        .func, .func_rgb, .func_multi => |shader| {
-                            switch (shader.coord_mode) {
-                                .uv => buf.loadFuncCoords(
-                                    shader.elem_uvs.?,
-                                    elem_idx * 2 * N,
-                                    2,
-                                ),
-                                .world_reference, .world_deformed, .para => {},
-                            }
-                        },
-                    }
-                },
-                else => {},
-            };
+
+            for (pipe.stages, 0..) |stage, si| {
+                const source = switch (stage) {
+                    .source => |source| source,
+                    else => continue,
+                };
+                const buf = &self.stages[si];
+
+                switch (source.shader) {
+                    .nodal => |shader| {
+                        const count: u8 = if (shader.elem_field.dims.len == 3)
+                            @intCast(shader.elem_field.dims[1])
+                        else
+                            @intCast(shader.elem_field.dims[2]);
+
+                        const frame_dim = shader.elem_field.dims[0] - 1;
+
+                        const idx = if (shader.elem_field.dims.len == 3)
+                            shader.elem_field.getFlatIdx(&.{ elem_idx, 0, 0 })
+                        else
+                            shader.elem_field.getFlatIdx(&.{
+                                @min(frame_idx, frame_dim),
+                                elem_idx,
+                                0,
+                                0,
+                            });
+
+                        buf.load(shader.elem_field, idx, count);
+                    },
+                    .tex_u8 => |shader| {
+                        buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .tex_u16 => |shader| {
+                        buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .tex_f => |shader| {
+                        buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .tex_rgb_u8 => |shader| {
+                        buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .tex_rgb_u16 => |shader| {
+                        buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .tex_rgb_f => |shader| {
+                        buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .tex_multi_f => |shader| {
+                        buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .func, .func_rgb, .func_multi => |shader| {
+                        if (shader.coord_mode == .uv) {
+                            buf.loadFuncCoords(shader.elem_uvs.?, elem_idx * 2 * N, 2);
+                        }
+                    },
+                }
+            }
         }
 
         pub inline fn completeHit(
@@ -95,16 +115,20 @@ pub fn LocalPipeBuff(comptime N: usize) type {
             selection: meshhit.MeshHitSelection,
         ) meshhit.MeshHit(N) {
             if (selection.count() == 0) return base;
+
             var hit = base;
             if (selection.contains(.coords_ref)) {
                 hit.coords_ref = meshhit.interpCoords(N, coord_space, &self.coords_ref, base);
             }
+
             if (selection.contains(.coords_def)) {
                 hit.coords_def = meshhit.interpCoords(N, coord_space, &self.coords_def, base);
             }
+
             if (selection.contains(.surf_norm)) {
                 hit.surf_norm = meshhit.interpCoords(N, .clip_px_leng, &self.surf_norm, base);
             }
+
             return hit;
         }
 
@@ -118,6 +142,7 @@ pub fn LocalPipeBuff(comptime N: usize) type {
             selection: meshhit.MeshHitSelection,
         ) meshhit.MeshHitGeomSIMD {
             if (selection.count() == 0) return .{};
+
             var hit: meshhit.MeshHitGeomSIMD = .{};
             if (selection.contains(.coords_ref)) {
                 hit.coords_ref = meshhit.interpCoordsSIMD(
@@ -130,6 +155,7 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                     subpx_z,
                 );
             }
+
             if (selection.contains(.coords_def)) {
                 hit.coords_def = meshhit.interpCoordsSIMD(
                     N,
@@ -141,6 +167,7 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                     subpx_z,
                 );
             }
+
             if (selection.contains(.surf_norm)) {
                 hit.surf_norm = meshhit.interpCoordsSIMD(
                     N,
@@ -152,6 +179,7 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                     subpx_z,
                 );
             }
+
             return hit;
         }
     };
@@ -168,58 +196,65 @@ pub fn PipeKernel(comptime N: usize) type {
             interp: meshhit.MeshHit(N),
             pipe_buf: *const LocalBuff,
             pipe: *const shadertypes.ShaderPipePrepared,
-            ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
             const hit = pipe_buf.completeHit(coord_space, interp, pipe.hit_geometry.selection);
+
             var outputs: shaderpipe.ScalarOutputs = .{};
-            var temporary: [cfg.max_nodal_fields]F = @splat(0);
-            var temp_mat = MatSlice(F).init(&temporary, cfg.max_nodal_fields, 1);
+
+            var source_values: [shaderpipe.max_channels]F = @splat(0);
+            var source_output = MatSlice(F).init(&source_values, shaderpipe.max_channels, 1);
+
             var stage_ctx = ctx_shade;
             stage_ctx.scratch_idx = 0;
             stage_ctx.simd_full_vector_store_safe = false;
 
-            for (pipe.stages, 0..) |*stage, si| switch (stage.*) {
-                .source => |*src| {
-                    const count = sourceChannels(src.shader);
-                    stage_ctx.actual_fields = count;
-                    shadeSource(
-                        N,
-                        coord_space,
-                        stage_ctx,
-                        hit,
-                        &pipe_buf.stages[si],
-                        &src.shader,
-                        ctx_report,
-                        &temp_mat,
-                    );
-                    for (0..count) |ch| {
-                        var dest = src.destination;
-                        dest.index += @intCast(ch);
-                        outputs.set(dest, temporary[ch]);
-                    }
-                },
-                .grey_to_emissivity => |m| {
-                    const grey = std.math.clamp((outputs.get(m.source) - m.grey_black) /
-                        (m.grey_white - m.grey_black), 0, 1);
-                    outputs.set(m.destination, m.black + grey * (m.white - m.black));
-                },
-                .clamp => |c| {
-                    const clamped = std.math.clamp(
-                        outputs.get(c.source),
-                        c.lower,
-                        c.upper,
-                    );
-                    outputs.set(c.destination, clamped);
-                },
-                .affine_map => |m| m.apply(&outputs),
-                .lut_map => |m| m.apply(&outputs, true),
-                .blend => |m| m.apply(&outputs),
-                .normalise => |m| m.apply(&outputs),
-            };
+            for (pipe.stages, 0..) |*stage, si| {
+                switch (stage.*) {
+                    .source => |*src| {
+                        const count = sourceChannels(src.shader);
+
+                        stage_ctx.actual_fields = count;
+
+                        shadeSource(
+                            N,
+                            coord_space,
+                            stage_ctx,
+                            hit,
+                            &pipe_buf.stages[si],
+                            &src.shader,
+                            &source_output,
+                        );
+
+                        for (0..count) |ch| {
+                            var dest = src.destination;
+                            dest.index += @intCast(ch);
+                            outputs.set(dest, source_values[ch]);
+                        }
+                    },
+                    .grey_to_emissivity => |m| {
+                        const grey = std.math.clamp((outputs.get(m.source) - m.grey_black) /
+                            (m.grey_white - m.grey_black), 0, 1);
+                        outputs.set(m.destination, m.black + grey * (m.white - m.black));
+                    },
+                    .clamp => |c| {
+                        const clamped = std.math.clamp(
+                            outputs.get(c.source),
+                            c.lower,
+                            c.upper,
+                        );
+                        outputs.set(c.destination, clamped);
+                    },
+                    .affine_map => |m| m.apply(&outputs),
+                    .lut_map => |m| m.apply(&outputs, true),
+                    .blend => |m| m.apply(&outputs),
+                    .normalise => |m| m.apply(&outputs),
+                }
+            }
 
             var resolved: [shaderpipe.max_channels]F = undefined;
             pipe.resolver.evaluate(&outputs, pipe.constants, pipe.channels, &resolved);
+
             for (0..pipe.channels) |ch| {
                 const idx = ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx;
                 spx_image_scratch.slice[idx] = resolved[ch];
@@ -229,7 +264,6 @@ pub fn PipeKernel(comptime N: usize) type {
         pub fn shadeSIMD(
             comptime coord_space: CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
-            ctx_report: anytype,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
             v_xi: VecSF,
@@ -248,59 +282,61 @@ pub fn PipeKernel(comptime N: usize) type {
                 v_subpx_z,
                 pipe.hit_geometry.selection,
             );
+
             var outputs: shaderpipe.VectorOutputs = .{};
             var stage_ctx = ctx_shade;
 
-            for (pipe.stages, 0..) |*stage, si| switch (stage.*) {
-                .source => |*src| {
-                    const count = sourceChannels(src.shader);
-                    stage_ctx.actual_fields = count;
-                    var source_values: shaderops.VectorSink(cfg.max_nodal_fields) = .{};
-                    shadeSourceSIMD(
-                        N,
-                        coord_space,
-                        stage_ctx,
-                        ctx_report,
-                        v_mask_active,
-                        v_weights,
-                        v_xi,
-                        v_eta,
-                        v_nodes_inv_z,
-                        v_subpx_z,
-                        hit,
-                        &pipe_buf.stages[si],
-                        &src.shader,
-                        &source_values,
-                    );
-                    for (0..count) |ch| {
-                        var dest = src.destination;
-                        dest.index += @intCast(ch);
-                        outputs.set(dest, source_values.values[ch]);
-                    }
-                },
-                .grey_to_emissivity => |m| {
-                    const src_val = outputs.get(m.source);
-                    const gb = @as(VecSF, @splat(m.grey_black));
-                    const gw_gb = @as(VecSF, @splat(m.grey_white - m.grey_black));
-                    const raw_grey = (src_val - gb) / gw_gb;
-                    const one = @as(VecSF, @splat(1));
-                    const zero = @as(VecSF, @splat(0));
-                    const grey = @min(one, @max(zero, raw_grey));
-                    const blk_splat = @as(VecSF, @splat(m.black));
-                    const w_b = @as(VecSF, @splat(m.white - m.black));
-                    outputs.set(m.destination, blk_splat + grey * w_b);
-                },
-                .clamp => |c| {
-                    const upper = @as(VecSF, @splat(c.upper));
-                    const lower = @as(VecSF, @splat(c.lower));
-                    const clamped = @min(upper, @max(lower, outputs.get(c.source)));
-                    outputs.set(c.destination, clamped);
-                },
-                .affine_map => |m| m.apply(&outputs),
-                .lut_map => |m| m.apply(&outputs, v_mask_active),
-                .blend => |m| m.apply(&outputs),
-                .normalise => |m| m.apply(&outputs),
-            };
+            for (pipe.stages, 0..) |*stage, si| {
+                switch (stage.*) {
+                    .source => |*src| {
+                        const count = sourceChannels(src.shader);
+                        stage_ctx.actual_fields = count;
+                        var source_values: shaderops.VectorSink(shaderpipe.max_channels) = .{};
+                        shadeSourceSIMD(
+                            N,
+                            coord_space,
+                            stage_ctx,
+                            v_mask_active,
+                            v_weights,
+                            v_xi,
+                            v_eta,
+                            v_nodes_inv_z,
+                            v_subpx_z,
+                            hit,
+                            &pipe_buf.stages[si],
+                            &src.shader,
+                            &source_values,
+                        );
+                        for (0..count) |ch| {
+                            var dest = src.destination;
+                            dest.index += @intCast(ch);
+                            outputs.set(dest, source_values.values[ch]);
+                        }
+                    },
+                    .grey_to_emissivity => |m| {
+                        const src_val = outputs.get(m.source);
+                        const gb = @as(VecSF, @splat(m.grey_black));
+                        const gw_gb = @as(VecSF, @splat(m.grey_white - m.grey_black));
+                        const raw_grey = (src_val - gb) / gw_gb;
+                        const one = @as(VecSF, @splat(1));
+                        const zero = @as(VecSF, @splat(0));
+                        const grey = @min(one, @max(zero, raw_grey));
+                        const blk_splat = @as(VecSF, @splat(m.black));
+                        const w_b = @as(VecSF, @splat(m.white - m.black));
+                        outputs.set(m.destination, blk_splat + grey * w_b);
+                    },
+                    .clamp => |c| {
+                        const upper = @as(VecSF, @splat(c.upper));
+                        const lower = @as(VecSF, @splat(c.lower));
+                        const clamped = @min(upper, @max(lower, outputs.get(c.source)));
+                        outputs.set(c.destination, clamped);
+                    },
+                    .affine_map => |m| m.apply(&outputs),
+                    .lut_map => |m| m.apply(&outputs, v_mask_active),
+                    .blend => |m| m.apply(&outputs),
+                    .normalise => |m| m.apply(&outputs),
+                }
+            }
 
             var resolved: [shaderpipe.max_channels]VecSF = undefined;
             pipe.resolver.evaluate(&outputs, pipe.constants, pipe.channels, &resolved);
@@ -347,7 +383,6 @@ fn shadeSource(
     interp: meshhit.MeshHit(N),
     buf: *const shadertypes.LocalShaderBuff(N),
     source: *const shadertypes.PipeSourcePrepared,
-    ctx_report: anytype,
     scratch: *MatSlice(F),
 ) void {
     switch (source.*) {
@@ -358,7 +393,6 @@ fn shadeSource(
                 interp.core(),
                 buf,
                 s,
-                ctx_report,
                 scratch,
             );
         },
@@ -369,7 +403,6 @@ fn shadeSource(
                 interp.core(),
                 buf,
                 s,
-                ctx_report,
                 scratch,
             );
         },
@@ -380,7 +413,6 @@ fn shadeSource(
                 interp.core(),
                 buf,
                 s,
-                ctx_report,
                 scratch,
             );
         },
@@ -391,7 +423,6 @@ fn shadeSource(
                 interp.core(),
                 buf,
                 s,
-                ctx_report,
                 scratch,
             );
         },
@@ -402,7 +433,6 @@ fn shadeSource(
                 interp.core(),
                 buf,
                 s,
-                ctx_report,
                 scratch,
             );
         },
@@ -413,7 +443,6 @@ fn shadeSource(
                 interp.core(),
                 buf,
                 s,
-                ctx_report,
                 scratch,
             );
         },
@@ -424,7 +453,6 @@ fn shadeSource(
                 interp.core(),
                 buf,
                 s,
-                ctx_report,
                 scratch,
             );
         },
@@ -435,7 +463,6 @@ fn shadeSource(
                 interp.core(),
                 buf,
                 s,
-                ctx_report,
                 scratch,
             );
         },
@@ -446,7 +473,6 @@ fn shadeSource(
                 interp,
                 buf,
                 s,
-                ctx_report,
                 scratch,
             );
         },
@@ -457,7 +483,6 @@ fn shadeSource(
                 interp,
                 buf,
                 s,
-                ctx_report,
                 scratch,
             );
         },
@@ -468,7 +493,6 @@ fn shadeSource(
                 interp,
                 buf,
                 s,
-                ctx_report,
                 scratch,
             );
         },
@@ -479,7 +503,6 @@ fn shadeSourceSIMD(
     comptime N: usize,
     comptime coord_space: CoordSpace,
     ctx: shadertypes.ShadeContext,
-    ctx_report: anytype,
     mask: VecSB,
     weights: [N]VecSF,
     xi: VecSF,
@@ -496,7 +519,6 @@ fn shadeSourceSIMD(
             shadekerns.NodalKernel(N).shadeSIMDTo(
                 coord_space,
                 ctx,
-                ctx_report,
                 mask,
                 weights,
                 xi,
@@ -512,7 +534,6 @@ fn shadeSourceSIMD(
             shadekerns.TexMultiKernel(N, F).shadeSIMDTo(
                 coord_space,
                 ctx,
-                ctx_report,
                 mask,
                 weights,
                 xi,
@@ -528,7 +549,6 @@ fn shadeSourceSIMD(
             shadekerns.TexKernel(N, u8, 1).shadeSIMDTo(
                 coord_space,
                 ctx,
-                ctx_report,
                 mask,
                 weights,
                 xi,
@@ -544,7 +564,6 @@ fn shadeSourceSIMD(
             shadekerns.TexKernel(N, u16, 1).shadeSIMDTo(
                 coord_space,
                 ctx,
-                ctx_report,
                 mask,
                 weights,
                 xi,
@@ -560,7 +579,6 @@ fn shadeSourceSIMD(
             shadekerns.TexKernel(N, F, 1).shadeSIMDTo(
                 coord_space,
                 ctx,
-                ctx_report,
                 mask,
                 weights,
                 xi,
@@ -576,7 +594,6 @@ fn shadeSourceSIMD(
             shadekerns.TexKernel(N, u8, 3).shadeSIMDTo(
                 coord_space,
                 ctx,
-                ctx_report,
                 mask,
                 weights,
                 xi,
@@ -592,7 +609,6 @@ fn shadeSourceSIMD(
             shadekerns.TexKernel(N, u16, 3).shadeSIMDTo(
                 coord_space,
                 ctx,
-                ctx_report,
                 mask,
                 weights,
                 xi,
@@ -608,7 +624,6 @@ fn shadeSourceSIMD(
             shadekerns.TexKernel(N, F, 3).shadeSIMDTo(
                 coord_space,
                 ctx,
-                ctx_report,
                 mask,
                 weights,
                 xi,
@@ -624,7 +639,6 @@ fn shadeSourceSIMD(
             shadekerns.FuncKernel(N, 1).shadeSIMDToHit(
                 coord_space,
                 ctx,
-                ctx_report,
                 mask,
                 weights,
                 xi,
@@ -641,7 +655,6 @@ fn shadeSourceSIMD(
             shadekerns.FuncKernel(N, 3).shadeSIMDToHit(
                 coord_space,
                 ctx,
-                ctx_report,
                 mask,
                 weights,
                 xi,
@@ -658,7 +671,6 @@ fn shadeSourceSIMD(
             shadekerns.FuncKernel(N, 0).shadeSIMDToHit(
                 coord_space,
                 ctx,
-                ctx_report,
                 mask,
                 weights,
                 xi,

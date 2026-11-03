@@ -401,3 +401,11 @@ The Zig demos use the same numbered names and ordering:
 - Rabbit parity checks require greater than 10% foreground coverage in every render, ensuring blank or unrendered frames cannot pass verification.
 - Demos that clear previous output share `src/demo_common.zig` (`demo_common.resetOutputDir`). This removes the named demo output directory and recreates it cleanly.
 - `demo5_cameramodels` renders all 6 distortion families with pixel-box, Gaussian (separable/non-separable), aligned anisotropic Gaussian, and rotated anisotropic Gaussian PSFs across all 3 buffer modes (90 comparison images per run under `<distortion>/<psf>/<buffer-mode>/`). Parity checks require the entire matrix to match.
+
+## Public API and C ABI checks
+
+Run `zig build test-public-api` and `zig build test-c-abi` in Debug after changing
+the public facade or language boundary. `python scripts/gen_c_abi.py --check`
+checks generated declarations; `test-c-abi` compares every descriptor size,
+alignment, and field offset with a C compiler reference. See `API.md` for the
+scene model and the explicit native input/lifetime contract.

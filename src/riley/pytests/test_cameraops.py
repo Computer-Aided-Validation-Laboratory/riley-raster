@@ -249,21 +249,6 @@ def test_calc_pixel_resolution() -> None:
     assert res == pytest.approx(0.2, rel=1e-5)
 
 
-def test_pos_fill_frame_from_rot_deprecated_wrapper() -> None:
-    coords = np.array(
-        [
-            [-10.0, -5.0, 0.0],
-            [10.0, 5.0, 0.0],
-        ],
-        dtype=np.float64,
-    )
-    with pytest.deprecated_call():
-        pos = riley.pos_fill_frame_from_rot(
-            coords,
-            (100, 100),
-            (0.1, 0.1),
-            10.0,
-            (0.0, 0.0, 0.0),
-            frame_fill=1.0,
-        )
-    np.testing.assert_allclose(pos, (0.0, 0.0, 20.0), atol=1e-5)
+def test_obsolete_camera_wrappers_are_not_public() -> None:
+    assert not hasattr(riley, "pos_fill_frame_from_rot")
+    assert not hasattr(riley, "pos_fill_frame_from_rot_over_meshes")

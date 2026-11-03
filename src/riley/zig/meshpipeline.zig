@@ -841,46 +841,6 @@ fn shaderSetHitSelection(
     return selection;
 }
 
-test "MeshHit requirements follow the selected camera role" {
-    const stages = [_]shadertypes.ShaderPipeStageStatic{
-        .{ .source = .{
-            .shader = .{ .func = .{
-                .elem_uvs = null,
-                .coord_mode = .world_reference,
-                .builtin = .linear,
-            } },
-            .destination = .{ .kind = .channel, .index = 0 },
-        } },
-        .{ .source = .{
-            .shader = .{ .func = .{
-                .elem_uvs = null,
-                .coord_mode = .world_deformed,
-                .builtin = .lambertian_normal_z,
-            } },
-            .destination = .{ .kind = .channel, .index = 0 },
-        } },
-    };
-    const shaders = shadertypes.MeshShaderSetStatic{
-        .mono = .{ .direct = .{ .nodal = .{ .field = undefined } } },
-        .ir = .{ .pipe = .{
-            .stages = &stages,
-            .resolver = undefined,
-            .constants = &.{},
-        } },
-    };
-    const direct = shaderSetHitSelection(shaders, .mono, .exact);
-    try std.testing.expect(direct.count() == 0);
-    try std.testing.expect(!shaderSetNeedsDeformedWorld(shaders, .mono));
-
-    const pipe = shaderSetHitSelection(shaders, .ir, .exact);
-    try std.testing.expect(pipe.contains(.coords_ref));
-    try std.testing.expect(pipe.contains(.coords_def));
-    try std.testing.expect(pipe.contains(.surf_norm));
-    try std.testing.expect(shaderSetNeedsDeformedWorld(shaders, .ir));
-
-    const no_norm = shaderSetHitSelection(shaders, .ir, .none);
-    try std.testing.expect(!no_norm.contains(.surf_norm));
-}
 
 fn shaderSetNeedsDeformedWorld(
     shaders: shadertypes.MeshShaderSetStatic,
@@ -2277,4 +2237,50 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
     };
+}
+
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
+test "MeshHit requirements follow the selected camera role" {
+    const stages = [_]shadertypes.ShaderPipeStageStatic{
+        .{ .source = .{
+            .shader = .{ .func = .{
+                .elem_uvs = null,
+                .coord_mode = .world_reference,
+                .builtin = .linear,
+            } },
+            .destination = .{ .kind = .channel, .index = 0 },
+        } },
+        .{ .source = .{
+            .shader = .{ .func = .{
+                .elem_uvs = null,
+                .coord_mode = .world_deformed,
+                .builtin = .lambertian_normal_z,
+            } },
+            .destination = .{ .kind = .channel, .index = 0 },
+        } },
+    };
+    const shaders = shadertypes.MeshShaderSetStatic{
+        .mono = .{ .direct = .{ .nodal = .{ .field = undefined } } },
+        .ir = .{ .pipe = .{
+            .stages = &stages,
+            .resolver = undefined,
+            .constants = &.{},
+        } },
+    };
+    const direct = shaderSetHitSelection(shaders, .mono, .exact);
+    try std.testing.expect(direct.count() == 0);
+    try std.testing.expect(!shaderSetNeedsDeformedWorld(shaders, .mono));
+
+    const pipe = shaderSetHitSelection(shaders, .ir, .exact);
+    try std.testing.expect(pipe.contains(.coords_ref));
+    try std.testing.expect(pipe.contains(.coords_def));
+    try std.testing.expect(pipe.contains(.surf_norm));
+    try std.testing.expect(shaderSetNeedsDeformedWorld(shaders, .ir));
+
+    const no_norm = shaderSetHitSelection(shaders, .ir, .none);
+    try std.testing.expect(!no_norm.contains(.surf_norm));
 }

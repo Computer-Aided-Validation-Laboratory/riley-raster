@@ -12,7 +12,7 @@ This project follows the Computer Aided Validation Laboratory style guides for P
 The `dev/` directory provides comprehensive architectural, mathematical, testing, and conventions documentation for Riley developers:
 
 - [**`dev/TESTING.md`**](./dev/TESTING.md): Testing architecture, quickstart commands, scene descriptions, suite coverage, reference generation and automated regression diagnostics.
-- [**`dev/SHADERPIPE.md`**](./SHADERPIPE.md): Camera pipe families, Python and C configuration, resolver expressions, and mixed camera output layout.
+- [**`dev/API.md`**](./API.md): Public scene-building API, shader roles, Python models, C ABI ownership, generated declarations, and boundary verification.
 - [**`dev/THEORY.md`**](./dev/THEORY.md): Mathematical foundations and engine design details, including polynomial camera distortion formulation, distortion-aware rasterisation frontend bounds, render thread budgets, and image save mode mechanics.
 - [**`dev/ASSUMPTIONS.md`**](./dev/ASSUMPTIONS.md): Supported engineering operating envelope, mesh validity contracts, conservative numerical margins, and reasoning guidelines for review.
 - [**`dev/MESHCONVENTION.md`**](./dev/MESHCONVENTION.md): Riley standard mesh representation, surface element definitions (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`), 3D continuum elements, node ordering, and connectivity conventions.

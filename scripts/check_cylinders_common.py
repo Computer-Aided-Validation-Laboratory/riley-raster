@@ -107,10 +107,10 @@ def render_check(
             parallel=4,
             save_strategy=riley.SaveStrategy.disk,
         )
-        config.image_save_mode = riley.ImageSaveMode.grey
-        config.save_bits = 8
-        config.save_format = riley.ImageFormat.bmp
-        config.save_scaling = riley.ScaleStrategy.none
+
+
+
+
         camera.background_value = 0.5 * (2**8 - 1)
         riley.raster(
             mesh,

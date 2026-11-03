@@ -13,7 +13,7 @@ const ops = riley.ops;
 
 test "public API surface is available through namespaces" {
     _ = riley.raster;
-    _ = riley.rasterAdvanced;
+    _ = riley.rasterInto;
     _ = riley.MeshInput;
     _ = riley.MeshType;
     _ = riley.Coords;
@@ -22,8 +22,8 @@ test "public API surface is available through namespaces" {
     _ = riley.CameraInput;
     _ = riley.RasterConfig;
     _ = riley.DistortParams;
-    _ = riley.BrownCon;
-    _ = riley.BrownConExt;
+    _ = riley.BrownConParams;
+    _ = riley.BrownConExtParams;
     _ = riley.ShaderPipeInput;
     _ = riley.FuncShaderBuiltin;
     _ = riley.Resolver;
@@ -39,6 +39,22 @@ test "public API surface is available through namespaces" {
 
     _ = ops.boundsCenter;
     _ = ops.lookAtPoint;
-    _ = ops.concreteTexture;
-    _ = ops.calcElemNodeNormal;
+    _ = ops.stageSource;
+    _ = ops.resolverIdentity;
+}
+
+test "public API excludes render implementation details" {
+    const std = @import("std");
+    try std.testing.expect(!@hasDecl(riley, "MeshStatic"));
+    try std.testing.expect(!@hasDecl(riley, "rasterAdvanced"));
+    try std.testing.expect(!@hasDecl(ops, "prepMeshFrame"));
+    try std.testing.expect(!@hasDecl(ops, "sampLanes"));
+    try std.testing.expect(!@hasDecl(ops, "selectShader"));
+}
+
+test "all maths types remain public" {
+    const std = @import("std");
+    inline for (.{ "F", "Vec2F", "Vec3F", "Vec2T", "Vec3T", "Vec2Ops", "Vec3Ops", "Mat22F", "Mat33F", "Mat44F", "MatSlice", "NDArray", "MappedNDArray", "Rotation" }) |name| {
+        try std.testing.expect(@hasDecl(maths, name));
+    }
 }

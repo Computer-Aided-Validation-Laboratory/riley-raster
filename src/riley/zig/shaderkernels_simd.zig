@@ -38,7 +38,6 @@ pub fn NodalKernel(comptime N: usize) type {
             interp: meshhit.RasterHit(N),
             shader_buf: *const shadertypes.LocalShaderBuff(N),
             shader: *const shadertypes.NodalPrepared,
-            ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
             comm.shadeNodalScalComm(
@@ -48,7 +47,6 @@ pub fn NodalKernel(comptime N: usize) type {
                 interp,
                 shader_buf,
                 shader,
-                ctx_report,
                 spx_image_scratch,
             );
         }
@@ -56,7 +54,6 @@ pub fn NodalKernel(comptime N: usize) type {
         pub inline fn shadeSIMDTo(
             comptime coord_space: CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
-            ctx_report: anytype,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
             v_xi: VecSF,
@@ -70,7 +67,6 @@ pub fn NodalKernel(comptime N: usize) type {
             _ = v_xi;
             _ = v_eta;
             _ = v_mask_active;
-            _ = ctx_report;
 
             if (comptime coord_space == CoordSpace.raster) {
                 shaderops.fillNodalPerspSIMD(
@@ -100,7 +96,6 @@ pub fn NodalKernel(comptime N: usize) type {
         pub inline fn shadeSIMD(
             comptime coord_space: CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
-            ctx_report: anytype,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
             v_xi: VecSF,
@@ -112,10 +107,10 @@ pub fn NodalKernel(comptime N: usize) type {
             spx_image_scratch: *MatSlice(F),
         ) void {
             var sink = shaderops.ImageSink{ .ctx = ctx_shade, .scratch = spx_image_scratch };
+
             shadeSIMDTo(
                 coord_space,
                 ctx_shade,
-                ctx_report,
                 v_mask_active,
                 v_weights,
                 v_xi,
@@ -149,7 +144,6 @@ pub fn TexKernel(
             interp: meshhit.RasterHit(N),
             shader_buf: *const shadertypes.LocalShaderBuff(N),
             shader: *const shadertypes.TexPrepared(T, C),
-            ctx_report: anytype,
             spx_img_scratch: *MatSlice(F),
         ) void {
             comm.shadeTexScalComm(
@@ -161,7 +155,6 @@ pub fn TexKernel(
                 interp,
                 shader_buf,
                 shader,
-                ctx_report,
                 spx_img_scratch,
             );
         }
@@ -169,7 +162,6 @@ pub fn TexKernel(
         pub inline fn shadeSIMDTo(
             comptime coord_space: CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
-            ctx_report: anytype,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
             v_xi: VecSF,
@@ -186,7 +178,6 @@ pub fn TexKernel(
                 C,
                 coord_space,
                 ctx_shade,
-                ctx_report,
                 v_mask_active,
                 v_weights,
                 v_xi,
@@ -202,7 +193,6 @@ pub fn TexKernel(
         pub inline fn shadeSIMD(
             comptime coord_space: CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
-            ctx_report: anytype,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
             v_xi: VecSF,
@@ -217,7 +207,6 @@ pub fn TexKernel(
             shadeSIMDTo(
                 coord_space,
                 ctx_shade,
-                ctx_report,
                 v_mask_active,
                 v_weights,
                 v_xi,
@@ -243,7 +232,6 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
             interp: meshhit.RasterHit(N),
             shader_buf: *const shadertypes.LocalShaderBuff(N),
             shader: *const shadertypes.TexMultiPrepared(T),
-            ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
             inline for (1..9) |C| {
@@ -255,7 +243,6 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
                         interp,
                         shader_buf,
                         &concrete,
-                        ctx_report,
                         spx_image_scratch,
                     );
                     return;
@@ -267,7 +254,6 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
         pub inline fn shadeSIMDTo(
             comptime coord_space: CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
-            ctx_report: anytype,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
             v_xi: VecSF,
@@ -284,7 +270,6 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
                     TexKernel(N, T, C).shadeSIMDTo(
                         coord_space,
                         ctx_shade,
-                        ctx_report,
                         v_mask_active,
                         v_weights,
                         v_xi,
@@ -304,7 +289,6 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
         pub inline fn shadeSIMD(
             comptime coord_space: CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
-            ctx_report: anytype,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
             v_xi: VecSF,
@@ -319,7 +303,6 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
             shadeSIMDTo(
                 coord_space,
                 ctx_shade,
-                ctx_report,
                 v_mask_active,
                 v_weights,
                 v_xi,
@@ -340,7 +323,6 @@ fn shadeTexSIMD(
     comptime C: usize,
     comptime coord_space: CoordSpace,
     ctx_shade: shadertypes.ShadeContext,
-    ctx_report: anytype,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
     v_xi: VecSF,
@@ -353,7 +335,6 @@ fn shadeTexSIMD(
 ) void {
     _ = v_xi;
     _ = v_eta;
-    _ = ctx_report;
 
     shadeTexSIMDDispatchSample(
         N,
@@ -484,7 +465,6 @@ pub fn FuncKernel(
             interp: meshhit.MeshHit(N),
             shader_buf: *const shadertypes.LocalShaderBuff(N),
             shader: *const shadertypes.FuncPrepared,
-            ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
             const hit = comm.completeFuncHit(N, coord_space, interp, shader_buf, shader);
@@ -496,7 +476,6 @@ pub fn FuncKernel(
                 hit,
                 shader_buf,
                 shader,
-                ctx_report,
                 spx_image_scratch,
             );
         }
@@ -504,7 +483,6 @@ pub fn FuncKernel(
         pub inline fn shadeSIMDTo(
             comptime coord_space: CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
-            ctx_report: anytype,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
             v_xi: VecSF,
@@ -528,7 +506,6 @@ pub fn FuncKernel(
             shadeSIMDToHit(
                 coord_space,
                 ctx_shade,
-                ctx_report,
                 v_mask_active,
                 v_weights,
                 v_xi,
@@ -545,7 +522,6 @@ pub fn FuncKernel(
         pub inline fn shadeSIMDToHit(
             comptime coord_space: CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
-            ctx_report: anytype,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
             v_xi: VecSF,
@@ -557,8 +533,6 @@ pub fn FuncKernel(
             shader: *const shadertypes.FuncPrepared,
             sink: anytype,
         ) void {
-            _ = ctx_report;
-
             if (comptime coord_space == CoordSpace.raster) {
                 shaderops.fillFuncPerspSIMD(
                     N,
@@ -597,7 +571,6 @@ pub fn FuncKernel(
         pub inline fn shadeSIMD(
             comptime coord_space: CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
-            ctx_report: anytype,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
             v_xi: VecSF,
@@ -612,7 +585,6 @@ pub fn FuncKernel(
             shadeSIMDTo(
                 coord_space,
                 ctx_shade,
-                ctx_report,
                 v_mask_active,
                 v_weights,
                 v_xi,

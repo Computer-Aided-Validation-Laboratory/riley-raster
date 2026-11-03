@@ -82,7 +82,7 @@ def main() -> None:
         connect=block.connect,
         disp=disp,
         shaders=riley.MeshShaderSet(
-            direct=riley.TextureShader(uvs=uvs, texture=texture),
+            mono=riley.TextureShader(uvs=uvs, texture=texture),
         ),
     )
     coords = mesh.coords
