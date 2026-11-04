@@ -408,6 +408,7 @@ pub fn prepVisNormalsThreaded(
     chunk_exec: *parachunkexec.ParaChunkExecutor,
     elem_chunk_size: usize,
     vis_chunk_size: usize,
+    referenced_nodes_num: usize,
 ) !ndarray.MappedNDArray(F) {
     return try prepVisNormalsThreadedN(
         comptime MT.getNodesNum(),
@@ -420,6 +421,7 @@ pub fn prepVisNormalsThreaded(
         chunk_exec,
         elem_chunk_size,
         vis_chunk_size,
+        referenced_nodes_num,
     );
 }
 
@@ -434,6 +436,7 @@ pub fn prepVisNormalsThreadedN(
     chunk_exec: *parachunkexec.ParaChunkExecutor,
     elem_chunk_size: usize,
     vis_chunk_size: usize,
+    referenced_nodes_num: usize,
 ) !ndarray.MappedNDArray(F) {
     var prep_normals = try initIdentityMappedNormals(
         N,
@@ -461,7 +464,7 @@ pub fn prepVisNormalsThreadedN(
             );
         },
         .avg => {
-            const nodes_num = getConnectNodesNum(connect);
+            const nodes_num = referenced_nodes_num;
             const elem_chunks_num = parachunkexec.getStaticPartitionsNum(
                 chunk_exec,
                 connect.getElemsNum(),

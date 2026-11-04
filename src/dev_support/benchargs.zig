@@ -13,6 +13,8 @@ const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const textypes = @import("../riley/zig/texturetypes.zig");
 
 pub const BenchArgs = struct {
+    data_dir: []const u8 = "data/tilt",
+    data_suffix: []const u8 = "fullraster",
     out_dir: []const u8,
     image_out_dir: []const u8,
     render_mode: rastcfg.RenderMode,
@@ -50,6 +52,7 @@ pub const TextureStorage = enum {
 };
 
 pub const ShaderSubset = enum {
+    static_preparation,
     all,
     texture,
     shaderpipe_baseline,
@@ -141,7 +144,11 @@ pub fn parseArgsWithDefaults(
             const value = argToSlice(args[ii + 1]);
             skip_next = true;
 
-            if (std.mem.eql(u8, arg, "--render-mode")) {
+            if (std.mem.eql(u8, arg, "--data-dir")) {
+                bench_args.data_dir = value;
+            } else if (std.mem.eql(u8, arg, "--data-suffix")) {
+                bench_args.data_suffix = value;
+            } else if (std.mem.eql(u8, arg, "--render-mode")) {
                 bench_args.render_mode =
                     try parseEnum(rastcfg.RenderMode, value);
             } else if (std.mem.eql(u8, arg, "--render-group-count")) {

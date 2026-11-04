@@ -212,7 +212,7 @@ pub fn PipeKernel(comptime N: usize) type {
             for (pipe.stages, 0..) |*stage, si| {
                 switch (stage.*) {
                     .source => |*src| {
-                        const count = sourceChannels(src.shader);
+                        const count = src.channels;
 
                         stage_ctx.actual_fields = count;
 
@@ -234,8 +234,8 @@ pub fn PipeKernel(comptime N: usize) type {
                     },
                     .grey_to_emissivity => |m| {
                         const grey = std.math.clamp((outputs.get(m.source) - m.grey_black) /
-                            (m.grey_white - m.grey_black), 0, 1);
-                        outputs.set(m.destination, m.black + grey * (m.white - m.black));
+                            m.grey_range, 0, 1);
+                        outputs.set(m.destination, m.black + grey * m.white_range);
                     },
                     .clamp => |c| {
                         const clamped = std.math.clamp(
@@ -289,7 +289,7 @@ pub fn PipeKernel(comptime N: usize) type {
             for (pipe.stages, 0..) |*stage, si| {
                 switch (stage.*) {
                     .source => |*src| {
-                        const count = sourceChannels(src.shader);
+                        const count = src.channels;
                         stage_ctx.actual_fields = count;
                         var source_values: shaderops.VectorSink(shaderpipe.max_channels) = .{};
                         shadeSourceSIMD(
@@ -316,13 +316,13 @@ pub fn PipeKernel(comptime N: usize) type {
                     .grey_to_emissivity => |m| {
                         const src_val = outputs.get(m.source);
                         const gb = @as(VecSF, @splat(m.grey_black));
-                        const gw_gb = @as(VecSF, @splat(m.grey_white - m.grey_black));
+                        const gw_gb = @as(VecSF, @splat(m.grey_range));
                         const raw_grey = (src_val - gb) / gw_gb;
                         const one = @as(VecSF, @splat(1));
                         const zero = @as(VecSF, @splat(0));
                         const grey = @min(one, @max(zero, raw_grey));
                         const blk_splat = @as(VecSF, @splat(m.black));
-                        const w_b = @as(VecSF, @splat(m.white - m.black));
+                        const w_b = @as(VecSF, @splat(m.white_range));
                         outputs.set(m.destination, blk_splat + grey * w_b);
                     },
                     .clamp => |c| {
@@ -358,21 +358,6 @@ pub fn PipeKernel(comptime N: usize) type {
                 }
             }
         }
-    };
-}
-
-fn sourceChannels(source: shadertypes.PipeSourcePrepared) u8 {
-    return switch (source) {
-        .nodal => |n| if (n.elem_field.dims.len == 3)
-            @intCast(n.elem_field.dims[1])
-        else
-            @intCast(n.elem_field.dims[2]),
-        .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
-        .tex_multi_f => |multi| @intCast(multi.tex.array.dims[0]),
-        .func => 1,
-        .func_rgb => 3,
-        .func_multi => |multi| @intCast(multi.channels.len),
-        else => 1,
     };
 }
 

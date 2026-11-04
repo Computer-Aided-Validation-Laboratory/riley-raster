@@ -11,6 +11,7 @@ const hullmultiroot = @import("hullmultiroot.zig");
 const shaderfunc = @import("shaderfunc.zig");
 const fieldtypes = @import("fieldtypes.zig");
 const std = @import("std");
+const shaderpipe = @import("shaderpipe.zig");
 
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -46,7 +47,10 @@ const distortbounds = @import("distortbounds.zig");
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub fn countFrames(meshes: []const meshtypes.MeshInput, cameras: []const cameratypes.CameraInput) usize {
+pub fn countFrames(
+    meshes: []const meshtypes.MeshInput,
+    cameras: []const cameratypes.CameraInput,
+) usize {
     const dim_time_pre: usize = 0;
     var num_time: usize = 1;
 
@@ -105,7 +109,10 @@ pub fn countFrames(meshes: []const meshtypes.MeshInput, cameras: []const camerat
     return num_time;
 }
 
-pub fn countOutputFields(meshes: []const meshtypes.MeshInput, cameras: []const cameratypes.CameraInput) u8 {
+pub fn countOutputFields(
+    meshes: []const meshtypes.MeshInput,
+    cameras: []const cameratypes.CameraInput,
+) u8 {
     var num_fields: u8 = 0;
     for (meshes) |mesh| {
         for (cameras) |camera| {
@@ -253,6 +260,7 @@ pub fn meshInputFromSimDataSlice(
 pub fn initMeshStatic(
     allocator: std.mem.Allocator,
     mesh_input: *const meshtypes.MeshInput,
+    active_roles: [4]bool,
 ) !meshtypes.MeshStatic {
     const coords_orig = try sceneops.duplicateCoords(
         allocator,
@@ -260,28 +268,45 @@ pub fn initMeshStatic(
     );
 
     var shaders: shadertypes.MeshShaderSetStatic = .{};
-    if (mesh_input.shaders.mono_direct) |shader|
-        shaders.mono = .{ .direct = try createShaderMonoStatic(allocator, shader, &mesh_input.connect) };
-    if (mesh_input.shaders.mono_pipe) |pipe|
-        shaders.mono = .{ .pipe = try createShaderPipeStatic(allocator, pipe, &mesh_input.connect) };
-    if (mesh_input.shaders.rgb_pipe) |pipe|
-        shaders.rgb = try createShaderPipeStatic(
-            allocator,
-            pipe,
-            &mesh_input.connect,
-        );
-    if (mesh_input.shaders.ir_direct) |shader|
-        shaders.ir = .{ .direct = try createShaderMonoStatic(allocator, shader, &mesh_input.connect) };
-    if (mesh_input.shaders.ir_pipe) |pipe|
-        shaders.ir = .{ .pipe = try createShaderPipeStatic(allocator, pipe, &mesh_input.connect) };
-    if (mesh_input.shaders.multifield_pipe) |pipe|
-        shaders.multifield = try createShaderPipeStatic(
-            allocator,
-            pipe,
-            &mesh_input.connect,
-        );
+    if (active_roles[0]) {
+        if (mesh_input.shaders.mono_direct) |shader|
+            shaders.mono = .{ .direct = try createShaderMonoStatic(allocator, shader, &mesh_input.connect) };
+        if (mesh_input.shaders.mono_pipe) |pipe|
+            shaders.mono = .{ .pipe = try createShaderPipeStatic(allocator, pipe, &mesh_input.connect) };
+    }
+    if (active_roles[1]) {
+        if (mesh_input.shaders.rgb_pipe) |pipe|
+            shaders.rgb = try createShaderPipeStatic(
+                allocator,
+                pipe,
+                &mesh_input.connect,
+            );
+    }
+    if (active_roles[2]) {
+        if (mesh_input.shaders.ir_direct) |shader|
+            shaders.ir = .{ .direct = try createShaderMonoStatic(allocator, shader, &mesh_input.connect) };
+        if (mesh_input.shaders.ir_pipe) |pipe|
+            shaders.ir = .{ .pipe = try createShaderPipeStatic(allocator, pipe, &mesh_input.connect) };
+    }
+    if (active_roles[3]) {
+        if (mesh_input.shaders.multifield_pipe) |pipe|
+            shaders.multifield = try createShaderPipeStatic(
+                allocator,
+                pipe,
+                &mesh_input.connect,
+            );
+    }
+    const roles = [_]shadertypes.RenderFormat{ .mono, .rgb, .ir, .{ .multifield = 1 } };
+    var hit_selections: [4]meshhit.MeshHitSelection = undefined;
+    var needs_normals = false;
+    for (roles, 0..) |role, ii| {
+        hit_selections[ii] = shaderSetHitSelection(shaders, role, mesh_input.normal_type);
+        needs_normals = needs_normals or hit_selections[ii].contains(.surf_norm);
+    }
 
     return .{
+        .referenced_nodes_num = if (needs_normals and mesh_input.normal_type == .avg) normals.getConnectNodesNum(&mesh_input.connect) else 0,
+        .hit_selections = hit_selections,
         .mesh_type = mesh_input.mesh_type,
         .normal_type = mesh_input.normal_type,
         .coords_orig = coords_orig,
@@ -306,100 +331,80 @@ fn createShaderPipeStatic(
             .source => |src| .{ .source = .{
                 .shader = try createPipeSourceStatic(allocator, src.shader, connect),
                 .destination = src.destination,
-                .global_scaling = switch (src.shader) {
-                    .nodal => |n| if (n.scale_over == .over_frames)
-                        imageops.getScalingParamsNDArray(&n.field.array, null, n.scaling)
-                    else
-                        null,
-                    else => null,
+                .channels = switch (src.shader) {
+                    .nodal => |n| @intCast(n.field.getFieldsN()),
+                    .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f, .func_rgb => 3,
+                    .tex_multi_u8 => |t| @intCast(t.tex.array.dims[0]),
+                    .tex_multi_u16 => |t| @intCast(t.tex.array.dims[0]),
+                    .tex_multi_f => |t| @intCast(t.tex.array.dims[0]),
+                    .func_multi => |f| @intCast(f.channels.len),
+                    else => 1,
                 },
             } },
-            .grey_to_emissivity => |m| .{ .grey_to_emissivity = m },
+            .grey_to_emissivity => |m| .{ .grey_to_emissivity = shadertypes.GreyToEmissivityPrepared.init(m) },
             .clamp => |c| .{ .clamp = c },
             .affine_map => |m| .{ .affine_map = m },
-            .lut_map => |m| .{ .lut_map = m },
-            .blend => |m| .{ .blend = m },
+            .lut_map => |m| .{ .lut_map = shadertypes.LUTMapPrepared.init(m) },
+            .blend => |m| .{ .blend = shadertypes.BlendPrepared.init(m) },
             .normalise => |m| .{ .normalise = m },
         };
     }
 
     return .{
         .stages = stages,
-        .resolver = pipe.resolver,
+        .resolver = shaderpipe.PreparedResolver.init(pipe.resolver),
         .constants = pipe.constants,
+    };
+}
+
+fn createNodalStatic(input: shadertypes.NodalInput) shadertypes.NodalStatic {
+    const bounds: imageops.ScalingParams = if (input.scale_over == .over_frames or input.scaling == .fixed)
+        imageops.getScalingParamsNDArray(&input.field.array, null, input.scaling)
+    else
+        .{ .min = 0, .range = 1 };
+    const factors = imageops.getScaleFactors(input.scaling, null, bounds);
+    return .{
+        .field = input.field,
+        .output_gain = input.output_gain,
+        .output_offset = input.output_offset,
+        .scaling = input.scaling,
+        .scale_over = input.scale_over,
+        .scale_mul = factors.mul * input.output_gain,
+        .scale_add = factors.add * input.output_gain + input.output_offset,
+    };
+}
+
+fn createTextureStatic(
+    comptime T: type,
+    comptime C: usize,
+    allocator: std.mem.Allocator,
+    input: shadertypes.TexInput(texturetypes.TexDataFix(T, C)),
+    connect: *const meshtypes.Connect,
+) !shadertypes.TexStatic(T, C) {
+    const factors = imageops.getScaleFactors(input.scaling, null, imageops.getScalingParamsTex(T, C, &input.tex, input.scaling));
+    return .{
+        .elem_uvs = try prepUVs(allocator, &input.uvs, connect),
+        .tex = input.tex,
+        .samp_cfg = input.samp_cfg,
+        .output_gain = input.output_gain,
+        .output_offset = input.output_offset,
+        .scaling = input.scaling,
+        .scale_mul = factors.mul * input.output_gain,
+        .scale_add = factors.add * input.output_gain + input.output_offset,
     };
 }
 
 fn createShaderMonoStatic(
     allocator: std.mem.Allocator,
-    shader_in: shadertypes.ShaderMonoInput,
+    input: shadertypes.ShaderMonoInput,
     connect: *const meshtypes.Connect,
 ) !shadertypes.ShaderMonoStatic {
-    return switch (shader_in) {
-        .nodal => |nodal_in| .{
-            .nodal = .{
-                .field = nodal_in.field,
-                .output_gain = nodal_in.output_gain,
-                .output_offset = nodal_in.output_offset,
-                .scaling = nodal_in.scaling,
-                .scale_over = nodal_in.scale_over,
-                .global_scaling = if (nodal_in.scale_over == .over_frames)
-                    imageops.getScalingParamsNDArray(
-                        &nodal_in.field.array,
-                        null,
-                        nodal_in.scaling,
-                    )
-                else
-                    null,
-            },
-        },
-        .tex_u8 => |tex_in| .{
-            .tex_u8 = .{
-                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .output_gain = tex_in.output_gain,
-                .output_offset = tex_in.output_offset,
-                .scaling = tex_in.scaling,
-            },
-        },
-        .tex_u16 => |tex_in| .{
-            .tex_u16 = .{
-                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .output_gain = tex_in.output_gain,
-                .output_offset = tex_in.output_offset,
-                .scaling = tex_in.scaling,
-            },
-        },
-        .tex_f => |tex_in| .{
-            .tex_f = .{
-                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .output_gain = tex_in.output_gain,
-                .output_offset = tex_in.output_offset,
-                .scaling = tex_in.scaling,
-            },
-        },
-        .func => |tex_func_in| .{
-            .func = .{
-                .elem_uvs = if (tex_func_in.uvs) |uvs|
-                    try prepUVs(allocator, &uvs, connect)
-                else
-                    null,
-                .coord_mode = tex_func_in.coord_mode,
-                .builtin = tex_func_in.builtin,
-                .params = shaderfunc.normFuncShaderParams(
-                    tex_func_in.builtin,
-                    tex_func_in.params,
-                ),
-                .output_gain = tex_func_in.output_gain,
-                .output_offset = tex_func_in.output_offset,
-                .scaling = tex_func_in.scaling,
-            },
-        },
+    return switch (input) {
+        .nodal => |n| .{ .nodal = createNodalStatic(n) },
+        .tex_u8 => |t| .{ .tex_u8 = try createTextureStatic(u8, 1, allocator, t, connect) },
+        .tex_u16 => |t| .{ .tex_u16 = try createTextureStatic(u16, 1, allocator, t, connect) },
+        .tex_f => |t| .{ .tex_f = try createTextureStatic(F, 1, allocator, t, connect) },
+        .func => |f| .{ .func = try funcStaticFromInput(allocator, f, connect) },
     };
 }
 
@@ -408,11 +413,15 @@ fn funcStaticFromInput(
     input: shadertypes.FuncInput,
     connect: *const meshtypes.Connect,
 ) !shadertypes.FuncStatic {
+    const factors = imageops.getScaleFactors(input.scaling, null, .{ .min = 0, .range = 1 });
     return .{
-        .elem_uvs = if (input.uvs) |uvs|
-            try prepUVs(allocator, &uvs, connect)
+        .elem_uvs = if (input.coord_mode == .uv)
+            try prepUVs(allocator, &(input.uvs orelse return error.MissingUVsForFuncShader), connect)
         else
             null,
+        .scale_mul = factors.mul * input.output_gain,
+        .scale_add = factors.add * input.output_gain + input.output_offset,
+        .needs_normal = input.builtin == .lambertian_normal_z,
         .coord_mode = input.coord_mode,
         .builtin = input.builtin,
         .params = shaderfunc.normFuncShaderParams(
@@ -430,117 +439,43 @@ fn funcMultiStaticFromInput(
     input: shadertypes.FuncMultiInput,
     connect: *const meshtypes.Connect,
 ) !shadertypes.FuncStatic {
-    return .{
-        .elem_uvs = if (input.uvs) |uvs|
-            try prepUVs(allocator, &uvs, connect)
-        else
-            null,
-        .coord_mode = input.coord_mode,
-        .channels = input.channels,
-    };
+    const channels = try allocator.alloc(shadertypes.FuncChannelPrepared, input.channels.len);
+    var needs_normal = false;
+    for (input.channels, channels) |ch, *out| {
+        const factors = imageops.getScaleFactors(ch.scaling, null, .{ .min = 0, .range = 1 });
+        out.* = .{
+            .builtin = ch.builtin,
+            .params = shaderfunc.normFuncShaderParams(ch.builtin, ch.params),
+            .scale_mul = factors.mul * ch.output_gain,
+            .scale_add = factors.add * ch.output_gain + ch.output_offset,
+        };
+        needs_normal = needs_normal or ch.builtin == .lambertian_normal_z;
+    }
+    return .{ .elem_uvs = if (input.coord_mode == .uv)
+        try prepUVs(allocator, &(input.uvs orelse return error.MissingUVsForFuncShader), connect)
+    else
+        null, .coord_mode = input.coord_mode, .channels = channels, .needs_normal = needs_normal };
 }
 
 fn createPipeSourceStatic(
     allocator: std.mem.Allocator,
-    source_in: shadertypes.PipeSourceInput,
+    input: shadertypes.PipeSourceInput,
     connect: *const meshtypes.Connect,
 ) !shadertypes.PipeSourceStatic {
-    return switch (source_in) {
-        .nodal => |nodal_in| .{
-            .nodal = .{
-                .field = nodal_in.field,
-                .output_gain = nodal_in.output_gain,
-                .output_offset = nodal_in.output_offset,
-                .scaling = nodal_in.scaling,
-                .scale_over = nodal_in.scale_over,
-                .global_scaling = if (nodal_in.scale_over == .over_frames)
-                    imageops.getScalingParamsNDArray(
-                        &nodal_in.field.array,
-                        null,
-                        nodal_in.scaling,
-                    )
-                else
-                    null,
-            },
-        },
-        .tex_multi_u8 => |tex_in| .{
-            .tex_multi_f = try createTextureMultiStatic(u8, allocator, tex_in, connect),
-        },
-        .tex_multi_u16 => |tex_in| .{
-            .tex_multi_f = try createTextureMultiStatic(u16, allocator, tex_in, connect),
-        },
-        .tex_multi_f => |tex_in| .{
-            .tex_multi_f = try createTextureMultiStatic(F, allocator, tex_in, connect),
-        },
-        .tex_u8 => |tex_in| .{
-            .tex_u8 = .{
-                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .output_gain = tex_in.output_gain,
-                .output_offset = tex_in.output_offset,
-                .scaling = tex_in.scaling,
-            },
-        },
-        .tex_u16 => |tex_in| .{
-            .tex_u16 = .{
-                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .output_gain = tex_in.output_gain,
-                .output_offset = tex_in.output_offset,
-                .scaling = tex_in.scaling,
-            },
-        },
-        .tex_f => |tex_in| .{
-            .tex_f = .{
-                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .output_gain = tex_in.output_gain,
-                .output_offset = tex_in.output_offset,
-                .scaling = tex_in.scaling,
-            },
-        },
-        .tex_rgb_u8 => |tex_in| .{
-            .tex_rgb_u8 = .{
-                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .output_gain = tex_in.output_gain,
-                .output_offset = tex_in.output_offset,
-                .scaling = tex_in.scaling,
-            },
-        },
-        .tex_rgb_u16 => |tex_in| .{
-            .tex_rgb_u16 = .{
-                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .output_gain = tex_in.output_gain,
-                .output_offset = tex_in.output_offset,
-                .scaling = tex_in.scaling,
-            },
-        },
-        .tex_rgb_f => |tex_in| .{
-            .tex_rgb_f = .{
-                .elem_uvs = try prepUVs(allocator, &tex_in.uvs, connect),
-                .tex = tex_in.tex,
-                .samp_cfg = tex_in.samp_cfg,
-                .output_gain = tex_in.output_gain,
-                .output_offset = tex_in.output_offset,
-                .scaling = tex_in.scaling,
-            },
-        },
-        .func => |func_in| .{
-            .func = try funcStaticFromInput(allocator, func_in, connect),
-        },
-        .func_rgb => |func_in| .{
-            .func_rgb = try funcStaticFromInput(allocator, func_in, connect),
-        },
-        .func_multi => |func_in| .{
-            .func_multi = try funcMultiStaticFromInput(allocator, func_in, connect),
-        },
+    return switch (input) {
+        .nodal => |n| .{ .nodal = createNodalStatic(n) },
+        .tex_u8 => |t| .{ .tex_u8 = try createTextureStatic(u8, 1, allocator, t, connect) },
+        .tex_u16 => |t| .{ .tex_u16 = try createTextureStatic(u16, 1, allocator, t, connect) },
+        .tex_f => |t| .{ .tex_f = try createTextureStatic(F, 1, allocator, t, connect) },
+        .tex_rgb_u8 => |t| .{ .tex_rgb_u8 = try createTextureStatic(u8, 3, allocator, t, connect) },
+        .tex_rgb_u16 => |t| .{ .tex_rgb_u16 = try createTextureStatic(u16, 3, allocator, t, connect) },
+        .tex_rgb_f => |t| .{ .tex_rgb_f = try createTextureStatic(F, 3, allocator, t, connect) },
+        .tex_multi_u8 => |t| .{ .tex_multi_f = try createTextureMultiStatic(u8, allocator, t, connect) },
+        .tex_multi_u16 => |t| .{ .tex_multi_f = try createTextureMultiStatic(u16, allocator, t, connect) },
+        .tex_multi_f => |t| .{ .tex_multi_f = try createTextureMultiStatic(F, allocator, t, connect) },
+        .func => |f| .{ .func = try funcStaticFromInput(allocator, f, connect) },
+        .func_rgb => |f| .{ .func_rgb = try funcStaticFromInput(allocator, f, connect) },
+        .func_multi => |f| .{ .func_multi = try funcMultiStaticFromInput(allocator, f, connect) },
     };
 }
 
@@ -562,6 +497,7 @@ fn createTextureMultiStatic(
             .cols_num = input.tex.cols_num,
         };
     };
+    const factors = imageops.getScaleFactors(input.scaling, null, imageops.getScalingParamsTex(F, null, &float_tex, input.scaling));
     return .{
         .elem_uvs = elem_uvs,
         .tex = float_tex,
@@ -569,6 +505,8 @@ fn createTextureMultiStatic(
         .output_gain = input.output_gain,
         .output_offset = input.output_offset,
         .scaling = input.scaling,
+        .scale_mul = factors.mul * input.output_gain,
+        .scale_add = factors.add * input.output_gain + input.output_offset,
     };
 }
 
@@ -605,9 +543,9 @@ pub fn prepMeshFrames(
         if (selected) |execution| switch (execution) {
             .direct => |shader| switch (shader.*) {
                 .nodal => |s| {
-                    if (s.scale_over == .over_frames) {
-                        nodal_frame_scaling = s.global_scaling;
-                    } else { // .within_frames
+                    if (s.scale_over == .within_frames and
+                        (s.scaling == .auto or s.scaling == .frac))
+                    {
                         nodal_frame_scaling = imageops.getScalingParamsNDArray(
                             &s.field.array,
                             frame_idx,
@@ -684,7 +622,6 @@ fn prepUVs(
         outer_alloc,
         &[_]usize{ elems_num, 2, nodes_per_elem },
     );
-    @memset(elem_uv_arr.slice, 0.0);
 
     for (0..elems_num) |ee| {
         const coord_inds = connect.getElem(ee);
@@ -709,7 +646,7 @@ fn initMeshFrameWorkspace(
             allocator,
             mesh_static.coords_orig.mat.rows_num,
         ),
-        .coords_nodes_def_world = if (shaderSetNeedsDeformedWorld(mesh_static.shaders, selection))
+        .coords_nodes_def_world = if (mesh_static.hit_selections[renderRoleIndex(selection)].contains(.coords_def))
             try meshtypes.Coords.initAlloc(
                 allocator,
                 mesh_static.coords_orig.mat.rows_num,
@@ -728,17 +665,12 @@ fn initMeshFrameWorkspace(
     };
 }
 
-fn shaderMonoNeedsDeformedWorld(shader: shadertypes.ShaderMonoStatic) bool {
-    return switch (shader) {
-        .func => |func_static| func_static.coord_mode == .world_deformed,
-        else => false,
-    };
-}
-
-fn pipeSourceNeedsDeformedWorld(source: shadertypes.PipeSourceStatic) bool {
-    return switch (source) {
-        .func, .func_rgb, .func_multi => |f| f.coord_mode == .world_deformed,
-        else => false,
+fn renderRoleIndex(role: shadertypes.RenderFormat) usize {
+    return switch (role) {
+        .mono => 0,
+        .rgb => 1,
+        .ir => 2,
+        .multifield => 3,
     };
 }
 
@@ -754,11 +686,7 @@ fn shaderMonoHitSelection(
                 .world_deformed => selection.insert(.coords_def),
                 else => {},
             }
-            if ((s.builtin == .lambertian_normal_z or
-                for (s.channels) |ch| {
-                    if (ch.builtin == .lambertian_normal_z) break true;
-                } else false) and normal_type != .none)
-            {
+            if (s.needs_normal and normal_type != .none) {
                 selection.insert(.surf_norm);
             }
         },
@@ -779,11 +707,7 @@ fn pipeSourceHitSelection(
                 .world_deformed => selection.insert(.coords_def),
                 else => {},
             }
-            if ((s.builtin == .lambertian_normal_z or
-                for (s.channels) |ch| {
-                    if (ch.builtin == .lambertian_normal_z) break true;
-                } else false) and normal_type != .none)
-            {
+            if (s.needs_normal and normal_type != .none) {
                 selection.insert(.surf_norm);
             }
         },
@@ -818,28 +742,6 @@ fn shaderSetHitSelection(
     return selection;
 }
 
-fn shaderSetNeedsDeformedWorld(
-    shaders: shadertypes.MeshShaderSetStatic,
-    selection: shadertypes.RenderFormat,
-) bool {
-    const selected = shaderops.selectShader(
-        shadertypes.ShaderMonoStatic,
-        shadertypes.ShaderPipeStatic,
-        &shaders,
-        selection,
-    ) orelse return false;
-    switch (selected) {
-        .direct => |shader| return shaderMonoNeedsDeformedWorld(shader.*),
-        .pipe => |pipe| {
-            for (pipe.stages) |stage| switch (stage) {
-                .source => |src| if (pipeSourceNeedsDeformedWorld(src.shader)) return true,
-                else => {},
-            };
-            return false;
-        },
-    }
-}
-
 //------------------------------------------------------------------------------------------
 // Geometry Pipeline Stages: meshio.Coords, Transform, Culling and Gathering
 //------------------------------------------------------------------------------------------
@@ -851,14 +753,6 @@ fn prefixVisCounts(mesh_workspace: *meshtypes.MeshFrameWorkspace) void {
         running_total += vis_count;
     }
     mesh_workspace.elems_in_image = running_total;
-}
-
-fn getConnectNodesNum(connect: *const meshtypes.Connect) usize {
-    var max_node_idx: usize = 0;
-    for (connect.table_mem) |node_idx| {
-        max_node_idx = @max(max_node_idx, node_idx);
-    }
-    return max_node_idx + 1;
 }
 
 //------------------------------------------------------------------------------------------
@@ -1129,6 +1023,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                             stage.camera.prep_psf.halo_px,
                             ideal_sensor,
                             stage.edge_spacing_px,
+                            if (comptime MT == .tri3 or MT == .tri3opt) null else &stage.cached_root_classes[ee],
                         );
                         if (stage.cached_distort_bboxes) |cached| cached[ee] = distorted;
                         break :blk if (distorted) |value| value.box_ints else null;
@@ -1150,18 +1045,10 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                             ee,
                             stage.hull_mode,
                             stage.camera.prep_psf.halo_px,
+                            &stage.cached_root_classes[ee],
                         );
 
                 if (bbox != null) {
-                    if (comptime MT != .tri3 and MT != .tri3opt) {
-                        stage.cached_root_classes[ee] = rasterfrontend.classifyElemFacing(
-                            MT,
-                            stage.camera,
-                            stage.coords_nodes,
-                            stage.connect,
-                            ee,
-                        );
-                    }
                     vis_count += 1;
                 }
                 if (stage.cached_bboxes) |cached| cached[ee] = bbox;
@@ -1493,7 +1380,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             _ = chunk_idx;
             const stage: *PrepareMultiRootElemsStage = @ptrCast(@alignCast(ctx_ptr));
             const N = comptime MT.getNodesNum();
-            const Seed = struct { z: F, index: u8 };
+            const Seed = struct { z: F, index: u8, front: bool = false };
 
             for (range_start..range_end) |pp| {
                 const slot = stage.hulls.slot_by_visible_elem.get(pp);
@@ -1584,23 +1471,25 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                     .y = &coords.y,
                     .z = &coords.z,
                 };
+                for (seeds[0..available]) |*seed| {
+                    const uv = geometrykernels.multiRootSeedCoords(
+                        N,
+                        seed.index,
+                    );
+                    const facing = rasterfrontend.projectedJacDetPhysical(
+                        N,
+                        nodes,
+                        uv[0],
+                        uv[1],
+                    );
+                    seed.front = std.math.isFinite(facing) and
+                        facing < -buildconfig.config.tol.culling.projected_jacobian_abs;
+                }
                 for (0..2) |tier_idx| {
                     var tier: [geometrykernels.multiRootSeedCount(N)]Seed = undefined;
                     var tier_len: usize = 0;
                     for (seeds[0..available]) |seed| {
-                        const uv = geometrykernels.multiRootSeedCoords(
-                            N,
-                            seed.index,
-                        );
-                        const facing = rasterfrontend.projectedJacDetPhysical(
-                            N,
-                            nodes,
-                            uv[0],
-                            uv[1],
-                        );
-                        const front = std.math.isFinite(facing) and
-                            facing < -buildconfig.config.tol.culling.projected_jacobian_abs;
-                        if (front != (tier_idx == 0)) continue;
+                        if (seed.front != (tier_idx == 0)) continue;
                         tier[tier_len] = seed;
                         tier_len += 1;
                     }
@@ -1713,11 +1602,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
         ) !meshhit.MeshHitGeomPrepared {
-            var selection = shaderSetHitSelection(
-                self.mesh_static.shaders,
-                self.camera.render_format,
-                self.mesh_static.normal_type,
-            );
+            const selection = self.mesh_static.hit_selections[renderRoleIndex(self.camera.render_format)];
             var hit_geometry = meshhit.MeshHitGeomPrepared{ .selection = selection };
             if (selection.contains(.coords_ref)) {
                 hit_geometry.coords_ref = try self.gatherVisElemCoordsFromNodes(
@@ -1752,14 +1637,14 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                     const exec = self.mesh_static.shaders.mono orelse return;
                     mesh_prep.shaders.mono = switch (exec) {
                         .direct => |s| .{
-                            .direct = try self.prepareShaderMono(
+                            .direct = try self.prepareShaderMonoFromStatic(
                                 outer_alloc,
                                 s,
                                 self.scaling_params,
                             ),
                         },
                         .pipe => |p| .{
-                            .pipe = try self.prepareShaderPipe(outer_alloc, p, 1),
+                            .pipe = try self.prepareShaderPipeFromStatic(outer_alloc, p, 1),
                         },
                     };
                 },
@@ -1767,20 +1652,20 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                     const exec = self.mesh_static.shaders.ir orelse return;
                     mesh_prep.shaders.ir = switch (exec) {
                         .direct => |s| .{
-                            .direct = try self.prepareShaderMono(
+                            .direct = try self.prepareShaderMonoFromStatic(
                                 outer_alloc,
                                 s,
                                 self.scaling_params,
                             ),
                         },
                         .pipe => |p| .{
-                            .pipe = try self.prepareShaderPipe(outer_alloc, p, 1),
+                            .pipe = try self.prepareShaderPipeFromStatic(outer_alloc, p, 1),
                         },
                     };
                 },
                 .rgb => {
                     const pipe = self.mesh_static.shaders.rgb orelse return;
-                    mesh_prep.shaders.rgb = try self.prepareShaderPipe(
+                    mesh_prep.shaders.rgb = try self.prepareShaderPipeFromStatic(
                         outer_alloc,
                         pipe,
                         3,
@@ -1788,7 +1673,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                 },
                 .multifield => {
                     const pipe = self.mesh_static.shaders.multifield orelse return;
-                    mesh_prep.shaders.multifield = try self.prepareShaderPipe(
+                    mesh_prep.shaders.multifield = try self.prepareShaderPipeFromStatic(
                         outer_alloc,
                         pipe,
                         format.channels(),
@@ -1797,7 +1682,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             }
         }
 
-        fn prepareShaderPipe(
+        fn prepareShaderPipeFromStatic(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
             pipe: shadertypes.ShaderPipeStatic,
@@ -1811,17 +1696,18 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             for (pipe.stages, 0..) |stage, si| {
                 stages[si] = switch (stage) {
                     .source => |src| blk: {
-                        var prepared_source = try self.preparePipeSource(
+                        var prepared_source = try self.preparePipeSourceFromStatic(
                             outer_alloc,
                             src.shader,
-                            if (src.shader == .nodal and src.global_scaling == null)
+                            if (src.shader == .nodal and src.shader.nodal.scale_over == .within_frames and
+                                (src.shader.nodal.scaling == .auto or src.shader.nodal.scaling == .frac))
                                 imageops.getScalingParamsNDArray(
                                     &src.shader.nodal.field.array,
                                     self.frame_idx,
                                     src.shader.nodal.scaling,
                                 )
                             else
-                                src.global_scaling,
+                                null,
                         );
                         switch (prepared_source) {
                             .func, .func_rgb, .func_multi => |*shader| shader.hit_geometry = .{},
@@ -1830,6 +1716,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                         break :blk .{ .source = .{
                             .shader = prepared_source,
                             .destination = src.destination,
+                            .channels = src.channels,
                         } };
                     },
                     .grey_to_emissivity => |m| .{ .grey_to_emissivity = m },
@@ -1850,7 +1737,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             };
         }
 
-        fn prepareShaderMono(
+        fn prepareShaderMonoFromStatic(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
             shader_static: shadertypes.ShaderMonoStatic,
@@ -1861,24 +1748,24 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             defer self.scaling_params = previous_scaling;
             return switch (shader_static) {
                 .nodal => |s| .{
-                    .nodal = try self.prepareNodalShaderRaw(outer_alloc, s),
+                    .nodal = try self.prepareNodalShaderFromStatic(outer_alloc, s),
                 },
                 .tex_u8 => |s| .{
-                    .tex_u8 = try prepareTexShaderRaw(u8, 1, outer_alloc, self, s),
+                    .tex_u8 = try prepareTexShaderFromStatic(u8, 1, outer_alloc, self, s),
                 },
                 .tex_u16 => |s| .{
-                    .tex_u16 = try prepareTexShaderRaw(u16, 1, outer_alloc, self, s),
+                    .tex_u16 = try prepareTexShaderFromStatic(u16, 1, outer_alloc, self, s),
                 },
                 .tex_f => |s| .{
-                    .tex_f = try prepareTexShaderRaw(F, 1, outer_alloc, self, s),
+                    .tex_f = try prepareTexShaderFromStatic(F, 1, outer_alloc, self, s),
                 },
                 .func => |s| .{
-                    .func = try prepareFuncShaderRaw(1, outer_alloc, self, s),
+                    .func = try prepareFuncShaderFromStatic(1, outer_alloc, self, s),
                 },
             };
         }
 
-        fn preparePipeSource(
+        fn preparePipeSourceFromStatic(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
             source_static: shadertypes.PipeSourceStatic,
@@ -1889,37 +1776,37 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             defer self.scaling_params = previous_scaling;
             return switch (source_static) {
                 .nodal => |s| .{
-                    .nodal = try self.prepareNodalShaderRaw(outer_alloc, s),
+                    .nodal = try self.prepareNodalShaderFromStatic(outer_alloc, s),
                 },
                 .tex_u8 => |s| .{
-                    .tex_u8 = try prepareTexShaderRaw(u8, 1, outer_alloc, self, s),
+                    .tex_u8 = try prepareTexShaderFromStatic(u8, 1, outer_alloc, self, s),
                 },
                 .tex_u16 => |s| .{
-                    .tex_u16 = try prepareTexShaderRaw(u16, 1, outer_alloc, self, s),
+                    .tex_u16 = try prepareTexShaderFromStatic(u16, 1, outer_alloc, self, s),
                 },
                 .tex_f => |s| .{
-                    .tex_f = try prepareTexShaderRaw(F, 1, outer_alloc, self, s),
+                    .tex_f = try prepareTexShaderFromStatic(F, 1, outer_alloc, self, s),
                 },
                 .tex_rgb_u8 => |s| .{
-                    .tex_rgb_u8 = try prepareTexShaderRaw(u8, 3, outer_alloc, self, s),
+                    .tex_rgb_u8 = try prepareTexShaderFromStatic(u8, 3, outer_alloc, self, s),
                 },
                 .tex_rgb_u16 => |s| .{
-                    .tex_rgb_u16 = try prepareTexShaderRaw(u16, 3, outer_alloc, self, s),
+                    .tex_rgb_u16 = try prepareTexShaderFromStatic(u16, 3, outer_alloc, self, s),
                 },
                 .tex_rgb_f => |s| .{
-                    .tex_rgb_f = try prepareTexShaderRaw(F, 3, outer_alloc, self, s),
+                    .tex_rgb_f = try prepareTexShaderFromStatic(F, 3, outer_alloc, self, s),
                 },
                 .tex_multi_f => |s| .{
-                    .tex_multi_f = try prepareTexShaderRaw(F, null, outer_alloc, self, s),
+                    .tex_multi_f = try prepareTexShaderFromStatic(F, null, outer_alloc, self, s),
                 },
                 .func => |s| .{
-                    .func = try prepareFuncShaderRaw(1, outer_alloc, self, s),
+                    .func = try prepareFuncShaderFromStatic(1, outer_alloc, self, s),
                 },
                 .func_rgb => |s| .{
-                    .func_rgb = try prepareFuncShaderRaw(3, outer_alloc, self, s),
+                    .func_rgb = try prepareFuncShaderFromStatic(3, outer_alloc, self, s),
                 },
                 .func_multi => |s| .{
-                    .func_multi = try prepareFuncShaderRaw(0, outer_alloc, self, s),
+                    .func_multi = try prepareFuncShaderFromStatic(0, outer_alloc, self, s),
                 },
             };
         }
@@ -1958,7 +1845,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             }
         }
 
-        fn prepareNodalShaderRaw(
+        fn prepareNodalShaderFromStatic(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
             nodal_static: shadertypes.NodalStatic,
@@ -1989,10 +1876,12 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                 self.vis_chunk_size,
             );
 
-            const factors = if (self.scaling_params) |sp|
-                imageops.getScaleFactors(nodal_static.scaling, null, sp)
+            const frame_scaling = nodal_static.scale_over == .within_frames and
+                (nodal_static.scaling == .auto or nodal_static.scaling == .frac);
+            const factors = if (frame_scaling)
+                imageops.getScaleFactors(nodal_static.scaling, null, self.scaling_params.?)
             else
-                imageops.ScaleFactors{ .mul = 1.0, .add = 0.0 };
+                imageops.ScaleFactors{ .mul = 1, .add = 0 };
 
             return .{
                 .elem_field = elem_field,
@@ -2000,8 +1889,14 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                 .output_offset = nodal_static.output_offset,
                 .scaling = nodal_static.scaling,
                 .scale_over = nodal_static.scale_over,
-                .scale_mul = factors.mul * nodal_static.output_gain,
-                .scale_add = factors.add * nodal_static.output_gain + nodal_static.output_offset,
+                .scale_mul = if (frame_scaling)
+                    factors.mul * nodal_static.output_gain
+                else
+                    nodal_static.scale_mul,
+                .scale_add = if (frame_scaling)
+                    factors.add * nodal_static.output_gain + nodal_static.output_offset
+                else
+                    nodal_static.scale_add,
             };
         }
 
@@ -2032,7 +1927,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             }
         }
 
-        fn prepareTexShaderRaw(
+        fn prepareTexShaderFromStatic(
             comptime T: type,
             comptime C: ?usize,
             outer_alloc: std.mem.Allocator,
@@ -2045,18 +1940,6 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             shadertypes.TexPrepared(T, channels)
         else
             shadertypes.TexMultiPrepared(T) {
-            const params = imageops.getScalingParamsTex(
-                T,
-                C,
-                &tex_static.tex,
-                tex_static.scaling,
-            );
-            const factors = imageops.getScaleFactors(
-                tex_static.scaling,
-                null,
-                params,
-            );
-
             var elem_uvs = try ndarray.NDArray(F).initFlat(
                 outer_alloc,
                 &[_]usize{
@@ -2087,23 +1970,17 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                 .output_gain = tex_static.output_gain,
                 .output_offset = tex_static.output_offset,
                 .scaling = tex_static.scaling,
-                .scale_mul = factors.mul * tex_static.output_gain,
-                .scale_add = factors.add * tex_static.output_gain + tex_static.output_offset,
+                .scale_mul = tex_static.scale_mul,
+                .scale_add = tex_static.scale_add,
             };
         }
 
-        fn prepareFuncShaderRaw(
+        fn prepareFuncShaderFromStatic(
             comptime C: usize,
             outer_alloc: std.mem.Allocator,
             self: *FrameMeshPipelineType,
             func_static: shadertypes.FuncStatic,
         ) !shadertypes.FuncPrepared {
-            const factors = imageops.getScaleFactors(
-                func_static.scaling,
-                null,
-                .{ .min = 0.0, .range = 1.0 },
-            );
-
             const elem_uvs = if (func_static.coord_mode == .uv) blk: {
                 const elem_uvs_full = func_static.elem_uvs orelse
                     return error.MissingUVsForFuncShader;
@@ -2133,35 +2010,12 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             } else null;
 
             if (comptime C == 0) {
-                const channels = try outer_alloc.alloc(
-                    shadertypes.FuncChannelPrepared,
-                    func_static.channels.len,
-                );
-                var needs_normal = false;
-                for (func_static.channels, channels) |channel, *prepared| {
-                    const channel_factors = imageops.getScaleFactors(
-                        channel.scaling,
-                        null,
-                        .{ .min = 0.0, .range = 1.0 },
-                    );
-                    prepared.* = .{
-                        .builtin = channel.builtin,
-                        .params = shaderfunc.normFuncShaderParams(
-                            channel.builtin,
-                            channel.params,
-                        ),
-                        .scale_mul = channel_factors.mul * channel.output_gain,
-                        .scale_add = channel_factors.add * channel.output_gain +
-                            channel.output_offset,
-                    };
-                    needs_normal = needs_normal or channel.builtin == .lambertian_normal_z;
-                }
                 return .{
                     .elem_uvs = elem_uvs,
                     .hit_geometry = self.hit_geometry,
                     .coord_mode = func_static.coord_mode,
-                    .channels = channels,
-                    .needs_normal = needs_normal and self.mesh_static.normal_type != .none,
+                    .channels = func_static.channels,
+                    .needs_normal = func_static.needs_normal and self.mesh_static.normal_type != .none,
                 };
             } else {
                 return .{
@@ -2169,17 +2023,13 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                     .hit_geometry = self.hit_geometry,
                     .coord_mode = func_static.coord_mode,
                     .builtin = func_static.builtin,
-                    .params = shaderfunc.normFuncShaderParams(
-                        func_static.builtin,
-                        func_static.params,
-                    ),
+                    .params = func_static.params,
                     .output_gain = func_static.output_gain,
                     .output_offset = func_static.output_offset,
                     .scaling = func_static.scaling,
-                    .scale_mul = factors.mul * func_static.output_gain,
-                    .scale_add = factors.add * func_static.output_gain +
-                        func_static.output_offset,
-                    .needs_normal = func_static.builtin == .lambertian_normal_z and
+                    .scale_mul = func_static.scale_mul,
+                    .scale_add = func_static.scale_add,
+                    .needs_normal = func_static.needs_normal and
                         self.mesh_static.normal_type != .none,
                 };
             }
@@ -2204,6 +2054,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                 self.chunk_exec,
                 self.elem_chunk_size,
                 self.vis_chunk_size,
+                self.mesh_static.referenced_nodes_num,
             );
         }
 
@@ -2234,6 +2085,7 @@ test "MeshHit requirements follow the selected camera role" {
                 .elem_uvs = null,
                 .coord_mode = .world_deformed,
                 .builtin = .lambertian_normal_z,
+                .needs_normal = true,
             } },
             .destination = .{ .kind = .channel, .index = 0 },
         } },
@@ -2248,14 +2100,87 @@ test "MeshHit requirements follow the selected camera role" {
     };
     const direct = shaderSetHitSelection(shaders, .mono, .exact);
     try std.testing.expect(direct.count() == 0);
-    try std.testing.expect(!shaderSetNeedsDeformedWorld(shaders, .mono));
+    try std.testing.expect(!shaderSetHitSelection(shaders, .mono, .exact).contains(.coords_def));
 
     const pipe = shaderSetHitSelection(shaders, .ir, .exact);
     try std.testing.expect(pipe.contains(.coords_ref));
     try std.testing.expect(pipe.contains(.coords_def));
     try std.testing.expect(pipe.contains(.surf_norm));
-    try std.testing.expect(shaderSetNeedsDeformedWorld(shaders, .ir));
+    try std.testing.expect(shaderSetHitSelection(shaders, .ir, .exact).contains(.coords_def));
 
     const no_norm = shaderSetHitSelection(shaders, .ir, .none);
     try std.testing.expect(!no_norm.contains(.surf_norm));
+}
+
+test "static preparation caches scaling and only prepares active roles" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var coord_mem = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+    const coords = meshtypes.Coords.init(&coord_mem, 3);
+    const connect = try meshtypes.Connect.initAlloc(alloc, 1, 3);
+    @memcpy(connect.table_mem, &[_]usize{ 2, 0, 1 });
+    var field_values = [_]F{ 2, 4, 6, 8, 10, 12 };
+    const field_array = try ndarray.NDArray(F).init(alloc, &field_values, &.{ 2, 3, 1 });
+    const field = fieldtypes.Field{ .array = field_array, .array_mem = &field_values };
+    const channels = [_]shadertypes.FuncChannel{
+        .{
+            .builtin = .constant,
+            .scaling = .{ .frac = .{ 0.2, 0.8 } },
+            .output_gain = 2,
+            .output_offset = 0.1,
+            .params = .{ .settings = .{ .constant = .{ .value = 300 } } },
+        },
+        .{ .builtin = .lambertian_normal_z, .params = .{ .settings = .{ .lambertian_normal_z = .{} } } },
+        .{ .builtin = .linear, .params = .{ .settings = .{ .linear = .{} } } },
+    };
+    const stages = [_]shadertypes.ShaderPipeStageInput{.{ .source = .{
+        .shader = .{ .func_multi = .{ .coord_mode = .world_reference, .channels = &channels } },
+        .destination = .{ .kind = .channel, .index = 0 },
+    } }};
+    const input = meshtypes.MeshInput{ .mesh_type = .tri3, .normal_type = .avg, .coords = coords, .connect = connect, .disp = null, .shaders = .{
+        .mono_direct = .{ .nodal = .{ .field = field, .scaling = .auto, .output_gain = 2, .output_offset = 0.25 } },
+        .rgb_pipe = .{ .stages = &stages, .resolver = .{ .identity = shaderpipe.identity_channels_3 } },
+    } };
+    const mono = try initMeshStatic(alloc, &input, .{ true, false, false, false });
+    try std.testing.expect(mono.shaders.rgb == null);
+    const nodal = mono.shaders.mono.?.direct.nodal;
+    try std.testing.expectApproxEqAbs(@as(F, 0.2), nodal.scale_mul, 1e-15);
+    try std.testing.expectApproxEqAbs(@as(F, -0.15), nodal.scale_add, 1e-15);
+    const rgb = try initMeshStatic(alloc, &input, .{ false, true, false, false });
+    try std.testing.expect(rgb.shaders.mono == null);
+    try std.testing.expectEqual(@as(usize, 3), rgb.referenced_nodes_num);
+    try std.testing.expect(rgb.hit_selections[1].contains(.coords_ref));
+    try std.testing.expect(rgb.hit_selections[1].contains(.surf_norm));
+    const source = rgb.shaders.rgb.?.stages[0].source;
+    try std.testing.expectEqual(@as(u8, 3), source.channels);
+    const func = source.shader.func_multi;
+    try std.testing.expect(func.needs_normal);
+    try std.testing.expectEqual(@as(usize, 3), func.channels.len);
+    try std.testing.expectApproxEqAbs(@as(F, 1.2), func.channels[0].scale_mul, 1e-15);
+    try std.testing.expectApproxEqAbs(@as(F, 0.5), func.channels[0].scale_add, 1e-15);
+}
+
+test "static texture scaling and UV gather match independent values" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const connect = try meshtypes.Connect.initAlloc(alloc, 1, 3);
+    @memcpy(connect.table_mem, &[_]usize{ 2, 0, 1 });
+    var uv_mem = [_]F{ 0, 0.1, 0.2, 0.3, 0.4, 0.5 };
+    const uv = try ndarray.NDArray(F).init(alloc, &uv_mem, &.{ 3, 2 });
+    var tex_mem = [_]u8{ 10, 30, 50, 90 };
+    const tex_array = try ndarray.NDArray(u8).init(alloc, &tex_mem, &.{ 1, 2, 2 });
+    const prepared = try createTextureStatic(u8, 1, alloc, .{
+        .uvs = uv,
+        .tex = .{ .array = tex_array, .rows_num = 2, .cols_num = 2 },
+        .scaling = .auto,
+        .output_gain = 2,
+        .output_offset = 0.25,
+    }, &connect);
+    try std.testing.expectApproxEqAbs(@as(F, 0.025), prepared.scale_mul, 1e-15);
+    try std.testing.expectApproxEqAbs(@as(F, 0), prepared.scale_add, 1e-15);
+    try std.testing.expectEqualSlices(F, &.{ 0.4, 0, 0.2, 0.5, 0.1, 0.3 }, prepared.elem_uvs.slice);
+    const function = try funcStaticFromInput(alloc, .{ .uvs = uv, .coord_mode = .para, .builtin = .constant }, &connect);
+    try std.testing.expect(function.elem_uvs == null);
 }

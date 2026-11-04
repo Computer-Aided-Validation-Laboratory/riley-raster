@@ -27,7 +27,6 @@ const config = common.BenchConfig{ .run = .all };
 
 const DEFAULT_OUT_DIR = "out/bench_stats_tiltraster";
 const DEFAULT_IMAGE_OUT_DIR = "out/bench_images_tiltraster";
-const DEFAULT_DATA_DIR_SUFFIX = "fullraster";
 const DEFAULT_PIXELS_NUM = [2]u32{ 1600, 1000 };
 const DEFAULT_SUB_SAMPLE: u32 = 2;
 const DEFAULT_FOCAL_LENG: F = @floatCast(50.0e-3);
@@ -135,6 +134,7 @@ pub fn main(init: std.process.Init) !void {
     };
     const tex_func_cases = [_]common.TexFuncCase{
         .{ .builtin = .constant, .coord_mode = .param },
+        .{ .builtin = .lambertian_normal_z, .coord_mode = .param },
         .{ .builtin = .constant, .coord_mode = .uv },
         .{ .builtin = .linear, .coord_mode = .param },
         .{ .builtin = .linear, .coord_mode = .uv },
@@ -302,6 +302,10 @@ fn runBenchmarksForTextureType(
         for (selected_shader_types) |st| {
             if (bench_args.shader_subset == .shaderpipe_multisource) continue;
             for (samp_cfgs) |sc| {
+                if (bench_args.sample) |sample| if (sc.sample != sample) continue;
+                if (bench_args.sample_mode) |mode| if (sc.mode != mode) continue;
+                if (bench_args.shader_subset == .static_preparation and
+                    (sc.mode != .direct or (sc.sample != .linear and sc.sample != .cubic_catmull_rom))) continue;
                 if (bench_args.shader_subset == .shaderpipe_baseline or
                     bench_args.shader_subset == .shaderpipe_compare)
                 {
@@ -317,8 +321,8 @@ fn runBenchmarksForTextureType(
                 const folder_name = if (mt == .tri3opt) "tri3" else @tagName(mt);
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
-                    "data/tilt/{s}_{s}",
-                    .{ folder_name, DEFAULT_DATA_DIR_SUFFIX },
+                    "{s}/{s}_{s}",
+                    .{ bench_args.data_dir, folder_name, bench_args.data_suffix },
                 );
 
                 if (common.shouldRun(config, mt, st, sc, data_dir)) {
@@ -352,6 +356,9 @@ fn runBenchmarksForTextureType(
 
         for (tex_func_shader_types) |st| {
             for (tex_func_cases) |tex_func_case| {
+                if (bench_args.shader_subset == .static_preparation and
+                    !(tex_func_case.builtin == .lambertian_normal_z or
+                        (tex_func_case.builtin == .linear and tex_func_case.coord_mode == .uv))) continue;
                 if (bench_args.shader_subset == .shaderpipe_multisource and
                     (st != .func or tex_func_case.builtin != .checker or
                         tex_func_case.coord_mode != .world_reference))
@@ -369,8 +376,8 @@ fn runBenchmarksForTextureType(
                 const folder_name = if (mt == .tri3opt) "tri3" else @tagName(mt);
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
-                    "data/tilt/{s}_{s}",
-                    .{ folder_name, DEFAULT_DATA_DIR_SUFFIX },
+                    "{s}/{s}_{s}",
+                    .{ bench_args.data_dir, folder_name, bench_args.data_suffix },
                 );
                 try runShaderCase(
                     T,
@@ -409,10 +416,13 @@ fn runShaderCase(
     tex_func_case: ?common.TexFuncCase,
     data_dir: []const u8,
 ) !void {
+    const static_preparation = bench_args.shader_subset == .static_preparation;
     const multisource = bench_args.shader_subset == .shaderpipe_multisource;
-    const compare = bench_args.shader_subset == .shaderpipe_compare or multisource;
+    const compare = bench_args.shader_subset == .shaderpipe_compare or multisource or static_preparation;
     const paths: []const common.BenchShaderPath = if (compare)
-        if (multisource)
+        if (static_preparation)
+            &.{ .direct, .static_preparation }
+        else if (multisource)
             &.{ .direct, .multi_source_pipe }
         else
             &.{ .direct, .one_stage_pipe }
@@ -432,7 +442,9 @@ fn runShaderCase(
     else
         base_name;
     defer if (compare) outer_alloc.free(direct_name);
-    const pipe_name = if (multisource)
+    const pipe_name = if (static_preparation)
+        try std.fmt.allocPrint(outer_alloc, "{s}_static_preparation", .{base_name})
+    else if (multisource)
         try std.fmt.allocPrint(outer_alloc, "{s}_multi_source_pipe", .{base_name})
     else if (compare)
         try std.fmt.allocPrint(outer_alloc, "{s}_one_stage_pipe", .{base_name})
@@ -447,7 +459,9 @@ fn runShaderCase(
     };
     defer for (&samples) |*sample| sample.deinit(outer_alloc);
 
-    const note_str = if (multisource)
+    const note_str = if (static_preparation)
+        " (direct / preparation stress pipe)"
+    else if (multisource)
         " (direct / three-source pipe)"
     else if (compare)
         " (direct / one-stage pipe)"
@@ -543,6 +557,7 @@ fn writeStudyMetadata(
     var buffered_writer = file.writer(io, &write_buf);
     const writer = &buffered_writer.interface;
 
+    try writer.print("data_dir={s}\ndata_suffix={s}\n", .{ bench_args.data_dir, bench_args.data_suffix });
     try writer.print("texture_storage={s}\n", .{
         @tagName(bench_args.texture_storage),
     });

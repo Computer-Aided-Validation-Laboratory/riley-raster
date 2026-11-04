@@ -13,7 +13,7 @@
   <a href="https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Computer-Aided-Validation-Laboratory/riley-raster" alt="MIT license"></a>
 </p>
 
-Riley is a high performance software rasteriser written in Zig for digital image correlation uncertainty quantification (DIC UQ). It synthesises deformed speckle images from finite element simulations, with higher order surface elements (`tri3`, `tri6`, `quad4`, `quad8`, and `quad9`), realistic camera models and distortion as well as texture/nodal/analytic shaders, and mixed scenes.
+Riley is an open-source high performance software rasteriser written in Zig for digital image correlation uncertainty quantification (DIC UQ). It synthesises deformed speckle images from finite element simulations, with higher order surface elements (`tri3`, `tri6`, `quad4`, `quad8`, and `quad9`), realistic camera models and distortion as well as texture/nodal/analytic shaders, and mixed scenes.
 
 Riley's Zig core uses `comptime` specialisation and SIMD with `@Vector` to keep its rendering path fast and direct. It also uses hierarchical offline parallelisation allowing scaling over cameras and timesteps to be rendered. Riley is available as a Zig library and executable, a C compatible ABI, and the [`riley-raster`](https://pypi.org/project/riley-raster/) Python package which provides python bindings to the compiled Zig library.
 
@@ -39,15 +39,11 @@ Install the published package:
 python -m pip install riley-raster
 python -m riley demo0_quickstart
 ```
-Python renders are written below `out_riley_py/`. For development from a checkout, install it in editable mode:
-
-```shell
-python -m pip install -e .
-```
+Python renders are written below `out_riley_py/`.
 
 ## Verification and regression tests
 
-The Zig test suites are intentionally separated by purpose. The focused verification suite requires the production `f64` and SIMD configuration; run `zig build --help` for the complete target list and configuration options.
+The Zig test suites are separated by purpose and size of the required data with the `verif` and `basic` test suite regression data embedded in the repo. The focused verification suite requires the production `f64` and SIMD configuration; run `zig build --help` for the complete target list and configuration options for the tests.
 
 | Command | Purpose |
 | --- | --- |
@@ -56,7 +52,9 @@ The Zig test suites are intentionally separated by purpose. The focused verifica
 | `zig build test-basic` | Basic regression suite. |
 | `zig build test-full -Doptimize=ReleaseSafe` | Full regression suite. |
 
-Run the packaged Python test suite with:
+Note that the data for the `full` test suite is large and will need to be generated using the appropriate data generation script after verifying that the `verif` and `basic` test suites pass. See the [developer docs](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/dev) for more details on the tests.
+
+The packaged Python test suite can be run with:
 
 ```shell
 python -m pytest --pyargs riley.pytests -s
@@ -70,7 +68,7 @@ python -m riley test
 
 The python tests include parity analysis between the Zig demo output when the repository assets and Zig compiler are available; they skip when installed from a clean PyPI package.
 
-## Examples
+## User Demos
 
 Riley provides a series of capability demos in Zig and Python. For example, render the rabbits demo with:
 
@@ -84,15 +82,7 @@ The equivalent Python demo is:
 python -m riley demo2a_rabbits_mono
 ```
 
-ShaderSet examples start with `zig build demo7-shaderpipe-quickstart` or
-`python -m riley demo7_shaderpipe_quickstart`. The four-case gallery is
-`demo8-shaderpipe-gallery` / `demo8_shaderpipe_gallery`; the stereo DIC and
-IR FE example is `demo9-diciruq` / `demo9_diciruq`; the lit sphere comparison
-is `demo10-sphere-lit` / `demo10_sphere_lit`. See
-[the shader-pipe guide](dev/SHADERPIPE.md) for shader selection, radiometric
-units, and per-camera TIFF encoding.
-
-Browse the complete [Zig demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src) or [Python demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src/riley/pydemos). The image links below are absolute GitHub URLs so they render both on GitHub and on PyPI.
+Browse the complete [Zig demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src) or [Python demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src/riley/pydemos).
 
 ### Rabbits demo
 
@@ -128,6 +118,12 @@ const ops = riley.ops;
 
 Rendering entry points, input/config types, and camera/shader types are available directly from `riley` (for example `riley.raster(...)`, `riley.MeshInput`, and `riley.RasterConfig`). File loading and saving live under `riley.dataio`, numerical primitives under `riley.maths`, and reusable scene, camera, mesh, shader, image, texture, and normal operations under `riley.ops`.
 
+## C API
+`Riley` provides a C-compatible API for use from other languages. The Python bindings use this interface through Cython, but it can also be called from C or from any language with a C FFI.
+
+The public C ABI is intentionally fixed to the production Riley build with: precision=`f64`, SIMD=`on`. The extern types and functions live in [`src/riley/zig/c-riley.zig`](./src/riley/zig/c-riley.zig).
+
+
 ## Project Layout
 The main Zig entry point for the rendering pipeline is the `raster(...)` family in `./src/riley/zig/riley.zig`.
 
@@ -147,10 +143,7 @@ Useful top-level locations:
 
 For a mathematical and architectural overview, see the engrXiv preprint: [Riley: A computational framework for higher-order finite element image synthesis applied to digital image correlation uncertainty quantification](https://engrxiv.org/preprint/view/7300/version/9460).
 
-## C Interface
-`Riley` provides a C-compatible API for use from other languages. The Python bindings use this interface through Cython, but it can also be called from C or from any language with a C FFI.
 
-The public C ABI is intentionally fixed to the production Riley build with: precision=`f64`, SIMD=`on`. The extern types and functions live in [`src/riley/zig/c-riley.zig`](./src/riley/zig/c-riley.zig).
 
 ## Citing Riley
 If you have found `Riley` useful you can cite it using:

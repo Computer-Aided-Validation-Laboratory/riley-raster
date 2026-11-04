@@ -85,6 +85,7 @@ pub fn calcVisibleDistortBBox(
     raster_halo_px: u16,
     ideal_sensor: distortbounds.DistortBounds,
     edge_spacing_px: F,
+    root_class_out: ?*?ElemRootClass,
 ) ?DistortElemBBox {
     const N = comptime MT.getNodesNum();
     const coords = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
@@ -103,6 +104,7 @@ pub fn calcVisibleDistortBBox(
     } else {
         const nodes = projectClipToIdealRaster(N, camera, coords);
         const root_class = classifyHighOrdFacing(N, nodes) orelse return null;
+        if (root_class_out) |out| out.* = root_class;
 
         if (root_class == .multi_root) {
             const points = hullmultiroot.HullMultiRoot.buildPointsFromClip(N, camera, coords);
@@ -379,6 +381,7 @@ pub fn calcVisibleNodeBBoxHighOrd(
         elem_idx,
         hull_mode,
         0,
+        null,
     );
 }
 
@@ -390,6 +393,7 @@ pub fn calcVisibleNodeBBoxHighOrdWithHalo(
     elem_idx: usize,
     hull_mode: rasterconfig.HullMode,
     raster_halo_px: u16,
+    root_class_out: ?*?ElemRootClass,
 ) ?ElemBBox {
     comptime {
         if (MT == .tri3) {
@@ -411,6 +415,7 @@ pub fn calcVisibleNodeBBoxHighOrdWithHalo(
     const coords_ideal_raster = projectClipToIdealRaster(N, camera, coords_clip);
     const root_class = classifyHighOrdFacing(N, coords_ideal_raster) orelse
         return null;
+    if (root_class_out) |out| out.* = root_class;
 
     if (root_class == .multi_root) {
         const points = hullmultiroot.HullMultiRoot.buildPointsFromClip(N, camera, coords_clip);
@@ -1017,6 +1022,7 @@ test "fixed scalar and SIMD bounds recover the distorted triangle interior" {
         0,
         sensor,
         1.0,
+        null,
     )).?;
     const old_bbox = calcVisibleNodeBBoxTri3(
         .tri3,

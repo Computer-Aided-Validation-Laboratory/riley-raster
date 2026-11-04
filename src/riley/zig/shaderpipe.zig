@@ -542,75 +542,152 @@ pub const Resolver = union(enum) {
         channels: u8,
         out: anytype,
     ) void {
-        const T = @TypeOf(out.*[0]);
-        switch (self) {
-            .identity => |slots| for (slots, 0..) |slot, ii| {
-                out.*[ii] = readSlot(T, inputs, constants, slot);
-            },
-            .sum => |slots| {
-                for (0..channels) |ch| out.*[ch] = splat(T, 0);
-                for (slots, 0..) |slot, ii| {
-                    out.*[ii % channels] += readSlot(T, inputs, constants, slot);
-                }
-            },
-            .modulate => |m| {
-                const factor = readSlot(T, inputs, constants, m.factor);
-                const ambient_splat = splat(T, m.ambient);
-                const gain_splat = splat(T, m.gain);
-                for (m.sources, 0..) |slot, ii| {
-                    const src_val = readSlot(T, inputs, constants, slot);
-                    out.*[ii] = (src_val * factor + ambient_splat) * gain_splat;
-                }
-            },
-            .weighted_sum => |w| {
-                for (0..channels) |ch| out.*[ch] = splat(T, 0);
-                for (w.sources, w.weights, 0..) |slot, weight, ii| {
-                    const src_val = readSlot(T, inputs, constants, slot);
-                    out.*[ii % channels] += src_val * splat(T, weight);
-                }
-            },
-            .greybody_bolometric => |g| {
-                const temp = readSlot(T, inputs, constants, g.temperature);
-                const square = temp * temp;
-                const em_val = readSlot(T, inputs, constants, g.emissivity);
-                const stefan_boltzmann = splat(T, 5.670374419e-8);
-                out.*[0] = em_val * stefan_boltzmann * square * square;
-            },
-            .greybody_band => |g| {
-                const temp = readSlot(T, inputs, constants, g.temperature);
-                var radiant: T = undefined;
-                if (T == F) {
-                    radiant = g.radiance.sample(temp);
-                } else {
-                    var lanes: [buildconfig.SimdWidth]F = @bitCast(temp);
-                    for (&lanes) |*lane| lane.* = g.radiance.sample(lane.*);
-                    radiant = @bitCast(lanes);
-                }
-                out.*[0] = readSlot(T, inputs, constants, g.emissivity) * radiant;
-            },
-            .greybody_band_apparent_c => |g| {
-                const temp = readSlot(T, inputs, constants, g.temperature);
-                const emissivity = readSlot(T, inputs, constants, g.emissivity);
-                const ambient = g.radiance.sample(g.ambient_k);
-                if (T == F) {
-                    const rad_temp = g.radiance.sample(temp);
-                    const measured = emissivity * rad_temp + (1 - emissivity) * ambient;
-                    out.*[0] = g.radiance.inverseMonotonic(measured) - 273.15;
-                } else {
-                    const temp_lanes: [buildconfig.SimdWidth]F = @bitCast(temp);
-                    const emissivity_lanes: [buildconfig.SimdWidth]F = @bitCast(emissivity);
-                    var result: [buildconfig.SimdWidth]F = undefined;
-                    for (&result, temp_lanes, emissivity_lanes) |*lane, t, e| {
-                        const measured = e * g.radiance.sample(t) + (1 - e) * ambient;
-                        lane.* = g.radiance.inverseMonotonic(measured) - 273.15;
-                    }
-                    out.*[0] = @bitCast(result);
-                }
-            },
-            .expression => |p| p.evaluate(inputs, channels, out),
-        }
+        const ambient = switch (self) {
+            .greybody_band_apparent_c => |g| g.radiance.sample(g.ambient_k),
+            else => 0,
+        };
+        evaluateResolver(false, self, inputs, constants, channels, out, ambient, 0, 0);
     }
 };
+
+// Immutable engine-side metadata. User-facing descriptors keep their existing layout.
+pub const PreparedLookup = struct {
+    lookup: Lookup,
+    last: usize,
+    max_index: F,
+
+    pub fn init(lookup: Lookup) PreparedLookup {
+        return initMetadata(lookup, lookup.values.len - 1, @floatFromInt(lookup.values.len - 1));
+    }
+
+    fn initMetadata(lookup: Lookup, last: usize, max_index: F) PreparedLookup {
+        return .{ .lookup = lookup, .last = last, .max_index = max_index };
+    }
+
+    pub inline fn sample(self: PreparedLookup, value: F) F {
+        const x = std.math.clamp((value - self.lookup.first) / self.lookup.step, 0, self.max_index);
+        const index: usize = @intFromFloat(x);
+        if (index == self.last) return self.lookup.values[index];
+        const t = x - @as(F, @floatFromInt(index));
+        return self.lookup.values[index] + t * (self.lookup.values[index + 1] - self.lookup.values[index]);
+    }
+};
+
+pub const PreparedResolver = struct {
+    value: Resolver,
+    ambient_radiance: F = 0,
+    lookup_last: usize = 0,
+    lookup_max: F = 0,
+
+    pub fn init(value: Resolver) PreparedResolver {
+        var result = PreparedResolver{ .value = value };
+        switch (value) {
+            .greybody_band => |g| {
+                result.lookup_last = g.radiance.values.len - 1;
+                result.lookup_max = @floatFromInt(result.lookup_last);
+            },
+            .greybody_band_apparent_c => |g| {
+                result.lookup_last = g.radiance.values.len - 1;
+                result.lookup_max = @floatFromInt(result.lookup_last);
+                result.ambient_radiance = g.radiance.sample(g.ambient_k);
+            },
+            else => {},
+        }
+        return result;
+    }
+
+    pub inline fn evaluate(
+        self: PreparedResolver,
+        inputs: anytype,
+        constants: []const F,
+        channels: u8,
+        out: anytype,
+    ) void {
+        evaluateResolver(true, self.value, inputs, constants, channels, out, self.ambient_radiance, self.lookup_last, self.lookup_max);
+    }
+};
+
+fn evaluateResolver(
+    comptime prepared: bool,
+    self: Resolver,
+    inputs: anytype,
+    constants: []const F,
+    channels: u8,
+    out: anytype,
+    ambient_radiance: F,
+    lookup_last: usize,
+    lookup_max: F,
+) void {
+    const T = @TypeOf(out.*[0]);
+    switch (self) {
+        .identity => |slots| for (slots, 0..) |slot, ii| {
+            out.*[ii] = readSlot(T, inputs, constants, slot);
+        },
+        .sum => |slots| {
+            for (0..channels) |ch| out.*[ch] = splat(T, 0);
+            for (slots, 0..) |slot, ii| {
+                out.*[ii % channels] += readSlot(T, inputs, constants, slot);
+            }
+        },
+        .modulate => |m| {
+            const factor = readSlot(T, inputs, constants, m.factor);
+            const ambient_splat = splat(T, m.ambient);
+            const gain_splat = splat(T, m.gain);
+            for (m.sources, 0..) |slot, ii| {
+                const src_val = readSlot(T, inputs, constants, slot);
+                out.*[ii] = (src_val * factor + ambient_splat) * gain_splat;
+            }
+        },
+        .weighted_sum => |w| {
+            for (0..channels) |ch| out.*[ch] = splat(T, 0);
+            for (w.sources, w.weights, 0..) |slot, weight, ii| {
+                const src_val = readSlot(T, inputs, constants, slot);
+                out.*[ii % channels] += src_val * splat(T, weight);
+            }
+        },
+        .greybody_bolometric => |g| {
+            const temp = readSlot(T, inputs, constants, g.temperature);
+            const square = temp * temp;
+            const em_val = readSlot(T, inputs, constants, g.emissivity);
+            const stefan_boltzmann = splat(T, 5.670374419e-8);
+            out.*[0] = em_val * stefan_boltzmann * square * square;
+        },
+        .greybody_band => |g| {
+            const radiance = if (prepared) PreparedLookup.initMetadata(g.radiance, lookup_last, lookup_max) else g.radiance;
+            const temp = readSlot(T, inputs, constants, g.temperature);
+            var radiant: T = undefined;
+            if (T == F) {
+                radiant = radiance.sample(temp);
+            } else {
+                var lanes: [buildconfig.SimdWidth]F = @bitCast(temp);
+                for (&lanes) |*lane| lane.* = radiance.sample(lane.*);
+                radiant = @bitCast(lanes);
+            }
+            out.*[0] = readSlot(T, inputs, constants, g.emissivity) * radiant;
+        },
+        .greybody_band_apparent_c => |g| {
+            const radiance = if (prepared) PreparedLookup.initMetadata(g.radiance, lookup_last, lookup_max) else g.radiance;
+            const temp = readSlot(T, inputs, constants, g.temperature);
+            const emissivity = readSlot(T, inputs, constants, g.emissivity);
+            const ambient = ambient_radiance;
+            if (T == F) {
+                const rad_temp = radiance.sample(temp);
+                const measured = emissivity * rad_temp + (1 - emissivity) * ambient;
+                out.*[0] = g.radiance.inverseMonotonic(measured) - 273.15;
+            } else {
+                const temp_lanes: [buildconfig.SimdWidth]F = @bitCast(temp);
+                const emissivity_lanes: [buildconfig.SimdWidth]F = @bitCast(emissivity);
+                var result: [buildconfig.SimdWidth]F = undefined;
+                for (&result, temp_lanes, emissivity_lanes) |*lane, t, e| {
+                    const measured = e * radiance.sample(t) + (1 - e) * ambient;
+                    lane.* = g.radiance.inverseMonotonic(measured) - 273.15;
+                }
+                out.*[0] = @bitCast(result);
+            }
+        },
+        .expression => |p| p.evaluate(inputs, channels, out),
+    }
+}
 
 fn checkSlot(slot: Slot, written: Written, constant_count: usize) !void {
     if (slot.kind == .constant) {
@@ -878,4 +955,35 @@ test "generic pipe stages match scalar values on SIMD lanes" {
         try std.testing.expectApproxEqAbs(if (lane == 0) @as(F, 0) else 0.8, ny[lane], 1e-6);
         try std.testing.expectEqual(@as(F, 0), nz[lane]);
     }
+}
+
+test "prepared resolver preserves lookup interpolation and ambient radiance" {
+    const lookup = Lookup{ .first = 280, .step = 20, .values = &.{ 10, 30, 70, 110 } };
+    const cached = PreparedLookup.init(lookup);
+    for ([_]F{ 270, 280, 294, 300, 310, 320, 340, 350 }) |value|
+        try std.testing.expectEqual(lookup.sample(value), cached.sample(value));
+    const input = Resolver{ .greybody_band_apparent_c = .{
+        .temperature = .{ .kind = .field, .index = 0 },
+        .emissivity = .{ .kind = .parameter, .index = 0 },
+        .radiance = lookup,
+        .ambient_k = 300,
+    } };
+    const prepared = PreparedResolver.init(input);
+    try std.testing.expectEqual(@as(F, 30), prepared.ambient_radiance);
+    var values: ScalarOutputs = .{};
+    values.field[0] = 320;
+    values.parameter[0] = 0.5;
+    var result: [1]F = undefined;
+    prepared.evaluate(&values, &.{}, 1, &result);
+    try std.testing.expectApproxEqAbs(@as(F, 310 - 273.15), result[0], 1e-12);
+    var expected: [1]F = undefined;
+    input.evaluate(&values, &.{}, 1, &expected);
+    try std.testing.expectEqual(expected[0], result[0]);
+    var vectors: VectorOutputs = .{};
+    vectors.field[0] = @splat(320);
+    vectors.parameter[0] = @splat(0.5);
+    var vector_result: [1]buildconfig.VecSF = undefined;
+    prepared.evaluate(&vectors, &.{}, 1, &vector_result);
+    const lanes: [buildconfig.SimdWidth]F = @bitCast(vector_result[0]);
+    for (lanes) |lane| try std.testing.expectEqual(result[0], lane);
 }

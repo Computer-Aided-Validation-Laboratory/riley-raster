@@ -451,7 +451,7 @@ pub const TexFuncCase = struct {
     coord_mode: TexFuncCoordMode,
 };
 
-pub const BenchShaderPath = enum { direct, one_stage_pipe, multi_source_pipe };
+pub const BenchShaderPath = enum { direct, one_stage_pipe, multi_source_pipe, static_preparation };
 
 pub const BenchRenderDefaults = struct {
     pixels_num: [2]u32,
@@ -1037,6 +1037,70 @@ fn runBenchmarkInternal(
         } };
     }
 
+    // Preparation stress variant: scaled base source, independent function channels,
+    // dynamic integer texture conversion, averaged normals, and constant pipe metadata.
+    if (render_defaults.shader_path == .static_preparation) {
+        var scaled_source = base_source;
+        switch (scaled_source) {
+            .func_multi => unreachable,
+            inline else => |*source| source.scaling = .auto,
+        }
+        const uv_path = try std.fs.path.join(aa, &.{ data_dir, "uvs.csv" });
+        const uvs = try loadNDArrayFromCSV(aa, io, uv_path, 2, false);
+        const channels = try aa.alloc(shadertypes.FuncChannel, 2);
+        channels[0] = .{ .builtin = .lambertian_normal_z, .params = .{ .settings = .{ .lambertian_normal_z = .{} } } };
+        channels[1] = .{ .builtin = .constant, .params = .{ .settings = .{ .constant = .{ .value = 300 } } } };
+        const radiance = shaderpipe.Lookup{ .first = 250, .step = 50, .values = &.{ 1, 2, 4, 8 } };
+        const stages = try aa.alloc(shadertypes.ShaderPipeStageInput, 8);
+        stages[0] = .{ .source = .{ .shader = scaled_source, .destination = .{ .kind = .channel, .index = 0 } } };
+        stages[1] = .{ .source = .{
+            .shader = .{ .func_multi = .{ .coord_mode = .world_reference, .channels = channels } },
+            .destination = .{ .kind = .field, .index = 0 },
+        } };
+        const dyn_tex = textypes.TexDataDyn(T){ .array = texture_rgb.array, .rows_num = texture_rgb.rows_num, .cols_num = texture_rgb.cols_num };
+        stages[2] = .{ .source = .{
+            .shader = if (T == u8) .{ .tex_multi_u8 = .{ .uvs = uvs, .tex = dyn_tex, .scaling = .auto } } else .{ .tex_multi_u16 = .{ .uvs = uvs, .tex = dyn_tex, .scaling = .auto } },
+            .destination = .{ .kind = .parameter, .index = 0 },
+        } };
+        stages[3] = .{ .grey_to_emissivity = .{
+            .source = .{ .kind = .channel, .index = 0 },
+            .destination = .{ .kind = .parameter, .index = 3 },
+            .black = 0.1,
+            .white = 0.9,
+        } };
+        stages[4] = .{ .lut_map = .{
+            .source = .{ .kind = .parameter, .index = 0 },
+            .destination = .{ .kind = .parameter, .index = 4 },
+            .lookup = .{ .first = 0, .step = 0.5, .values = &.{ 0, 0.5, 1 } },
+        } };
+        stages[5] = .{ .blend = .{
+            .a = .{ .kind = .field, .index = 0 },
+            .b = .{ .kind = .parameter, .index = 4 },
+            .destination = .{ .kind = .parameter, .index = 5 },
+            .alpha = .{ .fixed = 0.4 },
+        } };
+        stages[6] = .{ .blend = .{
+            .a = .{ .kind = .parameter, .index = 3 },
+            .b = .{ .kind = .parameter, .index = 5 },
+            .destination = .{ .kind = .parameter, .index = 6 },
+            .alpha = .{ .fixed = 0.2 },
+        } };
+        stages[7] = .{ .clamp = .{
+            .source = .{ .kind = .parameter, .index = 6 },
+            .destination = .{ .kind = .parameter, .index = 7 },
+            .lower = 0,
+            .upper = 1,
+        } };
+        const pipe = shadertypes.ShaderPipeInput{ .stages = stages, .resolver = .{ .greybody_band_apparent_c = .{
+            .temperature = .{ .kind = .field, .index = 1 },
+            .emissivity = .{ .kind = .parameter, .index = 7 },
+            .radiance = radiance,
+            .ambient_k = 285,
+        } } };
+        mesh_input.shaders = .{ .ir_pipe = pipe };
+        mesh_input.normal_type = .avg;
+    }
+
     const roi_pos = sceneops.boundsCenter(&mesh_input.coords);
     const cam_pos = cameraops.posFillFrameFromRot(
         &mesh_input.coords,
@@ -1068,7 +1132,7 @@ fn runBenchmarkInternal(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
-        .render_format = if (calcOutputChannels(shader_type) == 3) .rgb else .mono,
+        .render_format = if (render_defaults.shader_path == .static_preparation) .ir else if (calcOutputChannels(shader_type) == 3) .rgb else .mono,
     };
 
     var config_run = config;
@@ -1270,7 +1334,7 @@ fn calcTexFuncParams(tex_func_case: TexFuncCase) shaderfunc.FuncShaderParams {
                 },
             },
         },
-        else => .{},
+        else => shaderfunc.normFuncShaderParams(tex_func_case.builtin, .{}),
     };
 }
 

@@ -1,18 +1,6 @@
 # Riley Developer Guide
 This document collects information for developers including style guides, testing architecture, benchmark executables, and performance regression workflows.
 
-> [!IMPORTANT]
-> **AI AGENTS — REQUIRED TEST CONFIGURATION: `f64` WITH SIMD ON.**
-> Run tests only with `-Dprecision=f64 -Dsimd=on` unless the user explicitly
-> instructs you to run another combination. Do not run `f32`, scalar
-> (`-Dsimd=off`), or precision/SIMD matrix sweeps on your own initiative,
-> including for cross-cutting refactors or extra confidence. A general request
-> to implement, test, verify, or complete a plan does not authorize extra
-> precision/SIMD combinations. The alternative examples below document supported
-> configurations; they are not instructions for agents to run them.
-> Keep verif/basic in Debug and full in ReleaseSafe. This rule avoids unnecessary
-> compilation, runtime, and token costs.
-
 ## Style Guide
 This project follows the Computer Aided Validation Laboratory style guides for Python and Zig which can be found [here](https://github.com/Computer-Aided-Validation-Laboratory/styleguides). Riley is designed around three equally important principles:
 
@@ -20,11 +8,21 @@ This project follows the Computer Aided Validation Laboratory style guides for P
 2. **Make it fast.**
 3. **Make it simple for users.**
 
+
+> [!IMPORTANT]
+> **AI AGENTS — REQUIRED TEST CONFIGURATION: `f64` WITH SIMD ON.**
+> Run tests only with `-Dprecision=f64 -Dsimd=on` unless the user explicitly
+> instructs you to run another combination. Do not run `f32`, scalar
+> (`-Dsimd=off`), or precision/SIMD matrix sweeps on your own. A general request
+> to implement, test, verify, or complete a plan does not authorize extra
+> precision/SIMD combinations This rule avoids unnecessary
+> compilation, runtime, and token costs.
+
+
 ## Development Guides
 The `dev/` directory provides comprehensive architectural, mathematical, testing, and conventions documentation for Riley developers:
 
 - [**`dev/TESTING.md`**](./dev/TESTING.md): Testing architecture, quickstart commands, scene descriptions, suite coverage, reference generation and automated regression diagnostics.
-- [**`dev/API.md`**](./API.md): Public scene-building API, shader roles, Python models, C ABI ownership, generated declarations, and boundary verification.
 - [**`dev/THEORY.md`**](./dev/THEORY.md): Mathematical foundations and engine design details, including polynomial camera distortion formulation, distortion-aware rasterisation frontend bounds, render thread budgets, and image save mode mechanics.
 - [**`dev/ASSUMPTIONS.md`**](./dev/ASSUMPTIONS.md): Supported engineering operating envelope, mesh validity contracts, conservative numerical margins, and reasoning guidelines for review.
 - [**`dev/MESHCONVENTION.md`**](./dev/MESHCONVENTION.md): Riley standard mesh representation, surface element definitions (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`), 3D continuum elements, node ordering, and connectivity conventions.
@@ -262,6 +260,26 @@ exercises the shared MeshHit geometry on all six mesh types:
 ```shell
 python ./scripts/bench_perf_raster.py --no-experiment1 --no-experiment2 --experiment5
 ```
+
+## Geometry-heavy static preparation benchmark
+
+Use the existing tilt-raster driver with the `geom_1e5` datasets (99,856 quad
+or 100,352 triangle elements) to stress mesh preparation across all six element
+modes. The `static_preparation` subset runs 120 direct/stress-pipe cases covering
+nodal mono/RGB, linear/cubic textures, UV and Lambertian functions, independent
+function channels, dynamic RGB textures, averaged normals, scaling, LUT mapping,
+fixed blends, and apparent-temperature resolution.
+
+```shell
+zig build install-bench-tiltraster -Doptimize=ReleaseFast -Dprecision=f64 -Dsimd=on -Dsimd-vector-width=8
+zig-out/bin/bench_tiltraster_f64_simd --data-dir data/bench --data-suffix geom_1e5 --shader-subset static_preparation --mesh-subset all --runs 5 --pixels-x 1600 --pixels-y 1000 --sub-sample 1 --total-threads 1 --image-out-dir '' --save-strategy memory --out-dir out/staticprep-study/run
+```
+
+Preserve the baseline binary before rebuilding. Run both versions with the same
+CPU affinity and without concurrent compiler/test jobs. Compare geometry stage
+and end-to-end times: geometry timings exclude static setup, while end-to-end
+includes it. Keep per-run CSVs and median/MAD summaries; do not compare results
+from different mesh sizes or shader matrices as an A/B baseline.
 
 ## Additional Notes
 

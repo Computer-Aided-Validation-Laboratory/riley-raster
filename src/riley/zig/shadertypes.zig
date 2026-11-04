@@ -140,7 +140,8 @@ pub const NodalStatic = struct {
     output_offset: F = 0.0,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
-    global_scaling: ?imageops.ScalingParams = null,
+    scale_mul: F = 1.0,
+    scale_add: F = 0.0,
 };
 
 pub fn TexStatic(comptime T: type, comptime C: usize) type {
@@ -162,6 +163,8 @@ fn texStaticType(comptime T: type, comptime C: ?usize) type {
         output_gain: F = 1.0,
         output_offset: F = 0.0,
         scaling: imageops.ScaleStrategy = .none,
+        scale_mul: F = 1.0,
+        scale_add: F = 0.0,
     };
 }
 
@@ -174,7 +177,10 @@ pub const FuncStatic = struct {
     output_offset: F = 0.0,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
-    channels: []const FuncChannel = &.{},
+    scale_mul: F = 1.0,
+    scale_add: F = 0.0,
+    needs_normal: bool = false,
+    channels: []const FuncChannelPrepared = &.{},
 };
 
 pub const ShaderMonoStatic = union(enum) {
@@ -199,23 +205,106 @@ pub const PipeSourceStatic = union(enum) {
     func_multi: FuncStatic,
 };
 
+pub const GreyToEmissivityPrepared = struct {
+    source: shaderpipe.Slot,
+    destination: shaderpipe.Slot,
+    black: F,
+    white_range: F,
+    grey_black: F,
+    grey_range: F,
+
+    pub fn init(value: shaderpipe.GreyToEmissivityStage) GreyToEmissivityPrepared {
+        return .{
+            .source = value.source,
+            .destination = value.destination,
+            .black = value.black,
+            .white_range = value.white - value.black,
+            .grey_black = value.grey_black,
+            .grey_range = value.grey_white - value.grey_black,
+        };
+    }
+};
+
+pub const BlendPrepared = struct {
+    a: shaderpipe.Slot,
+    b: shaderpipe.Slot,
+    destination: shaderpipe.Slot,
+    alpha: shaderpipe.BlendAlpha,
+    fixed_complement: F,
+
+    pub fn init(value: shaderpipe.BlendStage) BlendPrepared {
+        return .{
+            .a = value.a,
+            .b = value.b,
+            .destination = value.destination,
+            .alpha = value.alpha,
+            .fixed_complement = switch (value.alpha) {
+                .fixed => |a| 1 - a,
+                .slot => 0,
+            },
+        };
+    }
+
+    pub inline fn apply(self: BlendPrepared, outputs: anytype) void {
+        const T = @TypeOf(outputs.get(self.a));
+        const alpha: T = switch (self.alpha) {
+            .fixed => |v| if (T == F) v else @splat(v),
+            .slot => |slot| outputs.get(slot),
+        };
+        const complement: T = switch (self.alpha) {
+            .fixed => if (T == F) self.fixed_complement else @splat(self.fixed_complement),
+            .slot => (if (T == F) @as(F, 1) else @as(T, @splat(1))) - alpha,
+        };
+        outputs.set(self.destination, complement * outputs.get(self.a) + alpha * outputs.get(self.b));
+    }
+};
+
+pub const LUTMapPrepared = struct {
+    source: shaderpipe.Slot,
+    destination: shaderpipe.Slot,
+    lookup: shaderpipe.PreparedLookup,
+
+    pub fn init(value: shaderpipe.LUTMapStage) LUTMapPrepared {
+        return .{
+            .source = value.source,
+            .destination = value.destination,
+            .lookup = shaderpipe.PreparedLookup.init(value.lookup),
+        };
+    }
+
+    pub inline fn apply(self: LUTMapPrepared, outputs: anytype, active: anytype) void {
+        const T = @TypeOf(outputs.get(self.source));
+        if (T == F) {
+            outputs.set(self.destination, self.lookup.sample(outputs.get(self.source)));
+        } else {
+            const values: [buildconfig.SimdWidth]F = @bitCast(outputs.get(self.source));
+            const mask: [buildconfig.SimdWidth]bool = active;
+            var result: [buildconfig.SimdWidth]F = undefined;
+            for (&result, values, mask) |*dest, value, enabled| {
+                dest.* = self.lookup.sample(if (enabled) value else self.lookup.lookup.first);
+            }
+            outputs.set(self.destination, @bitCast(result));
+        }
+    }
+};
+
 pub const ShaderPipeStageStatic = union(enum) {
     source: struct {
         shader: PipeSourceStatic,
         destination: shaderpipe.Slot,
-        global_scaling: ?imageops.ScalingParams = null,
+        channels: u8 = 1,
     },
-    grey_to_emissivity: shaderpipe.GreyToEmissivityStage,
+    grey_to_emissivity: GreyToEmissivityPrepared,
     clamp: shaderpipe.ClampStage,
     affine_map: shaderpipe.AffineMapStage,
-    lut_map: shaderpipe.LUTMapStage,
-    blend: shaderpipe.BlendStage,
+    lut_map: LUTMapPrepared,
+    blend: BlendPrepared,
     normalise: shaderpipe.NormaliseStage,
 };
 
 pub const ShaderPipeStatic = struct {
     stages: []const ShaderPipeStageStatic,
-    resolver: shaderpipe.Resolver,
+    resolver: shaderpipe.PreparedResolver,
     constants: []const F,
 };
 
@@ -331,18 +420,18 @@ pub const PipeSourcePrepared = union(enum) {
 };
 
 pub const ShaderPipeStagePrepared = union(enum) {
-    source: struct { shader: PipeSourcePrepared, destination: shaderpipe.Slot },
-    grey_to_emissivity: shaderpipe.GreyToEmissivityStage,
+    source: struct { shader: PipeSourcePrepared, destination: shaderpipe.Slot, channels: u8 = 1 },
+    grey_to_emissivity: GreyToEmissivityPrepared,
     clamp: shaderpipe.ClampStage,
     affine_map: shaderpipe.AffineMapStage,
-    lut_map: shaderpipe.LUTMapStage,
-    blend: shaderpipe.BlendStage,
+    lut_map: LUTMapPrepared,
+    blend: BlendPrepared,
     normalise: shaderpipe.NormaliseStage,
 };
 
 pub const ShaderPipePrepared = struct {
     stages: []const ShaderPipeStagePrepared,
-    resolver: shaderpipe.Resolver,
+    resolver: shaderpipe.PreparedResolver,
     constants: []const F,
     channels: u8,
     hit_geometry: meshhit.MeshHitGeomPrepared = .{},

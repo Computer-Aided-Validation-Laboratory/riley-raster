@@ -339,7 +339,7 @@ fn rasterIntoValidated(
 
     // Init. static data across all frames - here we reshape uv's once if we have them so
     // we don't need to do this every frames
-    const mesh_static = try initMeshStaticSlice(static_alloc, meshes);
+    const mesh_static = try initMeshStaticSlice(static_alloc, meshes, cams);
     const camera_meshes = try initCameraMeshSelections(static_alloc, cams, mesh_static);
 
     // Timing hooks for frame buffer setup, render time and E2E times
@@ -1326,11 +1326,21 @@ fn initCameraPreparedSlice(
 fn initMeshStaticSlice(
     allocator: std.mem.Allocator,
     meshes: []const meshtypes.MeshInput,
+    cameras: []const cameraprojops.CameraPrepared,
 ) ![]meshtypes.MeshStatic {
     const mesh_static = try allocator.alloc(meshtypes.MeshStatic, meshes.len);
 
+    var active_roles = [_]bool{false} ** 4;
+    for (cameras) |camera| active_roles[
+        switch (camera.render_format) {
+            .mono => @as(usize, 0),
+            .rgb => 1,
+            .ir => 2,
+            .multifield => 3,
+        }
+    ] = true;
     for (meshes, 0..) |mesh, ii| {
-        mesh_static[ii] = try meshpipeline.initMeshStatic(allocator, &mesh);
+        mesh_static[ii] = try meshpipeline.initMeshStatic(allocator, &mesh, active_roles);
         mesh_static[ii].scene_mesh_idx = ii;
     }
 
