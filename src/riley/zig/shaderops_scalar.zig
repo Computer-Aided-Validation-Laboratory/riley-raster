@@ -11,6 +11,7 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const matslice = @import("matslice.zig");
 const texops = @import("textureops.zig");
+const textypes = @import("texturetypes.zig");
 const comm = @import("shaderops_common.zig");
 const meshhit = @import("meshhit.zig");
 
@@ -64,7 +65,7 @@ pub inline fn fillTexClipScal(
     comptime N: usize,
     comptime T: type,
     comptime C: usize,
-    comptime samp_cfg: texops.TexSampConfig,
+    comptime samp_cfg: textypes.TexSampConfig,
     ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
     shader_buf: *const shadertypes.LocalShaderBuff(N),
@@ -96,7 +97,7 @@ pub inline fn fillTexPerspScal(
     comptime N: usize,
     comptime T: type,
     comptime C: usize,
-    comptime samp_cfg: texops.TexSampConfig,
+    comptime samp_cfg: textypes.TexSampConfig,
     ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
     shader_buf: *const shadertypes.LocalShaderBuff(N),

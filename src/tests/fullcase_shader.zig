@@ -19,7 +19,7 @@ const mo = @import("../riley/zig/meshpipeline.zig");
 const shaderops = @import("../riley/zig/shaderops.zig");
 const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const normals = @import("../riley/zig/normals.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 
 const F = buildconfig.F;
 const CameraInput = cameratypes.CameraInput;
@@ -223,7 +223,7 @@ pub fn buildShaderCaseMeshes(
             };
         },
         .tex => |t| {
-            const samp_cfg = texops.TexSampConfig{
+            const samp_cfg = textypes.TexSampConfig{
                 .sample = .cubic_catmull_rom,
                 .mode = .direct,
             };

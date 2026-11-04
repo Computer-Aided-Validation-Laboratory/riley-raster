@@ -12,7 +12,7 @@ const std = @import("std");
 const riley = @import("../riley/zig/riley.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const iio = @import("../riley/zig/imageio.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 const csvio = @import("../riley/zig/csvio.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
@@ -20,9 +20,9 @@ const so = @import("../riley/zig/shaderops.zig");
 const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const CameraPrepared = @import("../riley/zig/cameraprojops.zig").CameraPrepared;
-const CameraInput = @import("../riley/zig/cameraprojops.zig").CameraInput;
+const CameraInput = @import("../riley/zig/cameratypes.zig").CameraInput;
 const DistortParams = @import("../riley/zig/cameraprojops.zig").DistortParams;
-const SubPixelCenterMap = @import("../riley/zig/cameraprojops.zig").SubPixelCenterMap;
+const SubPixelCenterMap = @import("../riley/zig/cameratypes.zig").SubPixelCenterMap;
 const cameraops = @import("../riley/zig/cameraframeops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const report = @import("../riley/zig/report.zig");
@@ -442,7 +442,7 @@ pub const ShaderType = enum {
     func,
     func_rgb,
 };
-const TextureSampleConfig = @import("../riley/zig/textureops.zig").TextureSampleConfig;
+const TextureSampleConfig = @import("../riley/zig/texturetypes.zig").TexSampConfig;
 pub const TexFuncCoordMode = enum { uv, param, world_reference };
 pub const TexFuncCase = struct {
     builtin: shadertypes.FuncShaderBuiltin,
@@ -636,8 +636,8 @@ pub fn loadBenchmarkMeshInput(
     samp_cfg: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
-    texture_grey: texops.TexDataFix(T, 1),
-    texture_rgb: texops.TexDataFix(T, 3),
+    texture_grey: textypes.TexDataFix(T, 1),
+    texture_rgb: textypes.TexDataFix(T, 3),
 ) !meshtypes.MeshInput {
     const coord_path = try std.fs.path.join(allocator, &[_][]const u8{
         data_dir,
@@ -827,8 +827,8 @@ pub fn runBenchmark(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: texops.TexDataFix(T, 1),
-    texture_rgb: texops.TexDataFix(T, 3),
+    texture_grey: textypes.TexDataFix(T, 1),
+    texture_rgb: textypes.TexDataFix(T, 3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
 ) !BenchResult {
@@ -860,8 +860,8 @@ pub fn runBenchmarkWithImageOut(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: texops.TexDataFix(T, 1),
-    texture_rgb: texops.TexDataFix(T, 3),
+    texture_grey: textypes.TexDataFix(T, 1),
+    texture_rgb: textypes.TexDataFix(T, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,
@@ -895,8 +895,8 @@ pub fn runBenchmarkQuiet(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: texops.TexDataFix(T, 1),
-    texture_rgb: texops.TexDataFix(T, 3),
+    texture_grey: textypes.TexDataFix(T, 1),
+    texture_rgb: textypes.TexDataFix(T, 3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
 ) !BenchResult {
@@ -928,8 +928,8 @@ pub fn runBenchmarkQuietWithImageOut(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: texops.TexDataFix(T, 1),
-    texture_rgb: texops.TexDataFix(T, 3),
+    texture_grey: textypes.TexDataFix(T, 1),
+    texture_rgb: textypes.TexDataFix(T, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,
@@ -964,8 +964,8 @@ fn runBenchmarkInternal(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: texops.TexDataFix(T, 1),
-    texture_rgb: texops.TexDataFix(T, 3),
+    texture_grey: textypes.TexDataFix(T, 1),
+    texture_rgb: textypes.TexDataFix(T, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,
@@ -999,8 +999,8 @@ fn runBenchmarkInternal(
     const pipe_slots = [_]shaderpipe.Slot{output_slot};
     var deformed_source = base_source;
     if (render_defaults.shader_path == .multi_source_pipe) {
-        std.debug.assert(deformed_source == .func and deformed_source.func == .mono);
-        deformed_source.func.mono.coord_mode = .world_deformed;
+        std.debug.assert(deformed_source == .func);
+        deformed_source.func.coord_mode = .world_deformed;
     }
     const multi_stages = [_]shadertypes.ShaderPipeStageInput{
         .{ .source = .{

@@ -22,7 +22,7 @@ const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const sceneops = @import("../riley/zig/sceneops.zig");
 const shaderops = @import("../riley/zig/shaderops.zig");
 const shaderpipe = @import("../riley/zig/shaderpipe.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 const vec = @import("../riley/zig/vecstack.zig");
 
@@ -41,12 +41,12 @@ pub const sphere_center_scene0 = [3]F{ -0.0043, 0.0, 0.0 };
 pub const cylinder_center_scene0 = [3]F{ 0.0043, 0.0, -0.010 };
 
 pub const FullTextures = struct {
-    tex_u8_mono: texops.TexDataFix(u8, 1),
-    tex_u8_rgb: texops.TexDataFix(u8, 3),
-    tex_u16_mono: texops.TexDataFix(u16, 1),
-    tex_u16_rgb: texops.TexDataFix(u16, 3),
-    tex_f64_mono: texops.TexDataFix(F, 1),
-    tex_f64_rgb: texops.TexDataFix(F, 3),
+    tex_u8_mono: textypes.TexDataFix(u8, 1),
+    tex_u8_rgb: textypes.TexDataFix(u8, 3),
+    tex_u16_mono: textypes.TexDataFix(u16, 1),
+    tex_u16_rgb: textypes.TexDataFix(u16, 3),
+    tex_f64_mono: textypes.TexDataFix(F, 1),
+    tex_f64_rgb: textypes.TexDataFix(F, 3),
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io) !FullTextures {
         const tex_u8_mono = try iio.loadImage(
@@ -79,7 +79,7 @@ pub const FullTextures = struct {
         );
         errdefer tex_u16_mono.deinit(allocator);
 
-        var tex_u16_rgb = try texops.TexDataFix(u16, 3).init(
+        var tex_u16_rgb = try textypes.TexDataFix(u16, 3).init(
             allocator,
             tex_u8_rgb.rows_num,
             tex_u8_rgb.cols_num,
@@ -89,7 +89,7 @@ pub const FullTextures = struct {
             tex_u16_rgb.array.slice[ii] = @as(u16, pixel_val) * 257;
         }
 
-        var tex_f64_mono = try texops.TexDataFix(F, 1).init(
+        var tex_f64_mono = try textypes.TexDataFix(F, 1).init(
             allocator,
             tex_u16_mono.rows_num,
             tex_u16_mono.cols_num,
@@ -99,7 +99,7 @@ pub const FullTextures = struct {
             tex_f64_mono.array.slice[ii] = @as(F, @floatFromInt(pixel_val)) / 65535.0;
         }
 
-        var tex_f64_rgb = try texops.TexDataFix(F, 3).init(
+        var tex_f64_rgb = try textypes.TexDataFix(F, 3).init(
             allocator,
             tex_u8_rgb.rows_num,
             tex_u8_rgb.cols_num,

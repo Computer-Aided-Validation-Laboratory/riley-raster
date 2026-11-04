@@ -5,7 +5,10 @@
 - Use io as a suffix for files that contain operations for reading and writing to disk e.g. imageio.zig
 - Use ops as a suffix for collections of utility/data operation functions e.g. meshops.zig
 - Mesh, camera, and shader input/static/prepared declarations live in
-  `meshtypes.zig`, `cameratypes.zig`, and `shadertypes.zig`. Canonical mesh
+  `meshtypes.zig`, `cameratypes.zig`, and `shadertypes.zig`. Texture storage and
+  sampling configuration declarations live in `texturetypes.zig`; sampling operations
+  and coefficient LUTs live in `textureops*.zig`. Timing structs live in `report.zig`.
+  Canonical mesh
   coordinate, connectivity, and field declarations live in `meshtypes.zig` and
   `fieldtypes.zig`. Internal code imports declarations from those owners.
 - The public Zig API is assembled explicitly in `api/core.zig` and exposed
@@ -15,7 +18,7 @@
   `api/maths.zig`, and `api/ops.zig`. Do not add `usingnamespace` or duplicate
   implementation types in the public API.
 - Camera framing and placement helpers live in `cameraframeops.zig`; camera
-  preparation and projection live in `cameraprepops.zig` and
+  slice preparation is private render setup in `riley.zig`; projection lives in
   `cameraprojops*.zig`.
 - Use the kernel suffix for files defining structs containing only comptime known constants and inline functions e.g. geometrykernels
 - If a scalar/simd split is required the top level file name becomes a thin wrapper with no implementation details then all implementation and tests is moved into _common.zig, _simd.zig, _scalar.zig files.

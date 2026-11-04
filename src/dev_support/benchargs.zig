@@ -10,7 +10,7 @@ const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const cam = @import("../riley/zig/cameraprojops.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 
 pub const BenchArgs = struct {
     out_dir: []const u8,
@@ -27,8 +27,8 @@ pub const BenchArgs = struct {
     subpixel_center_map: cameratypes.SubPixelCenterMap,
     save_strategy: rastcfg.SaveStrategy,
     disk_save_overlap: bool,
-    sample: ?texops.TexSample,
-    sample_mode: ?texops.TexSampleMode,
+    sample: ?textypes.TexSamp,
+    sample_mode: ?textypes.TexSampMode,
     texture_storage: TextureStorage,
     shader_subset: ShaderSubset,
     mesh_subset: MeshSubset,
@@ -179,10 +179,10 @@ pub fn parseArgsWithDefaults(
                 bench_args.image_out_dir = value;
             } else if (std.mem.eql(u8, arg, "--sample")) {
                 bench_args.sample =
-                    try parseEnum(texops.TexSample, value);
+                    try parseEnum(textypes.TexSamp, value);
             } else if (std.mem.eql(u8, arg, "--sample-mode")) {
                 bench_args.sample_mode =
-                    try parseEnum(texops.TexSampleMode, value);
+                    try parseEnum(textypes.TexSampMode, value);
             } else if (std.mem.eql(u8, arg, "--texture-storage")) {
                 bench_args.texture_storage =
                     try parseEnum(TextureStorage, value);
@@ -396,11 +396,11 @@ test "parse bench args named options" {
         bench_args.save_strategy,
     );
     try std.testing.expectEqual(
-        texops.TexSample.linear,
+        textypes.TexSamp.linear,
         bench_args.sample.?,
     );
     try std.testing.expectEqual(
-        texops.TexSampleMode.direct,
+        textypes.TexSampMode.direct,
         bench_args.sample_mode.?,
     );
     try std.testing.expectEqual(

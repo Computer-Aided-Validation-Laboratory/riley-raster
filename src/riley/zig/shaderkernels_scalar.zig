@@ -9,6 +9,7 @@
 const shadertypes = @import("shadertypes.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
+const max_channels = buildconfig.config.max_image_channels;
 const comm = @import("shaderkernels_common.zig");
 const shaderops = @import("shaderops.zig");
 const meshhit = @import("meshhit.zig");
@@ -94,7 +95,7 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
             shader: *const shadertypes.TexMultiPrepared(T),
             spx_image_scratch: *MatSlice(F),
         ) void {
-            inline for (1..9) |C| {
+            inline for (1..max_channels + 1) |C| {
                 if (shader.tex.array.dims[0] == C) {
                     const concrete = shadertypes.concreteTexture(T, C, shader);
                     TexKernel(N, T, C).shade(
@@ -108,6 +109,7 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
                     return;
                 }
             }
+            // Preparation validates the runtime channel count against max_channels.
             unreachable;
         }
     };

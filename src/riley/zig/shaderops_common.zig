@@ -19,7 +19,7 @@ const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
 
 const imageops = @import("imageops.zig");
-const texops = @import("textureops.zig");
+const textypes = @import("texturetypes.zig");
 const meshio = @import("meshio.zig");
 const shaderpipe = @import("shaderpipe.zig");
 const meshhit = @import("meshhit.zig");
@@ -243,21 +243,21 @@ const ShadeContext = shadertypes.ShadeContext;
 const testing = std.testing;
 
 test "texture input defaults to direct evaluation mode" {
-    const ti_cfg = (TexInput(texops.TexDataFix(u8, 1)){
+    const ti_cfg = (TexInput(textypes.TexDataFix(u8, 1)){
         .uvs = undefined,
         .tex = undefined,
     }).samp_cfg;
-    try testing.expectEqual(texops.TexSampMode.direct, ti_cfg.mode);
+    try testing.expectEqual(textypes.TexSampMode.direct, ti_cfg.mode);
 
     const ts_cfg = (TexStatic(u8, 1){
         .elem_uvs = undefined,
         .tex = undefined,
     }).samp_cfg;
-    try testing.expectEqual(texops.TexSampMode.direct, ts_cfg.mode);
+    try testing.expectEqual(textypes.TexSampMode.direct, ts_cfg.mode);
 
     const tp_cfg = (TexPrepared(u8, 1){
         .elem_uvs = undefined,
         .tex = undefined,
     }).samp_cfg;
-    try testing.expectEqual(texops.TexSampMode.direct, tp_cfg.mode);
+    try testing.expectEqual(textypes.TexSampMode.direct, tp_cfg.mode);
 }

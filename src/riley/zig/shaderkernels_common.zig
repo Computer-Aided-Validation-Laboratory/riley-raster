@@ -16,8 +16,8 @@ const eval_branch_quota = buildconfig.comptime_eval_branch_quota;
 const shaderops = @import("shaderops.zig");
 const meshhit = @import("meshhit.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
-const texops = @import("textureops.zig");
-const TexSampConfig = texops.TexSampConfig;
+const textypes = @import("texturetypes.zig");
+const TexSampConfig = textypes.TexSampConfig;
 const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
 // --------------------------------------------------------------------------------------
@@ -118,8 +118,8 @@ inline fn shadeTexScalDispatchMode(
     comptime T: type,
     comptime C: usize,
     comptime coord_space: CoordSpace,
-    comptime samp_type: texops.TexSamp,
-    mode: texops.TexSampMode,
+    comptime samp_type: textypes.TexSamp,
+    mode: textypes.TexSampMode,
     ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
     shader_buf: *const shadertypes.LocalShaderBuff(N),
@@ -131,7 +131,7 @@ inline fn shadeTexScalDispatchMode(
             const samp_cfg = comptime (TexSampConfig{
                 .sample = samp_type,
                 .mode = mode_type,
-            }).sanitize();
+            }).sanitise();
 
             if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillTexClipScal(

@@ -13,6 +13,7 @@ const tol = buildconfig.config.tol;
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
 const texops = @import("textureops.zig");
+const textypes = @import("texturetypes.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -70,7 +71,7 @@ pub fn getScaleFactors(
 pub fn getScalingParamsTex(
     comptime T: type,
     comptime channels: ?usize,
-    tex: *const (if (channels) |count| texops.TexDataFix(T, count) else texops.TexDataDyn(T)),
+    tex: *const (if (channels) |count| textypes.TexDataFix(T, count) else textypes.TexDataDyn(T)),
     strategy: ScaleStrategy,
 ) ScalingParams {
     switch (strategy) {

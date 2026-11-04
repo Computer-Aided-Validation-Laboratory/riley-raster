@@ -18,7 +18,7 @@ const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
 
 const imageops = @import("imageops.zig");
-const texops = @import("textureops.zig");
+const textypes = @import("texturetypes.zig");
 const fieldtypes = @import("fieldtypes.zig");
 const shaderpipe = @import("shaderpipe.zig");
 const meshhit = @import("meshhit.zig");
@@ -81,7 +81,7 @@ pub fn TexInput(comptime Texture: type) type {
     return struct {
         uvs: ndarray.NDArray(F),
         tex: Texture,
-        samp_cfg: texops.TexSampConfig = .{
+        samp_cfg: textypes.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .direct,
         },
@@ -117,23 +117,23 @@ pub const FuncMultiInput = struct {
 
 pub const ShaderMonoInput = union(enum) {
     nodal: NodalInput,
-    tex_u8: TexInput(texops.TexDataFix(u8, 1)),
-    tex_u16: TexInput(texops.TexDataFix(u16, 1)),
-    tex_f: TexInput(texops.TexDataFix(F, 1)),
+    tex_u8: TexInput(textypes.TexDataFix(u8, 1)),
+    tex_u16: TexInput(textypes.TexDataFix(u16, 1)),
+    tex_f: TexInput(textypes.TexDataFix(F, 1)),
     func: FuncInput,
 };
 
 pub const PipeSourceInput = union(enum) {
     nodal: NodalInput,
-    tex_u8: TexInput(texops.TexDataFix(u8, 1)),
-    tex_u16: TexInput(texops.TexDataFix(u16, 1)),
-    tex_f: TexInput(texops.TexDataFix(F, 1)),
-    tex_rgb_u8: TexInput(texops.TexDataFix(u8, 3)),
-    tex_rgb_u16: TexInput(texops.TexDataFix(u16, 3)),
-    tex_rgb_f: TexInput(texops.TexDataFix(F, 3)),
-    tex_multi_u8: TexInput(texops.TexDataDyn(u8)),
-    tex_multi_u16: TexInput(texops.TexDataDyn(u16)),
-    tex_multi_f: TexInput(texops.TexDataDyn(F)),
+    tex_u8: TexInput(textypes.TexDataFix(u8, 1)),
+    tex_u16: TexInput(textypes.TexDataFix(u16, 1)),
+    tex_f: TexInput(textypes.TexDataFix(F, 1)),
+    tex_rgb_u8: TexInput(textypes.TexDataFix(u8, 3)),
+    tex_rgb_u16: TexInput(textypes.TexDataFix(u16, 3)),
+    tex_rgb_f: TexInput(textypes.TexDataFix(F, 3)),
+    tex_multi_u8: TexInput(textypes.TexDataDyn(u8)),
+    tex_multi_u16: TexInput(textypes.TexDataDyn(u16)),
+    tex_multi_f: TexInput(textypes.TexDataDyn(F)),
     func: FuncInput,
     func_rgb: FuncInput,
     func_multi: FuncMultiInput,
@@ -184,8 +184,8 @@ pub fn TexMultiStatic(comptime T: type) type {
 fn texStaticType(comptime T: type, comptime C: ?usize) type {
     return struct {
         elem_uvs: ndarray.NDArray(F),
-        tex: if (C) |channels| texops.TexDataFix(T, channels) else texops.TexDataDyn(T),
-        samp_cfg: texops.TexSampConfig = .{
+        tex: if (C) |channels| textypes.TexDataFix(T, channels) else textypes.TexDataDyn(T),
+        samp_cfg: textypes.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .direct,
         },
@@ -282,8 +282,8 @@ pub fn TexMultiPrepared(comptime T: type) type {
 fn texPreparedType(comptime T: type, comptime C: ?usize) type {
     return struct {
         elem_uvs: ndarray.NDArray(F),
-        tex: if (C) |channels| texops.TexDataFix(T, channels) else texops.TexDataDyn(T),
-        samp_cfg: texops.TexSampConfig = .{
+        tex: if (C) |channels| textypes.TexDataFix(T, channels) else textypes.TexDataDyn(T),
+        samp_cfg: textypes.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .direct,
         },

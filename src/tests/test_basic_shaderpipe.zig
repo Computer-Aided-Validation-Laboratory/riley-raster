@@ -14,7 +14,7 @@ const meshio = @import("../riley/zig/meshio.zig");
 const policy = @import("../dev_support/testpolicy.zig");
 const common = @import("../dev_support/tests.zig");
 const imageio = @import("../riley/zig/imageio.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 const ndarray = @import("../riley/zig/ndarray.zig");
 
 pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
@@ -283,7 +283,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     }
     try std.testing.expect(function_foreground > 0);
 
-    var multifield_tex = try texops.TexDataDyn(F).init(aa, 4, 2, 2);
+    var multifield_tex = try textypes.TexDataDyn(F).init(aa, 4, 2, 2);
     for (0..4) |ch| {
         for (0..2) |row| {
             for (0..2) |col| {
@@ -342,7 +342,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
 
     // The public texture input accepts the channel cap and integer storage.
     // Integer texels are converted during static preparation for this path.
-    var eight_tex = try texops.TexDataDyn(u8).init(aa, 8, 2, 2);
+    var eight_tex = try textypes.TexDataDyn(u8).init(aa, 8, 2, 2);
     for (0..8) |ch| {
         for (0..2) |row| {
             for (0..2) |col| eight_tex.setVal(ch, row, col, @intCast(ch + 1));

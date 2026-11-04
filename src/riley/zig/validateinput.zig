@@ -22,9 +22,10 @@ const rastcfg = @import("rasterconfig.zig");
 const report = @import("report.zig");
 const shaderops = @import("shaderops.zig");
 const shaderpipe = @import("shaderpipe.zig");
-const texops = @import("textureops.zig");
+const textypes = @import("texturetypes.zig");
 
 const F = buildconfig.F;
+const max_channels = buildconfig.config.max_image_channels;
 
 // --------------------------------------------------------------------------------------
 // File Constants & Tolerances
@@ -468,7 +469,7 @@ fn checkCameras(
 fn checkCamInp(cam_inp: cameratypes.CameraInput) InputValidationError!void {
     if (cam_inp.render_format == .multifield and
         (cam_inp.render_format.multifield == 0 or
-            cam_inp.render_format.multifield > 8))
+            cam_inp.render_format.multifield > max_channels))
     {
         return error.InvalidRenderFormatChannels;
     }
@@ -761,7 +762,7 @@ fn checkFuncMultiShaderMetadata(
     multi: shadertypes.FuncMultiInput,
     coords_num: usize,
 ) InputValidationError!void {
-    if (multi.channels.len == 0 or multi.channels.len > 8)
+    if (multi.channels.len == 0 or multi.channels.len > max_channels)
         return error.UnsuppedImageModeFieldCount;
     try checkOptionalUvMetadata(multi.uvs, coords_num, multi.coord_mode == .uv);
     for (multi.channels) |ch| {
@@ -775,7 +776,7 @@ fn checkFuncMultiShaderMetadata(
 fn checkTexMultiMetadata(t: anytype, coords_num: usize) InputValidationError!void {
     const tex = t.tex;
     const dims = tex.array.dims;
-    if (dims.len != 3 or dims[0] < 2 or dims[0] > 8 or
+    if (dims.len != 3 or dims[0] < 2 or dims[0] > max_channels or
         dims[1] == 0 or dims[2] == 0 or
         tex.rows_num != dims[1] or tex.cols_num != dims[2])
         return error.InvalidTextureDimensions;
@@ -828,7 +829,7 @@ fn checkOptionalUvMetadata(
     }
 }
 
-fn checkSampCfg(samp_cfg: texops.TexSampConfig) InputValidationError!void {
+fn checkSampCfg(samp_cfg: textypes.TexSampConfig) InputValidationError!void {
     if (!samp_cfg.isValid()) {
         return error.InvalidTexSampleConfig;
     }

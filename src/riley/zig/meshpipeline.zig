@@ -29,7 +29,7 @@ const pce = @import("parachunkexec.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 const frontend = @import("rasterfrontend.zig");
 const sceneops = @import("sceneops.zig");
-const texops = @import("textureops.zig");
+const textypes = @import("texturetypes.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 
 const shaderops = @import("shaderops.zig");
@@ -54,14 +54,6 @@ const MultiRootHulls = meshtypes.MultiRootHulls;
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
-
-pub fn calcNodesPerElem(meshes: []const MeshPrepared) F {
-    var nodes_sum: usize = 0;
-    for (meshes) |mesh| {
-        nodes_sum += mesh.mesh_type.getNodesNum();
-    }
-    return @as(F, @floatFromInt(nodes_sum)) / @as(F, @floatFromInt(meshes.len));
-}
 
 pub fn countFrames(meshes: []const MeshInput, cameras: []const cameratypes.CameraInput) usize {
     const dim_time_pre: usize = 0;
@@ -564,11 +556,11 @@ fn createPipeSourceStatic(
 fn createTextureMultiStatic(
     comptime T: type,
     allocator: std.mem.Allocator,
-    input: shadertypes.TexInput(texops.TexDataDyn(T)),
+    input: shadertypes.TexInput(textypes.TexDataDyn(T)),
     connect: *const meshio.Connect,
 ) !shadertypes.TexMultiStatic(F) {
     const elem_uvs = try prepUVs(allocator, &input.uvs, connect);
-    const float_tex: texops.TexDataDyn(F) = if (comptime T == F) input.tex else blk: {
+    const float_tex: textypes.TexDataDyn(F) = if (comptime T == F) input.tex else blk: {
         const values = try ndarray.NDArray(F).initFlat(allocator, input.tex.array.dims);
         for (input.tex.array.slice, values.slice) |source, *destination| {
             destination.* = @floatFromInt(source);
@@ -589,7 +581,7 @@ fn createTextureMultiStatic(
     };
 }
 
-const GeomTimes = meshtypes.GeomTimes;
+const GeomTimes = @import("report.zig").GeomTimes;
 
 // -----------------------------------------------------------------------------------------
 // Mesh Pipeline: Main entry point into the mesh frame pipeline
@@ -603,11 +595,9 @@ pub fn prepMeshFrames(
     config: rastcfg.RasterConfig,
     frame_idx: usize,
     static_meshes: []const MeshStatic,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
     frame_meshes: []MeshFrame,
     timing: *GeomTimes,
 ) !FrameGeomResult {
-    _ = nodal_global_scaling;
     var res = FrameGeomResult{
         .total_elems_num = 0,
         .total_elems_in_image = 0,
@@ -840,7 +830,6 @@ fn shaderSetHitSelection(
     }
     return selection;
 }
-
 
 fn shaderSetNeedsDeformedWorld(
     shaders: shadertypes.MeshShaderSetStatic,
@@ -2238,7 +2227,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         }
     };
 }
-
 
 // --------------------------------------------------------------------------------------
 // Tests

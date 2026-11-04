@@ -12,25 +12,11 @@ const simd_impl = @import("textureops_simd.zig");
 const impl = if (cfg.simd == .on) simd_impl else common_impl;
 
 // --------------------------------------------------------------------------------------
-// Public Constants & Public Types
-// --------------------------------------------------------------------------------------
-
-pub const TexSamp = common_impl.TexSamp;
-pub const TexSampMode = common_impl.TexSampMode;
-pub const TexSampConfig = common_impl.TexSampConfig;
-pub const lanczos2Coeff = common_impl.lanczos2Coeff;
-pub const TextureSampConfig = TexSampConfig;
-pub const TexSample = TexSamp;
-pub const TexSampleMode = TexSampMode;
-pub const TexSampleConfig = TexSampConfig;
-pub const TextureSampleConfig = TextureSampConfig;
-pub const texelToFloat = common_impl.texelToFloat;
-pub const TexDataFix = common_impl.TexDataFix;
-pub const TexDataDyn = common_impl.TexDataDyn;
-
-// --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
+
+pub const lanczos2Coeff = common_impl.lanczos2Coeff;
+pub const texelToFloat = common_impl.texelToFloat;
 
 pub const sampScal = impl.sampScal;
 pub const sampGrey = impl.sampGrey;

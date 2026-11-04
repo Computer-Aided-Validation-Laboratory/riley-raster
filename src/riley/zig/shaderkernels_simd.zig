@@ -11,6 +11,7 @@ const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
+const max_channels = buildconfig.config.max_image_channels;
 const eval_branch_quota = buildconfig.comptime_eval_branch_quota;
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
@@ -19,7 +20,7 @@ const VecSF = buildconfig.VecSF;
 const comm = @import("shaderkernels_common.zig");
 const shaderops = @import("shaderops.zig");
 const meshhit = @import("meshhit.zig");
-const texops = @import("textureops.zig");
+const textypes = @import("texturetypes.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
@@ -234,7 +235,7 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
             shader: *const shadertypes.TexMultiPrepared(T),
             spx_image_scratch: *MatSlice(F),
         ) void {
-            inline for (1..9) |C| {
+            inline for (1..max_channels + 1) |C| {
                 if (shader.tex.array.dims[0] == C) {
                     const concrete = shadertypes.concreteTexture(T, C, shader);
                     TexKernel(N, T, C).shade(
@@ -248,6 +249,7 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
                     return;
                 }
             }
+            // Preparation validates the runtime channel count against max_channels.
             unreachable;
         }
 
@@ -264,7 +266,7 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
             shader: *const shadertypes.TexMultiPrepared(T),
             sink: anytype,
         ) void {
-            inline for (1..9) |C| {
+            inline for (1..max_channels + 1) |C| {
                 if (shader.tex.array.dims[0] == C) {
                     const concrete = shadertypes.concreteTexture(T, C, shader);
                     TexKernel(N, T, C).shadeSIMDTo(
@@ -283,6 +285,7 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
                     return;
                 }
             }
+            // Preparation validates the runtime channel count against max_channels.
             unreachable;
         }
 
@@ -358,7 +361,7 @@ inline fn shadeTexSIMDDispatchSample(
     comptime T: type,
     comptime C: usize,
     comptime coord_space: CoordSpace,
-    samp_cfg: texops.TexSampConfig,
+    samp_cfg: textypes.TexSampConfig,
     ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -394,8 +397,8 @@ inline fn shadeTexSIMDDispatchMode(
     comptime T: type,
     comptime C: usize,
     comptime coord_space: CoordSpace,
-    comptime samp_type: texops.TexSamp,
-    mode: texops.TexSampMode,
+    comptime samp_type: textypes.TexSamp,
+    mode: textypes.TexSampMode,
     ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -407,10 +410,10 @@ inline fn shadeTexSIMDDispatchMode(
 ) void {
     switch (mode) {
         inline else => |mode_type| {
-            const samp_cfg = comptime (texops.TexSampConfig{
+            const samp_cfg = comptime (textypes.TexSampConfig{
                 .sample = samp_type,
                 .mode = mode_type,
-            }).sanitize();
+            }).sanitise();
 
             if (comptime coord_space == CoordSpace.raster) {
                 shaderops.fillTexPerspSIMD(

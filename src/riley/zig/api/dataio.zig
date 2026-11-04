@@ -39,6 +39,7 @@ pub const ImageSaveOpts = imageio.ImageSaveOpts;
 pub const CodePacking = imageio.CodePacking;
 pub const loadImage = imageio.loadImage;
 pub const saveImage = imageio.saveImage;
+pub const saveTextureCSV = imageio.saveTextureCSV;
 pub const loadFIMG = imageio.loadFIMG;
 
 // --------------------------------------------------------------------------------------

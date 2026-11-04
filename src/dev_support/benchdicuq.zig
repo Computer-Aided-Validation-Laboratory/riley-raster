@@ -20,7 +20,7 @@ const uvio = @import("../riley/zig/uvio.zig");
 const iio = @import("../riley/zig/imageio.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 const camera_mod = @import("../riley/zig/cameraprojops.zig");
 const cameraops = @import("../riley/zig/cameraframeops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
@@ -34,7 +34,7 @@ const MeshInput = meshtypes.MeshInput;
 pub const PreparedDicuqBenchmark = struct {
     mesh_input: MeshInput,
     camera_inputs: [2]CameraInput,
-    samp_cfg: texops.TextureSampleConfig,
+    samp_cfg: textypes.TexSampConfig,
     fov_scale: F,
 };
 
@@ -167,8 +167,8 @@ pub fn getBaseRasterConfig() riley.RasterConfig {
 
 pub fn makeSampleConfig(
     bench_args: benchargs.BenchArgs,
-) !texops.TextureSampleConfig {
-    const samp_cfg = texops.TextureSampleConfig{
+) !textypes.TexSampConfig {
+    const samp_cfg = textypes.TexSampConfig{
         .sample = bench_args.sample orelse .cubic_catmull_rom,
         .mode = bench_args.sample_mode orelse .direct,
     };
@@ -182,7 +182,7 @@ pub fn prepareBenchmark(
     allocator: std.mem.Allocator,
     io: std.Io,
     defaults: DicuqDefaults,
-    samp_cfg: texops.TextureSampleConfig,
+    samp_cfg: textypes.TexSampConfig,
 ) !PreparedDicuqBenchmark {
     const data_dir = defaults.data_dir;
     const coord_path = try std.fmt.allocPrint(
@@ -318,7 +318,7 @@ pub fn prepareBenchmark(
 
 pub fn calcCaseName(
     allocator: std.mem.Allocator,
-    samp_cfg: texops.TextureSampleConfig,
+    samp_cfg: textypes.TexSampConfig,
 ) ![]const u8 {
     return common.calcCaseName(
         allocator,

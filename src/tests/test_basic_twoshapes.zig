@@ -24,7 +24,7 @@ const riley = @import("../riley/zig/riley.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const sceneops = @import("../riley/zig/sceneops.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 
 const F = buildconfig.F;
 const CameraInput = cameratypes.CameraInput;
@@ -41,10 +41,10 @@ pub fn runTwoShapesCaseTest(
     io: std.Io,
     mesh_type: gk.MeshType,
     shader_kind: TwoShapesShaderKind,
-    texture_u8_grey: texops.TexDataFix(u8, 1),
-    texture_u8_rgb: texops.TexDataFix(u8, 3),
-    texture_u16_grey: texops.TexDataFix(u16, 1),
-    texture_f64_grey: texops.TexDataFix(F, 1),
+    texture_u8_grey: textypes.TexDataFix(u8, 1),
+    texture_u8_rgb: textypes.TexDataFix(u8, 3),
+    texture_u16_grey: textypes.TexDataFix(u16, 1),
+    texture_f64_grey: textypes.TexDataFix(F, 1),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {

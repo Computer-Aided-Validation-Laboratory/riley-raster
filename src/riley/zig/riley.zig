@@ -20,7 +20,6 @@ const rotation = @import("rotation.zig");
 const sliceops = @import("sliceops.zig");
 
 const cam = @import("cameraprojops.zig");
-const camops = @import("cameraprepops.zig");
 const frontend = @import("rasterfrontend.zig");
 const elemtilebin = @import("elemtilebinning.zig");
 const globbuffbins = @import("elemtilebinning_globbuff.zig");
@@ -369,7 +368,7 @@ fn rasterIntoValidated(
     defer static_arena.deinit();
     const static_alloc = static_arena.allocator();
 
-    const cams = try camops.prepareCameraSlice(
+    const cams = try initCameraPreparedSlice(
         outer_alloc,
         cam_inps,
     );
@@ -385,8 +384,6 @@ fn rasterIntoValidated(
     // we don't need to do this every frames
     const mesh_static = try initMeshStaticSlice(static_alloc, meshes);
     const camera_meshes = try initCameraMeshSelections(static_alloc, cams, mesh_static);
-    const nodal_glob_scaling = try initNodalGlobalScaling(outer_alloc, meshes);
-    defer outer_alloc.free(nodal_glob_scaling);
 
     // Timing hooks for frame buffer setup, render time and E2E times
     const time_start_frame_buff = report.timestamp(user_io, config.report_perf);
@@ -420,7 +417,6 @@ fn rasterIntoValidated(
             num_time,
             num_fields,
             camera_meshes,
-            nodal_glob_scaling,
             images_arr,
             bench_capt,
         );
@@ -435,7 +431,6 @@ fn rasterIntoValidated(
             num_time,
             num_fields,
             camera_meshes,
-            nodal_glob_scaling,
             images_arr,
             bench_capt,
         );
@@ -531,7 +526,6 @@ const OfflineDispatchShared = struct {
     num_time: usize,
     num_fields: u8,
     camera_meshes: []const []const meshtypes.MeshStatic,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
     total_scene_elems: usize,
@@ -550,7 +544,6 @@ fn dispatchFrameJobsOffline(
     num_time: usize,
     num_fields: u8,
     camera_meshes: []const []const meshtypes.MeshStatic,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
@@ -564,7 +557,6 @@ fn dispatchFrameJobsOffline(
         .num_time = num_time,
         .num_fields = num_fields,
         .camera_meshes = camera_meshes,
-        .nodal_global_scaling = nodal_global_scaling,
         .images_arr = images_arr,
         .bench_capture = bench_capture,
         .total_scene_elems = maxCameraMeshElems(camera_meshes),
@@ -648,7 +640,6 @@ fn processOfflineRenderGroupLoop(
             shared.out_dir_path,
             shared.num_fields,
             shared.camera_meshes,
-            shared.nodal_global_scaling,
             shared.images_arr,
             shared.bench_capture,
             job_indices,
@@ -690,7 +681,6 @@ const InOrderDispatchShared = struct {
     frame_idx: usize,
     num_fields: u8,
     camera_meshes: []const []const meshtypes.MeshStatic,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
     total_scene_elems: usize,
@@ -710,7 +700,6 @@ fn dispatchFrameJobsInOrder(
     num_time: usize,
     num_fields: u8,
     camera_meshes: []const []const meshtypes.MeshStatic,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
@@ -728,7 +717,6 @@ fn dispatchFrameJobsInOrder(
             .frame_idx = frame_idx,
             .num_fields = num_fields,
             .camera_meshes = camera_meshes,
-            .nodal_global_scaling = nodal_global_scaling,
             .images_arr = images_arr,
             .bench_capture = bench_capture,
             .total_scene_elems = total_scene_elems,
@@ -819,7 +807,6 @@ fn processInOrderRenderGroupLoop(
             shared.out_dir_path,
             shared.num_fields,
             shared.camera_meshes,
-            shared.nodal_global_scaling,
             shared.images_arr,
             shared.bench_capture,
             job_indices,
@@ -860,7 +847,6 @@ fn prepareJobBatch(
     out_dir_path: ?[]const u8,
     num_fields: u8,
     camera_meshes: []const []const meshtypes.MeshStatic,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
     job_indices: []const usize,
@@ -893,7 +879,6 @@ fn prepareJobBatch(
                 .out_dir = out_dir,
                 .out_dir_path = out_dir_path,
                 .mesh_static = camera_meshes[camera_idx],
-                .nodal_global_scaling = nodal_global_scaling,
                 .images_arr = images_arr,
                 .bench_capture = bench_capture,
                 .cameras_num = cameras.len,
@@ -1143,7 +1128,7 @@ fn runGeometryStage(
 
     var chunk_exec = pce.ParaChunkExecutor.init(io, geom_workers);
 
-    var timing = meshtypes.GeomTimes{};
+    var timing = report.GeomTimes{};
     const geo_res = try meshpipe.prepMeshFrames(
         arena_alloc,
         &chunk_exec,
@@ -1152,7 +1137,6 @@ fn runGeometryStage(
         job.desc.config,
         job.desc.frame_idx,
         job.desc.mesh_static,
-        job.desc.nodal_global_scaling,
         job.ctx.frame_meshes,
         &timing,
     );
@@ -1363,29 +1347,23 @@ fn getFrameReportPtr(
     };
 }
 
-fn initNodalGlobalScaling(
-    outer_alloc: std.mem.Allocator,
-    meshes: []const meshtypes.MeshInput,
-) ![]?imageops.ScalingParams {
-    var nodal_global_scaling = try outer_alloc.alloc(?imageops.ScalingParams, meshes.len);
-
-    for (meshes, 0..) |mesh, ii| {
-        nodal_global_scaling[ii] = null;
-        inline for (.{ mesh.shaders.mono_direct, mesh.shaders.ir_direct }) |shader_opt| {
-            if (shader_opt) |shader| switch (shader) {
-                .nodal => |s| if (s.scale_over == .over_frames) {
-                    nodal_global_scaling[ii] = imageops.getScalingParamsNDArray(
-                        &s.field.array,
-                        null,
-                        s.scaling,
-                    );
-                },
-                else => {},
-            };
-        }
+fn initCameraPreparedSlice(
+    allocator: std.mem.Allocator,
+    camera_inputs: []const cameratypes.CameraInput,
+) ![]cam.CameraPrepared {
+    const cameras = try allocator.alloc(cam.CameraPrepared, camera_inputs.len);
+    for (camera_inputs, 0..) |camera_input, cc| {
+        cameras[cc] = cam.CameraPrepared.init(
+            allocator,
+            camera_input,
+        ) catch |err| {
+            for (0..cc) |pp| cameras[pp].deinit(allocator);
+            allocator.free(cameras);
+            return err;
+        };
     }
 
-    return nodal_global_scaling;
+    return cameras;
 }
 
 fn initMeshStaticSlice(
@@ -1513,7 +1491,6 @@ const FrameJobDesc = struct {
     out_dir: ?std.Io.Dir,
     out_dir_path: ?[]const u8,
     mesh_static: []const meshtypes.MeshStatic,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
     cameras_num: usize,

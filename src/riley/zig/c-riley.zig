@@ -1111,7 +1111,7 @@ fn buildCameraInput(
         2 => .ir,
         3 => .{
             .multifield = if (in_camera.render_channels >= 1 and
-                in_camera.render_channels <= 8)
+                in_camera.render_channels <= riley.max_channels)
                 @intCast(in_camera.render_channels)
             else
                 return error.InvalidRenderChannels,

@@ -21,7 +21,7 @@ const policy = @import("../dev_support/testpolicy.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const riley = @import("../riley/zig/riley.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 
 const F = buildconfig.F;
 const CameraInput = cameratypes.CameraInput;
@@ -44,8 +44,8 @@ pub const ZooColorMode = enum {
 };
 
 pub const ZooInput = union(ZooColorMode) {
-    mono: texops.TexDataFix(u8, 1),
-    rgb: texops.TexDataFix(u8, 3),
+    mono: textypes.TexDataFix(u8, 1),
+    rgb: textypes.TexDataFix(u8, 3),
 };
 
 pub const zoo_threading_cases = [_]ZooThreadingCase{
@@ -270,7 +270,7 @@ pub fn runZooCase(
 pub fn runZooMonoTest(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_grey: texops.TexDataFix(u8, 1),
+    texture_grey: textypes.TexDataFix(u8, 1),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {
@@ -282,7 +282,7 @@ pub fn runZooMonoTest(
 pub fn runZooRgbTest(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_rgb: texops.TexDataFix(u8, 3),
+    texture_rgb: textypes.TexDataFix(u8, 3),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {

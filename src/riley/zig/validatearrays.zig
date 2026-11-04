@@ -15,7 +15,6 @@ const matslice = @import("matslice.zig");
 const meshpipe = @import("meshpipeline.zig");
 const ndarray = @import("ndarray.zig");
 const shaderops = @import("shaderops.zig");
-const texops = @import("textureops.zig");
 
 const F = buildconfig.F;
 
@@ -119,7 +118,7 @@ fn checkPipeArrays(pipe: shadertypes.ShaderPipeInput) InputArrayError!void {
     }
 }
 
-fn checkTexUvArrays(slice: []const f64) InputArrayError!void {
+fn checkTexUvArrays(slice: []const F) InputArrayError!void {
     for (slice) |val| {
         if (!std.math.isFinite(val)) return error.NonFiniteUvs;
     }

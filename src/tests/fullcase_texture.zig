@@ -17,7 +17,7 @@ const gk = @import("../riley/zig/geometrykernels.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const shaderops = @import("../riley/zig/shaderops.zig");
 const shaderpipe = @import("../riley/zig/shaderpipe.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 
 const F = buildconfig.F;
 const CameraInput = cameratypes.CameraInput;
@@ -26,7 +26,7 @@ const MeshInput = meshtypes.MeshInput;
 pub const FullTexSamplingCase = struct {
     is_rgb: bool,
     dtype: enum { u8, u16, f64 },
-    samp_cfg: texops.TexSampConfig,
+    samp_cfg: textypes.TexSampConfig,
 
     pub fn formatDirName(
         self: FullTexSamplingCase,
@@ -50,7 +50,7 @@ pub const FullTexSamplingCase = struct {
     }
 };
 
-pub const all_tex_samp_configs = [_]texops.TexSampConfig{
+pub const all_tex_samp_configs = [_]textypes.TexSampConfig{
     .{ .sample = .nearest, .mode = .direct },
     .{ .sample = .linear, .mode = .direct },
     .{ .sample = .cubic_catmull_rom, .mode = .direct },

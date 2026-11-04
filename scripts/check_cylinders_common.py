@@ -42,7 +42,6 @@ def render_check(
                 channels=1,
                 bits=8,
                 scaling_type=riley.ScaleStrategy.auto,
-                normal_type=riley.NormalType.none,
             ),
         ),
         (
@@ -54,19 +53,12 @@ def render_check(
                 sample_mode=riley.TextureSampleMode.direct,
                 bits=8,
                 scaling_type=riley.ScaleStrategy.auto,
-                normal_type=riley.NormalType.none,
             ),
         ),
     )
     target = riley.roi_cent_from_coords(coords)
-    position = riley.pos_frame_mesh(
-        riley.create_mesh(
-            convention,
-            riley.MeshType.tri6,
-            coords,
-            connect,
-            shaders[0][1],
-        ),
+    position = riley.pos_frame_coords(
+        coords,
         PIXELS_NUM,
         PIXELS_SIZE,
         FOCAL_LENGTH,
@@ -77,11 +69,11 @@ def render_check(
     camera_options = {}
     if use_distortion:
         camera_options = {
-            "distortion_model": 1,
-            "distortion_k1": -0.12,
-            "distortion_k2": 0.035,
-            "distortion_p1": 0.0002,
-            "distortion_p2": -0.0001,
+            "distort_model": 1,
+            "distort_k1": -0.12,
+            "distort_k2": 0.035,
+            "distort_p1": 0.0002,
+            "distort_p2": -0.0001,
         }
     camera = riley.Camera(
         pixels_num=PIXELS_NUM,
@@ -91,6 +83,9 @@ def render_check(
         roi_cent_world=target,
         focal_length=FOCAL_LENGTH,
         sub_sample=sub_sample,
+        render_format=riley.RenderFormat.mono,
+        background_value=127.5,
+        output_files=[riley.ImageSaveOpts(format=riley.ImageFormat.bmp, file_bits=8)],
         **camera_options,
     )
     case_dir = OUT_DIR / case_name
@@ -101,7 +96,8 @@ def render_check(
             riley.MeshType.tri6,
             coords,
             connect,
-            shader,
+            riley.MeshShaderSet(mono=shader),
+            normal_type=riley.NormalType.none,
         )
         config = riley.RasterConfig(
             parallel=4,
@@ -111,7 +107,6 @@ def render_check(
 
 
 
-        camera.background_value = 0.5 * (2**8 - 1)
         riley.raster(
             mesh,
             camera,

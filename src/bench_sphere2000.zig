@@ -16,7 +16,7 @@ const rastcfg = @import("riley/zig/rasterconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
-const texops = @import("riley/zig/textureops.zig");
+const textypes = @import("riley/zig/texturetypes.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const F = buildconfig.F;
 
@@ -97,7 +97,7 @@ pub fn main(init: std.process.Init) !void {
         .func,
         .func_rgb,
     };
-    const samp_cfgs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]textypes.TexSampConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
         .{ .sample = .cubic_mitchell_netravali, .mode = .lut_lerp },

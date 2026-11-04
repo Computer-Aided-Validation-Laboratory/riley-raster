@@ -18,7 +18,7 @@ const riley = @import("riley/zig/riley.zig");
 const cam = @import("riley/zig/cameraprojops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
-const texops = @import("riley/zig/textureops.zig");
+const textypes = @import("riley/zig/texturetypes.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const F = buildconfig.F;
 
@@ -119,7 +119,7 @@ pub fn main(init: std.process.Init) !void {
         .func,
         .func_rgb,
     };
-    const samp_cfgs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]textypes.TexSampConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
@@ -243,7 +243,7 @@ fn runBenchmarksForTextureType(
     mesh_types: []const gk.MeshType,
     shader_types: []const common.ShaderType,
     tex_func_shader_types: []const common.ShaderType,
-    samp_cfgs: []const texops.TextureSampleConfig,
+    samp_cfgs: []const textypes.TexSampConfig,
     tex_func_cases: []const common.TexFuncCase,
 ) !void {
     const texture_grey = try loadBenchmarkTexture(
@@ -491,7 +491,7 @@ fn loadBenchmarkTexture(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.TexDataFix(T, channels) {
+) !textypes.TexDataFix(T, channels) {
     if (T == u8) {
         return iio.loadImage(
             u8,
@@ -522,11 +522,11 @@ fn loadBenchmarkTexture(
 fn scaleTexture8To16(
     comptime channels: usize,
     allocator: std.mem.Allocator,
-    texture_u8: texops.TexDataFix(u8, channels),
-) !texops.TexDataFix(u16, channels) {
+    texture_u8: textypes.TexDataFix(u8, channels),
+) !textypes.TexDataFix(u16, channels) {
     defer texture_u8.deinit(allocator);
 
-    var texture_u16 = try texops.TexDataFix(u16, channels).init(
+    var texture_u16 = try textypes.TexDataFix(u16, channels).init(
         allocator,
         texture_u8.rows_num,
         texture_u8.cols_num,

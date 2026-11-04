@@ -20,6 +20,7 @@ const VecSU = buildconfig.VecSU;
 const lut_size = cfg.interp_lut_size;
 const tol = cfg.tol;
 
+const textypes = @import("texturetypes.zig");
 const common = @import("textureops_common.zig");
 
 // --------------------------------------------------------------------------
@@ -51,9 +52,9 @@ const common = @import("textureops_common.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const TexSamp = common.TexSamp;
-pub const TexSampMode = common.TexSampMode;
-pub const TexSampConfig = common.TexSampConfig;
+const TexSamp = textypes.TexSamp;
+const TexSampMode = textypes.TexSampMode;
+const TexSampConfig = textypes.TexSampConfig;
 
 const catmull_rom_lut = common.catmull_rom_lut;
 const mitchell_netravali_lut = common.mitchell_netravali_lut;

@@ -16,7 +16,7 @@ const MatSlice = @import("../riley/zig/matslice.zig").MatSlice;
 
 const meshio = @import("../riley/zig/meshio.zig");
 const CameraPrepared = @import("../riley/zig/cameraprojops.zig").CameraPrepared;
-const CameraInput = @import("../riley/zig/cameraprojops.zig").CameraInput;
+const CameraInput = @import("../riley/zig/cameratypes.zig").CameraInput;
 
 const gk = @import("../riley/zig/geometrykernels.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
@@ -25,7 +25,7 @@ const MeshInput = meshtypes.MeshInput;
 
 const riley = @import("../riley/zig/riley.zig");
 const iio = @import("../riley/zig/imageio.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
@@ -861,9 +861,9 @@ pub fn runSingleMeshSuiteDriver(
     test_type: []const u8,
     mesh_type: gk.MeshType,
     fov_scale: F,
-    texture: texops.TexDataFix(u8, 1),
+    texture: textypes.TexDataFix(u8, 1),
     pixel_num: [2]u32,
-    samp_cfgs: []const texops.TextureSampleConfig,
+    samp_cfgs: []const textypes.TexSampConfig,
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
     config: rastcfg.RasterConfig,
@@ -1182,9 +1182,9 @@ pub fn runTestInternal(
     test_type: []const u8,
     mesh_type: MeshType,
     fov_scale: F,
-    texture: texops.TexDataFix(u8, 1),
+    texture: textypes.TexDataFix(u8, 1),
     pixel_num: [2]u32,
-    samp_cfgs: []const texops.TextureSampleConfig,
+    samp_cfgs: []const textypes.TexSampConfig,
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
     rel_tol: F,
@@ -1218,9 +1218,9 @@ pub fn runMeshTypesSuite(
     test_types: []const []const u8,
     mesh_types: []const gk.MeshType,
     fov_scale: F,
-    texture: texops.TexDataFix(u8, 1),
+    texture: textypes.TexDataFix(u8, 1),
     pixel_num: [2]u32,
-    samp_cfgs: []const texops.TextureSampleConfig,
+    samp_cfgs: []const textypes.TexSampConfig,
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
     rel_tol: F,

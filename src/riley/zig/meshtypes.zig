@@ -199,13 +199,6 @@ pub const MeshPrepared = struct {
     shaders: shadertypes.MeshShaderSetPrepared,
 };
 
-pub const GeomTimes = struct {
-    coord_ops: u64 = 0,
-    cull_ops: u64 = 0,
-    prep_hulls_shaders: u64 = 0,
-    remap_inds: u64 = 0,
-};
-
 pub const FrameGeomResult = struct {
     total_elems_num: usize,
     total_elems_in_image: usize,

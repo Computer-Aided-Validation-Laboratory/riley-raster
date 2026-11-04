@@ -14,7 +14,6 @@ const F = buildconfig.F;
 const Timestamp = std.Io.Clock.Timestamp;
 const ndarray = @import("ndarray.zig");
 const cam = @import("cameraprojops.zig");
-const meshpipe = @import("meshpipeline.zig");
 const iio = @import("imageio.zig");
 const rastcfg = @import("rasterconfig.zig");
 const report = @import("report.zig");
@@ -363,7 +362,7 @@ pub fn publishRenderedSlot(
     slot.total_nodes_num = meta.total_nodes_num;
     slot.total_elems_num = meta.total_elems_num;
     slot.total_elems_in_image = meta.total_elems_in_image;
-    slot.nodes_per_elem = meshpipe.calcNodesPerElem(prep_meshes);
+    slot.nodes_per_elem = report.calcNodesPerElem(prep_meshes);
     slot.actual_tile_size = meta.actual_tile_size;
     slot.time_start_frame = meta.time_start_frame;
 

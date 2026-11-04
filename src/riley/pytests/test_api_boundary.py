@@ -93,3 +93,16 @@ def test_empty_coordinates_fail_at_the_native_boundary() -> None:
     coords = np.empty((0, 3), dtype=np.float64)
     with pytest.raises(RuntimeError, match="InvalidCoordsShape"):
         riley.roi_cent_from_coords(coords)
+
+
+def test_rgb_source_assigned_after_construction_becomes_an_input_pipe() -> None:
+    mesh, camera, config = scene()
+    mesh.shaders = riley.MeshShaderSet()
+    mesh.shaders.rgb = riley.FunctionShader(
+        builtin=riley.FuncShaderBuiltin.constant,
+        channels=3, scaling_type=riley.ScaleStrategy.none,
+    )
+    camera.render_format = riley.RenderFormat.rgb
+    image = riley.raster(mesh, camera, config)
+    assert isinstance(mesh.shaders.rgb, riley.ShaderPipe)
+    np.testing.assert_allclose(image[0, 0, :, 16, 16], (0.2, 0.5, 0.8), atol=1e-12)

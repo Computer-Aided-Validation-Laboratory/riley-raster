@@ -378,6 +378,8 @@ def _make_array_2d_f64(
     rows_num: cython.Py_ssize_t,
     cols_num: cython.Py_ssize_t,
 ) -> cr.CArray2DF64:
+    if rows_num == 0 or cols_num == 0:
+        return cr.CArray2DF64(cython.NULL, rows_num, cols_num)
     return cr.CArray2DF64(
         cython.address(view_in[0, 0]),
         rows_num,
@@ -391,6 +393,8 @@ def _make_array_2d_usize(
     rows_num: cython.Py_ssize_t,
     cols_num: cython.Py_ssize_t,
 ) -> cr.CArray2DUsize:
+    if rows_num == 0 or cols_num == 0:
+        return cr.CArray2DUsize(cython.NULL, rows_num, cols_num)
     return cr.CArray2DUsize(
         cython.address(view_in[0, 0]),
         rows_num,
@@ -965,6 +969,7 @@ def _fill_mesh_array(
             )
             keepalive.append(disp_np)
 
+        mesh.shaders._normalise_sources()
         choices = []
         for role, entry in (
             (RenderFormat.mono, mesh.shaders.mono),

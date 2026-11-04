@@ -572,7 +572,11 @@ class MeshShaderSet:
     rgb: Any | None = None
     ir: Any | None = None
     multifield: Any | None = None
+
     def __post_init__(self) -> None:
+        self._normalise_sources()
+
+    def _normalise_sources(self) -> None:
         # Zig's RGB and multifield inputs are always pipes. Normalise the
         # convenient Python source form before it crosses the C boundary.
         for role in ("rgb", "multifield"):

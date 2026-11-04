@@ -28,7 +28,7 @@ const shaderops = @import("../riley/zig/shaderops.zig");
 const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const normals = @import("../riley/zig/normals.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 
 const F = buildconfig.F;
@@ -113,16 +113,16 @@ fn buildRgbFieldTwoFrames(
 }
 
 fn textureShaderMono(
-    texture: texops.TexDataFix(u8, 1),
+    texture: textypes.TexDataFix(u8, 1),
     uvs: uvio.UVMap,
     comptime bits: u8,
     linear: bool,
 ) shadertypes.ShaderMonoInput {
-    const samp_cfg = texops.TexSampConfig{
+    const samp_cfg = textypes.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
     };
-    const input = shadertypes.TexInput(texops.TexDataFix(u8, 1)){
+    const input = shadertypes.TexInput(textypes.TexDataFix(u8, 1)){
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = samp_cfg,
@@ -133,16 +133,16 @@ fn textureShaderMono(
 }
 
 fn textureShaderRGB(
-    texture: texops.TexDataFix(u8, 3),
+    texture: textypes.TexDataFix(u8, 3),
     uvs: uvio.UVMap,
     comptime bits: u8,
     linear: bool,
 ) shadertypes.PipeSourceInput {
-    const samp_cfg = texops.TexSampConfig{
+    const samp_cfg = textypes.TexSampConfig{
         .sample = if (linear) .linear else .cubic_catmull_rom,
         .mode = if (linear) .direct else .lut_lerp,
     };
-    const input = shadertypes.TexInput(texops.TexDataFix(u8, 3)){
+    const input = shadertypes.TexInput(textypes.TexDataFix(u8, 3)){
         .uvs = uvs.array,
         .tex = texture,
         .samp_cfg = samp_cfg,
@@ -160,7 +160,7 @@ fn loadZooMesh(
     io: std.Io,
     case: Case,
     case_index: usize,
-    texture: texops.TexDataFix(T, C),
+    texture: textypes.TexDataFix(T, C),
 ) !MeshInput {
     const dir = try std.fmt.allocPrint(
         allocator,
@@ -315,7 +315,7 @@ pub fn buildZooScene(
     comptime bits: u8,
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture: texops.TexDataFix(T, C),
+    texture: textypes.TexDataFix(T, C),
 ) ![]MeshInput {
     var meshes = std.ArrayList(MeshInput).empty;
     var groups = std.ArrayList(sceneops.MeshGroup).empty;
@@ -448,7 +448,7 @@ pub fn buildAllZooCameras(meshes: []MeshInput) [6]cameratypes.CameraInput {
 pub fn generateZooMonoGold(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_grey: texops.TexDataFix(u8, 1),
+    texture_grey: textypes.TexDataFix(u8, 1),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {
@@ -491,7 +491,7 @@ pub fn generateZooMonoGold(
 pub fn generateZooRgbGold(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_rgb: texops.TexDataFix(u8, 3),
+    texture_rgb: textypes.TexDataFix(u8, 3),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {
@@ -538,8 +538,8 @@ pub fn generateZooRgbGold(
 pub fn generateAllFeatureZooCases(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture_grey: texops.TexDataFix(u8, 1),
-    texture_rgb: texops.TexDataFix(u8, 3),
+    texture_grey: textypes.TexDataFix(u8, 1),
+    texture_rgb: textypes.TexDataFix(u8, 3),
     gold_dir_root: []const u8,
     config: rastcfg.RasterConfig,
 ) !void {

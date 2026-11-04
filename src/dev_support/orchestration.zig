@@ -18,7 +18,7 @@ const meshio = @import("../riley/zig/meshio.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const sceneops = @import("../riley/zig/sceneops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 const shaderops = @import("../riley/zig/shaderops.zig");
 const shaderpipe = @import("../riley/zig/shaderpipe.zig");
@@ -409,7 +409,7 @@ pub fn buildMixedMeshInputs(
     allocator: std.mem.Allocator,
     io: std.Io,
     dir_paths: []const []const u8,
-    texture: texops.TexDataFix(u8, 1),
+    texture: textypes.TexDataFix(u8, 1),
 ) ![]meshtypes.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
     var mesh_inputs = try allocator.alloc(meshtypes.MeshInput, 10);
@@ -466,7 +466,7 @@ pub fn buildMixedRgbMeshInputs(
     allocator: std.mem.Allocator,
     io: std.Io,
     dir_paths: []const []const u8,
-    texture: texops.TexDataFix(u8, 3),
+    texture: textypes.TexDataFix(u8, 3),
 ) ![]meshtypes.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
     var mesh_inputs = try allocator.alloc(meshtypes.MeshInput, 10);

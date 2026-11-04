@@ -11,7 +11,6 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cam = @import("cameraprojops.zig");
-const meshpipe = @import("meshpipeline.zig");
 const rastcfg = @import("rasterconfig.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 const elemtilebin = @import("elemtilebinning.zig");
@@ -55,6 +54,21 @@ pub const GlobalSubpxTimes = struct {
     tile_raster: F = 0,
     resolve: F = 0,
 };
+
+pub const GeomTimes = struct {
+    coord_ops: u64 = 0,
+    cull_ops: u64 = 0,
+    prep_hulls_shaders: u64 = 0,
+    remap_inds: u64 = 0,
+};
+
+pub fn calcNodesPerElem(meshes: []const meshtypes.MeshPrepared) F {
+    var nodes_sum: usize = 0;
+    for (meshes) |mesh| {
+        nodes_sum += mesh.mesh_type.getNodesNum();
+    }
+    return @as(F, @floatFromInt(nodes_sum)) / @as(F, @floatFromInt(meshes.len));
+}
 
 pub const FrameTimes = struct {
     setup_frame_buff: F = 0,
@@ -279,7 +293,7 @@ pub fn publishFrameResults(
     total_elems_in_image: usize,
     prep_meshes: []const meshtypes.MeshPrepared,
 ) !void {
-    const nodes_per_elem = meshpipe.calcNodesPerElem(prep_meshes);
+    const nodes_per_elem = calcNodesPerElem(prep_meshes);
     try publishFrameResultsWithNodesPerElem(
         outer_alloc,
         io,

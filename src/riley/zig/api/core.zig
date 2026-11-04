@@ -95,11 +95,11 @@ pub const Resolver = @import("../shaderpipe.zig").Resolver;
 // Texture Types
 // --------------------------------------------------------------------------------------
 
-pub const TexSamp = @import("../textureops.zig").TexSamp;
-pub const TexSampMode = @import("../textureops.zig").TexSampMode;
-pub const TexSampConfig = @import("../textureops.zig").TexSampConfig;
-pub const TexDataFix = @import("../textureops.zig").TexDataFix;
-pub const TexDataDyn = @import("../textureops.zig").TexDataDyn;
+pub const TexSamp = @import("../texturetypes.zig").TexSamp;
+pub const TexSampMode = @import("../texturetypes.zig").TexSampMode;
+pub const TexSampConfig = @import("../texturetypes.zig").TexSampConfig;
+pub const TexDataFix = @import("../texturetypes.zig").TexDataFix;
+pub const TexDataDyn = @import("../texturetypes.zig").TexDataDyn;
 
 // --------------------------------------------------------------------------------------
 // Configuration
