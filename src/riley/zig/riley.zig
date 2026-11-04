@@ -1339,6 +1339,7 @@ fn initMeshStaticSlice(
             .multifield => 3,
         }
     ] = true;
+    
     for (meshes, 0..) |mesh, ii| {
         mesh_static[ii] = try meshpipeline.initMeshStatic(allocator, &mesh, active_roles);
         mesh_static[ii].scene_mesh_idx = ii;

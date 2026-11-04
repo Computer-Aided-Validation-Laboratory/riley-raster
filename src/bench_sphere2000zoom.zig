@@ -156,8 +156,11 @@ pub fn main(init: std.process.Init) !void {
     );
 
     for (mesh_types) |mt| {
+        if (bench_args.smoke and mt != .tri3) continue;
         for (shader_types) |st| {
+            if (bench_args.smoke and st != .nodal_grey) continue;
             for (samp_cfgs) |sc| {
+                if (bench_args.smoke and sc.sample != .linear) continue;
                 const samp_cfg = if (st == .tex8_grey or st == .tex8_rgb) sc else null;
                 const case_name = try common.calcCaseName(
                     outer_alloc,
@@ -181,7 +184,7 @@ pub fn main(init: std.process.Init) !void {
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
                     "data/bench/{s}_{s}",
-                    .{ @tagName(mt), DEFAULT_DATA_DIR_SUFFIX },
+                    .{ @tagName(if (mt == .tri3opt) gk.MeshType.tri3 else mt), DEFAULT_DATA_DIR_SUFFIX },
                 );
                 for (0..bench_args.runs) |rr| {
                     const run_out_dir_base = if (bench_args.save_strategy == .disk or
@@ -245,6 +248,7 @@ pub fn main(init: std.process.Init) !void {
         }
 
         for (tex_func_shader_types) |st| {
+            if (bench_args.smoke) continue;
             for (tex_func_cases) |tex_func_case| {
                 const case_name = try common.calcCaseName(
                     outer_alloc,
@@ -268,7 +272,7 @@ pub fn main(init: std.process.Init) !void {
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
                     "data/bench/{s}_{s}",
-                    .{ @tagName(mt), DEFAULT_DATA_DIR_SUFFIX },
+                    .{ @tagName(if (mt == .tri3opt) gk.MeshType.tri3 else mt), DEFAULT_DATA_DIR_SUFFIX },
                 );
                 for (0..bench_args.runs) |rr| {
                     const run_out_dir_base = if (bench_args.save_strategy == .disk or

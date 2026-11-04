@@ -173,6 +173,8 @@ const poly_deg7_pincushion_coeffs = [_]F{
 };
 
 pub const BenchDistPsfArgs = struct {
+    pixels_num: [2]u32 = DEFAULT_PIXELS_NUM,
+    sub_sample: u32 = DEFAULT_SUB_SAMPLE,
     out_dir: []const u8 = DEFAULT_OUT_DIR,
     image_out_dir: []const u8 = "",
     mesh_subset: MeshSubset = .all,
@@ -260,6 +262,12 @@ fn parseDistPsfArgs(args: anytype) !BenchDistPsfArgs {
             } else if (std.mem.eql(u8, arg, "--psf")) {
                 result.psf_case = std.meta.stringToEnum(PSFCase, val) orelse
                     return error.InvalidPSFCase;
+            } else if (std.mem.eql(u8, arg, "--pixels-x")) {
+                result.pixels_num[0] = try std.fmt.parseInt(u32, val, 10);
+            } else if (std.mem.eql(u8, arg, "--pixels-y")) {
+                result.pixels_num[1] = try std.fmt.parseInt(u32, val, 10);
+            } else if (std.mem.eql(u8, arg, "--sub-sample")) {
+                result.sub_sample = try std.fmt.parseInt(u32, val, 10);
             } else if (std.mem.eql(u8, arg, "--runs")) {
                 result.runs = try std.fmt.parseInt(usize, val, 10);
             } else if (std.mem.eql(u8, arg, "--frames")) {
@@ -477,9 +485,9 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print(
         "Starting Distortion & PSF Benchmark ({d}x{d}, SSAA={d}, {d} runs, {d} threads)...\n",
         .{
-            DEFAULT_PIXELS_NUM[0],
-            DEFAULT_PIXELS_NUM[1],
-            DEFAULT_SUB_SAMPLE,
+            bench_args.pixels_num[0],
+            bench_args.pixels_num[1],
+            bench_args.sub_sample,
             bench_args.runs,
             bench_args.total_threads,
         },
@@ -548,7 +556,7 @@ pub fn main(init: std.process.Init) !void {
                     const roi_pos = sceneops.boundsCenter(&sim_data.coords);
                     const cam_pos = cameraops.posFillFrameFromRot(
                         &sim_data.coords,
-                        DEFAULT_PIXELS_NUM,
+                        bench_args.pixels_num,
                         DEFAULT_PIXEL_SIZE,
                         DEFAULT_FOCAL_LENG,
                         DEFAULT_ROT,
@@ -559,13 +567,13 @@ pub fn main(init: std.process.Init) !void {
                     const psf_params = createPSF(psf_case);
 
                     const cam_input = cameratypes.CameraInput{
-                        .pixels_num = DEFAULT_PIXELS_NUM,
+                        .pixels_num = bench_args.pixels_num,
                         .pixels_size = DEFAULT_PIXEL_SIZE,
                         .pos_world = cam_pos,
                         .rot_world = DEFAULT_ROT,
                         .roi_cent_world = roi_pos,
                         .focal_length = DEFAULT_FOCAL_LENG,
-                        .sub_sample = DEFAULT_SUB_SAMPLE,
+                        .sub_sample = bench_args.sub_sample,
                         .distort = distort_params,
                         .psf = psf_params,
                         .subpixel_center_map = bench_args.subpixel_center_map,
@@ -695,14 +703,14 @@ pub fn main(init: std.process.Init) !void {
 
                             const total_elems = sim_data.connect.getElemsNum();
                             const vis_elems = total_elems;
-                            const total_px = @as(u64, DEFAULT_PIXELS_NUM[0]) *
-                                @as(u64, DEFAULT_PIXELS_NUM[1]);
+                            const total_px = @as(u64, bench_args.pixels_num[0]) *
+                                @as(u64, bench_args.pixels_num[1]);
                             const shaded_px = total_px;
 
                             const metrics = common.calcMetrics(
                                 mt,
-                                DEFAULT_PIXELS_NUM,
-                                DEFAULT_SUB_SAMPLE,
+                                bench_args.pixels_num,
+                                bench_args.sub_sample,
                                 frame_e2e_ms,
                                 frame_times,
                                 capture.bench_log,
@@ -794,7 +802,7 @@ pub fn main(init: std.process.Init) !void {
         io,
         "Distortion & PSF Benchmark",
         bench_args.out_dir,
-        DEFAULT_PIXELS_NUM,
+        bench_args.pixels_num,
         stats.stats_list.items,
         32,
     );

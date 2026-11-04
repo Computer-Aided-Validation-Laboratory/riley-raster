@@ -67,9 +67,11 @@ zig build diag-badjac
 # Python Integration Suite
 pytest --pyargs riley.pytests -vs
 
-# Benchmarks & Performance Runs (Always ReleaseFast)
-zig build install-bench-multiroot -Doptimize=ReleaseFast -Dsimd=on
-zig build install-bench-buffer-psf -Doptimize=ReleaseFast -Dsimd=on
+# Compile all native benchmarks (ReleaseFast, f64, SIMD on)
+python scripts/compile_benchmarks.py
+
+# Minimal execution check for every native benchmark
+python scripts/run_all_bench.py --profile smoke
 ```
 
 ### Core Suites Summary
@@ -117,169 +119,134 @@ zig build test-basic -Dprecision=f32 -Dsimd=on
 zig build test-basic -Dprecision=f32 -Dsimd=off
 ```
 
-## Benchmark Binaries
-The benchmark entry points exposed through `zig build` are:
+## Benchmarks
 
-- `bench-dicuq`
-- `bench-fullraster`
-- `bench-tiltraster`
-- `bench-geom`
-- `bench-sphere2000`
-- `bench-sphere2000zoom`
-- `bench-thread-geom`
+All native benchmarks use the same Python compiler and execution harness.
+The benchmark catalogue in `scripts/benchmark_catalog.py` defines their names,
+Zig install targets, binary names, and supported experiment matrices.
 
-To install benchmark binaries into `./bin/`:
+| Name | Python entry point | Shared experiment | Specialised study |
+| --- | --- | --- | --- |
+| `dicuq` | `scripts/bench_dicuq.py` | `hulls` | DIC UQ |
+| `fullraster` | `scripts/bench_fullraster.py` | `hulls` | — |
+| `tiltraster` | `scripts/bench_tiltraster.py` | `hulls` | Raster/shader experiments 1–5 |
+| `geom` | `scripts/bench_geom.py` | `hulls` | — |
+| `sphere2000` | `scripts/bench_sphere2000.py` | `hulls` | — |
+| `sphere2000zoom` | `scripts/bench_sphere2000zoom.py` | `hulls` | — |
+| `thread_geom` | `scripts/bench_thread_geom.py` | `hulls` | — |
+| `dist_psf` | `scripts/bench_dist_psf.py` | `distortion` | Distortion/PSF experiments |
+| `multiroot` | `scripts/bench_multiroot.py` | `solver` | Root policies and edge preparation |
+| `buffer_psf` | `scripts/bench_buffer_psf.py` | `buffers` | Buffer/PSF/density/SSAA experiments |
 
-```shell
-zig build install-bench-fullraster -Doptimize=ReleaseFast --prefix .
-zig build install-bench-tiltraster -Doptimize=ReleaseFast --prefix .
-zig build install-bench-geom -Doptimize=ReleaseFast --prefix .
-zig build install-bench-sphere2000 -Doptimize=ReleaseFast --prefix .
-zig build install-bench-sphere2000zoom -Doptimize=ReleaseFast --prefix .
-zig build install-bench-dicuq -Doptimize=ReleaseFast --prefix .
-zig build install-bench-bins -Doptimize=ReleaseFast --prefix .
-```
-
-The installed binaries land in `./bin/`.
-
-## Performance Regression Scripts
-The older performance regression workflow uses the scripts in `./scripts/` with reference data under `./perf/`.
-
-Compile the standard SIMD benchmark binaries:
+### Compilation and naming
 
 ```shell
-python ./scripts/compile_para_simd_benchmarks.py
+# All benchmarks, or selected benchmarks
+python scripts/compile_benchmarks.py
+python scripts/compile_benchmarks.py geom multiroot
+
+# Explicit alternative configuration when needed
+python scripts/compile_benchmarks.py tiltraster --precision f64 --simd on --lanes 4
 ```
 
-Generate local gold performance statistics:
+Compilation always uses ReleaseFast. Use `--jobs N` to set concurrent builds
+(default: two). The default is f64 with SIMD on; alternative
+precision/SIMD configurations require explicit options. Binaries install into
+`bin/`, with names such as `bench_geom_f64_simd`, `bench_geom_f64_scalar`, and
+`bench_tiltraster_f64_simd_v4`. Default vector widths omit the `_vN` suffix.
+No shorthand binary copies are produced.
+
+Every benchmark also has native Zig run and install hooks. Convert underscores
+in catalogue names to hyphens in build targets:
 
 ```shell
-python ./scripts/gen_gold_perf_all.py
+zig build install-bench-thread-geom --prefix . -Doptimize=ReleaseFast -Dprecision=f64 -Dsimd=on
+zig build install-bench-bins --prefix . -Doptimize=ReleaseFast -Dprecision=f64 -Dsimd=on
 ```
 
-Run performance regression checks against those references:
+### Shared execution harness
+
+Every `bench_<name>.py` supports the same options. Compilation is separate unless
+`--build` is supplied. Smoke profiles use one repeat, small images, and a reduced
+case selection; they check execution, not representative performance. The DIC
+UQ smoke profile uses the bundled `platehole3d_2mr_7f` dataset; its default
+large study requires `data/FE/platehole3d_6mr_63f/`. Override the input using
+`-- --data-dir PATH/` (including the trailing slash).
 
 ```shell
-python ./scripts/test_perf_all.py
+python scripts/bench_geom.py --profile smoke --build
+python scripts/run_all_bench.py --profile smoke
+python scripts/bench_geom.py --runs 5
+python scripts/bench_geom.py --experiment hulls --runs 5
+python scripts/bench_buffer_psf.py --experiment buffers --profile smoke
+python scripts/bench_multiroot.py --dry-run
 ```
 
-You can also isolate a single case:
+Shared options include `--profile`, `--runs`, `--precision`, `--simd`, `--lanes`,
+`--binary`, `--out-root`, `--build`, `--dry-run`, and `--experiment`.
+Pass driver-specific arguments after `--`. Defaults use one thread and memory
+output. Each invocation writes its native CSVs, exact command, configuration
+metadata, execution status/duration, stdout, and stderr under `out/benchmarks/<name>/<timestamp>/`.
+A failed build or benchmark exits unsuccessfully; inspect that run's stderr.
+Specialised CSV schemas and counters remain native to each benchmark. Threaded
+geometry reports the mean over `--runs` repeats for each scheduling configuration;
+its smoke profile uses one frame and one mesh copy.
+
+Check the Python harness contract without compiling or rendering:
 
 ```shell
-python ./scripts/test_perf_fullraster.py
-python ./scripts/test_perf_geom.py
-python ./scripts/test_perf_sphere2000.py
-python ./scripts/test_perf_sphere2000zoom.py
+python -m unittest discover -s scripts/tests -v
 ```
 
-These scripts support perf profiles such as `1thread` and `4thread` through their `--profile` flag.
+### Specialised experiments
 
-## Benchmark Experiment Orchestration
-For the newer raster-performance study workflow, use:
-
-- `scripts/compile_perf_all.py`
-- `scripts/bench_perf_raster.py`
-
-First compile the benchmark binaries used by the experiment matrix:
+Preserved experiment matrices live in `scripts/study_*.py`; select them through
+the corresponding entry point with `--study`. Arguments after `--` belong to the
+study, whose own CLI controls its matrix, output locations, and build behaviour.
+Use `--study -- --help` to inspect those options. Shared `--runs` is forwarded;
+`--dry-run` prints the study invocation without executing it.
 
 ```shell
-python ./scripts/compile_perf_all.py
+python scripts/bench_tiltraster.py --study -- --no-experiment1 --no-experiment2 --experiment3
+python scripts/bench_multiroot.py --study -- --quick --skip-build
+python scripts/bench_buffer_psf.py --study -- --quick --skip-build
 ```
 
-This builds the configured `bench_tiltraster` variants into `./bin/`.
+Studies also use the shared command/logging/failure-handling runner.
+Study build adapters use the canonical targets and `bin/` installation location.
 
-Then run the raster benchmark experiments:
+### Geometry-heavy static preparation experiment
+
+The tilt-raster `static_preparation` profile uses the `geom_1e5` datasets
+(99,856 quad or 100,352 triangle elements), 1600×1000 pixels, SSAA=1, and one
+thread. Its 120 direct/stress-pipe cases exercise all six element modes and
+nodal, texture, function, and composed shader preparation.
 
 ```shell
-python ./scripts/bench_perf_raster.py
+python scripts/bench_tiltraster.py --profile static_preparation --runs 5 --build
+python scripts/bench_tiltraster.py --profile static_preparation --runs 5 --binary out/baseline/bench_tiltraster_f64_simd
 ```
 
-By default this uses the constants defined at the top of the script, including which experiments are enabled, the run count, the active SSAA levels, and the case matrix.
+Preserve baseline binaries before rebuilding. Use the same CPU affinity and
+avoid concurrent compiler/test jobs when measuring. Compare geometry and
+end-to-end timings: geometry excludes static setup, while end-to-end includes it.
+Retain raw samples and compare matching datasets, configurations, and case matrices.
 
-Typical useful commands are:
+### Performance regression checks
+
+The reference-based workflow remains separate from experiment orchestration.
+It uses the canonical f64/SIMD binary names and references under `perf/`:
 
 ```shell
-python ./scripts/bench_perf_raster.py --runs 5
-python ./scripts/bench_perf_raster.py --dry-run
-python ./scripts/bench_perf_raster.py --out-root out/bench_stats_perf_manual
-python ./scripts/bench_perf_raster.py --image-out-dir out/bench_images_perf_manual
+python scripts/compile_benchmarks.py fullraster geom sphere2000 sphere2000zoom
+python scripts/gen_gold_perf_all.py
+python scripts/test_perf_all.py
 ```
 
-The script writes:
-
-- per-run experiment output under `./out/bench_stats_perf/<timestamp>/`
-- rendered images under `./out/bench_images_perf/`
-- a timing summary CSV such as `./out/time_bench_perf_raster_<timestamp>.csv`
-
-The current experiment groups are driven directly by constants in the script:
-
-- `DEFAULT_EXPERIMENT1`
-- `DEFAULT_EXPERIMENT2`
-- `DEFAULT_EXPERIMENT3` (off by default)
-- `DEFAULT_EXPERIMENT4` (off by default)
-- `EXPERIMENT1_SUB_SAMPLES`
-- `EXPERIMENT2_SUB_SAMPLES`
-- `EXPERIMENT1_CASES_BASE`
-- `EXPERIMENT3_CASES`
-
-If you want to change the study matrix, edit those constants first.
-
-Experiment 3 is the one-stage shader-pipe baseline: six mesh types (`tri3`,
-`tri3opt`, `tri6`, `quad4`, `quad8`, `quad9`) times nodal grey, parametric
-checker, direct linear greyscale texture, and direct cubic Catmull-Rom greyscale
-texture. Its default profile is f64, SIMD width 8, SSAA=2, one thread, and
-memory output. Run only this experiment with:
-
-```shell
-python ./scripts/bench_perf_raster.py --no-experiment1 --no-experiment2 --experiment3
-```
-
-Pass `--experiment3-binary PATH` to use a preserved baseline binary after the
-normal installed benchmark binary has been rebuilt. Use `--dry-run` to inspect
-the command without rendering.
-
-Experiment 4 compares the current `direct` single-shader path (formerly
-`single_fast`) with a mono pipe containing that same shader and an identity
-resolver. It uses the same six mesh types, four shaders, and run profile as
-Experiment 3. Each repeat measures both paths; their order alternates between
-repeats. The median CSV has paired `_direct` and `_one_stage_pipe` rows. Run it
-after compiling the current benchmark binary with:
-
-```shell
-python ./scripts/bench_perf_raster.py --no-experiment1 --no-experiment2 --experiment4
-```
-
-Pass `--experiment4-binary PATH` to run the same experiment against a preserved
-baseline binary. This lets the direct and one-stage-pipe timings be compared
-between engine revisions without replacing `bin/bench_tiltraster_f64_simd`.
-
-Experiment 5 compares a direct world-reference checker with a three-source
-mono pipe using reference, deformed, and reference world coordinates. It
-exercises the shared MeshHit geometry on all six mesh types:
-
-```shell
-python ./scripts/bench_perf_raster.py --no-experiment1 --no-experiment2 --experiment5
-```
-
-## Geometry-heavy static preparation benchmark
-
-Use the existing tilt-raster driver with the `geom_1e5` datasets (99,856 quad
-or 100,352 triangle elements) to stress mesh preparation across all six element
-modes. The `static_preparation` subset runs 120 direct/stress-pipe cases covering
-nodal mono/RGB, linear/cubic textures, UV and Lambertian functions, independent
-function channels, dynamic RGB textures, averaged normals, scaling, LUT mapping,
-fixed blends, and apparent-temperature resolution.
-
-```shell
-zig build install-bench-tiltraster -Doptimize=ReleaseFast -Dprecision=f64 -Dsimd=on -Dsimd-vector-width=8
-zig-out/bin/bench_tiltraster_f64_simd --data-dir data/bench --data-suffix geom_1e5 --shader-subset static_preparation --mesh-subset all --runs 5 --pixels-x 1600 --pixels-y 1000 --sub-sample 1 --total-threads 1 --image-out-dir '' --save-strategy memory --out-dir out/staticprep-study/run
-```
-
-Preserve the baseline binary before rebuilding. Run both versions with the same
-CPU affinity and without concurrent compiler/test jobs. Compare geometry stage
-and end-to-end times: geometry timings exclude static setup, while end-to-end
-includes it. Keep per-run CSVs and median/MAD summaries; do not compare results
-from different mesh sizes or shader matrices as an A/B baseline.
+Generate references deliberately; do not regenerate them during ordinary checks.
+The individual `test_perf_<name>.py` scripts support profiles such as `1thread`
+and `4thread`. Paper studies retain their separate `paper_bench*.py` workflow;
+`scripts/legacy/` contains archived scripts outside the supported native harness.
 
 ## Additional Notes
 

@@ -28,6 +28,13 @@
   numerical, and operation namespaces are assembled in `api/dataio.zig`,
   `api/maths.zig`, and `api/ops.zig`. Do not add `usingnamespace` or duplicate
   implementation types in the public API.
+- Mesh Static initialization prepares only shader roles used by the render cameras.
+  It owns invariant scale factors, normalised function/channel records, pipe
+  constants, and per-role geometry requirements. Frame Prepared records borrow
+  immutable metadata from this storage; the static arena must outlive all frame
+  workers. Frame-dependent nodal scaling and visible-element gathering remain in
+  frame preparation. Geometry caches proportional to element count are not added
+  merely to avoid arithmetic.
 - Camera framing and placement helpers live in `cameraframeops.zig`; camera
   slice preparation is private render setup in `riley.zig`; projection lives in
   `cameraprojops*.zig`.

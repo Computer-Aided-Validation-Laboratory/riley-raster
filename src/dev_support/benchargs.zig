@@ -13,6 +13,7 @@ const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const textypes = @import("../riley/zig/texturetypes.zig");
 
 pub const BenchArgs = struct {
+    smoke: bool = false,
     data_dir: []const u8 = "data/tilt",
     data_suffix: []const u8 = "fullraster",
     out_dir: []const u8,
@@ -207,6 +208,8 @@ pub fn parseArgsWithDefaults(
                 bench_args.pixels_num[1] = try parseInt(u32, value);
             } else if (std.mem.eql(u8, arg, "--sub-sample")) {
                 bench_args.sub_sample = try parseInt(u32, value);
+            } else if (std.mem.eql(u8, arg, "--smoke")) {
+                bench_args.smoke = try parseBool(value);
             } else if (std.mem.eql(u8, arg, "--runs")) {
                 bench_args.runs = try parseInt(usize, value);
             } else if (std.mem.eql(u8, arg, "--distort")) {

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from benchmark_runner import run_command
+
+from benchmark_catalog import binary_name as catalog_binary_name
+
 import argparse
 import csv
 import datetime as dt
 import pathlib
 import shlex
-import subprocess
-import time
 
 from perf_common import command_path, repo_root
 
@@ -206,14 +208,8 @@ def default_image_out_dir() -> pathlib.Path:
     return DEFAULT_IMAGE_OUT_DIR
 
 
-def default_lanes(precision: str) -> int:
-    return 16 if precision == "f32" else 8
-
-
 def binary_name(precision: str, lanes: int) -> str:
-    if lanes == default_lanes(precision):
-        return f"bench_tiltraster_{precision}_simd"
-    return f"bench_tiltraster_{precision}_simd_v{lanes}"
+    return catalog_binary_name("tiltraster", precision, "on", lanes)
 
 
 def binary_path(precision: str, lanes: int) -> pathlib.Path:
@@ -221,20 +217,13 @@ def binary_path(precision: str, lanes: int) -> pathlib.Path:
     if not path.exists():
         raise SystemExit(
             f"Missing binary {path}. Run "
-            "scripts/compile_perf_all.py first.",
+            "scripts/compile_benchmarks.py tiltraster first.",
         )
     return path
 
 
 def timestamp_string() -> str:
     return dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-
-
-def write_command_file(output_dir: pathlib.Path, command: list[str]) -> None:
-    command_file = output_dir / "command.txt"
-    command_file.write_text(
-        " ".join(shlex.quote(part) for part in command) + "\n",
-    )
 
 
 def write_experiment_meta(
@@ -266,7 +255,7 @@ def write_timing_csv(
 ) -> pathlib.Path:
     out_dir = repo_root() / "out"
     out_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = out_dir / f"time_bench_perf_raster_{timestamp}.csv"
+    csv_path = out_dir / f"time_bench_tiltraster_study_{timestamp}.csv"
     with csv_path.open("w", newline="") as csv_file:
         writer = csv.DictWriter(
             csv_file,
@@ -342,32 +331,16 @@ def run_case(
     if pixels_y is not None:
         command.extend(["--pixels-y", str(pixels_y)])
     if "distortion" in case:
-        command.extend(["--distortion", str(case["distortion"])])
+        command.extend(["--distort", str(case["distortion"])])
 
-    print(f"[bench_perf_raster] {case['case_name']}")
+    print(f"[bench_tiltraster] {case['case_name']}")
     if dry_run:
         print("  dry-run:", " ".join(shlex.quote(part) for part in command))
         return 0.0
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    write_command_file(output_dir, command)
     write_experiment_meta(output_dir, case_with_binary, command)
-
-    stdout_path = output_dir / "stdout.txt"
-    stderr_path = output_dir / "stderr.txt"
-    start = time.perf_counter()
-    with (
-        stdout_path.open("w") as stdout_file,
-        stderr_path.open("w") as stderr_file,
-    ):
-        subprocess.run(
-            command,
-            check=True,
-            cwd=repo_root(),
-            stdout=stdout_file,
-            stderr=stderr_file,
-        )
-    return time.perf_counter() - start
+    return run_command(command, output_dir, case_with_binary)
 
 
 def main() -> int:

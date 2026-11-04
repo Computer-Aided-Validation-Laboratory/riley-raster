@@ -289,6 +289,7 @@ fn runBenchmarksForTextureType(
     defer texture_rgb.deinit(outer_alloc);
 
     for (mesh_types) |mt| {
+        if (bench_args.smoke and mt != .tri3) continue;
         if (!shouldRunMeshType(bench_args.mesh_subset, mt)) {
             continue;
         }
@@ -300,8 +301,10 @@ fn runBenchmarksForTextureType(
         else
             shader_types;
         for (selected_shader_types) |st| {
+            if (bench_args.smoke and st != .nodal_grey) continue;
             if (bench_args.shader_subset == .shaderpipe_multisource) continue;
             for (samp_cfgs) |sc| {
+                if (bench_args.smoke and sc.sample != .linear) continue;
                 if (bench_args.sample) |sample| if (sc.sample != sample) continue;
                 if (bench_args.sample_mode) |mode| if (sc.mode != mode) continue;
                 if (bench_args.shader_subset == .static_preparation and
@@ -355,6 +358,7 @@ fn runBenchmarksForTextureType(
         }
 
         for (tex_func_shader_types) |st| {
+            if (bench_args.smoke) continue;
             for (tex_func_cases) |tex_func_case| {
                 if (bench_args.shader_subset == .static_preparation and
                     !(tex_func_case.builtin == .lambertian_normal_z or

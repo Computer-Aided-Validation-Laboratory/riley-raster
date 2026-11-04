@@ -274,6 +274,7 @@ pub fn initMeshStatic(
         if (mesh_input.shaders.mono_pipe) |pipe|
             shaders.mono = .{ .pipe = try createShaderPipeStatic(allocator, pipe, &mesh_input.connect) };
     }
+
     if (active_roles[1]) {
         if (mesh_input.shaders.rgb_pipe) |pipe|
             shaders.rgb = try createShaderPipeStatic(
@@ -282,12 +283,14 @@ pub fn initMeshStatic(
                 &mesh_input.connect,
             );
     }
+
     if (active_roles[2]) {
         if (mesh_input.shaders.ir_direct) |shader|
             shaders.ir = .{ .direct = try createShaderMonoStatic(allocator, shader, &mesh_input.connect) };
         if (mesh_input.shaders.ir_pipe) |pipe|
             shaders.ir = .{ .pipe = try createShaderPipeStatic(allocator, pipe, &mesh_input.connect) };
     }
+
     if (active_roles[3]) {
         if (mesh_input.shaders.multifield_pipe) |pipe|
             shaders.multifield = try createShaderPipeStatic(
@@ -296,6 +299,7 @@ pub fn initMeshStatic(
                 &mesh_input.connect,
             );
     }
+
     const roles = [_]shadertypes.RenderFormat{ .mono, .rgb, .ir, .{ .multifield = 1 } };
     var hit_selections: [4]meshhit.MeshHitSelection = undefined;
     var needs_normals = false;
@@ -362,7 +366,9 @@ fn createNodalStatic(input: shadertypes.NodalInput) shadertypes.NodalStatic {
         imageops.getScalingParamsNDArray(&input.field.array, null, input.scaling)
     else
         .{ .min = 0, .range = 1 };
+
     const factors = imageops.getScaleFactors(input.scaling, null, bounds);
+
     return .{
         .field = input.field,
         .output_gain = input.output_gain,

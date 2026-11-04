@@ -265,17 +265,20 @@ fn runBenchmarksForTextureType(
     defer texture_rgb.deinit(outer_alloc);
 
     for (mesh_types) |mt| {
+        if (bench_args.smoke and mt != .tri3) continue;
         const selected_shader_types = if (bench_args.shader_subset == .texture)
             texture_shader_types[0..]
         else
             shader_types;
         for (selected_shader_types) |st| {
+            if (bench_args.smoke and st != .nodal_grey) continue;
             for (samp_cfgs) |sc| {
+                if (bench_args.smoke and sc.sample != .linear) continue;
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
                     "data/bench/{s}_{s}",
-                    .{ @tagName(mt), DEFAULT_DATA_DIR_SUFFIX },
+                    .{ @tagName(if (mt == .tri3opt) gk.MeshType.tri3 else mt), DEFAULT_DATA_DIR_SUFFIX },
                 );
 
                 if (common.shouldRun(config, mt, st, sc, data_dir)) {
@@ -367,12 +370,13 @@ fn runBenchmarksForTextureType(
         }
 
         for (tex_func_shader_types) |st| {
+            if (bench_args.smoke) continue;
             for (tex_func_cases) |tex_func_case| {
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
                     "data/bench/{s}_{s}",
-                    .{ @tagName(mt), DEFAULT_DATA_DIR_SUFFIX },
+                    .{ @tagName(if (mt == .tri3opt) gk.MeshType.tri3 else mt), DEFAULT_DATA_DIR_SUFFIX },
                 );
                 const case_name = try common.calcCaseName(
                     outer_alloc,
