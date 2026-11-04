@@ -86,10 +86,10 @@ pub const FuncShaderParams = shaderfunc.FuncShaderParams;
 // Shader Pipe
 // --------------------------------------------------------------------------------------
 
-pub const SlotKind = @import("../shaderpipe.zig").SlotKind;
-pub const Slot = @import("../shaderpipe.zig").Slot;
-pub const Op = @import("../shaderpipe.zig").Op;
-pub const BandResponse = @import("../shaderpipe.zig").BandResponse;
+pub const RegisterKind = @import("../shaderpipe.zig").RegisterKind;
+pub const Register = @import("../shaderpipe.zig").Register;
+pub const ResolverOp = @import("../shaderpipe.zig").ResolverOp;
+pub const SpectralBandResponse = @import("../shaderpipe.zig").SpectralBandResponse;
 pub const Resolver = @import("../shaderpipe.zig").Resolver;
 
 // --------------------------------------------------------------------------------------
@@ -126,11 +126,11 @@ pub const ValidateInput = @import("../rasterconfig.zig").ValidateInput;
 pub const ScaleStrategy = @import("../imageops.zig").ScaleStrategy;
 pub const FuncCoordMode = shaderfunc.FuncCoordMode;
 pub const FuncChannel = @import("../shadertypes.zig").FuncChannel;
-pub const Lookup = @import("../shaderpipe.zig").Lookup;
+pub const LookupTable = @import("../shaderpipe.zig").LookupTable;
 pub const HullMode = @import("../rasterconfig.zig").HullMode;
 pub const EdgeFunMode = @import("../rasterconfig.zig").EdgeFunMode;
 pub const NewtonSeedMode = @import("../rasterconfig.zig").NewtonSeedMode;
 pub const NewtonSeedReuse = @import("../rasterconfig.zig").NewtonSeedReuse;
 
-pub const max_channels = @import("../shaderpipe.zig").max_channels;
-pub const max_slots = @import("../shaderpipe.zig").max_slots;
+pub const max_channels = @import("../buildconfig.zig").config.max_image_channels;
+pub const max_registers = @import("../buildconfig.zig").config.shaderpipe.max_registers;

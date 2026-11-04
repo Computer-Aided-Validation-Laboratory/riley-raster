@@ -16,6 +16,7 @@ const VecSF = buildconfig.VecSF;
 const VecSB = buildconfig.VecSB;
 const eval_branch_quota = buildconfig.comptime_eval_branch_quota;
 const shaderops = @import("shaderops.zig");
+const shaderfill = @import("shaderfill.zig");
 const meshhit = @import("meshhit.zig");
 const texturetypes = @import("texturetypes.zig");
 
@@ -33,7 +34,7 @@ pub inline fn shadeNodalScalComm(
     spx_img_scratch: *matslice.MatSlice(F),
 ) void {
     if (comptime coord_space == geometrykernels.CoordSpace.clip_px_leng) {
-        shaderops.fillNodalClipScal(
+        shaderfill.fillNodalClipScal(
             N,
             ctx_shade,
             interp,
@@ -42,7 +43,7 @@ pub inline fn shadeNodalScalComm(
             spx_img_scratch,
         );
     } else {
-        shaderops.fillNodalPerspScal(
+        shaderfill.fillNodalPerspScal(
             N,
             ctx_shade,
             interp,
@@ -133,7 +134,7 @@ inline fn shadeTexScalDispatchMode(
             }).sanitise();
 
             if (comptime coord_space == geometrykernels.CoordSpace.clip_px_leng) {
-                shaderops.fillTexClipScal(
+                shaderfill.fillTexClipScal(
                     N,
                     T,
                     C,
@@ -145,7 +146,7 @@ inline fn shadeTexScalDispatchMode(
                     spx_img_scratch,
                 );
             } else {
-                shaderops.fillTexPerspScal(
+                shaderfill.fillTexPerspScal(
                     N,
                     T,
                     C,
@@ -255,7 +256,7 @@ pub inline fn shadeFuncScalComm(
     spx_img_scratch: *matslice.MatSlice(F),
 ) void {
     if (comptime coord_space == geometrykernels.CoordSpace.clip_px_leng) {
-        shaderops.fillFuncClipScal(
+        shaderfill.fillFuncClipScal(
             N,
             C,
             ctx_shade,
@@ -265,7 +266,7 @@ pub inline fn shadeFuncScalComm(
             spx_img_scratch,
         );
     } else {
-        shaderops.fillFuncPerspScal(
+        shaderfill.fillFuncPerspScal(
             N,
             C,
             ctx_shade,

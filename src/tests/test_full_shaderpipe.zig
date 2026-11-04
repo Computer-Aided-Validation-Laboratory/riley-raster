@@ -35,12 +35,12 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
         const aa = arena.allocator();
 
         const sphere_stages = [_]shadertypes.ShaderPipeStageInput{
-            .{ .source = .{ .shader = .{ .tex_u8 = .{
+            .{ .shader = .{ .shader = .{ .tex_u8 = .{
                 .uvs = scene.sphere_uvs.array,
                 .tex = textures.tex_u8_mono,
                 .samp_cfg = .{ .sample = .linear, .mode = .direct },
-            } }, .destination = .{ .kind = .channel, .index = 0 } } },
-            .{ .source = .{ .shader = .{ .func = .{
+            } }, .register_dest = .{ .kind = .channel, .index = 0 } } },
+            .{ .shader = .{ .shader = .{ .func = .{
                 .builtin = .lambertian_normal_z,
                 .params = .{
                     .settings = .{
@@ -49,15 +49,15 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                         },
                     },
                 },
-            } }, .destination = .{ .kind = .parameter, .index = 0 } } },
+            } }, .register_dest = .{ .kind = .parameter, .index = 0 } } },
         };
         const cylinder_stages = [_]shadertypes.ShaderPipeStageInput{
-            .{ .source = .{ .shader = .{ .tex_u8 = .{
+            .{ .shader = .{ .shader = .{ .tex_u8 = .{
                 .uvs = scene.cylinder_uvs.array,
                 .tex = textures.tex_u8_mono,
                 .samp_cfg = .{ .sample = .linear, .mode = .direct },
-            } }, .destination = .{ .kind = .channel, .index = 0 } } },
-            .{ .source = .{ .shader = .{ .func = .{
+            } }, .register_dest = .{ .kind = .channel, .index = 0 } } },
+            .{ .shader = .{ .shader = .{ .func = .{
                 .builtin = .lambertian_normal_z,
                 .params = .{
                     .settings = .{
@@ -66,11 +66,11 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                         },
                     },
                 },
-            } }, .destination = .{ .kind = .parameter, .index = 0 } } },
+            } }, .register_dest = .{ .kind = .parameter, .index = 0 } } },
         };
-        const channel_slots = [_]shaderpipe.Slot{.{ .kind = .channel, .index = 0 }};
+        const channel_slots = [_]shaderpipe.Register{.{ .kind = .channel, .index = 0 }};
         const resolver: shaderpipe.Resolver = .{ .modulate = .{
-            .sources = &channel_slots,
+            .register_sources = &channel_slots,
             .factor = .{ .kind = .parameter, .index = 0 },
         } };
         const sphere_pipes = [_]shadertypes.ShaderPipeInput{.{
@@ -174,7 +174,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                 }
             }
 
-            const operations = [_]shaderpipe.Op{
+            const operations = [_]shaderpipe.ResolverOp{
                 .{ .load = .{ .kind = .channel, .index = 0 } },
                 .{ .load = .{ .kind = .parameter, .index = 0 } },
                 .multiply,

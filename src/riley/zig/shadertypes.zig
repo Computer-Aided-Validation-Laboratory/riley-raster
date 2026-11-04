@@ -114,7 +114,7 @@ pub const PipeSourceInput = union(enum) {
 };
 
 pub const ShaderPipeStageInput = union(enum) {
-    source: struct { shader: PipeSourceInput, destination: shaderpipe.Slot },
+    shader: struct { shader: PipeSourceInput, register_dest: shaderpipe.Register },
     grey_to_emissivity: shaderpipe.GreyToEmissivityStage,
     clamp: shaderpipe.ClampStage,
     affine_map: shaderpipe.AffineMapStage,
@@ -210,41 +210,41 @@ pub const PipeSourceStatic = union(enum) {
 };
 
 pub const GreyToEmissivityPrepared = struct {
-    source: shaderpipe.Slot,
-    destination: shaderpipe.Slot,
-    black: F,
-    white_range: F,
-    grey_black: F,
-    grey_range: F,
+    register_source: shaderpipe.Register,
+    register_dest: shaderpipe.Register,
+    emissivity_at_black: F,
+    emissivity_range: F,
+    greylevel_at_black: F,
+    greylevel_range: F,
 
     pub fn init(value: shaderpipe.GreyToEmissivityStage) GreyToEmissivityPrepared {
         return .{
-            .source = value.source,
-            .destination = value.destination,
-            .black = value.black,
-            .white_range = value.white - value.black,
-            .grey_black = value.grey_black,
-            .grey_range = value.grey_white - value.grey_black,
+            .register_source = value.register_source,
+            .register_dest = value.register_dest,
+            .emissivity_at_black = value.emissivity_at_black,
+            .emissivity_range = value.emissivity_at_white - value.emissivity_at_black,
+            .greylevel_at_black = value.greylevel_at_black,
+            .greylevel_range = value.greylevel_at_white - value.greylevel_at_black,
         };
     }
 };
 
 pub const BlendPrepared = struct {
-    a: shaderpipe.Slot,
-    b: shaderpipe.Slot,
-    destination: shaderpipe.Slot,
-    alpha: shaderpipe.BlendAlpha,
+    a: shaderpipe.Register,
+    b: shaderpipe.Register,
+    register_dest: shaderpipe.Register,
+    alpha: shaderpipe.BlendWeight,
     fixed_complement: F,
 
     pub fn init(value: shaderpipe.BlendStage) BlendPrepared {
         return .{
             .a = value.a,
             .b = value.b,
-            .destination = value.destination,
+            .register_dest = value.register_dest,
             .alpha = value.alpha,
             .fixed_complement = switch (value.alpha) {
                 .fixed => |a| 1 - a,
-                .slot => 0,
+                .register => 0,
             },
         };
     }
@@ -253,49 +253,49 @@ pub const BlendPrepared = struct {
         const T = @TypeOf(outputs.get(self.a));
         const alpha: T = switch (self.alpha) {
             .fixed => |v| if (T == F) v else @splat(v),
-            .slot => |slot| outputs.get(slot),
+            .register => |register_ref| outputs.get(register_ref),
         };
         const complement: T = switch (self.alpha) {
             .fixed => if (T == F) self.fixed_complement else @splat(self.fixed_complement),
-            .slot => (if (T == F) @as(F, 1) else @as(T, @splat(1))) - alpha,
+            .register => (if (T == F) @as(F, 1) else @as(T, @splat(1))) - alpha,
         };
-        outputs.set(self.destination, complement * outputs.get(self.a) + alpha * outputs.get(self.b));
+        outputs.set(self.register_dest, complement * outputs.get(self.a) + alpha * outputs.get(self.b));
     }
 };
 
 pub const LUTMapPrepared = struct {
-    source: shaderpipe.Slot,
-    destination: shaderpipe.Slot,
-    lookup: shaderpipe.PreparedLookup,
+    register_source: shaderpipe.Register,
+    register_dest: shaderpipe.Register,
+    lookup: shaderpipe.LookupTablePrepared,
 
     pub fn init(value: shaderpipe.LUTMapStage) LUTMapPrepared {
         return .{
-            .source = value.source,
-            .destination = value.destination,
-            .lookup = shaderpipe.PreparedLookup.init(value.lookup),
+            .register_source = value.register_source,
+            .register_dest = value.register_dest,
+            .lookup = shaderpipe.LookupTablePrepared.init(value.lookup),
         };
     }
 
     pub inline fn apply(self: LUTMapPrepared, outputs: anytype, active: anytype) void {
-        const T = @TypeOf(outputs.get(self.source));
+        const T = @TypeOf(outputs.get(self.register_source));
         if (T == F) {
-            outputs.set(self.destination, self.lookup.sample(outputs.get(self.source)));
+            outputs.set(self.register_dest, self.lookup.sample(outputs.get(self.register_source)));
         } else {
-            const values: [buildconfig.SimdWidth]F = @bitCast(outputs.get(self.source));
+            const values: [buildconfig.SimdWidth]F = @bitCast(outputs.get(self.register_source));
             const mask: [buildconfig.SimdWidth]bool = active;
             var result: [buildconfig.SimdWidth]F = undefined;
             for (&result, values, mask) |*dest, value, enabled| {
                 dest.* = self.lookup.sample(if (enabled) value else self.lookup.lookup.first);
             }
-            outputs.set(self.destination, @bitCast(result));
+            outputs.set(self.register_dest, @bitCast(result));
         }
     }
 };
 
 pub const ShaderPipeStageStatic = union(enum) {
-    source: struct {
+    shader: struct {
         shader: PipeSourceStatic,
-        destination: shaderpipe.Slot,
+        register_dest: shaderpipe.Register,
         channels: u8 = 1,
     },
     grey_to_emissivity: GreyToEmissivityPrepared,
@@ -308,7 +308,7 @@ pub const ShaderPipeStageStatic = union(enum) {
 
 pub const ShaderPipeStatic = struct {
     stages: []const ShaderPipeStageStatic,
-    resolver: shaderpipe.PreparedResolver,
+    resolver: shaderpipe.ResolverPrepared,
     constants: []const F,
 };
 
@@ -424,7 +424,7 @@ pub const PipeSourcePrepared = union(enum) {
 };
 
 pub const ShaderPipeStagePrepared = union(enum) {
-    source: struct { shader: PipeSourcePrepared, destination: shaderpipe.Slot, channels: u8 = 1 },
+    shader: struct { shader: PipeSourcePrepared, register_dest: shaderpipe.Register, channels: u8 = 1 },
     grey_to_emissivity: GreyToEmissivityPrepared,
     clamp: shaderpipe.ClampStage,
     affine_map: shaderpipe.AffineMapStage,
@@ -435,7 +435,7 @@ pub const ShaderPipeStagePrepared = union(enum) {
 
 pub const ShaderPipePrepared = struct {
     stages: []const ShaderPipeStagePrepared,
-    resolver: shaderpipe.PreparedResolver,
+    resolver: shaderpipe.ResolverPrepared,
     constants: []const F,
     channels: u8,
     hit_geometry: meshhit.MeshHitGeomPrepared = .{},

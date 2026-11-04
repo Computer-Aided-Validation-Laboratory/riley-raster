@@ -434,7 +434,7 @@ class FunctionMultiShader:
     uvs: np.ndarray | None = None
 
 
-class SlotKind(IntEnum):
+class RegisterKind(IntEnum):
     channel = 0
     field = 1
     parameter = 2
@@ -452,7 +452,7 @@ class ResolverKind(IntEnum):
     greybody_band_apparent_c = 7
 
 
-class OperationKind(IntEnum):
+class ResolverOpKind(IntEnum):
     load = 0
     add = 1
     subtract = 2
@@ -466,15 +466,15 @@ class OperationKind(IntEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class Slot:
-    kind: SlotKind
+class Register:
+    kind: RegisterKind
     index: int
 
 
 @dataclass(frozen=True, slots=True)
-class Operation:
-    kind: OperationKind
-    slot: Slot = Slot(SlotKind.channel, 0)
+class ResolverOp:
+    kind: ResolverOpKind
+    register_ref: Register = Register(RegisterKind.channel, 0)
     lower: float = 0.0
     upper: float = 1.0
 
@@ -482,55 +482,55 @@ class Operation:
 @dataclass(slots=True)
 class ShaderResolver:
     kind: ResolverKind
-    slots: tuple[Slot, ...] = ()
+    registers: tuple[Register, ...] = ()
     weights: tuple[float, ...] = ()
-    factor: Slot = Slot(SlotKind.parameter, 0)
-    temperature: Slot = Slot(SlotKind.field, 0)
-    emissivity: Slot = Slot(SlotKind.parameter, 0)
+    factor: Register = Register(RegisterKind.parameter, 0)
+    temperature: Register = Register(RegisterKind.field, 0)
+    emissivity: Register = Register(RegisterKind.parameter, 0)
     ambient: float = 0.0
     gain: float = 1.0
     lookup_first: float = 0.0
     lookup_step: float = 1.0
     lookup_values: np.ndarray | None = None
-    operations: tuple[Operation, ...] = ()
+    operations: tuple[ResolverOp, ...] = ()
 
 
 @dataclass(slots=True)
 class ShaderSource:
     shader: TextureShader | NodalShader | FunctionShader | FunctionMultiShader
-    destination: Slot
+    register_dest: Register
 
 
 @dataclass(slots=True)
 class GreyToEmissivity:
-    source: Slot
-    destination: Slot
-    black: float
-    white: float
-    grey_black: float = 0.0
-    grey_white: float = 1.0
+    register_source: Register
+    register_dest: Register
+    emissivity_at_black: float
+    emissivity_at_white: float
+    greylevel_at_black: float = 0.0
+    greylevel_at_white: float = 1.0
 
 
 @dataclass(slots=True)
 class ClampStage:
-    source: Slot
-    destination: Slot
+    register_source: Register
+    register_dest: Register
     lower: float
     upper: float
 
 
 @dataclass(slots=True)
 class AffineMap:
-    source: Slot
-    destination: Slot
+    register_source: Register
+    register_dest: Register
     gain: float
     offset: float
 
 
 @dataclass(slots=True)
 class LUTMap:
-    source: Slot
-    destination: Slot
+    register_source: Register
+    register_dest: Register
     first: float
     step: float
     values: np.ndarray
@@ -538,16 +538,16 @@ class LUTMap:
 
 @dataclass(slots=True)
 class Blend:
-    a: Slot
-    b: Slot
-    destination: Slot
-    alpha: float | Slot
+    a: Register
+    b: Register
+    register_dest: Register
+    alpha: float | Register
 
 
 @dataclass(slots=True)
 class Normalise:
-    source: Slot
-    destination: Slot
+    register_source: Register
+    register_dest: Register
     components: int
 
 
@@ -593,10 +593,10 @@ class MeshShaderSet:
                 count = len(source.channels)
             else:
                 count = source.channels
-            slots = tuple(Slot(SlotKind.channel, index) for index in range(count))
+            registers = tuple(Register(RegisterKind.channel, index) for index in range(count))
             setattr(self, role, ShaderPipe(
-                stages=(ShaderSource(source, Slot(SlotKind.channel, 0)),),
-                resolver=ShaderResolver(ResolverKind.identity, slots=slots),
+                stages=(ShaderSource(source, Register(RegisterKind.channel, 0)),),
+                resolver=ShaderResolver(ResolverKind.identity, registers=registers),
             ))
 
 

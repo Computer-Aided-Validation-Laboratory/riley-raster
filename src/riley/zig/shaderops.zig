@@ -6,55 +6,157 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
-const shaderfunc = @import("shaderfunc.zig");
+const std = @import("std");
 const shadertypes = @import("shadertypes.zig");
-const cfg = @import("buildconfig.zig").config;
-const shaderops_common = @import("shaderops_common.zig");
-const shaderops_scalar = @import("shaderops_scalar.zig");
-const shaderops_simd = @import("shaderops_simd.zig");
+
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
+const VecSF = buildconfig.VecSF;
+const VecSB = buildconfig.VecSB;
+
+const texturetypes = @import("texturetypes.zig");
+const shaderpipe = @import("shaderpipe.zig");
 
 // --------------------------------------------------------------------------------------
-// Public Constants & Public Types
+// Stage 1: Input
+// --------------------------------------------------------------------------------------
+// Input: Raw user shader data for all frames.
+// Nodal Fields: Node-order [num_frames, total_nodes, num_fields]
+// UVs: Node-order [total_nodes, 2]
+
+pub fn stageSource(source: shadertypes.PipeSourceInput) shadertypes.ShaderPipeStageInput {
+    return .{
+        .shader = .{
+            .shader = source,
+            .register_dest = .{ .kind = .channel, .index = 0 },
+        },
+    };
+}
+
+pub fn identityRGB(
+    source: shadertypes.PipeSourceInput,
+    stage_buf: *[1]shadertypes.ShaderPipeStageInput,
+) shadertypes.ShaderPipeInput {
+    stage_buf[0] = stageSource(source);
+    return .{
+        .stages = stage_buf,
+        .resolver = .{ .identity = shaderpipe.identity_channels_3 },
+    };
+}
+
+pub fn identityMulti(
+    channels: u8,
+    source: shadertypes.PipeSourceInput,
+    stage_buf: *[1]shadertypes.ShaderPipeStageInput,
+) shadertypes.ShaderPipeInput {
+    stage_buf[0] = stageSource(source);
+    return .{
+        .stages = stage_buf,
+        .resolver = .{ .identity = shaderpipe.identityRegisters(channels) },
+    };
+}
+
+pub fn monoToPipeSource(mono: shadertypes.ShaderMonoInput) shadertypes.PipeSourceInput {
+    return switch (mono) {
+        .tex_u8 => |t| .{ .tex_u8 = t },
+        .tex_u16 => |t| .{ .tex_u16 = t },
+        .tex_f => |t| .{ .tex_f = t },
+        .nodal => |n| .{ .nodal = n },
+        .func => |f| .{ .func = f },
+    };
+}
+
+pub fn pipeSourceToMono(source: shadertypes.PipeSourceInput) !shadertypes.ShaderMonoInput {
+    return switch (source) {
+        .tex_u8 => |t| .{ .tex_u8 = t },
+        .tex_u16 => |t| .{ .tex_u16 = t },
+        .tex_f => |t| .{ .tex_f = t },
+        .nodal => |n| .{ .nodal = n },
+        .func => |f| .{ .func = f },
+        .func_rgb => error.DirectMonoFuncRequiresMono,
+        .func_multi => error.DirectMonoFuncRequiresMono,
+        else => error.DirectMonoShaderExpectedMono,
+    };
+}
+
+pub fn hasShader(shaders: anytype, format: shadertypes.RenderFormat) bool {
+    if (comptime @TypeOf(shaders) == shadertypes.MeshShaderSetInput) {
+        return switch (format) {
+            .mono => shaders.mono_direct != null or shaders.mono_pipe != null,
+            .ir => shaders.ir_direct != null or shaders.ir_pipe != null,
+            .rgb => shaders.rgb_pipe != null,
+            .multifield => shaders.multifield_pipe != null,
+        };
+    }
+    return switch (format) {
+        .mono => shaders.mono != null,
+        .ir => shaders.ir != null,
+        .rgb => shaders.rgb != null,
+        .multifield => shaders.multifield != null,
+    };
+}
+
+pub fn selectShader(
+    comptime Direct: type,
+    comptime Pipe: type,
+    shaders: anytype,
+    role: shadertypes.RenderRole,
+) ?shadertypes.SelectedShader(Direct, Pipe) {
+    if (comptime @TypeOf(shaders.*) == shadertypes.MeshShaderSetInput) {
+        return switch (role) {
+            .mono => if (shaders.mono_direct) |*shader| .{ .direct = shader } else if (shaders.mono_pipe) |*pipe| .{ .pipe = pipe } else null,
+            .ir => if (shaders.ir_direct) |*shader| .{ .direct = shader } else if (shaders.ir_pipe) |*pipe| .{ .pipe = pipe } else null,
+            .rgb => if (shaders.rgb_pipe) |*pipe| .{ .pipe = pipe } else null,
+            .multifield => if (shaders.multifield_pipe) |*pipe| .{ .pipe = pipe } else null,
+        };
+    }
+    return switch (role) {
+        .mono => if (shaders.mono) |*exec| switch (exec.*) {
+            .direct => |*shader| .{ .direct = shader },
+            .pipe => |*pipe| .{ .pipe = pipe },
+        } else null,
+        .ir => if (shaders.ir) |*exec| switch (exec.*) {
+            .direct => |*shader| .{ .direct = shader },
+            .pipe => |*pipe| .{ .pipe = pipe },
+        } else null,
+        .rgb => if (shaders.rgb) |*pipe|
+            .{ .pipe = pipe }
+        else
+            null,
+        .multifield => if (shaders.multifield) |*pipe|
+            .{ .pipe = pipe }
+        else
+            null,
+    };
+}
+
+// --------------------------------------------------------------------------------------
+// Rasterisation Runtime Context & Buffers
 // --------------------------------------------------------------------------------------
 
-pub const concreteTexture = shadertypes.concreteTexture;
-pub const normFuncShaderParams = shaderfunc.normFuncShaderParams;
-pub const hasShader = shaderops_common.hasShader;
-pub const selectShader = shaderops_common.selectShader;
-pub const stageSource = shaderops_common.stageSource;
-pub const identityRGB = shaderops_common.identityRGB;
-pub const identityMulti = shaderops_common.identityMulti;
-pub const monoToPipeSource = shaderops_common.monoToPipeSource;
-pub const pipeSourceToMono = shaderops_common.pipeSourceToMono;
-pub const identitySlots = @import("shaderpipe.zig").identitySlots;
-pub const resolverIdentity = @import("shaderpipe.zig").resolverIdentity;
-pub const identity_channels_1 = @import("shaderpipe.zig").identity_channels_1;
-pub const identity_channels_3 = @import("shaderpipe.zig").identity_channels_3;
-pub const identity_channels_8 = @import("shaderpipe.zig").identity_channels_8;
+// Local buffer for hoisting element shader data into cache once per element before we
+// enter the sub-pixel raster loop.
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Func
+// Tests
 // --------------------------------------------------------------------------------------
 
-pub const fillNodalClipScal = shaderops_scalar.fillNodalClipScal;
-pub const fillNodalPerspScal = shaderops_scalar.fillNodalPerspScal;
-pub const fillTexClipScal = shaderops_scalar.fillTexClipScal;
-pub const fillTexPerspScal = shaderops_scalar.fillTexPerspScal;
-pub const fillFuncClipScal = shaderops_scalar.fillFuncClipScal;
-pub const fillFuncPerspScal = shaderops_scalar.fillFuncPerspScal;
-pub const fillNodalClip = fillNodalClipScal;
-pub const fillNodalPersp = fillNodalPerspScal;
-pub const fillTexClip = fillTexClipScal;
-pub const fillTexPersp = fillTexPerspScal;
-pub const fillFuncClip = fillFuncClipScal;
-pub const fillFuncPersp = fillFuncPerspScal;
-pub const fillNodalClipSIMD = shaderops_simd.fillNodalClipSIMD;
-pub const ImageSink = shaderops_simd.ImageSink;
-pub const VectorSink = shaderops_simd.VectorSink;
-pub const fillNodalPerspSIMD = shaderops_simd.fillNodalPerspSIMD;
-pub const fillTexClipSIMD = shaderops_simd.fillTexClipSIMD;
-pub const fillTexPerspSIMD = shaderops_simd.fillTexPerspSIMD;
-pub const fillFuncClipSIMD = shaderops_simd.fillFuncClipSIMD;
-pub const fillFuncPerspSIMD = shaderops_simd.fillFuncPerspSIMD;
-pub const evalFuncShaderGreyNormSIMD = shaderops_simd.evalFuncShaderGreyNormSIMD;
-pub const evalFuncShaderRGBNormSIMD = shaderops_simd.evalFuncShaderRGBNormSIMD;
+test "texture input defaults to direct evaluation mode" {
+    const ti_cfg = (shadertypes.TexInput(texturetypes.TexDataFix(u8, 1)){
+        .uvs = undefined,
+        .tex = undefined,
+    }).samp_cfg;
+    try std.testing.expectEqual(texturetypes.TexSampMode.direct, ti_cfg.mode);
+
+    const ts_cfg = (shadertypes.TexStatic(u8, 1){
+        .elem_uvs = undefined,
+        .tex = undefined,
+    }).samp_cfg;
+    try std.testing.expectEqual(texturetypes.TexSampMode.direct, ts_cfg.mode);
+
+    const tp_cfg = (shadertypes.TexPrepared(u8, 1){
+        .elem_uvs = undefined,
+        .tex = undefined,
+    }).samp_cfg;
+    try std.testing.expectEqual(texturetypes.TexSampMode.direct, tp_cfg.mode);
+}

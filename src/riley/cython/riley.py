@@ -49,11 +49,11 @@ from riley.types import (
     FunctionShader,
     FunctionChannel,
     FunctionMultiShader,
-    SlotKind,
+    RegisterKind,
     ResolverKind,
-    OperationKind,
-    Slot,
-    Operation,
+    ResolverOpKind,
+    Register,
+    ResolverOp,
     ShaderResolver,
     ShaderSource,
     GreyToEmissivity,
@@ -648,8 +648,8 @@ def pos_frame_mesh(
 
 
 @cython.cfunc
-def _make_slot(slot: Slot) -> cr.CSlot:
-    return cr.CSlot(int(slot.kind), int(slot.index))
+def _make_register(register_ref: Register) -> cr.CRegister:
+    return cr.CRegister(int(register_ref.kind), int(register_ref.index))
 
 
 @cython.cfunc
@@ -782,7 +782,7 @@ def _fill_pipe_single(
                     " shader"
                 )
             stages[si].tag = 0
-            stages[si].destination = _make_slot(stage.destination)
+            stages[si].register_dest = _make_register(stage.register_dest)
             source = cython.cast(
                 cython.pointer[cr.CShaderInput],
                 _descriptor_bytes(cython.sizeof(cr.CShaderInput), keepalive),
@@ -794,28 +794,28 @@ def _fill_pipe_single(
             stages[si].shader = source
         elif isinstance(stage, GreyToEmissivity):
             stages[si].tag = 1
-            stages[si].source = _make_slot(stage.source)
-            stages[si].destination = _make_slot(stage.destination)
-            stages[si].lower = float(stage.grey_black)
-            stages[si].upper = float(stage.grey_white)
-            stages[si].black = float(stage.black)
-            stages[si].white = float(stage.white)
+            stages[si].register_source = _make_register(stage.register_source)
+            stages[si].register_dest = _make_register(stage.register_dest)
+            stages[si].lower = float(stage.greylevel_at_black)
+            stages[si].upper = float(stage.greylevel_at_white)
+            stages[si].black = float(stage.emissivity_at_black)
+            stages[si].white = float(stage.emissivity_at_white)
         elif isinstance(stage, ClampStage):
             stages[si].tag = 2
-            stages[si].source = _make_slot(stage.source)
-            stages[si].destination = _make_slot(stage.destination)
+            stages[si].register_source = _make_register(stage.register_source)
+            stages[si].register_dest = _make_register(stage.register_dest)
             stages[si].lower = float(stage.lower)
             stages[si].upper = float(stage.upper)
         elif isinstance(stage, AffineMap):
             stages[si].tag = 3
-            stages[si].source = _make_slot(stage.source)
-            stages[si].destination = _make_slot(stage.destination)
+            stages[si].register_source = _make_register(stage.register_source)
+            stages[si].register_dest = _make_register(stage.register_dest)
             stages[si].gain = float(stage.gain)
             stages[si].offset = float(stage.offset)
         elif isinstance(stage, LUTMap):
             stages[si].tag = 4
-            stages[si].source = _make_slot(stage.source)
-            stages[si].destination = _make_slot(stage.destination)
+            stages[si].register_source = _make_register(stage.register_source)
+            stages[si].register_dest = _make_register(stage.register_dest)
             stages[si].lookup.first = float(stage.first)
             stages[si].lookup.step = float(stage.step)
             lookup_np = np.ascontiguousarray(
@@ -832,43 +832,43 @@ def _fill_pipe_single(
             stages[si].lookup.values_len = len(lookup_np)
         elif isinstance(stage, Blend):
             stages[si].tag = 5
-            stages[si].source = _make_slot(stage.a)
-            stages[si].source_b = _make_slot(stage.b)
-            stages[si].destination = _make_slot(stage.destination)
-            if isinstance(stage.alpha, Slot):
-                stages[si].alpha_from_slot = 1
-                stages[si].alpha_slot = _make_slot(stage.alpha)
+            stages[si].register_source = _make_register(stage.a)
+            stages[si].register_source_b = _make_register(stage.b)
+            stages[si].register_dest = _make_register(stage.register_dest)
+            if isinstance(stage.alpha, Register):
+                stages[si].alpha_from_register = 1
+                stages[si].alpha_register = _make_register(stage.alpha)
             else:
-                stages[si].alpha_from_slot = 0
+                stages[si].alpha_from_register = 0
                 stages[si].alpha = float(stage.alpha)
         elif isinstance(stage, Normalise):
             stages[si].tag = 6
-            stages[si].source = _make_slot(stage.source)
-            stages[si].destination = _make_slot(stage.destination)
+            stages[si].register_source = _make_register(stage.register_source)
+            stages[si].register_dest = _make_register(stage.register_dest)
             stages[si].components = int(stage.components)
         else:
             raise TypeError("unsupported shader-pipe stage")
 
     resolver = pipe.resolver
     out_pipe.resolver.tag = int(resolver.kind)
-    out_pipe.resolver.factor = _make_slot(resolver.factor)
-    out_pipe.resolver.temperature = _make_slot(resolver.temperature)
-    out_pipe.resolver.emissivity = _make_slot(resolver.emissivity)
+    out_pipe.resolver.factor = _make_register(resolver.factor)
+    out_pipe.resolver.temperature = _make_register(resolver.temperature)
+    out_pipe.resolver.emissivity = _make_register(resolver.emissivity)
     out_pipe.resolver.ambient = float(resolver.ambient)
     out_pipe.resolver.gain = float(resolver.gain)
-    out_pipe.resolver.slots = cython.NULL
-    out_pipe.resolver.slots_len = len(resolver.slots)
-    if resolver.slots:
-        slots = cython.cast(
-            cython.pointer[cr.CSlot],
-            _descriptor_bytes(len(resolver.slots) * cython.sizeof(cr.CSlot), keepalive),
+    out_pipe.resolver.registers = cython.NULL
+    out_pipe.resolver.registers_len = len(resolver.registers)
+    if resolver.registers:
+        registers = cython.cast(
+            cython.pointer[cr.CRegister],
+            _descriptor_bytes(len(resolver.registers) * cython.sizeof(cr.CRegister), keepalive),
         )
-        if slots == cython.NULL:
+        if registers == cython.NULL:
             raise MemoryError()
 
-        for si in range(len(resolver.slots)):
-            slots[si] = _make_slot(resolver.slots[si])
-        out_pipe.resolver.slots = slots
+        for si in range(len(resolver.registers)):
+            registers[si] = _make_register(resolver.registers[si])
+        out_pipe.resolver.registers = registers
 
     out_pipe.resolver.weights = cython.NULL
     out_pipe.resolver.weights_len = len(resolver.weights)
@@ -899,8 +899,8 @@ def _fill_pipe_single(
     out_pipe.resolver.operations_len = len(resolver.operations)
     if resolver.operations:
         operations = cython.cast(
-            cython.pointer[cr.COperation],
-            _descriptor_bytes(len(resolver.operations) * cython.sizeof(cr.COperation), keepalive),
+            cython.pointer[cr.CResolverOp],
+            _descriptor_bytes(len(resolver.operations) * cython.sizeof(cr.CResolverOp), keepalive),
         )
         if operations == cython.NULL:
             raise MemoryError()
@@ -908,7 +908,7 @@ def _fill_pipe_single(
         for si in range(len(resolver.operations)):
             operation = resolver.operations[si]
             operations[si].tag = int(operation.kind)
-            operations[si].slot = _make_slot(operation.slot)
+            operations[si].register_ref = _make_register(operation.register_ref)
             operations[si].lower = float(operation.lower)
             operations[si].upper = float(operation.upper)
         out_pipe.resolver.operations = operations

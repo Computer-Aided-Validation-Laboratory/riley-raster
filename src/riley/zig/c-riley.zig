@@ -244,10 +244,10 @@ pub const CShaderInput = extern struct {
     value: CShaderPayload,
 };
 
-pub const CSlot = extern struct { kind: u32, index: u32 };
-pub const COperation = extern struct {
+pub const CRegister = extern struct { kind: u32, index: u32 };
+pub const CResolverOp = extern struct {
     tag: u32,
-    slot: CSlot,
+    register_ref: CRegister,
     lower: F,
     upper: F,
 };
@@ -259,32 +259,32 @@ pub const CLookup = extern struct {
 };
 pub const CResolver = extern struct {
     tag: u32,
-    slots: [*c]const CSlot,
-    slots_len: usize,
+    registers: [*c]const CRegister,
+    registers_len: usize,
     weights: [*c]const F,
     weights_len: usize,
-    factor: CSlot,
-    temperature: CSlot,
-    emissivity: CSlot,
+    factor: CRegister,
+    temperature: CRegister,
+    emissivity: CRegister,
     ambient: F,
     gain: F,
     lookup: CLookup,
-    operations: [*c]const COperation,
+    operations: [*c]const CResolverOp,
     operations_len: usize,
 };
 pub const CPipeStage = extern struct {
     tag: u32,
     shader: [*c]const CShaderInput,
-    source: CSlot,
-    destination: CSlot,
+    register_source: CRegister,
+    register_dest: CRegister,
     lower: F,
     upper: F,
     black: F,
     white: F,
-    source_b: CSlot,
-    alpha_slot: CSlot,
+    register_source_b: CRegister,
+    alpha_register: CRegister,
     alpha: F,
-    alpha_from_slot: u32,
+    alpha_from_register: u32,
     gain: F,
     offset: F,
     components: u32,
@@ -1178,34 +1178,34 @@ fn buildCameraInput(
     };
 }
 
-fn pipeSlotFromC(in_slot: CSlot) !riley.Slot {
-    if (in_slot.index >= riley.max_slots) return error.InvalidPipeSlot;
+fn pipeRegisterFromC(in_slot: CRegister) !riley.Register {
+    if (in_slot.index >= riley.max_registers) return error.InvalidPipeRegister;
     return .{
         .kind = switch (in_slot.kind) {
             0 => .channel,
             1 => .field,
             2 => .parameter,
             3 => .constant,
-            else => return error.InvalidPipeSlot,
+            else => return error.InvalidPipeRegister,
         },
         .index = @intCast(in_slot.index),
     };
 }
 
-fn pipeSlotsFromC(
+fn pipeRegistersFromC(
     allocator: std.mem.Allocator,
-    slots: [*c]const CSlot,
+    registers: [*c]const CRegister,
     count: usize,
-) ![]riley.Slot {
-    const input = try cConstSlice(CSlot, slots, count);
-    const output = try allocator.alloc(riley.Slot, count);
-    for (input, output) |slot, *dest| {
-        dest.* = try pipeSlotFromC(slot);
+) ![]riley.Register {
+    const input = try cConstSlice(CRegister, registers, count);
+    const output = try allocator.alloc(riley.Register, count);
+    for (input, output) |register_ref, *dest| {
+        dest.* = try pipeRegisterFromC(register_ref);
     }
     return output;
 }
 
-fn lookupFromC(input: CLookup) !riley.Lookup {
+fn lookupFromC(input: CLookup) !riley.LookupTable {
     return .{
         .first = input.first,
         .step = input.step,
@@ -1218,45 +1218,45 @@ fn resolverFromC(
     input: CResolver,
     constants: []const F,
 ) !riley.Resolver {
-    const slots = try pipeSlotsFromC(allocator, input.slots, input.slots_len);
+    const registers = try pipeRegistersFromC(allocator, input.registers, input.registers_len);
     return switch (input.tag) {
-        0 => .{ .identity = slots },
-        1 => .{ .sum = slots },
+        0 => .{ .identity = registers },
+        1 => .{ .sum = registers },
         2 => .{ .modulate = .{
-            .sources = slots,
-            .factor = try pipeSlotFromC(input.factor),
+            .register_sources = registers,
+            .factor = try pipeRegisterFromC(input.factor),
             .ambient = input.ambient,
             .gain = input.gain,
         } },
         3 => .{ .weighted_sum = .{
-            .sources = slots,
+            .register_sources = registers,
             .weights = try cConstSlice(F, input.weights, input.weights_len),
         } },
         4 => .{ .greybody_bolometric = .{
-            .temperature = try pipeSlotFromC(input.temperature),
-            .emissivity = try pipeSlotFromC(input.emissivity),
+            .temperature = try pipeRegisterFromC(input.temperature),
+            .emissivity = try pipeRegisterFromC(input.emissivity),
         } },
         5 => .{ .greybody_band = .{
-            .temperature = try pipeSlotFromC(input.temperature),
-            .emissivity = try pipeSlotFromC(input.emissivity),
+            .temperature = try pipeRegisterFromC(input.temperature),
+            .emissivity = try pipeRegisterFromC(input.emissivity),
             .radiance = try lookupFromC(input.lookup),
         } },
         7 => .{ .greybody_band_apparent_c = .{
-            .temperature = try pipeSlotFromC(input.temperature),
-            .emissivity = try pipeSlotFromC(input.emissivity),
+            .temperature = try pipeRegisterFromC(input.temperature),
+            .emissivity = try pipeRegisterFromC(input.emissivity),
             .radiance = try lookupFromC(input.lookup),
             .ambient_k = input.ambient,
         } },
         6 => blk: {
             const input_ops = try cConstSlice(
-                COperation,
+                CResolverOp,
                 input.operations,
                 input.operations_len,
             );
-            const operations = try allocator.alloc(riley.Op, input_ops.len);
+            const operations = try allocator.alloc(riley.ResolverOp, input_ops.len);
             for (input_ops, operations) |op, *dest| {
                 dest.* = switch (op.tag) {
-                    0 => .{ .load = try pipeSlotFromC(op.slot) },
+                    0 => .{ .load = try pipeRegisterFromC(op.register_ref) },
                     1 => .add,
                     2 => .subtract,
                     3 => .multiply,
@@ -1264,12 +1264,12 @@ fn resolverFromC(
                     5 => .power4,
                     6 => .clamp01,
                     7 => .{ .clamp = .{ .lower = op.lower, .upper = op.upper } },
-                    8 => if (op.slot.index < 1)
+                    8 => if (op.register_ref.index < 1)
                         .{ .lut = 0 }
                     else
                         return error.InvalidPipeOperation,
-                    9 => if (op.slot.index < riley.max_channels)
-                        .{ .store = @intCast(op.slot.index) }
+                    9 => if (op.register_ref.index < riley.max_channels)
+                        .{ .store = @intCast(op.register_ref.index) }
                     else
                         return error.InvalidPipeOperation,
                     else => return error.InvalidPipeOperation,
@@ -1277,7 +1277,7 @@ fn resolverFromC(
             }
             const lookups = if (input.lookup.values_len > 0)
                 try allocator.dupe(
-                    riley.Lookup,
+                    riley.LookupTable,
                     &.{try lookupFromC(input.lookup)},
                 )
             else
@@ -1640,50 +1640,50 @@ fn buildPipeInput(allocator: std.mem.Allocator, pipe: *const CPipe) !riley.Shade
     const stages = try allocator.alloc(riley.ShaderPipeStageInput, input_stages.len);
     for (input_stages, stages) |input_stage, *stage| {
         stage.* = switch (input_stage.tag) {
-            0 => .{ .source = .{
+            0 => .{ .shader = .{
                 .shader = if (input_stage.shader != null)
                     try buildShaderDirectInput(allocator, input_stage.shader)
                 else
                     return error.NullPointer,
-                .destination = try pipeSlotFromC(input_stage.destination),
+                .register_dest = try pipeRegisterFromC(input_stage.register_dest),
             } },
             1 => .{ .grey_to_emissivity = .{
-                .source = try pipeSlotFromC(input_stage.source),
-                .destination = try pipeSlotFromC(input_stage.destination),
-                .grey_black = input_stage.lower,
-                .grey_white = input_stage.upper,
-                .black = input_stage.black,
-                .white = input_stage.white,
+                .register_source = try pipeRegisterFromC(input_stage.register_source),
+                .register_dest = try pipeRegisterFromC(input_stage.register_dest),
+                .greylevel_at_black = input_stage.lower,
+                .greylevel_at_white = input_stage.upper,
+                .emissivity_at_black = input_stage.black,
+                .emissivity_at_white = input_stage.white,
             } },
             2 => .{ .clamp = .{
-                .source = try pipeSlotFromC(input_stage.source),
-                .destination = try pipeSlotFromC(input_stage.destination),
+                .register_source = try pipeRegisterFromC(input_stage.register_source),
+                .register_dest = try pipeRegisterFromC(input_stage.register_dest),
                 .lower = input_stage.lower,
                 .upper = input_stage.upper,
             } },
             3 => .{ .affine_map = .{
-                .source = try pipeSlotFromC(input_stage.source),
-                .destination = try pipeSlotFromC(input_stage.destination),
+                .register_source = try pipeRegisterFromC(input_stage.register_source),
+                .register_dest = try pipeRegisterFromC(input_stage.register_dest),
                 .gain = input_stage.gain,
                 .offset = input_stage.offset,
             } },
             4 => .{ .lut_map = .{
-                .source = try pipeSlotFromC(input_stage.source),
-                .destination = try pipeSlotFromC(input_stage.destination),
+                .register_source = try pipeRegisterFromC(input_stage.register_source),
+                .register_dest = try pipeRegisterFromC(input_stage.register_dest),
                 .lookup = try lookupFromC(input_stage.lookup),
             } },
             5 => .{ .blend = .{
-                .a = try pipeSlotFromC(input_stage.source),
-                .b = try pipeSlotFromC(input_stage.source_b),
-                .destination = try pipeSlotFromC(input_stage.destination),
-                .alpha = if (input_stage.alpha_from_slot != 0)
-                    .{ .slot = try pipeSlotFromC(input_stage.alpha_slot) }
+                .a = try pipeRegisterFromC(input_stage.register_source),
+                .b = try pipeRegisterFromC(input_stage.register_source_b),
+                .register_dest = try pipeRegisterFromC(input_stage.register_dest),
+                .alpha = if (input_stage.alpha_from_register != 0)
+                    .{ .register = try pipeRegisterFromC(input_stage.alpha_register) }
                 else
                     .{ .fixed = input_stage.alpha },
             } },
             6 => .{ .normalise = .{
-                .source = try pipeSlotFromC(input_stage.source),
-                .destination = try pipeSlotFromC(input_stage.destination),
+                .register_source = try pipeRegisterFromC(input_stage.register_source),
+                .register_dest = try pipeRegisterFromC(input_stage.register_dest),
                 .components = std.math.cast(u8, input_stage.components) orelse return error.InvalidPipeStage,
             } },
             else => return error.InvalidPipeStage,

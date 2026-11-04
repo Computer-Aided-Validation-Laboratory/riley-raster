@@ -84,28 +84,28 @@ pub fn main(init: std.process.Init) !void {
         },
     };
 
-    const channel_slot = riley.Slot{ .kind = .channel, .index = 0 };
-    const param_slot = riley.Slot{ .kind = .parameter, .index = 0 };
-    const channel_slots = [_]riley.Slot{channel_slot};
+    const channel_slot = riley.Register{ .kind = .channel, .index = 0 };
+    const param_slot = riley.Register{ .kind = .parameter, .index = 0 };
+    const channel_slots = [_]riley.Register{channel_slot};
 
     const lit_stages = [_]riley.ShaderPipeStageInput{
         .{
-            .source = .{
+            .shader = .{
                 .shader = ops.monoToPipeSource(speckle_shader),
-                .destination = channel_slot,
+                .register_dest = channel_slot,
             },
         },
         .{
-            .source = .{
+            .shader = .{
                 .shader = ops.monoToPipeSource(lambertian_shader),
-                .destination = param_slot,
+                .register_dest = param_slot,
             },
         },
     };
 
     const lit_resolver: riley.Resolver = .{
         .modulate = .{
-            .sources = &channel_slots,
+            .register_sources = &channel_slots,
             .factor = param_slot,
         },
     };

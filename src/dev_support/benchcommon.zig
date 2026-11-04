@@ -989,36 +989,36 @@ fn runBenchmarkInternal(
         texture_rgb,
     );
     const base_source: shadertypes.PipeSourceInput = if (calcOutputChannels(shader_type) == 3)
-        mesh_input.shaders.rgb_pipe.?.stages[0].source.shader
+        mesh_input.shaders.rgb_pipe.?.stages[0].shader.shader
     else
         so.monoToPipeSource(mesh_input.shaders.mono_direct.?);
 
-    const output_slot: shaderpipe.Slot = .{ .kind = .channel, .index = 0 };
-    const pipe_stages = [_]shadertypes.ShaderPipeStageInput{.{ .source = .{
+    const output_slot: shaderpipe.Register = .{ .kind = .channel, .index = 0 };
+    const pipe_stages = [_]shadertypes.ShaderPipeStageInput{.{ .shader = .{
         .shader = base_source,
-        .destination = output_slot,
+        .register_dest = output_slot,
     } }};
-    const pipe_slots = [_]shaderpipe.Slot{output_slot};
+    const pipe_slots = [_]shaderpipe.Register{output_slot};
     var deformed_source = base_source;
     if (render_defaults.shader_path == .multi_source_pipe) {
         std.debug.assert(deformed_source == .func);
         deformed_source.func.coord_mode = .world_deformed;
     }
     const multi_stages = [_]shadertypes.ShaderPipeStageInput{
-        .{ .source = .{
+        .{ .shader = .{
             .shader = base_source,
-            .destination = .{ .kind = .channel, .index = 0 },
+            .register_dest = .{ .kind = .channel, .index = 0 },
         } },
-        .{ .source = .{
+        .{ .shader = .{
             .shader = deformed_source,
-            .destination = .{ .kind = .channel, .index = 1 },
+            .register_dest = .{ .kind = .channel, .index = 1 },
         } },
-        .{ .source = .{
+        .{ .shader = .{
             .shader = base_source,
-            .destination = .{ .kind = .channel, .index = 2 },
+            .register_dest = .{ .kind = .channel, .index = 2 },
         } },
     };
-    const multi_slots = [_]shaderpipe.Slot{
+    const multi_slots = [_]shaderpipe.Register{
         .{ .kind = .channel, .index = 0 },
         .{ .kind = .channel, .index = 1 },
         .{ .kind = .channel, .index = 2 },
@@ -1050,44 +1050,44 @@ fn runBenchmarkInternal(
         const channels = try aa.alloc(shadertypes.FuncChannel, 2);
         channels[0] = .{ .builtin = .lambertian_normal_z, .params = .{ .settings = .{ .lambertian_normal_z = .{} } } };
         channels[1] = .{ .builtin = .constant, .params = .{ .settings = .{ .constant = .{ .value = 300 } } } };
-        const radiance = shaderpipe.Lookup{ .first = 250, .step = 50, .values = &.{ 1, 2, 4, 8 } };
+        const radiance = shaderpipe.LookupTable{ .first = 250, .step = 50, .values = &.{ 1, 2, 4, 8 } };
         const stages = try aa.alloc(shadertypes.ShaderPipeStageInput, 8);
-        stages[0] = .{ .source = .{ .shader = scaled_source, .destination = .{ .kind = .channel, .index = 0 } } };
-        stages[1] = .{ .source = .{
+        stages[0] = .{ .shader = .{ .shader = scaled_source, .register_dest = .{ .kind = .channel, .index = 0 } } };
+        stages[1] = .{ .shader = .{
             .shader = .{ .func_multi = .{ .coord_mode = .world_reference, .channels = channels } },
-            .destination = .{ .kind = .field, .index = 0 },
+            .register_dest = .{ .kind = .field, .index = 0 },
         } };
         const dyn_tex = textypes.TexDataDyn(T){ .array = texture_rgb.array, .rows_num = texture_rgb.rows_num, .cols_num = texture_rgb.cols_num };
-        stages[2] = .{ .source = .{
+        stages[2] = .{ .shader = .{
             .shader = if (T == u8) .{ .tex_multi_u8 = .{ .uvs = uvs, .tex = dyn_tex, .scaling = .auto } } else .{ .tex_multi_u16 = .{ .uvs = uvs, .tex = dyn_tex, .scaling = .auto } },
-            .destination = .{ .kind = .parameter, .index = 0 },
+            .register_dest = .{ .kind = .parameter, .index = 0 },
         } };
         stages[3] = .{ .grey_to_emissivity = .{
-            .source = .{ .kind = .channel, .index = 0 },
-            .destination = .{ .kind = .parameter, .index = 3 },
-            .black = 0.1,
-            .white = 0.9,
+            .register_source = .{ .kind = .channel, .index = 0 },
+            .register_dest = .{ .kind = .parameter, .index = 3 },
+            .emissivity_at_black = 0.1,
+            .emissivity_at_white = 0.9,
         } };
         stages[4] = .{ .lut_map = .{
-            .source = .{ .kind = .parameter, .index = 0 },
-            .destination = .{ .kind = .parameter, .index = 4 },
+            .register_source = .{ .kind = .parameter, .index = 0 },
+            .register_dest = .{ .kind = .parameter, .index = 4 },
             .lookup = .{ .first = 0, .step = 0.5, .values = &.{ 0, 0.5, 1 } },
         } };
         stages[5] = .{ .blend = .{
             .a = .{ .kind = .field, .index = 0 },
             .b = .{ .kind = .parameter, .index = 4 },
-            .destination = .{ .kind = .parameter, .index = 5 },
+            .register_dest = .{ .kind = .parameter, .index = 5 },
             .alpha = .{ .fixed = 0.4 },
         } };
         stages[6] = .{ .blend = .{
             .a = .{ .kind = .parameter, .index = 3 },
             .b = .{ .kind = .parameter, .index = 5 },
-            .destination = .{ .kind = .parameter, .index = 6 },
+            .register_dest = .{ .kind = .parameter, .index = 6 },
             .alpha = .{ .fixed = 0.2 },
         } };
         stages[7] = .{ .clamp = .{
-            .source = .{ .kind = .parameter, .index = 6 },
-            .destination = .{ .kind = .parameter, .index = 7 },
+            .register_source = .{ .kind = .parameter, .index = 6 },
+            .register_dest = .{ .kind = .parameter, .index = 7 },
             .lower = 0,
             .upper = 1,
         } };

@@ -502,7 +502,7 @@ def _prepare_shader_set(
                         _prepare_shader(
                             stage.shader, nodes_num, source_node_idxs
                         ),
-                        stage.destination,
+                        stage.register_dest,
                     )
                     if isinstance(stage, ShaderSource)
                     else stage

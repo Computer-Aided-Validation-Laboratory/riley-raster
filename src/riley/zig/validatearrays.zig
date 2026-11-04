@@ -107,7 +107,7 @@ fn checkMeshShaderArrays(mesh: meshtypes.MeshInput) InputArrayError!void {
 fn checkPipeArrays(pipe: shadertypes.ShaderPipeInput) InputArrayError!void {
     for (pipe.stages) |stage| {
         switch (stage) {
-            .source => |src| try checkPipeSourceArrays(src.shader),
+            .shader => |src| try checkPipeSourceArrays(src.shader),
             else => {},
         }
     }

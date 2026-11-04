@@ -74,9 +74,9 @@ def main() -> None:
     texture = riley.load_texture_mono_u8(riley.data.speckle_texture_path())
     speckle = riley.TextureShader(uvs=uvs, texture=texture)
 
-    channel = riley.Slot(riley.SlotKind.channel, 0)
-    field = riley.Slot(riley.SlotKind.field, 0)
-    parameter = riley.Slot(riley.SlotKind.parameter, 0)
+    channel = riley.Register(riley.RegisterKind.channel, 0)
+    field = riley.Register(riley.RegisterKind.field, 0)
+    parameter = riley.Register(riley.RegisterKind.parameter, 0)
 
     nodal_temp = riley.NodalShader(
         temperature,
@@ -89,10 +89,10 @@ def main() -> None:
             riley.GreyToEmissivity(
                 channel,
                 parameter,
-                black=0.96,
-                white=0.90,
-                grey_black=0.0,
-                grey_white=255.0,
+                emissivity_at_black=0.96,
+                emissivity_at_white=0.90,
+                greylevel_at_black=0.0,
+                greylevel_at_white=255.0,
             ),
             riley.ShaderSource(nodal_temp, field),
         ),

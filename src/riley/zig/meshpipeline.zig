@@ -89,7 +89,7 @@ pub fn countFrames(
                 .pipe => |pipe| {
                     for (pipe.stages) |stage| {
                         switch (stage) {
-                            .source => |src| switch (src.shader) {
+                            .shader => |src| switch (src.shader) {
                                 .nodal => |nodal| {
                                     num_time = @max(
                                         num_time,
@@ -353,9 +353,9 @@ fn createShaderPipeStaticFromInput(
 
     for (pipe.stages, 0..) |stage, si| {
         stages[si] = switch (stage) {
-            .source => |src| .{ .source = .{
+            .shader => |src| .{ .shader = .{
                 .shader = try createPipeSourceStaticFromInput(allocator, src.shader, connect),
-                .destination = src.destination,
+                .register_dest = src.register_dest,
                 .channels = switch (src.shader) {
                     .nodal => |n| @intCast(n.field.getFieldsN()),
                     .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f, .func_rgb => 3,
@@ -379,7 +379,7 @@ fn createShaderPipeStaticFromInput(
 
     return .{
         .stages = stages,
-        .resolver = shaderpipe.PreparedResolver.init(pipe.resolver),
+        .resolver = shaderpipe.ResolverPrepared.init(pipe.resolver),
         .constants = pipe.constants,
     };
 }
@@ -831,7 +831,7 @@ fn shaderSetHitSelection(
         .direct => |shader| return shaderMonoHitSelection(shader.*, normal_type),
         .pipe => |pipe| {
             for (pipe.stages) |stage| switch (stage) {
-                .source => |src| selection.setUnion(
+                .shader => |src| selection.setUnion(
                     pipeSourceHitSelection(src.shader, normal_type),
                 ),
                 else => {},
@@ -1485,8 +1485,8 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             const Seed = struct { z: F, index: u8, front: bool = false };
 
             for (range_start..range_end) |pp| {
-                const slot = stage.hulls.slot_by_visible_elem.get(pp);
-                if (slot == std.math.maxInt(u32)) continue;
+                const register_ref = stage.hulls.slot_by_visible_elem.get(pp);
+                if (register_ref == std.math.maxInt(u32)) continue;
 
                 var coords: rasterfrontend.ElemCoords(N) = undefined;
                 const xs = stage.elem_coords.getSlice(&.{ pp, 0, 0 }, 1);
@@ -1507,7 +1507,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                     }
                 }
 
-                const leaf_offset = @as(usize, slot) * 4;
+                const leaf_offset = @as(usize, register_ref) * 4;
                 if (stage.edge_fun_mode == .pre_calc) {
                     const leaf_slice =
                         stage.hulls.leaves_pre_calc[leaf_offset .. leaf_offset + 4];
@@ -1620,9 +1620,9 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                 @memcpy(seeds[0..available], ordered[0..available]);
 
                 const count = @min(available, stage.hulls.indices.cols_num);
-                const row = stage.hulls.indices.getSlice(slot);
+                const row = stage.hulls.indices.getSlice(register_ref);
                 for (0..count) |ii| row[ii] = seeds[ii].index;
-                stage.hulls.valid_depth.set(slot, @intCast(count));
+                stage.hulls.valid_depth.set(register_ref, @intCast(count));
             }
         }
 
@@ -1799,7 +1799,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
 
             for (pipe.stages, 0..) |stage, si| {
                 stages[si] = switch (stage) {
-                    .source => |src| blk: {
+                    .shader => |src| blk: {
                         var prepared_source = try self.preparePipeSourceFromStatic(
                             outer_alloc,
                             src.shader,
@@ -1819,9 +1819,9 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                             .func, .func_rgb, .func_multi => |*shader| shader.hit_geometry = .{},
                             else => {},
                         }
-                        break :blk .{ .source = .{
+                        break :blk .{ .shader = .{
                             .shader = prepared_source,
-                            .destination = src.destination,
+                            .register_dest = src.register_dest,
                             .channels = src.channels,
                         } };
                     },
@@ -2179,22 +2179,22 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
 
 test "MeshHit requirements follow the selected camera role" {
     const stages = [_]shadertypes.ShaderPipeStageStatic{
-        .{ .source = .{
+        .{ .shader = .{
             .shader = .{ .func = .{
                 .elem_uvs = null,
                 .coord_mode = .world_reference,
                 .builtin = .linear,
             } },
-            .destination = .{ .kind = .channel, .index = 0 },
+            .register_dest = .{ .kind = .channel, .index = 0 },
         } },
-        .{ .source = .{
+        .{ .shader = .{
             .shader = .{ .func = .{
                 .elem_uvs = null,
                 .coord_mode = .world_deformed,
                 .builtin = .lambertian_normal_z,
                 .needs_normal = true,
             } },
-            .destination = .{ .kind = .channel, .index = 0 },
+            .register_dest = .{ .kind = .channel, .index = 0 },
         } },
     };
     const shaders = shadertypes.MeshShaderSetStatic{
@@ -2244,9 +2244,9 @@ test "static preparation caches scaling and only prepares active roles" {
         },
         .{ .builtin = .linear, .params = .{ .settings = .{ .linear = .{} } } },
     };
-    const stages = [_]shadertypes.ShaderPipeStageInput{.{ .source = .{
+    const stages = [_]shadertypes.ShaderPipeStageInput{.{ .shader = .{
         .shader = .{ .func_multi = .{ .coord_mode = .world_reference, .channels = &channels } },
-        .destination = .{ .kind = .channel, .index = 0 },
+        .register_dest = .{ .kind = .channel, .index = 0 },
     } }};
     const input = meshtypes.MeshInput{
         .mesh_type = .tri3,
@@ -2296,7 +2296,7 @@ test "static preparation caches scaling and only prepares active roles" {
     try std.testing.expect(combined.shaders.multifield == null);
     try std.testing.expect(combined.hit_selections.get(.rgb).contains(.surf_norm));
     try std.testing.expect(!combined.hit_selections.get(.mono).contains(.surf_norm));
-    const source = rgb.shaders.rgb.?.stages[0].source;
+    const source = rgb.shaders.rgb.?.stages[0].shader;
     try std.testing.expectEqual(@as(u8, 3), source.channels);
     const func = source.shader.func_multi;
     try std.testing.expect(func.needs_normal);

@@ -107,12 +107,12 @@ pub fn main(init: std.process.Init) !void {
         .render_format = .mono,
     };
 
-    const ch0 = riley.Slot{ .kind = .channel, .index = 0 };
-    const ch1 = riley.Slot{ .kind = .channel, .index = 1 };
-    const ch2 = riley.Slot{ .kind = .channel, .index = 2 };
-    const param0 = riley.Slot{ .kind = .parameter, .index = 0 };
-    const field0 = riley.Slot{ .kind = .field, .index = 0 };
-    const field1 = riley.Slot{ .kind = .field, .index = 1 };
+    const ch0 = riley.Register{ .kind = .channel, .index = 0 };
+    const ch1 = riley.Register{ .kind = .channel, .index = 1 };
+    const ch2 = riley.Register{ .kind = .channel, .index = 2 };
+    const param0 = riley.Register{ .kind = .parameter, .index = 0 };
+    const field0 = riley.Register{ .kind = .field, .index = 0 };
+    const field1 = riley.Register{ .kind = .field, .index = 1 };
 
     const checker: riley.PipeSourceInput = .{
         .func = .{
@@ -146,24 +146,24 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const mod_stages = [_]riley.ShaderPipeStageInput{
         .{
-            .source = .{
+            .shader = .{
                 .shader = checker,
-                .destination = ch0,
+                .register_dest = ch0,
             },
         },
         .{
-            .source = .{
+            .shader = .{
                 .shader = mod_linear_source,
-                .destination = param0,
+                .register_dest = param0,
             },
         },
     };
-    const mod_sources = [_]riley.Slot{ch0};
+    const mod_sources = [_]riley.Register{ch0};
     const mod_pipe: riley.ShaderPipeInput = .{
         .stages = &mod_stages,
         .resolver = .{
             .modulate = .{
-                .sources = &mod_sources,
+                .register_sources = &mod_sources,
                 .factor = param0,
             },
         },
@@ -190,25 +190,25 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const rgb_stages = [_]riley.ShaderPipeStageInput{
         .{
-            .source = .{
+            .shader = .{
                 .shader = linear(0.5, 0.0),
-                .destination = ch0,
+                .register_dest = ch0,
             },
         },
         .{
-            .source = .{
+            .shader = .{
                 .shader = linear(0.0, 0.5),
-                .destination = ch1,
+                .register_dest = ch1,
             },
         },
         .{
-            .source = .{
+            .shader = .{
                 .shader = linear(0.25, -0.25),
-                .destination = ch2,
+                .register_dest = ch2,
             },
         },
     };
-    const rgb_slots = [_]riley.Slot{ ch0, ch1, ch2 };
+    const rgb_slots = [_]riley.Register{ ch0, ch1, ch2 };
     const rgb_pipe: riley.ShaderPipeInput = .{
         .stages = &rgb_stages,
         .resolver = .{ .identity = &rgb_slots },
@@ -228,19 +228,19 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const expr_stages = [_]riley.ShaderPipeStageInput{
         .{
-            .source = .{
+            .shader = .{
                 .shader = linear(0.5, 0.0),
-                .destination = field0,
+                .register_dest = field0,
             },
         },
         .{
-            .source = .{
+            .shader = .{
                 .shader = linear(0.0, 0.5),
-                .destination = field1,
+                .register_dest = field1,
             },
         },
     };
-    const expr_ops = [_]riley.Op{
+    const expr_ops = [_]riley.ResolverOp{
         .{ .load = field0 },
         .{ .load = .{ .kind = .constant, .index = 0 } },
         .multiply,
@@ -275,21 +275,21 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const emissivity_stages = [_]riley.ShaderPipeStageInput{
         .{
-            .source = .{
+            .shader = .{
                 .shader = checker,
-                .destination = ch0,
+                .register_dest = ch0,
             },
         },
         .{
             .grey_to_emissivity = .{
-                .source = ch0,
-                .destination = param0,
-                .black = 0.96,
-                .white = 0.90,
+                .register_source = ch0,
+                .register_dest = param0,
+                .emissivity_at_black = 0.96,
+                .emissivity_at_white = 0.90,
             },
         },
     };
-    const emissivity_ops = [_]riley.Op{
+    const emissivity_ops = [_]riley.ResolverOp{
         .{ .load = param0 },
         .{ .load = .{ .kind = .constant, .index = 0 } },
         .subtract,

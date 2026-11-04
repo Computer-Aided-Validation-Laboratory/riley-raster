@@ -17,6 +17,7 @@ const S = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 const VecSB = buildconfig.VecSB;
 const shaderops = @import("shaderops.zig");
+const shaderfill = @import("shaderfill.zig");
 const meshhit = @import("meshhit.zig");
 const shaderpipe = @import("shaderpipe.zig");
 const shaderkernels = @import("shaderkernels.zig");
@@ -24,7 +25,7 @@ const simdops = @import("simdops.zig");
 
 pub fn LocalPipeBuff(comptime N: usize) type {
     return struct {
-        stages: [8]shadertypes.LocalShaderBuff(N) = undefined,
+        stages: [buildconfig.config.shaderpipe.max_stages]shadertypes.LocalShaderBuff(N) = undefined,
         coords_ref: [3 * N]F = undefined,
         coords_def: [3 * N]F = undefined,
         surf_norm: [3 * N]F = undefined,
@@ -52,7 +53,7 @@ pub fn LocalPipeBuff(comptime N: usize) type {
 
             for (pipe.stages, 0..) |stage, si| {
                 const source = switch (stage) {
-                    .source => |source| source,
+                    .shader => |source| source,
                     else => continue,
                 };
                 const buf = &self.stages[si];
@@ -200,10 +201,14 @@ pub fn PipeKernel(comptime N: usize) type {
         ) void {
             const hit = pipe_buf.completeHit(coord_space, interp, pipe.hit_geometry.selection);
 
-            var outputs: shaderpipe.ScalarOutputs = .{};
+            var outputs: shaderpipe.RegistersOutputScalar = .{};
 
-            var source_values: [shaderpipe.max_channels]F = @splat(0);
-            var source_output = matslice.MatSlice(F).init(&source_values, shaderpipe.max_channels, 1);
+            var source_values: [buildconfig.config.max_image_channels]F = @splat(0);
+            var source_output = matslice.MatSlice(F).init(
+                &source_values,
+                buildconfig.config.max_image_channels,
+                1,
+            );
 
             var stage_ctx = ctx_shade;
             stage_ctx.scratch_idx = 0;
@@ -211,7 +216,7 @@ pub fn PipeKernel(comptime N: usize) type {
 
             for (pipe.stages, 0..) |*stage, si| {
                 switch (stage.*) {
-                    .source => |*src| {
+                    .shader => |*src| {
                         const count = src.channels;
 
                         stage_ctx.actual_fields = count;
@@ -227,23 +232,26 @@ pub fn PipeKernel(comptime N: usize) type {
                         );
 
                         for (0..count) |ch| {
-                            var dest = src.destination;
+                            var dest = src.register_dest;
                             dest.index += @intCast(ch);
                             outputs.set(dest, source_values[ch]);
                         }
                     },
                     .grey_to_emissivity => |m| {
-                        const grey = std.math.clamp((outputs.get(m.source) - m.grey_black) /
-                            m.grey_range, 0, 1);
-                        outputs.set(m.destination, m.black + grey * m.white_range);
+                        const grey = std.math.clamp((outputs.get(m.register_source) - m.greylevel_at_black) /
+                            m.greylevel_range, 0, 1);
+                        outputs.set(
+                            m.register_dest,
+                            m.emissivity_at_black + grey * m.emissivity_range,
+                        );
                     },
                     .clamp => |c| {
                         const clamped = std.math.clamp(
-                            outputs.get(c.source),
+                            outputs.get(c.register_source),
                             c.lower,
                             c.upper,
                         );
-                        outputs.set(c.destination, clamped);
+                        outputs.set(c.register_dest, clamped);
                     },
                     .affine_map => |m| m.apply(&outputs),
                     .lut_map => |m| m.apply(&outputs, true),
@@ -252,7 +260,7 @@ pub fn PipeKernel(comptime N: usize) type {
                 }
             }
 
-            var resolved: [shaderpipe.max_channels]F = undefined;
+            var resolved: [buildconfig.config.max_image_channels]F = undefined;
             pipe.resolver.evaluate(&outputs, pipe.constants, pipe.channels, &resolved);
 
             for (0..pipe.channels) |ch| {
@@ -283,15 +291,15 @@ pub fn PipeKernel(comptime N: usize) type {
                 pipe.hit_geometry.selection,
             );
 
-            var outputs: shaderpipe.VectorOutputs = .{};
+            var outputs: shaderpipe.RegistersOutputSIMD = .{};
             var stage_ctx = ctx_shade;
 
             for (pipe.stages, 0..) |*stage, si| {
                 switch (stage.*) {
-                    .source => |*src| {
+                    .shader => |*src| {
                         const count = src.channels;
                         stage_ctx.actual_fields = count;
-                        var source_values: shaderops.VectorSink(shaderpipe.max_channels) = .{};
+                        var source_values: shaderfill.VectorSink(buildconfig.config.max_image_channels) = .{};
                         shadeSourceSIMD(
                             N,
                             coord_space,
@@ -308,28 +316,28 @@ pub fn PipeKernel(comptime N: usize) type {
                             &source_values,
                         );
                         for (0..count) |ch| {
-                            var dest = src.destination;
+                            var dest = src.register_dest;
                             dest.index += @intCast(ch);
                             outputs.set(dest, source_values.values[ch]);
                         }
                     },
                     .grey_to_emissivity => |m| {
-                        const src_val = outputs.get(m.source);
-                        const gb = @as(VecSF, @splat(m.grey_black));
-                        const gw_gb = @as(VecSF, @splat(m.grey_range));
+                        const src_val = outputs.get(m.register_source);
+                        const gb = @as(VecSF, @splat(m.greylevel_at_black));
+                        const gw_gb = @as(VecSF, @splat(m.greylevel_range));
                         const raw_grey = (src_val - gb) / gw_gb;
                         const one = @as(VecSF, @splat(1));
                         const zero = @as(VecSF, @splat(0));
                         const grey = @min(one, @max(zero, raw_grey));
-                        const blk_splat = @as(VecSF, @splat(m.black));
-                        const w_b = @as(VecSF, @splat(m.white_range));
-                        outputs.set(m.destination, blk_splat + grey * w_b);
+                        const blk_splat = @as(VecSF, @splat(m.emissivity_at_black));
+                        const w_b = @as(VecSF, @splat(m.emissivity_range));
+                        outputs.set(m.register_dest, blk_splat + grey * w_b);
                     },
                     .clamp => |c| {
                         const upper = @as(VecSF, @splat(c.upper));
                         const lower = @as(VecSF, @splat(c.lower));
-                        const clamped = @min(upper, @max(lower, outputs.get(c.source)));
-                        outputs.set(c.destination, clamped);
+                        const clamped = @min(upper, @max(lower, outputs.get(c.register_source)));
+                        outputs.set(c.register_dest, clamped);
                     },
                     .affine_map => |m| m.apply(&outputs),
                     .lut_map => |m| m.apply(&outputs, v_mask_active),
@@ -338,7 +346,7 @@ pub fn PipeKernel(comptime N: usize) type {
                 }
             }
 
-            var resolved: [shaderpipe.max_channels]VecSF = undefined;
+            var resolved: [buildconfig.config.max_image_channels]VecSF = undefined;
             pipe.resolver.evaluate(&outputs, pipe.constants, pipe.channels, &resolved);
             for (0..pipe.channels) |ch| {
                 const idx = ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx;

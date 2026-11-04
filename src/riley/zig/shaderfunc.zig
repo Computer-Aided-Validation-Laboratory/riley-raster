@@ -15,6 +15,7 @@ const VecSF = buildconfig.VecSF;
 
 const maths_simd = @import("maths_simd.zig");
 const shaderops = @import("shaderops.zig");
+const shaderfill = @import("shaderfill.zig");
 
 // --------------------------------------------------------------------------------------
 // Coordinate Modes & Builtins
@@ -641,7 +642,7 @@ test "SIMD func builtin matches scalar builtin per lane" {
     };
 
     for (scalar_builtins) |builtin| {
-        const v_vals = shaderops.evalFuncShaderGreyNormSIMD(
+        const v_vals = shaderfill.evalFuncShaderGreyNormSIMD(
             builtin,
             coord_simd,
             normFuncShaderParams(builtin, params),
@@ -656,7 +657,7 @@ test "SIMD func builtin matches scalar builtin per lane" {
             try std.testing.expectApproxEqAbs(expected, vals_arr[ll], unit_tol);
         }
 
-        const v_rgb = shaderops.evalFuncShaderRGBNormSIMD(
+        const v_rgb = shaderfill.evalFuncShaderRGBNormSIMD(
             builtin,
             coord_simd,
             normFuncShaderParams(builtin, params),

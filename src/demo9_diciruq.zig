@@ -112,36 +112,36 @@ pub fn main(init: std.process.Init) !void {
     const speckle_source: riley.PipeSourceInput = .{ .tex_u8 = speckle_tex };
     const speckle_mono: riley.ShaderMonoInput = .{ .tex_u8 = speckle_tex };
 
-    const channel = riley.Slot{ .kind = .channel, .index = 0 };
-    const field = riley.Slot{ .kind = .field, .index = 0 };
-    const parameter = riley.Slot{ .kind = .parameter, .index = 0 };
+    const channel = riley.Register{ .kind = .channel, .index = 0 };
+    const field = riley.Register{ .kind = .field, .index = 0 };
+    const parameter = riley.Register{ .kind = .parameter, .index = 0 };
 
     const stages = [_]riley.ShaderPipeStageInput{
         .{
-            .source = .{
+            .shader = .{
                 .shader = speckle_source,
-                .destination = channel,
+                .register_dest = channel,
             },
         },
         .{
             .grey_to_emissivity = .{
-                .source = channel,
-                .destination = parameter,
-                .black = 0.96,
-                .white = 0.90,
-                .grey_black = 0.0,
-                .grey_white = 255.0,
+                .register_source = channel,
+                .register_dest = parameter,
+                .emissivity_at_black = 0.96,
+                .emissivity_at_white = 0.90,
+                .greylevel_at_black = 0.0,
+                .greylevel_at_white = 255.0,
             },
         },
         .{
-            .source = .{
+            .shader = .{
                 .shader = .{
                     .nodal = .{
                         .field = temperature,
                         .scaling = .none,
                     },
                 },
-                .destination = field,
+                .register_dest = field,
             },
         },
     };
@@ -153,7 +153,7 @@ pub fn main(init: std.process.Init) !void {
         lambda.* = (8.0 + 0.25 * @as(maths.F, @floatFromInt(ii))) * 1e-6;
     }
 
-    const band_resp = riley.BandResponse{
+    const band_resp = riley.SpectralBandResponse{
         .wavelengths_m = &wavelengths,
         .response = &response,
     };

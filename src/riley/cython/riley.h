@@ -208,17 +208,17 @@ typedef struct CShaderInput {
     CShaderPayload value;
 } CShaderInput;
 
-typedef struct CSlot {
+typedef struct CRegister {
     uint32_t kind;
     uint32_t index;
-} CSlot;
+} CRegister;
 
-typedef struct COperation {
+typedef struct CResolverOp {
     uint32_t tag;
-    CSlot slot;
+    CRegister register_ref;
     double lower;
     double upper;
-} COperation;
+} CResolverOp;
 
 typedef struct CLookup {
     double first;
@@ -229,33 +229,33 @@ typedef struct CLookup {
 
 typedef struct CResolver {
     uint32_t tag;
-    const CSlot * slots;
-    size_t slots_len;
+    const CRegister * registers;
+    size_t registers_len;
     const double * weights;
     size_t weights_len;
-    CSlot factor;
-    CSlot temperature;
-    CSlot emissivity;
+    CRegister factor;
+    CRegister temperature;
+    CRegister emissivity;
     double ambient;
     double gain;
     CLookup lookup;
-    const COperation * operations;
+    const CResolverOp * operations;
     size_t operations_len;
 } CResolver;
 
 typedef struct CPipeStage {
     uint32_t tag;
     const CShaderInput * shader;
-    CSlot source;
-    CSlot destination;
+    CRegister register_source;
+    CRegister register_dest;
     double lower;
     double upper;
     double black;
     double white;
-    CSlot source_b;
-    CSlot alpha_slot;
+    CRegister register_source_b;
+    CRegister alpha_register;
     double alpha;
-    uint32_t alpha_from_slot;
+    uint32_t alpha_from_register;
     double gain;
     double offset;
     uint32_t components;

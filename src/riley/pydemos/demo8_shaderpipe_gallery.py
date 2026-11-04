@@ -80,11 +80,11 @@ def main() -> None:
         save_strategy=riley.SaveStrategy.disk,
     )
 
-    ch = tuple(riley.Slot(riley.SlotKind.channel, ii) for ii in range(3))
-    fields = tuple(riley.Slot(riley.SlotKind.field, ii) for ii in range(2))
-    param = riley.Slot(riley.SlotKind.parameter, 0)
+    ch = tuple(riley.Register(riley.RegisterKind.channel, ii) for ii in range(3))
+    fields = tuple(riley.Register(riley.RegisterKind.field, ii) for ii in range(2))
+    param = riley.Register(riley.RegisterKind.parameter, 0)
     constants = tuple(
-        riley.Slot(riley.SlotKind.constant, ii) for ii in range(2)
+        riley.Register(riley.RegisterKind.constant, ii) for ii in range(2)
     )
 
     checker = riley.FunctionShader(
@@ -146,7 +146,7 @@ def main() -> None:
                 ),
                 resolver=riley.ShaderResolver(
                     riley.ResolverKind.modulate,
-                    slots=(ch[0],),
+                    registers=(ch[0],),
                     factor=param,
                 ),
             ),
@@ -162,8 +162,8 @@ def main() -> None:
         riley.MeshShaderSet(
             rgb=riley.ShaderPipe(
                 stages=tuple(
-                    riley.ShaderSource(shader, slot)
-                    for shader, slot in zip(
+                    riley.ShaderSource(shader, register_ref)
+                    for shader, register_ref in zip(
                         (
                             linear(0.5, 0.0),
                             linear(0.0, 0.5),
@@ -174,7 +174,7 @@ def main() -> None:
                 ),
                 resolver=riley.ShaderResolver(
                     riley.ResolverKind.identity,
-                    slots=ch,
+                    registers=ch,
                 ),
             ),
         ),
@@ -185,15 +185,15 @@ def main() -> None:
     # 4. Composition C: Bounded expression blend
     # --------------------------------------------------------------------------
     expression = (
-        riley.Operation(riley.OperationKind.load, fields[0]),
-        riley.Operation(riley.OperationKind.load, constants[0]),
-        riley.Operation(riley.OperationKind.multiply),
-        riley.Operation(riley.OperationKind.load, fields[1]),
-        riley.Operation(riley.OperationKind.load, constants[1]),
-        riley.Operation(riley.OperationKind.multiply),
-        riley.Operation(riley.OperationKind.add),
-        riley.Operation(riley.OperationKind.clamp01),
-        riley.Operation(riley.OperationKind.store),
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[0]),
+        riley.ResolverOp(riley.ResolverOpKind.load, constants[0]),
+        riley.ResolverOp(riley.ResolverOpKind.multiply),
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[1]),
+        riley.ResolverOp(riley.ResolverOpKind.load, constants[1]),
+        riley.ResolverOp(riley.ResolverOpKind.multiply),
+        riley.ResolverOp(riley.ResolverOpKind.add),
+        riley.ResolverOp(riley.ResolverOpKind.clamp01),
+        riley.ResolverOp(riley.ResolverOpKind.store),
     )
     render(
         "c_expression",
@@ -217,13 +217,13 @@ def main() -> None:
     # 5. Composition D: Emissivity material parameter mapping
     # --------------------------------------------------------------------------
     emissivity_ops = (
-        riley.Operation(riley.OperationKind.load, param),
-        riley.Operation(riley.OperationKind.load, constants[0]),
-        riley.Operation(riley.OperationKind.subtract),
-        riley.Operation(riley.OperationKind.load, constants[1]),
-        riley.Operation(riley.OperationKind.multiply),
-        riley.Operation(riley.OperationKind.clamp01),
-        riley.Operation(riley.OperationKind.store),
+        riley.ResolverOp(riley.ResolverOpKind.load, param),
+        riley.ResolverOp(riley.ResolverOpKind.load, constants[0]),
+        riley.ResolverOp(riley.ResolverOpKind.subtract),
+        riley.ResolverOp(riley.ResolverOpKind.load, constants[1]),
+        riley.ResolverOp(riley.ResolverOpKind.multiply),
+        riley.ResolverOp(riley.ResolverOpKind.clamp01),
+        riley.ResolverOp(riley.ResolverOpKind.store),
     )
     render(
         "d_emissivity_visualisation",
@@ -234,8 +234,8 @@ def main() -> None:
                     riley.GreyToEmissivity(
                         ch[0],
                         param,
-                        black=0.96,
-                        white=0.90,
+                        emissivity_at_black=0.96,
+                        emissivity_at_white=0.90,
                     ),
                 ),
                 resolver=riley.ShaderResolver(

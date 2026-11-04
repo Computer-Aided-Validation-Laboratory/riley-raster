@@ -54,8 +54,8 @@ def main() -> None:
         scaling_type=riley.ScaleStrategy.none,
     )
 
-    channel = riley.Slot(riley.SlotKind.channel, 0)
-    parameter = riley.Slot(riley.SlotKind.parameter, 0)
+    channel = riley.Register(riley.RegisterKind.channel, 0)
+    parameter = riley.Register(riley.RegisterKind.parameter, 0)
 
     stages = (
         riley.ShaderSource(checker, channel),
@@ -63,7 +63,7 @@ def main() -> None:
     )
     resolver = riley.ShaderResolver(
         riley.ResolverKind.modulate,
-        slots=(channel,),
+        registers=(channel,),
         factor=parameter,
     )
     shaders = riley.MeshShaderSet(

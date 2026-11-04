@@ -30,6 +30,16 @@
   implementation types in the public API.
 - Input-to-Static constructors use `create*StaticFromInput` names, including
   `createMeshStaticFromInput`; frame preparation uses `prepare*FromStatic`.
+- Shader evaluation fill functions live in `shaderfill_scalar.zig` and
+  `shaderfill_simd.zig`, exported by the thin `shaderfill.zig` facade.
+  Shader selection, conversion, and construction helpers live in `shaderops.zig`.
+- Shader-pipe intermediate addresses are `Register` values. Stage endpoints use
+  `register_source` and `register_dest`; resolver expressions use `ResolverProgram`
+  and `ResolverOp`. Register state is held by `RegistersWritten` and `RegistersOutput`.
+  Stage, register, instruction, and stack capacities come from
+  `buildconfig.config.shaderpipe`; output channels use `config.max_image_channels`.
+- Shader-pipe stages use `.shader` for shader evaluation, alongside operation
+  tags such as `.clamp`, `.blend`, and `.lut_map`.
 - Shader roles derive from the tags of `shadertypes.RenderFormat`.
   `ActiveShaderRoles` is an enum set; per-role mesh hit selections use an enum
   array keyed by the same roles. Avoid positional role arrays and numeric indices.

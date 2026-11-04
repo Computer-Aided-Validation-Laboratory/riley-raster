@@ -61,8 +61,8 @@ def main() -> None:
         scaling_type=riley.ScaleStrategy.none,
     )
 
-    channel_slot = riley.Slot(riley.SlotKind.channel, 0)
-    param_slot = riley.Slot(riley.SlotKind.parameter, 0)
+    channel_slot = riley.Register(riley.RegisterKind.channel, 0)
+    param_slot = riley.Register(riley.RegisterKind.parameter, 0)
 
     lit_stages = (
         riley.ShaderSource(speckle, channel_slot),
@@ -70,7 +70,7 @@ def main() -> None:
     )
     lit_resolver = riley.ShaderResolver(
         riley.ResolverKind.modulate,
-        slots=(channel_slot,),
+        registers=(channel_slot,),
         factor=param_slot,
     )
     lit_pipe = riley.ShaderPipe(stages=lit_stages, resolver=lit_resolver)

@@ -20,6 +20,7 @@ const VecSF = buildconfig.VecSF;
 
 const shaderkernels_common = @import("shaderkernels_common.zig");
 const shaderops = @import("shaderops.zig");
+const shaderfill = @import("shaderfill.zig");
 const meshhit = @import("meshhit.zig");
 const texturetypes = @import("texturetypes.zig");
 
@@ -69,7 +70,7 @@ pub fn NodalKernel(comptime N: usize) type {
             _ = v_mask_active;
 
             if (comptime coord_space == geometrykernels.CoordSpace.raster) {
-                shaderops.fillNodalPerspSIMD(
+                shaderfill.fillNodalPerspSIMD(
                     N,
                     ctx_shade,
                     shader_buf,
@@ -80,7 +81,7 @@ pub fn NodalKernel(comptime N: usize) type {
                     sink,
                 );
             } else if (comptime coord_space == geometrykernels.CoordSpace.clip_px_leng) {
-                shaderops.fillNodalClipSIMD(
+                shaderfill.fillNodalClipSIMD(
                     N,
                     ctx_shade,
                     shader_buf,
@@ -106,7 +107,7 @@ pub fn NodalKernel(comptime N: usize) type {
             shader: *const shadertypes.NodalPrepared,
             spx_image_scratch: *matslice.MatSlice(F),
         ) void {
-            var sink = shaderops.ImageSink{ .ctx = ctx_shade, .scratch = spx_image_scratch };
+            var sink = shaderfill.ImageSink{ .ctx = ctx_shade, .scratch = spx_image_scratch };
 
             shadeSIMDTo(
                 coord_space,
@@ -203,7 +204,7 @@ pub fn TexKernel(
             shader: *const shadertypes.TexPrepared(T, C),
             spx_img_scratch: *matslice.MatSlice(F),
         ) void {
-            var sink = shaderops.ImageSink{ .ctx = ctx_shade, .scratch = spx_img_scratch };
+            var sink = shaderfill.ImageSink{ .ctx = ctx_shade, .scratch = spx_img_scratch };
             shadeSIMDTo(
                 coord_space,
                 ctx_shade,
@@ -301,7 +302,7 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
             shader: *const shadertypes.TexMultiPrepared(T),
             spx_img_scratch: *matslice.MatSlice(F),
         ) void {
-            var sink = shaderops.ImageSink{ .ctx = ctx_shade, .scratch = spx_img_scratch };
+            var sink = shaderfill.ImageSink{ .ctx = ctx_shade, .scratch = spx_img_scratch };
             shadeSIMDTo(
                 coord_space,
                 ctx_shade,
@@ -415,7 +416,7 @@ inline fn shadeTexSIMDDispatchMode(
             }).sanitise();
 
             if (comptime coord_space == geometrykernels.CoordSpace.raster) {
-                shaderops.fillTexPerspSIMD(
+                shaderfill.fillTexPerspSIMD(
                     N,
                     T,
                     C,
@@ -430,7 +431,7 @@ inline fn shadeTexSIMDDispatchMode(
                     sink,
                 );
             } else if (comptime coord_space == geometrykernels.CoordSpace.clip_px_leng) {
-                shaderops.fillTexClipSIMD(
+                shaderfill.fillTexClipSIMD(
                     N,
                     T,
                     C,
@@ -536,7 +537,7 @@ pub fn FuncKernel(
             sink: anytype,
         ) void {
             if (comptime coord_space == geometrykernels.CoordSpace.raster) {
-                shaderops.fillFuncPerspSIMD(
+                shaderfill.fillFuncPerspSIMD(
                     N,
                     C,
                     ctx_shade,
@@ -552,7 +553,7 @@ pub fn FuncKernel(
                     sink,
                 );
             } else if (comptime coord_space == geometrykernels.CoordSpace.clip_px_leng) {
-                shaderops.fillFuncClipSIMD(
+                shaderfill.fillFuncClipSIMD(
                     N,
                     C,
                     ctx_shade,
@@ -583,7 +584,7 @@ pub fn FuncKernel(
             shader: *const shadertypes.FuncPrepared,
             spx_image_scratch: *matslice.MatSlice(F),
         ) void {
-            var sink = shaderops.ImageSink{ .ctx = ctx_shade, .scratch = spx_image_scratch };
+            var sink = shaderfill.ImageSink{ .ctx = ctx_shade, .scratch = spx_image_scratch };
             shadeSIMDTo(
                 coord_space,
                 ctx_shade,

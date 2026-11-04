@@ -595,50 +595,53 @@ fn checkPipeMetadata(
     coords_num: usize,
     channels: u8,
 ) InputValidationError!void {
-    if (channels == 0 or channels > shaderpipe.max_channels or
-        pipe.stages.len == 0 or pipe.stages.len > 8) return error.InvalidShaderPipe;
-    var written: shaderpipe.Written = .{};
+    if (channels == 0 or channels > buildconfig.config.max_image_channels or
+        pipe.stages.len == 0 or pipe.stages.len > buildconfig.config.shaderpipe.max_stages) return error.InvalidShaderPipe;
+    var written: shaderpipe.RegistersWritten = .{};
     for (pipe.stages) |stage| switch (stage) {
-        .source => |src| {
+        .shader => |src| {
             try checkPipeSourceMetadata(src.shader, coords_num);
             const count = pipeSourceChannels(src.shader);
             for (0..count) |offset| {
-                var dest = src.destination;
+                var dest = src.register_dest;
                 const index = @as(usize, dest.index) + offset;
-                if (index >= shaderpipe.max_slots) return error.InvalidShaderPipe;
+                if (index >= buildconfig.config.shaderpipe.max_registers) return error.InvalidShaderPipe;
                 dest.index = @intCast(index);
                 written.add(dest) catch return error.InvalidShaderPipe;
             }
         },
         .grey_to_emissivity => |m| {
-            if (!written.has(m.source) or m.source.kind != .channel or
-                m.destination.kind != .parameter or
-                !std.math.isFinite(m.black) or !std.math.isFinite(m.white) or
-                !std.math.isFinite(m.grey_black) or !std.math.isFinite(m.grey_white) or
-                m.grey_white <= m.grey_black or
-                m.black < 0 or m.black > 1 or m.white < 0 or m.white > 1)
+            if (!written.has(m.register_source) or m.register_source.kind != .channel or
+                m.register_dest.kind != .parameter or
+                !std.math.isFinite(m.emissivity_at_black) or
+                !std.math.isFinite(m.emissivity_at_white) or
+                !std.math.isFinite(m.greylevel_at_black) or
+                !std.math.isFinite(m.greylevel_at_white) or
+                m.greylevel_at_white <= m.greylevel_at_black or
+                m.emissivity_at_black < 0 or m.emissivity_at_black > 1 or
+                m.emissivity_at_white < 0 or m.emissivity_at_white > 1)
             {
                 return error.InvalidShaderPipe;
             }
-            written.add(m.destination) catch return error.InvalidShaderPipe;
+            written.add(m.register_dest) catch return error.InvalidShaderPipe;
         },
         .clamp => |c| {
-            if (!written.has(c.source) or !std.math.isFinite(c.lower) or
+            if (!written.has(c.register_source) or !std.math.isFinite(c.lower) or
                 !std.math.isFinite(c.upper) or c.lower > c.upper)
             {
                 return error.InvalidShaderPipe;
             }
-            written.add(c.destination) catch return error.InvalidShaderPipe;
+            written.add(c.register_dest) catch return error.InvalidShaderPipe;
         },
         .affine_map => |m| {
-            if (!written.has(m.source) or !std.math.isFinite(m.gain) or
+            if (!written.has(m.register_source) or !std.math.isFinite(m.gain) or
                 !std.math.isFinite(m.offset)) return error.InvalidShaderPipe;
-            written.add(m.destination) catch return error.InvalidShaderPipe;
+            written.add(m.register_dest) catch return error.InvalidShaderPipe;
         },
         .lut_map => |m| {
-            if (!written.has(m.source)) return error.InvalidShaderPipe;
+            if (!written.has(m.register_source)) return error.InvalidShaderPipe;
             m.lookup.validate() catch return error.InvalidShaderPipe;
-            written.add(m.destination) catch return error.InvalidShaderPipe;
+            written.add(m.register_dest) catch return error.InvalidShaderPipe;
         },
         .blend => |m| {
             if (!written.has(m.a) or !written.has(m.b)) return error.InvalidShaderPipe;
@@ -646,29 +649,29 @@ fn checkPipeMetadata(
                 .fixed => |alpha| if (!std.math.isFinite(alpha)) {
                     return error.InvalidShaderPipe;
                 },
-                .slot => |slot| if (!written.has(slot)) {
+                .register => |register_ref| if (!written.has(register_ref)) {
                     return error.InvalidShaderPipe;
                 },
             }
-            written.add(m.destination) catch return error.InvalidShaderPipe;
+            written.add(m.register_dest) catch return error.InvalidShaderPipe;
         },
         .normalise => |m| {
             if (m.components != 2 and m.components != 3) return error.InvalidShaderPipe;
-            if (m.source.kind == .constant or m.destination.kind == .constant) {
+            if (m.register_source.kind == .constant or m.register_dest.kind == .constant) {
                 return error.InvalidShaderPipe;
             }
             for (0..m.components) |offset| {
-                const src_idx = @as(usize, m.source.index) + offset;
-                const dst_idx = @as(usize, m.destination.index) + offset;
-                if (src_idx >= shaderpipe.max_slots or dst_idx >= shaderpipe.max_slots) {
+                const src_idx = @as(usize, m.register_source.index) + offset;
+                const dst_idx = @as(usize, m.register_dest.index) + offset;
+                if (src_idx >= buildconfig.config.shaderpipe.max_registers or dst_idx >= buildconfig.config.shaderpipe.max_registers) {
                     return error.InvalidShaderPipe;
                 }
-                var src = m.source;
+                var src = m.register_source;
                 src.index = @intCast(src_idx);
                 if (!written.has(src)) return error.InvalidShaderPipe;
             }
             for (0..m.components) |offset| {
-                var dest = m.destination;
+                var dest = m.register_dest;
                 dest.index += @intCast(offset);
                 written.add(dest) catch return error.InvalidShaderPipe;
             }
@@ -1106,27 +1109,27 @@ test "raster configuration rejects invalid distortion edge spacing" {
 }
 
 test "generic pipe stages validate ordered reads and single writers" {
-    const ch0 = shaderpipe.Slot{ .kind = .channel, .index = 0 };
-    const ch1 = shaderpipe.Slot{ .kind = .channel, .index = 1 };
-    const ch2 = shaderpipe.Slot{ .kind = .channel, .index = 2 };
-    const f0 = shaderpipe.Slot{ .kind = .field, .index = 0 };
-    const f1 = shaderpipe.Slot{ .kind = .field, .index = 1 };
-    const f2 = shaderpipe.Slot{ .kind = .field, .index = 2 };
-    const p0 = shaderpipe.Slot{ .kind = .parameter, .index = 0 };
+    const ch0 = shaderpipe.Register{ .kind = .channel, .index = 0 };
+    const ch1 = shaderpipe.Register{ .kind = .channel, .index = 1 };
+    const ch2 = shaderpipe.Register{ .kind = .channel, .index = 2 };
+    const f0 = shaderpipe.Register{ .kind = .field, .index = 0 };
+    const f1 = shaderpipe.Register{ .kind = .field, .index = 1 };
+    const f2 = shaderpipe.Register{ .kind = .field, .index = 2 };
+    const p0 = shaderpipe.Register{ .kind = .parameter, .index = 0 };
     const table = [_]F{ 0, 1, 2 };
     const original = [_]shadertypes.ShaderPipeStageInput{
         .{
-            .source = .{
+            .shader = .{
                 .shader = .{ .func_rgb = .{ .builtin = .constant } },
-                .destination = ch0,
+                .register_dest = ch0,
             },
         },
-        .{ .affine_map = .{ .source = ch0, .destination = f0, .gain = 2, .offset = 1 } },
-        .{ .lut_map = .{ .source = f0, .destination = f1, .lookup = .{ .first = 0, .step = 1, .values = &table } } },
-        .{ .blend = .{ .a = ch1, .b = f1, .destination = f2, .alpha = .{ .slot = f0 } } },
-        .{ .normalise = .{ .source = ch0, .destination = p0, .components = 3 } },
+        .{ .affine_map = .{ .register_source = ch0, .register_dest = f0, .gain = 2, .offset = 1 } },
+        .{ .lut_map = .{ .register_source = f0, .register_dest = f1, .lookup = .{ .first = 0, .step = 1, .values = &table } } },
+        .{ .blend = .{ .a = ch1, .b = f1, .register_dest = f2, .alpha = .{ .register = f0 } } },
+        .{ .normalise = .{ .register_source = ch0, .register_dest = p0, .components = 3 } },
     };
-    const result = [_]shaderpipe.Slot{ch0};
+    const result = [_]shaderpipe.Register{ch0};
     var stages = original;
     const pipe = shadertypes.ShaderPipeInput{
         .stages = &stages,
@@ -1134,26 +1137,26 @@ test "generic pipe stages validate ordered reads and single writers" {
     };
     try checkPipeMetadata(pipe, 3, 1);
 
-    stages[1] = .{ .affine_map = .{ .source = f1, .destination = f0, .gain = 1, .offset = 0 } };
+    stages[1] = .{ .affine_map = .{ .register_source = f1, .register_dest = f0, .gain = 1, .offset = 0 } };
     try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
-    stages[1] = .{ .affine_map = .{ .source = ch0, .destination = f0, .gain = std.math.nan(F), .offset = 0 } };
+    stages[1] = .{ .affine_map = .{ .register_source = ch0, .register_dest = f0, .gain = std.math.nan(F), .offset = 0 } };
     try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
     stages[1] = original[1];
 
-    stages[2] = .{ .lut_map = .{ .source = f0, .destination = f1, .lookup = .{ .first = 0, .step = 0, .values = &table } } };
+    stages[2] = .{ .lut_map = .{ .register_source = f0, .register_dest = f1, .lookup = .{ .first = 0, .step = 0, .values = &table } } };
     try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
     stages[2] = original[2];
 
-    stages[3] = .{ .blend = .{ .a = ch1, .b = f1, .destination = f2, .alpha = .{ .slot = .{ .kind = .parameter, .index = 9 } } } };
+    stages[3] = .{ .blend = .{ .a = ch1, .b = f1, .register_dest = f2, .alpha = .{ .register = .{ .kind = .parameter, .index = 9 } } } };
     try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
-    stages[3] = .{ .blend = .{ .a = ch1, .b = f1, .destination = f2, .alpha = .{ .fixed = std.math.inf(F) } } };
+    stages[3] = .{ .blend = .{ .a = ch1, .b = f1, .register_dest = f2, .alpha = .{ .fixed = std.math.inf(F) } } };
     try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
     stages[3] = original[3];
 
-    stages[4] = .{ .normalise = .{ .source = ch0, .destination = p0, .components = 4 } };
+    stages[4] = .{ .normalise = .{ .register_source = ch0, .register_dest = p0, .components = 4 } };
     try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
-    stages[4] = .{ .normalise = .{ .source = ch0, .destination = ch2, .components = 3 } };
+    stages[4] = .{ .normalise = .{ .register_source = ch0, .register_dest = ch2, .components = 3 } };
     try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
-    stages[4] = .{ .normalise = .{ .source = ch0, .destination = .{ .kind = .parameter, .index = 15 }, .components = 2 } };
+    stages[4] = .{ .normalise = .{ .register_source = ch0, .register_dest = .{ .kind = .parameter, .index = 15 }, .components = 2 } };
     try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
 }

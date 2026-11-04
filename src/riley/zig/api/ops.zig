@@ -103,5 +103,5 @@ pub const stageSource = @import("../shaderops.zig").stageSource;
 pub const identityRGB = @import("../shaderops.zig").identityRGB;
 pub const identityMulti = @import("../shaderops.zig").identityMulti;
 pub const monoToPipeSource = @import("../shaderops.zig").monoToPipeSource;
-pub const resolverIdentity = @import("../shaderops.zig").resolverIdentity;
+pub const resolverIdentity = @import("../shaderpipe.zig").resolverIdentity;
 pub const getScaleMax = @import("../imageops.zig").getScaleMax;
