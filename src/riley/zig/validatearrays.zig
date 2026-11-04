@@ -10,11 +10,6 @@ const meshtypes = @import("meshtypes.zig");
 const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
-const geomkerns = @import("geometrykernels.zig");
-const matslice = @import("matslice.zig");
-const meshpipe = @import("meshpipeline.zig");
-const ndarray = @import("ndarray.zig");
-const shaderops = @import("shaderops.zig");
 
 const F = buildconfig.F;
 

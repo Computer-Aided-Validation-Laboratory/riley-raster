@@ -8,53 +8,22 @@
 // --------------------------------------------------------------------------------------
 const cameratypes = @import("cameratypes.zig");
 const buildconfig = @import("buildconfig.zig");
-const common = @import("cameraprojops_common.zig");
-const cm = @import("cameramodels.zig");
-const camera_scalar = @import("cameraprojops_scalar.zig");
-const camera_simd = @import("cameraprojops_simd.zig");
+const cameraprojops_common = @import("cameraprojops_common.zig");
+const cameraprojops_scalar = @import("cameraprojops_scalar.zig");
+const cameraprojops_simd = @import("cameraprojops_simd.zig");
 
 const cfg = buildconfig.config;
 const F = cfg.precision;
-const camera_impl = if (cfg.simd == .on) camera_simd else camera_scalar;
+const camera_impl = if (cfg.simd == .on) cameraprojops_simd else cameraprojops_scalar;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const DistortModel = cm.DistortModel;
-pub const DistortParams = cm.DistortParams;
-pub const BrownCon = cm.BrownCon;
-pub const BrownConExt = cm.BrownConExt;
-pub const BrownConParams = cm.BrownConParams;
-pub const BrownConExtParams = cm.BrownConExtParams;
-pub const DistortCoords = cm.DistortCoords;
-pub const PolyMode = cm.PolyMode;
-pub const polyTermCount = cm.polyTermCount;
-pub const POLY_MAX_DEGREE = cm.POLY_MAX_DEGREE;
-pub const PolyMap = cm.PolyMap;
-pub const BrownConPoly = cm.BrownConPoly;
-pub const BrownConExtPoly = cm.BrownConExtPoly;
-pub const BrownConExtPolyParams = cm.BrownConExtPolyParams;
-pub const DistortFordJacResult = cm.DistortFordJacResult;
-pub const fordDistortModelScal = cm.fordDistortModelScal;
-pub const invDistortModelScal = cm.invDistortModelScal;
-pub const fordDistortSIMD = cm.fordDistortSIMD;
-pub const fordDistortWithJacSIMD = cm.fordDistortWithJacSIMD;
-pub const invDistortSIMD = cm.invDistortSIMD;
-pub const fordDistortModelSIMD = cm.fordDistortModelSIMD;
-pub const invDistortModelSIMD = cm.invDistortModelSIMD;
-pub const SeparablePSF = cm.SeparablePSF;
-pub const PixelBoxPSF = cm.PixelBoxPSF;
-pub const GaussianPSF = cm.GaussianPSF;
-pub const AnisotropicGaussianPSF = cm.AnisotropicGaussianPSF;
-pub const PointSpreadFunc = cm.PointSpreadFunc;
-pub const PreparedPSFMode = cm.PreparedPSFMode;
-pub const PreparedPSF = cm.PreparedPSF;
-
 pub const CameraPrepared = camera_impl.CameraPrepared;
-pub const allCamerasSharePixels = common.allCamerasSharePixels;
+pub const allCamerasSharePixels = cameraprojops_common.allCamerasSharePixels;
 pub const isNoDistort = cameratypes.isNoDistort;
-pub const calcPixelCenterCoord = common.calcPixelCenterCoord;
-pub const storeIdealPairScratch = common.storeIdealPairScratch;
-pub const getIdealXPlaneScratch = common.getIdealXPlaneScratch;
-pub const getIdealYPlaneScratch = common.getIdealYPlaneScratch;
+pub const calcPixelCenterCoord = cameraprojops_common.calcPixelCenterCoord;
+pub const storeIdealPairScratch = cameraprojops_common.storeIdealPairScratch;
+pub const getIdealXPlaneScratch = cameraprojops_common.getIdealXPlaneScratch;
+pub const getIdealYPlaneScratch = cameraprojops_common.getIdealYPlaneScratch;

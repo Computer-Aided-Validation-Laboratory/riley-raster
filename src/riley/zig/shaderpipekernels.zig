@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 
+const geometrykernels = @import("geometrykernels.zig");
+const matslice = @import("matslice.zig");
 const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
@@ -17,10 +19,8 @@ const VecSB = buildconfig.VecSB;
 const shaderops = @import("shaderops.zig");
 const meshhit = @import("meshhit.zig");
 const shaderpipe = @import("shaderpipe.zig");
-const shadekerns = @import("shaderkernels.zig");
+const shaderkernels = @import("shaderkernels.zig");
 const simdops = @import("simdops.zig");
-const CoordSpace = @import("geometrykernels.zig").CoordSpace;
-const MatSlice = @import("matslice.zig").MatSlice;
 
 pub fn LocalPipeBuff(comptime N: usize) type {
     return struct {
@@ -110,7 +110,7 @@ pub fn LocalPipeBuff(comptime N: usize) type {
 
         pub inline fn completeHit(
             self: *const @This(),
-            comptime coord_space: CoordSpace,
+            comptime coord_space: geometrykernels.CoordSpace,
             base: meshhit.MeshHit(N),
             selection: meshhit.MeshHitSelection,
         ) meshhit.MeshHit(N) {
@@ -134,7 +134,7 @@ pub fn LocalPipeBuff(comptime N: usize) type {
 
         pub inline fn completeHitSIMD(
             self: *const @This(),
-            comptime coord_space: CoordSpace,
+            comptime coord_space: geometrykernels.CoordSpace,
             mask: VecSB,
             weights: [N]VecSF,
             nodes_inv_z: [N]VecSF,
@@ -191,19 +191,19 @@ pub fn PipeKernel(comptime N: usize) type {
         pub const Hit = meshhit.MeshHit(N);
 
         pub fn shade(
-            comptime coord_space: CoordSpace,
+            comptime coord_space: geometrykernels.CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
             interp: meshhit.MeshHit(N),
             pipe_buf: *const LocalBuff,
             pipe: *const shadertypes.ShaderPipePrepared,
-            spx_image_scratch: *MatSlice(F),
+            spx_image_scratch: *matslice.MatSlice(F),
         ) void {
             const hit = pipe_buf.completeHit(coord_space, interp, pipe.hit_geometry.selection);
 
             var outputs: shaderpipe.ScalarOutputs = .{};
 
             var source_values: [shaderpipe.max_channels]F = @splat(0);
-            var source_output = MatSlice(F).init(&source_values, shaderpipe.max_channels, 1);
+            var source_output = matslice.MatSlice(F).init(&source_values, shaderpipe.max_channels, 1);
 
             var stage_ctx = ctx_shade;
             stage_ctx.scratch_idx = 0;
@@ -262,7 +262,7 @@ pub fn PipeKernel(comptime N: usize) type {
         }
 
         pub fn shadeSIMD(
-            comptime coord_space: CoordSpace,
+            comptime coord_space: geometrykernels.CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
             v_mask_active: VecSB,
             v_weights: [N]VecSF,
@@ -272,7 +272,7 @@ pub fn PipeKernel(comptime N: usize) type {
             v_subpx_z: VecSF,
             pipe_buf: *const LocalBuff,
             pipe: *const shadertypes.ShaderPipePrepared,
-            spx_image_scratch: *MatSlice(F),
+            spx_image_scratch: *matslice.MatSlice(F),
         ) void {
             const hit = pipe_buf.completeHitSIMD(
                 coord_space,
@@ -378,16 +378,16 @@ fn sourceChannels(source: shadertypes.PipeSourcePrepared) u8 {
 
 fn shadeSource(
     comptime N: usize,
-    comptime coord_space: CoordSpace,
+    comptime coord_space: geometrykernels.CoordSpace,
     ctx: shadertypes.ShadeContext,
     interp: meshhit.MeshHit(N),
     buf: *const shadertypes.LocalShaderBuff(N),
     source: *const shadertypes.PipeSourcePrepared,
-    scratch: *MatSlice(F),
+    scratch: *matslice.MatSlice(F),
 ) void {
     switch (source.*) {
         .nodal => |*s| {
-            shadekerns.NodalKernel(N).shade(
+            shaderkernels.NodalKernel(N).shade(
                 coord_space,
                 ctx,
                 interp.core(),
@@ -397,7 +397,7 @@ fn shadeSource(
             );
         },
         .tex_multi_f => |*s| {
-            shadekerns.TexMultiKernel(N, F).shade(
+            shaderkernels.TexMultiKernel(N, F).shade(
                 coord_space,
                 ctx,
                 interp.core(),
@@ -407,7 +407,7 @@ fn shadeSource(
             );
         },
         .tex_u8 => |*s| {
-            shadekerns.TexKernel(N, u8, 1).shade(
+            shaderkernels.TexKernel(N, u8, 1).shade(
                 coord_space,
                 ctx,
                 interp.core(),
@@ -417,7 +417,7 @@ fn shadeSource(
             );
         },
         .tex_u16 => |*s| {
-            shadekerns.TexKernel(N, u16, 1).shade(
+            shaderkernels.TexKernel(N, u16, 1).shade(
                 coord_space,
                 ctx,
                 interp.core(),
@@ -427,7 +427,7 @@ fn shadeSource(
             );
         },
         .tex_f => |*s| {
-            shadekerns.TexKernel(N, F, 1).shade(
+            shaderkernels.TexKernel(N, F, 1).shade(
                 coord_space,
                 ctx,
                 interp.core(),
@@ -437,7 +437,7 @@ fn shadeSource(
             );
         },
         .tex_rgb_u8 => |*s| {
-            shadekerns.TexKernel(N, u8, 3).shade(
+            shaderkernels.TexKernel(N, u8, 3).shade(
                 coord_space,
                 ctx,
                 interp.core(),
@@ -447,7 +447,7 @@ fn shadeSource(
             );
         },
         .tex_rgb_u16 => |*s| {
-            shadekerns.TexKernel(N, u16, 3).shade(
+            shaderkernels.TexKernel(N, u16, 3).shade(
                 coord_space,
                 ctx,
                 interp.core(),
@@ -457,7 +457,7 @@ fn shadeSource(
             );
         },
         .tex_rgb_f => |*s| {
-            shadekerns.TexKernel(N, F, 3).shade(
+            shaderkernels.TexKernel(N, F, 3).shade(
                 coord_space,
                 ctx,
                 interp.core(),
@@ -467,7 +467,7 @@ fn shadeSource(
             );
         },
         .func => |*s| {
-            shadekerns.FuncKernel(N, 1).shade(
+            shaderkernels.FuncKernel(N, 1).shade(
                 coord_space,
                 ctx,
                 interp,
@@ -477,7 +477,7 @@ fn shadeSource(
             );
         },
         .func_rgb => |*s| {
-            shadekerns.FuncKernel(N, 3).shade(
+            shaderkernels.FuncKernel(N, 3).shade(
                 coord_space,
                 ctx,
                 interp,
@@ -487,7 +487,7 @@ fn shadeSource(
             );
         },
         .func_multi => |*s| {
-            shadekerns.FuncKernel(N, 0).shade(
+            shaderkernels.FuncKernel(N, 0).shade(
                 coord_space,
                 ctx,
                 interp,
@@ -501,7 +501,7 @@ fn shadeSource(
 
 fn shadeSourceSIMD(
     comptime N: usize,
-    comptime coord_space: CoordSpace,
+    comptime coord_space: geometrykernels.CoordSpace,
     ctx: shadertypes.ShadeContext,
     mask: VecSB,
     weights: [N]VecSF,
@@ -516,7 +516,7 @@ fn shadeSourceSIMD(
 ) void {
     switch (source.*) {
         .nodal => |*s| {
-            shadekerns.NodalKernel(N).shadeSIMDTo(
+            shaderkernels.NodalKernel(N).shadeSIMDTo(
                 coord_space,
                 ctx,
                 mask,
@@ -531,7 +531,7 @@ fn shadeSourceSIMD(
             );
         },
         .tex_multi_f => |*s| {
-            shadekerns.TexMultiKernel(N, F).shadeSIMDTo(
+            shaderkernels.TexMultiKernel(N, F).shadeSIMDTo(
                 coord_space,
                 ctx,
                 mask,
@@ -546,7 +546,7 @@ fn shadeSourceSIMD(
             );
         },
         .tex_u8 => |*s| {
-            shadekerns.TexKernel(N, u8, 1).shadeSIMDTo(
+            shaderkernels.TexKernel(N, u8, 1).shadeSIMDTo(
                 coord_space,
                 ctx,
                 mask,
@@ -561,7 +561,7 @@ fn shadeSourceSIMD(
             );
         },
         .tex_u16 => |*s| {
-            shadekerns.TexKernel(N, u16, 1).shadeSIMDTo(
+            shaderkernels.TexKernel(N, u16, 1).shadeSIMDTo(
                 coord_space,
                 ctx,
                 mask,
@@ -576,7 +576,7 @@ fn shadeSourceSIMD(
             );
         },
         .tex_f => |*s| {
-            shadekerns.TexKernel(N, F, 1).shadeSIMDTo(
+            shaderkernels.TexKernel(N, F, 1).shadeSIMDTo(
                 coord_space,
                 ctx,
                 mask,
@@ -591,7 +591,7 @@ fn shadeSourceSIMD(
             );
         },
         .tex_rgb_u8 => |*s| {
-            shadekerns.TexKernel(N, u8, 3).shadeSIMDTo(
+            shaderkernels.TexKernel(N, u8, 3).shadeSIMDTo(
                 coord_space,
                 ctx,
                 mask,
@@ -606,7 +606,7 @@ fn shadeSourceSIMD(
             );
         },
         .tex_rgb_u16 => |*s| {
-            shadekerns.TexKernel(N, u16, 3).shadeSIMDTo(
+            shaderkernels.TexKernel(N, u16, 3).shadeSIMDTo(
                 coord_space,
                 ctx,
                 mask,
@@ -621,7 +621,7 @@ fn shadeSourceSIMD(
             );
         },
         .tex_rgb_f => |*s| {
-            shadekerns.TexKernel(N, F, 3).shadeSIMDTo(
+            shaderkernels.TexKernel(N, F, 3).shadeSIMDTo(
                 coord_space,
                 ctx,
                 mask,
@@ -636,7 +636,7 @@ fn shadeSourceSIMD(
             );
         },
         .func => |*s| {
-            shadekerns.FuncKernel(N, 1).shadeSIMDToHit(
+            shaderkernels.FuncKernel(N, 1).shadeSIMDToHit(
                 coord_space,
                 ctx,
                 mask,
@@ -652,7 +652,7 @@ fn shadeSourceSIMD(
             );
         },
         .func_rgb => |*s| {
-            shadekerns.FuncKernel(N, 3).shadeSIMDToHit(
+            shaderkernels.FuncKernel(N, 3).shadeSIMDToHit(
                 coord_space,
                 ctx,
                 mask,
@@ -668,7 +668,7 @@ fn shadeSourceSIMD(
             );
         },
         .func_multi => |*s| {
-            shadekerns.FuncKernel(N, 0).shadeSIMDToHit(
+            shaderkernels.FuncKernel(N, 0).shadeSIMDToHit(
                 coord_space,
                 ctx,
                 mask,

@@ -11,19 +11,15 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
-const Timestamp = std.Io.Clock.Timestamp;
 const ndarray = @import("ndarray.zig");
-const cam = @import("cameraprojops.zig");
-const iio = @import("imageio.zig");
-const rastcfg = @import("rasterconfig.zig");
+const cameraprojops = @import("cameraprojops.zig");
+const imageio = @import("imageio.zig");
+const rasterconfig = @import("rasterconfig.zig");
 const report = @import("report.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
-
-pub const RasterConfig = rastcfg.RasterConfig;
-pub const FrameReportStorage = report.FrameReportStorage;
 
 pub const SaveSlotState = enum {
     free,
@@ -35,7 +31,7 @@ pub const SaveSlotState = enum {
 pub const SaveSlot = struct {
     state: SaveSlotState = .free,
     frame_arr: ndarray.NDArray(F),
-    camera: ?*const cam.CameraPrepared = null,
+    camera: ?*const cameraprojops.CameraPrepared = null,
     camera_idx: usize = 0,
     frame_idx: usize = 0,
     cameras_num: usize = 0,
@@ -44,19 +40,19 @@ pub const SaveSlot = struct {
     out_dir: ?std.Io.Dir = null,
     out_dir_path: ?[]const u8 = null,
     bench_capture: ?[]report.FrameBenchCapture = null,
-    report_storage: FrameReportStorage = .{ .off = .{} },
+    report_storage: report.FrameReportStorage = .{ .off = .{} },
     frame_times: report.FrameTimes = .{},
     total_nodes_num: usize = 0,
     total_elems_num: usize = 0,
     total_elems_in_image: usize = 0,
     nodes_per_elem: F = 0.0,
     actual_tile_size: u16 = 1,
-    time_start_frame: ?Timestamp = null,
+    time_start_frame: ?std.Io.Clock.Timestamp = null,
 
     pub fn resetReportStorage(
         self: *SaveSlot,
         outer_alloc: std.mem.Allocator,
-        config: RasterConfig,
+        config: rasterconfig.RasterConfig,
     ) void {
         _ = outer_alloc;
         _ = config;
@@ -95,7 +91,7 @@ pub const SaveSlotBuff = struct {
 
 pub const SaveOverlap = struct {
     save_io: std.Io,
-    config: RasterConfig,
+    config: rasterconfig.RasterConfig,
     enabled_flag: bool,
     arena: std.heap.ArenaAllocator,
     slot_buff: ?SaveSlotBuff = null,
@@ -105,9 +101,9 @@ pub const SaveOverlap = struct {
     pub fn initMaybe(
         outer_alloc: std.mem.Allocator,
         save_io: std.Io,
-        cameras: []const cam.CameraPrepared,
+        cameras: []const cameraprojops.CameraPrepared,
         num_fields: u8,
-        config: RasterConfig,
+        config: rasterconfig.RasterConfig,
         is_enabled: bool,
     ) !SaveOverlap {
         var session = SaveOverlap{
@@ -186,7 +182,7 @@ pub const SaveOverlap = struct {
         io: std.Io,
         slot: *SaveSlot,
         meta: RenderedFrameMeta,
-        report_storage: *FrameReportStorage,
+        report_storage: *report.FrameReportStorage,
         prep_meshes: []const meshtypes.MeshPrepared,
     ) !void {
         const coordinator = self.coordinator orelse unreachable;
@@ -268,7 +264,7 @@ pub const SaveOverlap = struct {
 };
 
 pub const RenderedFrameMeta = struct {
-    camera: *const cam.CameraPrepared,
+    camera: *const cameraprojops.CameraPrepared,
     camera_idx: usize,
     frame_idx: usize,
     cameras_num: usize,
@@ -281,12 +277,12 @@ pub const RenderedFrameMeta = struct {
     total_elems_num: usize,
     total_elems_in_image: usize,
     actual_tile_size: u16,
-    time_start_frame: ?Timestamp,
+    time_start_frame: ?std.Io.Clock.Timestamp,
 };
 
 pub fn initSaveSlots(
     save_alloc: std.mem.Allocator,
-    cameras: []const cam.CameraPrepared,
+    cameras: []const cameraprojops.CameraPrepared,
     num_fields: u8,
     slot_count: usize,
 ) !SaveSlotBuff {
@@ -344,7 +340,7 @@ pub fn publishRenderedSlot(
     coordinator: *SaveCoordinator,
     slot: *SaveSlot,
     meta: RenderedFrameMeta,
-    report_storage: *FrameReportStorage,
+    report_storage: *report.FrameReportStorage,
     prep_meshes: []const meshtypes.MeshPrepared,
 ) !void {
     slot.camera = meta.camera;
@@ -377,14 +373,14 @@ pub fn completeSaveSlot(
     save_io: std.Io,
     coordinator: *SaveCoordinator,
     slot_idx: usize,
-    config: RasterConfig,
+    config: rasterconfig.RasterConfig,
 ) !void {
     var slot = &coordinator.slots[slot_idx];
     const time_start_save = report.timestamp(save_io, config.report_perf);
     std.debug.assert(slot.camera != null);
     std.debug.assert(slot.pixels_num[0] > 0);
     std.debug.assert(slot.pixels_num[1] > 0);
-    try iio.saveImages(
+    try imageio.saveImages(
         save_io,
         slot.out_dir,
         slot.camera_idx,
@@ -441,7 +437,7 @@ pub fn saveWorkerLoop(
     outer_alloc: std.mem.Allocator,
     save_io: std.Io,
     coordinator: *SaveCoordinator,
-    config: RasterConfig,
+    config: rasterconfig.RasterConfig,
 ) void {
     while (true) {
         coordinator.mutex.lockUncancelable(save_io);

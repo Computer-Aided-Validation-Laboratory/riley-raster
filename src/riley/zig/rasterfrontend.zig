@@ -6,27 +6,27 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const hulladaptive = @import("hulladaptive.zig");
+const hullmultiroot = @import("hullmultiroot.zig");
+const rotation = @import("rotation.zig");
+const meshtypes = @import("meshtypes.zig");
+const cameramodels = @import("cameramodels.zig");
 const std = @import("std");
 const vecstack = @import("vecstack.zig");
-const vsd = @import("vecsimd.zig");
+const vecsimd = @import("vecsimd.zig");
 const ndarray = @import("ndarray.zig");
-const meshio = @import("meshio.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const tol = buildconfig.config.tol;
-const cam = @import("cameraprojops.zig");
+const cameraprojops = @import("cameraprojops.zig");
 const shapefun = @import("shapefun.zig");
-const matrix = @import("matstack.zig");
-const rastcfg = @import("rasterconfig.zig");
+const matstack = @import("matstack.zig");
+const rasterconfig = @import("rasterconfig.zig");
 
-const geomkerns = @import("geometrykernels.zig");
-const MeshType = geomkerns.MeshType;
-const HullAdaptive = @import("hulladaptive.zig").HullAdaptive;
-const HullMultiRoot = @import("hullmultiroot.zig").HullMultiRoot;
-const shaderops = @import("shaderops.zig");
-const distbounds = @import("distortbounds.zig");
-const elemtilebin = @import("elemtilebinning.zig");
-const edgeops = @import("hulledge.zig");
+const geometrykernels = @import("geometrykernels.zig");
+const distortbounds = @import("distortbounds.zig");
+const elemtilebinning = @import("elemtilebinning.zig");
+const hulledge = @import("hulledge.zig");
 
 pub const ElemRootClass = enum(u8) {
     one_root,
@@ -72,18 +72,18 @@ pub const ElemBBox = struct {
 
 pub const DistortElemBBox = struct {
     box_ints: ElemBBox,
-    box_floats: distbounds.DistortBounds,
+    box_floats: distortbounds.DistortBounds,
 };
 
 pub fn calcVisibleDistortBBox(
-    comptime MT: MeshType,
-    camera: *const cam.CameraPrepared,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
+    comptime MT: geometrykernels.MeshType,
+    camera: *const cameraprojops.CameraPrepared,
+    coords_nodes: *const meshtypes.Coords,
+    connect: *const meshtypes.Connect,
     elem_idx: usize,
-    hull_mode: rastcfg.HullMode,
+    hull_mode: rasterconfig.HullMode,
     raster_halo_px: u16,
-    ideal_sensor: distbounds.DistortBounds,
+    ideal_sensor: distortbounds.DistortBounds,
     edge_spacing_px: F,
 ) ?DistortElemBBox {
     const N = comptime MT.getNodesNum();
@@ -93,19 +93,19 @@ pub fn calcVisibleDistortBBox(
         return null;
     }
 
-    var ideal_bounds = distbounds.DistortBounds.initEmpty();
+    var ideal_bounds = distortbounds.DistortBounds.initEmpty();
     if (comptime MT == .tri3 or MT == .tri3opt) {
         const nodes = RasterCoords2D(N){ .x = coords.x, .y = coords.y };
 
         if (isTri3BackfaceRaster(nodes)) return null;
 
-        ideal_bounds = distbounds.DistortBounds.fromCoords2D(N, nodes);
+        ideal_bounds = distortbounds.DistortBounds.fromCoords2D(N, nodes);
     } else {
         const nodes = projectClipToIdealRaster(N, camera, coords);
         const root_class = classifyHighOrdFacing(N, nodes) orelse return null;
 
         if (root_class == .multi_root) {
-            const points = HullMultiRoot.buildPointsFromClip(N, camera, coords);
+            const points = hullmultiroot.HullMultiRoot.buildPointsFromClip(N, camera, coords);
 
             if (points.count < 3) return null;
 
@@ -115,19 +115,19 @@ pub fn calcVisibleDistortBBox(
         } else {
             const NH = comptime MT.getNumHullPoints();
 
-            const points = HullAdaptive.buildPointsFromClip(
+            const points = hulladaptive.HullAdaptive.buildPointsFromClip(
                 N,
                 camera,
                 coords,
                 hull_mode,
             );
-            ideal_bounds = distbounds.DistortBounds.fromCoords2D(NH, points);
+            ideal_bounds = distortbounds.DistortBounds.fromCoords2D(NH, points);
         }
     }
 
     const walk = ideal_bounds.intersect(ideal_sensor) orelse return null;
 
-    var observed = distbounds.sampleRectEdges(camera, walk, edge_spacing_px);
+    var observed = distortbounds.sampleRectEdges(camera, walk, edge_spacing_px);
 
     if (!isOnScreen(
         camera,
@@ -167,8 +167,8 @@ pub fn calcVisibleDistortBBox(
 }
 
 pub const RasterContext = struct {
-    camera: *const cam.CameraPrepared,
-    config: rastcfg.RasterConfig,
+    camera: *const cameraprojops.CameraPrepared,
+    config: rasterconfig.RasterConfig,
     frame_idx: usize,
     tile_size: u16,
 };
@@ -178,8 +178,8 @@ pub const RasterContext = struct {
 //------------------------------------------------------------------------------------------
 
 pub fn nodesToRasterRangeInPlace(
-    camera: *const cam.CameraPrepared,
-    coords_nodes: *meshio.Coords,
+    camera: *const cameraprojops.CameraPrepared,
+    coords_nodes: *meshtypes.Coords,
     node_start: usize,
     node_end: usize,
 ) void {
@@ -193,8 +193,8 @@ pub fn nodesToRasterRangeInPlace(
 }
 
 pub fn nodesToClipPxLengRangeInPlace(
-    camera: *const cam.CameraPrepared,
-    coords_nodes: *meshio.Coords,
+    camera: *const cameraprojops.CameraPrepared,
+    coords_nodes: *meshtypes.Coords,
     node_start: usize,
     node_end: usize,
 ) void {
@@ -210,10 +210,10 @@ pub fn nodesToClipPxLengRangeInPlace(
 pub fn worldToRasterSIMD(
     comptime N: usize,
     comptime T: type,
-    coord_world: vsd.Vec3SIMD(N, T),
-    camera: *const cam.CameraPrepared,
-) vsd.Vec3SIMD(N, T) {
-    var coord_raster: vsd.Vec3SIMD(N, T) = vsd.mat44Mul(
+    coord_world: vecsimd.Vec3SIMD(N, T),
+    camera: *const cameraprojops.CameraPrepared,
+) vecsimd.Vec3SIMD(N, T) {
+    var coord_raster: vecsimd.Vec3SIMD(N, T) = vecsimd.mat44Mul(
         N,
         T,
         camera.world_to_cam_mat,
@@ -245,26 +245,26 @@ pub fn worldToRasterSIMD(
 pub fn elemsToRasterSIMD(
     comptime N: usize,
     comptime T: type,
-    camera: *const cam.CameraPrepared,
+    camera: *const cameraprojops.CameraPrepared,
     dim_elem: usize,
     elem_coord_arr: *ndarray.NDArray(T),
 ) !void {
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const coords_world: vsd.Vec3SIMD(N, T) = try vsd.loadElemVec3SIMD(
+        const coords_world: vecsimd.Vec3SIMD(N, T) = try vecsimd.loadElemVec3SIMD(
             N,
             T,
             elem_coord_arr,
             ee,
         );
         const coords_raster = worldToRasterSIMD(N, T, coords_world, camera);
-        try vsd.saveElemVec3SIMD(N, T, elem_coord_arr, ee, coords_raster);
+        try vecsimd.saveElemVec3SIMD(N, T, elem_coord_arr, ee, coords_raster);
     }
 }
 
 pub fn elemsToClipPxLengSIMD(
     comptime N: usize,
     comptime T: type,
-    camera: *const cam.CameraPrepared,
+    camera: *const cameraprojops.CameraPrepared,
     dim_elem: usize,
     elem_coord_arr: *ndarray.NDArray(T),
 ) !void {
@@ -274,13 +274,13 @@ pub fn elemsToClipPxLengSIMD(
         @as(F, @floatFromInt(camera.pixels_num[1])) / camera.image_dims[1];
 
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const coords_world = try vsd.loadElemVec3SIMD(
+        const coords_world = try vecsimd.loadElemVec3SIMD(
             N,
             F,
             elem_coord_arr,
             ee,
         );
-        var coords_raster = vsd.mat44Mul(
+        var coords_raster = vecsimd.mat44Mul(
             N,
             F,
             camera.world_to_cam_mat,
@@ -288,12 +288,12 @@ pub fn elemsToClipPxLengSIMD(
         );
         coords_raster.x *= @splat(x_scale);
         coords_raster.y *= @splat(-y_scale);
-        try vsd.saveElemVec3SIMD(
+        try vecsimd.saveElemVec3SIMD(
             N,
             F,
             elem_coord_arr,
             ee,
-            vsd.Vec3SIMD(N, F){
+            vecsimd.Vec3SIMD(N, F){
                 .x = coords_raster.x,
                 .y = coords_raster.y,
                 .z = -coords_raster.z,
@@ -307,20 +307,20 @@ pub fn elemsToClipPxLengSIMD(
 //------------------------------------------------------------------------------------------
 
 pub fn calcVisibleNodeBBoxTri3(
-    comptime MT: MeshType,
-    camera: *const cam.CameraPrepared,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
+    comptime MT: geometrykernels.MeshType,
+    camera: *const cameraprojops.CameraPrepared,
+    coords_nodes: *const meshtypes.Coords,
+    connect: *const meshtypes.Connect,
     elem_idx: usize,
 ) ?ElemBBox {
     return calcVisibleNodeBBoxTri3WithHalo(MT, camera, coords_nodes, connect, elem_idx, 0);
 }
 
 pub fn calcVisibleNodeBBoxTri3WithHalo(
-    comptime MT: MeshType,
-    camera: *const cam.CameraPrepared,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
+    comptime MT: geometrykernels.MeshType,
+    camera: *const cameraprojops.CameraPrepared,
+    coords_nodes: *const meshtypes.Coords,
+    connect: *const meshtypes.Connect,
     elem_idx: usize,
     raster_halo_px: u16,
 ) ?ElemBBox {
@@ -364,12 +364,12 @@ pub fn calcVisibleNodeBBoxTri3WithHalo(
 }
 
 pub fn calcVisibleNodeBBoxHighOrd(
-    comptime MT: MeshType,
-    camera: *const cam.CameraPrepared,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
+    comptime MT: geometrykernels.MeshType,
+    camera: *const cameraprojops.CameraPrepared,
+    coords_nodes: *const meshtypes.Coords,
+    connect: *const meshtypes.Connect,
     elem_idx: usize,
-    hull_mode: rastcfg.HullMode,
+    hull_mode: rasterconfig.HullMode,
 ) ?ElemBBox {
     return calcVisibleNodeBBoxHighOrdWithHalo(
         MT,
@@ -383,12 +383,12 @@ pub fn calcVisibleNodeBBoxHighOrd(
 }
 
 pub fn calcVisibleNodeBBoxHighOrdWithHalo(
-    comptime MT: MeshType,
-    camera: *const cam.CameraPrepared,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
+    comptime MT: geometrykernels.MeshType,
+    camera: *const cameraprojops.CameraPrepared,
+    coords_nodes: *const meshtypes.Coords,
+    connect: *const meshtypes.Connect,
     elem_idx: usize,
-    hull_mode: rastcfg.HullMode,
+    hull_mode: rasterconfig.HullMode,
     raster_halo_px: u16,
 ) ?ElemBBox {
     comptime {
@@ -413,16 +413,16 @@ pub fn calcVisibleNodeBBoxHighOrdWithHalo(
         return null;
 
     if (root_class == .multi_root) {
-        const points = HullMultiRoot.buildPointsFromClip(N, camera, coords_clip);
+        const points = hullmultiroot.HullMultiRoot.buildPointsFromClip(N, camera, coords_clip);
         if (points.count < 3) return null;
-        var bounds = distbounds.DistortBounds.initEmpty();
+        var bounds = distortbounds.DistortBounds.initEmpty();
         for (0..points.count) |nn| {
             bounds.include(points.x[nn], points.y[nn]);
         }
         return calcBBoxFromBounds(camera, elem_idx, bounds, raster_halo_px);
     }
 
-    const hull_points_ideal = HullAdaptive.buildPointsFromClip(
+    const hull_points_ideal = hulladaptive.HullAdaptive.buildPointsFromClip(
         N,
         camera,
         coords_clip,
@@ -457,8 +457,8 @@ pub fn ElemCoords(comptime N: usize) type {
 
 pub fn gatherElemNodeCoords(
     comptime N: usize,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
+    coords_nodes: *const meshtypes.Coords,
+    connect: *const meshtypes.Connect,
     elem_idx: usize,
 ) ElemCoords(N) {
     var coords_elem: ElemCoords(N) = undefined;
@@ -503,12 +503,12 @@ pub fn loadElemVec3Slices(
 //------------------------------------------------------------------------------------------
 
 pub fn prepareVisibleAdaptiveHullsRange(
-    comptime MT: MeshType,
-    camera: *const cam.CameraPrepared,
+    comptime MT: geometrykernels.MeshType,
+    camera: *const cameraprojops.CameraPrepared,
     elem_coords: *const ndarray.NDArray(F),
     hull_adaptive: *ndarray.NDArray(F),
     root_classes: []const ElemRootClass,
-    hull_mode: rastcfg.HullMode,
+    hull_mode: rasterconfig.HullMode,
     visible_start: usize,
     visible_end: usize,
 ) void {
@@ -529,7 +529,7 @@ pub fn prepareVisibleAdaptiveHullsRange(
             coords_elem.z[nn] = sz[nn];
         }
 
-        const hull_points = HullAdaptive.buildPointsFromClip(
+        const hull_points = hulladaptive.HullAdaptive.buildPointsFromClip(
             N,
             camera,
             coords_elem,
@@ -543,10 +543,10 @@ pub fn prepareVisibleAdaptiveHullsRange(
 }
 
 fn transformWorldNodeToRaster(
-    camera: *const cam.CameraPrepared,
+    camera: *const cameraprojops.CameraPrepared,
     coord_world: vecstack.Vec3T(F),
 ) vecstack.Vec3T(F) {
-    var coord_raster = matrix.Mat44Ops.mulVec3(F, camera.world_to_cam_mat, coord_world);
+    var coord_raster = matstack.Mat44Ops.mulVec3(F, camera.world_to_cam_mat, coord_world);
 
     coord_raster.vec[0] = camera.image_dist * coord_raster.vec[0] /
         (-coord_raster.vec[2]);
@@ -566,7 +566,7 @@ fn transformWorldNodeToRaster(
 }
 
 fn transformWorldNodeToClipPx(
-    camera: *const cam.CameraPrepared,
+    camera: *const cameraprojops.CameraPrepared,
     coord_world: vecstack.Vec3T(F),
 ) vecstack.Vec3T(F) {
     const x_scale = camera.image_dist *
@@ -574,7 +574,7 @@ fn transformWorldNodeToClipPx(
     const y_scale = camera.image_dist *
         @as(F, @floatFromInt(camera.pixels_num[1])) / camera.image_dims[1];
 
-    var coord_clip = matrix.Mat44Ops.mulVec3(F, camera.world_to_cam_mat, coord_world);
+    var coord_clip = matstack.Mat44Ops.mulVec3(F, camera.world_to_cam_mat, coord_world);
     coord_clip.vec[0] *= x_scale;
     coord_clip.vec[1] *= -y_scale;
     coord_clip.vec[2] = -coord_clip.vec[2];
@@ -608,12 +608,12 @@ fn isNodeZInvertible(
 }
 
 fn isTri3Backface(coords_elem: ElemCoords(3)) bool {
-    const signed_area = edgeops.edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
+    const signed_area = hulledge.edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
     return signed_area <= tol.culling.tri3_signed_area;
 }
 
 fn isTri3BackfaceRaster(coords_raster: RasterCoords2D(3)) bool {
-    const signed_area = edgeops.edgeFun3Slices(0, 1, 2, &coords_raster.x, &coords_raster.y);
+    const signed_area = hulledge.edgeFun3Slices(0, 1, 2, &coords_raster.x, &coords_raster.y);
     return signed_area <= tol.culling.tri3_signed_area;
 }
 
@@ -676,10 +676,10 @@ pub fn classifyHighOrdFacing(
 }
 
 pub fn classifyElemFacing(
-    comptime MT: MeshType,
-    camera: *const cam.CameraPrepared,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
+    comptime MT: geometrykernels.MeshType,
+    camera: *const cameraprojops.CameraPrepared,
+    coords_nodes: *const meshtypes.Coords,
+    connect: *const meshtypes.Connect,
     elem_idx: usize,
 ) ?ElemRootClass {
     comptime {
@@ -754,7 +754,7 @@ pub fn projectedJacDetPhysical(
 }
 
 fn isOnScreen(
-    camera: *const cam.CameraPrepared,
+    camera: *const cameraprojops.CameraPrepared,
     x_min: F,
     x_max: F,
     y_min: F,
@@ -770,7 +770,7 @@ fn isOnScreen(
 
 fn projectClipToIdealRaster(
     comptime N: usize,
-    camera: *const cam.CameraPrepared,
+    camera: *const cameraprojops.CameraPrepared,
     coords_clip: ElemCoords(N),
 ) RasterCoords2D(N) {
     const offsets = camera.calcRasterOffsets();
@@ -784,21 +784,21 @@ fn projectClipToIdealRaster(
 
 fn distortIdealRasterCoords(
     comptime N: usize,
-    camera: *const cam.CameraPrepared,
+    camera: *const cameraprojops.CameraPrepared,
     coords_ideal: RasterCoords2D(N),
 ) RasterCoords2D(N) {
     const focal_px = camera.calcFocalPx();
     const offsets = camera.calcRasterOffsets();
     var coords_distorted = coords_ideal;
 
-    if (cam.isNoDistort(camera.distort)) {
+    if (cameraprojops.isNoDistort(camera.distort)) {
         return coords_distorted;
     }
 
     for (0..N) |nn| {
         const x_ideal = (coords_ideal.x[nn] - offsets.x_off) / focal_px.fx;
         const y_ideal = (coords_ideal.y[nn] - offsets.y_off) / focal_px.fy;
-        const distorted = cam.fordDistortModelScal(
+        const distorted = cameramodels.fordDistortModelScal(
             camera.distort,
             x_ideal,
             y_ideal,
@@ -824,7 +824,7 @@ fn packHullPointsAsRasterCoords(
 
 fn calcBBoxFromRasterCoords(
     comptime N: usize,
-    camera: *const cam.CameraPrepared,
+    camera: *const cameraprojops.CameraPrepared,
     elem_idx: usize,
     coords_raster: RasterCoords2D(N),
     raster_halo_px: u16,
@@ -843,9 +843,9 @@ fn calcBBoxFromRasterCoords(
 }
 
 fn calcBBoxFromBounds(
-    camera: *const cam.CameraPrepared,
+    camera: *const cameraprojops.CameraPrepared,
     elem_idx: usize,
-    bounds: distbounds.DistortBounds,
+    bounds: distortbounds.DistortBounds,
     raster_halo_px: u16,
 ) ?ElemBBox {
     if (!isOnScreen(
@@ -890,7 +890,7 @@ pub fn boundIndMaxSigned(val: F, max: i32) i32 {
 
 fn initTestCullCamera(
     allocator: std.mem.Allocator,
-) !cam.CameraPrepared {
+) !cameraprojops.CameraPrepared {
     return try initTestCullCameraWithDistort(
         allocator,
         .{
@@ -907,18 +907,16 @@ fn initTestCullCamera(
 
 fn initTestCullCameraWithDistort(
     allocator: std.mem.Allocator,
-    distort: cam.DistortModel,
-) !cam.CameraPrepared {
-    const Vec3F = @import("vecstack.zig").Vec3F;
-    const Rotation = @import("rotation.zig").Rotation;
-    return cam.CameraPrepared.init(
+    distort: cameramodels.DistortModel,
+) !cameraprojops.CameraPrepared {
+    return cameraprojops.CameraPrepared.init(
         allocator,
         .{
             .pixels_num = .{ 10, 10 },
             .pixels_size = .{ 0.01, 0.01 },
-            .pos_world = Vec3F.initZeros(),
-            .rot_world = Rotation.init(0, 0, 0),
-            .roi_cent_world = Vec3F.initZeros(),
+            .pos_world = vecstack.Vec3F.initZeros(),
+            .rot_world = rotation.Rotation.init(0, 0, 0),
+            .roi_cent_world = vecstack.Vec3F.initZeros(),
             .focal_length = 1.0,
             .sub_sample = 1,
             .distort = distort.paramsFromModel(),
@@ -929,8 +927,8 @@ fn initTestCullCameraWithDistort(
 fn initSingleElemConnect(
     comptime N: usize,
     allocator: std.mem.Allocator,
-) !meshio.Connect {
-    var connect = try meshio.Connect.initAlloc(allocator, 1, N);
+) !meshtypes.Connect {
+    var connect = try meshtypes.Connect.initAlloc(allocator, 1, N);
     for (0..N) |nn| {
         connect.table_mem[nn] = nn;
     }
@@ -943,8 +941,8 @@ fn initElemCoords(
     x_coords: [N]F,
     y_coords: [N]F,
     z_coords: [N]F,
-) !meshio.Coords {
-    var coords = try meshio.Coords.initAlloc(allocator, N);
+) !meshtypes.Coords {
+    var coords = try meshtypes.Coords.initAlloc(allocator, N);
     for (0..N) |nn| {
         coords.mat.set(nn, 0, x_coords[nn]);
         coords.mat.set(nn, 1, y_coords[nn]);
@@ -957,25 +955,21 @@ fn initElemCoords(
 // Tests
 // --------------------------------------------------------------------------------------
 
-fn initTestCullCameraManual(distort: cam.DistortModel) cam.CameraPrepared {
-    const Vec3F = @import("vecstack.zig").Vec3F;
-    const Rotation = @import("rotation.zig").Rotation;
-    const Mat44F = @import("matstack.zig").Mat44F;
-
+fn initTestCullCameraManual(distort: cameramodels.DistortModel) cameraprojops.CameraPrepared {
     return .{
         .pixels_num = .{ 10, 10 },
         .pixels_size = .{ 0.01, 0.01 },
-        .pos_world = Vec3F.initZeros(),
-        .rot_world = Rotation.init(0, 0, 0),
-        .roi_cent_world = Vec3F.initZeros(),
+        .pos_world = vecstack.Vec3F.initZeros(),
+        .rot_world = rotation.Rotation.init(0, 0, 0),
+        .roi_cent_world = vecstack.Vec3F.initZeros(),
         .focal_length = 1.0,
         .sub_sample = 1,
         .background_value = 0.0,
         .sensor_size = .{ 0.1, 0.1 },
         .image_dims = .{ 0.1, 0.1 },
         .image_dist = 1.0,
-        .cam_to_world_mat = Mat44F.initIdentity(),
-        .world_to_cam_mat = Mat44F.initIdentity(),
+        .cam_to_world_mat = matstack.Mat44F.initIdentity(),
+        .world_to_cam_mat = matstack.Mat44F.initIdentity(),
         .distort = distort,
         .psf = .{ .pixel_box = .{} },
         .prep_psf = .{},
@@ -1007,7 +1001,7 @@ test "fixed scalar and SIMD bounds recover the distorted triangle interior" {
     var connect = try initSingleElemConnect(3, outer_alloc);
     defer connect.deinit(outer_alloc);
 
-    const sensor = distbounds.DistortBounds{
+    const sensor = distortbounds.DistortBounds{
         .x_min = 0.0,
         .x_max = 200.0,
         .y_min = 0.0,
@@ -1033,7 +1027,7 @@ test "fixed scalar and SIMD bounds recover the distorted triangle interior" {
     ).?;
     try std.testing.expectEqual(@as(i32, 112), old_bbox.x_min);
     try std.testing.expectEqual(@as(i32, 110), bbox.box_ints.x_min);
-    const overlap = elemtilebin.clipElemBBoxToTile(
+    const overlap = elemtilebinning.clipElemBBoxToTile(
         bbox.box_ints,
         bbox.box_floats,
         0,
@@ -1048,14 +1042,14 @@ test "fixed scalar and SIMD bounds recover the distorted triangle interior" {
     try std.testing.expect(ideal[0] > 110.0 and ideal[0] < 120.0);
     try std.testing.expect(ideal[1] > 50.0 and ideal[1] < 150.0);
 
-    const rect = distbounds.DistortBounds{
+    const rect = distortbounds.DistortBounds{
         .x_min = 110.0,
         .x_max = 120.0,
         .y_min = 50.0,
         .y_max = 150.0,
     };
-    const scalar = distbounds.sampleRectEdgesScalar(&camera, rect, 1.0);
-    const simd = distbounds.sampleRectEdgesSIMD(&camera, rect, 1.0);
+    const scalar = distortbounds.sampleRectEdgesScalar(&camera, rect, 1.0);
+    const simd = distortbounds.sampleRectEdgesSIMD(&camera, rect, 1.0);
     const bound_tol: F = if (F == f32) 1e-4 else 1e-10;
     try std.testing.expectApproxEqAbs(scalar.x_min, simd.x_min, bound_tol);
     try std.testing.expectApproxEqAbs(scalar.x_max, simd.x_max, bound_tol);
@@ -1073,14 +1067,14 @@ test "one-pixel fixed spacing resolves a smooth between-sample radial minimum" {
     } });
     camera.pixels_num = .{ 2000, 2000 };
     camera.pixels_size = .{ 0.001, 0.001 };
-    const rect = distbounds.DistortBounds{
+    const rect = distortbounds.DistortBounds{
         .x_min = 1600.0,
         .x_max = 1700.0,
         .y_min = 560.3,
         .y_max = 1560.3,
     };
-    const scalar = distbounds.sampleRectEdgesScalar(&camera, rect, 1.0);
-    const simd = distbounds.sampleRectEdgesSIMD(&camera, rect, 1.0);
+    const scalar = distortbounds.sampleRectEdgesScalar(&camera, rect, 1.0);
+    const simd = distortbounds.sampleRectEdgesSIMD(&camera, rect, 1.0);
     const exact_min: F = 1000.0 + 1000.0 * 0.6 * (1.0 + 0.3 * 0.6 * 0.6);
     const error_limit: F = if (F == f32) 0.002 else 0.0001;
     try std.testing.expect(scalar.x_min >= exact_min - error_limit);
@@ -1415,7 +1409,7 @@ test "calcVisibleNodeBBoxHighOrd noninvertible_z" {
 
 test "calcVisibleNodeBBoxTri3 distorted_on_screen_shift" {
     const allocator = std.testing.allocator;
-    const distort = cam.DistortModel{
+    const distort = cameramodels.DistortModel{
         .brown_con = .{
             .k1 = 0.05,
             .k2 = 0.0,
@@ -1454,7 +1448,7 @@ test "calcVisibleNodeBBoxTri3 distorted_on_screen_shift" {
 
 test "calcVisibleNodeBBoxTri3 distorted_off_screen_shift" {
     const allocator = std.testing.allocator;
-    const distort = cam.DistortModel{
+    const distort = cameramodels.DistortModel{
         .brown_con = .{
             .k1 = 0.0,
             .k2 = 0.0,
@@ -1499,7 +1493,7 @@ test "calcVisibleNodeBBoxTri3 distorted_off_screen_shift" {
 }
 
 test "high_order_distorted_hull_shift" {
-    const distort = cam.DistortModel{
+    const distort = cameramodels.DistortModel{
         .brown_con = .{
             .k1 = 0.0,
             .k2 = 0.0,
@@ -1517,7 +1511,7 @@ test "high_order_distorted_hull_shift" {
         .z = .{ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 },
     };
 
-    const hull_points_ideal = HullAdaptive.buildPointsFromClip(
+    const hull_points_ideal = hulladaptive.HullAdaptive.buildPointsFromClip(
         6,
         &camera,
         coords_clip,
@@ -1542,7 +1536,7 @@ test "high_order_distorted_hull_shift" {
 
 test "calcVisibleNodeBBoxHighOrd distorted_off_screen_shift" {
     const allocator = std.testing.allocator;
-    const distort = cam.DistortModel{
+    const distort = cameramodels.DistortModel{
         .brown_con = .{
             .k1 = 0.2,
             .k2 = 0.0,
@@ -1578,7 +1572,7 @@ test "calcVisibleNodeBBoxHighOrd distorted_off_screen_shift" {
 
 test "calcVisibleNodeBBoxHighOrd backface_uses_ideal_pinhole" {
     const allocator = std.testing.allocator;
-    const distort = try cam.DistortModel.init(.{
+    const distort = try cameramodels.DistortModel.init(.{
         .brown_con_ext = .{
             .k1 = -0.2,
             .k2 = 0.05,

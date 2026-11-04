@@ -6,24 +6,22 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
-const cfg = @import("buildconfig.zig").config;
-const common_impl = @import("textureops_common.zig");
-const simd_impl = @import("textureops_simd.zig");
-const impl = if (cfg.simd == .on) simd_impl else common_impl;
+const textureops_common = @import("textureops_common.zig");
+const textureops_simd = @import("textureops_simd.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub const lanczos2Coeff = common_impl.lanczos2Coeff;
-pub const texelToFloat = common_impl.texelToFloat;
+pub const lanczos2Coeff = textureops_common.lanczos2Coeff;
+pub const texelToFloat = textureops_common.texelToFloat;
 
-pub const sampScal = impl.sampScal;
-pub const sampGrey = impl.sampGrey;
-pub const sampOneLane = simd_impl.sampOneLane;
-pub const sampWide = simd_impl.sampWide;
-pub const sampLanes = simd_impl.sampLanes;
-pub const sampLanesTri3 = simd_impl.sampLanesTri3;
+pub const sampScal = textureops_common.sampScal;
+pub const sampGrey = textureops_common.sampGrey;
+pub const sampOneLane = textureops_simd.sampOneLane;
+pub const sampWide = textureops_simd.sampWide;
+pub const sampLanes = textureops_simd.sampLanes;
+pub const sampLanesTri3 = textureops_simd.sampLanesTri3;
 pub const sampleScal = sampScal;
 pub const sampleGreyscale = sampGrey;
 pub const sampleOneLane = sampOneLane;

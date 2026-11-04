@@ -9,6 +9,7 @@
 
 // Public API entry point for `@import("riley")`.
 
+const shaderfunc = @import("../shaderfunc.zig");
 pub const dataio = @import("dataio.zig");
 pub const maths = @import("maths.zig");
 pub const ops = @import("ops.zig");
@@ -78,8 +79,8 @@ pub const FuncMultiInput = @import("../shadertypes.zig").FuncMultiInput;
 pub const TexInput = @import("../shadertypes.zig").TexInput;
 pub const RenderFormat = @import("../shadertypes.zig").RenderFormat;
 pub const ScaleOver = @import("../shadertypes.zig").ScaleOver;
-pub const FuncShaderBuiltin = @import("../shadertypes.zig").FuncShaderBuiltin;
-pub const FuncShaderParams = @import("../shadertypes.zig").FuncShaderParams;
+pub const FuncShaderBuiltin = shaderfunc.FuncShaderBuiltin;
+pub const FuncShaderParams = shaderfunc.FuncShaderParams;
 
 // --------------------------------------------------------------------------------------
 // Shader Pipe
@@ -123,7 +124,7 @@ pub const ValidateInput = @import("../rasterconfig.zig").ValidateInput;
 
 // Input types used by scene builders and language adapters.
 pub const ScaleStrategy = @import("../imageops.zig").ScaleStrategy;
-pub const FuncCoordMode = @import("../shadertypes.zig").FuncCoordMode;
+pub const FuncCoordMode = shaderfunc.FuncCoordMode;
 pub const FuncChannel = @import("../shadertypes.zig").FuncChannel;
 pub const Lookup = @import("../shaderpipe.zig").Lookup;
 pub const HullMode = @import("../rasterconfig.zig").HullMode;

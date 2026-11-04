@@ -50,8 +50,8 @@ fn buildFrameCoords(
     allocator: std.mem.Allocator,
     sim_data: *const meshio.SimData,
     frame_idx: usize,
-) !meshio.Coords {
-    var coords = try meshio.Coords.initAlloc(
+) !meshtypes.Coords {
+    var coords = try meshtypes.Coords.initAlloc(
         allocator,
         sim_data.coords.mat.rows_num,
     );
@@ -273,7 +273,7 @@ fn writeStatsCsv(
     scaling: cameratypes.FOVScaling,
     pinhole_camera: *const cam.CameraPrepared,
     distorted_camera: *const cam.CameraPrepared,
-    frame_coords: *const meshio.Coords,
+    frame_coords: *const meshtypes.Coords,
 ) !void {
     const file = try out_dir.createFile(io, file_name, .{});
     defer file.close(io);
@@ -365,8 +365,8 @@ fn renderScalarMap(
     out_allocator: std.mem.Allocator,
     io: std.Io,
     case_spec: vconst.DistortCase,
-    connect: meshio.Connect,
-    frame_coords: meshio.Coords,
+    connect: meshtypes.Connect,
+    frame_coords: meshtypes.Coords,
     camera_input: cameratypes.CameraInput,
     config: @TypeOf(tcfg.getRasterConfig(.preview)),
     out_dir_path: []const u8,
@@ -397,7 +397,7 @@ fn renderScalarMap(
     return try extractScalarMap(out_allocator, &result);
 }
 
-fn buildCentroidCameraInput(ref_coords: *const meshio.Coords) cameratypes.CameraInput {
+fn buildCentroidCameraInput(ref_coords: *const meshtypes.Coords) cameratypes.CameraInput {
     const initial_rot = orch.defaultRotation();
     const roi_cent_world = sceneops.meanCenter(ref_coords);
     const pos_world = cameraops.posFillFrameFromRotAndTarget(

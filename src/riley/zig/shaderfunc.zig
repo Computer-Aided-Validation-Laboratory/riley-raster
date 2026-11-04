@@ -440,7 +440,6 @@ pub inline fn evalFuncShaderBuiltinRGBNorm(
 // Tests
 // --------------------------------------------------------------------------------------
 
-const testing = std.testing;
 const unit_tol: F = if (F == f32) 1e-5 else 1e-12;
 
 test "FuncShaderParams defaults preserve constant shader" {
@@ -456,7 +455,7 @@ test "FuncShaderParams defaults preserve constant shader" {
         coord,
         normFuncShaderParams(.constant, .{}),
     );
-    try testing.expectApproxEqAbs(@as(F, 0.5), value, unit_tol);
+    try std.testing.expectApproxEqAbs(@as(F, 0.5), value, unit_tol);
 }
 
 test "FuncShaderParams control sinusoidal frequency" {
@@ -481,8 +480,8 @@ test "FuncShaderParams control sinusoidal frequency" {
     );
     const expected_base = 0.5 + 0.25 * @sin(6.0 * 0.25) + 0.2 * @cos(0.0);
     const expected_shifted = 0.5 + 0.25 * @sin(6.0 * 0.5) + 0.2 * @cos(0.0);
-    try testing.expectApproxEqAbs(expected_base, base, unit_tol);
-    try testing.expectApproxEqAbs(expected_shifted, shifted, unit_tol);
+    try std.testing.expectApproxEqAbs(expected_base, base, unit_tol);
+    try std.testing.expectApproxEqAbs(expected_shifted, shifted, unit_tol);
 }
 
 test "checker texfunc creates hard black white cells from coord scale" {
@@ -515,8 +514,8 @@ test "checker texfunc creates hard black white cells from coord scale" {
         normFuncShaderParams(.checker, params),
     );
 
-    try testing.expectEqual(@as(F, 0.0), value_black);
-    try testing.expectEqual(@as(F, 1.0), value_white);
+    try std.testing.expectEqual(@as(F, 0.0), value_black);
+    try std.testing.expectEqual(@as(F, 1.0), value_white);
 }
 
 test "eggbox reaches mean plus contrast at cell center" {
@@ -541,7 +540,7 @@ test "eggbox reaches mean plus contrast at cell center" {
         coord,
         normFuncShaderParams(.eggbox, params),
     );
-    try testing.expectApproxEqAbs(@as(F, 0.9), value, unit_tol);
+    try std.testing.expectApproxEqAbs(@as(F, 0.9), value, unit_tol);
 }
 
 test "eggbox reaches mean minus contrast on grid line" {
@@ -566,7 +565,7 @@ test "eggbox reaches mean minus contrast on grid line" {
         coord,
         normFuncShaderParams(.eggbox, params),
     );
-    try testing.expectApproxEqAbs(@as(F, 0.1), value, unit_tol);
+    try std.testing.expectApproxEqAbs(@as(F, 0.1), value, unit_tol);
 }
 
 test "SIMD func builtin matches scalar builtin per lane" {
@@ -654,7 +653,7 @@ test "SIMD func builtin matches scalar builtin per lane" {
                 coord,
                 normFuncShaderParams(builtin, params),
             );
-            try testing.expectApproxEqAbs(expected, vals_arr[ll], unit_tol);
+            try std.testing.expectApproxEqAbs(expected, vals_arr[ll], unit_tol);
         }
 
         const v_rgb = shaderops.evalFuncShaderRGBNormSIMD(
@@ -670,7 +669,7 @@ test "SIMD func builtin matches scalar builtin per lane" {
                     coord,
                     normFuncShaderParams(builtin, params),
                 )[ch];
-                try testing.expectApproxEqAbs(
+                try std.testing.expectApproxEqAbs(
                     expected,
                     vals_rgb_arr[ll],
                     unit_tol,

@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const rasterconfig = @import("../riley/zig/rasterconfig.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const std = @import("std");
@@ -29,7 +30,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     _ = camera;
     _ = cameraio;
 
-    var coords = try meshio.Coords.initAlloc(allocator, 3);
+    var coords = try meshtypes.Coords.initAlloc(allocator, 3);
     defer allocator.free(coords.mem);
     const xyz = [_][3]F{
         .{ 0.1, 0.5, 0.0 },
@@ -39,7 +40,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     for (xyz, 0..) |point, nn| {
         for (0..3) |cc| coords.mat.set(nn, cc, point[cc]);
     }
-    var connect = try meshio.Connect.initAlloc(allocator, 1, 3);
+    var connect = try meshtypes.Connect.initAlloc(allocator, 1, 3);
     defer connect.deinit(allocator);
     connect.table_mem[0] = 0;
     connect.table_mem[1] = 1;
@@ -58,7 +59,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
         } } },
     };
     const modes = [_]cameratypes.SubPixelCenterMap{ .full_in_mem, .per_tile };
-    const buffers = [_]riley.BufferMode{ .tile_local, .global_subpx_full };
+    const buffers = [_]rasterconfig.BufferMode{ .tile_local, .global_subpx_full };
     const samples = [_]u32{ 1, 2, 4 };
 
     for (modes) |subpx_mode| {
@@ -75,7 +76,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
                     .subpixel_center_map = subpx_mode,
                     .distort = .{ .brown_con = .{ .k1 = 1.0 } },
                 };
-                const config = riley.RasterConfig{
+                const config = rasterconfig.RasterConfig{
                     .save_strategy = .memory,
                     .report_perf = .off,
                     .advanced = .{

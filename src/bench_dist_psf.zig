@@ -6,6 +6,9 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("riley/zig/cameramodels.zig");
+const rendergroups = @import("riley/zig/rendergroups.zig");
+const fieldtypes = @import("riley/zig/fieldtypes.zig");
 const cameratypes = @import("riley/zig/cameratypes.zig");
 const meshtypes = @import("riley/zig/meshtypes.zig");
 const shadertypes = @import("riley/zig/shadertypes.zig");
@@ -288,7 +291,7 @@ fn parseDistPsfArgs(args: anytype) !BenchDistPsfArgs {
     return result;
 }
 
-fn createDistortModel(case: DistortCase) cam.DistortParams {
+fn createDistortModel(case: DistortCase) cameramodels.DistortParams {
     return switch (case) {
         .none, .all => .none,
         .brown_zero => .{ .brown_con = .{
@@ -360,7 +363,7 @@ fn createDistortModel(case: DistortCase) cam.DistortParams {
     };
 }
 
-fn createPSF(case: PSFCase) cam.PointSpreadFunc {
+fn createPSF(case: PSFCase) cameramodels.PointSpreadFunc {
     return switch (case) {
         .pixel_box, .all => .{ .pixel_box = .{} },
         .gaussian_0p5 => .{ .gaussian = .{
@@ -408,7 +411,7 @@ pub fn main(init: std.process.Init) !void {
     base_raster_config.advanced.solver.oneroot.hull_mode = bench_args.hull_mode;
     base_raster_config.save_strategy = bench_args.save_strategy;
 
-    var groups = try riley.ManagedRenderGroups.init(
+    var groups = try rendergroups.ManagedRenderGroups.init(
         outer_alloc,
         init.minimal,
         bench_args.total_threads,
@@ -588,9 +591,9 @@ pub fn main(init: std.process.Init) !void {
                         },
                     };
 
-                    var disp_field: ?meshio.Field = null;
+                    var disp_field: ?fieldtypes.Field = null;
                     if (bench_args.frames > 1) {
-                        disp_field = try meshio.Field.initAlloc(
+                        disp_field = try fieldtypes.Field.initAlloc(
                             local_alloc,
                             bench_args.frames,
                             sim_data.coords.mat.rows_num,

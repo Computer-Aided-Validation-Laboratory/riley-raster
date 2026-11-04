@@ -1,6 +1,18 @@
 # Riley Developer Guide
 This document collects information for developers including style guides, testing architecture, benchmark executables, and performance regression workflows.
 
+> [!IMPORTANT]
+> **AI AGENTS — REQUIRED TEST CONFIGURATION: `f64` WITH SIMD ON.**
+> Run tests only with `-Dprecision=f64 -Dsimd=on` unless the user explicitly
+> instructs you to run another combination. Do not run `f32`, scalar
+> (`-Dsimd=off`), or precision/SIMD matrix sweeps on your own initiative,
+> including for cross-cutting refactors or extra confidence. A general request
+> to implement, test, verify, or complete a plan does not authorize extra
+> precision/SIMD combinations. The alternative examples below document supported
+> configurations; they are not instructions for agents to run them.
+> Keep verif/basic in Debug and full in ReleaseSafe. This rule avoids unnecessary
+> compilation, runtime, and token costs.
+
 ## Style Guide
 This project follows the Computer Aided Validation Laboratory style guides for Python and Zig which can be found [here](https://github.com/Computer-Aided-Validation-Laboratory/styleguides). Riley is designed around three equally important principles:
 
@@ -88,7 +100,7 @@ zig build <STEP> -Dnewton-solver=robust
 zig build <STEP> -Dsimd-vector-width=8
 ```
 
-Suggested first-pass development checks on the main production path (Debug for verif/basic, ReleaseSafe for full):
+Default development checks and the required AI-agent configuration (Debug for verif/basic, ReleaseSafe for full):
 
 ```shell
 zig build test-verif -Dprecision=f64 -Dsimd=on
@@ -96,7 +108,7 @@ zig build test-basic -Dprecision=f64 -Dsimd=on
 zig build test-full -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
 ```
 
-For broader matrix checks across precisions and SIMD modes:
+**Alternative configurations — AI agents must run these only when the user explicitly requests the corresponding combinations.** These are opt-in examples, not a routine verification checklist:
 
 ```shell
 zig build test-verif -Dprecision=f64 -Dsimd=on

@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const fieldtypes = @import("../riley/zig/fieldtypes.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const shadertypes = @import("../riley/zig/shadertypes.zig");
@@ -75,11 +76,11 @@ pub fn convertU16TexToF64(
 
 fn sliceFieldToSingleFrame(
     allocator: std.mem.Allocator,
-    field: meshio.Field,
-) !meshio.Field {
+    field: fieldtypes.Field,
+) !fieldtypes.Field {
     const node_n = field.getCoordN();
     const chan_n = field.getFieldsN();
-    var result = try meshio.Field.initAlloc(allocator, 1, node_n, chan_n);
+    var result = try fieldtypes.Field.initAlloc(allocator, 1, node_n, chan_n);
     for (0..node_n) |nn| {
         for (0..chan_n) |cc| {
             result.array.set(
@@ -93,12 +94,12 @@ fn sliceFieldToSingleFrame(
 
 fn buildRgbField(
     allocator: std.mem.Allocator,
-    temp: meshio.Field,
-    disp: meshio.Field,
-) !meshio.Field {
+    temp: fieldtypes.Field,
+    disp: fieldtypes.Field,
+) !fieldtypes.Field {
     const time_n = temp.getTimeN();
     const node_n = temp.getCoordN();
-    var field = try meshio.Field.initAlloc(allocator, time_n, node_n, 3);
+    var field = try fieldtypes.Field.initAlloc(allocator, time_n, node_n, 3);
     for (0..time_n) |tt| {
         for (0..node_n) |nn| {
             field.array.set(&.{ tt, nn, 0 }, temp.array.get(&.{ tt, nn, 0 }));

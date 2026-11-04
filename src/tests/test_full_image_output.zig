@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const rendergroups = @import("../riley/zig/rendergroups.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
@@ -481,7 +482,7 @@ fn runEntryPointEquivalence(
 
     // The caller I/O opens the directory, while this supplied threaded group
     // renders and saves the frame through its own I/O context.
-    var groups = try riley.ManagedRenderGroups.init(allocator, null, 2, 1);
+    var groups = try rendergroups.ManagedRenderGroups.init(allocator, null, 2, 1);
     defer groups.deinit(allocator);
 
     var disk_config = run_config;

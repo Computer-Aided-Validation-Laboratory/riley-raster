@@ -16,7 +16,7 @@ const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const VecSU = buildconfig.VecSU;
-const common = @import("cameraprojops_common.zig");
+const cameraprojops_common = @import("cameraprojops_common.zig");
 const simdops = @import("simdops.zig");
 
 // --------------------------------------------------------------------------------------
@@ -70,8 +70,8 @@ pub fn fillTileIdealCentersPerTile(
     ideal_pixel_centers: []F,
 ) !void {
     const sub_samp: usize = @intCast(camera.sub_sample);
-    const ideal_x_plane = common.getIdealXPlaneScratch(ideal_pixel_centers);
-    const ideal_y_plane = common.getIdealYPlaneScratch(ideal_pixel_centers);
+    const ideal_x_plane = cameraprojops_common.getIdealXPlaneScratch(ideal_pixel_centers);
+    const ideal_y_plane = cameraprojops_common.getIdealYPlaneScratch(ideal_pixel_centers);
     const start_x = scratch_x_px_min * @as(i32, @intCast(sub_samp));
     const start_y = scratch_y_px_min * @as(i32, @intCast(sub_samp));
     const tile_w_px = scratch_x_px_max - scratch_x_px_min;

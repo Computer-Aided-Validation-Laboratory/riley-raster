@@ -6,6 +6,9 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const fieldtypes = @import("../riley/zig/fieldtypes.zig");
+const shaderfunc = @import("../riley/zig/shaderfunc.zig");
+const cameramodels = @import("../riley/zig/cameramodels.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const shadertypes = @import("../riley/zig/shadertypes.zig");
@@ -64,13 +67,13 @@ const mesh_centers = [cases.len][3]F{
 
 fn sliceFieldToTwoFrames(
     allocator: std.mem.Allocator,
-    field: meshio.Field,
-) !meshio.Field {
+    field: fieldtypes.Field,
+) !fieldtypes.Field {
     const time_n = field.getTimeN();
     const node_n = field.getCoordN();
     const chan_n = field.getFieldsN();
     const last_t = if (time_n > 1) time_n - 1 else 0;
-    var result = try meshio.Field.initAlloc(allocator, 2, node_n, chan_n);
+    var result = try fieldtypes.Field.initAlloc(allocator, 2, node_n, chan_n);
     for (0..node_n) |nn| {
         for (0..chan_n) |cc| {
             result.array.set(
@@ -88,16 +91,16 @@ fn sliceFieldToTwoFrames(
 
 fn buildRgbFieldTwoFrames(
     allocator: std.mem.Allocator,
-    temp: meshio.Field,
-    disp: meshio.Field,
-) !meshio.Field {
+    temp: fieldtypes.Field,
+    disp: fieldtypes.Field,
+) !fieldtypes.Field {
     const node_n = temp.getCoordN();
     const time_temp = temp.getTimeN();
     const time_disp = disp.getTimeN();
     const last_temp = if (time_temp > 1) time_temp - 1 else 0;
     const last_disp = if (time_disp > 1) time_disp - 1 else 0;
 
-    var field = try meshio.Field.initAlloc(allocator, 2, node_n, 3);
+    var field = try fieldtypes.Field.initAlloc(allocator, 2, node_n, 3);
     for (0..node_n) |nn| {
         // Frame 0: static
         field.array.set(&.{ 0, nn, 0 }, temp.array.get(&.{ 0, nn, 0 }));
@@ -219,12 +222,12 @@ fn loadZooMesh(
             } },
             3, 4 => blk_fn: {
                 const params = if (case_index == 3)
-                    shadertypes.FuncShaderParams{
+                    shaderfunc.FuncShaderParams{
                         .coord_scale = .{ 1000.0, 1000.0 },
                         .settings = .{ .checker = .{} },
                     }
                 else
-                    shadertypes.FuncShaderParams{
+                    shaderfunc.FuncShaderParams{
                         .coord_scale = .{ 1.0, 1.0 },
                         .settings = .{ .eggbox = .{
                             .pitch = .{ 0.005, 0.005 },
@@ -271,12 +274,12 @@ fn loadZooMesh(
             } },
             3, 4 => blk_fn: {
                 const params = if (case_index == 3)
-                    shadertypes.FuncShaderParams{
+                    shaderfunc.FuncShaderParams{
                         .coord_scale = .{ 1000.0, 1000.0 },
                         .settings = .{ .checker = .{} },
                     }
                 else
-                    shadertypes.FuncShaderParams{
+                    shaderfunc.FuncShaderParams{
                         .coord_scale = .{ 1.0, 1.0 },
                         .settings = .{ .eggbox = .{
                             .pitch = .{ 0.005, 0.005 },
@@ -344,8 +347,8 @@ fn makeZooCamera(
     pixels_num: [2]u32,
     rot: Rotation,
     sub_sample: u32,
-    distort: camera.DistortParams,
-    psf: camera.PointSpreadFunc,
+    distort: cameramodels.DistortParams,
+    psf: cameramodels.PointSpreadFunc,
 ) cameratypes.CameraInput {
     const target = sceneops.boundsCenterOverMeshes(meshes);
     return .{
@@ -371,13 +374,13 @@ fn makeZooCamera(
 
 pub fn buildAllZooCameras(meshes: []MeshInput) [6]cameratypes.CameraInput {
     const deg = std.math.degreesToRadians;
-    const brown: camera.DistortParams = .{ .brown_con = .{
+    const brown: cameramodels.DistortParams = .{ .brown_con = .{
         .k1 = -0.12,
         .k2 = 0.035,
         .p1 = 0.0002,
         .p2 = -0.0001,
     } };
-    const gaussian: camera.PointSpreadFunc = .{ .gaussian = .{
+    const gaussian: cameramodels.PointSpreadFunc = .{ .gaussian = .{
         .sigma_px = 0.65,
         .supp_rad_px = 2.0,
     } };

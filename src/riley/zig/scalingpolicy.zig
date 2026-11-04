@@ -8,9 +8,7 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
-const rastcfg = @import("rasterconfig.zig");
-const report = @import("report.zig");
-const GeometrySchedulingMode = rastcfg.GeometrySchedulingMode;
+const rasterconfig = @import("rasterconfig.zig");
 
 // --------------------------------------------------------------------------------------
 // Module Constants
@@ -51,7 +49,7 @@ pub const ParallelWorkload = struct {
     camera_count: usize,
     frame_count: usize,
     element_count: usize,
-    render_mode: rastcfg.RenderMode,
+    render_mode: rasterconfig.RenderMode,
 };
 
 pub const RenderParallelPlan = struct {
@@ -60,7 +58,7 @@ pub const RenderParallelPlan = struct {
     frame_batch_size_per_group: u16,
     max_geom_jobs_in_flight_per_group: u16,
     max_geom_workers_per_job: u16,
-    geom_scheduling_mode: GeometrySchedulingMode,
+    geom_scheduling_mode: rasterconfig.GeometrySchedulingMode,
     max_raster_workers_per_job: u16,
 };
 
@@ -69,9 +67,9 @@ pub const RenderParallelPlan = struct {
 // --------------------------------------------------------------------------------------
 
 pub fn resolveGeometrySchedulingMode(
-    requested_mode: GeometrySchedulingMode,
+    requested_mode: rasterconfig.GeometrySchedulingMode,
     total_scene_elems: usize,
-) GeometrySchedulingMode {
+) rasterconfig.GeometrySchedulingMode {
     return switch (requested_mode) {
         .spread, .pack => requested_mode,
         .auto => if (total_scene_elems < AUTO_GEOMETRY_SPREAD_ELEMS_THRESHOLD)
@@ -94,7 +92,7 @@ pub fn maxIndependentRenderJobs(workload: ParallelWorkload) usize {
     };
 }
 
-pub fn availableThreadBudget(config: rastcfg.ParallelConfig) u16 {
+pub fn availableThreadBudget(config: rasterconfig.ParallelConfig) u16 {
     return switch (config) {
         .auto => blk: {
             const cpu_count = std.Thread.getCpuCount() catch 1;
@@ -108,7 +106,7 @@ pub fn availableThreadBudget(config: rastcfg.ParallelConfig) u16 {
 
 pub fn resolveRenderParallelPlan(
     workload: ParallelWorkload,
-    parallel_config: rastcfg.ParallelConfig,
+    parallel_config: rasterconfig.ParallelConfig,
 ) RenderParallelPlan {
     const thread_budget = availableThreadBudget(parallel_config);
 
@@ -287,18 +285,18 @@ fn chunkSize(
 
 test "resolveGeometrySchedulingMode uses explicit modes unchanged" {
     try std.testing.expectEqual(
-        GeometrySchedulingMode.spread,
+        rasterconfig.GeometrySchedulingMode.spread,
         resolveGeometrySchedulingMode(.spread, 1),
     );
     try std.testing.expectEqual(
-        GeometrySchedulingMode.pack,
+        rasterconfig.GeometrySchedulingMode.pack,
         resolveGeometrySchedulingMode(.pack, 1),
     );
 }
 
 test "resolveGeometrySchedulingMode auto prefers spread for smaller scenes" {
     try std.testing.expectEqual(
-        GeometrySchedulingMode.spread,
+        rasterconfig.GeometrySchedulingMode.spread,
         resolveGeometrySchedulingMode(
             .auto,
             AUTO_GEOMETRY_SPREAD_ELEMS_THRESHOLD - 1,
@@ -308,7 +306,7 @@ test "resolveGeometrySchedulingMode auto prefers spread for smaller scenes" {
 
 test "resolveGeometrySchedulingMode auto prefers pack for larger scenes" {
     try std.testing.expectEqual(
-        GeometrySchedulingMode.pack,
+        rasterconfig.GeometrySchedulingMode.pack,
         resolveGeometrySchedulingMode(
             .auto,
             AUTO_GEOMETRY_SPREAD_ELEMS_THRESHOLD,

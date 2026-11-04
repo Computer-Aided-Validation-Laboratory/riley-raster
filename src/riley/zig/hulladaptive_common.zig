@@ -9,17 +9,16 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const cam = @import("cameraprojops.zig");
-const geomkerns = @import("geometrykernels.zig");
-const MeshType = geomkerns.MeshType;
-const rastcfg = @import("rasterconfig.zig");
-const frontend = @import("rasterfrontend.zig");
-const edgeops = @import("hulledge.zig");
+const cameraprojops = @import("cameraprojops.zig");
+const geometrykernels = @import("geometrykernels.zig");
+const rasterconfig = @import("rasterconfig.zig");
+const rasterfrontend = @import("rasterfrontend.zig");
+const hulledge = @import("hulledge.zig");
 const tol = buildconfig.config.tol;
 
 pub fn Points(comptime N: usize) type {
     const NH = blk: {
-        for (std.enums.values(MeshType)) |mt| {
+        for (std.enums.values(geometrykernels.MeshType)) |mt| {
             if (mt.getNodesNum() == N) {
                 if (mt == .tri3) break :blk 0;
                 break :blk mt.getNumHullPoints();
@@ -48,7 +47,7 @@ fn convexifyHullInPlace(
             const mm = (nn + 1) % NH;
 
             // Vis elems are CW. For CW: convex is val < 0, concave is val > 0.
-            const val = edgeops.edgeFun3(
+            const val = hulledge.edgeFun3(
                 hull_x[pp],
                 hull_y[pp],
                 hull_x[mm],
@@ -70,9 +69,9 @@ fn convexifyHullInPlace(
 
 pub fn buildPointsFromClip(
     comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    coords_elem: frontend.ElemCoords(N),
-    hull_mode: rastcfg.HullMode,
+    camera: *const cameraprojops.CameraPrepared,
+    coords_elem: rasterfrontend.ElemCoords(N),
+    hull_mode: rasterconfig.HullMode,
 ) Points(N) {
     const x_off = 0.5 * @as(F, @floatFromInt(camera.pixels_num[0]));
     const y_off = 0.5 * @as(F, @floatFromInt(camera.pixels_num[1]));
@@ -180,7 +179,7 @@ fn buildTri6(
         const p0 = edge[0];
         const p1 = edge[1];
         const pm = edge[2];
-        const edge_val = edgeops.edgeFun3(
+        const edge_val = hulledge.edgeFun3(
             lx[p0],
             ly[p0],
             lx[p1],
@@ -227,7 +226,7 @@ fn buildQuad(
         const p0 = edge[0];
         const p1 = edge[1];
         const pm = edge[2];
-        const edge_val = edgeops.edgeFun3(
+        const edge_val = hulledge.edgeFun3(
             lx[p0],
             ly[p0],
             lx[p1],

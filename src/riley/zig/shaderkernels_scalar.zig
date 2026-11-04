@@ -6,15 +6,14 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const matslice = @import("matslice.zig");
+const geometrykernels = @import("geometrykernels.zig");
 const shadertypes = @import("shadertypes.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const max_channels = buildconfig.config.max_image_channels;
-const comm = @import("shaderkernels_common.zig");
-const shaderops = @import("shaderops.zig");
+const shaderkernels_common = @import("shaderkernels_common.zig");
 const meshhit = @import("meshhit.zig");
-const MatSlice = @import("matslice.zig").MatSlice;
-const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
 // --------------------------------------------------------------------------------------
 // Nodal Interp Shader
@@ -26,14 +25,14 @@ pub fn NodalKernel(comptime N: usize) type {
         pub const Hit = meshhit.RasterHit(N);
 
         pub inline fn shade(
-            comptime coord_space: CoordSpace,
+            comptime coord_space: geometrykernels.CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
             interp: meshhit.RasterHit(N),
             shader_buf: *const shadertypes.LocalShaderBuff(N),
             shader: *const shadertypes.NodalPrepared,
-            spx_image_scratch: *MatSlice(F),
+            spx_image_scratch: *matslice.MatSlice(F),
         ) void {
-            comm.shadeNodalScalComm(
+            shaderkernels_common.shadeNodalScalComm(
                 N,
                 coord_space,
                 ctx_shade,
@@ -60,14 +59,14 @@ pub fn TexKernel(
         pub const Hit = meshhit.RasterHit(N);
 
         pub inline fn shade(
-            comptime coord_space: CoordSpace,
+            comptime coord_space: geometrykernels.CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
             interp: meshhit.RasterHit(N),
             shader_buf: *const shadertypes.LocalShaderBuff(N),
             shader: *const shadertypes.TexPrepared(T, C),
-            spx_image_scratch: *MatSlice(F),
+            spx_image_scratch: *matslice.MatSlice(F),
         ) void {
-            comm.shadeTexScalComm(
+            shaderkernels_common.shadeTexScalComm(
                 N,
                 T,
                 C,
@@ -88,12 +87,12 @@ pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
         pub const Hit = meshhit.RasterHit(N);
 
         pub inline fn shade(
-            comptime coord_space: CoordSpace,
+            comptime coord_space: geometrykernels.CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
             interp: meshhit.RasterHit(N),
             shader_buf: *const shadertypes.LocalShaderBuff(N),
             shader: *const shadertypes.TexMultiPrepared(T),
-            spx_image_scratch: *MatSlice(F),
+            spx_image_scratch: *matslice.MatSlice(F),
         ) void {
             inline for (1..max_channels + 1) |C| {
                 if (shader.tex.array.dims[0] == C) {
@@ -128,15 +127,15 @@ pub fn FuncKernel(
         pub const Hit = meshhit.MeshHit(N);
 
         pub inline fn shade(
-            comptime coord_space: CoordSpace,
+            comptime coord_space: geometrykernels.CoordSpace,
             ctx_shade: shadertypes.ShadeContext,
             interp: meshhit.MeshHit(N),
             shader_buf: *const shadertypes.LocalShaderBuff(N),
             shader: *const shadertypes.FuncPrepared,
-            spx_image_scratch: *MatSlice(F),
+            spx_image_scratch: *matslice.MatSlice(F),
         ) void {
-            const hit = comm.completeFuncHit(N, coord_space, interp, shader_buf, shader);
-            comm.shadeFuncScalComm(
+            const hit = shaderkernels_common.completeFuncHit(N, coord_space, interp, shader_buf, shader);
+            shaderkernels_common.shadeFuncScalComm(
                 N,
                 C,
                 coord_space,

@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const rendergroups = @import("../riley/zig/rendergroups.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
@@ -27,7 +28,7 @@ const valinp = @import("../riley/zig/validateinput.zig");
 const F = buildconfig.F;
 const CameraInput = cameratypes.CameraInput;
 const MeshInput = meshtypes.MeshInput;
-const RenderGroup = riley.RenderGroup;
+const RenderGroup = rendergroups.RenderGroup;
 const RasterConfig = rastcfg.RasterConfig;
 const NDArray = ndarray.NDArray(F);
 

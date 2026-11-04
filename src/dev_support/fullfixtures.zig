@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const fieldtypes = @import("../riley/zig/fieldtypes.zig");
+const cameramodels = @import("../riley/zig/cameramodels.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const shadertypes = @import("../riley/zig/shadertypes.zig");
@@ -131,12 +133,12 @@ pub const FullTextures = struct {
 
 pub fn sliceFieldToTwoFrames(
     allocator: std.mem.Allocator,
-    field: meshio.Field,
-) !meshio.Field {
+    field: fieldtypes.Field,
+) !fieldtypes.Field {
     const time_n = field.getTimeN();
     const node_n = field.getCoordN();
     const chan_n = field.getFieldsN();
-    var result = try meshio.Field.initAlloc(allocator, 2, node_n, chan_n);
+    var result = try fieldtypes.Field.initAlloc(allocator, 2, node_n, chan_n);
     const max_time_idx = if (time_n > 0) time_n - 1 else 0;
 
     for (0..node_n) |nn| {
@@ -156,11 +158,11 @@ pub fn sliceFieldToTwoFrames(
 
 pub fn buildRgbFieldTwoFrames(
     allocator: std.mem.Allocator,
-    temp_2f: meshio.Field,
-    disp_2f: meshio.Field,
-) !meshio.Field {
+    temp_2f: fieldtypes.Field,
+    disp_2f: fieldtypes.Field,
+) !fieldtypes.Field {
     const node_n = temp_2f.getCoordN();
-    var field = try meshio.Field.initAlloc(allocator, 2, node_n, 3);
+    var field = try fieldtypes.Field.initAlloc(allocator, 2, node_n, 3);
     for (0..2) |tt| {
         for (0..node_n) |nn| {
             field.array.set(&.{ tt, nn, 0 }, temp_2f.array.get(&.{ tt, nn, 0 }));
@@ -221,19 +223,19 @@ pub fn createScene0Camera(meshes: []const MeshInput) CameraInput {
 
 pub const Scene0Prepared = struct {
     mesh_type: gk.MeshType,
-    sphere_coords: meshio.Coords,
-    sphere_connect: meshio.Connect,
-    sphere_disp: meshio.Field,
+    sphere_coords: meshtypes.Coords,
+    sphere_connect: meshtypes.Connect,
+    sphere_disp: fieldtypes.Field,
     sphere_uvs: uvio.UVMap,
-    sphere_temp: meshio.Field,
-    sphere_rgb: meshio.Field,
+    sphere_temp: fieldtypes.Field,
+    sphere_rgb: fieldtypes.Field,
 
-    cylinder_coords: meshio.Coords,
-    cylinder_connect: meshio.Connect,
-    cylinder_disp: meshio.Field,
+    cylinder_coords: meshtypes.Coords,
+    cylinder_connect: meshtypes.Connect,
+    cylinder_disp: fieldtypes.Field,
     cylinder_uvs: uvio.UVMap,
-    cylinder_temp: meshio.Field,
-    cylinder_rgb: meshio.Field,
+    cylinder_temp: fieldtypes.Field,
+    cylinder_rgb: fieldtypes.Field,
 
     camera_input: CameraInput,
 
@@ -466,8 +468,8 @@ pub const focal_length_scene1: F = @floatCast(50.0e-3);
 pub const grey_background_scene1: F = 127.5;
 
 pub const Scene1Prepared = struct {
-    coords: meshio.Coords,
-    connect: meshio.Connect,
+    coords: meshtypes.Coords,
+    connect: meshtypes.Connect,
     uvs: uvio.UVMap,
     camera_input: CameraInput,
 
@@ -478,7 +480,7 @@ pub const Scene1Prepared = struct {
     }
 };
 
-pub fn getRepresentativePolyMap() camera.PolyMap {
+pub fn getRepresentativePolyMap() cameramodels.PolyMap {
     return .{
         .degree = 2,
         .mode = .displacement,
@@ -487,15 +489,15 @@ pub fn getRepresentativePolyMap() camera.PolyMap {
 }
 
 pub const EquivalentBrownConPoly = struct {
-    brown_con: camera.BrownCon.Params,
-    poly: camera.PolyMap,
+    brown_con: cameramodels.BrownCon.Params,
+    poly: cameramodels.PolyMap,
 };
 
 /// A cubic polynomial representation of a Brown-Conrady model with radial
 /// k1 and both tangential terms.  The polynomial model is forward-only: its
 /// inverse is deliberately solved from the same forward map as Brown-Conrady.
 pub fn getEquivalentBrownConPoly() EquivalentBrownConPoly {
-    const brown_con = camera.BrownCon.Params{
+    const brown_con = cameramodels.BrownCon.Params{
         .k1 = -1200.0,
         .p1 = 0.25,
         .p2 = -0.20,
@@ -611,12 +613,12 @@ pub const sphere2_center_scene2 = [3]F{ 0.0050, 0.0, -1.02 };
 
 pub const Scene2Prepared = struct {
     mesh_type: gk.MeshType,
-    sphere1_coords: meshio.Coords,
-    sphere1_connect: meshio.Connect,
+    sphere1_coords: meshtypes.Coords,
+    sphere1_connect: meshtypes.Connect,
     sphere1_uvs: uvio.UVMap,
 
-    sphere2_coords: meshio.Coords,
-    sphere2_connect: meshio.Connect,
+    sphere2_coords: meshtypes.Coords,
+    sphere2_connect: meshtypes.Connect,
     sphere2_uvs: uvio.UVMap,
 
     pub fn deinit(self: *Scene2Prepared, allocator: std.mem.Allocator) void {
@@ -919,10 +921,10 @@ pub const scene3_mesh_specs = [16]Scene3MeshSpec{
 
 pub const Scene3MeshPrepared = struct {
     mesh_type: gk.MeshType,
-    coords: meshio.Coords,
-    connect: meshio.Connect,
-    disp: ?meshio.Field,
-    field: ?meshio.Field,
+    coords: meshtypes.Coords,
+    connect: meshtypes.Connect,
+    disp: ?fieldtypes.Field,
+    field: ?fieldtypes.Field,
     uvs: uvio.UVMap,
 
     pub fn deinit(self: *Scene3MeshPrepared, allocator: std.mem.Allocator) void {

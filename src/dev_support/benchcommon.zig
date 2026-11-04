@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const shaderfunc = @import("../riley/zig/shaderfunc.zig");
+const cameramodels = @import("../riley/zig/cameramodels.zig");
 const shadertypes = @import("../riley/zig/shadertypes.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const std = @import("std");
@@ -21,7 +23,7 @@ const shaderpipe = @import("../riley/zig/shaderpipe.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const CameraPrepared = @import("../riley/zig/cameraprojops.zig").CameraPrepared;
 const CameraInput = @import("../riley/zig/cameratypes.zig").CameraInput;
-const DistortParams = @import("../riley/zig/cameraprojops.zig").DistortParams;
+const DistortParams = cameramodels.DistortParams;
 const SubPixelCenterMap = @import("../riley/zig/cameratypes.zig").SubPixelCenterMap;
 const cameraops = @import("../riley/zig/cameraframeops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
@@ -445,7 +447,7 @@ pub const ShaderType = enum {
 const TextureSampleConfig = @import("../riley/zig/texturetypes.zig").TexSampConfig;
 pub const TexFuncCoordMode = enum { uv, param, world_reference };
 pub const TexFuncCase = struct {
-    builtin: shadertypes.FuncShaderBuiltin,
+    builtin: shaderfunc.FuncShaderBuiltin,
     coord_mode: TexFuncCoordMode,
 };
 
@@ -1236,7 +1238,7 @@ fn printPaddedSafe(writer: anytype, text: []const u8, width: usize) !void {
     }
 }
 
-fn calcTexFuncParams(tex_func_case: TexFuncCase) shadertypes.FuncShaderParams {
+fn calcTexFuncParams(tex_func_case: TexFuncCase) shaderfunc.FuncShaderParams {
     const pi: F = std.math.pi;
     const oscillations: F = if (tex_func_case.coord_mode == .param)
         2.0

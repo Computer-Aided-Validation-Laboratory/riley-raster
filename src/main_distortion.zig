@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("riley/zig/cameramodels.zig");
+const shaderfunc = @import("riley/zig/shaderfunc.zig");
 const cameratypes = @import("riley/zig/cameratypes.zig");
 const meshtypes = @import("riley/zig/meshtypes.zig");
 const shadertypes = @import("riley/zig/shadertypes.zig");
@@ -27,11 +29,11 @@ const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const MeshInput = meshtypes.MeshInput;
 const MeshType = gk.MeshType;
 const CameraInput = cameratypes.CameraInput;
-const DistortModel = camera_mod.DistortParams;
-const BrownCon = camera_mod.BrownCon;
-const PointSpreadFunc = camera_mod.PointSpreadFunc;
-const FuncShaderBuiltin = shadertypes.FuncShaderBuiltin;
-const FuncShaderParams = shadertypes.FuncShaderParams;
+const DistortModel = cameramodels.DistortParams;
+const BrownCon = cameramodels.BrownCon;
+const PointSpreadFunc = cameramodels.PointSpreadFunc;
+const FuncShaderBuiltin = shaderfunc.FuncShaderBuiltin;
+const FuncShaderParams = shaderfunc.FuncShaderParams;
 
 const OUT_DIR_ROOT = "./out/distortion";
 const PIXELS_NUM = [2]u32{ 1600, 1000 };
@@ -115,7 +117,7 @@ fn ensureDir(io: std.Io, dir_path: []const u8) !void {
 }
 
 fn makeCameraInput(
-    coords: *const meshio.Coords,
+    coords: *const meshtypes.Coords,
     distort: DistortModel,
     psf: PointSpreadFunc,
 ) CameraInput {

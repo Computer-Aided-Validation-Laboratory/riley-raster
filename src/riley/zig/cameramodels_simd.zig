@@ -10,7 +10,7 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
-const common = @import("cameramodels_common.zig");
+const cameramodels_common = @import("cameramodels_common.zig");
 const cfg = buildconfig.config;
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
@@ -39,67 +39,60 @@ pub const DistortJacSIMD = struct {
 };
 
 pub const BrownConSIMD = struct {
-    pub const Params = common.BrownConParams;
-
-    pub inline fn ford(params: Params, x: VecSF, y: VecSF) DistortCoordsSIMD {
-        const result = fordDistortSIMD(Params, params, x, y);
+    pub inline fn ford(params: cameramodels_common.BrownConParams, x: VecSF, y: VecSF) DistortCoordsSIMD {
+        const result = fordDistortSIMD(cameramodels_common.BrownConParams, params, x, y);
         return result;
     }
 
     pub inline fn fordWithJac(
-        params: Params,
+        params: cameramodels_common.BrownConParams,
         x: VecSF,
         y: VecSF,
     ) DistortFordJacSIMDResult {
-        return fordDistortWithJacSIMD(Params, params, x, y);
+        return fordDistortWithJacSIMD(cameramodels_common.BrownConParams, params, x, y);
     }
 
     pub inline fn inv(
-        params: Params,
+        params: cameramodels_common.BrownConParams,
         x_d: VecSF,
         y_d: VecSF,
         active: VecSB,
     ) !DistortCoordsSIMD {
-        return invDistortSIMD(Params, params, x_d, y_d, active);
+        return invDistortSIMD(cameramodels_common.BrownConParams, params, x_d, y_d, active);
     }
 };
 
 pub const BrownConExtSIMD = struct {
-    pub const Params = common.BrownConExt.Params;
-    pub const Model = common.BrownConExt;
-
-    pub inline fn ford(model: Model, x: VecSF, y: VecSF) DistortCoordsSIMD {
-        const result = fordDistortSIMD(Model, model, x, y);
+    pub inline fn ford(model: cameramodels_common.BrownConExt, x: VecSF, y: VecSF) DistortCoordsSIMD {
+        const result = fordDistortSIMD(cameramodels_common.BrownConExt, model, x, y);
         return result;
     }
 
     pub inline fn fordWithJac(
-        model: Model,
+        model: cameramodels_common.BrownConExt,
         x: VecSF,
         y: VecSF,
     ) DistortFordJacSIMDResult {
-        return fordDistortWithJacSIMD(Model, model, x, y);
+        return fordDistortWithJacSIMD(cameramodels_common.BrownConExt, model, x, y);
     }
 
     pub inline fn inv(
-        model: Model,
+        model: cameramodels_common.BrownConExt,
         x_d: VecSF,
         y_d: VecSF,
         active: VecSB,
     ) !DistortCoordsSIMD {
-        return invDistortSIMD(Model, model, x_d, y_d, active);
+        return invDistortSIMD(cameramodels_common.BrownConExt, model, x_d, y_d, active);
     }
 };
 
 pub const PolyMapSIMD = struct {
-    pub const Params = common.PolyMap;
-
-    pub inline fn ford(params: Params, x: VecSF, y: VecSF) DistortCoordsSIMD {
+    pub inline fn ford(params: cameramodels_common.PolyMap, x: VecSF, y: VecSF) DistortCoordsSIMD {
         return evaluatePolyMapSIMD(params, x, y);
     }
 
     pub inline fn fordWithJac(
-        params: Params,
+        params: cameramodels_common.PolyMap,
         x: VecSF,
         y: VecSF,
     ) DistortFordJacSIMDResult {
@@ -107,7 +100,7 @@ pub const PolyMapSIMD = struct {
     }
 
     pub inline fn inv(
-        params: Params,
+        params: cameramodels_common.PolyMap,
         x_d: VecSF,
         y_d: VecSF,
         active: VecSB,
@@ -140,7 +133,7 @@ pub fn fordDistortWithJacSIMD(
     x: VecSF,
     y: VecSF,
 ) DistortFordJacSIMDResult {
-    const params = if (DistortType == common.BrownConExt)
+    const params = if (DistortType == cameramodels_common.BrownConExt)
         distort.params
     else
         distort;
@@ -148,7 +141,7 @@ pub fn fordDistortWithJacSIMD(
     const r4 = r2 * r2;
     const r6 = r4 * r2;
 
-    const radial_and_deriv = if (DistortType == common.BrownConExt) blk: {
+    const radial_and_deriv = if (DistortType == cameramodels_common.BrownConExt) blk: {
         const numerator = @as(VecSF, @splat(1.0)) +
             @as(VecSF, @splat(params.k1)) * r2 +
             @as(VecSF, @splat(params.k2)) * r4 +
@@ -217,7 +210,7 @@ pub fn fordDistortWithJacSIMD(
         @as(VecSF, @splat(6.0)) * p1 * y +
         @as(VecSF, @splat(2.0)) * p2 * x;
 
-    if (DistortType == common.BrownConExt) {
+    if (DistortType == cameramodels_common.BrownConExt) {
         const s1: VecSF = @splat(params.s1);
         const s2: VecSF = @splat(params.s2);
         const s3: VecSF = @splat(params.s3);
@@ -352,17 +345,17 @@ pub fn invDistortSIMD(
 // Polynomial Distortion
 // --------------------------------------------------------------------------------------
 
-fn evaluatePolyMapSIMD(poly: common.PolyMap, x: VecSF, y: VecSF) DistortCoordsSIMD {
-    const result = common.evalPoly(VecSF, false, poly, x, y);
+fn evaluatePolyMapSIMD(poly: cameramodels_common.PolyMap, x: VecSF, y: VecSF) DistortCoordsSIMD {
+    const result = cameramodels_common.evalPoly(VecSF, false, poly, x, y);
     return .{ .x = result.x, .y = result.y };
 }
 
 fn evaluatePolyMapWithJacSIMD(
-    poly: common.PolyMap,
+    poly: cameramodels_common.PolyMap,
     x: VecSF,
     y: VecSF,
 ) DistortFordJacSIMDResult {
-    const result = common.evalPoly(VecSF, true, poly, x, y);
+    const result = cameramodels_common.evalPoly(VecSF, true, poly, x, y);
     return .{
         .coords = .{ .x = result.x, .y = result.y },
         .jac = .{ .xx = result.xx, .xy = result.xy, .yx = result.yx, .yy = result.yy },
@@ -370,7 +363,7 @@ fn evaluatePolyMapWithJacSIMD(
 }
 
 fn invPolySIMD(
-    poly: common.PolyMap,
+    poly: cameramodels_common.PolyMap,
     v_x_d: VecSF,
     v_y_d: VecSF,
     v_lane_active_init: VecSB,
@@ -438,12 +431,10 @@ fn invPolySIMD(
 // Distortion Unions
 // --------------------------------------------------------------------------------------
 
-pub const DistortModel = common.DistortModel;
-
 /// Explicit model dispatch keeps the tagged-union boundary visible to callers;
 /// the selected evaluator is fully resolved at compile time inside each arm.
 pub fn fordDistortModelSIMD(
-    distort: DistortModel,
+    distort: cameramodels_common.DistortModel,
     x: VecSF,
     y: VecSF,
 ) DistortCoordsSIMD {
@@ -472,7 +463,7 @@ pub fn fordDistortModelSIMD(
 }
 
 fn removeTiltSIMD(
-    distort: common.BrownConExt,
+    distort: cameramodels_common.BrownConExt,
     x_d: VecSF,
     y_d: VecSF,
     lane_active: VecSB,
@@ -510,16 +501,16 @@ fn removeTiltSIMD(
 }
 
 fn invBrownConExtSIMD(
-    distort: common.BrownConExt,
+    distort: cameramodels_common.BrownConExt,
     x_d: VecSF,
     y_d: VecSF,
     lane_active: VecSB,
 ) !DistortCoordsSIMD {
     const untilted = try removeTiltSIMD(distort, x_d, y_d, lane_active);
-    const lens = common.BrownConExt{ .params = distort.params };
+    const lens = cameramodels_common.BrownConExt{ .params = distort.params };
 
     return invDistortSIMD(
-        common.BrownConExt,
+        cameramodels_common.BrownConExt,
         lens,
         untilted.x,
         untilted.y,
@@ -528,7 +519,7 @@ fn invBrownConExtSIMD(
 }
 
 pub fn invDistortModelSIMD(
-    distort: DistortModel,
+    distort: cameramodels_common.DistortModel,
     v_x_d: VecSF,
     v_y_d: VecSF,
     v_lane_active: VecSB,
@@ -536,7 +527,7 @@ pub fn invDistortModelSIMD(
     return switch (distort) {
         .none => .{ .x = v_x_d, .y = v_y_d },
         .brown_con => |bc| invDistortSIMD(
-            common.BrownCon.Params,
+            cameramodels_common.BrownCon.Params,
             bc,
             v_x_d,
             v_y_d,
@@ -562,7 +553,7 @@ pub fn invDistortModelSIMD(
                 v_lane_active,
             );
             break :blk try invDistortSIMD(
-                common.BrownCon.Params,
+                cameramodels_common.BrownCon.Params,
                 chain.brown_con,
                 poly_inv.x,
                 poly_inv.y,
@@ -595,10 +586,10 @@ test "polynomial scalar and SIMD forward agree for every order" {
     var coeffs = [_]F{0} ** 72;
     for (&coeffs, 0..) |*coeff, ii| coeff.* = @as(F, @floatFromInt(ii % 7)) * 0.001;
     for (degrees) |degree| {
-        const poly = try common.PolyMap.init(
+        const poly = try cameramodels_common.PolyMap.init(
             degree,
             .displacement,
-            coeffs[0 .. 2 * common.polyTermCount(degree)],
+            coeffs[0 .. 2 * cameramodels_common.polyTermCount(degree)],
         );
         const scalar = poly.ford(0.12, -0.23);
         const simd = PolyMapSIMD.ford(poly, @splat(0.12), @splat(-0.23));
@@ -633,7 +624,7 @@ test "polynomial scalar and SIMD forward agree for every order" {
 }
 
 test "polynomial SIMD reports failures only in active lanes" {
-    const singular = common.PolyMap{
+    const singular = cameramodels_common.PolyMap{
         .degree = 1,
         .mode = .displacement,
         .coeffs = &.{ 0.0, 0, -1.0, 0, 0.0, 0 },
@@ -643,7 +634,7 @@ test "polynomial SIMD reports failures only in active lanes" {
         PolyMapSIMD.inv(singular, @splat(0.3), @splat(-0.2), @splat(true)),
     );
     _ = try PolyMapSIMD.inv(singular, @splat(0.3), @splat(-0.2), @splat(false));
-    const stalled = common.PolyMap{
+    const stalled = cameramodels_common.PolyMap{
         .degree = 2,
         .mode = .displacement,
         .coeffs = &.{ 0.0, 0, 0.0, 0, 0.0, 0, 1e22, 0, 0, 0, 0, 0 },

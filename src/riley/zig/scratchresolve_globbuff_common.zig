@@ -6,13 +6,14 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameramodels = @import("cameramodels.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const cam = @import("cameraprojops.zig");
+const cameraprojops = @import("cameraprojops.zig");
 const ndarray = @import("ndarray.zig");
-const subpxframe = @import("subpxframe_globbuff.zig");
-const pce = @import("parachunkexec.zig");
+const subpxframe_globbuff = @import("subpxframe_globbuff.zig");
+const parachunkexec = @import("parachunkexec.zig");
 
 const S = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
@@ -22,8 +23,8 @@ const VecSF = buildconfig.VecSF;
 // --------------------------------------------------------------------------------------
 
 pub fn resolveGlobBuff(
-    target: *const subpxframe.SubpxTarget,
-    camera: *const cam.CameraPrepared,
+    target: *const subpxframe_globbuff.SubpxTarget,
+    camera: *const cameraprojops.CameraPrepared,
     background_value: F,
     image_out_arr: *ndarray.NDArray(F),
 ) void {
@@ -38,8 +39,8 @@ pub fn resolveGlobBuff(
 }
 
 pub fn resolveRowsGlobBuff(
-    target: *const subpxframe.SubpxTarget,
-    camera: *const cam.CameraPrepared,
+    target: *const subpxframe_globbuff.SubpxTarget,
+    camera: *const cameraprojops.CameraPrepared,
     background_value: F,
     image_out_arr: *ndarray.NDArray(F),
     image_y_min: usize,
@@ -91,8 +92,8 @@ pub fn resolveParallelGlobBuff(
     comptime use_simd: bool,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    target: *const subpxframe.SubpxTarget,
-    camera: *const cam.CameraPrepared,
+    target: *const subpxframe_globbuff.SubpxTarget,
+    camera: *const cameraprojops.CameraPrepared,
     background_value: F,
     image_out_arr: *ndarray.NDArray(F),
     image_y_min: usize,
@@ -134,8 +135,8 @@ fn workersForRowsGlobBuff(requested_workers: u16, rows: usize) usize {
 
 fn resolveDirectParallelGlobBuff(
     io: std.Io,
-    target: *const subpxframe.SubpxTarget,
-    camera: *const cam.CameraPrepared,
+    target: *const subpxframe_globbuff.SubpxTarget,
+    camera: *const cameraprojops.CameraPrepared,
     background_value: F,
     image_out_arr: *ndarray.NDArray(F),
     image_y_min: usize,
@@ -144,8 +145,8 @@ fn resolveDirectParallelGlobBuff(
 ) !usize {
     const workers_num = workersForRowsGlobBuff(requested_workers, image_y_max - image_y_min);
     const Ctx = struct {
-        target: *const subpxframe.SubpxTarget,
-        camera: *const cam.CameraPrepared,
+        target: *const subpxframe_globbuff.SubpxTarget,
+        camera: *const cameraprojops.CameraPrepared,
         background_value: F,
         image_out_arr: *ndarray.NDArray(F),
         image_y_min: usize,
@@ -165,7 +166,7 @@ fn resolveDirectParallelGlobBuff(
             );
         }
     };
-    var exec = pce.ParaChunkExecutor.init(io, @intCast(workers_num));
+    var exec = parachunkexec.ParaChunkExecutor.init(io, @intCast(workers_num));
     var ctx = Ctx{
         .target = target,
         .camera = camera,
@@ -181,8 +182,8 @@ fn resolveSeparableParallelGlobBuff(
     comptime use_simd: bool,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    target: *const subpxframe.SubpxTarget,
-    camera: *const cam.CameraPrepared,
+    target: *const subpxframe_globbuff.SubpxTarget,
+    camera: *const cameraprojops.CameraPrepared,
     image_out_arr: *ndarray.NDArray(F),
     image_y_min: usize,
     image_y_max: usize,
@@ -197,8 +198,8 @@ fn resolveSeparableParallelGlobBuff(
     defer outer_alloc.free(horizontal);
 
     const HorizontalCtx = struct {
-        target: *const subpxframe.SubpxTarget,
-        camera: *const cam.CameraPrepared,
+        target: *const subpxframe_globbuff.SubpxTarget,
+        camera: *const cameraprojops.CameraPrepared,
         horizontal: []F,
         image_w_px: usize,
         storage_h: usize,
@@ -211,7 +212,7 @@ fn resolveSeparableParallelGlobBuff(
     };
 
     const horizontal_workers = workersForRowsGlobBuff(requested_workers, storage_h);
-    var horizontal_exec = pce.ParaChunkExecutor.init(io, @intCast(horizontal_workers));
+    var horizontal_exec = parachunkexec.ParaChunkExecutor.init(io, @intCast(horizontal_workers));
     var horizontal_ctx = HorizontalCtx{
         .target = target,
         .camera = camera,
@@ -222,8 +223,8 @@ fn resolveSeparableParallelGlobBuff(
     try horizontal_exec.runStaticRange(&horizontal_ctx, HorizontalAdapter.run, storage_h, 1);
 
     const VerticalCtx = struct {
-        target: *const subpxframe.SubpxTarget,
-        camera: *const cam.CameraPrepared,
+        target: *const subpxframe_globbuff.SubpxTarget,
+        camera: *const cameraprojops.CameraPrepared,
         horizontal: []const F,
         image_out_arr: *ndarray.NDArray(F),
         image_w_px: usize,
@@ -243,7 +244,7 @@ fn resolveSeparableParallelGlobBuff(
     };
 
     const vertical_workers = workersForRowsGlobBuff(requested_workers, image_y_max - image_y_min);
-    var vertical_exec = pce.ParaChunkExecutor.init(io, @intCast(vertical_workers));
+    var vertical_exec = parachunkexec.ParaChunkExecutor.init(io, @intCast(vertical_workers));
     var vertical_ctx = VerticalCtx{
         .target = target,
         .camera = camera,
@@ -368,8 +369,8 @@ fn verticalRowsGlobBuff(
 // --------------------------------------------------------------------------------------
 
 fn sampleFilteredGlobBuff(
-    target: *const subpxframe.SubpxTarget,
-    prep_psf: cam.PreparedPSF,
+    target: *const subpxframe_globbuff.SubpxTarget,
+    prep_psf: cameramodels.PreparedPSF,
     background_value: F,
     global_subx: i32,
     global_suby: i32,
@@ -403,8 +404,8 @@ fn sampleFilteredGlobBuff(
 }
 
 fn sampleSeparableGlobBuff(
-    target: *const subpxframe.SubpxTarget,
-    prep_psf: cam.PreparedPSF,
+    target: *const subpxframe_globbuff.SubpxTarget,
+    prep_psf: cameramodels.PreparedPSF,
     background_value: F,
     global_subx: i32,
     global_suby: i32,
@@ -430,8 +431,8 @@ fn sampleSeparableGlobBuff(
 }
 
 fn sampleNonSeparableGlobBuff(
-    target: *const subpxframe.SubpxTarget,
-    prep_psf: cam.PreparedPSF,
+    target: *const subpxframe_globbuff.SubpxTarget,
+    prep_psf: cameramodels.PreparedPSF,
     background_value: F,
     global_subx: i32,
     global_suby: i32,
@@ -458,7 +459,7 @@ fn sampleNonSeparableGlobBuff(
 }
 
 fn sampleTargetGlobBuff(
-    target: *const subpxframe.SubpxTarget,
+    target: *const subpxframe_globbuff.SubpxTarget,
     background_value: F,
     global_subx: i32,
     global_suby: i32,
@@ -483,8 +484,8 @@ fn sampleTargetGlobBuff(
 // --------------------------------------------------------------------------------------
 
 test "sampleTarget uses the target global origin" {
-    const domain = try subpxframe.SubpxFrameDomain.init(1, .{ 2, 2 }, 1, 1);
-    var target = try subpxframe.SubpxTarget.init(
+    const domain = try subpxframe_globbuff.SubpxFrameDomain.init(1, .{ 2, 2 }, 1, 1);
+    var target = try subpxframe_globbuff.SubpxTarget.init(
         std.testing.allocator,
         domain,
         -1,

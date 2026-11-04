@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const fieldtypes = @import("riley/zig/fieldtypes.zig");
 const meshtypes = @import("riley/zig/meshtypes.zig");
 const cameratypes = @import("riley/zig/cameratypes.zig");
 const shadertypes = @import("riley/zig/shadertypes.zig");
@@ -80,7 +81,7 @@ fn duplicateMeshInput(
     const new_coords_mem = try allocator.alloc(F, new_coords_num * 3);
     errdefer allocator.free(new_coords_mem);
 
-    var new_coords = meshio.Coords.init(new_coords_mem, new_coords_num);
+    var new_coords = meshtypes.Coords.init(new_coords_mem, new_coords_num);
 
     var jj: usize = 0;
     while (jj < copies_num) : (jj += 1) {
@@ -107,7 +108,7 @@ fn duplicateMeshInput(
     );
     errdefer allocator.free(new_connect_mem);
 
-    var new_connect = meshio.Connect.init(
+    var new_connect = meshtypes.Connect.init(
         new_connect_mem,
         new_elems_num,
         nodes_per_elem,
@@ -215,7 +216,7 @@ fn runAndRecord(
     try duplicateMeshInput(ra, base_mesh, copies_num, &duplicated_mesh);
 
     const num_coords = duplicated_mesh.coords.mat.rows_num;
-    const disp_field = try meshio.Field.initAlloc(ra, 64, num_coords, 3);
+    const disp_field = try fieldtypes.Field.initAlloc(ra, 64, num_coords, 3);
     duplicated_mesh.disp = disp_field;
 
     const camera_inputs = try ra.alloc(cameratypes.CameraInput, 64);

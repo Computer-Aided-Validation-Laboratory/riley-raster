@@ -1,3 +1,5 @@
+const fieldtypes = @import("../riley/zig/fieldtypes.zig");
+const rasterconfig = @import("../riley/zig/rasterconfig.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const shadertypes = @import("../riley/zig/shadertypes.zig");
@@ -139,7 +141,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     // A nodal source with fewer frames than the mesh displacement must use
     // the selected frame, then hold its final field frame just like a direct
     // nodal shader. This compares the complete scalar/SIMD raster result.
-    var timed_field = try meshio.Field.initAlloc(
+    var timed_field = try fieldtypes.Field.initAlloc(
         aa,
         3,
         prepared.sim_data.coords.mat.rows_num,
@@ -153,7 +155,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             );
         }
     }
-    const zero_disp = try meshio.Field.initAlloc(
+    const zero_disp = try fieldtypes.Field.initAlloc(
         aa,
         4,
         prepared.sim_data.coords.mat.rows_num,
@@ -484,7 +486,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
 
     // A temperature field and an independent emissivity producer feed the IR
     // resolver. Distinct nodal values make the physically resolved image vary.
-    var temperature = try meshio.Field.initAlloc(
+    var temperature = try fieldtypes.Field.initAlloc(
         aa,
         1,
         prepared.sim_data.coords.mat.rows_num,
@@ -642,7 +644,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     );
 
     // A mixed camera batch selects the matching pipe and pads unused channels.
-    var channels = try meshio.Field.initAlloc(
+    var channels = try fieldtypes.Field.initAlloc(
         aa,
         1,
         prepared.sim_data.coords.mat.rows_num,
@@ -760,7 +762,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     }
     try std.testing.expect(found);
 
-    const unused_field = try meshio.Field.initAlloc(
+    const unused_field = try fieldtypes.Field.initAlloc(
         aa,
         6,
         prepared.sim_data.coords.mat.rows_num,
@@ -908,7 +910,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
 
     // The incompatible foreground mesh must be absent from mono depth and
     // geometry preparation; each mixed-camera image matches its isolated scene.
-    var front_coords = try meshio.Coords.initAlloc(aa, prepared.sim_data.coords.mat.rows_num);
+    var front_coords = try meshtypes.Coords.initAlloc(aa, prepared.sim_data.coords.mat.rows_num);
     @memcpy(front_coords.mem, prepared.sim_data.coords.mem);
     for (0..front_coords.mat.rows_num) |nn| {
         for (0..3) |axis| {
@@ -991,7 +993,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
     defer aa.free(scaled_only.slice);
 
     const selected_scene = [_]meshtypes.MeshInput{ front_rgb_mesh, scaled_direct_mesh };
-    for ([_]riley.RenderMode{ .offline, .in_order }) |mode| {
+    for ([_]rasterconfig.RenderMode{ .offline, .in_order }) |mode| {
         var selected_config = memory_config;
         selected_config.render_mode = mode;
         const selected_result = try riley.raster(
@@ -1025,7 +1027,7 @@ fn runSharedWorldGeometryCase(
     io: std.Io,
     mesh: meshtypes.MeshInput,
     camera_mono: cameratypes.CameraInput,
-    config: riley.RasterConfig,
+    config: rasterconfig.RasterConfig,
     tolerance: F,
 ) !void {
     const ref_shader: shadertypes.ShaderMonoInput = .{ .func = .{

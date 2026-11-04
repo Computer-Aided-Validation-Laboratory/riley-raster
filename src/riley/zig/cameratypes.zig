@@ -8,27 +8,27 @@
 // --------------------------------------------------------------------------------------
 const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
-const vec = @import("vecstack.zig");
-const matrix = @import("matstack.zig");
+const vecstack = @import("vecstack.zig");
+const matstack = @import("matstack.zig");
 const rotation = @import("rotation.zig");
 const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const cm = @import("cameramodels.zig");
-const distbounds = @import("distortbounds.zig");
+const cameramodels = @import("cameramodels.zig");
+const distortbounds = @import("distortbounds.zig");
 const imageio = @import("imageio.zig");
 
 pub const CameraInput = struct {
     pixels_num: [2]u32,
     pixels_size: [2]F,
-    pos_world: vec.Vec3F,
+    pos_world: vecstack.Vec3F,
     rot_world: rotation.Rotation,
-    roi_cent_world: vec.Vec3F,
+    roi_cent_world: vecstack.Vec3F,
     focal_length: F,
     sub_sample: u32,
     background_value: F = 0.0,
-    distort: cm.DistortParams = .none,
-    psf: cm.PointSpreadFunc = .{ .pixel_box = .{} },
+    distort: cameramodels.DistortParams = .none,
+    psf: cameramodels.PointSpreadFunc = .{ .pixel_box = .{} },
     coord_sys: CameraCoordSys = .opengl,
     subpixel_center_map: SubPixelCenterMap = .per_tile,
     render_format: shadertypes.RenderFormat = .mono,
@@ -73,20 +73,20 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
 
         pixels_num: [2]u32,
         pixels_size: [2]F,
-        pos_world: vec.Vec3F,
+        pos_world: vecstack.Vec3F,
         rot_world: rotation.Rotation,
-        roi_cent_world: vec.Vec3F,
+        roi_cent_world: vecstack.Vec3F,
         focal_length: F,
         sub_sample: u32,
         background_value: F,
         sensor_size: [2]F,
         image_dims: [2]F,
         image_dist: F,
-        cam_to_world_mat: matrix.Mat44F,
-        world_to_cam_mat: matrix.Mat44F,
-        distort: cm.DistortModel,
-        psf: cm.PointSpreadFunc,
-        prep_psf: cm.PreparedPSF,
+        cam_to_world_mat: matstack.Mat44F,
+        world_to_cam_mat: matstack.Mat44F,
+        distort: cameramodels.DistortModel,
+        psf: cameramodels.PointSpreadFunc,
+        prep_psf: cameramodels.PreparedPSF,
         coord_sys: CameraCoordSys,
         ideal_pixel_centers: ndarray.NDArray(F),
         subpixel_center_map: SubPixelCenterMap,
@@ -94,13 +94,13 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         output_files: []const imageio.ImageSaveOpts = &.{
             .{ .format = .bmp, .file_bits = 8, .scaling = .none },
         },
-        ideal_sensor_bounds: ?distbounds.DistortBounds = null,
+        ideal_sensor_bounds: ?distortbounds.DistortBounds = null,
 
         pub fn init(
             allocator: std.mem.Allocator,
             input: CameraInput,
         ) !Self {
-            const distort = try cm.DistortModel.init(input.distort);
+            const distort = try cameramodels.DistortModel.init(input.distort);
             const subpixel_center_map = input.subpixel_center_map;
             const actual_sub_sample = if (input.sub_sample == 0)
                 @as(u32, 2)
@@ -120,11 +120,11 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
                 (image_dist / input.focal_length) * sensor_size[1],
             };
 
-            var cam_to_world_mat = matrix.Mat44F.initIdentity();
+            var cam_to_world_mat = matstack.Mat44F.initIdentity();
             cam_to_world_mat.insertColVec(3, 0, 3, pos_w);
             cam_to_world_mat.insertSubMat(0, 0, 3, 3, rot_matrix);
 
-            const world_to_cam_mat = matrix.Mat44Ops.inv(F, cam_to_world_mat);
+            const world_to_cam_mat = matstack.Mat44Ops.inv(F, cam_to_world_mat);
 
             const ideal_pixel_centers = switch (subpixel_center_map) {
                 .full_in_mem => blk: {
@@ -165,7 +165,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
                 .world_to_cam_mat = world_to_cam_mat,
                 .distort = distort,
                 .psf = input.psf,
-                .prep_psf = try cm.PreparedPSF.init(
+                .prep_psf = try cameramodels.PreparedPSF.init(
                     allocator,
                     input.psf,
                     actual_sub_sample,
@@ -185,7 +185,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             self.ideal_sensor_bounds = if (isNoDistort(self.distort))
                 null
             else
-                try distbounds.idealSensorBounds(&self, self.prep_psf.halo_px);
+                try distortbounds.idealSensorBounds(&self, self.prep_psf.halo_px);
 
             return self;
         }
@@ -306,14 +306,14 @@ pub const FrameFitMode = enum(u32) {
 };
 
 pub const OrbitCam = struct {
-    pos: vec.Vec3F,
+    pos: vecstack.Vec3F,
     rot: rotation.Rotation,
 };
 
 pub const StereoPairPosRot = struct {
-    cam0_pos: vec.Vec3F,
+    cam0_pos: vecstack.Vec3F,
     cam0_rot: rotation.Rotation,
-    cam1_pos: vec.Vec3F,
+    cam1_pos: vecstack.Vec3F,
     cam1_rot: rotation.Rotation,
 };
 

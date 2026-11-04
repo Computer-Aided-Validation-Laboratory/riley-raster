@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("../riley/zig/cameramodels.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
@@ -21,12 +22,12 @@ const SubPixelCenterMap = cameratypes.SubPixelCenterMap;
 
 pub const DistCase = struct {
     tag: []const u8,
-    distort: camera.DistortParams,
+    distort: cameramodels.DistortParams,
 };
 
 pub const PsfCase = struct {
     tag: []const u8,
-    psf: camera.PointSpreadFunc,
+    psf: cameramodels.PointSpreadFunc,
 };
 
 pub const PxMapCase = struct {

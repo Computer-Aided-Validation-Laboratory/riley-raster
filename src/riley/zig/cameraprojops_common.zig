@@ -8,36 +8,17 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 
-const vec = @import("vecstack.zig");
-const matrix = @import("matstack.zig");
+const cameratypes = @import("cameratypes.zig");
+const vecstack = @import("vecstack.zig");
 const rotation = @import("rotation.zig");
-const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const cm = @import("cameramodels.zig");
-const distbounds = @import("distortbounds.zig");
-const camera_scalar = @import("cameraprojops_scalar.zig");
-const camera_simd = @import("cameraprojops_simd.zig");
-const imageio = @import("imageio.zig");
-const shaderops = @import("shaderops.zig");
+const cameramodels = @import("cameramodels.zig");
+const cameraprojops_scalar = @import("cameraprojops_scalar.zig");
+const cameraprojops_simd = @import("cameraprojops_simd.zig");
 
 const cfg = buildconfig.config;
-const camera_impl = if (cfg.simd == .on) camera_simd else camera_scalar;
-
-// --------------------------------------------------------------------------------------
-// Public Constants & Public Types
-// --------------------------------------------------------------------------------------
-
-const cameratypes = @import("cameratypes.zig");
-const CameraInput = cameratypes.CameraInput;
-const StereoPairInput = cameratypes.StereoPairInput;
-const CameraCoordSys = cameratypes.CameraCoordSys;
-const SubPixelCenterMap = cameratypes.SubPixelCenterMap;
-const FOVScaling = cameratypes.FOVScaling;
-const CameraPreparedType = cameratypes.CameraPreparedType;
-const isNoDistort = cameratypes.isNoDistort;
-
-const CameraPrepared = CameraPreparedType(camera_impl);
+const camera_impl = if (cfg.simd == .on) cameraprojops_simd else cameraprojops_scalar;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -68,7 +49,7 @@ pub inline fn getIdealYPlaneScratch(ideal_pixel_centers: []F) []F {
     return ideal_pixel_centers[plane_stride .. plane_stride * 2];
 }
 
-pub fn allCamerasSharePixels(cameras: []const CameraPrepared) bool {
+pub fn allCamerasSharePixels(cameras: []const cameratypes.CameraPreparedType(camera_impl)) bool {
     std.debug.assert(cameras.len != 0);
 
     const pixels_num = cameras[0].pixels_num;
@@ -79,10 +60,6 @@ pub fn allCamerasSharePixels(cameras: []const CameraPrepared) bool {
     }
     return true;
 }
-
-// --------------------------------------------------------------------------------------
-// Major Internal Types
-// --------------------------------------------------------------------------------------
 
 // --------------------------------------------------------------------------------------
 // Generic Low-Level Helpers
@@ -106,7 +83,7 @@ const coord_x = [_]F{ -bb, bb, bb, -bb, -bb, bb, bb, -bb };
 const coord_y = [_]F{ bb, bb, -bb, -bb, bb, bb, -bb, -bb };
 const coord_z = [_]F{ bb, bb, bb, bb, -bb, -bb, -bb, -bb };
 const roi_world_arr = [_]F{ 0, 0, 0 };
-const roi_world = vec.Vec3F.initSlice(&roi_world_arr);
+const roi_world = vecstack.Vec3F.initSlice(&roi_world_arr);
 const sub_samp: u32 = 2;
 
 fn expectApproxEqRelAbs(
@@ -153,7 +130,7 @@ fn checkDistortGridInv(
 }
 
 fn checkBrownConExtGridInv(
-    distort: cm.BrownConExt,
+    distort: cameramodels.BrownConExt,
     rel_tol: F,
     abs_tol: F,
 ) !void {
@@ -175,10 +152,10 @@ fn checkBrownConExtGridInv(
 // --------------------------------------------------------------------------------------
 
 test "CameraPrepared.init" {
-    const input = CameraInput{
+    const input = cameratypes.CameraInput{
         .pixels_num = pix_num,
         .pixels_size = pix_size,
-        .pos_world = vec.initVec3(F, 0.0, 800.0, 800.0),
+        .pos_world = vecstack.initVec3(F, 0.0, 800.0, 800.0),
         .rot_world = rotat_world,
         .roi_cent_world = roi_world,
         .focal_length = foc_leng,
@@ -186,7 +163,7 @@ test "CameraPrepared.init" {
         .subpixel_center_map = .full_in_mem,
     };
 
-    const camera = try CameraPrepared.init(std.testing.allocator, input);
+    const camera = try cameratypes.CameraPreparedType(camera_impl).init(std.testing.allocator, input);
     defer camera.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(pix_num, camera.pixels_num);
@@ -198,12 +175,12 @@ test "CameraPrepared.init" {
 test "CameraPrepared.init rejects singular distortion before camera setup" {
     try std.testing.expectError(
         error.SingularTiltProjection,
-        CameraPrepared.init(std.testing.allocator, .{
+        cameratypes.CameraPreparedType(camera_impl).init(std.testing.allocator, .{
             .pixels_num = .{ 10, 10 },
             .pixels_size = .{ 0.01, 0.01 },
-            .pos_world = vec.Vec3F.initZeros(),
+            .pos_world = vecstack.Vec3F.initZeros(),
             .rot_world = rotation.Rotation.init(0, 0, 0),
-            .roi_cent_world = vec.Vec3F.initZeros(),
+            .roi_cent_world = vecstack.Vec3F.initZeros(),
             .focal_length = 1.0,
             .sub_sample = 1,
             .distort = .{ .brown_con_ext = .{
@@ -214,7 +191,7 @@ test "CameraPrepared.init rejects singular distortion before camera setup" {
 }
 
 test "BrownConrady.forwardInv" {
-    const bc = cm.BrownCon.Params{
+    const bc = cameramodels.BrownCon.Params{
         .k1 = -0.2,
         .k2 = 0.03,
         .k3 = -0.005,
@@ -225,15 +202,15 @@ test "BrownConrady.forwardInv" {
     const x_ideal = 0.1;
     const y_ideal = -0.15;
 
-    const distorted = cm.BrownCon.ford(bc, x_ideal, y_ideal);
-    const recovered = try cm.BrownCon.inv(bc, distorted.x, distorted.y);
+    const distorted = cameramodels.BrownCon.ford(bc, x_ideal, y_ideal);
+    const recovered = try cameramodels.BrownCon.inv(bc, distorted.x, distorted.y);
 
     try std.testing.expectApproxEqAbs(x_ideal, recovered.x, unit_abs_tol);
     try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
 }
 
 test "BrownConradyExt.forwardInv" {
-    const bc_ext_params = cm.BrownConExt.Params{
+    const bc_ext_params = cameramodels.BrownConExt.Params{
         .k1 = -0.18,
         .k2 = 0.02,
         .k3 = -0.004,
@@ -247,7 +224,7 @@ test "BrownConradyExt.forwardInv" {
     const x_ideal = -0.12;
     const y_ideal = 0.18;
 
-    const bc_ext = try cm.BrownConExt.init(bc_ext_params);
+    const bc_ext = try cameramodels.BrownConExt.init(bc_ext_params);
     const distorted = bc_ext.ford(x_ideal, y_ideal);
     const recovered = try bc_ext.inv(distorted.x, distorted.y);
 
@@ -256,7 +233,7 @@ test "BrownConradyExt.forwardInv" {
 }
 
 test "Polynomial.forwardOnlyRoundTrip" {
-    const model = cm.DistortModel{
+    const model = cameramodels.DistortModel{
         .poly = .{
             .degree = 1,
             .mode = .displacement,
@@ -266,12 +243,12 @@ test "Polynomial.forwardOnlyRoundTrip" {
 
     const x_ideal = 0.12;
     const y_ideal = -0.18;
-    const distorted = cm.fordDistortModelScal(
+    const distorted = cameramodels.fordDistortModelScal(
         model,
         x_ideal,
         y_ideal,
     );
-    const recovered = try cm.invDistortModelScal(
+    const recovered = try cameramodels.invDistortModelScal(
         model,
         distorted.x,
         distorted.y,
@@ -282,7 +259,7 @@ test "Polynomial.forwardOnlyRoundTrip" {
 }
 
 test "BrownConradyPolynomial.forwardInv" {
-    const model = cm.DistortModel{
+    const model = cameramodels.DistortModel{
         .brown_con_poly = .{
             .brown_con = .{
                 .k1 = -0.08,
@@ -304,12 +281,12 @@ test "BrownConradyPolynomial.forwardInv" {
 
     const x_ideal = 0.09;
     const y_ideal = -0.14;
-    const distorted = cm.fordDistortModelScal(
+    const distorted = cameramodels.fordDistortModelScal(
         model,
         x_ideal,
         y_ideal,
     );
-    const recovered = try cm.invDistortModelScal(
+    const recovered = try cameramodels.invDistortModelScal(
         model,
         distorted.x,
         distorted.y,
@@ -320,14 +297,14 @@ test "BrownConradyPolynomial.forwardInv" {
 }
 
 test "BrownConrady.gridInvRoundTrip" {
-    const bc_mild = cm.BrownCon.Params{
+    const bc_mild = cameramodels.BrownCon.Params{
         .k1 = -0.08,
         .k2 = 0.01,
         .k3 = -0.002,
         .p1 = 0.0004,
         .p2 = -0.0007,
     };
-    const bc_strong = cm.BrownCon.Params{
+    const bc_strong = cameramodels.BrownCon.Params{
         .k1 = -0.2,
         .k2 = 0.03,
         .k3 = -0.005,
@@ -336,13 +313,13 @@ test "BrownConrady.gridInvRoundTrip" {
     };
 
     try checkDistortGridInv(
-        cm.BrownCon,
+        cameramodels.BrownCon,
         bc_mild,
         unit_rel_tol,
         unit_rel_tol,
     );
     try checkDistortGridInv(
-        cm.BrownCon,
+        cameramodels.BrownCon,
         bc_strong,
         unit_rel_tol,
         unit_rel_tol,
@@ -350,7 +327,7 @@ test "BrownConrady.gridInvRoundTrip" {
 }
 
 test "BrownConradyExt.gridInvRoundTrip" {
-    const bc_ext_mild_params = cm.BrownConExt.Params{
+    const bc_ext_mild_params = cameramodels.BrownConExt.Params{
         .k1 = -0.09,
         .k2 = 0.012,
         .k3 = -0.0015,
@@ -360,7 +337,7 @@ test "BrownConradyExt.gridInvRoundTrip" {
         .p1 = 0.0005,
         .p2 = -0.0006,
     };
-    const bc_ext_strong_params = cm.BrownConExt.Params{
+    const bc_ext_strong_params = cameramodels.BrownConExt.Params{
         .k1 = -0.18,
         .k2 = 0.02,
         .k3 = -0.004,
@@ -372,31 +349,31 @@ test "BrownConradyExt.gridInvRoundTrip" {
     };
 
     try checkBrownConExtGridInv(
-        try cm.BrownConExt.init(bc_ext_mild_params),
+        try cameramodels.BrownConExt.init(bc_ext_mild_params),
         unit_rel_tol,
         unit_rel_tol,
     );
     try checkBrownConExtGridInv(
-        try cm.BrownConExt.init(bc_ext_strong_params),
+        try cameramodels.BrownConExt.init(bc_ext_strong_params),
         unit_rel_tol,
         unit_rel_tol,
     );
 }
 
 test "CameraPrepared.distortionNone" {
-    const input = CameraInput{
+    const input = cameratypes.CameraInput{
         .pixels_num = .{ 10, 10 },
         .pixels_size = .{ 0.01, 0.01 },
-        .pos_world = vec.Vec3F.initZeros(),
+        .pos_world = vecstack.Vec3F.initZeros(),
         .rot_world = rotation.Rotation.init(0, 0, 0),
-        .roi_cent_world = vec.Vec3F.initZeros(),
+        .roi_cent_world = vecstack.Vec3F.initZeros(),
         .focal_length = 1.0,
         .sub_sample = 1,
         .distort = .none,
         .subpixel_center_map = .full_in_mem,
     };
 
-    const camera = try CameraPrepared.init(std.testing.allocator, input);
+    const camera = try cameratypes.CameraPreparedType(camera_impl).init(std.testing.allocator, input);
     defer camera.deinit(std.testing.allocator);
 
     const x_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 0 });
@@ -404,7 +381,7 @@ test "CameraPrepared.distortionNone" {
 }
 
 test "CameraPrepared.brownConradyExtDistortionApplied" {
-    const distort = cm.BrownConExt.Params{
+    const distort = cameramodels.BrownConExt.Params{
         .k1 = -0.18,
         .k2 = 0.02,
         .k3 = -0.004,
@@ -414,19 +391,19 @@ test "CameraPrepared.brownConradyExtDistortionApplied" {
         .p1 = 0.0012,
         .p2 = -0.0018,
     };
-    const input = CameraInput{
+    const input = cameratypes.CameraInput{
         .pixels_num = .{ 10, 10 },
         .pixels_size = .{ 0.01, 0.01 },
-        .pos_world = vec.Vec3F.initZeros(),
+        .pos_world = vecstack.Vec3F.initZeros(),
         .rot_world = rotation.Rotation.init(0, 0, 0),
-        .roi_cent_world = vec.Vec3F.initZeros(),
+        .roi_cent_world = vecstack.Vec3F.initZeros(),
         .focal_length = 1.0,
         .sub_sample = 1,
         .distort = .{ .brown_con_ext = distort },
         .subpixel_center_map = .full_in_mem,
     };
 
-    const camera = try CameraPrepared.init(std.testing.allocator, input);
+    const camera = try cameratypes.CameraPreparedType(camera_impl).init(std.testing.allocator, input);
     defer camera.deinit(std.testing.allocator);
 
     const x_off = 0.5 * @as(F, @floatFromInt(input.pixels_num[0]));
@@ -435,7 +412,7 @@ test "CameraPrepared.brownConradyExtDistortionApplied" {
     const fy = input.focal_length / input.pixels_size[1];
     const x_d = (0.5 - x_off) / fx;
     const y_d = (0.5 - y_off) / fy;
-    const solved = try (try cm.BrownConExt.init(distort)).inv(x_d, y_d);
+    const solved = try (try cameramodels.BrownConExt.init(distort)).inv(x_d, y_d);
 
     const x_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 0 });
     const y_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 1 });
@@ -454,7 +431,7 @@ test "CameraPrepared.brownConradyExtDistortionApplied" {
 }
 
 test "PreparedPSF gaussian kernels normalize" {
-    var prep = try cm.PreparedPSF.init(
+    var prep = try cameramodels.PreparedPSF.init(
         std.testing.allocator,
         .{ .gaussian = .{
             .sigma_px = 0.35,
@@ -476,7 +453,7 @@ test "PreparedPSF gaussian kernels normalize" {
 }
 
 test "PreparedPSF isotropic gaussian separable matches non-separable outer product" {
-    var prepared_sep = try cm.PreparedPSF.init(
+    var prepared_sep = try cameramodels.PreparedPSF.init(
         std.testing.allocator,
         .{ .gaussian = .{
             .sigma_px = 0.35,
@@ -487,7 +464,7 @@ test "PreparedPSF isotropic gaussian separable matches non-separable outer produ
     );
     defer prepared_sep.deinit(std.testing.allocator);
 
-    var prepared_nonsep = try cm.PreparedPSF.init(
+    var prepared_nonsep = try cameramodels.PreparedPSF.init(
         std.testing.allocator,
         .{ .gaussian = .{
             .sigma_px = 0.35,
@@ -513,12 +490,12 @@ test "PreparedPSF isotropic gaussian separable matches non-separable outer produ
 }
 
 test "camera preparation propagates polynomial inverse errors without leaking" {
-    var input = CameraInput{
+    var input = cameratypes.CameraInput{
         .pixels_num = .{ 2, 2 },
         .pixels_size = .{ 0.001, 0.001 },
-        .pos_world = vec.Vec3F.initSlice(&.{ 0.0, 0.0, 1.0 }),
+        .pos_world = vecstack.Vec3F.initSlice(&.{ 0.0, 0.0, 1.0 }),
         .rot_world = rotation.Rotation.init(0.0, 0.0, 0.0),
-        .roi_cent_world = vec.Vec3F.initZeros(),
+        .roi_cent_world = vecstack.Vec3F.initZeros(),
         .focal_length = 0.1,
         .sub_sample = 1,
         .subpixel_center_map = .full_in_mem,
@@ -530,11 +507,11 @@ test "camera preparation propagates polynomial inverse errors without leaking" {
     };
     try std.testing.expectError(
         error.SingularJac,
-        CameraPrepared.init(std.testing.allocator, input),
+        cameratypes.CameraPreparedType(camera_impl).init(std.testing.allocator, input),
     );
     input.subpixel_center_map = .per_tile;
     try std.testing.expectError(
         error.SingularJac,
-        CameraPrepared.init(std.testing.allocator, input),
+        cameratypes.CameraPreparedType(camera_impl).init(std.testing.allocator, input),
     );
 }

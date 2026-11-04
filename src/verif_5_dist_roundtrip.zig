@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("riley/zig/cameramodels.zig");
 const cameratypes = @import("riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -76,7 +77,7 @@ fn invDistortWithIters(
     var y_guess = y_dist;
 
     for (0..max_iters) |ii| {
-        const fwd = if (Evaluator == cam.BrownConExt)
+        const fwd = if (Evaluator == cameramodels.BrownConExt)
             distort.fordWithJac(x_guess, y_guess)
         else
             Evaluator.fordWithJac(distort, x_guess, y_guess);
@@ -136,7 +137,7 @@ fn observedToIdealRasterWithIters(
         },
         .brown_con => |distort| blk: {
             const solved = try invDistortWithIters(
-                cam.BrownCon,
+                cameramodels.BrownCon,
                 distort,
                 x_dist,
                 y_dist,
@@ -149,7 +150,7 @@ fn observedToIdealRasterWithIters(
         },
         .brown_con_ext => |distort| blk: {
             const solved = try invDistortWithIters(
-                cam.BrownConExt,
+                cameramodels.BrownConExt,
                 distort,
                 x_dist,
                 y_dist,
@@ -164,7 +165,7 @@ fn observedToIdealRasterWithIters(
         .brown_con_poly,
         .brown_con_ext_poly,
         => blk: {
-            const solved = try cam.invDistortModelScal(
+            const solved = try cameramodels.invDistortModelScal(
                 camera.distort,
                 x_dist,
                 y_dist,

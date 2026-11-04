@@ -6,19 +6,19 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const ndarray = @import("ndarray.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const NDArray = @import("ndarray.zig").NDArray;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-// NOTE: this has to be in a separate file from meshtypes to avoid a circular dependency 
+// NOTE: this has to be in a separate file from meshtypes to avoid a circular dependency
 // as shadertypes need access as well.
 pub const Field = struct {
-    array: NDArray(F),
+    array: ndarray.NDArray(F),
     array_mem: []F,
 
     const Self = @This();
@@ -33,7 +33,7 @@ pub const Field = struct {
         @memset(mem_array, 0.0);
 
         const mem_dims = [3]usize{ time_n, coord_n, @as(usize, fields_n) };
-        const arr = try NDArray(F).init(outer_alloc, mem_array, mem_dims[0..]);
+        const arr = try ndarray.NDArray(F).init(outer_alloc, mem_array, mem_dims[0..]);
 
         return .{
             .array = arr,

@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const shaderfunc = @import("../riley/zig/shaderfunc.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const shadertypes = @import("../riley/zig/shadertypes.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
@@ -47,8 +48,8 @@ const ImageDiffStats = struct {
 };
 
 fn sinusoidalParams(
-    builtin: shadertypes.FuncShaderBuiltin,
-) shadertypes.FuncShaderParams {
+    builtin: shaderfunc.FuncShaderBuiltin,
+) shaderfunc.FuncShaderParams {
     const wave_num = 2.0 * std.math.pi * wave_oscillations;
     return switch (builtin) {
         .sinusoidal => .{
@@ -74,7 +75,7 @@ fn sinusoidalParams(
 fn loadFuncMeshInput(
     allocator: std.mem.Allocator,
     io: std.Io,
-    builtin: shadertypes.FuncShaderBuiltin,
+    builtin: shaderfunc.FuncShaderBuiltin,
 ) !meshtypes.MeshInput {
     const coord_path = try std.fs.path.join(
         allocator,
@@ -115,7 +116,7 @@ fn loadFuncMeshInput(
 fn renderSinImage(
     allocator: std.mem.Allocator,
     io: std.Io,
-    builtin: shadertypes.FuncShaderBuiltin,
+    builtin: shaderfunc.FuncShaderBuiltin,
 ) !NDArray(F) {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();

@@ -6,14 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const vecslice = @import("vecslice.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const print = std.debug.print;
-const assert = std.debug.assert;
 
-const VecSlice = @import("vecslice.zig").VecSlice;
-const sliceops = @import("sliceops.zig");
 const csvio = @import("csvio.zig");
 
 // --------------------------------------------------------------------------------------
@@ -29,7 +26,7 @@ pub fn MatSlice(comptime T: type) type {
         const Self: type = @This();
 
         pub fn init(slice: []T, rows_num: usize, cols_num: usize) Self {
-            assert(slice.len == (rows_num * cols_num));
+            std.debug.assert(slice.len == (rows_num * cols_num));
 
             return .{
                 .slice = slice,
@@ -69,41 +66,41 @@ pub fn MatSlice(comptime T: type) type {
         }
 
         pub fn get(self: *const Self, row: usize, col: usize) T {
-            assert(row < self.rows_num);
-            assert(col < self.cols_num);
+            std.debug.assert(row < self.rows_num);
+            std.debug.assert(col < self.cols_num);
             return self.slice[(row * self.cols_num) + col];
         }
 
         pub fn set(self: *Self, row: usize, col: usize, val: T) void {
-            assert(row < self.rows_num);
-            assert(col < self.cols_num);
+            std.debug.assert(row < self.rows_num);
+            std.debug.assert(col < self.cols_num);
             self.slice[(row * self.cols_num) + col] = val;
         }
 
         pub fn flatIndex(self: *const Self, row: usize, col: usize) usize {
-            assert(row < self.rows_num);
-            assert(col < self.cols_num);
+            std.debug.assert(row < self.rows_num);
+            std.debug.assert(col < self.cols_num);
             return row * self.cols_num + col;
         }
 
         pub fn rowBase(self: *const Self, row: usize) usize {
-            assert(row < self.rows_num);
+            std.debug.assert(row < self.rows_num);
             return row * self.cols_num;
         }
 
         pub fn getFlat(self: *const Self, flat_idx: usize) T {
-            assert(flat_idx < self.slice.len);
+            std.debug.assert(flat_idx < self.slice.len);
             return self.slice[flat_idx];
         }
 
         pub fn setFlat(self: *Self, flat_idx: usize, val: T) void {
-            assert(flat_idx < self.slice.len);
+            std.debug.assert(flat_idx < self.slice.len);
             self.slice[flat_idx] = val;
         }
 
         pub fn transpose(self: *Self, buff: *Self) void {
-            assert(self.cols_num == buff.cols_num);
-            assert(self.rows_num == buff.rows_num);
+            std.debug.assert(self.cols_num == buff.cols_num);
+            std.debug.assert(self.rows_num == buff.rows_num);
 
             @memcpy(buff.slice, self.slice);
 
@@ -162,7 +159,7 @@ pub fn MatSlice(comptime T: type) type {
         }
 
         pub fn getSlice(self: *const Self, row_to_slice: usize) []T {
-            assert(row_to_slice < self.rows_num);
+            std.debug.assert(row_to_slice < self.rows_num);
 
             const start_idx: usize = row_to_slice * self.cols_num;
             const end_idx: usize = start_idx + self.cols_num;
@@ -173,18 +170,18 @@ pub fn MatSlice(comptime T: type) type {
             var ind: usize = 0;
 
             for (0..self.rows_num) |ii| {
-                print("[", .{});
+                std.debug.print("[", .{});
                 for (0..self.cols_num) |jj| {
                     ind = (ii * self.cols_num) + jj;
-                    print("{e:.3},", .{self.slice[ind]});
+                    std.debug.print("{e:.3},", .{self.slice[ind]});
                 }
-                print("]\n", .{});
+                std.debug.print("]\n", .{});
             }
-            print("\n", .{});
+            std.debug.print("\n", .{});
         }
 
         pub fn minByRow(self: *const Self, fixed_col: usize) T {
-            assert(fixed_col < self.cols_num);
+            std.debug.assert(fixed_col < self.cols_num);
 
             var val: T = self.get(0, fixed_col);
 
@@ -199,7 +196,7 @@ pub fn MatSlice(comptime T: type) type {
         }
 
         pub fn maxByRow(self: *const Self, fixed_col: usize) T {
-            assert(fixed_col < self.cols_num);
+            std.debug.assert(fixed_col < self.cols_num);
 
             var val: T = self.get(0, fixed_col);
 
@@ -245,8 +242,8 @@ pub fn MatSliceOps(comptime T: type) type {
             mat1: *const MatSlice(T),
             mat_out: *MatSlice(T),
         ) void {
-            assert(mat0.rows_num == mat1.rows_num);
-            assert(mat0.cols_num == mat1.cols_num);
+            std.debug.assert(mat0.rows_num == mat1.rows_num);
+            std.debug.assert(mat0.cols_num == mat1.cols_num);
 
             for (0..mat0.slice.len) |ii| {
                 mat_out.slice[ii] = mat0.slice[ii] + mat1.slice[ii];
@@ -258,8 +255,8 @@ pub fn MatSliceOps(comptime T: type) type {
             mat1: *const MatSlice(T),
             mat_out: *MatSlice(T),
         ) void {
-            assert(mat0.rows_num == mat1.rows_num);
-            assert(mat0.cols_num == mat1.cols_num);
+            std.debug.assert(mat0.rows_num == mat1.rows_num);
+            std.debug.assert(mat0.cols_num == mat1.cols_num);
 
             for (0..mat0.slice.len) |ii| {
                 mat_out.slice[ii] = mat0.slice[ii] - mat1.slice[ii];
@@ -271,8 +268,8 @@ pub fn MatSliceOps(comptime T: type) type {
             mat1: *const MatSlice(T),
             mat_out: *MatSlice(T),
         ) void {
-            assert(mat0.rows_num == mat1.rows_num);
-            assert(mat0.cols_num == mat1.cols_num);
+            std.debug.assert(mat0.rows_num == mat1.rows_num);
+            std.debug.assert(mat0.cols_num == mat1.cols_num);
 
             for (0..mat0.slice.len) |ii| {
                 mat_out.slice[ii] = mat0.slice[ii] * mat1.slice[ii];
@@ -284,8 +281,8 @@ pub fn MatSliceOps(comptime T: type) type {
             mat1: *const MatSlice(T),
             mat_out: *MatSlice(T),
         ) void {
-            assert(mat0.rows_num == mat1.rows_num);
-            assert(mat0.cols_num == mat1.cols_num);
+            std.debug.assert(mat0.rows_num == mat1.rows_num);
+            std.debug.assert(mat0.cols_num == mat1.cols_num);
 
             for (0..mat0.slice.len) |ii| {
                 mat_out.slice[ii] = mat0.slice[ii] / mat1.slice[ii];
@@ -304,10 +301,10 @@ pub fn MatSliceOps(comptime T: type) type {
 
         pub fn mulVec(
             mat: *const MatSlice(T),
-            vec_mul: *const VecSlice(T),
-            vec_out: *VecSlice(T),
+            vec_mul: *const vecslice.VecSlice(T),
+            vec_out: *vecslice.VecSlice(T),
         ) void {
-            assert(mat.cols_num == vec_mul.slice.len);
+            std.debug.assert(mat.cols_num == vec_mul.slice.len);
 
             var sum: T = 0;
 
@@ -325,7 +322,7 @@ pub fn MatSliceOps(comptime T: type) type {
             mat1: *const MatSlice(T),
             mat_out: *MatSlice(T),
         ) void {
-            assert(mat0.cols_num == mat1.rows_num);
+            std.debug.assert(mat0.cols_num == mat1.rows_num);
 
             var sum: T = 0;
 
@@ -348,12 +345,8 @@ pub fn MatSliceOps(comptime T: type) type {
 // Tests
 // --------------------------------------------------------------------------------------
 
-const testing = std.testing;
-const expectEqual = std.testing.expectEqual;
-const expectApproxEqAbs = testing.expectApproxEqAbs;
-const expectEqualSlices = testing.expectEqualSlices;
 const TestType = F;
-const talloc = testing.allocator;
+const talloc = std.testing.allocator;
 
 test "MatSlice.getSlice" {
     const rows: usize = 3;
@@ -379,9 +372,9 @@ test "MatSlice.getSlice" {
     const slice1 = mat0.getSlice(1);
     const slice2 = mat0.getSlice(2);
 
-    try expectEqualSlices(TestType, exp0[0..], slice0);
-    try expectEqualSlices(TestType, exp1[0..], slice1);
-    try expectEqualSlices(TestType, exp2[0..], slice2);
+    try std.testing.expectEqualSlices(TestType, exp0[0..], slice0);
+    try std.testing.expectEqualSlices(TestType, exp1[0..], slice1);
+    try std.testing.expectEqualSlices(TestType, exp2[0..], slice2);
 }
 
 test "MatSlice flat helpers" {
@@ -397,9 +390,9 @@ test "MatSlice flat helpers" {
     const idx = mat0.flatIndex(2, 3);
     mat0.setFlat(idx, 9.0);
 
-    try expectEqual(@as(usize, 8), base);
-    try expectEqual(@as(usize, 11), idx);
-    try expectApproxEqAbs(@as(TestType, 9.0), mat0.get(2, 3), 1e-12);
+    try std.testing.expectEqual(@as(usize, 8), base);
+    try std.testing.expectEqual(@as(usize, 11), idx);
+    try std.testing.expectApproxEqAbs(@as(TestType, 9.0), mat0.get(2, 3), 1e-12);
 }
 
 test "MatSliceOps.add" {
@@ -428,7 +421,7 @@ test "MatSliceOps.add" {
 
     MatSliceOps(TestType).add(&mat0, &mat1, &mat_op);
 
-    try expectEqualSlices(TestType, mat_exp.slice, mat_op.slice);
+    try std.testing.expectEqualSlices(TestType, mat_exp.slice, mat_op.slice);
 }
 
 test "MatSliceOps.sub" {
@@ -457,7 +450,7 @@ test "MatSliceOps.sub" {
 
     MatSliceOps(TestType).sub(&mat0, &mat1, &mat_op);
 
-    try expectEqualSlices(TestType, mat_exp.slice, mat_op.slice);
+    try std.testing.expectEqualSlices(TestType, mat_exp.slice, mat_op.slice);
 }
 
 test "MatSliceOps.mulElemWise" {
@@ -486,7 +479,7 @@ test "MatSliceOps.mulElemWise" {
 
     MatSliceOps(TestType).mulElemWise(&mat0, &mat1, &mat_op);
 
-    try expectEqualSlices(TestType, mat_exp.slice, mat_op.slice);
+    try std.testing.expectEqualSlices(TestType, mat_exp.slice, mat_op.slice);
 }
 
 test "MatSliceOps.mulScal" {
@@ -512,7 +505,7 @@ test "MatSliceOps.mulScal" {
 
     MatSliceOps(TestType).mulScal(&mat0, scal, &mat_op);
 
-    try expectEqualSlices(TestType, mat_exp.slice, mat_op.slice);
+    try std.testing.expectEqualSlices(TestType, mat_exp.slice, mat_op.slice);
 }
 
 test "MatSliceOps.divElemWise" {
@@ -541,7 +534,7 @@ test "MatSliceOps.divElemWise" {
 
     MatSliceOps(TestType).divElemWise(&mat0, &mat1, &mat_op);
 
-    try expectEqualSlices(TestType, mat_exp.slice, mat_op.slice);
+    try std.testing.expectEqualSlices(TestType, mat_exp.slice, mat_op.slice);
 }
 
 test "MatSlice.addInPlace" {
@@ -556,7 +549,7 @@ test "MatSlice.addInPlace" {
 
     mat0.addInPlace(&mat1);
 
-    try expectEqualSlices(TestType, mat_exp.slice, mat0.slice);
+    try std.testing.expectEqualSlices(TestType, mat_exp.slice, mat0.slice);
 }
 
 test "MatSlice.subInPlace" {
@@ -571,7 +564,7 @@ test "MatSlice.subInPlace" {
 
     mat0.subInPlace(&mat1);
 
-    try expectEqualSlices(TestType, mat_exp.slice, mat0.slice);
+    try std.testing.expectEqualSlices(TestType, mat_exp.slice, mat0.slice);
 }
 
 test "MatSlice.trace" {
@@ -580,7 +573,7 @@ test "MatSlice.trace" {
 
     const trace_exp: TestType = 5;
 
-    try expectEqual(trace_exp, mat0.trace());
+    try std.testing.expectEqual(trace_exp, mat0.trace());
 }
 
 test "MatSlice.transpose" {
@@ -595,7 +588,7 @@ test "MatSlice.transpose" {
 
     mat0.transpose(&mat_buff);
 
-    try expectEqualSlices(TestType, mat_exp.slice, mat0.slice);
+    try std.testing.expectEqualSlices(TestType, mat_exp.slice, mat0.slice);
 }
 
 test "MatSlice.mulScal" {
@@ -609,7 +602,7 @@ test "MatSlice.mulScal" {
 
     mat0.mulScalInPlace(scal);
 
-    try expectEqualSlices(TestType, mat_exp.slice, mat0.slice);
+    try std.testing.expectEqualSlices(TestType, mat_exp.slice, mat0.slice);
 }
 
 test "MatSliceOps.mulVec" {
@@ -617,17 +610,17 @@ test "MatSliceOps.mulVec" {
     const mat0 = MatSlice(TestType).init(&m0, 3, 3);
 
     var v0 = [_]TestType{ 3, 2, 1 };
-    const vec0 = VecSlice(TestType).init(&v0);
+    const vec0 = vecslice.VecSlice(TestType).init(&v0);
 
     var v1 = [_]TestType{ 10, 28, 46 };
-    const vec_exp = VecSlice(TestType).init(&v1);
+    const vec_exp = vecslice.VecSlice(TestType).init(&v1);
 
     var v_out = [_]TestType{0} ** 3;
-    var vec_out = VecSlice(TestType).init(&v_out);
+    var vec_out = vecslice.VecSlice(TestType).init(&v_out);
 
     MatSliceOps(TestType).mulVec(&mat0, &vec0, &vec_out);
 
-    try expectEqualSlices(TestType, vec_exp.slice, vec_out.slice);
+    try std.testing.expectEqualSlices(TestType, vec_exp.slice, vec_out.slice);
 }
 
 test "MatSliceOps.mulMat" {
@@ -645,5 +638,5 @@ test "MatSliceOps.mulMat" {
 
     MatSliceOps(TestType).mulMat(&mat0, &mat1, &mat_out);
 
-    try expectEqualSlices(TestType, mat_exp.slice, mat_out.slice);
+    try std.testing.expectEqualSlices(TestType, mat_exp.slice, mat_out.slice);
 }

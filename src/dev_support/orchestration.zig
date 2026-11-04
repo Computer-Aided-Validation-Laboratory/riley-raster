@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const fieldtypes = @import("../riley/zig/fieldtypes.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const shadertypes = @import("../riley/zig/shadertypes.zig");
 const std = @import("std");
@@ -112,7 +113,7 @@ fn initCameraForSimDataAllFrames(
     var mesh_inputs = try aa.alloc(meshtypes.MeshInput, time_steps);
 
     for (0..time_steps) |tt| {
-        var frame_coords = try meshio.Coords.initAlloc(aa, sim_data.coords.mat.rows_num);
+        var frame_coords = try meshtypes.Coords.initAlloc(aa, sim_data.coords.mat.rows_num);
 
         for (0..sim_data.coords.mat.rows_num) |nn| {
             frame_coords.mat.set(nn, 0, sim_data.coords.x(nn));
@@ -211,7 +212,7 @@ pub fn prepareSingleMeshCase(
 
 pub fn initCameraForCoords(
     allocator: std.mem.Allocator,
-    coords: *const meshio.Coords,
+    coords: *const meshtypes.Coords,
     pixel_num: [2]u32,
     fov_scale: F,
 ) !CameraPrepared {
@@ -226,7 +227,7 @@ pub fn initCameraForCoords(
 
 pub fn initCameraForCoordsWithRotation(
     allocator: std.mem.Allocator,
-    coords: *const meshio.Coords,
+    coords: *const meshtypes.Coords,
     pixel_num: [2]u32,
     fov_scale: F,
     rot: Rotation,
@@ -255,7 +256,7 @@ pub fn initCameraForCoordsWithRotation(
 
 pub fn initStereoCamerasForCoords(
     allocator: std.mem.Allocator,
-    coords: *const meshio.Coords,
+    coords: *const meshtypes.Coords,
     pixel_num: [2]u32,
     fov_scale: F,
     half_angle_deg: F,
@@ -349,16 +350,16 @@ pub fn buildMultimeshInputs(
 
 pub fn copyCoords(
     allocator: std.mem.Allocator,
-    coords: meshio.Coords,
-) !meshio.Coords {
+    coords: meshtypes.Coords,
+) !meshtypes.Coords {
     return sceneops.duplicateCoords(allocator, coords);
 }
 
 fn buildGradientRgbField(
     allocator: std.mem.Allocator,
-    coords: meshio.Coords,
-    field: meshio.Field,
-) !meshio.Field {
+    coords: meshtypes.Coords,
+    field: fieldtypes.Field,
+) !fieldtypes.Field {
     const num_coords = coords.mat.rows_num;
     var rgb_field_arr = try NDArray(F).initFlat(
         allocator,

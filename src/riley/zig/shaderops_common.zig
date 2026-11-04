@@ -15,48 +15,8 @@ const F = buildconfig.F;
 const VecSF = buildconfig.VecSF;
 const VecSB = buildconfig.VecSB;
 
-const ndarray = @import("ndarray.zig");
-const matslice = @import("matslice.zig");
-
-const imageops = @import("imageops.zig");
-const textypes = @import("texturetypes.zig");
-const meshio = @import("meshio.zig");
+const texturetypes = @import("texturetypes.zig");
 const shaderpipe = @import("shaderpipe.zig");
-const meshhit = @import("meshhit.zig");
-pub const shaderfunc = @import("shaderfunc.zig");
-
-// --------------------------------------------------------------------------------------
-// Common Enums & Shared Pipe Stages
-// --------------------------------------------------------------------------------------
-
-const ScaleOver = shadertypes.ScaleOver;
-const RenderFormat = shadertypes.RenderFormat;
-const GreyToEmissivityStage = shadertypes.GreyToEmissivityStage;
-const ClampStage = shadertypes.ClampStage;
-const AffineMapStage = shadertypes.AffineMapStage;
-const LUTMapStage = shadertypes.LUTMapStage;
-const BlendStage = shadertypes.BlendStage;
-const NormaliseStage = shadertypes.NormaliseStage;
-const FuncCoordMode = shadertypes.FuncCoordMode;
-const FuncShaderBuiltin = shadertypes.FuncShaderBuiltin;
-const FuncCoord = shadertypes.FuncCoord;
-const FuncCoordSIMD = shadertypes.FuncCoordSIMD;
-const ConstantParams = shadertypes.ConstantParams;
-const LinearParams = shadertypes.LinearParams;
-const QuadraticParams = shadertypes.QuadraticParams;
-const SinusoidalParams = shadertypes.SinusoidalParams;
-const CheckerParams = shadertypes.CheckerParams;
-const CheckerSmoothParams = shadertypes.CheckerSmoothParams;
-const LambertianParams = shadertypes.LambertianParams;
-const EggboxParams = shadertypes.EggboxParams;
-const FuncShaderParams = shadertypes.FuncShaderParams;
-const normFuncShaderParams = shadertypes.normFuncShaderParams;
-const applyFuncShaderCoordParams = shadertypes.applyFuncShaderCoordParams;
-const applyFuncShaderCoordParamsSIMD = shadertypes.applyFuncShaderCoordParamsSIMD;
-const cubicSmoothStep = shadertypes.cubicSmoothStep;
-const cubicSmoothStepSIMD = shadertypes.cubicSmoothStepSIMD;
-const evalFuncShaderBuiltinGreyNorm = shadertypes.evalFuncShaderBuiltinGreyNorm;
-const evalFuncShaderBuiltinRGBNorm = shadertypes.evalFuncShaderBuiltinRGBNorm;
 
 // --------------------------------------------------------------------------------------
 // Stage 1: Input
@@ -65,18 +25,7 @@ const evalFuncShaderBuiltinRGBNorm = shadertypes.evalFuncShaderBuiltinRGBNorm;
 // Nodal Fields: Node-order [num_frames, total_nodes, num_fields]
 // UVs: Node-order [total_nodes, 2]
 
-const NodalInput = shadertypes.NodalInput;
-const TexInput = shadertypes.TexInput;
-const FuncInput = shadertypes.FuncInput;
-const FuncChannel = shadertypes.FuncChannel;
-const FuncMultiInput = shadertypes.FuncMultiInput;
-const ShaderMonoInput = shadertypes.ShaderMonoInput;
-const PipeSourceInput = shadertypes.PipeSourceInput;
-const ShaderPipeStageInput = shadertypes.ShaderPipeStageInput;
-const ShaderPipeInput = shadertypes.ShaderPipeInput;
-const MeshShaderSetInput = shadertypes.MeshShaderSetInput;
-
-pub fn stageSource(source: PipeSourceInput) ShaderPipeStageInput {
+pub fn stageSource(source: shadertypes.PipeSourceInput) shadertypes.ShaderPipeStageInput {
     return .{
         .source = .{
             .shader = source,
@@ -86,9 +35,9 @@ pub fn stageSource(source: PipeSourceInput) ShaderPipeStageInput {
 }
 
 pub fn identityRGB(
-    source: PipeSourceInput,
-    stage_buf: *[1]ShaderPipeStageInput,
-) ShaderPipeInput {
+    source: shadertypes.PipeSourceInput,
+    stage_buf: *[1]shadertypes.ShaderPipeStageInput,
+) shadertypes.ShaderPipeInput {
     stage_buf[0] = stageSource(source);
     return .{
         .stages = stage_buf,
@@ -98,9 +47,9 @@ pub fn identityRGB(
 
 pub fn identityMulti(
     channels: u8,
-    source: PipeSourceInput,
-    stage_buf: *[1]ShaderPipeStageInput,
-) ShaderPipeInput {
+    source: shadertypes.PipeSourceInput,
+    stage_buf: *[1]shadertypes.ShaderPipeStageInput,
+) shadertypes.ShaderPipeInput {
     stage_buf[0] = stageSource(source);
     return .{
         .stages = stage_buf,
@@ -108,7 +57,7 @@ pub fn identityMulti(
     };
 }
 
-pub fn monoToPipeSource(mono: ShaderMonoInput) PipeSourceInput {
+pub fn monoToPipeSource(mono: shadertypes.ShaderMonoInput) shadertypes.PipeSourceInput {
     return switch (mono) {
         .tex_u8 => |t| .{ .tex_u8 = t },
         .tex_u16 => |t| .{ .tex_u16 = t },
@@ -118,7 +67,7 @@ pub fn monoToPipeSource(mono: ShaderMonoInput) PipeSourceInput {
     };
 }
 
-pub fn pipeSourceToMono(source: PipeSourceInput) !ShaderMonoInput {
+pub fn pipeSourceToMono(source: shadertypes.PipeSourceInput) !shadertypes.ShaderMonoInput {
     return switch (source) {
         .tex_u8 => |t| .{ .tex_u8 = t },
         .tex_u16 => |t| .{ .tex_u16 = t },
@@ -138,17 +87,6 @@ pub fn pipeSourceToMono(source: PipeSourceInput) !ShaderMonoInput {
 // Nodal Fields: Node-order [num_frames, total_nodes, num_fields]
 // UVs: Elem-order [total_elems, 2, nodes_per_elem]
 
-const NodalStatic = shadertypes.NodalStatic;
-const TexStatic = shadertypes.TexStatic;
-const TexMultiStatic = shadertypes.TexMultiStatic;
-const FuncStatic = shadertypes.FuncStatic;
-const ShaderMonoStatic = shadertypes.ShaderMonoStatic;
-const PipeSourceStatic = shadertypes.PipeSourceStatic;
-const ShaderPipeStageStatic = shadertypes.ShaderPipeStageStatic;
-const ShaderPipeStatic = shadertypes.ShaderPipeStatic;
-const ShaderExecutionStatic = shadertypes.ShaderExecutionStatic;
-const MeshShaderSetStatic = shadertypes.MeshShaderSetStatic;
-
 // --------------------------------------------------------------------------------------
 // Stage 3: Prepared
 // --------------------------------------------------------------------------------------
@@ -157,27 +95,12 @@ const MeshShaderSetStatic = shadertypes.MeshShaderSetStatic;
 // Nodal Fields: Elem-order [vis_elems, num_fields, nodes_per_elem]
 // UVs: Elem-order [vis_elems, 2, nodes_per_elem]
 
-const NodalPrepared = shadertypes.NodalPrepared;
-const TexPrepared = shadertypes.TexPrepared;
-const TexMultiPrepared = shadertypes.TexMultiPrepared;
-const concreteTexture = shadertypes.concreteTexture;
-const FuncPrepared = shadertypes.FuncPrepared;
-const FuncChannelPrepared = shadertypes.FuncChannelPrepared;
-const ShaderMonoPrepared = shadertypes.ShaderMonoPrepared;
-const PipeSourcePrepared = shadertypes.PipeSourcePrepared;
-const ShaderPipeStagePrepared = shadertypes.ShaderPipeStagePrepared;
-const ShaderPipePrepared = shadertypes.ShaderPipePrepared;
-const ShaderExecutionPrepared = shadertypes.ShaderExecutionPrepared;
-const MeshShaderSetPrepared = shadertypes.MeshShaderSetPrepared;
-
 // --------------------------------------------------------------------------------------
 // MeshShaderSet Operations & Camera Selection
 // --------------------------------------------------------------------------------------
 
-const SelectedShader = shadertypes.SelectedShader;
-
-pub fn hasShader(shaders: anytype, format: RenderFormat) bool {
-    if (comptime @TypeOf(shaders) == MeshShaderSetInput) {
+pub fn hasShader(shaders: anytype, format: shadertypes.RenderFormat) bool {
+    if (comptime @TypeOf(shaders) == shadertypes.MeshShaderSetInput) {
         return switch (format) {
             .mono => shaders.mono_direct != null or shaders.mono_pipe != null,
             .ir => shaders.ir_direct != null or shaders.ir_pipe != null,
@@ -197,9 +120,9 @@ pub fn selectShader(
     comptime Direct: type,
     comptime Pipe: type,
     shaders: anytype,
-    format: RenderFormat,
-) ?SelectedShader(Direct, Pipe) {
-    if (comptime @TypeOf(shaders.*) == MeshShaderSetInput) {
+    format: shadertypes.RenderFormat,
+) ?shadertypes.SelectedShader(Direct, Pipe) {
+    if (comptime @TypeOf(shaders.*) == shadertypes.MeshShaderSetInput) {
         return switch (format) {
             .mono => if (shaders.mono_direct) |*shader| .{ .direct = shader } else if (shaders.mono_pipe) |*pipe| .{ .pipe = pipe } else null,
             .ir => if (shaders.ir_direct) |*shader| .{ .direct = shader } else if (shaders.ir_pipe) |*pipe| .{ .pipe = pipe } else null,
@@ -233,31 +156,27 @@ pub fn selectShader(
 
 // Local buffer for hoisting element shader data into cache once per element before we
 // enter the sub-pixel raster loop.
-const LocalShaderBuff = shadertypes.LocalShaderBuff;
-const ShadeContext = shadertypes.ShadeContext;
 
 // --------------------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------------------
 
-const testing = std.testing;
-
 test "texture input defaults to direct evaluation mode" {
-    const ti_cfg = (TexInput(textypes.TexDataFix(u8, 1)){
+    const ti_cfg = (shadertypes.TexInput(texturetypes.TexDataFix(u8, 1)){
         .uvs = undefined,
         .tex = undefined,
     }).samp_cfg;
-    try testing.expectEqual(textypes.TexSampMode.direct, ti_cfg.mode);
+    try std.testing.expectEqual(texturetypes.TexSampMode.direct, ti_cfg.mode);
 
-    const ts_cfg = (TexStatic(u8, 1){
+    const ts_cfg = (shadertypes.TexStatic(u8, 1){
         .elem_uvs = undefined,
         .tex = undefined,
     }).samp_cfg;
-    try testing.expectEqual(textypes.TexSampMode.direct, ts_cfg.mode);
+    try std.testing.expectEqual(texturetypes.TexSampMode.direct, ts_cfg.mode);
 
-    const tp_cfg = (TexPrepared(u8, 1){
+    const tp_cfg = (shadertypes.TexPrepared(u8, 1){
         .elem_uvs = undefined,
         .tex = undefined,
     }).samp_cfg;
-    try testing.expectEqual(textypes.TexSampMode.direct, tp_cfg.mode);
+    try std.testing.expectEqual(texturetypes.TexSampMode.direct, tp_cfg.mode);
 }

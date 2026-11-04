@@ -6,12 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const geometrykernels = @import("geometrykernels.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const VecSF = buildconfig.VecSF;
 const VecSB = buildconfig.VecSB;
-const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 const ndarray = @import("ndarray.zig");
 
 pub const MeshHitField = enum { coords_ref, coords_def, surf_norm };
@@ -69,7 +69,7 @@ pub const MeshHitGeomSIMD = struct {
 
 pub inline fn interpCoordsSIMD(
     comptime N: usize,
-    comptime coord_space: CoordSpace,
+    comptime coord_space: geometrykernels.CoordSpace,
     values: *const [3 * N]F,
     mask: VecSB,
     weights: [N]VecSF,
@@ -96,7 +96,7 @@ pub inline fn interpCoordsSIMD(
 
 pub inline fn interpCoords(
     comptime N: usize,
-    comptime coord_space: CoordSpace,
+    comptime coord_space: geometrykernels.CoordSpace,
     values: *const [3 * N]F,
     hit: MeshHit(N),
 ) [3]F {

@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameramodels = @import("riley/zig/cameramodels.zig");
 const cameratypes = @import("riley/zig/cameratypes.zig");
 const meshtypes = @import("riley/zig/meshtypes.zig");
 const std = @import("std");
@@ -198,11 +199,11 @@ fn makeMesh(
     }
     return .{
         .mesh_type = mesh_type,
-        .coords = meshio.Coords.init(
+        .coords = meshtypes.Coords.init(
             coord_values,
             args.elements_per_type * N,
         ),
-        .connect = meshio.Connect.init(
+        .connect = meshtypes.Connect.init(
             connect_values,
             args.elements_per_type,
             N,
@@ -241,7 +242,7 @@ pub fn main(init: std.process.Init) !void {
         try makeMesh(9, local_alloc, .quad9, 3, args),
     };
 
-    const psf: cam.PointSpreadFunc = switch (args.psf) {
+    const psf: cameramodels.PointSpreadFunc = switch (args.psf) {
         .none => .{ .pixel_box = .{} },
         .gaussian_1_0 => .{ .gaussian = .{
             .sigma_px = 1.0,

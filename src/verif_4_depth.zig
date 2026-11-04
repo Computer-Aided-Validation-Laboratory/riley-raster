@@ -72,7 +72,7 @@ fn pairedBackMeshType(front_mesh_type: gk.MeshType) gk.MeshType {
     };
 }
 
-fn translateCoords(coords: *meshio.Coords, translation: [3]F) void {
+fn translateCoords(coords: *meshtypes.Coords, translation: [3]F) void {
     for (0..coords.mat.rows_num) |nn| {
         coords.mat.set(nn, 0, coords.mat.get(nn, 0) + translation[0]);
         coords.mat.set(nn, 1, coords.mat.get(nn, 1) + translation[1]);

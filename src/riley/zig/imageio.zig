@@ -14,8 +14,8 @@ const F = buildconfig.F;
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
 
-const texops = @import("textureops.zig");
-const textypes = @import("texturetypes.zig");
+const textureops = @import("textureops.zig");
+const texturetypes = @import("texturetypes.zig");
 const clibtiff = @import("clibtiff.zig");
 
 const imageops = @import("imageops.zig");
@@ -63,7 +63,7 @@ pub fn loadImage(
     io: std.Io,
     path: []const u8,
     format: ImageFormat,
-) !textypes.TexDataFix(T, channels) {
+) !texturetypes.TexDataFix(T, channels) {
     return switch (format) {
         .csv => try loadCSV(T, channels, allocator, io, path),
         .fimg => {
@@ -86,7 +86,7 @@ pub fn saveTextureCSV(
     const TexturePtr = @TypeOf(tex);
     const SaveCtx = struct {
         fn getVal(ctx: TexturePtr, row: usize, col: usize, ch: usize) F {
-            return texops.texelToFloat(T, ctx.getVal(ch, row, col));
+            return textureops.texelToFloat(T, ctx.getVal(ch, row, col));
         }
     };
     try csvio.savePackedGridCSV(
@@ -605,7 +605,7 @@ pub fn loadPPM(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !textypes.TexDataFix(T, channels) {
+) !texturetypes.TexDataFix(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -656,7 +656,7 @@ pub fn loadPPM(
     const height = try std.fmt.parseInt(usize, height_str, 10);
     const max_val = try std.fmt.parseInt(u32, max_val_str, 10);
 
-    var tex = try textypes.TexDataFix(T, channels).init(allocator, height, width);
+    var tex = try texturetypes.TexDataFix(T, channels).init(allocator, height, width);
     errdefer tex.deinit(allocator);
 
     const max_val_f = @as(F, @floatFromInt(max_val));
@@ -697,7 +697,7 @@ pub fn loadCSV(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !textypes.TexDataFix(T, channels) {
+) !texturetypes.TexDataFix(T, channels) {
     const array = if (channels == 1)
         try csvio.loadScalarCsv2D(allocator, io, path)
     else
@@ -710,7 +710,7 @@ pub fn loadCSV(
 
     const rows = array.dims[0];
     const cols = array.dims[1];
-    var tex = try textypes.TexDataFix(T, channels).init(allocator, rows, cols);
+    var tex = try texturetypes.TexDataFix(T, channels).init(allocator, rows, cols);
     errdefer tex.deinit(allocator);
 
     for (0..rows) |rr| {
@@ -834,7 +834,7 @@ fn loadFIMGTex(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !textypes.TexDataFix(T, channels) {
+) !texturetypes.TexDataFix(T, channels) {
     const array = try loadFIMG(allocator, io, path);
     defer {
         allocator.free(array.slice);
@@ -846,7 +846,7 @@ fn loadFIMGTex(
         return error.ChannelMismatch;
     }
 
-    var tex = try textypes.TexDataFix(T, channels).init(
+    var tex = try texturetypes.TexDataFix(T, channels).init(
         allocator,
         array.dims[1],
         array.dims[2],
@@ -871,7 +871,7 @@ pub fn loadBMP(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !textypes.TexDataFix(T, channels) {
+) !texturetypes.TexDataFix(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -904,7 +904,7 @@ pub fn loadBMP(
     const abs_height = @as(usize, @intCast(@abs(height)));
     const abs_width = @as(usize, @intCast(@abs(width)));
 
-    var tex = try textypes.TexDataFix(T, channels).init(
+    var tex = try texturetypes.TexDataFix(T, channels).init(
         allocator,
         abs_height,
         abs_width,
@@ -1001,7 +1001,7 @@ pub fn loadTIFF(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !textypes.TexDataFix(T, channels) {
+) !texturetypes.TexDataFix(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -1059,7 +1059,7 @@ pub fn loadTIFF(
 
     if (samples_per_pixel != 1) return error.UnsuppedTIFFColorSpace;
 
-    var tex = try textypes.TexDataFix(T, channels).init(
+    var tex = try texturetypes.TexDataFix(T, channels).init(
         allocator,
         height,
         width,
@@ -1104,7 +1104,7 @@ pub fn CLoadTIFF(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !textypes.TexDataFix(T, channels) {
+) !texturetypes.TexDataFix(T, channels) {
     _ = io;
     var libtiff = try clibtiff.LibTiff.init();
     defer libtiff.deinit();
@@ -1126,7 +1126,7 @@ pub fn CLoadTIFF(
 
     if (libtiff.readRGBAImage(tif, w, h, raster.ptr, 0) == 0) return error.ReadFailed;
 
-    var tex = try textypes.TexDataFix(T, channels).init(allocator, h, w);
+    var tex = try texturetypes.TexDataFix(T, channels).init(allocator, h, w);
     errdefer tex.deinit(allocator);
 
     for (0..h) |row| {
@@ -1211,8 +1211,6 @@ fn digitise(value: F, opts: ImageSaveOpts, params: imageops.ScalingParams) u16 {
 // Tests
 // --------------------------------------------------------------------------------------
 
-const testing = std.testing;
-
 const frac_tol: F = if (F == f32) 1e-2 else 1e-6;
 
 fn ensureTempTestDir(io: std.Io) !void {
@@ -1231,7 +1229,7 @@ fn deleteTempTestDir(io: std.Io) void {
 }
 
 test "Verify hand-written TIFF loader" {
-    const allocator = testing.allocator;
+    const allocator = std.testing.allocator;
     const io = std.testing.io;
     const cwd = std.Io.Dir.cwd();
     try ensureTempTestDir(io);
@@ -1269,20 +1267,20 @@ test "Verify hand-written TIFF loader" {
     );
     defer tex_zig.deinit(allocator);
 
-    try testing.expectEqual(rows_num, tex_zig.rows_num);
-    try testing.expectEqual(cols_num, tex_zig.cols_num);
+    try std.testing.expectEqual(rows_num, tex_zig.rows_num);
+    try std.testing.expectEqual(cols_num, tex_zig.cols_num);
 
     for (0..rows_num) |rr| {
         for (0..cols_num) |cc| {
             const expected = mat_mem[rr * cols_num + cc];
             const actual = tex_zig.getVal(0, rr, cc);
-            try testing.expectEqual(expected, actual);
+            try std.testing.expectEqual(expected, actual);
         }
     }
 }
 
 test "Save and Load All Formats 8-bit and 16-bit" {
-    const allocator = testing.allocator;
+    const allocator = std.testing.allocator;
     const io = std.testing.io;
     const cwd = std.Io.Dir.cwd();
     try ensureTempTestDir(io);
@@ -1347,8 +1345,8 @@ test "Save and Load All Formats 8-bit and 16-bit" {
                     fmt,
                 );
                 defer loaded.deinit(allocator);
-                try testing.expectEqual(rows, loaded.rows_num);
-                try testing.expectEqual(cols, loaded.cols_num);
+                try std.testing.expectEqual(rows, loaded.rows_num);
+                try std.testing.expectEqual(cols, loaded.cols_num);
             } else {
                 var loaded = try loadImage(
                     u16,
@@ -1359,15 +1357,15 @@ test "Save and Load All Formats 8-bit and 16-bit" {
                     fmt,
                 );
                 defer loaded.deinit(allocator);
-                try testing.expectEqual(rows, loaded.rows_num);
-                try testing.expectEqual(cols, loaded.cols_num);
+                try std.testing.expectEqual(rows, loaded.rows_num);
+                try std.testing.expectEqual(cols, loaded.cols_num);
             }
         }
     }
 }
 
 test "TIFF ADC packing and range scaling" {
-    const allocator = testing.allocator;
+    const allocator = std.testing.allocator;
     const io = std.testing.io;
     try ensureTempTestDir(io);
     defer deleteTempTestDir(io);
@@ -1384,10 +1382,10 @@ test "TIFF ADC packing and range scaling" {
     defer dic.deinit(allocator);
     const expected_dic = [_]u16{ 0, 16384, 32768, 49136, 65520, 65520 };
     for (dic.array.slice, expected_dic) |actual, expected| {
-        try testing.expectEqual(expected, actual);
+        try std.testing.expectEqual(expected, actual);
     }
     for (dic.array.slice) |code| {
-        try testing.expectEqual(@as(u16, 0), code % 16);
+        try std.testing.expectEqual(@as(u16, 0), code % 16);
     }
 
     const temperatures = [_]F{ 0, 25, 50, 100, 200, 250 };
@@ -1401,12 +1399,12 @@ test "TIFF ADC packing and range scaling" {
     defer ir.deinit(allocator);
     for (ir.array.slice, temperatures) |code, celsius| {
         const expected_celsius = @as(F, @floatFromInt(code)) * 250 / 65535;
-        try testing.expectApproxEqAbs(celsius, expected_celsius, @as(F, 0.002));
+        try std.testing.expectApproxEqAbs(celsius, expected_celsius, @as(F, 0.002));
     }
 }
 
 test "Scaling Strategy: Fractional" {
-    const allocator = testing.allocator;
+    const allocator = std.testing.allocator;
     const io = std.testing.io;
     const cwd = std.Io.Dir.cwd();
     try ensureTempTestDir(io);
@@ -1440,10 +1438,10 @@ test "Scaling Strategy: Fractional" {
         .csv,
     );
     defer loaded1.deinit(allocator);
-    try testing.expectApproxEqAbs(loaded1.getVal(0, 0, 0), 0.4, frac_tol);
-    try testing.expectApproxEqAbs(loaded1.getVal(0, 0, 1), 0.6, frac_tol);
-    try testing.expectApproxEqAbs(loaded1.getVal(0, 1, 0), 0.5, frac_tol);
-    try testing.expectApproxEqAbs(loaded1.getVal(0, 1, 1), 0.45, frac_tol);
+    try std.testing.expectApproxEqAbs(loaded1.getVal(0, 0, 0), 0.4, frac_tol);
+    try std.testing.expectApproxEqAbs(loaded1.getVal(0, 0, 1), 0.6, frac_tol);
+    try std.testing.expectApproxEqAbs(loaded1.getVal(0, 1, 0), 0.5, frac_tol);
+    try std.testing.expectApproxEqAbs(loaded1.getVal(0, 1, 1), 0.45, frac_tol);
 
     // Test 2: Frac [0.4, 0.6], bits = 8 (CSV) -> should map [0, 10] to [0.4*255, 0.6*255]
     const opts2 = ImageSaveOpts{
@@ -1462,22 +1460,22 @@ test "Scaling Strategy: Fractional" {
         .csv,
     );
     defer loaded2.deinit(allocator);
-    try testing.expectApproxEqAbs(
+    try std.testing.expectApproxEqAbs(
         loaded2.getVal(0, 0, 0),
         102.0,
         frac_tol,
     );
-    try testing.expectApproxEqAbs(
+    try std.testing.expectApproxEqAbs(
         loaded2.getVal(0, 0, 1),
         153.0,
         frac_tol,
     );
-    try testing.expectApproxEqAbs(
+    try std.testing.expectApproxEqAbs(
         loaded2.getVal(0, 1, 0),
         128.0,
         frac_tol,
     );
-    try testing.expectApproxEqAbs(
+    try std.testing.expectApproxEqAbs(
         loaded2.getVal(0, 1, 1),
         115.0,
         frac_tol,
@@ -1493,7 +1491,7 @@ test "FIMG Save and Load Roundtrip" {
     const height: usize = 3;
     const channels: usize = 2;
 
-    var tex = try textypes.TexDataFix(F, channels).init(
+    var tex = try texturetypes.TexDataFix(F, channels).init(
         allocator,
         height,
         width,
@@ -1546,28 +1544,28 @@ test "FIMG Save and Load Roundtrip" {
 }
 
 test "texture CSV export preserves fixed and dynamic channel layout and raw values" {
-    const allocator = testing.allocator;
+    const allocator = std.testing.allocator;
     const io = std.testing.io;
     try ensureTempTestDir(io);
     defer deleteTempTestDir(io);
 
-    var fixed = try textypes.TexDataFix(u16, 3).init(allocator, 2, 2);
+    var fixed = try texturetypes.TexDataFix(u16, 3).init(allocator, 2, 2);
     defer fixed.deinit(allocator);
     const expected = [_]u16{ 0, 256, 4095, 65535, 10, 20, 30, 40, 100, 200, 300, 400 };
     @memcpy(fixed.array.slice, &expected);
     try saveTextureCSV(u16, &fixed, io, std.Io.Dir.cwd(), temp_test_dir ++ "/texture_fixed.csv");
     var loaded_fixed = try loadImage(u16, 3, allocator, io, temp_test_dir ++ "/texture_fixed.csv", .csv);
     defer loaded_fixed.deinit(allocator);
-    try testing.expectEqualSlices(u16, &expected, loaded_fixed.array.slice);
+    try std.testing.expectEqualSlices(u16, &expected, loaded_fixed.array.slice);
 
-    var dynamic = try textypes.TexDataDyn(F).init(allocator, 2, 2, 2);
+    var dynamic = try texturetypes.TexDataDyn(F).init(allocator, 2, 2, 2);
     defer dynamic.deinit(allocator);
     const floats = [_]F{ -2.5, 0, 1.25, 256, 3, 4, 5, 6 };
     @memcpy(dynamic.array.slice, &floats);
     try saveTextureCSV(F, &dynamic, io, std.Io.Dir.cwd(), temp_test_dir ++ "/texture_dynamic.csv");
     var loaded_dynamic = try loadImage(F, 2, allocator, io, temp_test_dir ++ "/texture_dynamic.csv", .csv);
     defer loaded_dynamic.deinit(allocator);
-    try testing.expectEqualSlices(F, &floats, loaded_dynamic.array.slice);
+    try std.testing.expectEqualSlices(F, &floats, loaded_dynamic.array.slice);
 }
 
 test "output name format expands fields and zero padding" {

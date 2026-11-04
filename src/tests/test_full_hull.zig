@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const shaderfunc = @import("../riley/zig/shaderfunc.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const shadertypes = @import("../riley/zig/shadertypes.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
@@ -92,7 +93,7 @@ fn runOneElemHullCaseTest(
         );
     }
 
-    const shader_params = shadertypes.FuncShaderParams{
+    const shader_params = shaderfunc.FuncShaderParams{
         .coord_scale = .{ 4.0, 4.0 },
         .settings = .{ .checker = .{} },
     };

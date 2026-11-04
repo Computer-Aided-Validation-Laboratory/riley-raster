@@ -6,10 +6,10 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const matslice = @import("matslice.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const MatSlice = @import("matslice.zig").MatSlice;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -62,7 +62,7 @@ pub const SubpxFrameDomain = struct {
 
 pub const SubpxTarget = struct {
     domain: SubpxFrameDomain,
-    image: MatSlice(F),
+    image: matslice.MatSlice(F),
     global_subx_min: i32,
     global_suby_min: i32,
 
@@ -89,7 +89,7 @@ pub const SubpxTarget = struct {
 
         return .{
             .domain = domain,
-            .image = MatSlice(F).init(
+            .image = matslice.MatSlice(F).init(
                 image_mem,
                 domain.fields_num,
                 samples_num,

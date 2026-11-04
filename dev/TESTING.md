@@ -1,5 +1,25 @@
 # Riley Testing Architecture & Test Suites
 
+> [!IMPORTANT]
+> **AI AGENTS — REQUIRED TEST CONFIGURATION: `f64` WITH SIMD ON.**
+> Run tests only with `-Dprecision=f64 -Dsimd=on` unless the user explicitly
+> instructs you to run another combination. Do not run `f32`, scalar
+> (`-Dsimd=off`), or precision/SIMD matrix sweeps on your own initiative,
+> including for cross-cutting refactors or extra confidence. A general request
+> to implement, test, verify, or complete a plan does not authorize extra
+> precision/SIMD combinations. The alternative examples below document supported
+> configurations; they are not instructions for agents to run them.
+> Keep verif/basic in Debug and full in ReleaseSafe. This rule avoids unnecessary
+> compilation, runtime, and token costs.
+
+For AI-agent verification, use these commands for the suites relevant to the task:
+
+```bash
+zig build test-verif -Dprecision=f64 -Dsimd=on
+zig build test-basic -Dprecision=f64 -Dsimd=on
+zig build test-full -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+```
+
 ---
 
 ## Render reference data commit policy

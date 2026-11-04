@@ -6,11 +6,10 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
-const std = @import("std");
+const cameramodels = @import("cameramodels.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const frontend = @import("rasterfrontend.zig");
-const elemtilebin = @import("elemtilebinning.zig");
+const elemtilebinning = @import("elemtilebinning.zig");
 const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
 
@@ -29,7 +28,7 @@ pub const ScratchTileGeometry = struct {
     core_start_y_subpx: usize,
 
     pub fn init(
-        tile: elemtilebin.ActiveTile,
+        tile: elemtilebinning.ActiveTile,
         sub_sample: usize,
     ) ScratchTileGeometry {
         const core_w_px = @as(usize, @intCast(tile.core_px.x_max - tile.core_px.x_min));
@@ -62,7 +61,7 @@ pub const ScratchTileGeometry = struct {
     }
 
     pub fn initCoreOnly(
-        tile: elemtilebin.ActiveTile,
+        tile: elemtilebinning.ActiveTile,
         sub_sample: usize,
     ) ScratchTileGeometry {
         const core_w_px = @as(usize, @intCast(tile.core_px.x_max - tile.core_px.x_min));
@@ -135,12 +134,12 @@ pub fn resolveTileWithPSF(
     avg_fn: AvgFn,
     filter_separable_fn: FilterSeparableFn,
     filter_nonseparable_fn: FilterNonSeparableFn,
-    tile: elemtilebin.ActiveTile,
+    tile: elemtilebinning.ActiveTile,
     sub_samp: usize,
     spx_stride: usize,
     fields_num: u8,
     background_value: F,
-    prep_psf: @import("cameraprojops.zig").PreparedPSF,
+    prep_psf: cameramodels.PreparedPSF,
     scratch_geom: ScratchTileGeometry,
     spx_image_scratch: *matslice.MatSlice(F),
     filter_tmp: *matslice.MatSlice(F),

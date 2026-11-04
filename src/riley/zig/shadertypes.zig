@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const shaderfunc = @import("shaderfunc.zig");
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
@@ -15,14 +16,12 @@ const VecSF = buildconfig.VecSF;
 const VecSB = buildconfig.VecSB;
 
 const ndarray = @import("ndarray.zig");
-const matslice = @import("matslice.zig");
 
 const imageops = @import("imageops.zig");
-const textypes = @import("texturetypes.zig");
+const texturetypes = @import("texturetypes.zig");
 const fieldtypes = @import("fieldtypes.zig");
 const shaderpipe = @import("shaderpipe.zig");
 const meshhit = @import("meshhit.zig");
-pub const shaderfunc = @import("shaderfunc.zig");
 
 pub const ScaleOver = enum { within_frames, over_frames };
 pub const RenderFormat = union(enum) {
@@ -40,35 +39,6 @@ pub const RenderFormat = union(enum) {
     }
 };
 
-pub const GreyToEmissivityStage = shaderpipe.GreyToEmissivityStage;
-pub const ClampStage = shaderpipe.ClampStage;
-pub const AffineMapStage = shaderpipe.AffineMapStage;
-pub const LUTMapStage = shaderpipe.LUTMapStage;
-pub const BlendStage = shaderpipe.BlendStage;
-pub const NormaliseStage = shaderpipe.NormaliseStage;
-
-// Re-exports of function shader types and evaluation helpers from shaderfunc.zig
-pub const FuncCoordMode = shaderfunc.FuncCoordMode;
-pub const FuncShaderBuiltin = shaderfunc.FuncShaderBuiltin;
-pub const FuncCoord = shaderfunc.FuncCoord;
-pub const FuncCoordSIMD = shaderfunc.FuncCoordSIMD;
-pub const ConstantParams = shaderfunc.ConstantParams;
-pub const LinearParams = shaderfunc.LinearParams;
-pub const QuadraticParams = shaderfunc.QuadraticParams;
-pub const SinusoidalParams = shaderfunc.SinusoidalParams;
-pub const CheckerParams = shaderfunc.CheckerParams;
-pub const CheckerSmoothParams = shaderfunc.CheckerSmoothParams;
-pub const LambertianParams = shaderfunc.LambertianParams;
-pub const EggboxParams = shaderfunc.EggboxParams;
-pub const FuncShaderParams = shaderfunc.FuncShaderParams;
-pub const normFuncShaderParams = shaderfunc.normFuncShaderParams;
-pub const applyFuncShaderCoordParams = shaderfunc.applyFuncShaderCoordParams;
-pub const applyFuncShaderCoordParamsSIMD = shaderfunc.applyFuncShaderCoordParamsSIMD;
-pub const cubicSmoothStep = shaderfunc.cubicSmoothStep;
-pub const cubicSmoothStepSIMD = shaderfunc.cubicSmoothStepSIMD;
-pub const evalFuncShaderBuiltinGreyNorm = shaderfunc.evalFuncShaderBuiltinGreyNorm;
-pub const evalFuncShaderBuiltinRGBNorm = shaderfunc.evalFuncShaderBuiltinRGBNorm;
-
 pub const NodalInput = struct {
     field: fieldtypes.Field,
     output_gain: F = 1.0,
@@ -81,7 +51,7 @@ pub fn TexInput(comptime Texture: type) type {
     return struct {
         uvs: ndarray.NDArray(F),
         tex: Texture,
-        samp_cfg: textypes.TexSampConfig = .{
+        samp_cfg: texturetypes.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .direct,
         },
@@ -93,17 +63,17 @@ pub fn TexInput(comptime Texture: type) type {
 
 pub const FuncInput = struct {
     uvs: ?ndarray.NDArray(F) = null,
-    coord_mode: FuncCoordMode = .para,
-    builtin: FuncShaderBuiltin,
-    params: FuncShaderParams = .{},
+    coord_mode: shaderfunc.FuncCoordMode = .para,
+    builtin: shaderfunc.FuncShaderBuiltin,
+    params: shaderfunc.FuncShaderParams = .{},
     output_gain: F = 1.0,
     output_offset: F = 0.0,
     scaling: imageops.ScaleStrategy = .none,
 };
 
 pub const FuncChannel = struct {
-    builtin: FuncShaderBuiltin,
-    params: FuncShaderParams = .{},
+    builtin: shaderfunc.FuncShaderBuiltin,
+    params: shaderfunc.FuncShaderParams = .{},
     scaling: imageops.ScaleStrategy = .none,
     output_gain: F = 1.0,
     output_offset: F = 0.0,
@@ -111,29 +81,29 @@ pub const FuncChannel = struct {
 
 pub const FuncMultiInput = struct {
     uvs: ?ndarray.NDArray(F) = null,
-    coord_mode: FuncCoordMode = .para,
+    coord_mode: shaderfunc.FuncCoordMode = .para,
     channels: []const FuncChannel,
 };
 
 pub const ShaderMonoInput = union(enum) {
     nodal: NodalInput,
-    tex_u8: TexInput(textypes.TexDataFix(u8, 1)),
-    tex_u16: TexInput(textypes.TexDataFix(u16, 1)),
-    tex_f: TexInput(textypes.TexDataFix(F, 1)),
+    tex_u8: TexInput(texturetypes.TexDataFix(u8, 1)),
+    tex_u16: TexInput(texturetypes.TexDataFix(u16, 1)),
+    tex_f: TexInput(texturetypes.TexDataFix(F, 1)),
     func: FuncInput,
 };
 
 pub const PipeSourceInput = union(enum) {
     nodal: NodalInput,
-    tex_u8: TexInput(textypes.TexDataFix(u8, 1)),
-    tex_u16: TexInput(textypes.TexDataFix(u16, 1)),
-    tex_f: TexInput(textypes.TexDataFix(F, 1)),
-    tex_rgb_u8: TexInput(textypes.TexDataFix(u8, 3)),
-    tex_rgb_u16: TexInput(textypes.TexDataFix(u16, 3)),
-    tex_rgb_f: TexInput(textypes.TexDataFix(F, 3)),
-    tex_multi_u8: TexInput(textypes.TexDataDyn(u8)),
-    tex_multi_u16: TexInput(textypes.TexDataDyn(u16)),
-    tex_multi_f: TexInput(textypes.TexDataDyn(F)),
+    tex_u8: TexInput(texturetypes.TexDataFix(u8, 1)),
+    tex_u16: TexInput(texturetypes.TexDataFix(u16, 1)),
+    tex_f: TexInput(texturetypes.TexDataFix(F, 1)),
+    tex_rgb_u8: TexInput(texturetypes.TexDataFix(u8, 3)),
+    tex_rgb_u16: TexInput(texturetypes.TexDataFix(u16, 3)),
+    tex_rgb_f: TexInput(texturetypes.TexDataFix(F, 3)),
+    tex_multi_u8: TexInput(texturetypes.TexDataDyn(u8)),
+    tex_multi_u16: TexInput(texturetypes.TexDataDyn(u16)),
+    tex_multi_f: TexInput(texturetypes.TexDataDyn(F)),
     func: FuncInput,
     func_rgb: FuncInput,
     func_multi: FuncMultiInput,
@@ -141,12 +111,12 @@ pub const PipeSourceInput = union(enum) {
 
 pub const ShaderPipeStageInput = union(enum) {
     source: struct { shader: PipeSourceInput, destination: shaderpipe.Slot },
-    grey_to_emissivity: GreyToEmissivityStage,
-    clamp: ClampStage,
-    affine_map: AffineMapStage,
-    lut_map: LUTMapStage,
-    blend: BlendStage,
-    normalise: NormaliseStage,
+    grey_to_emissivity: shaderpipe.GreyToEmissivityStage,
+    clamp: shaderpipe.ClampStage,
+    affine_map: shaderpipe.AffineMapStage,
+    lut_map: shaderpipe.LUTMapStage,
+    blend: shaderpipe.BlendStage,
+    normalise: shaderpipe.NormaliseStage,
 };
 
 pub const ShaderPipeInput = struct {
@@ -184,8 +154,8 @@ pub fn TexMultiStatic(comptime T: type) type {
 fn texStaticType(comptime T: type, comptime C: ?usize) type {
     return struct {
         elem_uvs: ndarray.NDArray(F),
-        tex: if (C) |channels| textypes.TexDataFix(T, channels) else textypes.TexDataDyn(T),
-        samp_cfg: textypes.TexSampConfig = .{
+        tex: if (C) |channels| texturetypes.TexDataFix(T, channels) else texturetypes.TexDataDyn(T),
+        samp_cfg: texturetypes.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .direct,
         },
@@ -197,9 +167,9 @@ fn texStaticType(comptime T: type, comptime C: ?usize) type {
 
 pub const FuncStatic = struct {
     elem_uvs: ?ndarray.NDArray(F),
-    coord_mode: FuncCoordMode = .para,
-    builtin: FuncShaderBuiltin = .constant,
-    params: FuncShaderParams = .{},
+    coord_mode: shaderfunc.FuncCoordMode = .para,
+    builtin: shaderfunc.FuncShaderBuiltin = .constant,
+    params: shaderfunc.FuncShaderParams = .{},
     output_gain: F = 1.0,
     output_offset: F = 0.0,
     scaling: imageops.ScaleStrategy = .none,
@@ -235,12 +205,12 @@ pub const ShaderPipeStageStatic = union(enum) {
         destination: shaderpipe.Slot,
         global_scaling: ?imageops.ScalingParams = null,
     },
-    grey_to_emissivity: GreyToEmissivityStage,
-    clamp: ClampStage,
-    affine_map: AffineMapStage,
-    lut_map: LUTMapStage,
-    blend: BlendStage,
-    normalise: NormaliseStage,
+    grey_to_emissivity: shaderpipe.GreyToEmissivityStage,
+    clamp: shaderpipe.ClampStage,
+    affine_map: shaderpipe.AffineMapStage,
+    lut_map: shaderpipe.LUTMapStage,
+    blend: shaderpipe.BlendStage,
+    normalise: shaderpipe.NormaliseStage,
 };
 
 pub const ShaderPipeStatic = struct {
@@ -282,8 +252,8 @@ pub fn TexMultiPrepared(comptime T: type) type {
 fn texPreparedType(comptime T: type, comptime C: ?usize) type {
     return struct {
         elem_uvs: ndarray.NDArray(F),
-        tex: if (C) |channels| textypes.TexDataFix(T, channels) else textypes.TexDataDyn(T),
-        samp_cfg: textypes.TexSampConfig = .{
+        tex: if (C) |channels| texturetypes.TexDataFix(T, channels) else texturetypes.TexDataDyn(T),
+        samp_cfg: texturetypes.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .direct,
         },
@@ -319,9 +289,9 @@ pub fn concreteTexture(
 pub const FuncPrepared = struct {
     elem_uvs: ?ndarray.NDArray(F),
     hit_geometry: meshhit.MeshHitGeomPrepared = .{},
-    coord_mode: FuncCoordMode = .para,
-    builtin: FuncShaderBuiltin = .constant,
-    params: FuncShaderParams = .{},
+    coord_mode: shaderfunc.FuncCoordMode = .para,
+    builtin: shaderfunc.FuncShaderBuiltin = .constant,
+    params: shaderfunc.FuncShaderParams = .{},
     output_gain: F = 1.0,
     output_offset: F = 0.0,
     scaling: imageops.ScaleStrategy = .none,
@@ -332,8 +302,8 @@ pub const FuncPrepared = struct {
 };
 
 pub const FuncChannelPrepared = struct {
-    builtin: FuncShaderBuiltin,
-    params: FuncShaderParams,
+    builtin: shaderfunc.FuncShaderBuiltin,
+    params: shaderfunc.FuncShaderParams,
     scale_mul: F,
     scale_add: F,
 };
@@ -362,12 +332,12 @@ pub const PipeSourcePrepared = union(enum) {
 
 pub const ShaderPipeStagePrepared = union(enum) {
     source: struct { shader: PipeSourcePrepared, destination: shaderpipe.Slot },
-    grey_to_emissivity: GreyToEmissivityStage,
-    clamp: ClampStage,
-    affine_map: AffineMapStage,
-    lut_map: LUTMapStage,
-    blend: BlendStage,
-    normalise: NormaliseStage,
+    grey_to_emissivity: shaderpipe.GreyToEmissivityStage,
+    clamp: shaderpipe.ClampStage,
+    affine_map: shaderpipe.AffineMapStage,
+    lut_map: shaderpipe.LUTMapStage,
+    blend: shaderpipe.BlendStage,
+    normalise: shaderpipe.NormaliseStage,
 };
 
 pub const ShaderPipePrepared = struct {

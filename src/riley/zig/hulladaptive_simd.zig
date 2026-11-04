@@ -6,15 +6,13 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const rasterconfig = @import("rasterconfig.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
 const tol = cfg.tol;
-const frontend = @import("rasterfrontend.zig");
-const edgeops = @import("hulledge.zig");
-const HullEdge = @import("hulledge.zig").HullEdge;
-const EdgeFunMode = @import("rasterconfig.zig").EdgeFunMode;
+const hulledge = @import("hulledge.zig");
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const S = cfg.simd_vec_width;
@@ -24,7 +22,7 @@ const Triangle = struct {
     y: [3]F,
     xi: [3]F,
     eta: [3]F,
-    edges: [3]HullEdge = undefined,
+    edges: [3]hulledge.HullEdge = undefined,
 };
 
 pub const CandidateSeedSIMD = struct {
@@ -45,7 +43,7 @@ pub fn Tessellation(comptime NT: usize) type {
             for (&self.triangles) |*tri| {
                 for (0..3) |ii| {
                     const jj = (ii + 1) % 3;
-                    tri.edges[ii] = HullEdge.init(
+                    tri.edges[ii] = hulledge.HullEdge.init(
                         tri.x[ii],
                         tri.y[ii],
                         tri.x[jj],
@@ -60,7 +58,7 @@ pub fn Tessellation(comptime NT: usize) type {
             self: @This(),
             v_px: VecSF,
             v_py: VecSF,
-            mode: EdgeFunMode,
+            mode: rasterconfig.EdgeFunMode,
         ) CandidateSeedSIMD {
             return self.evaluateSIMD(v_px, v_py, mode, true);
         }
@@ -69,7 +67,7 @@ pub fn Tessellation(comptime NT: usize) type {
             self: @This(),
             v_px: VecSF,
             v_py: VecSF,
-            mode: EdgeFunMode,
+            mode: rasterconfig.EdgeFunMode,
         ) VecSB {
             return self.evaluateSIMD(v_px, v_py, mode, false).v_is_in;
         }
@@ -78,7 +76,7 @@ pub fn Tessellation(comptime NT: usize) type {
             self: @This(),
             v_px: VecSF,
             v_py: VecSF,
-            mode: EdgeFunMode,
+            mode: rasterconfig.EdgeFunMode,
             comptime with_seed: bool,
         ) CandidateSeedSIMD {
             const eps = tol.hull.simd_inclusion;
@@ -94,21 +92,21 @@ pub fn Tessellation(comptime NT: usize) type {
                     const b0: VecSF = @splat(tri.edges[0].b);
                     const c0: VecSF = @splat(tri.edges[0].c);
                     break :blk a0 * v_px + b0 * v_py + c0;
-                } else edgeops.edgeFun3SIMD(tri.x[0], tri.y[0], tri.x[1], tri.y[1], v_px, v_py);
+                } else hulledge.edgeFun3SIMD(tri.x[0], tri.y[0], tri.x[1], tri.y[1], v_px, v_py);
 
                 const v_test1: VecSF = if (mode == .pre_calc) blk: {
                     const a1: VecSF = @splat(tri.edges[1].a);
                     const b1: VecSF = @splat(tri.edges[1].b);
                     const c1: VecSF = @splat(tri.edges[1].c);
                     break :blk a1 * v_px + b1 * v_py + c1;
-                } else edgeops.edgeFun3SIMD(tri.x[1], tri.y[1], tri.x[2], tri.y[2], v_px, v_py);
+                } else hulledge.edgeFun3SIMD(tri.x[1], tri.y[1], tri.x[2], tri.y[2], v_px, v_py);
 
                 const v_test2: VecSF = if (mode == .pre_calc) blk: {
                     const a2: VecSF = @splat(tri.edges[2].a);
                     const b2: VecSF = @splat(tri.edges[2].b);
                     const c2: VecSF = @splat(tri.edges[2].c);
                     break :blk a2 * v_px + b2 * v_py + c2;
-                } else edgeops.edgeFun3SIMD(tri.x[2], tri.y[2], tri.x[0], tri.y[0], v_px, v_py);
+                } else hulledge.edgeFun3SIMD(tri.x[2], tri.y[2], tri.x[0], tri.y[0], v_px, v_py);
 
                 const threshold: VecSF = if (mode == .pre_calc) @splat(0) else v_m_eps;
 
@@ -118,21 +116,21 @@ pub fn Tessellation(comptime NT: usize) type {
 
                 if (with_seed and @reduce(.Or, v_in_tri)) {
                     const v_e0 = if (mode == .pre_calc)
-                        edgeops.edgeFun3SIMD(tri.x[0], tri.y[0], tri.x[1], tri.y[1], v_px, v_py)
+                        hulledge.edgeFun3SIMD(tri.x[0], tri.y[0], tri.x[1], tri.y[1], v_px, v_py)
                     else
                         v_test0;
 
                     const v_e1 = if (mode == .pre_calc)
-                        edgeops.edgeFun3SIMD(tri.x[1], tri.y[1], tri.x[2], tri.y[2], v_px, v_py)
+                        hulledge.edgeFun3SIMD(tri.x[1], tri.y[1], tri.x[2], tri.y[2], v_px, v_py)
                     else
                         v_test1;
 
                     const v_e2 = if (mode == .pre_calc)
-                        edgeops.edgeFun3SIMD(tri.x[2], tri.y[2], tri.x[0], tri.y[0], v_px, v_py)
+                        hulledge.edgeFun3SIMD(tri.x[2], tri.y[2], tri.x[0], tri.y[0], v_px, v_py)
                     else
                         v_test2;
 
-                    const area = edgeops.edgeFun3(
+                    const area = hulledge.edgeFun3(
                         tri.x[0],
                         tri.y[0],
                         tri.x[1],

@@ -6,9 +6,10 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameramodels = @import("cameramodels.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
-const camera = @import("cameraprojops.zig");
+const cameraprojops = @import("cameraprojops.zig");
 
 const cfg = buildconfig.config;
 const F = buildconfig.F;
@@ -114,7 +115,7 @@ pub inline fn edgeIntervalCount(length: F, spacing_px: F) usize {
 }
 
 pub fn idealSensorBounds(
-    cam: *const camera.CameraPrepared,
+    cam: *const cameraprojops.CameraPrepared,
     halo_px: u16,
 ) !DistortBounds {
     var bounds = DistortBounds.initEmpty();
@@ -163,7 +164,7 @@ pub fn idealSensorBounds(
 }
 
 inline fn sampleEdgePointScalar(
-    cam: *const camera.CameraPrepared,
+    cam: *const cameraprojops.CameraPrepared,
     focal: anytype,
     offsets: anytype,
     edge: [4]F,
@@ -176,7 +177,7 @@ inline fn sampleEdgePointScalar(
     const ideal_y = edge[1] + t * (edge[3] - edge[1]);
     const norm_x = (ideal_x - offsets.x_off) / focal.fx;
     const norm_y = (ideal_y - offsets.y_off) / focal.fy;
-    const mapped = camera.fordDistortModelScal(cam.distort, norm_x, norm_y);
+    const mapped = cameramodels.fordDistortModelScal(cam.distort, norm_x, norm_y);
     result.include(
         mapped.x * focal.fx + offsets.x_off,
         mapped.y * focal.fy + offsets.y_off,
@@ -184,7 +185,7 @@ inline fn sampleEdgePointScalar(
 }
 
 pub fn sampleRectEdgesScalar(
-    cam: *const camera.CameraPrepared,
+    cam: *const cameraprojops.CameraPrepared,
     rect: DistortBounds,
     spacing_px: F,
 ) DistortBounds {
@@ -222,7 +223,7 @@ pub fn sampleRectEdgesScalar(
 }
 
 pub fn sampleRectEdgesSIMD(
-    cam: *const camera.CameraPrepared,
+    cam: *const cameraprojops.CameraPrepared,
     rect: DistortBounds,
     spacing_px: F,
 ) DistortBounds {
@@ -268,7 +269,7 @@ pub fn sampleRectEdgesSIMD(
                     norm_x_arr[lane] = (ideal_x - offsets.x_off) / focal.fx;
                     norm_y_arr[lane] = (ideal_y - offsets.y_off) / focal.fy;
                 }
-                const mapped = camera.fordDistortModelSIMD(
+                const mapped = cameramodels.fordDistortModelSIMD(
                     cam.distort,
                     @as(VecSF, @bitCast(norm_x_arr)),
                     @as(VecSF, @bitCast(norm_y_arr)),
@@ -299,7 +300,7 @@ pub fn sampleRectEdgesSIMD(
 }
 
 pub fn sampleRectEdges(
-    cam: *const camera.CameraPrepared,
+    cam: *const cameraprojops.CameraPrepared,
     rect: DistortBounds,
     spacing_px: F,
 ) DistortBounds {

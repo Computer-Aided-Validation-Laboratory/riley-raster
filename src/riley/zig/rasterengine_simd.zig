@@ -6,11 +6,14 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const matslice = @import("matslice.zig");
+const ndarray = @import("ndarray.zig");
+const hullmultiroot = @import("hullmultiroot.zig");
+const hulladaptive = @import("hulladaptive.zig");
 const meshtypes = @import("meshtypes.zig");
 const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
-const cam = @import("cameraprojops.zig");
-const CameraPrepared = cam.CameraPrepared;
+const cameraprojops = @import("cameraprojops.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
@@ -20,38 +23,17 @@ const VecSF = buildconfig.VecSF;
 const VecSU = buildconfig.VecSU;
 const VecSU8 = buildconfig.VecSU8;
 
-const rastcfg = @import("rasterconfig.zig");
-const ReportMode = rastcfg.ReportMode;
+const rasterconfig = @import("rasterconfig.zig");
 const tol = cfg.tol;
-const MatSlice = @import("matslice.zig").MatSlice;
-const NDArray = @import("ndarray.zig").NDArray;
-const HullMultiRoot = @import("hullmultiroot.zig").HullMultiRoot;
-const HullAdaptive = @import("hulladaptive.zig").HullAdaptive;
-const CandidateSeedSIMD = HullAdaptive.CandidateSeedSIMD;
 const shapefun = @import("shapefun.zig");
-const frontend = @import("rasterfrontend.zig");
-const elemtilebin = @import("elemtilebinning.zig");
-const edgeops = @import("hulledge.zig");
-const ElemBBox = frontend.ElemBBox;
-const OverlapBBox = elemtilebin.OverlapBBox;
-const ActiveTile = elemtilebin.ActiveTile;
-const Vec3Slices = frontend.Vec3Slices;
+const rasterfrontend = @import("rasterfrontend.zig");
+const elemtilebinning = @import("elemtilebinning.zig");
 const report = @import("report.zig");
-const Timestamp = std.Io.Clock.Timestamp;
-const comm = @import("rasterengine_common.zig");
+const rasterengine_common = @import("rasterengine_common.zig");
 const simdops = @import("simdops.zig");
 
-const spec = @import("riley.zig");
-const meshpipe = @import("meshpipeline.zig");
-const MeshPrepared = meshtypes.MeshPrepared;
-const MeshType = meshpipe.MeshType;
-const Shader = meshpipe.Shader;
-const shaderops = @import("shaderops.zig");
-const NodalPrepared = shadertypes.NodalPrepared;
-const TexPrepared = shadertypes.TexPrepared;
-const geomkerns = @import("geometrykernels.zig");
+const geometrykernels = @import("geometrykernels.zig");
 const newton = @import("newton.zig");
-const shadekerns = @import("shaderkernels.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -61,8 +43,8 @@ pub const SubpxScratchBuffs = struct {
 
     stride_subpx: usize,
     inv_z: []align(64) F,
-    image: MatSlice(F),
-    filter_tmp: MatSlice(F),
+    image: matslice.MatSlice(F),
+    filter_tmp: matslice.MatSlice(F),
     simd_chunks: []SubpxSimdChunk,
     multi_root_candidate_indices: []u32,
     multi_root_child_masks: []u8,
@@ -140,7 +122,7 @@ pub fn initSubpxScratch(
         mem_align,
         (subpx_tile_total_padded + S) * @as(usize, fields_num),
     );
-    const subpx_image_scratch = MatSlice(F).init(
+    const subpx_image_scratch = matslice.MatSlice(F).init(
         subpx_img_mem,
         @as(usize, fields_num),
         subpx_tile_total_padded + S,
@@ -150,7 +132,7 @@ pub fn initSubpxScratch(
         mem_align,
         (subpx_tile_total_padded + S) * @as(usize, fields_num),
     );
-    const filter_tmp = MatSlice(F).init(
+    const filter_tmp = matslice.MatSlice(F).init(
         filter_tmp_mem,
         @as(usize, fields_num),
         subpx_tile_total_padded + S,
@@ -206,30 +188,28 @@ pub fn resetSubpxScratch(
 //------------------------------------------------------------------------------------------
 // Raster Engine Builder
 //------------------------------------------------------------------------------------------
-const SubpxDom = comm.SubpxDom;
-const RasterBounds = comm.RasterBounds;
 
 pub fn RasterEngine(
     comptime ScratchBuffs: type,
     comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
-    comptime root_class: frontend.ElemRootClass,
+    comptime root_class: rasterfrontend.ElemRootClass,
 ) type {
     @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
     return struct {
         pub const HullType = if (root_class == .multi_root)
             *const meshtypes.MultiRootHulls
         else
-            ?*const NDArray(F);
+            ?*const ndarray.NDArray(F);
 
         pub fn rasterElemInTile(
-            comptime report_mode: ReportMode,
-            ctx_rast: frontend.RasterContext,
+            comptime report_mode: rasterconfig.ReportMode,
+            ctx_rast: rasterfrontend.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            tile: elemtilebin.ActiveTile,
-            overlap: elemtilebin.OverlapBBox,
-            coords: *const NDArray(F),
+            tile: elemtilebinning.ActiveTile,
+            overlap: elemtilebinning.OverlapBBox,
+            coords: *const ndarray.NDArray(F),
             hull: HullType,
             shader: *const ShaderData,
             shader_buf: *const ShaderKern.LocalBuff,
@@ -239,7 +219,7 @@ pub fn RasterEngine(
             const sub_samp_u: usize = @intCast(ctx_rast.camera.sub_sample);
             const sub_samp_f: F = @as(F, @floatFromInt(ctx_rast.camera.sub_sample));
 
-            const subpx_dom = SubpxDom{
+            const subpx_dom = rasterengine_common.SubpxDom{
                 .step = 1.0 / sub_samp_f,
                 .offset = 1.0 / (2.0 * sub_samp_f),
                 .tile_size = subpx_scratch.stride_subpx,
@@ -256,7 +236,7 @@ pub fn RasterEngine(
             const scratch_start_y_u = sub_samp_u * @as(usize, @intCast(overlap_start_y_px));
             const scratch_end_y_u = sub_samp_u * @as(usize, @intCast(overlap_end_y_px));
 
-            const rast_bounds = RasterBounds{
+            const rast_bounds = rasterengine_common.RasterBounds{
                 .start_x_u = scratch_start_x_u,
                 .end_x_u = scratch_end_x_u,
                 .start_y_u = scratch_start_y_u,
@@ -265,14 +245,14 @@ pub fn RasterEngine(
                 .y_min_f = @as(F, @floatFromInt(overlap.y_min)),
             };
 
-            const nodes_coords = try frontend.loadElemVec3Slices(
+            const nodes_coords = try rasterfrontend.loadElemVec3Slices(
                 GeomKern.nodes_num,
                 F,
                 coords,
                 overlap.elem_idx,
             );
 
-            const shaded_px = if (comptime GeomKern == geomkerns.Tri3OptKernel())
+            const shaded_px = if (comptime GeomKern == geometrykernels.Tri3OptKernel())
                 try rasterSteppedSIMD(
                     ScratchBuffs,
                     GeomKern,
@@ -329,14 +309,14 @@ pub fn RasterEngine(
         }
 
         fn rasterDirectSIMD(
-            comptime report_mode: ReportMode,
-            ctx_rast: frontend.RasterContext,
+            comptime report_mode: rasterconfig.ReportMode,
+            ctx_rast: rasterfrontend.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            tile: elemtilebin.ActiveTile,
-            overlap: elemtilebin.OverlapBBox,
-            subpx_dom: SubpxDom,
-            rast_bounds: RasterBounds,
-            nodes_coords: Vec3Slices(F),
+            tile: elemtilebinning.ActiveTile,
+            overlap: elemtilebinning.OverlapBBox,
+            subpx_dom: rasterengine_common.SubpxDom,
+            rast_bounds: rasterengine_common.RasterBounds,
+            nodes_coords: rasterfrontend.Vec3Slices(F),
             shader: *const ShaderData,
             shader_buf: *const ShaderKern.LocalBuff,
             subpx_scratch: *ScratchBuffs,
@@ -363,15 +343,15 @@ pub fn RasterEngine(
         /// To use our S wide SIMD effectively for Newton we need to process in
         /// multiple passes to fill the S lanes where possible.
         fn rasterNewtonSIMD(
-            comptime report_mode: ReportMode,
-            ctx_rast: frontend.RasterContext,
+            comptime report_mode: rasterconfig.ReportMode,
+            ctx_rast: rasterfrontend.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            tile: elemtilebin.ActiveTile,
-            overlap: elemtilebin.OverlapBBox,
-            hull_adaptive: ?*const NDArray(F),
-            subpx_dom: SubpxDom,
-            rast_bounds: RasterBounds,
-            nodes_coords: Vec3Slices(F),
+            tile: elemtilebinning.ActiveTile,
+            overlap: elemtilebinning.OverlapBBox,
+            hull_adaptive: ?*const ndarray.NDArray(F),
+            subpx_dom: rasterengine_common.SubpxDom,
+            rast_bounds: rasterengine_common.RasterBounds,
+            nodes_coords: rasterfrontend.Vec3Slices(F),
             shader: *const ShaderData,
             shader_buf: *const ShaderKern.LocalBuff,
             subpx_scratch: *ScratchBuffs,
@@ -397,15 +377,15 @@ pub fn RasterEngine(
         }
 
         fn rasterNewtonMultiSIMD(
-            comptime report_mode: ReportMode,
-            ctx_rast: frontend.RasterContext,
+            comptime report_mode: rasterconfig.ReportMode,
+            ctx_rast: rasterfrontend.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            tile: elemtilebin.ActiveTile,
-            overlap: elemtilebin.OverlapBBox,
+            tile: elemtilebinning.ActiveTile,
+            overlap: elemtilebinning.OverlapBBox,
             hull_multiroot: *const meshtypes.MultiRootHulls,
-            subpx_dom: SubpxDom,
-            rast_bounds: RasterBounds,
-            nodes_coords: Vec3Slices(F),
+            subpx_dom: rasterengine_common.SubpxDom,
+            rast_bounds: rasterengine_common.RasterBounds,
+            nodes_coords: rasterfrontend.Vec3Slices(F),
             shader: *const ShaderData,
             shader_buf: *const ShaderKern.LocalBuff,
             subpx_scratch: *ScratchBuffs,
@@ -437,14 +417,14 @@ fn rasterDirectSIMDImpl(
     comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
-    comptime report_mode: ReportMode,
-    ctx_rast: frontend.RasterContext,
+    comptime report_mode: rasterconfig.ReportMode,
+    ctx_rast: rasterfrontend.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: elemtilebin.ActiveTile,
-    overlap: elemtilebin.OverlapBBox,
-    subpx_dom: SubpxDom,
-    rast_bounds: RasterBounds,
-    nodes_coords: Vec3Slices(F),
+    tile: elemtilebinning.ActiveTile,
+    overlap: elemtilebinning.OverlapBBox,
+    subpx_dom: rasterengine_common.SubpxDom,
+    rast_bounds: rasterengine_common.RasterBounds,
+    nodes_coords: rasterfrontend.Vec3Slices(F),
     shader: *const ShaderData,
     shader_buf: *const ShaderKern.LocalBuff,
     subpx_scratch: *ScratchBuffs,
@@ -464,10 +444,10 @@ fn rasterDirectSIMDImpl(
 
     const v_start_x_u: VecSU = @splat(rast_bounds.start_x_u);
     const v_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
-    const ideal_x_plane = cam.getIdealXPlaneScratch(
+    const ideal_x_plane = cameraprojops.getIdealXPlaneScratch(
         subpx_scratch.ideal_pix_cent,
     );
-    const ideal_y_plane = cam.getIdealYPlaneScratch(
+    const ideal_y_plane = cameraprojops.getIdealYPlaneScratch(
         subpx_scratch.ideal_pix_cent,
     );
 
@@ -549,12 +529,12 @@ fn rasterDirectSIMDImpl(
                     scratch_y_u,
                     scratch_idx,
                 ),
-                .global_subx = comm.globalSubpxForReport(
+                .global_subx = rasterengine_common.globalSubpxForReport(
                     tile.scratch_px.x_min,
                     sub_samp,
                     scratch_x_u,
                 ),
-                .global_suby = comm.globalSubpxForReport(
+                .global_suby = rasterengine_common.globalSubpxForReport(
                     tile.scratch_px.y_min,
                     sub_samp,
                     scratch_y_u,
@@ -586,15 +566,15 @@ fn rasterNewtonMultiSIMDImpl(
     comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
-    comptime report_mode: ReportMode,
-    ctx_rast: frontend.RasterContext,
+    comptime report_mode: rasterconfig.ReportMode,
+    ctx_rast: rasterfrontend.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: elemtilebin.ActiveTile,
-    overlap: elemtilebin.OverlapBBox,
+    tile: elemtilebinning.ActiveTile,
+    overlap: elemtilebinning.OverlapBBox,
     hull_multiroot: *const meshtypes.MultiRootHulls,
-    subpx_dom: SubpxDom,
-    rast_bounds: RasterBounds,
-    nodes_coords: Vec3Slices(F),
+    subpx_dom: rasterengine_common.SubpxDom,
+    rast_bounds: rasterengine_common.RasterBounds,
+    nodes_coords: rasterfrontend.Vec3Slices(F),
     shader: *const ShaderData,
     shader_buf: *const ShaderKern.LocalBuff,
     subpx_scratch: *ScratchBuffs,
@@ -626,10 +606,10 @@ fn rasterNewtonMultiSIMDImpl(
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
 
-    const ideal_x_plane = cam.getIdealXPlaneScratch(
+    const ideal_x_plane = cameraprojops.getIdealXPlaneScratch(
         subpx_scratch.ideal_pix_cent,
     );
-    const ideal_y_plane = cam.getIdealYPlaneScratch(
+    const ideal_y_plane = cameraprojops.getIdealYPlaneScratch(
         subpx_scratch.ideal_pix_cent,
     );
 
@@ -670,14 +650,14 @@ fn rasterNewtonMultiSIMDImpl(
             const v_py = simdops.loadVecSF(ideal_y_plane, idx);
 
             const child_masks = if (edge_fun_mode == .pre_calc)
-                HullMultiRoot.childMaskPreCalcSIMD(
+                hullmultiroot.HullMultiRoot.childMaskPreCalcSIMD(
                     leaves_pre_calc,
                     v_px,
                     v_py,
                     valid,
                 )
             else
-                HullMultiRoot.childMaskOnTheFlySIMD(
+                hullmultiroot.HullMultiRoot.childMaskOnTheFlySIMD(
                     leaves_on_the_fly,
                     v_px,
                     v_py,
@@ -764,7 +744,7 @@ fn rasterNewtonMultiSIMDImpl(
                 slot,
             )[0..seed_count];
             for (fallback_seeds) |seed_idx| {
-                const seed = geomkerns.multiRootSeedCoords(N, seed_idx);
+                const seed = geometrykernels.multiRootSeedCoords(N, seed_idx);
                 const unresolved_slice =
                     subpx_scratch.multi_root_candidate_indices[0..unresolved_count];
                 for (unresolved_slice) |idx_u32| {
@@ -850,12 +830,12 @@ fn rasterNewtonMultiSIMDImpl(
                     scratch_y,
                     idx,
                 ),
-                .global_subx = comm.globalSubpxForReport(
+                .global_subx = rasterengine_common.globalSubpxForReport(
                     tile.scratch_px.x_min,
                     sub_samp,
                     scratch_x,
                 ),
-                .global_suby = comm.globalSubpxForReport(
+                .global_suby = rasterengine_common.globalSubpxForReport(
                     tile.scratch_px.y_min,
                     sub_samp,
                     scratch_y,
@@ -885,7 +865,7 @@ fn rasterNewtonMultiSIMDImpl(
 
 fn projectedJacDetPhysicalSIMD(
     comptime N: usize,
-    nodes: Vec3Slices(F),
+    nodes: rasterfrontend.Vec3Slices(F),
     v_weights: *const [N]VecSF,
     v_dNu: *const [N]VecSF,
     v_dNv: *const [N]VecSF,
@@ -937,10 +917,10 @@ fn projectedJacDetPhysicalSIMD(
 fn solveMultiRootChunk(
     comptime ScratchBuffs: type,
     comptime GeomKern: type,
-    comptime report_mode: ReportMode,
+    comptime report_mode: rasterconfig.ReportMode,
     ctx_report: report.ReportContext(report_mode),
-    subpx_dom: SubpxDom,
-    nodes_coords: Vec3Slices(F),
+    subpx_dom: rasterengine_common.SubpxDom,
+    nodes_coords: rasterfrontend.Vec3Slices(F),
     chunk: *SubpxSimdChunk,
     subpx_scratch: *ScratchBuffs,
 ) void {
@@ -1085,15 +1065,15 @@ fn rasterNewtonSIMDImpl(
     comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
-    comptime report_mode: ReportMode,
-    ctx_rast: frontend.RasterContext,
+    comptime report_mode: rasterconfig.ReportMode,
+    ctx_rast: rasterfrontend.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: elemtilebin.ActiveTile,
-    overlap: elemtilebin.OverlapBBox,
-    hull_adaptive: ?*const NDArray(F),
-    subpx_dom: SubpxDom,
-    rast_bounds: RasterBounds,
-    nodes_coords: Vec3Slices(F),
+    tile: elemtilebinning.ActiveTile,
+    overlap: elemtilebinning.OverlapBBox,
+    hull_adaptive: ?*const ndarray.NDArray(F),
+    subpx_dom: rasterengine_common.SubpxDom,
+    rast_bounds: rasterengine_common.RasterBounds,
+    nodes_coords: rasterfrontend.Vec3Slices(F),
     shader: *const ShaderData,
     shader_buf: *const ShaderKern.LocalBuff,
     subpx_scratch: *ScratchBuffs,
@@ -1115,11 +1095,11 @@ fn rasterNewtonSIMDImpl(
     }
 
     const maybe_hull_adaptive = hull_adaptive;
-    var elem_tess: HullAdaptive.Tessellation(GeomKern.tess_triangles_num) = undefined;
+    var elem_tess: hulladaptive.HullAdaptive.Tessellation(GeomKern.tess_triangles_num) = undefined;
     if (maybe_hull_adaptive) |rh| {
         const hx = rh.getSlice(&[_]usize{ overlap.elem_idx, 0, 0 }, 1);
         const hy = rh.getSlice(&[_]usize{ overlap.elem_idx, 1, 0 }, 1);
-        elem_tess = HullAdaptive.makeTessellation(
+        elem_tess = hulladaptive.HullAdaptive.makeTessellation(
             N,
             GeomKern.hull_nodes_num,
             GeomKern.tess_triangles_num,
@@ -1141,10 +1121,10 @@ fn rasterNewtonSIMDImpl(
     const v_start_x_u: VecSU = @splat(rast_bounds.start_x_u);
     const v_bounds_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
 
-    const ideal_x_plane = cam.getIdealXPlaneScratch(
+    const ideal_x_plane = cameraprojops.getIdealXPlaneScratch(
         subpx_scratch.ideal_pix_cent,
     );
-    const ideal_y_plane = cam.getIdealYPlaneScratch(
+    const ideal_y_plane = cameraprojops.getIdealYPlaneScratch(
         subpx_scratch.ideal_pix_cent,
     );
 
@@ -1170,7 +1150,7 @@ fn rasterNewtonSIMDImpl(
                 const seed_mode = ctx_rast.config.advanced.solver.oneroot.newton_seed_mode;
                 const edge_mode = ctx_rast.config.advanced.solver.oneroot.edge_fun_mode;
                 const v_hull_in = if (seed_mode == .hull) blk: {
-                    const v_hull_res: CandidateSeedSIMD = elem_tess.isInSIMD(
+                    const v_hull_res: hulladaptive.HullAdaptive.CandidateSeedSIMD = elem_tess.isInSIMD(
                         v_ideal_x_pix,
                         v_ideal_y_pix,
                         edge_mode,
@@ -1443,12 +1423,12 @@ fn rasterNewtonSIMDImpl(
                     scratch_y_u,
                     scratch_idx,
                 ),
-                .global_subx = comm.globalSubpxForReport(
+                .global_subx = rasterengine_common.globalSubpxForReport(
                     tile.scratch_px.x_min,
                     sub_samp,
                     scratch_x_u,
                 ),
-                .global_suby = comm.globalSubpxForReport(
+                .global_suby = rasterengine_common.globalSubpxForReport(
                     tile.scratch_px.y_min,
                     sub_samp,
                     scratch_y_u,
@@ -1481,14 +1461,14 @@ fn rasterSteppedSIMD(
     comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
-    comptime report_mode: ReportMode,
-    ctx_rast: frontend.RasterContext,
+    comptime report_mode: rasterconfig.ReportMode,
+    ctx_rast: rasterfrontend.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: elemtilebin.ActiveTile,
-    overlap: elemtilebin.OverlapBBox,
-    subpx_dom: SubpxDom,
-    rast_bounds: RasterBounds,
-    nodes_coords: Vec3Slices(F),
+    tile: elemtilebinning.ActiveTile,
+    overlap: elemtilebinning.OverlapBBox,
+    subpx_dom: rasterengine_common.SubpxDom,
+    rast_bounds: rasterengine_common.RasterBounds,
+    nodes_coords: rasterfrontend.Vec3Slices(F),
     shader: *const ShaderData,
     shader_buf: *const ShaderKern.LocalBuff,
     subpx_scratch: *ScratchBuffs,
@@ -1506,7 +1486,7 @@ fn rasterSteppedSIMD(
     const max_x_steps = if (aligned_width > 0) aligned_width - 1 else 0;
     const max_y_steps = if (height > 0) height - 1 else 0;
 
-    if (comm.Tri3FixedEdges.init(
+    if (rasterengine_common.Tri3FixedEdges.init(
         nodes_coords,
         sub_samp,
         start_subx_global,
@@ -1558,18 +1538,18 @@ fn rasterSteppedSIMDFixP(
     comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
-    comptime report_mode: ReportMode,
-    ctx_rast: frontend.RasterContext,
+    comptime report_mode: rasterconfig.ReportMode,
+    ctx_rast: rasterfrontend.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: elemtilebin.ActiveTile,
-    overlap: elemtilebin.OverlapBBox,
-    subpx_dom: SubpxDom,
-    rast_bounds: RasterBounds,
-    nodes_coords: Vec3Slices(F),
+    tile: elemtilebinning.ActiveTile,
+    overlap: elemtilebinning.OverlapBBox,
+    subpx_dom: rasterengine_common.SubpxDom,
+    rast_bounds: rasterengine_common.RasterBounds,
+    nodes_coords: rasterfrontend.Vec3Slices(F),
     shader: *const ShaderData,
     shader_buf: *const ShaderKern.LocalBuff,
     subpx_scratch: *ScratchBuffs,
-    fixed: comm.Tri3FixedEdges,
+    fixed: rasterengine_common.Tri3FixedEdges,
 ) !u64 {
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -1724,12 +1704,12 @@ fn rasterSteppedSIMDFixP(
                     scratch_y_u,
                     scratch_idx,
                 ),
-                .global_subx = comm.globalSubpxForReport(
+                .global_subx = rasterengine_common.globalSubpxForReport(
                     tile.scratch_px.x_min,
                     sub_samp,
                     scratch_x_u,
                 ),
-                .global_suby = comm.globalSubpxForReport(
+                .global_suby = rasterengine_common.globalSubpxForReport(
                     tile.scratch_px.y_min,
                     sub_samp,
                     scratch_y_u,
@@ -1764,14 +1744,14 @@ fn rasterSteppedSIMDFloat(
     comptime GeomKern: type,
     comptime ShaderKern: type,
     comptime ShaderData: type,
-    comptime report_mode: ReportMode,
-    ctx_rast: frontend.RasterContext,
+    comptime report_mode: rasterconfig.ReportMode,
+    ctx_rast: rasterfrontend.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: elemtilebin.ActiveTile,
-    overlap: elemtilebin.OverlapBBox,
-    subpx_dom: SubpxDom,
-    rast_bounds: RasterBounds,
-    nodes_coords: Vec3Slices(F),
+    tile: elemtilebinning.ActiveTile,
+    overlap: elemtilebinning.OverlapBBox,
+    subpx_dom: rasterengine_common.SubpxDom,
+    rast_bounds: rasterengine_common.RasterBounds,
+    nodes_coords: rasterfrontend.Vec3Slices(F),
     shader: *const ShaderData,
     shader_buf: *const ShaderKern.LocalBuff,
     subpx_scratch: *ScratchBuffs,
@@ -1975,12 +1955,12 @@ fn rasterSteppedSIMDFloat(
                     scratch_y_u,
                     scratch_idx,
                 ),
-                .global_subx = comm.globalSubpxForReport(
+                .global_subx = rasterengine_common.globalSubpxForReport(
                     tile.scratch_px.x_min,
                     sub_samp,
                     scratch_x_u,
                 ),
-                .global_suby = comm.globalSubpxForReport(
+                .global_suby = rasterengine_common.globalSubpxForReport(
                     tile.scratch_px.y_min,
                     sub_samp,
                     scratch_y_u,

@@ -6,21 +6,21 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const vecstack = @import("vecstack.zig");
+const hullmultiroot = @import("hullmultiroot.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
-const Vec3F = @import("vecstack.zig").Vec3F;
 const vecslice = @import("vecslice.zig");
 const fieldtypes = @import("fieldtypes.zig");
 const normals = @import("normals.zig");
-const geomkerns = @import("geometrykernels.zig");
+const geometrykernels = @import("geometrykernels.zig");
 const shadertypes = @import("shadertypes.zig");
-const frontend = @import("rasterfrontend.zig");
-const distbounds = @import("distortbounds.zig");
+const rasterfrontend = @import("rasterfrontend.zig");
+const distortbounds = @import("distortbounds.zig");
 const meshhit = @import("meshhit.zig");
-const HullMultiRoot = @import("hullmultiroot.zig").HullMultiRoot;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -64,9 +64,9 @@ pub const Coords = struct {
         return self.mat.getSlice(ind);
     }
 
-    pub fn getVec3(self: *const Coords, ind: usize) Vec3F {
+    pub fn getVec3(self: *const Coords, ind: usize) vecstack.Vec3F {
         const vec_slice = self.mat.getSlice(ind);
-        const vec = Vec3F.initSlice(vec_slice);
+        const vec = vecstack.Vec3F.initSlice(vec_slice);
         return vec;
     }
 };
@@ -121,7 +121,7 @@ pub const Connect = struct {
 // Coords/Fields: Node-order [total_nodes, ...]
 // Connect: Connectivity table links nodes to elems.
 pub const MeshInput = struct {
-    mesh_type: geomkerns.MeshType,
+    mesh_type: geometrykernels.MeshType,
     normal_type: normals.NormalType = .exact,
     coords: Coords,
     connect: Connect,
@@ -134,7 +134,7 @@ pub const MeshInput = struct {
 // Shader UVs: Elem-order (gathered during static init as they are usually static).
 pub const MeshStatic = struct {
     scene_mesh_idx: usize = 0,
-    mesh_type: geomkerns.MeshType,
+    mesh_type: geometrykernels.MeshType,
     normal_type: normals.NormalType = .exact,
     coords_orig: Coords,
     connect: Connect,
@@ -146,8 +146,8 @@ pub const MultiRootHulls = struct {
     indices: matslice.MatSlice(u8),
     valid_depth: vecslice.VecSlice(u8),
     slot_by_visible_elem: vecslice.VecSlice(u32),
-    leaves_pre_calc: []HullMultiRoot.BezierLeafPreCalc = &.{},
-    leaves_on_the_fly: []HullMultiRoot.BezierLeafOnTheFly = &.{},
+    leaves_pre_calc: []hullmultiroot.HullMultiRoot.BezierLeafPreCalc = &.{},
+    leaves_on_the_fly: []hullmultiroot.HullMultiRoot.BezierLeafOnTheFly = &.{},
 };
 
 pub const MeshHulls = struct {
@@ -164,9 +164,9 @@ pub const MeshFrameWorkspace = struct {
     coords_nodes: Coords,
     coords_nodes_def_world: ?Coords,
     vis_orig_elem_inds: []usize,
-    elem_bboxes: []frontend.ElemBBox,
-    root_classes: []frontend.ElemRootClass,
-    elem_float_bboxes: ?[]distbounds.DistortBounds = null,
+    elem_bboxes: []rasterfrontend.ElemBBox,
+    root_classes: []rasterfrontend.ElemRootClass,
+    elem_float_bboxes: ?[]distortbounds.DistortBounds = null,
     elems_in_image: usize,
     hull_adaptive: ?ndarray.NDArray(F),
     hull_multiroot: ?MultiRootHulls,
@@ -178,9 +178,9 @@ pub const MeshFrameWorkspace = struct {
 // Prep means culled elem-order ndarray.NDArray data ready for the raster loop.
 pub const MeshFrame = struct {
     mesh: MeshPrepared,
-    elem_bboxes: []frontend.ElemBBox,
-    root_classes: []frontend.ElemRootClass,
-    elem_float_bboxes: ?[]distbounds.DistortBounds = null,
+    elem_bboxes: []rasterfrontend.ElemBBox,
+    root_classes: []rasterfrontend.ElemRootClass,
+    elem_float_bboxes: ?[]distortbounds.DistortBounds = null,
     elems_in_image: usize,
     total_elems_num: usize,
     hull_adaptive: ?ndarray.NDArray(F),
@@ -193,7 +193,7 @@ pub const MeshFrame = struct {
 // Elem-order [vis_elems, field, nodes_per_elem]
 pub const MeshPrepared = struct {
     scene_mesh_idx: usize = 0,
-    mesh_type: geomkerns.MeshType,
+    mesh_type: geometrykernels.MeshType,
     coords: ndarray.NDArray(F),
     hit_geometry: meshhit.MeshHitGeomPrepared = .{},
     shaders: shadertypes.MeshShaderSetPrepared,

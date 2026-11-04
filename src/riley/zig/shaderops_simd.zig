@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const matslice = @import("matslice.zig");
+const shaderfunc = @import("shaderfunc.zig");
 const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 
@@ -17,21 +19,15 @@ const VecSB = buildconfig.VecSB;
 const VecSI = buildconfig.VecSI;
 const VecSF = buildconfig.VecSF;
 
-const MatSlice = @import("matslice.zig").MatSlice;
 const maths_simd = @import("maths_simd.zig");
-const texops = @import("textureops.zig");
-const textypes = @import("texturetypes.zig");
-const TexSampConfig = textypes.TexSampConfig;
-const comm = @import("shaderops_common.zig");
+const textureops = @import("textureops.zig");
+const texturetypes = @import("texturetypes.zig");
 const meshhit = @import("meshhit.zig");
-const scal = @import("shaderops_scalar.zig");
 const simdops = @import("simdops.zig");
 
 // --------------------------------------------------------------------------------------
 // Nodal Interp Shader
 // --------------------------------------------------------------------------------------
-pub const fillNodalClipScal = scal.fillNodalClipScal;
-pub const fillNodalPerspScal = scal.fillNodalPerspScal;
 
 inline fn storeShadeSIMD(
     subpx_vals: []F,
@@ -61,7 +57,7 @@ inline fn storeShadeSIMD(
 
 pub const ImageSink = struct {
     ctx: shadertypes.ShadeContext,
-    scratch: *MatSlice(F),
+    scratch: *matslice.MatSlice(F),
 
     pub inline fn store(self: *@This(), channel: usize, mask: VecSB, value: VecSF) void {
         const index = channel * self.scratch.cols_num + self.ctx.scratch_idx;
@@ -138,12 +134,9 @@ pub inline fn fillNodalPerspSIMD(
 // Texture Shader
 // --------------------------------------------------------------------------------------
 
-pub const fillTexClipScal = scal.fillTexClipScal;
-pub const fillTexPerspScal = scal.fillTexPerspScal;
-
 fn texSimdInterpMode(
     comptime C: comptime_int,
-    comptime samp_cfg: TexSampConfig,
+    comptime samp_cfg: texturetypes.TexSampConfig,
 ) buildconfig.SimdTexInterpMode {
     return buildconfig.TexSIMDPolicy.resolve(
         C,
@@ -156,7 +149,7 @@ pub inline fn fillTexClipSIMD(
     comptime N: usize,
     comptime T: type,
     comptime C: usize,
-    comptime samp_cfg: TexSampConfig,
+    comptime samp_cfg: texturetypes.TexSampConfig,
     ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -173,7 +166,7 @@ pub inline fn fillTexClipSIMD(
     }
 
     const sampled_vecs = switch (comptime texSimdInterpMode(C, samp_cfg)) {
-        .inner => texops.sampLanes(
+        .inner => textureops.sampLanes(
             C,
             samp_cfg,
             v_mask_active,
@@ -181,7 +174,7 @@ pub inline fn fillTexClipSIMD(
             v_tex_u,
             v_tex_v,
         ),
-        .over_pixels => texops.sampWide(
+        .over_pixels => textureops.sampWide(
             C,
             samp_cfg,
             shader.tex,
@@ -203,7 +196,7 @@ pub inline fn fillTexPerspSIMD(
     comptime N: usize,
     comptime T: type,
     comptime C: usize,
-    comptime samp_cfg: TexSampConfig,
+    comptime samp_cfg: texturetypes.TexSampConfig,
     ctx_shade: shadertypes.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -235,7 +228,7 @@ pub inline fn fillTexPerspSIMD(
         samp_cfg,
     )) {
         .inner => if (comptime N == 3)
-            texops.sampLanesTri3(
+            textureops.sampLanesTri3(
                 C,
                 samp_cfg,
                 v_mask_active,
@@ -244,7 +237,7 @@ pub inline fn fillTexPerspSIMD(
                 v_tex_v,
             )
         else
-            texops.sampLanes(
+            textureops.sampLanes(
                 C,
                 samp_cfg,
                 v_mask_active,
@@ -252,7 +245,7 @@ pub inline fn fillTexPerspSIMD(
                 v_tex_u,
                 v_tex_v,
             ),
-        .over_pixels => texops.sampWide(
+        .over_pixels => textureops.sampWide(
             C,
             samp_cfg,
             shader.tex,
@@ -271,15 +264,12 @@ pub inline fn fillTexPerspSIMD(
 // Function Shader
 // --------------------------------------------------------------------------------------
 
-pub const fillFuncClipScal = scal.fillFuncClipScal;
-pub const fillFuncPerspScal = scal.fillFuncPerspScal;
-
 pub inline fn evalFuncShaderGreyNormSIMD(
-    builtin: shadertypes.FuncShaderBuiltin,
-    coord: shadertypes.FuncCoordSIMD,
-    params: shadertypes.FuncShaderParams,
+    builtin: shaderfunc.FuncShaderBuiltin,
+    coord: shaderfunc.FuncCoordSIMD,
+    params: shaderfunc.FuncShaderParams,
 ) VecSF {
-    const eval_coord = shadertypes.applyFuncShaderCoordParamsSIMD(coord, params);
+    const eval_coord = shaderfunc.applyFuncShaderCoordParamsSIMD(coord, params);
     const v_value = switch (builtin) {
         .constant => blk: {
             const p = params.settings.constant;
@@ -356,7 +346,7 @@ pub inline fn evalFuncShaderGreyNormSIMD(
                 v_half * @sin(v_freq_pi * eval_coord.coord_0);
             const v_phase_y = v_half +
                 v_half * @sin(v_freq_pi * eval_coord.coord_1);
-            break :blk shadertypes.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
+            break :blk shaderfunc.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
         },
         .lambertian_normal_z => blk: {
             const p = params.settings.lambertian_normal_z;
@@ -384,11 +374,11 @@ pub inline fn evalFuncShaderGreyNormSIMD(
 }
 
 pub inline fn evalFuncShaderRGBNormSIMD(
-    builtin: shadertypes.FuncShaderBuiltin,
-    coord: shadertypes.FuncCoordSIMD,
-    params: shadertypes.FuncShaderParams,
+    builtin: shaderfunc.FuncShaderBuiltin,
+    coord: shaderfunc.FuncCoordSIMD,
+    params: shaderfunc.FuncShaderParams,
 ) [3]VecSF {
-    const eval_coord = shadertypes.applyFuncShaderCoordParamsSIMD(coord, params);
+    const eval_coord = shaderfunc.applyFuncShaderCoordParamsSIMD(coord, params);
 
     const v_vals = switch (builtin) {
         .constant => blk: {
@@ -518,11 +508,11 @@ pub inline fn evalFuncShaderRGBNormSIMD(
 
             const v_phase_x = v_half + v_half * @sin(v_freq_pi * eval_coord.coord_0);
             const v_phase_y = v_half + v_half * @sin(v_freq_pi * eval_coord.coord_1);
-            const v_base = shadertypes.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
+            const v_base = shaderfunc.cubicSmoothStepSIMD(v_phase_x * v_phase_y);
 
             break :blk .{
                 v_base,
-                shadertypes.cubicSmoothStepSIMD(v_one - v_base),
+                shaderfunc.cubicSmoothStepSIMD(v_one - v_base),
                 v_half + v_half * @sin(v_two_pi * v_base),
             };
         },
@@ -643,7 +633,7 @@ pub inline fn fillFuncClipSIMD(
             v_weights,
         );
 
-    const coord = shadertypes.FuncCoordSIMD{
+    const coord = shaderfunc.FuncCoordSIMD{
         .coord_0 = v_coord_0,
         .coord_1 = v_coord_1,
         .normal_x = normal_vecs[0],
@@ -745,7 +735,7 @@ pub inline fn fillFuncPerspSIMD(
             v_weights,
         );
 
-    const coord = shadertypes.FuncCoordSIMD{
+    const coord = shaderfunc.FuncCoordSIMD{
         .coord_0 = v_coord_0,
         .coord_1 = v_coord_1,
         .normal_x = normal_vecs[0],

@@ -442,7 +442,6 @@ const f32_trig_tol: f32 = 1e-5;
 const f64_trig_tol: f64 = 1e-12;
 
 test "maths_simd sin and cos approximations f32" {
-    const testing = std.testing;
     const N = 4;
 
     var input_array: [N]f32 = undefined;
@@ -463,12 +462,12 @@ test "maths_simd sin and cos approximations f32" {
         const cos_arr: [N]f32 = cosApproxSIMD(N, f32, val_vec);
 
         for (0..N) |jj| {
-            try testing.expectApproxEqAbs(
+            try std.testing.expectApproxEqAbs(
                 @sin(input_array[jj]),
                 sin_arr[jj],
                 f32_trig_tol,
             );
-            try testing.expectApproxEqAbs(
+            try std.testing.expectApproxEqAbs(
                 @cos(input_array[jj]),
                 cos_arr[jj],
                 f32_trig_tol,
@@ -478,7 +477,6 @@ test "maths_simd sin and cos approximations f32" {
 }
 
 test "maths_simd sin and cos approximations f64" {
-    const testing = std.testing;
     const N = 4;
 
     var input_array: [N]f64 = undefined;
@@ -499,12 +497,12 @@ test "maths_simd sin and cos approximations f64" {
         const cos_arr: [N]f64 = cosApproxSIMD(N, f64, val_vec);
 
         for (0..N) |jj| {
-            try testing.expectApproxEqAbs(
+            try std.testing.expectApproxEqAbs(
                 @sin(input_array[jj]),
                 sin_arr[jj],
                 f64_trig_tol,
             );
-            try testing.expectApproxEqAbs(
+            try std.testing.expectApproxEqAbs(
                 @cos(input_array[jj]),
                 cos_arr[jj],
                 f64_trig_tol,
@@ -514,7 +512,6 @@ test "maths_simd sin and cos approximations f64" {
 }
 
 test "maths_simd dedicated paths match shared pair f32" {
-    const testing = std.testing;
     const N = 4;
 
     for (0..128) |ii| {
@@ -533,12 +530,12 @@ test "maths_simd dedicated paths match shared pair f32" {
         const pair_cos_arr: [N]f32 = pair.cos_val;
 
         for (0..N) |jj| {
-            try testing.expectApproxEqAbs(
+            try std.testing.expectApproxEqAbs(
                 pair_sin_arr[jj],
                 sin_arr[jj],
                 f32_trig_tol,
             );
-            try testing.expectApproxEqAbs(
+            try std.testing.expectApproxEqAbs(
                 pair_cos_arr[jj],
                 cos_arr[jj],
                 f32_trig_tol,

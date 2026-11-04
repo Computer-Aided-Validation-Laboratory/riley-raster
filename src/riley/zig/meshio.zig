@@ -9,22 +9,10 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const print = std.debug.print;
-const time = std.time;
-const assert = std.debug.assert;
 
-const slice = @import("sliceops.zig");
 const csvio = @import("csvio.zig");
 const meshtypes = @import("meshtypes.zig");
 const fieldtypes = @import("fieldtypes.zig");
-
-// --------------------------------------------------------------------------------------
-// Public Constants & Public Types
-// --------------------------------------------------------------------------------------
-
-pub const Coords = meshtypes.Coords;
-pub const Connect = meshtypes.Connect;
-pub const Field = fieldtypes.Field;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -33,9 +21,9 @@ pub const Field = fieldtypes.Field;
 pub fn parseCoords(
     outer_alloc: std.mem.Allocator,
     csv_lines: *const std.ArrayList([]const u8),
-) !Coords {
+) !meshtypes.Coords {
     const coord_count: usize = csv_lines.items.len;
-    var coords = try Coords.initAlloc(outer_alloc, coord_count);
+    var coords = try meshtypes.Coords.initAlloc(outer_alloc, coord_count);
 
     const num_coords: u8 = 3;
     var num_count: u8 = 0;
@@ -63,7 +51,7 @@ pub fn parseCoords(
 pub fn parseConnect(
     outer_alloc: std.mem.Allocator,
     csv_lines: *const std.ArrayList([]const u8),
-) !Connect {
+) !meshtypes.Connect {
     const elem_count = csv_lines.items.len;
 
     var split_iter = std.mem.splitScalar(u8, csv_lines.items[0], ',');
@@ -73,7 +61,7 @@ pub fn parseConnect(
         nodes_per_elem += 1;
     }
 
-    const connect = try Connect.initAlloc(outer_alloc, elem_count, nodes_per_elem);
+    const connect = try meshtypes.Connect.initAlloc(outer_alloc, elem_count, nodes_per_elem);
 
     var elem: usize = 0;
     var node: usize = 0;
@@ -108,7 +96,7 @@ pub fn getFieldTimeN(csv_lines: *const std.ArrayList([]const u8)) usize {
 
 pub fn parseField(
     csv_lines: *const std.ArrayList([]const u8),
-    field: *Field,
+    field: *fieldtypes.Field,
     field_n: u8,
 ) !void {
 
@@ -147,10 +135,10 @@ pub const SimDataFiles = struct {
 };
 
 pub const SimData = struct {
-    coords: Coords,
-    connect: Connect,
-    field: ?Field,
-    disp: ?Field,
+    coords: meshtypes.Coords,
+    connect: meshtypes.Connect,
+    field: ?fieldtypes.Field,
+    disp: ?fieldtypes.Field,
 
     pub fn deinit(self: *SimData, outer_alloc: std.mem.Allocator) void {
         outer_alloc.free(self.coords.mem);
@@ -186,14 +174,14 @@ pub fn loadSimData(
 
     //--------------------------------------------------------------------------
     // Parse field (optional)
-    var field: ?Field = null;
+    var field: ?fieldtypes.Field = null;
     if (field_paths) |fp| {
         if (fp.len > 0) {
             lines = try csvio.readCsvToList(arena_alloc, io, fp[0]);
             const time_n: usize = getFieldTimeN(&lines);
             const coord_n: usize = lines.items.len;
             std.debug.assert(fp.len <= std.math.maxInt(u8));
-            field = try Field.initAlloc(outer_alloc, time_n, coord_n, @intCast(fp.len));
+            field = try fieldtypes.Field.initAlloc(outer_alloc, time_n, coord_n, @intCast(fp.len));
             try parseField(&lines, &field.?, 0);
             lines.clearRetainingCapacity();
 
@@ -207,14 +195,14 @@ pub fn loadSimData(
 
     //--------------------------------------------------------------------------
     // Parse displacement (optional)
-    var disp: ?Field = null;
+    var disp: ?fieldtypes.Field = null;
     if (disp_paths) |dp| {
         if (dp.len > 0) {
             lines = try csvio.readCsvToList(arena_alloc, io, dp[0]);
             const time_n: usize = getFieldTimeN(&lines);
             const coord_n: usize = lines.items.len;
             std.debug.assert(dp.len <= std.math.maxInt(u8));
-            disp = try Field.initAlloc(outer_alloc, time_n, coord_n, @intCast(dp.len));
+            disp = try fieldtypes.Field.initAlloc(outer_alloc, time_n, coord_n, @intCast(dp.len));
             try parseField(&lines, &disp.?, 0);
             lines.clearRetainingCapacity();
 

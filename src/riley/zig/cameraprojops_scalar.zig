@@ -9,8 +9,8 @@
 const cameratypes = @import("cameratypes.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const cm = @import("cameramodels.zig");
-const common = @import("cameraprojops_common.zig");
+const cameramodels = @import("cameramodels.zig");
+const cameraprojops_common = @import("cameraprojops_common.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -32,8 +32,8 @@ pub fn fillTileIdealCentersPerTile(
     ideal_pixel_centers: []F,
 ) !void {
     const sub_samp: usize = @intCast(camera.sub_sample);
-    const ideal_x_plane = common.getIdealXPlaneScratch(ideal_pixel_centers);
-    const ideal_y_plane = common.getIdealYPlaneScratch(ideal_pixel_centers);
+    const ideal_x_plane = cameraprojops_common.getIdealXPlaneScratch(ideal_pixel_centers);
+    const ideal_y_plane = cameraprojops_common.getIdealYPlaneScratch(ideal_pixel_centers);
     const start_x = scratch_x_px_min * @as(i32, @intCast(sub_samp));
     const start_y = scratch_y_px_min * @as(i32, @intCast(sub_samp));
     const tile_w_px = scratch_x_px_max - scratch_x_px_min;
@@ -98,7 +98,7 @@ pub fn calcPinholeRasterPoint(
     const x_dist = (observed_x_px - offsets.x_off) / focal_px.fx;
     const y_dist = (observed_y_px - offsets.y_off) / focal_px.fy;
 
-    const solved = try cm.invDistortModelScal(
+    const solved = try cameramodels.invDistortModelScal(
         camera.distort,
         x_dist,
         y_dist,

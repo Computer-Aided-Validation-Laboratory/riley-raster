@@ -13,10 +13,7 @@ const eval_branch_quota = buildconfig.comptime_eval_branch_quota;
 const cfg = buildconfig.config;
 const tol = cfg.tol;
 const lut_size = cfg.interp_lut_size;
-const textypes = @import("texturetypes.zig");
-const TexSamp = textypes.TexSamp;
-const TexSampMode = textypes.TexSampMode;
-const TexSampConfig = textypes.TexSampConfig;
+const texturetypes = @import("texturetypes.zig");
 
 // --------------------------------------------------------------------------------------
 // Strategy Map:
@@ -58,7 +55,7 @@ pub fn texelToFloat(comptime T: type, val: T) F {
 
 pub fn sampScal(
     comptime C: usize,
-    comptime config: TexSampConfig,
+    comptime config: texturetypes.TexSampConfig,
     tex: anytype,
     u: F,
     v: F,
@@ -150,7 +147,7 @@ pub fn sampScal(
 }
 
 pub fn sampGrey(
-    comptime config: TexSampConfig,
+    comptime config: texturetypes.TexSampConfig,
     tex: anytype,
     u: F,
     v: F,
@@ -242,8 +239,8 @@ pub fn sampConvo(
 
 fn sampTex4Tap(
     comptime C: usize,
-    comptime sample: TexSamp,
-    comptime mode: TexSampMode,
+    comptime sample: texturetypes.TexSamp,
+    comptime mode: texturetypes.TexSampMode,
     tex: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
@@ -325,8 +322,8 @@ fn sampTex4Tap(
 
 fn sampTex6Tap(
     comptime C: usize,
-    comptime sample: TexSamp,
-    comptime mode: TexSampMode,
+    comptime sample: texturetypes.TexSamp,
+    comptime mode: texturetypes.TexSampMode,
     tex: anytype,
     tex_x_i: isize,
     tex_y_i: isize,

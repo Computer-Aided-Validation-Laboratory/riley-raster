@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const rendergroups = @import("riley/zig/rendergroups.zig");
 const std = @import("std");
 
 const benchargs = @import("dev_support/benchargs.zig");
@@ -112,7 +113,7 @@ pub fn main(init: std.process.Init) !void {
         outer_alloc.free(managed_ios);
     }
     const render_groups = try outer_alloc.alloc(
-        riley.RenderGroup,
+        rendergroups.RenderGroup,
         bench_args.render_group_count,
     );
     defer outer_alloc.free(render_groups);

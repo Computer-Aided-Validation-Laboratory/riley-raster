@@ -11,6 +11,17 @@
   Canonical mesh
   coordinate, connectivity, and field declarations live in `meshtypes.zig` and
   `fieldtypes.zig`. Internal code imports declarations from those owners.
+- Internal implementation code imports modules and qualifies external types, functions,
+  and shared constants through the owning module, for example `report.GeomTimes`
+  and `std.Io.Clock.Timestamp`. Use a lowercase namespace matching the source
+  filename, including scalar/SIMD suffixes. Do not introduce local declaration
+  aliases or route internal imports through unrelated re-exports.
+  `buildconfig.zig` is the shorthand exception: `F`, SIMD types, `cfg`, and
+  configuration-derived constants may remain unqualified. Local types, generic
+  parameters, and ordinary local values such as allocator handles are unaffected.
+  Public API facades, thin implementation-selection wrappers, and associated types
+  required by generic kernel interfaces may deliberately re-export declarations;
+  qualify external declarations inside their implementation bodies.
 - The public Zig API is assembled explicitly in `api/core.zig` and exposed
   through `api.zig`, which is registered as the `riley` module root so relative
   imports from `api/core.zig` remain inside the module path. Public load/save,

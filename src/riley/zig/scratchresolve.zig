@@ -6,45 +6,37 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameramodels = @import("cameramodels.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const frontend = @import("rasterfrontend.zig");
-const elemtilebin = @import("elemtilebinning.zig");
-const cam = @import("cameraprojops.zig");
+const elemtilebinning = @import("elemtilebinning.zig");
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
-const common = @import("scratchresolve_common.zig");
-const scal = @import("scratchresolve_scalar.zig");
-const simd = @import("scratchresolve_simd.zig");
+const scratchresolve_common = @import("scratchresolve_common.zig");
+const scratchresolve_scalar = @import("scratchresolve_scalar.zig");
+const scratchresolve_simd = @import("scratchresolve_simd.zig");
 
 const cfg = buildconfig.config;
-const resolve_scratch_direct_impl = scal.resolveScratchDirectCore;
 const avg_scratch_impl = if (cfg.simd == .on)
-    simd.avgScratchCoreSIMD
+    scratchresolve_simd.avgScratchCoreSIMD
 else
-    scal.avgScratchCore;
+    scratchresolve_scalar.avgScratchCore;
 const filter_scratch_separable_impl = if (cfg.simd == .on)
-    simd.filterScratchSeparableSIMD
+    scratchresolve_simd.filterScratchSeparableSIMD
 else
-    scal.filterScratchSeparable;
+    scratchresolve_scalar.filterScratchSeparable;
 const filter_scratch_nonseparable_impl = if (cfg.simd == .on)
-    simd.filterScratchNonSeparableSIMD
+    scratchresolve_simd.filterScratchNonSeparableSIMD
 else
-    scal.filterScratchNonSeparable;
-
-// --------------------------------------------------------------------------------------
-// Public Constants & Public Types
-// --------------------------------------------------------------------------------------
-
-pub const ScratchTileGeometry = common.ScratchTileGeometry;
+    scratchresolve_scalar.filterScratchNonSeparable;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn resolveScratchDirect(
-    tile: elemtilebin.ActiveTile,
-    scratch_geom: ScratchTileGeometry,
+    tile: elemtilebinning.ActiveTile,
+    scratch_geom: scratchresolve_common.ScratchTileGeometry,
     spx_tile_size: usize,
     fields_num: u8,
     spx_image_scratch: *const matslice.MatSlice(F),
@@ -52,7 +44,7 @@ pub fn resolveScratchDirect(
     touched_max_x: []const usize,
     image_out_arr: *ndarray.NDArray(F),
 ) void {
-    resolve_scratch_direct_impl(
+    scratchresolve_scalar.resolveScratchDirectCore(
         tile,
         scratch_geom,
         spx_tile_size,
@@ -67,8 +59,8 @@ pub fn resolveScratchDirect(
 }
 
 pub fn avgScratch(
-    tile: elemtilebin.ActiveTile,
-    scratch_geom: ScratchTileGeometry,
+    tile: elemtilebinning.ActiveTile,
+    scratch_geom: scratchresolve_common.ScratchTileGeometry,
     sub_samp: usize,
     spx_tile_size: usize,
     fields_num: u8,
@@ -93,25 +85,25 @@ pub fn avgScratch(
 }
 
 pub fn resolveTileWithPSF(
-    tile: elemtilebin.ActiveTile,
+    tile: elemtilebinning.ActiveTile,
     sub_samp: usize,
     spx_stride: usize,
     fields_num: u8,
     background_value: F,
-    prep_psf: cam.PreparedPSF,
-    scratch_geom: ScratchTileGeometry,
+    prep_psf: cameramodels.PreparedPSF,
+    scratch_geom: scratchresolve_common.ScratchTileGeometry,
     spx_image_scratch: *matslice.MatSlice(F),
     filter_tmp: *matslice.MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
     image_out_arr: *ndarray.NDArray(F),
 ) void {
-    common.resolveTileWithPSF(
-        @TypeOf(resolve_scratch_direct_impl),
+    scratchresolve_common.resolveTileWithPSF(
+        @TypeOf(scratchresolve_scalar.resolveScratchDirectCore),
         @TypeOf(avg_scratch_impl),
         @TypeOf(filter_scratch_separable_impl),
         @TypeOf(filter_scratch_nonseparable_impl),
-        resolve_scratch_direct_impl,
+        scratchresolve_scalar.resolveScratchDirectCore,
         avg_scratch_impl,
         filter_scratch_separable_impl,
         filter_scratch_nonseparable_impl,

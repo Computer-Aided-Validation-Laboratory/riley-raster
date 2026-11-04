@@ -6,44 +6,41 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const rasterconfig = @import("rasterconfig.zig");
+const ndarray = @import("ndarray.zig");
+const matslice = @import("matslice.zig");
 const meshtypes = @import("meshtypes.zig");
 const std = @import("std");
 const F = @import("buildconfig.zig").F;
-const frontend = @import("rasterfrontend.zig");
-const elemtilebin = @import("elemtilebinning.zig");
+const rasterfrontend = @import("rasterfrontend.zig");
+const elemtilebinning = @import("elemtilebinning.zig");
 const report = @import("report.zig");
-const ReportMode = report.ReportMode;
 const scalingpolicy = @import("scalingpolicy.zig");
-const pce = @import("parachunkexec.zig");
-const meshpipe = @import("meshpipeline.zig");
-const MeshPrepared = meshtypes.MeshPrepared;
-const NDArray = @import("ndarray.zig").NDArray;
-const Timestamp = std.Io.Clock.Timestamp;
+const parachunkexec = @import("parachunkexec.zig");
 const rasterreport = @import("rasterreport.zig");
-const common = @import("rasterengine_common.zig");
+const rasterengine_common = @import("rasterengine_common.zig");
 const cfg = @import("buildconfig.zig").config;
 const S = @import("buildconfig.zig").SimdWidth;
-const MatSlice = @import("matslice.zig").MatSlice;
-const scalar_kernel = @import("rasterengine_scalar.zig");
-const simd_kernel = @import("rasterengine_simd.zig");
+const rasterengine_scalar = @import("rasterengine_scalar.zig");
+const rasterengine_simd = @import("rasterengine_simd.zig");
 const SelectedRasterBackend = if (cfg.simd == .on)
     GlobalBackendSIMD
 else
     GlobalBackendScalar;
-const subpxframe = @import("subpxframe_globbuff.zig");
+const subpxframe_globbuff = @import("subpxframe_globbuff.zig");
 
 pub fn rasterSceneGlobBuff(
-    comptime report_mode: ReportMode,
+    comptime report_mode: rasterconfig.ReportMode,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    ctx_rast: frontend.RasterContext,
+    ctx_rast: rasterfrontend.RasterContext,
     ctx_report: report.ReportContext(report_mode),
     requested_workers: u16,
-    tiling: elemtilebin.TileElemOverlaps,
-    meshes: []const MeshPrepared,
+    tiling: elemtilebinning.TileElemOverlaps,
+    meshes: []const meshtypes.MeshPrepared,
     mesh_hulls: meshtypes.MeshHulls,
-    target: *subpxframe.SubpxTarget,
-    image_out_arr: *NDArray(F),
+    target: *subpxframe_globbuff.SubpxTarget,
+    image_out_arr: *ndarray.NDArray(F),
 ) !usize {
     return rasterSceneGlobBuffImpl(
         SelectedRasterBackend,
@@ -63,29 +60,29 @@ pub fn rasterSceneGlobBuff(
 
 fn rasterSceneGlobBuffImpl(
     comptime RasterBackend: type,
-    comptime report_mode: ReportMode,
+    comptime report_mode: rasterconfig.ReportMode,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    ctx_rast: frontend.RasterContext,
+    ctx_rast: rasterfrontend.RasterContext,
     ctx_report: report.ReportContext(report_mode),
     requested_workers: u16,
-    tiling: elemtilebin.TileElemOverlaps,
-    meshes: []const MeshPrepared,
+    tiling: elemtilebinning.TileElemOverlaps,
+    meshes: []const meshtypes.MeshPrepared,
     mesh_hulls: meshtypes.MeshHulls,
-    target: *subpxframe.SubpxTarget,
-    image_out_arr: *NDArray(F),
+    target: *subpxframe_globbuff.SubpxTarget,
+    image_out_arr: *ndarray.NDArray(F),
 ) !usize {
     if (tiling.active_tiles.len == 0) return 0;
 
     const WorkerState = comptime ThreadState(RasterBackend, report_mode);
     const GlobalTileRangeCtx = struct {
         io: std.Io,
-        ctx_rast: frontend.RasterContext,
+        ctx_rast: rasterfrontend.RasterContext,
         shared_log: *report.LogType(report_mode),
-        tiling: elemtilebin.TileElemOverlaps,
-        meshes: []const MeshPrepared,
+        tiling: elemtilebinning.TileElemOverlaps,
+        meshes: []const meshtypes.MeshPrepared,
         mesh_hulls: meshtypes.MeshHulls,
-        target: *subpxframe.SubpxTarget,
+        target: *subpxframe_globbuff.SubpxTarget,
         worker_states: []WorkerState,
         subpx_tile_size: usize,
     };
@@ -116,7 +113,7 @@ fn rasterSceneGlobBuffImpl(
                     tile_rng_ctx.subpx_tile_size,
                     tile_rng_ctx.ctx_rast.camera.background_value,
                 );
-                const result = try common.rasterTileCore(
+                const result = try rasterengine_common.rasterTileCore(
                     RasterBackend,
                     report_mode,
                     tile_rng_ctx.io,
@@ -146,7 +143,7 @@ fn rasterSceneGlobBuffImpl(
         requested_workers,
         tiling.active_tiles.len,
     );
-    var chunk_exec = pce.ParaChunkExecutor.init(io, @intCast(workers_num));
+    var chunk_exec = parachunkexec.ParaChunkExecutor.init(io, @intCast(workers_num));
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
@@ -160,7 +157,7 @@ fn rasterSceneGlobBuffImpl(
         worker_state.* = try WorkerState.init(
             arena_alloc,
             image_out_arr.dims[0],
-            common.tileScratchSubpxSize(ctx_rast),
+            rasterengine_common.tileScratchSubpxSize(ctx_rast),
         );
         initialized_num += 1;
     }
@@ -174,7 +171,7 @@ fn rasterSceneGlobBuffImpl(
         .mesh_hulls = mesh_hulls,
         .target = target,
         .worker_states = worker_states,
-        .subpx_tile_size = common.tileScratchSubpxSize(ctx_rast),
+        .subpx_tile_size = rasterengine_common.tileScratchSubpxSize(ctx_rast),
     };
     try chunk_exec.runDynRangeWithWorkerErr(
         &tile_range_ctx,
@@ -205,8 +202,8 @@ const GlobalSubpxBuffsScalar = struct {
 
     stride_subpx: usize,
     inv_z: []F,
-    image: MatSlice(F),
-    filter_tmp: MatSlice(F),
+    image: matslice.MatSlice(F),
+    filter_tmp: matslice.MatSlice(F),
     touched_min_x: []usize,
     touched_max_x: []usize,
     ideal_pix_cent: []F,
@@ -241,8 +238,8 @@ pub const GlobalBackendScalar = struct {
         return .{
             .stride_subpx = subpx_tile_size,
             .inv_z = try arena_alloc.alloc(F, total),
-            .image = MatSlice(F).init(image_mem, fields_num, 0),
-            .filter_tmp = MatSlice(F).init(
+            .image = matslice.MatSlice(F).init(image_mem, fields_num, 0),
+            .filter_tmp = matslice.MatSlice(F).init(
                 image_mem,
                 fields_num,
                 0,
@@ -267,8 +264,8 @@ pub const GlobalBackendScalar = struct {
     }
 
     pub fn configureTarget(
-        target: *subpxframe.SubpxTarget,
-        tile: elemtilebin.ActiveTile,
+        target: *subpxframe_globbuff.SubpxTarget,
+        tile: elemtilebinning.ActiveTile,
         sub_samp: i32,
         scratch: *GlobalSubpxBuffsScalar,
     ) void {
@@ -290,9 +287,9 @@ pub const GlobalBackendScalar = struct {
         comptime GeomKern: type,
         comptime ShaderKern: type,
         comptime ShaderData: type,
-        comptime root_class: frontend.ElemRootClass,
+        comptime root_class: rasterfrontend.ElemRootClass,
     ) type {
-        return scalar_kernel.RasterEngine(
+        return rasterengine_scalar.RasterEngine(
             GlobalSubpxBuffsScalar,
             GeomKern,
             ShaderKern,
@@ -310,9 +307,9 @@ pub const GlobalSubpxBuffsSIMD = struct {
 
     stride_subpx: usize,
     inv_z: []align(64) F,
-    image: MatSlice(F),
-    filter_tmp: MatSlice(F),
-    simd_chunks: []simd_kernel.SubpxSimdChunk,
+    image: matslice.MatSlice(F),
+    filter_tmp: matslice.MatSlice(F),
+    simd_chunks: []rasterengine_simd.SubpxSimdChunk,
     multi_root_candidate_indices: []u32,
     multi_root_child_masks: []u8,
     mask: []align(64) bool,
@@ -379,7 +376,7 @@ pub const GlobalBackendSIMD = struct {
         );
 
         const empty_image_mem = try arena_alloc.alloc(F, 0);
-        const empty_image = MatSlice(F).init(
+        const empty_image = matslice.MatSlice(F).init(
             empty_image_mem,
             @as(usize, fields_num),
             0,
@@ -388,7 +385,7 @@ pub const GlobalBackendSIMD = struct {
         const subpx_simd_chunk_count =
             @divFloor(subpx_tile_total_padded + (S - 1), S) + 1;
         const subpx_simd_chunks = try arena_alloc.alloc(
-            simd_kernel.SubpxSimdChunk,
+            rasterengine_simd.SubpxSimdChunk,
             subpx_simd_chunk_count,
         );
 
@@ -435,8 +432,8 @@ pub const GlobalBackendSIMD = struct {
     }
 
     pub fn configureTarget(
-        target: *subpxframe.SubpxTarget,
-        tile: elemtilebin.ActiveTile,
+        target: *subpxframe_globbuff.SubpxTarget,
+        tile: elemtilebinning.ActiveTile,
         sub_samp: i32,
         scratch: *GlobalSubpxBuffsSIMD,
     ) void {
@@ -458,9 +455,9 @@ pub const GlobalBackendSIMD = struct {
         comptime GeomKern: type,
         comptime ShaderKern: type,
         comptime ShaderData: type,
-        comptime root_class: frontend.ElemRootClass,
+        comptime root_class: rasterfrontend.ElemRootClass,
     ) type {
-        return simd_kernel.RasterEngine(
+        return rasterengine_simd.RasterEngine(
             GlobalSubpxBuffsSIMD,
             GeomKern,
             ShaderKern,
@@ -474,7 +471,7 @@ pub const GlobalBackendSIMD = struct {
 // Global raster workers
 // --------------------------------------------------------------------------------------
 fn initThreadReportLog(
-    comptime report_mode: ReportMode,
+    comptime report_mode: rasterconfig.ReportMode,
 ) report.LogType(report_mode) {
     return switch (report_mode) {
         .off => .{},
@@ -484,7 +481,7 @@ fn initThreadReportLog(
 
 fn ThreadState(
     comptime RasterBackend: type,
-    comptime report_mode: ReportMode,
+    comptime report_mode: rasterconfig.ReportMode,
 ) type {
     return struct {
         const Self = @This();

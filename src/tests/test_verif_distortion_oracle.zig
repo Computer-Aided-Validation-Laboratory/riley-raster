@@ -28,18 +28,18 @@ const jac_cols_num: usize = 8;
 const brown_start: usize = 4;
 const coeffs_start: usize = 18;
 
-fn buildPoly(row: []const F) !cam.PolyMap {
+fn buildPoly(row: []const F) !cm.PolyMap {
     const degree: u8 = @intFromFloat(row[2]);
-    const mode: cam.PolyMode = switch (@as(u8, @intFromFloat(row[3]))) {
+    const mode: cm.PolyMode = switch (@as(u8, @intFromFloat(row[3]))) {
         0 => .coordinate,
         1 => .displacement,
         else => return error.InvalidPolyMode,
     };
-    if (degree < 1 or degree > cam.POLY_MAX_DEGREE) return error.InvalidPolyDegree;
-    return cam.PolyMap.init(degree, mode, row[coeffs_start..][0 .. 2 * cam.polyTermCount(degree)]);
+    if (degree < 1 or degree > cm.POLY_MAX_DEGREE) return error.InvalidPolyDegree;
+    return cm.PolyMap.init(degree, mode, row[coeffs_start..][0 .. 2 * cm.polyTermCount(degree)]);
 }
 
-fn buildBrown(row: []const F) cam.BrownCon.Params {
+fn buildBrown(row: []const F) cm.BrownCon.Params {
     return .{
         .k1 = row[brown_start + 0],
         .k2 = row[brown_start + 1],
@@ -49,7 +49,7 @@ fn buildBrown(row: []const F) cam.BrownCon.Params {
     };
 }
 
-fn buildBrownExt(row: []const F) cam.BrownConExt.Params {
+fn buildBrownExt(row: []const F) cm.BrownConExt.Params {
     return .{
         .k1 = row[brown_start + 0],
         .k2 = row[brown_start + 1],
@@ -68,9 +68,9 @@ fn buildBrownExt(row: []const F) cam.BrownConExt.Params {
     };
 }
 
-fn buildModel(row: []const F) !cam.DistortModel {
+fn buildModel(row: []const F) !cm.DistortModel {
     const model_tag: u8 = @intFromFloat(row[1]);
-    const params: cam.DistortParams = switch (model_tag) {
+    const params: cm.DistortParams = switch (model_tag) {
         0 => .none,
         1 => .{ .brown_con = buildBrown(row) },
         2 => .{ .brown_con_ext = buildBrownExt(row) },
@@ -85,7 +85,7 @@ fn buildModel(row: []const F) !cam.DistortModel {
         } },
         else => return error.InvalidOracleModel,
     };
-    return cam.DistortModel.init(params);
+    return cm.DistortModel.init(params);
 }
 
 fn reportMismatch(
@@ -142,7 +142,7 @@ fn checkScalarPoints(cases: anytype, points: anytype) !void {
         const ideal = [2]F{ point_row[2], point_row[3] };
         const expected_observed = [2]F{ point_row[4], point_row[5] };
         const expected_inv = [2]F{ point_row[6], point_row[7] };
-        const actual_observed = cam.fordDistortModelScal(
+        const actual_observed = cm.fordDistortModelScal(
             model,
             ideal[0],
             ideal[1],
@@ -156,7 +156,7 @@ fn checkScalarPoints(cases: anytype, points: anytype) !void {
             tolerance.ford_abs_norm,
         );
 
-        const recovered = try cam.invDistortModelScal(
+        const recovered = try cm.invDistortModelScal(
             model,
             expected_observed[0],
             expected_observed[1],
@@ -203,7 +203,7 @@ fn checkSIMDPoints(cases: anytype, points: anytype) !void {
 
         const case_row = cases.slice[case_id * case_cols_num ..][0..case_cols_num];
         const model = try buildModel(case_row);
-        const actual_ford: ?cm.DistortCoordsSIMD = cam.fordDistortModelSIMD(
+        const actual_ford: ?cm.DistortCoordsSIMD = cm.fordDistortModelSIMD(
             model,
             @as(VecSF, ideal_x),
             @as(VecSF, ideal_y),
@@ -224,7 +224,7 @@ fn checkSIMDPoints(cases: anytype, points: anytype) !void {
                 );
             }
         }
-        const solved = try cam.invDistortModelSIMD(
+        const solved = try cm.invDistortModelSIMD(
             model,
             @as(VecSF, observed_x),
             @as(VecSF, observed_y),
@@ -247,10 +247,10 @@ fn checkSIMDPoints(cases: anytype, points: anytype) !void {
     }
 }
 
-fn modelJacobian(model: cam.DistortModel, x: F, y: F) ?Mat22F {
+fn modelJacobian(model: cm.DistortModel, x: F, y: F) ?Mat22F {
     return switch (model) {
-        .brown_con => |brown| cam.BrownCon.fordWithJac(brown, x, y).jac,
-        .brown_con_ext => |brown| cam.BrownConExt.fordWithJac(brown, x, y).jac,
+        .brown_con => |brown| cm.BrownCon.fordWithJac(brown, x, y).jac,
+        .brown_con_ext => |brown| cm.BrownConExt.fordWithJac(brown, x, y).jac,
         .poly => |poly| poly.fordWithJac(x, y).jac,
         .brown_con_poly => |chain| chain.fordWithJac(x, y).jac,
         .brown_con_ext_poly => |chain| chain.fordWithJac(x, y).jac,
@@ -258,7 +258,7 @@ fn modelJacobian(model: cam.DistortModel, x: F, y: F) ?Mat22F {
     };
 }
 
-fn polyJacobianSIMD(model: cam.DistortModel, x: F, y: F) ?cm.DistortFordJacSIMDResult {
+fn polyJacobianSIMD(model: cm.DistortModel, x: F, y: F) ?cm.DistortFordJacSIMDResult {
     const vx: VecSF = @splat(x);
     const vy: VecSF = @splat(y);
     const poly = switch (model) {
@@ -269,13 +269,13 @@ fn polyJacobianSIMD(model: cam.DistortModel, x: F, y: F) ?cm.DistortFordJacSIMDR
     };
     const brown = switch (model) {
         .brown_con_poly => |chain| cm.fordDistortWithJacSIMD(
-            cam.BrownCon.Params,
+            cm.BrownCon.Params,
             chain.brown_con,
             vx,
             vy,
         ),
         .brown_con_ext_poly => |chain| cm.fordDistortWithJacSIMD(
-            cam.BrownConExt,
+            cm.BrownConExt,
             chain.brown_con_ext,
             vx,
             vy,
@@ -348,10 +348,10 @@ fn checkJacobians(cases: anytype, jacobians: anytype) !void {
 
 fn checkBrownConPolyEquivalence() !void {
     const equivalent = fullfixtures.getEquivalentBrownConPoly();
-    const brown_model: cam.DistortModel = .{
+    const brown_model: cm.DistortModel = .{
         .brown_con = equivalent.brown_con,
     };
-    const poly_model: cam.DistortModel = .{
+    const poly_model: cm.DistortModel = .{
         .poly = equivalent.poly,
     };
     const poly_map = equivalent.poly;
@@ -367,12 +367,12 @@ fn checkBrownConPolyEquivalence() !void {
     const jacobian_tolerance: F = 1.0e-12;
 
     for (points, 0..) |point, point_id| {
-        const brown_ford = cam.fordDistortModelScal(
+        const brown_ford = cm.fordDistortModelScal(
             brown_model,
             point[0],
             point[1],
         );
-        const poly_ford = cam.fordDistortModelScal(
+        const poly_ford = cm.fordDistortModelScal(
             poly_model,
             point[0],
             point[1],
@@ -386,7 +386,7 @@ fn checkBrownConPolyEquivalence() !void {
             ford_tolerance,
         );
 
-        const brown_jac = cam.BrownCon.fordWithJac(
+        const brown_jac = cm.BrownCon.fordWithJac(
             equivalent.brown_con,
             point[0],
             point[1],
@@ -405,12 +405,12 @@ fn checkBrownConPolyEquivalence() !void {
             }
         }
 
-        const brown_inv = try cam.invDistortModelScal(
+        const brown_inv = try cm.invDistortModelScal(
             brown_model,
             brown_ford.x,
             brown_ford.y,
         );
-        const poly_inv = try cam.invDistortModelScal(
+        const poly_inv = try cm.invDistortModelScal(
             poly_model,
             brown_ford.x,
             brown_ford.y,
@@ -430,13 +430,13 @@ fn checkBrownConPolyEquivalence() !void {
         observed_x[0] = brown_ford.x;
         observed_y[0] = brown_ford.y;
         active[0] = true;
-        const brown_simd_inv = try cam.invDistortModelSIMD(
+        const brown_simd_inv = try cm.invDistortModelSIMD(
             brown_model,
             @as(VecSF, observed_x),
             @as(VecSF, observed_y),
             @as(VecSB, active),
         );
-        const poly_simd_inv = try cam.invDistortModelSIMD(
+        const poly_simd_inv = try cm.invDistortModelSIMD(
             poly_model,
             @as(VecSF, observed_x),
             @as(VecSF, observed_y),

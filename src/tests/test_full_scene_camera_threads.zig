@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const rendergroups = @import("../riley/zig/rendergroups.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
@@ -130,7 +131,7 @@ fn runRender(
     run_config.advanced.raster.buffer_mode = buf_case.mode;
     run_config.parallel = .{ .threads = thread_case.total_threads };
 
-    var render_groups: [4]riley.RenderGroup = undefined;
+    var render_groups: [4]rendergroups.RenderGroup = undefined;
     for (0..thread_case.group_count) |gg| {
         render_groups[gg] = .{
             .io = io,
@@ -460,7 +461,7 @@ fn runAdditionalSceneCameraThreadTests(
             run_config.render_mode = render_mode;
             run_config.parallel = .{ .threads = 2 };
 
-            const render_groups = [_]riley.RenderGroup{
+            const render_groups = [_]rendergroups.RenderGroup{
                 .{ .io = io, .workers = 2 },
             };
 
@@ -498,7 +499,7 @@ fn runAdditionalSceneCameraThreadTests(
             run_config.save_strategy = .memory;
             run_config.parallel = .{ .threads = 2 };
 
-            const render_groups = [_]riley.RenderGroup{
+            const render_groups = [_]rendergroups.RenderGroup{
                 .{ .io = io, .workers = 2 },
             };
 
@@ -531,7 +532,7 @@ fn runAdditionalSceneCameraThreadTests(
         run_config.save_strategy = .memory;
         run_config.parallel = .{ .threads = 2 };
 
-        const render_groups = [_]riley.RenderGroup{
+        const render_groups = [_]rendergroups.RenderGroup{
             .{ .io = io, .workers = 2 },
         };
 

@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const matslice = @import("matslice.zig");
+const geometrykernels = @import("geometrykernels.zig");
 const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
@@ -15,10 +17,7 @@ const VecSB = buildconfig.VecSB;
 const eval_branch_quota = buildconfig.comptime_eval_branch_quota;
 const shaderops = @import("shaderops.zig");
 const meshhit = @import("meshhit.zig");
-const MatSlice = @import("matslice.zig").MatSlice;
-const textypes = @import("texturetypes.zig");
-const TexSampConfig = textypes.TexSampConfig;
-const CoordSpace = @import("geometrykernels.zig").CoordSpace;
+const texturetypes = @import("texturetypes.zig");
 
 // --------------------------------------------------------------------------------------
 // Nodal Interp Shader
@@ -26,14 +25,14 @@ const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
 pub inline fn shadeNodalScalComm(
     comptime N: usize,
-    comptime coord_space: CoordSpace,
+    comptime coord_space: geometrykernels.CoordSpace,
     ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
     shader_buf: *const shadertypes.LocalShaderBuff(N),
     shader: *const shadertypes.NodalPrepared,
-    spx_img_scratch: *MatSlice(F),
+    spx_img_scratch: *matslice.MatSlice(F),
 ) void {
-    if (comptime coord_space == CoordSpace.clip_px_leng) {
+    if (comptime coord_space == geometrykernels.CoordSpace.clip_px_leng) {
         shaderops.fillNodalClipScal(
             N,
             ctx_shade,
@@ -62,12 +61,12 @@ pub inline fn shadeTexScalComm(
     comptime N: usize,
     comptime T: type,
     comptime C: usize,
-    comptime coord_space: CoordSpace,
+    comptime coord_space: geometrykernels.CoordSpace,
     ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
     shader_buf: *const shadertypes.LocalShaderBuff(N),
     shader: *const shadertypes.TexPrepared(T, C),
-    spx_img_scratch: *MatSlice(F),
+    spx_img_scratch: *matslice.MatSlice(F),
 ) void {
     shadeTexScalDispatchSample(
         N,
@@ -87,13 +86,13 @@ inline fn shadeTexScalDispatchSample(
     comptime N: usize,
     comptime T: type,
     comptime C: usize,
-    comptime coord_space: CoordSpace,
-    samp_cfg: TexSampConfig,
+    comptime coord_space: geometrykernels.CoordSpace,
+    samp_cfg: texturetypes.TexSampConfig,
     ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
     shader_buf: *const shadertypes.LocalShaderBuff(N),
     shader: *const shadertypes.TexPrepared(T, C),
-    spx_img_scratch: *MatSlice(F),
+    spx_img_scratch: *matslice.MatSlice(F),
 ) void {
     @setEvalBranchQuota(eval_branch_quota);
     switch (samp_cfg.sample) {
@@ -117,23 +116,23 @@ inline fn shadeTexScalDispatchMode(
     comptime N: usize,
     comptime T: type,
     comptime C: usize,
-    comptime coord_space: CoordSpace,
-    comptime samp_type: textypes.TexSamp,
-    mode: textypes.TexSampMode,
+    comptime coord_space: geometrykernels.CoordSpace,
+    comptime samp_type: texturetypes.TexSamp,
+    mode: texturetypes.TexSampMode,
     ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.RasterHit(N),
     shader_buf: *const shadertypes.LocalShaderBuff(N),
     shader: *const shadertypes.TexPrepared(T, C),
-    spx_img_scratch: *MatSlice(F),
+    spx_img_scratch: *matslice.MatSlice(F),
 ) void {
     switch (mode) {
         inline else => |mode_type| {
-            const samp_cfg = comptime (TexSampConfig{
+            const samp_cfg = comptime (texturetypes.TexSampConfig{
                 .sample = samp_type,
                 .mode = mode_type,
             }).sanitise();
 
-            if (comptime coord_space == CoordSpace.clip_px_leng) {
+            if (comptime coord_space == geometrykernels.CoordSpace.clip_px_leng) {
                 shaderops.fillTexClipScal(
                     N,
                     T,
@@ -168,7 +167,7 @@ inline fn shadeTexScalDispatchMode(
 
 pub inline fn completeFuncHit(
     comptime N: usize,
-    comptime coord_space: CoordSpace,
+    comptime coord_space: geometrykernels.CoordSpace,
     base: meshhit.MeshHit(N),
     shader_buf: *const shadertypes.LocalShaderBuff(N),
     shader: *const shadertypes.FuncPrepared,
@@ -194,7 +193,7 @@ pub inline fn completeFuncHit(
 
 pub inline fn completeFuncHitSIMD(
     comptime N: usize,
-    comptime coord_space: CoordSpace,
+    comptime coord_space: geometrykernels.CoordSpace,
     mask: VecSB,
     weights: [N]VecSF,
     nodes_inv_z: [N]VecSF,
@@ -248,14 +247,14 @@ pub inline fn completeFuncHitSIMD(
 pub inline fn shadeFuncScalComm(
     comptime N: usize,
     comptime C: usize,
-    comptime coord_space: CoordSpace,
+    comptime coord_space: geometrykernels.CoordSpace,
     ctx_shade: shadertypes.ShadeContext,
     interp: meshhit.MeshHit(N),
     shader_buf: *const shadertypes.LocalShaderBuff(N),
     shader: *const shadertypes.FuncPrepared,
-    spx_img_scratch: *MatSlice(F),
+    spx_img_scratch: *matslice.MatSlice(F),
 ) void {
-    if (comptime coord_space == CoordSpace.clip_px_leng) {
+    if (comptime coord_space == geometrykernels.CoordSpace.clip_px_leng) {
         shaderops.fillFuncClipScal(
             N,
             C,

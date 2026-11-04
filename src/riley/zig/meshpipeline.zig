@@ -6,9 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
-const cameratypes = @import("cameratypes.zig");
-const shadertypes = @import("shadertypes.zig");
+const report = @import("report.zig");
+const hullmultiroot = @import("hullmultiroot.zig");
+const shaderfunc = @import("shaderfunc.zig");
+const fieldtypes = @import("fieldtypes.zig");
 const std = @import("std");
+
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
@@ -22,40 +25,28 @@ const meshtypes = @import("meshtypes.zig");
 const uvio = @import("uvio.zig");
 const imageio = @import("imageio.zig");
 
-const rastcfg = @import("rasterconfig.zig");
-const imageops = @import("imageops.zig");
-const cam = @import("cameraprojops.zig");
-const pce = @import("parachunkexec.zig");
-const scalingpolicy = @import("scalingpolicy.zig");
-const frontend = @import("rasterfrontend.zig");
-const sceneops = @import("sceneops.zig");
-const textypes = @import("texturetypes.zig");
-const Timestamp = std.Io.Clock.Timestamp;
+const rasterconfig = @import("rasterconfig.zig");
+const cameratypes = @import("cameratypes.zig");
+const shadertypes = @import("shadertypes.zig");
+const texturetypes = @import("texturetypes.zig");
 
+const imageops = @import("imageops.zig");
+const cameraprojops = @import("cameraprojops.zig");
+const parachunkexec = @import("parachunkexec.zig");
+const scalingpolicy = @import("scalingpolicy.zig");
+const rasterfrontend = @import("rasterfrontend.zig");
+const sceneops = @import("sceneops.zig");
 const shaderops = @import("shaderops.zig");
 const meshhit = @import("meshhit.zig");
 const normals = @import("normals.zig");
-const geomkerns = @import("geometrykernels.zig");
-const HullMultiRoot = @import("hullmultiroot.zig").HullMultiRoot;
-const distbounds = @import("distortbounds.zig");
-
-// --------------------------------------------------------------------------------------
-// Public Constants & Public Types
-// --------------------------------------------------------------------------------------
-
-const MeshInput = meshtypes.MeshInput;
-const MeshStatic = meshtypes.MeshStatic;
-const MeshPrepared = meshtypes.MeshPrepared;
-const MeshFrame = meshtypes.MeshFrame;
-const MeshFrameWorkspace = meshtypes.MeshFrameWorkspace;
-const MeshHulls = meshtypes.MeshHulls;
-const MultiRootHulls = meshtypes.MultiRootHulls;
+const geometrykernels = @import("geometrykernels.zig");
+const distortbounds = @import("distortbounds.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub fn countFrames(meshes: []const MeshInput, cameras: []const cameratypes.CameraInput) usize {
+pub fn countFrames(meshes: []const meshtypes.MeshInput, cameras: []const cameratypes.CameraInput) usize {
     const dim_time_pre: usize = 0;
     var num_time: usize = 1;
 
@@ -114,7 +105,7 @@ pub fn countFrames(meshes: []const MeshInput, cameras: []const cameratypes.Camer
     return num_time;
 }
 
-pub fn countOutputFields(meshes: []const MeshInput, cameras: []const cameratypes.CameraInput) u8 {
+pub fn countOutputFields(meshes: []const meshtypes.MeshInput, cameras: []const cameratypes.CameraInput) u8 {
     var num_fields: u8 = 0;
     for (meshes) |mesh| {
         for (cameras) |camera| {
@@ -132,7 +123,7 @@ pub fn countOutputFields(meshes: []const MeshInput, cameras: []const cameratypes
     return num_fields;
 }
 
-pub fn countStaticMeshElems(mesh_static: []const MeshStatic) usize {
+pub fn countStaticMeshElems(mesh_static: []const meshtypes.MeshStatic) usize {
     var total: usize = 0;
     for (mesh_static) |mesh| {
         total += mesh.connect.table.rows_num;
@@ -140,7 +131,7 @@ pub fn countStaticMeshElems(mesh_static: []const MeshStatic) usize {
     return total;
 }
 
-pub fn countMeshInputElems(meshes: []const MeshInput) usize {
+pub fn countMeshInputElems(meshes: []const meshtypes.MeshInput) usize {
     var total: usize = 0;
     for (meshes) |mesh| {
         total += mesh.connect.table.rows_num;
@@ -148,7 +139,7 @@ pub fn countMeshInputElems(meshes: []const MeshInput) usize {
     return total;
 }
 
-pub fn countStaticMeshNodes(mesh_static: []const MeshStatic) usize {
+pub fn countStaticMeshNodes(mesh_static: []const meshtypes.MeshStatic) usize {
     var total: usize = 0;
     for (mesh_static) |mesh| {
         total += mesh.coords_orig.mat.rows_num;
@@ -162,13 +153,13 @@ pub fn meshInputFromSimDataSlice(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     sim_datas: []const meshio.SimData,
-    mesh_types: []const geomkerns.MeshType,
+    mesh_types: []const geometrykernels.MeshType,
     shader_mode: enum { nodal, tex },
     uv_paths: ?[]const []const u8,
     tex_path: ?[]const u8,
     uv_file: ?[]const u8,
-) ![]MeshInput {
-    var mesh_inputs = try outer_alloc.alloc(MeshInput, sim_datas.len);
+) ![]meshtypes.MeshInput {
+    var mesh_inputs = try outer_alloc.alloc(meshtypes.MeshInput, sim_datas.len);
     var initialized_count: usize = 0;
     errdefer {
         for (0..initialized_count) |ii| {
@@ -203,7 +194,7 @@ pub fn meshInputFromSimDataSlice(
     const uv_file_name = uv_file orelse "uvs.csv";
 
     for (sim_datas, 0..) |sim_data, ii| {
-        mesh_inputs[ii] = MeshInput{
+        mesh_inputs[ii] = meshtypes.MeshInput{
             .mesh_type = mesh_types[ii],
             .coords = sim_data.coords,
             .connect = sim_data.connect,
@@ -261,8 +252,8 @@ pub fn meshInputFromSimDataSlice(
 
 pub fn initMeshStatic(
     allocator: std.mem.Allocator,
-    mesh_input: *const MeshInput,
-) !MeshStatic {
+    mesh_input: *const meshtypes.MeshInput,
+) !meshtypes.MeshStatic {
     const coords_orig = try sceneops.duplicateCoords(
         allocator,
         mesh_input.coords,
@@ -303,7 +294,7 @@ pub fn initMeshStatic(
 fn createShaderPipeStatic(
     allocator: std.mem.Allocator,
     pipe: shadertypes.ShaderPipeInput,
-    connect: *const meshio.Connect,
+    connect: *const meshtypes.Connect,
 ) !shadertypes.ShaderPipeStatic {
     const stages = try allocator.alloc(
         shadertypes.ShaderPipeStageStatic,
@@ -342,7 +333,7 @@ fn createShaderPipeStatic(
 fn createShaderMonoStatic(
     allocator: std.mem.Allocator,
     shader_in: shadertypes.ShaderMonoInput,
-    connect: *const meshio.Connect,
+    connect: *const meshtypes.Connect,
 ) !shadertypes.ShaderMonoStatic {
     return switch (shader_in) {
         .nodal => |nodal_in| .{
@@ -400,7 +391,7 @@ fn createShaderMonoStatic(
                     null,
                 .coord_mode = tex_func_in.coord_mode,
                 .builtin = tex_func_in.builtin,
-                .params = shadertypes.normFuncShaderParams(
+                .params = shaderfunc.normFuncShaderParams(
                     tex_func_in.builtin,
                     tex_func_in.params,
                 ),
@@ -415,7 +406,7 @@ fn createShaderMonoStatic(
 fn funcStaticFromInput(
     allocator: std.mem.Allocator,
     input: shadertypes.FuncInput,
-    connect: *const meshio.Connect,
+    connect: *const meshtypes.Connect,
 ) !shadertypes.FuncStatic {
     return .{
         .elem_uvs = if (input.uvs) |uvs|
@@ -424,7 +415,7 @@ fn funcStaticFromInput(
             null,
         .coord_mode = input.coord_mode,
         .builtin = input.builtin,
-        .params = shadertypes.normFuncShaderParams(
+        .params = shaderfunc.normFuncShaderParams(
             input.builtin,
             input.params,
         ),
@@ -437,7 +428,7 @@ fn funcStaticFromInput(
 fn funcMultiStaticFromInput(
     allocator: std.mem.Allocator,
     input: shadertypes.FuncMultiInput,
-    connect: *const meshio.Connect,
+    connect: *const meshtypes.Connect,
 ) !shadertypes.FuncStatic {
     return .{
         .elem_uvs = if (input.uvs) |uvs|
@@ -452,7 +443,7 @@ fn funcMultiStaticFromInput(
 fn createPipeSourceStatic(
     allocator: std.mem.Allocator,
     source_in: shadertypes.PipeSourceInput,
-    connect: *const meshio.Connect,
+    connect: *const meshtypes.Connect,
 ) !shadertypes.PipeSourceStatic {
     return switch (source_in) {
         .nodal => |nodal_in| .{
@@ -556,11 +547,11 @@ fn createPipeSourceStatic(
 fn createTextureMultiStatic(
     comptime T: type,
     allocator: std.mem.Allocator,
-    input: shadertypes.TexInput(textypes.TexDataDyn(T)),
-    connect: *const meshio.Connect,
+    input: shadertypes.TexInput(texturetypes.TexDataDyn(T)),
+    connect: *const meshtypes.Connect,
 ) !shadertypes.TexMultiStatic(F) {
     const elem_uvs = try prepUVs(allocator, &input.uvs, connect);
-    const float_tex: textypes.TexDataDyn(F) = if (comptime T == F) input.tex else blk: {
+    const float_tex: texturetypes.TexDataDyn(F) = if (comptime T == F) input.tex else blk: {
         const values = try ndarray.NDArray(F).initFlat(allocator, input.tex.array.dims);
         for (input.tex.array.slice, values.slice) |source, *destination| {
             destination.* = @floatFromInt(source);
@@ -581,24 +572,22 @@ fn createTextureMultiStatic(
     };
 }
 
-const GeomTimes = @import("report.zig").GeomTimes;
-
 // -----------------------------------------------------------------------------------------
 // Mesh Pipeline: Main entry point into the mesh frame pipeline
 // -----------------------------------------------------------------------------------------
 
 pub fn prepMeshFrames(
     arena_alloc: std.mem.Allocator,
-    chunk_exec: *pce.ParaChunkExecutor,
+    chunk_exec: *parachunkexec.ParaChunkExecutor,
     workers_num: usize,
-    camera: *const cam.CameraPrepared,
-    config: rastcfg.RasterConfig,
+    camera: *const cameraprojops.CameraPrepared,
+    config: rasterconfig.RasterConfig,
     frame_idx: usize,
-    static_meshes: []const MeshStatic,
-    frame_meshes: []MeshFrame,
-    timing: *GeomTimes,
-) !FrameGeomResult {
-    var res = FrameGeomResult{
+    static_meshes: []const meshtypes.MeshStatic,
+    frame_meshes: []meshtypes.MeshFrame,
+    timing: *report.GeomTimes,
+) !meshtypes.FrameGeomResult {
+    var res = meshtypes.FrameGeomResult{
         .total_elems_num = 0,
         .total_elems_in_image = 0,
     };
@@ -653,15 +642,15 @@ pub fn prepMeshFrames(
 
 pub fn prepMeshFrame(
     outer_alloc: std.mem.Allocator,
-    chunk_exec: *pce.ParaChunkExecutor,
+    chunk_exec: *parachunkexec.ParaChunkExecutor,
     workers_num: usize,
-    camera: *const cam.CameraPrepared,
-    config: rastcfg.RasterConfig,
-    mesh_static: *const MeshStatic,
+    camera: *const cameraprojops.CameraPrepared,
+    config: rasterconfig.RasterConfig,
+    mesh_static: *const meshtypes.MeshStatic,
     frame_idx: usize,
     scaling_params: ?imageops.ScalingParams,
-    timing: *GeomTimes,
-) !MeshFrame {
+    timing: *report.GeomTimes,
+) !meshtypes.MeshFrame {
     return switch (mesh_static.mesh_type) {
         inline else => |MT| {
             var pipeline = try FrameMeshPipeline(MT).init(
@@ -682,14 +671,12 @@ pub fn prepMeshFrame(
     };
 }
 
-const FrameGeomResult = meshtypes.FrameGeomResult;
-
 // Outside of pipeline because these are static - we gather these into an NDarray once
 // for all frames and cameras
 fn prepUVs(
     outer_alloc: std.mem.Allocator,
     uvs: *const ndarray.NDArray(F),
-    connect: *const meshio.Connect,
+    connect: *const meshtypes.Connect,
 ) !ndarray.NDArray(F) {
     const elems_num = connect.getElemsNum();
     const nodes_per_elem = connect.getNodesPerElem();
@@ -714,16 +701,16 @@ fn prepUVs(
 
 fn initMeshFrameWorkspace(
     allocator: std.mem.Allocator,
-    mesh_static: *const MeshStatic,
+    mesh_static: *const meshtypes.MeshStatic,
     selection: shadertypes.RenderFormat,
-) !MeshFrameWorkspace {
+) !meshtypes.MeshFrameWorkspace {
     return .{
-        .coords_nodes = try meshio.Coords.initAlloc(
+        .coords_nodes = try meshtypes.Coords.initAlloc(
             allocator,
             mesh_static.coords_orig.mat.rows_num,
         ),
         .coords_nodes_def_world = if (shaderSetNeedsDeformedWorld(mesh_static.shaders, selection))
-            try meshio.Coords.initAlloc(
+            try meshtypes.Coords.initAlloc(
                 allocator,
                 mesh_static.coords_orig.mat.rows_num,
             )
@@ -857,7 +844,7 @@ fn shaderSetNeedsDeformedWorld(
 // Geometry Pipeline Stages: meshio.Coords, Transform, Culling and Gathering
 //------------------------------------------------------------------------------------------
 
-fn prefixVisCounts(mesh_workspace: *MeshFrameWorkspace) void {
+fn prefixVisCounts(mesh_workspace: *meshtypes.MeshFrameWorkspace) void {
     var running_total: usize = 0;
     for (mesh_workspace.vis_counts_by_chunk, 0..) |vis_count, cc| {
         mesh_workspace.vis_offsets_by_chunk[cc] = running_total;
@@ -866,7 +853,7 @@ fn prefixVisCounts(mesh_workspace: *MeshFrameWorkspace) void {
     mesh_workspace.elems_in_image = running_total;
 }
 
-fn getConnectNodesNum(connect: *const meshio.Connect) usize {
+fn getConnectNodesNum(connect: *const meshtypes.Connect) usize {
     var max_node_idx: usize = 0;
     for (connect.table_mem) |node_idx| {
         max_node_idx = @max(max_node_idx, node_idx);
@@ -878,19 +865,19 @@ fn getConnectNodesNum(connect: *const meshio.Connect) usize {
 // Frame Mesh Pipeline: Implementation of the frame-by-frame geometry pipeline
 //------------------------------------------------------------------------------------------
 
-fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
+fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
     return struct {
         const FrameMeshPipelineType = @This();
 
-        camera: *const cam.CameraPrepared,
-        mesh_static: *const MeshStatic,
+        camera: *const cameraprojops.CameraPrepared,
+        mesh_static: *const meshtypes.MeshStatic,
         frame_idx: usize,
-        hull_mode: rastcfg.HullMode,
-        multiroot_mode: rastcfg.MultirootSolverMode,
-        multiroot_edge_fun_mode: rastcfg.EdgeFunMode,
+        hull_mode: rasterconfig.HullMode,
+        multiroot_mode: rasterconfig.MultirootSolverMode,
+        multiroot_edge_fun_mode: rasterconfig.EdgeFunMode,
         edge_spacing_px: F,
         scaling_params: ?imageops.ScalingParams,
-        chunk_exec: *pce.ParaChunkExecutor,
+        chunk_exec: *parachunkexec.ParaChunkExecutor,
         workers_num: usize,
         nodes_num: usize,
         elems_num: usize,
@@ -898,20 +885,20 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         elem_chunk_size: usize,
         elem_chunks_num: usize,
         vis_chunk_size: usize,
-        mesh_workspace: MeshFrameWorkspace,
+        mesh_workspace: meshtypes.MeshFrameWorkspace,
         hit_geometry: meshhit.MeshHitGeomPrepared = .{},
 
         fn init(
             outer_alloc: std.mem.Allocator,
-            camera: *const cam.CameraPrepared,
-            mesh_static: *const MeshStatic,
+            camera: *const cameraprojops.CameraPrepared,
+            mesh_static: *const meshtypes.MeshStatic,
             frame_idx: usize,
-            hull_mode: rastcfg.HullMode,
-            multiroot_mode: rastcfg.MultirootSolverMode,
-            multiroot_edge_fun_mode: rastcfg.EdgeFunMode,
+            hull_mode: rasterconfig.HullMode,
+            multiroot_mode: rasterconfig.MultirootSolverMode,
+            multiroot_edge_fun_mode: rasterconfig.EdgeFunMode,
             edge_spacing_px: F,
             scaling_params: ?imageops.ScalingParams,
-            chunk_exec: *pce.ParaChunkExecutor,
+            chunk_exec: *parachunkexec.ParaChunkExecutor,
             workers_num: usize,
         ) !FrameMeshPipelineType {
             const nodes_num = mesh_static.coords_orig.mat.rows_num;
@@ -940,7 +927,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .elems_num = elems_num,
                 .node_chunk_size = node_chunk_size,
                 .elem_chunk_size = elem_chunk_size,
-                .elem_chunks_num = pce.getStaticPartitionsNum(
+                .elem_chunks_num = parachunkexec.getStaticPartitionsNum(
                     chunk_exec,
                     elems_num,
                     elem_chunk_size,
@@ -957,38 +944,38 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         fn run(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
-            timing: *GeomTimes,
-        ) !MeshFrame {
-            const time_start_coords = Timestamp.now(self.chunk_exec.io, .awake);
+            timing: *report.GeomTimes,
+        ) !meshtypes.MeshFrame {
+            const time_start_coords = std.Io.Clock.Timestamp.now(self.chunk_exec.io, .awake);
             self.displaceCoords();
             self.transformCoords();
-            const time_end_coords = Timestamp.now(self.chunk_exec.io, .awake);
+            const time_end_coords = std.Io.Clock.Timestamp.now(self.chunk_exec.io, .awake);
             timing.coord_ops += @intCast(time_start_coords.durationTo(
                 time_end_coords,
             ).raw.nanoseconds);
 
-            const time_start_cull = Timestamp.now(self.chunk_exec.io, .awake);
+            const time_start_cull = std.Io.Clock.Timestamp.now(self.chunk_exec.io, .awake);
             try self.cullAndClassifyVisibleElems(outer_alloc);
             var mesh_prep = try self.gatherVisCoords(outer_alloc);
-            const time_end_cull = Timestamp.now(self.chunk_exec.io, .awake);
+            const time_end_cull = std.Io.Clock.Timestamp.now(self.chunk_exec.io, .awake);
             timing.cull_ops += @intCast(time_start_cull.durationTo(
                 time_end_cull,
             ).raw.nanoseconds);
 
-            const time_start_prep = Timestamp.now(self.chunk_exec.io, .awake);
+            const time_start_prep = std.Io.Clock.Timestamp.now(self.chunk_exec.io, .awake);
             try self.prepareAdaptiveHulls(outer_alloc, &mesh_prep.coords);
             try self.prepareMultiRootElems(outer_alloc, &mesh_prep.coords);
             self.hit_geometry = try self.prepareHitGeometry(outer_alloc);
             mesh_prep.hit_geometry = self.hit_geometry;
             try self.prepareShader(outer_alloc, &mesh_prep);
-            const time_end_prep = Timestamp.now(self.chunk_exec.io, .awake);
+            const time_end_prep = std.Io.Clock.Timestamp.now(self.chunk_exec.io, .awake);
             timing.prep_hulls_shaders += @intCast(time_start_prep.durationTo(
                 time_end_prep,
             ).raw.nanoseconds);
 
-            const time_start_remap = Timestamp.now(self.chunk_exec.io, .awake);
+            const time_start_remap = std.Io.Clock.Timestamp.now(self.chunk_exec.io, .awake);
             self.remapVisElemInds();
-            const time_end_remap = Timestamp.now(self.chunk_exec.io, .awake);
+            const time_end_remap = std.Io.Clock.Timestamp.now(self.chunk_exec.io, .awake);
             timing.remap_inds += @intCast(time_start_remap.durationTo(
                 time_end_remap,
             ).raw.nanoseconds);
@@ -1007,8 +994,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         }
 
         const DisplaceCoordsStage = struct {
-            frame_workspace: *MeshFrameWorkspace,
-            mesh_static: *const MeshStatic,
+            frame_workspace: *meshtypes.MeshFrameWorkspace,
+            mesh_static: *const meshtypes.MeshStatic,
             frame_idx: usize,
         };
 
@@ -1050,7 +1037,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .mesh_static = self.mesh_static,
                 .frame_idx = self.frame_idx,
             };
-            pce.runStaticRange(
+            parachunkexec.runStaticRange(
                 self.chunk_exec,
                 &displace_stage,
                 runDisplaceCoords,
@@ -1063,8 +1050,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         }
 
         const TransformCoordsStage = struct {
-            camera: *const cam.CameraPrepared,
-            frame_workspace: *MeshFrameWorkspace,
+            camera: *const cameraprojops.CameraPrepared,
+            frame_workspace: *meshtypes.MeshFrameWorkspace,
         };
 
         fn runTransformCoords(
@@ -1077,14 +1064,14 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             const stage: *TransformCoordsStage = @ptrCast(@alignCast(ctx_ptr));
 
             if (MT == .tri3 or MT == .tri3opt) {
-                frontend.nodesToRasterRangeInPlace(
+                rasterfrontend.nodesToRasterRangeInPlace(
                     stage.camera,
                     &stage.frame_workspace.coords_nodes,
                     range_start,
                     range_end,
                 );
             } else {
-                frontend.nodesToClipPxLengRangeInPlace(
+                rasterfrontend.nodesToClipPxLengRangeInPlace(
                     stage.camera,
                     &stage.frame_workspace.coords_nodes,
                     range_start,
@@ -1099,7 +1086,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .frame_workspace = &self.mesh_workspace,
             };
 
-            pce.runStaticRange(
+            parachunkexec.runStaticRange(
                 self.chunk_exec,
                 &transform_stage,
                 runTransformCoords,
@@ -1109,15 +1096,15 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         }
 
         const CullVisibleCountStage = struct {
-            camera: *const cam.CameraPrepared,
+            camera: *const cameraprojops.CameraPrepared,
             edge_spacing_px: F,
-            connect: *const meshio.Connect,
-            coords_nodes: *const meshio.Coords,
+            connect: *const meshtypes.Connect,
+            coords_nodes: *const meshtypes.Coords,
             vis_counts_by_chunk: []usize,
-            cached_distort_bboxes: ?[]?frontend.DistortElemBBox,
-            cached_bboxes: ?[]?frontend.ElemBBox,
-            cached_root_classes: []?frontend.ElemRootClass,
-            hull_mode: rastcfg.HullMode,
+            cached_distort_bboxes: ?[]?rasterfrontend.DistortElemBBox,
+            cached_bboxes: ?[]?rasterfrontend.ElemBBox,
+            cached_root_classes: []?rasterfrontend.ElemRootClass,
+            hull_mode: rasterconfig.HullMode,
         };
 
         fn runCullVisibleCount(
@@ -1130,9 +1117,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             var vis_count: usize = 0;
 
             for (range_start..range_end) |ee| {
-                const bbox: ?frontend.ElemBBox =
+                const bbox: ?rasterfrontend.ElemBBox =
                     if (stage.camera.ideal_sensor_bounds) |ideal_sensor| blk: {
-                        const distorted = frontend.calcVisibleDistortBBox(
+                        const distorted = rasterfrontend.calcVisibleDistortBBox(
                             MT,
                             stage.camera,
                             stage.coords_nodes,
@@ -1146,7 +1133,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         if (stage.cached_distort_bboxes) |cached| cached[ee] = distorted;
                         break :blk if (distorted) |value| value.box_ints else null;
                     } else if (MT == .tri3 or MT == .tri3opt)
-                        frontend.calcVisibleNodeBBoxTri3WithHalo(
+                        rasterfrontend.calcVisibleNodeBBoxTri3WithHalo(
                             MT,
                             stage.camera,
                             stage.coords_nodes,
@@ -1155,7 +1142,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                             stage.camera.prep_psf.halo_px,
                         )
                     else
-                        frontend.calcVisibleNodeBBoxHighOrdWithHalo(
+                        rasterfrontend.calcVisibleNodeBBoxHighOrdWithHalo(
                             MT,
                             stage.camera,
                             stage.coords_nodes,
@@ -1167,7 +1154,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
                 if (bbox != null) {
                     if (comptime MT != .tri3 and MT != .tri3opt) {
-                        stage.cached_root_classes[ee] = frontend.classifyElemFacing(
+                        stage.cached_root_classes[ee] = rasterfrontend.classifyElemFacing(
                             MT,
                             stage.camera,
                             stage.coords_nodes,
@@ -1189,10 +1176,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         ) !void {
             const has_distort = self.camera.ideal_sensor_bounds != null;
 
-            var cached_distort_bboxes: ?[]?frontend.DistortElemBBox = null;
+            var cached_distort_bboxes: ?[]?rasterfrontend.DistortElemBBox = null;
             if (has_distort) {
                 cached_distort_bboxes = try outer_alloc.alloc(
-                    ?frontend.DistortElemBBox,
+                    ?rasterfrontend.DistortElemBBox,
                     self.elems_num,
                 );
             }
@@ -1200,12 +1187,12 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             const cached_bboxes = if (has_distort)
                 null
             else
-                try outer_alloc.alloc(?frontend.ElemBBox, self.elems_num);
+                try outer_alloc.alloc(?rasterfrontend.ElemBBox, self.elems_num);
             defer if (cached_bboxes) |bboxes| outer_alloc.free(bboxes);
             const cached_root_classes = if (MT == .tri3 or MT == .tri3opt)
                 &.{}
             else
-                try outer_alloc.alloc(?frontend.ElemRootClass, self.elems_num);
+                try outer_alloc.alloc(?rasterfrontend.ElemRootClass, self.elems_num);
             defer if (cached_root_classes.len != 0)
                 outer_alloc.free(cached_root_classes);
 
@@ -1232,7 +1219,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .hull_mode = self.hull_mode,
             };
 
-            pce.runStaticRange(
+            parachunkexec.runStaticRange(
                 self.chunk_exec,
                 &cull_count_stage,
                 runCullVisibleCount,
@@ -1245,19 +1232,19 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             self.mesh_workspace.vis_orig_elem_inds =
                 try outer_alloc.alloc(usize, self.mesh_workspace.elems_in_image);
             self.mesh_workspace.elem_bboxes = try outer_alloc.alloc(
-                frontend.ElemBBox,
+                rasterfrontend.ElemBBox,
                 self.mesh_workspace.elems_in_image,
             );
             self.mesh_workspace.root_classes = if (MT == .tri3 or MT == .tri3opt)
                 &.{}
             else
                 try outer_alloc.alloc(
-                    frontend.ElemRootClass,
+                    rasterfrontend.ElemRootClass,
                     self.mesh_workspace.elems_in_image,
                 );
             self.mesh_workspace.elem_float_bboxes = if (has_distort)
                 try outer_alloc.alloc(
-                    distbounds.DistortBounds,
+                    distortbounds.DistortBounds,
                     self.mesh_workspace.elems_in_image,
                 )
             else
@@ -1277,7 +1264,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .elem_float_bboxes = self.mesh_workspace.elem_float_bboxes,
                 .vis_offsets_by_chunk = self.mesh_workspace.vis_offsets_by_chunk,
             };
-            pce.runStaticRange(
+            parachunkexec.runStaticRange(
                 self.chunk_exec,
                 &cull_fill_stage,
                 runCullVisibleFill,
@@ -1292,17 +1279,17 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         }
 
         const CullVisibleFillStage = struct {
-            camera: *const cam.CameraPrepared,
-            connect: *const meshio.Connect,
-            coords_nodes: *const meshio.Coords,
-            hull_mode: rastcfg.HullMode,
-            cached_distort_bboxes: ?[]const ?frontend.DistortElemBBox,
-            cached_bboxes: ?[]const ?frontend.ElemBBox,
-            cached_root_classes: []const ?frontend.ElemRootClass,
+            camera: *const cameraprojops.CameraPrepared,
+            connect: *const meshtypes.Connect,
+            coords_nodes: *const meshtypes.Coords,
+            hull_mode: rasterconfig.HullMode,
+            cached_distort_bboxes: ?[]const ?rasterfrontend.DistortElemBBox,
+            cached_bboxes: ?[]const ?rasterfrontend.ElemBBox,
+            cached_root_classes: []const ?rasterfrontend.ElemRootClass,
             vis_orig_elem_inds: []usize,
-            elem_bboxes: []frontend.ElemBBox,
-            root_classes: []frontend.ElemRootClass,
-            elem_float_bboxes: ?[]distbounds.DistortBounds,
+            elem_bboxes: []rasterfrontend.ElemBBox,
+            root_classes: []rasterfrontend.ElemRootClass,
+            elem_float_bboxes: ?[]distortbounds.DistortBounds,
             vis_offsets_by_chunk: []const usize,
         };
 
@@ -1346,8 +1333,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         }
 
         const GatherVisibleCoordsStage = struct {
-            connect: *const meshio.Connect,
-            coords_nodes: *const meshio.Coords,
+            connect: *const meshtypes.Connect,
+            coords_nodes: *const meshtypes.Coords,
             vis_orig_elem_inds: []const usize,
             elem_coords: *ndarray.NDArray(F),
         };
@@ -1386,7 +1373,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         fn gatherVisElemCoordsFromNodes(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
-            coords_nodes: *const meshio.Coords,
+            coords_nodes: *const meshtypes.Coords,
         ) !ndarray.NDArray(F) {
             const N = comptime MT.getNodesNum();
             var elem_coords = try ndarray.NDArray(F).initFlat(
@@ -1401,7 +1388,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .elem_coords = &elem_coords,
             };
 
-            pce.runStaticRange(
+            parachunkexec.runStaticRange(
                 self.chunk_exec,
                 &gather_coords_stage,
                 runGatherVisibleCoords,
@@ -1415,7 +1402,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         fn gatherVisCoords(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
-        ) !MeshPrepared {
+        ) !meshtypes.MeshPrepared {
             const elem_coords = try self.gatherVisElemCoordsFromNodes(
                 outer_alloc,
                 &self.mesh_workspace.coords_nodes,
@@ -1430,11 +1417,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         }
 
         const PrepareAdaptiveHullsStage = struct {
-            camera: *const cam.CameraPrepared,
+            camera: *const cameraprojops.CameraPrepared,
             elem_coords: *const ndarray.NDArray(F),
             hull_adaptive: *ndarray.NDArray(F),
-            root_classes: []const frontend.ElemRootClass,
-            hull_mode: rastcfg.HullMode,
+            root_classes: []const rasterfrontend.ElemRootClass,
+            hull_mode: rasterconfig.HullMode,
         };
 
         fn runPrepareAdaptiveHulls(
@@ -1445,7 +1432,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         ) void {
             _ = chunk_idx;
             const stage: *PrepareAdaptiveHullsStage = @ptrCast(@alignCast(ctx_ptr));
-            frontend.prepareVisibleAdaptiveHullsRange(
+            rasterfrontend.prepareVisibleAdaptiveHullsRange(
                 MT,
                 stage.camera,
                 stage.elem_coords,
@@ -1480,7 +1467,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .root_classes = self.mesh_workspace.root_classes,
                 .hull_mode = self.hull_mode,
             };
-            pce.runStaticRange(
+            parachunkexec.runStaticRange(
                 self.chunk_exec,
                 &hulls_stage,
                 runPrepareAdaptiveHulls,
@@ -1490,11 +1477,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         }
 
         const PrepareMultiRootElemsStage = struct {
-            camera: *const cam.CameraPrepared,
+            camera: *const cameraprojops.CameraPrepared,
             elem_coords: *const ndarray.NDArray(F),
-            hulls: *MultiRootHulls,
-            multiroot_mode: rastcfg.MultirootSolverMode,
-            edge_fun_mode: rastcfg.EdgeFunMode,
+            hulls: *meshtypes.MultiRootHulls,
+            multiroot_mode: rasterconfig.MultirootSolverMode,
+            edge_fun_mode: rasterconfig.EdgeFunMode,
         };
 
         fn runPrepareMultiRootElems(
@@ -1512,11 +1499,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 const slot = stage.hulls.slot_by_visible_elem.get(pp);
                 if (slot == std.math.maxInt(u32)) continue;
 
-                var coords: frontend.ElemCoords(N) = undefined;
+                var coords: rasterfrontend.ElemCoords(N) = undefined;
                 const xs = stage.elem_coords.getSlice(&.{ pp, 0, 0 }, 1);
                 const ys = stage.elem_coords.getSlice(&.{ pp, 1, 0 }, 1);
                 const zs = stage.elem_coords.getSlice(&.{ pp, 2, 0 }, 1);
-                var seeds: [geomkerns.multiRootSeedCount(N)]Seed = undefined;
+                var seeds: [geometrykernels.multiRootSeedCount(N)]Seed = undefined;
                 var available: usize = 0;
                 for (0..N) |nn| {
                     coords.x[nn] = xs[nn];
@@ -1535,7 +1522,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 if (stage.edge_fun_mode == .pre_calc) {
                     const leaf_slice =
                         stage.hulls.leaves_pre_calc[leaf_offset .. leaf_offset + 4];
-                    HullMultiRoot.prepareFourBezierLeavesPreCalc(
+                    hullmultiroot.HullMultiRoot.prepareFourBezierLeavesPreCalc(
                         N,
                         stage.camera,
                         coords,
@@ -1544,7 +1531,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 } else {
                     const leaf_slice =
                         stage.hulls.leaves_on_the_fly[leaf_offset .. leaf_offset + 4];
-                    HullMultiRoot.prepareFourBezierLeavesOnTheFly(
+                    hullmultiroot.HullMultiRoot.prepareFourBezierLeavesOnTheFly(
                         N,
                         stage.camera,
                         coords,
@@ -1552,8 +1539,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
                 }
 
-                for (N..geomkerns.multiRootSeedCount(N)) |seed_idx| {
-                    const seed_uv = geomkerns.multiRootSeedCoords(
+                for (N..geometrykernels.multiRootSeedCount(N)) |seed_idx| {
+                    const seed_uv = geometrykernels.multiRootSeedCoords(
                         N,
                         @intCast(seed_idx),
                     );
@@ -1590,22 +1577,22 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     }
                     seeds[jj] = seed;
                 }
-                var ordered: [geomkerns.multiRootSeedCount(N)]Seed = undefined;
+                var ordered: [geometrykernels.multiRootSeedCount(N)]Seed = undefined;
                 var length: usize = 0;
-                const nodes = frontend.Vec3Slices(F){
+                const nodes = rasterfrontend.Vec3Slices(F){
                     .x = &coords.x,
                     .y = &coords.y,
                     .z = &coords.z,
                 };
                 for (0..2) |tier_idx| {
-                    var tier: [geomkerns.multiRootSeedCount(N)]Seed = undefined;
+                    var tier: [geometrykernels.multiRootSeedCount(N)]Seed = undefined;
                     var tier_len: usize = 0;
                     for (seeds[0..available]) |seed| {
-                        const uv = geomkerns.multiRootSeedCoords(
+                        const uv = geometrykernels.multiRootSeedCoords(
                             N,
                             seed.index,
                         );
-                        const facing = frontend.projectedJacDetPhysical(
+                        const facing = rasterfrontend.projectedJacDetPhysical(
                             N,
                             nodes,
                             uv[0],
@@ -1617,7 +1604,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         tier[tier_len] = seed;
                         tier_len += 1;
                     }
-                    var used = [_]bool{false} ** geomkerns.multiRootSeedCount(N);
+                    var used = [_]bool{false} ** geometrykernels.multiRootSeedCount(N);
                     for (0..tier_len) |ii| {
                         const remaining = tier_len - ii;
                         const rank = switch (ii % 3) {
@@ -1692,14 +1679,14 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .slot_by_visible_elem = vecslice.VecSlice(u32).init(slot_mem),
                 .leaves_pre_calc = if (self.multiroot_edge_fun_mode == .pre_calc)
                     try outer_alloc.alloc(
-                        HullMultiRoot.BezierLeafPreCalc,
+                        hullmultiroot.HullMultiRoot.BezierLeafPreCalc,
                         multi_count * 4,
                     )
                 else
                     &.{},
                 .leaves_on_the_fly = if (self.multiroot_edge_fun_mode == .on_the_fly)
                     try outer_alloc.alloc(
-                        HullMultiRoot.BezierLeafOnTheFly,
+                        hullmultiroot.HullMultiRoot.BezierLeafOnTheFly,
                         multi_count * 4,
                     )
                 else
@@ -1713,7 +1700,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .multiroot_mode = self.multiroot_mode,
                 .edge_fun_mode = self.multiroot_edge_fun_mode,
             };
-            pce.runStaticRange(
+            parachunkexec.runStaticRange(
                 self.chunk_exec,
                 &stage,
                 runPrepareMultiRootElems,
@@ -1757,7 +1744,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         fn prepareShader(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
-            mesh_prep: *MeshPrepared,
+            mesh_prep: *meshtypes.MeshPrepared,
         ) !void {
             const format = self.camera.render_format;
             switch (format) {
@@ -1938,8 +1925,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         }
 
         const GatherVisibleFieldStage = struct {
-            connect: *const meshio.Connect,
-            field: *const meshio.Field,
+            connect: *const meshtypes.Connect,
+            field: *const fieldtypes.Field,
             frame_idx: usize,
             vis_orig_elem_inds: []const usize,
             elem_field: *ndarray.NDArray(F),
@@ -1994,7 +1981,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .elem_field = &elem_field,
             };
 
-            pce.runStaticRange(
+            parachunkexec.runStaticRange(
                 self.chunk_exec,
                 &field_stage,
                 runGatherVisibleField,
@@ -2085,7 +2072,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .elem_uvs = &elem_uvs,
             };
 
-            pce.runStaticRange(
+            parachunkexec.runStaticRange(
                 self.chunk_exec,
                 &uv_stage,
                 runGatherVisibleUV,
@@ -2135,7 +2122,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .elem_uvs = &elem_uvs,
                 };
 
-                pce.runStaticRange(
+                parachunkexec.runStaticRange(
                     self.chunk_exec,
                     &uv_stage,
                     runGatherVisibleUV,
@@ -2159,7 +2146,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
                     prepared.* = .{
                         .builtin = channel.builtin,
-                        .params = shadertypes.normFuncShaderParams(
+                        .params = shaderfunc.normFuncShaderParams(
                             channel.builtin,
                             channel.params,
                         ),
@@ -2182,7 +2169,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .hit_geometry = self.hit_geometry,
                     .coord_mode = func_static.coord_mode,
                     .builtin = func_static.builtin,
-                    .params = shadertypes.normFuncShaderParams(
+                    .params = shaderfunc.normFuncShaderParams(
                         func_static.builtin,
                         func_static.params,
                     ),

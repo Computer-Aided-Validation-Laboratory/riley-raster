@@ -9,8 +9,6 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const print = std.debug.print;
-const assert = std.debug.assert;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -24,7 +22,7 @@ pub fn ValIdx(ValType: type) type {
 }
 
 pub fn max(comptime T: type, slice: []const T) ValIdx(T) {
-    assert(slice.len > 0);
+    std.debug.assert(slice.len > 0);
 
     var val_idx = ValIdx(T){
         .val = slice[0],
@@ -42,7 +40,7 @@ pub fn max(comptime T: type, slice: []const T) ValIdx(T) {
 }
 
 pub fn min(comptime T: type, slice: []const T) ValIdx(T) {
-    assert(slice.len > 0);
+    std.debug.assert(slice.len > 0);
 
     var val_idx = ValIdx(T){
         .val = slice[0],
@@ -60,7 +58,7 @@ pub fn min(comptime T: type, slice: []const T) ValIdx(T) {
 }
 
 pub fn sum(comptime T: type, slice: []const T) T {
-    assert(slice.len > 0);
+    std.debug.assert(slice.len > 0);
 
     var sum_out: T = 0;
     for (slice[0..]) |elem| {
@@ -97,7 +95,7 @@ pub fn rangeLen(start: F, stop: F, step: F) usize {
 }
 
 pub fn dot(comptime T: type, slice0: []const T, slice1: []const T) T {
-    assert(slice0.len == slice1.len);
+    std.debug.assert(slice0.len == slice1.len);
 
     var dot_prod: T = 0;
     for (0..slice0.len) |ii| {
@@ -121,8 +119,8 @@ pub fn vecLen(comptime T: type, vec: []const T) T {
 }
 
 pub fn add(comptime T: type, vec0: []const T, vec1: []const T, vec_out: []T) !void {
-    assert(vec0.len == vec1.len);
-    assert(vec0.len == vec_out.len);
+    std.debug.assert(vec0.len == vec1.len);
+    std.debug.assert(vec0.len == vec_out.len);
 
     for (0..vec0.len) |ii| {
         vec_out[ii] = vec0[ii] + vec1[ii];
@@ -130,8 +128,8 @@ pub fn add(comptime T: type, vec0: []const T, vec1: []const T, vec_out: []T) !vo
 }
 
 pub fn sub(comptime T: type, vec0: []const T, vec1: []const T, vec_out: []T) !void {
-    assert(vec0.len == vec1.len);
-    assert(vec0.len == vec_out.len);
+    std.debug.assert(vec0.len == vec1.len);
+    std.debug.assert(vec0.len == vec_out.len);
 
     for (0..vec0.len) |ii| {
         vec_out[ii] = vec0[ii] - vec1[ii];
@@ -144,8 +142,8 @@ pub fn mul(
     vec1: []const T,
     vec_out: []T,
 ) !void {
-    assert(vec0.len == vec1.len);
-    assert(vec0.len == vec_out.len);
+    std.debug.assert(vec0.len == vec1.len);
+    std.debug.assert(vec0.len == vec_out.len);
 
     for (0..vec0.len) |ii| {
         vec_out[ii] = vec0[ii] * vec1[ii];
@@ -153,7 +151,7 @@ pub fn mul(
 }
 
 pub fn div(comptime T: type, vec0: []const T, vec1: []const T, vec_out: []T) !void {
-    assert(vec0.len == vec1.len);
+    std.debug.assert(vec0.len == vec1.len);
 
     for (0..vec0.len) |ii| {
         vec_out[ii] = vec0[ii] / vec1[ii];
@@ -161,7 +159,7 @@ pub fn div(comptime T: type, vec0: []const T, vec1: []const T, vec_out: []T) !vo
 }
 
 pub fn mulScal(comptime T: type, vec0: []const T, scal: T, vec_out: []T) !void {
-    assert(vec0.len == vec_out.len);
+    std.debug.assert(vec0.len == vec_out.len);
 
     for (0..vec0.len) |ii| {
         vec_out[ii] = scal * vec0[ii];
@@ -169,22 +167,17 @@ pub fn mulScal(comptime T: type, vec0: []const T, scal: T, vec_out: []T) !void {
 }
 
 pub fn slicePrint(comptime T: type, slice: []const T) void {
-    print("[", .{});
+    std.debug.print("[", .{});
     for (0..slice.len) |ii| {
-        print("{},", .{slice[ii]});
+        std.debug.print("{},", .{slice[ii]});
     }
-    print("]\n", .{});
+    std.debug.print("]\n", .{});
 }
 
 // --------------------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------------------
 const TestType = F;
-
-const testing = std.testing;
-const expectEqual = testing.expectEqual;
-const expectApproxEqAbs = testing.expectApproxEqAbs;
-const expectEqualSlices = testing.expectEqualSlices;
 
 test "slice.add" {
     const vec_len: usize = 10;
@@ -197,7 +190,7 @@ test "slice.add" {
 
     try add(TestType, vec0[0..], vec1[0..], vec_op[0..]);
 
-    try expectEqualSlices(TestType, vec_exp[0..], vec_op[0..]);
+    try std.testing.expectEqualSlices(TestType, vec_exp[0..], vec_op[0..]);
 }
 
 test "slice.sub" {
@@ -211,7 +204,7 @@ test "slice.sub" {
 
     try sub(TestType, vec0[0..], vec1[0..], vec_op[0..]);
 
-    try expectEqualSlices(TestType, vec_exp[0..], vec_op[0..]);
+    try std.testing.expectEqualSlices(TestType, vec_exp[0..], vec_op[0..]);
 }
 
 test "slice.mul" {
@@ -225,7 +218,7 @@ test "slice.mul" {
 
     try mul(TestType, vec0[0..], vec1[0..], vec_op[0..]);
 
-    try expectEqualSlices(TestType, vec_exp[0..], vec_op[0..]);
+    try std.testing.expectEqualSlices(TestType, vec_exp[0..], vec_op[0..]);
 }
 
 test "slice.div" {
@@ -239,7 +232,7 @@ test "slice.div" {
 
     try div(TestType, vec0[0..], vec1[0..], vec_op[0..]);
 
-    try expectEqualSlices(TestType, vec_exp[0..], vec_op[0..]);
+    try std.testing.expectEqualSlices(TestType, vec_exp[0..], vec_op[0..]);
 }
 
 test "slice.mulScal" {
@@ -253,7 +246,7 @@ test "slice.mulScal" {
 
     try mulScal(TestType, vec0[0..], scal, vec_op[0..]);
 
-    try expectEqualSlices(TestType, vec_exp[0..], vec_op[0..]);
+    try std.testing.expectEqualSlices(TestType, vec_exp[0..], vec_op[0..]);
 }
 
 test "slice.apply" {
@@ -264,17 +257,17 @@ test "slice.apply" {
 
     apply(TestType, &arr_out, &arr_ones, std.math.sqrt);
 
-    try expectEqual(arr_ones, arr_out);
+    try std.testing.expectEqual(arr_ones, arr_out);
 
     arr_out = [_]TestType{-1} ** 7;
     apply(TestType, &arr_out, &arr_zeros, std.math.atan);
 
-    try expectEqual(arr_zeros, arr_out);
+    try std.testing.expectEqual(arr_zeros, arr_out);
 
     arr_out = [_]TestType{-1} ** 7;
     apply(TestType, &arr_out, &arr_zeros, exp);
 
-    try expectEqual(arr_ones, arr_out);
+    try std.testing.expectEqual(arr_ones, arr_out);
 }
 
 test "slice.max" {
@@ -286,7 +279,7 @@ test "slice.max" {
         .idx = 3,
     };
 
-    try expectEqual(max_idx_exp, max_idx);
+    try std.testing.expectEqual(max_idx_exp, max_idx);
 }
 
 test "slice.min" {
@@ -298,7 +291,7 @@ test "slice.min" {
         .idx = 5,
     };
 
-    try expectEqual(min_idx_exp, min_idx);
+    try std.testing.expectEqual(min_idx_exp, min_idx);
 }
 
 test "slice.sum" {
@@ -306,7 +299,7 @@ test "slice.sum" {
     const sum_exp: TestType = 11;
     const sum_arr = sum(TestType, &array);
 
-    try expectEqual(sum_exp, sum_arr);
+    try std.testing.expectEqual(sum_exp, sum_arr);
 }
 
 test "slice.mean" {
@@ -314,7 +307,7 @@ test "slice.mean" {
     const mean_exp: TestType = 11.0 / 7.0;
     const mean_arr = mean(TestType, &array);
 
-    try expectEqual(mean_exp, mean_arr);
+    try std.testing.expectEqual(mean_exp, mean_arr);
 }
 
 pub fn insertSort(comptime T: type, slice: []T) void {
@@ -351,7 +344,7 @@ test "slice.insertSort" {
     var array = [_]TestType{ 5.0, -2.0, 9.0, 0.0, -2.0, 3.5 };
     insertSort(TestType, &array);
     const expected = [_]TestType{ -2.0, -2.0, 0.0, 3.5, 5.0, 9.0 };
-    try expectEqualSlices(TestType, &expected, &array);
+    try std.testing.expectEqualSlices(TestType, &expected, &array);
 }
 
 test "slice.insertSortBy" {
@@ -364,5 +357,5 @@ test "slice.insertSortBy" {
     var array = [_]TestType{ 5.0, -2.0, 9.0, 0.0, 3.5 };
     insertSortBy(TestType, &array, descending);
     const expected = [_]TestType{ 9.0, 5.0, 3.5, 0.0, -2.0 };
-    try expectEqualSlices(TestType, &expected, &array);
+    try std.testing.expectEqualSlices(TestType, &expected, &array);
 }

@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("riley/zig/cameramodels.zig");
 const std = @import("std");
 
 const benchargs = @import("dev_support/benchargs.zig");
@@ -67,7 +68,7 @@ pub fn main(init: std.process.Init) !void {
     );
     defer threaded_io.deinit();
     const io = threaded_io.io();
-    const distort_model: cam.DistortParams = switch (bench_args.distort) {
+    const distort_model: cameramodels.DistortParams = switch (bench_args.distort) {
         .none => .none,
         .brown => .{
             .brown_con = .{

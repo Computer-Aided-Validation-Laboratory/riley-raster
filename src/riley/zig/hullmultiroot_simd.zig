@@ -11,17 +11,15 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
 const tol = cfg.tol;
-const frontend = @import("rasterfrontend.zig");
-const edgeops = @import("hulledge.zig");
-const HullEdge = @import("hulledge.zig").HullEdge;
-const EdgeFunMode = @import("rasterconfig.zig").EdgeFunMode;
-const hullcommon = @import("hullmultiroot_common.zig");
-const cam = @import("cameraprojops.zig");
+const rasterfrontend = @import("rasterfrontend.zig");
+const hulledge = @import("hulledge.zig");
+const hullmultiroot_common = @import("hullmultiroot_common.zig");
+const cameraprojops = @import("cameraprojops.zig");
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const S = cfg.simd_vec_width;
 
-pub fn prepareEdgesSIMD(x: []const F, y: []const F, edges: []HullEdge) void {
+pub fn prepareEdgesSIMD(x: []const F, y: []const F, edges: []hulledge.HullEdge) void {
     std.debug.assert(x.len == y.len and x.len == edges.len);
 
     var start: usize = 0;
@@ -73,7 +71,7 @@ pub fn prepareEdgesSIMD(x: []const F, y: []const F, edges: []HullEdge) void {
 }
 
 pub fn containsPreCalcSIMD(
-    poly: *const hullcommon.HullPolyPreCalc,
+    poly: *const hullmultiroot_common.HullPolyPreCalc,
     v_px: VecSF,
     v_py: VecSF,
     valid: VecSB,
@@ -91,7 +89,7 @@ pub fn containsPreCalcSIMD(
 }
 
 pub fn containsOnTheFlySIMD(
-    poly: *const hullcommon.HullPolyOnTheFly,
+    poly: *const hullmultiroot_common.HullPolyOnTheFly,
     v_px: VecSF,
     v_py: VecSF,
     valid: VecSB,
@@ -100,7 +98,7 @@ pub fn containsOnTheFlySIMD(
     var inside = valid;
     for (0..poly.count) |ii| {
         const jj = (ii + 1) % poly.count;
-        inside &= edgeops.edgeFun3SIMD(
+        inside &= hulledge.edgeFun3SIMD(
             poly.x[ii],
             poly.y[ii],
             poly.x[jj],
@@ -114,7 +112,7 @@ pub fn containsOnTheFlySIMD(
 }
 
 pub fn childMaskPreCalcSIMD(
-    leaves: []const hullcommon.BezierLeafPreCalc,
+    leaves: []const hullmultiroot_common.BezierLeafPreCalc,
     v_px: VecSF,
     v_py: VecSF,
     valid_mask: VecSB,
@@ -144,7 +142,7 @@ pub fn childMaskPreCalcSIMD(
 }
 
 pub fn childMaskOnTheFlySIMD(
-    leaves: []const hullcommon.BezierLeafOnTheFly,
+    leaves: []const hullmultiroot_common.BezierLeafOnTheFly,
     v_px: VecSF,
     v_py: VecSF,
     valid_mask: VecSB,
@@ -175,11 +173,11 @@ pub fn childMaskOnTheFlySIMD(
 
 pub fn prepareFourBezierLeavesPreCalcSIMD(
     comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    coords: frontend.ElemCoords(N),
-    output: *[4]hullcommon.BezierLeafPreCalc,
+    camera: *const cameraprojops.CameraPrepared,
+    coords: rasterfrontend.ElemCoords(N),
+    output: *[4]hullmultiroot_common.BezierLeafPreCalc,
 ) void {
-    hullcommon.prepareFourBezierLeavesPreCalc(
+    hullmultiroot_common.prepareFourBezierLeavesPreCalc(
         N,
         prepareEdgesSIMD,
         camera,
@@ -190,11 +188,11 @@ pub fn prepareFourBezierLeavesPreCalcSIMD(
 
 pub fn prepareFourBezierLeavesOnTheFlySIMD(
     comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    coords: frontend.ElemCoords(N),
-    output: *[4]hullcommon.BezierLeafOnTheFly,
+    camera: *const cameraprojops.CameraPrepared,
+    coords: rasterfrontend.ElemCoords(N),
+    output: *[4]hullmultiroot_common.BezierLeafOnTheFly,
 ) void {
-    hullcommon.prepareFourBezierLeavesOnTheFly(
+    hullmultiroot_common.prepareFourBezierLeavesOnTheFly(
         N,
         camera,
         coords,
@@ -212,12 +210,12 @@ test "multi-root SIMD edge preparation and containment match scalar" {
             x[ii] = 50 + 20 * @cos(angle);
             y[ii] = 50 + 20 * @sin(angle);
         }
-        var vector_edges: [count]HullEdge = undefined;
-        var scalar_edges: [count]HullEdge = undefined;
+        var vector_edges: [count]hulledge.HullEdge = undefined;
+        var scalar_edges: [count]hulledge.HullEdge = undefined;
         var tol_edge: [count]F = undefined;
         prepareEdgesSIMD(&x, &y, &vector_edges);
-        hullcommon.prepareEdgesScalar(&x, &y, &scalar_edges);
-        hullcommon.calcEdgeTol(&x, &y, &tol_edge);
+        hullmultiroot_common.prepareEdgesScalar(&x, &y, &scalar_edges);
+        hullmultiroot_common.calcEdgeTol(&x, &y, &tol_edge);
         for (0..count) |ii| {
             try std.testing.expectApproxEqRel(
                 scalar_edges[ii].a,
@@ -247,9 +245,9 @@ test "multi-root SIMD edge preparation and containment match scalar" {
         const v_py: VecSF = py;
         const v_valid: VecSB = valid;
 
-        var poly_pre = hullcommon.HullPolyPreCalc{ .count = @intCast(count) };
+        var poly_pre = hullmultiroot_common.HullPolyPreCalc{ .count = @intCast(count) };
         @memcpy(poly_pre.edges[0..count], vector_edges[0..count]);
-        var poly_scalar_pre = hullcommon.HullPolyPreCalc{ .count = @intCast(count) };
+        var poly_scalar_pre = hullmultiroot_common.HullPolyPreCalc{ .count = @intCast(count) };
         @memcpy(poly_scalar_pre.edges[0..count], scalar_edges[0..count]);
 
         const hits_pre: [S]bool = containsPreCalcSIMD(
@@ -260,11 +258,11 @@ test "multi-root SIMD edge preparation and containment match scalar" {
         );
         for (0..S) |lane| {
             const expected = valid[lane] and
-                hullcommon.containsPreCalcScalar(&poly_scalar_pre, px[lane], py[lane]);
+                hullmultiroot_common.containsPreCalcScalar(&poly_scalar_pre, px[lane], py[lane]);
             try std.testing.expectEqual(expected, hits_pre[lane]);
         }
 
-        var poly_fly = hullcommon.HullPolyOnTheFly{ .count = @intCast(count) };
+        var poly_fly = hullmultiroot_common.HullPolyOnTheFly{ .count = @intCast(count) };
         @memcpy(poly_fly.x[0..count], x[0..count]);
         @memcpy(poly_fly.y[0..count], y[0..count]);
         @memcpy(poly_fly.tol_edge[0..count], tol_edge[0..count]);
@@ -277,7 +275,7 @@ test "multi-root SIMD edge preparation and containment match scalar" {
         );
         for (0..S) |lane| {
             const expected = valid[lane] and
-                hullcommon.containsOnTheFlyScalar(&poly_fly, px[lane], py[lane]);
+                hullmultiroot_common.containsOnTheFlyScalar(&poly_fly, px[lane], py[lane]);
             try std.testing.expectEqual(expected, hits_fly[lane]);
         }
     }
@@ -286,8 +284,8 @@ test "multi-root SIMD edge preparation and containment match scalar" {
 test "multi-root SIMD child masks match scalar with inactive lanes" {
     const x = [_]F{ 0, 0, 100, 100 };
     const y = [_]F{ 0, 100, 100, 0 };
-    var leaves_pre: [4]hullcommon.BezierLeafPreCalc = undefined;
-    var leaves_fly: [4]hullcommon.BezierLeafOnTheFly = undefined;
+    var leaves_pre: [4]hullmultiroot_common.BezierLeafPreCalc = undefined;
+    var leaves_fly: [4]hullmultiroot_common.BezierLeafOnTheFly = undefined;
     for (0..4) |ii| {
         const inset = 10 * @as(F, @floatFromInt(ii));
         leaves_pre[ii] = .{
@@ -304,7 +302,7 @@ test "multi-root SIMD child masks match scalar with inactive lanes" {
         };
         @memcpy(leaves_fly[ii].poly.x[0..4], &x);
         @memcpy(leaves_fly[ii].poly.y[0..4], &y);
-        hullcommon.calcEdgeTol(&x, &y, leaves_fly[ii].poly.tol_edge[0..4]);
+        hullmultiroot_common.calcEdgeTol(&x, &y, leaves_fly[ii].poly.tol_edge[0..4]);
     }
     var px: [S]F = undefined;
     var py: [S]F = undefined;
@@ -321,7 +319,7 @@ test "multi-root SIMD child masks match scalar with inactive lanes" {
     const masks_pre = childMaskPreCalcSIMD(&leaves_pre, v_px, v_py, v_valid);
     for (0..S) |lane| {
         const expected: u8 = if (valid[lane])
-            hullcommon.childMaskPreCalcScalar(&leaves_pre, px[lane], py[lane])
+            hullmultiroot_common.childMaskPreCalcScalar(&leaves_pre, px[lane], py[lane])
         else
             0;
         try std.testing.expectEqual(expected, masks_pre[lane]);
@@ -330,7 +328,7 @@ test "multi-root SIMD child masks match scalar with inactive lanes" {
     const masks_fly = childMaskOnTheFlySIMD(&leaves_fly, v_px, v_py, v_valid);
     for (0..S) |lane| {
         const expected: u8 = if (valid[lane])
-            hullcommon.childMaskOnTheFlyScalar(&leaves_fly, px[lane], py[lane])
+            hullmultiroot_common.childMaskOnTheFlyScalar(&leaves_fly, px[lane], py[lane])
         else
             0;
         try std.testing.expectEqual(expected, masks_fly[lane]);

@@ -48,8 +48,8 @@ Each term stores its $x$-output and $y$-output coefficients contiguously. Degree
 
 ```zig
 const coeffs = [_]F{ 0, 0, 0.01, 0, 0, -0.01 };
-const poly = try cam.PolyMap.init(1, .displacement, &coeffs);
-const distort = try cam.DistortModel.init(.{ .poly = poly });
+const poly = try cameramodels.PolyMap.init(1, .displacement, &coeffs);
+const distort = try cameramodels.DistortModel.init(.{ .poly = poly });
 ```
 
 ### Lifetime and Evaluation Semantics
@@ -115,7 +115,7 @@ In Python, `riley.RasterConfig(parallel=...)` passes thread settings directly to
 Advanced callers providing custom I/O or external group management use:
 
 ```zig
-var managed_groups = try ManagedRenderGroups.init(outer_alloc, minimal, thread_budget, max_groups);
+var managed_groups = try rendergroups.ManagedRenderGroups.init(outer_alloc, minimal, thread_budget, max_groups);
 defer managed_groups.deinit(outer_alloc);
 
 const images = try riley.rasterAdvanced(

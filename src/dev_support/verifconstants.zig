@@ -1,4 +1,5 @@
 // --------------------------------------------------------------------------
+const cameramodels = @import("../riley/zig/cameramodels.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
@@ -17,7 +18,7 @@ pub const output_dir_name = "verif";
 
 pub const CameraDistortCase = struct {
     case_name: []const u8,
-    distort: cam.DistortParams,
+    distort: cameramodels.DistortParams,
 };
 
 pub const DistortCase = struct {
@@ -49,7 +50,7 @@ fn brownConradyDistort(
     k3: F,
     p1: F,
     p2: F,
-) cam.DistortParams {
+) cameramodels.DistortParams {
     return .{
         .brown_con = .{
             .k1 = k1,
@@ -70,7 +71,7 @@ fn brownConradyExtDistort(
     k6: F,
     p1: F,
     p2: F,
-) cam.DistortParams {
+) cameramodels.DistortParams {
     return .{
         .brown_con_ext = .{
             .k1 = k1,
@@ -92,8 +93,8 @@ fn fixturePolyCoeffs(
 ) []const F {
     const Storage = struct {
         const pairs = blk: {
-            var data: [2 * cam.polyTermCount(degree)]F = undefined;
-            for (0..cam.polyTermCount(degree)) |ii| {
+            var data: [2 * cameramodels.polyTermCount(degree)]F = undefined;
+            for (0..cameramodels.polyTermCount(degree)) |ii| {
                 data[2 * ii] = cu[ii];
                 data[2 * ii + 1] = cv[ii];
             }
@@ -107,7 +108,7 @@ fn standalonePolyDistort(
     comptime degree: u8,
     comptime coeffs_u: [10]F,
     comptime coeffs_v: [10]F,
-) cam.DistortParams {
+) cameramodels.DistortParams {
     return .{
         .poly = .{
             .degree = degree,
@@ -126,7 +127,7 @@ fn brownConradyPolyDistort(
     comptime degree: u8,
     comptime coeffs_u: [10]F,
     comptime coeffs_v: [10]F,
-) cam.DistortParams {
+) cameramodels.DistortParams {
     return .{
         .brown_con_poly = .{
             .brown_con = .{
@@ -157,7 +158,7 @@ fn brownConradyExtPolyDistort(
     comptime degree: u8,
     comptime coeffs_u: [10]F,
     comptime coeffs_v: [10]F,
-) cam.DistortParams {
+) cameramodels.DistortParams {
     return .{
         .brown_con_ext_poly = .{
             .brown_con_ext = .{

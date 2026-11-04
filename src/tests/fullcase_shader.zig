@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const shaderfunc = @import("../riley/zig/shaderfunc.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const shadertypes = @import("../riley/zig/shadertypes.zig");
@@ -40,8 +41,8 @@ pub const FullTexCase = struct {
 
 pub const FullFuncCase = struct {
     is_rgb: bool,
-    builtin: shadertypes.FuncShaderBuiltin,
-    coord: shadertypes.FuncCoordMode,
+    builtin: shaderfunc.FuncShaderBuiltin,
+    coord: shaderfunc.FuncCoordMode,
     normal_type: normals.NormalType = .none,
 };
 
@@ -327,7 +328,7 @@ pub fn buildShaderCaseMeshes(
             };
         },
         .func => |f| {
-            const params = shadertypes.FuncShaderParams{
+            const params = shaderfunc.FuncShaderParams{
                 .settings = switch (f.builtin) {
                     .constant => .{ .constant = .{} },
                     .linear => .{ .linear = .{} },

@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("../riley/zig/cameramodels.zig");
+const shaderfunc = @import("../riley/zig/shaderfunc.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const shadertypes = @import("../riley/zig/shadertypes.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
@@ -29,7 +31,7 @@ pub const default_bg_value: F = 127.5;
 
 pub const DistModelCase = struct {
     tag: []const u8,
-    distort: camera.DistortParams,
+    distort: cameramodels.DistortParams,
 };
 
 pub fn buildRadialPoly7Coeffs(k1: F, k2: F, k3: F) [72]F {
@@ -235,7 +237,7 @@ pub fn buildCheckerMeshInput(
     prepared: *const orch.SingleMeshPrepared,
     mesh_type: gk.MeshType,
 ) MeshInput {
-    const shader_params = shadertypes.FuncShaderParams{
+    const shader_params = shaderfunc.FuncShaderParams{
         .coord_scale = .{ 4.0, 4.0 },
         .settings = .{ .checker = .{} },
     };
@@ -259,7 +261,7 @@ pub fn buildCheckerMeshInput(
 
 pub fn buildCameraInput(
     prepared: *const orch.SingleMeshPrepared,
-    distort: camera.DistortParams,
+    distort: cameramodels.DistortParams,
 ) CameraInput {
     return CameraInput{
         .pixels_num = prepared.camera.pixels_num,
@@ -273,7 +275,7 @@ pub fn buildCameraInput(
     };
 }
 
-pub fn calcCoordsBounds(coords: *const meshio.Coords) struct {
+pub fn calcCoordsBounds(coords: *const meshtypes.Coords) struct {
     min_x: F,
     max_x: F,
     min_y: F,

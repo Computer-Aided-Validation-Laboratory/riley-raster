@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const rendergroups = @import("../riley/zig/rendergroups.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
@@ -176,7 +177,7 @@ pub fn runZooCase(
     else
         .serial;
 
-    var render_groups_buf: [8]riley.RenderGroup = undefined;
+    var render_groups_buf: [8]rendergroups.RenderGroup = undefined;
     for (case.workers_per_group, 0..) |workers_count, ii| {
         render_groups_buf[ii] = .{ .io = io, .workers = workers_count };
     }

@@ -11,24 +11,11 @@ const meshtypes = @import("meshtypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 
-const cam = @import("cameraprojops.zig");
-const meshio = @import("meshio.zig");
-const meshpipe = @import("meshpipeline.zig");
 const sceneops = @import("sceneops.zig");
-const vec = @import("vecstack.zig");
-const matrix = @import("matstack.zig");
+const vecstack = @import("vecstack.zig");
+const matstack = @import("matstack.zig");
 const rotation = @import("rotation.zig");
-const rastcfg = @import("rasterconfig.zig");
 const F = buildconfig.F;
-
-// --------------------------------------------------------------------------------------
-// Public Constants & Public Types
-// --------------------------------------------------------------------------------------
-
-const FrameFitMode = cameratypes.FrameFitMode;
-const OrbitCam = cameratypes.OrbitCam;
-const StereoPairPosRot = cameratypes.StereoPairPosRot;
-const CameraPlaneMetrics = cameratypes.CameraPlaneMetrics;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -39,7 +26,7 @@ pub fn toOpenGLInput(input: cameratypes.CameraInput) cameratypes.CameraInput {
     var opengl_input = input;
     const r_opencv = input.rot_world.matrix;
     const r_opencv_t = r_opencv.transpose();
-    const neg_t = vec.initVec3(
+    const neg_t = vecstack.initVec3(
         F,
         -input.pos_world.get(0),
         -input.pos_world.get(1),
@@ -58,7 +45,7 @@ pub fn toOpenGLInput(input: cameratypes.CameraInput) cameratypes.CameraInput {
     return opengl_input;
 }
 
-pub fn calcPlaneMetrics(camera_input: cameratypes.CameraInput) CameraPlaneMetrics {
+pub fn calcPlaneMetrics(camera_input: cameratypes.CameraInput) cameratypes.CameraPlaneMetrics {
     const opengl_input = toOpenGLInput(camera_input);
     const scaling = calcFOVScaling(
         opengl_input,
@@ -95,7 +82,7 @@ pub fn fovScaleToCoverage(fov_scale: F) F {
 
 pub fn fovFromCamRot(
     cam_rot: rotation.Rotation,
-    coords_world: *const meshio.Coords,
+    coords_world: *const meshtypes.Coords,
 ) [2]F {
     return sceneops.extentInRotatedFrame(cam_rot, coords_world);
 }
@@ -135,7 +122,7 @@ pub fn imageDistFromFov(
 
 pub fn calcFOVScaling(
     camera_input: cameratypes.CameraInput,
-    plane_cent_world: vec.Vec3F,
+    plane_cent_world: vecstack.Vec3F,
 ) cameratypes.FOVScaling {
     const cam_z_axis = camera_input.rot_world.matrix.getColVec(2);
     const plane_vec = (&camera_input.pos_world).sub(plane_cent_world);
@@ -166,18 +153,18 @@ pub fn calcFOVScaling(
 }
 
 pub fn calcCamPos(
-    roi_pos_world: vec.Vec3F,
+    roi_pos_world: vecstack.Vec3F,
     cam_rot: rotation.Rotation,
     image_dist: F,
-) vec.Vec3F {
+) vecstack.Vec3F {
     var cam_z_axis_vec = cam_rot.matrix.getColVec(2);
     cam_z_axis_vec = cam_z_axis_vec.mulScal(image_dist);
     return (&roi_pos_world).add(cam_z_axis_vec);
 }
 
 pub fn lookAtPoint(
-    pos_world: vec.Vec3F,
-    targ_world: vec.Vec3F,
+    pos_world: vecstack.Vec3F,
+    targ_world: vecstack.Vec3F,
 ) rotation.Rotation {
     const cam_z_axis = (&pos_world).sub(targ_world);
     const cam_z_leng = cam_z_axis.vecLen();
@@ -200,13 +187,13 @@ pub fn lookAtPoint(
 }
 
 pub fn imageDistFrameCoords(
-    coords_world: *const meshio.Coords,
+    coords_world: *const meshtypes.Coords,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
     cam_rot: rotation.Rotation,
     fov_scale: F,
-    fit_mode: FrameFitMode,
+    fit_mode: cameratypes.FrameFitMode,
 ) F {
     var fov_leng = fovFromCamRot(cam_rot, coords_world);
     fov_leng[0] = fov_scale * fov_leng[0];
@@ -222,16 +209,16 @@ pub fn imageDistFrameCoords(
 }
 
 pub fn imageDistFrameCoordsTarg(
-    coords_world: *const meshio.Coords,
-    targ_world: vec.Vec3F,
+    coords_world: *const meshtypes.Coords,
+    targ_world: vecstack.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
     cam_rot: rotation.Rotation,
     fov_scale: F,
-    fit_mode: FrameFitMode,
+    fit_mode: cameratypes.FrameFitMode,
 ) F {
-    const world_to_cam_mat = matrix.Mat33Ops.inv(F, cam_rot.matrix);
+    const world_to_cam_mat = matstack.Mat33Ops.inv(F, cam_rot.matrix);
     var coord_cam = world_to_cam_mat.mulVec(coords_world.getVec3(0).sub(targ_world));
     var max_abs_x = @abs(coord_cam.get(0));
     var max_abs_y = @abs(coord_cam.get(1));
@@ -262,7 +249,7 @@ pub fn imageDistFrameMeshes(
     focal_leng: F,
     cam_rot: rotation.Rotation,
     fov_scale: F,
-    fit_mode: FrameFitMode,
+    fit_mode: cameratypes.FrameFitMode,
 ) F {
     var fov_leng = fovFromCamRotOverMeshes(cam_rot, meshes);
     fov_leng[0] = fov_scale * fov_leng[0];
@@ -279,15 +266,15 @@ pub fn imageDistFrameMeshes(
 
 pub fn imageDistFrameMeshesTarg(
     meshes: anytype,
-    targ_world: vec.Vec3F,
+    targ_world: vecstack.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
     cam_rot: rotation.Rotation,
     fov_scale: F,
-    fit_mode: FrameFitMode,
+    fit_mode: cameratypes.FrameFitMode,
 ) F {
-    const world_to_cam_mat = matrix.Mat33Ops.inv(F, cam_rot.matrix);
+    const world_to_cam_mat = matstack.Mat33Ops.inv(F, cam_rot.matrix);
     var max_abs_x: F = 0.0;
     var max_abs_y: F = 0.0;
     var is_first = true;
@@ -322,14 +309,14 @@ pub fn imageDistFrameMeshesTarg(
 }
 
 pub fn posFrameCoords(
-    coords_world: *const meshio.Coords,
+    coords_world: *const meshtypes.Coords,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
     cam_rot: rotation.Rotation,
     fov_scale: F,
-    fit_mode: FrameFitMode,
-) vec.Vec3F {
+    fit_mode: cameratypes.FrameFitMode,
+) vecstack.Vec3F {
     const image_dist = imageDistFrameCoords(
         coords_world,
         pixels_num,
@@ -347,15 +334,15 @@ pub fn posFrameCoords(
 }
 
 pub fn posFrameCoordsTarg(
-    coords_world: *const meshio.Coords,
-    targ_world: vec.Vec3F,
+    coords_world: *const meshtypes.Coords,
+    targ_world: vecstack.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
     cam_rot: rotation.Rotation,
     fov_scale: F,
-    fit_mode: FrameFitMode,
-) vec.Vec3F {
+    fit_mode: cameratypes.FrameFitMode,
+) vecstack.Vec3F {
     const image_dist = imageDistFrameCoordsTarg(
         coords_world,
         targ_world,
@@ -376,8 +363,8 @@ pub fn posFrameMesh(
     focal_leng: F,
     cam_rot: rotation.Rotation,
     fov_scale: F,
-    fit_mode: FrameFitMode,
-) vec.Vec3F {
+    fit_mode: cameratypes.FrameFitMode,
+) vecstack.Vec3F {
     return posFrameCoords(
         &mesh.coords,
         pixels_num,
@@ -396,8 +383,8 @@ pub fn posFrameMeshes(
     focal_leng: F,
     cam_rot: rotation.Rotation,
     fov_scale: F,
-    fit_mode: FrameFitMode,
-) vec.Vec3F {
+    fit_mode: cameratypes.FrameFitMode,
+) vecstack.Vec3F {
     const image_dist = imageDistFrameMeshes(
         meshes,
         pixels_num,
@@ -416,14 +403,14 @@ pub fn posFrameMeshes(
 
 pub fn posFrameMeshesTarg(
     meshes: anytype,
-    targ_world: vec.Vec3F,
+    targ_world: vecstack.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
     cam_rot: rotation.Rotation,
     fov_scale: F,
-    fit_mode: FrameFitMode,
-) vec.Vec3F {
+    fit_mode: cameratypes.FrameFitMode,
+) vecstack.Vec3F {
     const image_dist = imageDistFrameMeshesTarg(
         meshes,
         targ_world,
@@ -438,13 +425,13 @@ pub fn posFrameMeshesTarg(
 }
 
 pub fn posOrbitCam(
-    targ_world: vec.Vec3F,
+    targ_world: vecstack.Vec3F,
     azimuth_rad: F,
     elevation_rad: F,
     dist: F,
-) OrbitCam {
+) cameratypes.OrbitCam {
     const cos_elev = @cos(elevation_rad);
-    const offset = vec.initVec3(
+    const offset = vecstack.initVec3(
         F,
         dist * cos_elev * @cos(azimuth_rad),
         dist * cos_elev * @sin(azimuth_rad),
@@ -459,11 +446,11 @@ pub fn posOrbitCam(
 }
 
 pub fn posStereoPair(
-    targ_world: vec.Vec3F,
+    targ_world: vecstack.Vec3F,
     dist: F,
     stereo_angle_rad: F,
     baseline_angle_rad: F,
-) StereoPairPosRot {
+) cameratypes.StereoPairPosRot {
     const half_angle = 0.5 * stereo_angle_rad;
     const cam0_orbit = posOrbitCam(
         targ_world,
@@ -487,7 +474,7 @@ pub fn posStereoPair(
 
 pub fn calcPixelResolution(
     camera_input: cameratypes.CameraInput,
-    targ_world: vec.Vec3F,
+    targ_world: vecstack.Vec3F,
 ) F {
     const opengl_input = toOpenGLInput(camera_input);
     const scaling = calcFOVScaling(opengl_input, targ_world);
@@ -499,7 +486,7 @@ pub fn calcPixelResolution(
 // --------------------------------------------------------------------------------------
 
 pub fn imageDistFillFrameFromRot(
-    coords_world: *const meshio.Coords,
+    coords_world: *const meshtypes.Coords,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
@@ -518,13 +505,13 @@ pub fn imageDistFillFrameFromRot(
 }
 
 pub fn posFillFrameFromRot(
-    coords_world: *const meshio.Coords,
+    coords_world: *const meshtypes.Coords,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
     cam_rot: rotation.Rotation,
     fov_scale: F,
-) vec.Vec3F {
+) vecstack.Vec3F {
     return posFrameCoords(
         coords_world,
         pixels_num,
@@ -537,14 +524,14 @@ pub fn posFillFrameFromRot(
 }
 
 pub fn posFillFrameFromRotAndTarg(
-    coords_world: *const meshio.Coords,
-    targ_world: vec.Vec3F,
+    coords_world: *const meshtypes.Coords,
+    targ_world: vecstack.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
     cam_rot: rotation.Rotation,
     fov_scale: F,
-) vec.Vec3F {
+) vecstack.Vec3F {
     return posFrameCoordsTarg(
         coords_world,
         targ_world,
@@ -564,7 +551,7 @@ pub fn posFillFrameFromRotOverMeshes(
     focal_leng: F,
     cam_rot: rotation.Rotation,
     fov_scale: F,
-) vec.Vec3F {
+) vecstack.Vec3F {
     return posFrameMeshes(
         meshes,
         pixels_num,
@@ -578,13 +565,13 @@ pub fn posFillFrameFromRotOverMeshes(
 
 pub fn posFillFrameFromRotOverMeshesAndTarg(
     meshes: anytype,
-    targ_world: vec.Vec3F,
+    targ_world: vecstack.Vec3F,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
     cam_rot: rotation.Rotation,
     fov_scale: F,
-) vec.Vec3F {
+) vecstack.Vec3F {
     return posFrameMeshesTarg(
         meshes,
         targ_world,
@@ -601,7 +588,7 @@ pub fn posFillFrameFromRotOverMeshesAndTarg(
 // Generic Low-Level Helpers
 // --------------------------------------------------------------------------------------
 
-fn selectFitDist(image_dists: [2]F, fit_mode: FrameFitMode) F {
+fn selectFitDist(image_dists: [2]F, fit_mode: cameratypes.FrameFitMode) F {
     return switch (fit_mode) {
         .contain => @max(image_dists[0], image_dists[1]),
         .cover => @min(image_dists[0], image_dists[1]),
@@ -631,7 +618,7 @@ test "FrameFitMode distance selection" {
 }
 
 test "posOrbitCam placement and rotation" {
-    const targ = vec.initVec3(F, 0.0, 0.0, 0.0);
+    const targ = vecstack.initVec3(F, 0.0, 0.0, 0.0);
     const dist: F = 100.0;
     const orbit = posOrbitCam(targ, 0.0, 0.0, dist);
     try std.testing.expectApproxEqRel(@as(F, 100.0), orbit.pos.get(0), 1e-6);
@@ -640,7 +627,7 @@ test "posOrbitCam placement and rotation" {
 }
 
 test "posStereoPair symmetric separation" {
-    const targ = vec.initVec3(F, 0.0, 0.0, 0.0);
+    const targ = vecstack.initVec3(F, 0.0, 0.0, 0.0);
     const dist: F = 100.0;
     const stereo_angle: F = std.math.pi / 6.0;
     const stereo = posStereoPair(targ, dist, stereo_angle, 0.0);
@@ -657,7 +644,7 @@ test "posFrameCoords framing modes" {
         10.0,  5.0,  0.0,
         -10.0, 5.0,  0.0,
     };
-    const coords = meshio.Coords.init(&raw_coords, 4);
+    const coords = meshtypes.Coords.init(&raw_coords, 4);
     const pixels_num = [2]u32{ 100, 100 };
     const pixels_size = [2]F{ 0.1, 0.1 };
     const focal_leng: F = 10.0;
@@ -715,8 +702,8 @@ test "posFrameCoordsTarg framing with offset target" {
         0.0,  0.0, 0.0,
         20.0, 0.0, 0.0,
     };
-    const coords = meshio.Coords.init(&raw_coords, 2);
-    const targ = vec.initVec3(F, 10.0, 0.0, 0.0);
+    const coords = meshtypes.Coords.init(&raw_coords, 2);
+    const targ = vecstack.initVec3(F, 10.0, 0.0, 0.0);
     const pixels_num = [2]u32{ 100, 100 };
     const pixels_size = [2]F{ 0.1, 0.1 };
     const focal_leng: F = 10.0;

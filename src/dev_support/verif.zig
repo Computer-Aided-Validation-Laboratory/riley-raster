@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("../riley/zig/cameramodels.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
@@ -188,7 +189,7 @@ pub fn idealToObservedRaster(
     const x_norm = (ideal_xy[0] - offsets.x_off) / focal_px.fx;
     const y_norm = (ideal_xy[1] - offsets.y_off) / focal_px.fy;
 
-    const distorted = cam.fordDistortModelScal(
+    const distorted = cameramodels.fordDistortModelScal(
         camera.distort,
         x_norm,
         y_norm,
@@ -208,7 +209,7 @@ pub fn observedToIdealRaster(
     const x_dist = (observed_xy[0] - offsets.x_off) / focal_px.fx;
     const y_dist = (observed_xy[1] - offsets.y_off) / focal_px.fy;
 
-    const solved = try cam.invDistortModelScal(
+    const solved = try cameramodels.invDistortModelScal(
         camera.distort,
         x_dist,
         y_dist,

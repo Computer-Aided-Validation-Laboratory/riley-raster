@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("../riley/zig/cameramodels.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
@@ -246,7 +247,7 @@ fn runAdditionalDistPsfTests(
 
     const extra_dist_cases = [_]struct {
         tag: []const u8,
-        distort: camera.DistortParams,
+        distort: cameramodels.DistortParams,
     }{
         .{
             .tag = "standalone_poly",
@@ -280,7 +281,7 @@ fn runAdditionalDistPsfTests(
 
     const extra_psf_cases = [_]struct {
         tag: []const u8,
-        psf: camera.PointSpreadFunc,
+        psf: cameramodels.PointSpreadFunc,
     }{
         .{
             .tag = "rotated_anisotropic_gaussian",

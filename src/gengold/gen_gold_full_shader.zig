@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const shaderfunc = @import("../riley/zig/shaderfunc.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const shadertypes = @import("../riley/zig/shadertypes.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
@@ -107,7 +108,7 @@ pub fn generateAllFullShaderCases(
         .exact,
     };
     const bool_values = [_]bool{ false, true };
-    const builtins = [_]shadertypes.FuncShaderBuiltin{
+    const builtins = [_]shaderfunc.FuncShaderBuiltin{
         .constant,
         .linear,
         .quadratic,
@@ -118,7 +119,7 @@ pub fn generateAllFullShaderCases(
         .lambertian_normal_z,
         .eggbox,
     };
-    const coord_modes = [_]shadertypes.FuncCoordMode{
+    const coord_modes = [_]shaderfunc.FuncCoordMode{
         .para,
         .uv,
         .world_reference,

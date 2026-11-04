@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const rasterconfig = @import("../riley/zig/rasterconfig.zig");
+const rendergroups = @import("../riley/zig/rendergroups.zig");
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const std = @import("std");
@@ -155,7 +157,7 @@ const DicuqE2EStatsRow = struct {
     e2e_tpx_mpx_s: ?F,
 };
 
-pub fn getBaseRasterConfig() riley.RasterConfig {
+pub fn getBaseRasterConfig() rasterconfig.RasterConfig {
     var base_raster_config = tcfg.getRasterConfig(.bench);
     // Thread counts include the caller thread.
     base_raster_config.parallel = .{ .threads = 1 };
@@ -333,10 +335,10 @@ pub fn calcCaseName(
 pub fn runBenchmark(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    render_groups: []const riley.RenderGroup,
+    render_groups: []const rendergroups.RenderGroup,
     camera_inputs: []const CameraInput,
     mesh_input: MeshInput,
-    config: riley.RasterConfig,
+    config: rasterconfig.RasterConfig,
     out_dir_path: ?[]const u8,
 ) !DicuqRunResult {
     const frame_count = if (mesh_input.disp) |disp|

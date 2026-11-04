@@ -280,11 +280,11 @@ fn makeMesh(
     }
     return .{
         .mesh_type = mesh_type,
-        .coords = meshio.Coords.init(
+        .coords = meshtypes.Coords.init(
             coord_values,
             args.elements_per_type * N,
         ),
-        .connect = meshio.Connect.init(
+        .connect = meshtypes.Connect.init(
             connect_values,
             args.elements_per_type,
             N,

@@ -6,8 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const ndarray = @import("ndarray.zig");
 const std = @import("std");
-const NDArray = @import("ndarray.zig").NDArray;
 
 pub const TexSamp = enum {
     nearest,
@@ -60,7 +60,7 @@ pub fn TexDataDyn(comptime T: type) type {
 
 fn texDataType(comptime T: type, comptime C: ?usize) type {
     return struct {
-        array: NDArray(T),
+        array: ndarray.NDArray(T),
         rows_num: usize,
         cols_num: usize,
 
@@ -70,12 +70,12 @@ fn texDataType(comptime T: type, comptime C: ?usize) type {
 
         fn initFixed(allocator: std.mem.Allocator, rows: usize, cols: usize) !Self {
             const dims = &[_]usize{ C orelse unreachable, rows, cols };
-            const array = try NDArray(T).initFlat(allocator, dims);
+            const array = try ndarray.NDArray(T).initFlat(allocator, dims);
             return .{ .array = array, .rows_num = rows, .cols_num = cols };
         }
 
         fn initDynamic(allocator: std.mem.Allocator, channels: usize, rows: usize, cols: usize) !Self {
-            const array = try NDArray(T).initFlat(allocator, &.{ channels, rows, cols });
+            const array = try ndarray.NDArray(T).initFlat(allocator, &.{ channels, rows, cols });
             return .{ .array = array, .rows_num = rows, .cols_num = cols };
         }
 

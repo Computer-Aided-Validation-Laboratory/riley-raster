@@ -6,23 +6,23 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const shaderfunc = @import("shaderfunc.zig");
+const cameramodels = @import("cameramodels.zig");
 const cameratypes = @import("cameratypes.zig");
 const meshtypes = @import("meshtypes.zig");
 const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
-const cam = @import("cameraprojops.zig");
-const geomkerns = @import("geometrykernels.zig");
+const cameraprojops = @import("cameraprojops.zig");
 const imageops = @import("imageops.zig");
 const imageio = @import("imageio.zig");
-const matslice = @import("matslice.zig");
-const meshpipe = @import("meshpipeline.zig");
+const meshpipeline = @import("meshpipeline.zig");
 const ndarray = @import("ndarray.zig");
-const rastcfg = @import("rasterconfig.zig");
+const rasterconfig = @import("rasterconfig.zig");
 const report = @import("report.zig");
 const shaderops = @import("shaderops.zig");
 const shaderpipe = @import("shaderpipe.zig");
-const textypes = @import("texturetypes.zig");
+const texturetypes = @import("texturetypes.zig");
 
 const F = buildconfig.F;
 const max_channels = buildconfig.config.max_image_channels;
@@ -125,7 +125,7 @@ pub fn checkRenderInps(
     render_groups: anytype,
     cam_inps: []const cameratypes.CameraInput,
     meshes: []const meshtypes.MeshInput,
-    config: rastcfg.RasterConfig,
+    config: rasterconfig.RasterConfig,
     imgs_arr: ?*ndarray.NDArray(F),
     require_out_buff: bool,
     bench_capt: ?[]report.FrameBenchCapture,
@@ -137,7 +137,7 @@ pub fn checkRenderInps(
     try checkCameras(cam_inps, config);
     try checkPipeCompatibility(cam_inps, meshes);
 
-    const num_time = meshpipe.countFrames(meshes, cam_inps);
+    const num_time = meshpipeline.countFrames(meshes, cam_inps);
     if (num_time == 0) {
         return error.NoMeshFrames;
     }
@@ -156,7 +156,7 @@ pub fn checkRenderInps(
         }
     }
 
-    const raw_num_fields = meshpipe.countOutputFields(meshes, cam_inps);
+    const raw_num_fields = meshpipeline.countOutputFields(meshes, cam_inps);
     if (raw_num_fields == 0) {
         return error.NoOutputFields;
     }
@@ -222,11 +222,11 @@ fn checkPipeCompatibility(
 pub fn summariseRenderInpsAssumeValid(
     cam_inps: []const cameratypes.CameraInput,
     meshes: []const meshtypes.MeshInput,
-    config: rastcfg.RasterConfig,
+    config: rasterconfig.RasterConfig,
 ) ValidSummary {
-    const num_time = if (meshes.len > 0) meshpipe.countFrames(meshes, cam_inps) else 1;
+    const num_time = if (meshes.len > 0) meshpipeline.countFrames(meshes, cam_inps) else 1;
     const raw_num_fields = if (meshes.len > 0)
-        meshpipe.countOutputFields(meshes, cam_inps)
+        meshpipeline.countOutputFields(meshes, cam_inps)
     else
         1;
     const out_num_fields = raw_num_fields;
@@ -250,7 +250,7 @@ pub fn summariseRenderInpsAssumeValid(
 
 fn checkTopLevelAndRenderGroups(
     render_groups: anytype,
-    config: rastcfg.RasterConfig,
+    config: rasterconfig.RasterConfig,
 ) InputValidationError!void {
     _ = config;
     if (render_groups.len == 0) {
@@ -263,7 +263,7 @@ fn checkTopLevelAndRenderGroups(
     }
 }
 
-fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
+fn checkRasterConfig(config: rasterconfig.RasterConfig) InputValidationError!void {
     if (!std.math.isFinite(config.advanced.distortion.edge_spacing_px) or
         config.advanced.distortion.edge_spacing_px <= 0.0)
     {
@@ -379,7 +379,7 @@ fn checkMeshesMetadata(
 
         if (mesh.mesh_type == .tri3opt) {
             for (cam_inps) |cam_inp| {
-                if (!cam.isNoDistort(cam_inp.distort)) {
+                if (!cameraprojops.isNoDistort(cam_inp.distort)) {
                     return error.DistortNotSuppedWithTri3Opt;
                 }
             }
@@ -431,7 +431,7 @@ fn pipeSourceChannels(source: shadertypes.PipeSourceInput) u8 {
 
 fn checkCameras(
     cam_inps: []const cameratypes.CameraInput,
-    config: rastcfg.RasterConfig,
+    config: rasterconfig.RasterConfig,
 ) InputValidationError!void {
     if (cam_inps.len == 0) {
         return error.NoCameras;
@@ -566,7 +566,7 @@ fn isValidRotationMatrix(mat: anytype) bool {
 }
 
 fn checkGlobalSubpxAlignment(
-    config: rastcfg.RasterConfig,
+    config: rasterconfig.RasterConfig,
     sub_samp: u32,
 ) InputValidationError!void {
     if (config.advanced.raster.buffer_mode == .tile_local) return;
@@ -829,7 +829,7 @@ fn checkOptionalUvMetadata(
     }
 }
 
-fn checkSampCfg(samp_cfg: textypes.TexSampConfig) InputValidationError!void {
+fn checkSampCfg(samp_cfg: texturetypes.TexSampConfig) InputValidationError!void {
     if (!samp_cfg.isValid()) {
         return error.InvalidTexSampleConfig;
     }
@@ -856,8 +856,8 @@ fn checkScaling(scaling: imageops.ScaleStrategy) InputValidationError!void {
 }
 
 fn checkFuncParams(
-    builtin: shadertypes.FuncShaderBuiltin,
-    params: shadertypes.FuncShaderParams,
+    builtin: shaderfunc.FuncShaderBuiltin,
+    params: shaderfunc.FuncShaderParams,
 ) InputValidationError!void {
     if (!isFiniteSlice(&params.coord_scale) or
         params.coord_scale[0] == 0.0 or
@@ -954,7 +954,7 @@ fn calcAllFramesImgDims(
 }
 
 fn validOutBuffErr(
-    config: rastcfg.RasterConfig,
+    config: rasterconfig.RasterConfig,
     imgs_arr: ?*ndarray.NDArray(F),
     require_out_buff: bool,
     exp_dims: [5]usize,
@@ -988,12 +988,12 @@ fn validAllFramesBuff(
 // Low-Level Distortion & PSF Validators
 // --------------------------------------------------------------------------------------
 
-fn isValidPolyMap(map: cam.PolyMap) bool {
+fn isValidPolyMap(map: cameramodels.PolyMap) bool {
     map.validate() catch return false;
     return true;
 }
 
-fn isValidDistort(distort: cam.DistortParams) bool {
+fn isValidDistort(distort: cameramodels.DistortParams) bool {
     return switch (distort) {
         .none => true,
         .brown_con => |bc| isFiniteSlice(&[_]F{
@@ -1046,7 +1046,7 @@ fn isValidDistort(distort: cam.DistortParams) bool {
     };
 }
 
-fn isValidPsf(psf: cam.PointSpreadFunc) bool {
+fn isValidPsf(psf: cameramodels.PointSpreadFunc) bool {
     return switch (psf) {
         .pixel_box => |box| std.math.isFinite(box.supp_rad_px) and
             box.supp_rad_px >= 0.0,
@@ -1095,7 +1095,7 @@ fn isFiniteVec3(vec_val: anytype) bool {
 }
 
 test "raster configuration rejects invalid distortion edge spacing" {
-    var config = rastcfg.RasterConfig{};
+    var config = rasterconfig.RasterConfig{};
     for ([_]F{ 0.0, -1.0, std.math.nan(F), std.math.inf(F) }) |spacing| {
         config.advanced.distortion.edge_spacing_px = spacing;
         try std.testing.expectError(

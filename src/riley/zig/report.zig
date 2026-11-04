@@ -10,14 +10,13 @@ const meshtypes = @import("meshtypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const cam = @import("cameraprojops.zig");
-const rastcfg = @import("rasterconfig.zig");
+const cameraprojops = @import("cameraprojops.zig");
+const rasterconfig = @import("rasterconfig.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
-const elemtilebin = @import("elemtilebinning.zig");
-pub const ReportMode = rastcfg.ReportMode;
+const elemtilebinning = @import("elemtilebinning.zig");
 
 /// A zero timestamp keeps existing duration arithmetic inert when reporting is off.
-pub inline fn timestamp(io: std.Io, mode: ReportMode) std.Io.Clock.Timestamp {
+pub inline fn timestamp(io: std.Io, mode: rasterconfig.ReportMode) std.Io.Clock.Timestamp {
     return if (mode == .bench)
         std.Io.Clock.Timestamp.now(io, .awake)
     else
@@ -31,7 +30,7 @@ pub inline fn timestamp(io: std.Io, mode: ReportMode) std.Io.Clock.Timestamp {
 pub const OffLog = struct {};
 
 pub const GlobalSubpxStats = struct {
-    mode: rastcfg.BufferMode = .tile_local,
+    mode: rasterconfig.BufferMode = .tile_local,
     output_w_subpx: usize = 0,
     output_h_subpx: usize = 0,
     outer_halo_subpx: usize = 0,
@@ -105,7 +104,7 @@ pub fn rasterStageTime(frame_times: FrameTimes) F {
 }
 
 pub fn initGlobalSubpxStats(
-    buffer_mode: rastcfg.BufferMode,
+    buffer_mode: rasterconfig.BufferMode,
     pixels_num: [2]u32,
     sub_sample: u32,
     halo_px: u16,
@@ -125,7 +124,7 @@ pub fn initGlobalSubpxStats(
 }
 
 pub fn recordTilingStatsGlobBuff(
-    tiling: elemtilebin.TileElemOverlaps,
+    tiling: elemtilebinning.TileElemOverlaps,
     tile_grid_count: usize,
     stats: *GlobalSubpxStats,
 ) void {
@@ -140,7 +139,7 @@ pub fn recordTilingStatsGlobBuff(
 pub fn recordGlobalSubpxStats(
     pixels_num: [2]u32,
     actual_tile_size: u16,
-    tiling: elemtilebin.TileElemOverlaps,
+    tiling: elemtilebinning.TileElemOverlaps,
     frame_times: *FrameTimes,
 ) void {
     if (frame_times.global_subpx_stats) |*stats| {
@@ -167,7 +166,7 @@ pub fn recordGlobalSubpxStripeStats(
     stripe_subpx: usize,
     storage_w_subpx: usize,
     storage_h_subpx: usize,
-    stripe_tiling: elemtilebin.TileElemOverlaps,
+    stripe_tiling: elemtilebinning.TileElemOverlaps,
     frame_times: *FrameTimes,
 ) void {
     if (frame_times.global_subpx_stats) |*stats| {
@@ -249,7 +248,7 @@ pub const FrameBenchCapture = struct {
     bench_log: BenchLog,
 };
 
-pub const FrameReportStorage = union(ReportMode) {
+pub const FrameReportStorage = union(rasterconfig.ReportMode) {
     off: OffLog,
     bench: BenchLog,
 };
@@ -258,7 +257,7 @@ pub const FrameReportStorage = union(ReportMode) {
 // Public Entry-Point Functions
 // --------------------------------------------------------------------------------------
 
-pub fn FrameReportPtr(comptime report_mode: ReportMode) type {
+pub fn FrameReportPtr(comptime report_mode: rasterconfig.ReportMode) type {
     return *LogType(report_mode);
 }
 
@@ -277,9 +276,9 @@ pub fn calcBenchCaptureIdx(
 pub fn publishFrameResults(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    config: rastcfg.RasterConfig,
+    config: rasterconfig.RasterConfig,
     actual_tile_size: u16,
-    camera: *const cam.CameraPrepared,
+    camera: *const cameraprojops.CameraPrepared,
     camera_idx: usize,
     frame_idx: usize,
     cameras_num: usize,
@@ -318,9 +317,9 @@ pub fn publishFrameResults(
 pub fn publishFrameResultsWithNodesPerElem(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    config: rastcfg.RasterConfig,
+    config: rasterconfig.RasterConfig,
     actual_tile_size: u16,
-    camera: *const cam.CameraPrepared,
+    camera: *const cameraprojops.CameraPrepared,
     camera_idx: usize,
     frame_idx: usize,
     cameras_num: usize,
@@ -395,26 +394,26 @@ pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
     dst.resolve_time_ns += src.resolve_time_ns;
 }
 
-pub const ReportLog = union(ReportMode) {
+pub const ReportLog = union(rasterconfig.ReportMode) {
     off: OffLog,
     bench: BenchLog,
 };
 
-pub fn LogType(comptime mode: ReportMode) type {
+pub fn LogType(comptime mode: rasterconfig.ReportMode) type {
     return switch (mode) {
         .off => OffLog,
         .bench => BenchLog,
     };
 }
 
-pub fn getBenchLog(comptime mode: ReportMode, log: *LogType(mode)) ?*BenchLog {
+pub fn getBenchLog(comptime mode: rasterconfig.ReportMode, log: *LogType(mode)) ?*BenchLog {
     return switch (mode) {
         .off => null,
         .bench => log,
     };
 }
 
-pub fn ReportContext(comptime mode: ReportMode) type {
+pub fn ReportContext(comptime mode: rasterconfig.ReportMode) type {
     @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
     return struct {
         log: *LogType(mode),
@@ -550,7 +549,7 @@ pub fn ReportContext(comptime mode: ReportMode) type {
 
 pub fn standardReport(
     io: std.Io,
-    camera: *const cam.CameraPrepared,
+    camera: *const cameraprojops.CameraPrepared,
     actual_tile_size: u16,
     frame_idx: usize,
     camera_idx: usize,
@@ -727,7 +726,7 @@ pub fn standardReport(
 
 fn globalSubpxStandardReport(
     io: std.Io,
-    camera: *const cam.CameraPrepared,
+    camera: *const cameraprojops.CameraPrepared,
     frame_idx: usize,
     camera_idx: usize,
     frame_times: FrameTimes,
@@ -887,10 +886,10 @@ fn globalSubpxStandardReport(
 
 pub fn printRenderSummary(
     io: std.Io,
-    cameras: []const cam.CameraPrepared,
-    config: rastcfg.RasterConfig,
+    cameras: []const cameraprojops.CameraPrepared,
+    config: rasterconfig.RasterConfig,
     num_time: usize,
-    report_mode: ReportMode,
+    report_mode: rasterconfig.ReportMode,
     end_to_end_times: EndToEndTimes,
     bench_capture: ?[]const FrameBenchCapture,
 ) !void {

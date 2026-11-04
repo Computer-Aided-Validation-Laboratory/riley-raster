@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("../riley/zig/cameramodels.zig");
 const std = @import("std");
 const camera = @import("../riley/zig/cameraprojops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
@@ -18,7 +19,7 @@ pub const HullStatusCase = struct {
 
 pub const HullPsfCase = struct {
     tag: []const u8,
-    psf: camera.PointSpreadFunc,
+    psf: cameramodels.PointSpreadFunc,
 };
 
 pub const NewtonSeedCase = struct {
