@@ -48,7 +48,7 @@ pub fn MeshHit(comptime N: usize) type {
         coords_def: ?[3]F = null,
         surf_norm: ?[3]F = null,
 
-        pub inline fn core(self: @This()) RasterHit(N) {
+        pub inline fn getRasterHit(self: @This()) RasterHit(N) {
             return .{
                 .weights = self.weights,
                 .nodes_inv_z = self.nodes_inv_z,

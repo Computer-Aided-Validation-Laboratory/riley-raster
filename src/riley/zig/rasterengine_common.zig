@@ -332,7 +332,7 @@ pub fn rasterTileCore(
                 shadertypes.ShaderMonoPrepared,
                 shadertypes.ShaderPipePrepared,
                 &mesh_ptr.shaders,
-                ctx_rast.camera.render_format,
+                std.meta.activeTag(ctx_rast.camera.render_format),
             ) orelse continue;
 
             const coords = &mesh_ptr.coords;

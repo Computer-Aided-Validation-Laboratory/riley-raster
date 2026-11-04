@@ -771,6 +771,7 @@ pub inline fn fillFuncPerspSIMD(
         coord,
         params,
     );
+
     inline for (0..C) |ch| {
         const v_mul = @as(VecSF, @splat(shader.scale_mul));
         const v_add = @as(VecSF, @splat(shader.scale_add));

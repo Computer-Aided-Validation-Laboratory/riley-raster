@@ -39,6 +39,10 @@ pub const RenderFormat = union(enum) {
     }
 };
 
+/// Shader role independent of output channel count.
+pub const RenderRole = std.meta.Tag(RenderFormat);
+pub const ActiveShaderRoles = std.EnumSet(RenderRole);
+
 pub const NodalInput = struct {
     field: fieldtypes.Field,
     output_gain: F = 1.0,

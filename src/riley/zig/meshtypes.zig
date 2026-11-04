@@ -134,8 +134,8 @@ pub const MeshInput = struct {
 // Shader UVs: Elem-order (gathered during static init as they are usually static).
 pub const MeshStatic = struct {
     referenced_nodes_num: usize = 0,
-    // Role order: mono, rgb, ir, multifield; independent of output channel count.
-    hit_selections: [4]meshhit.MeshHitSelection = @splat(meshhit.MeshHitSelection.initEmpty()),
+    hit_selections: std.EnumArray(shadertypes.RenderRole, meshhit.MeshHitSelection) =
+        .initFill(meshhit.MeshHitSelection.initEmpty()),
     scene_mesh_idx: usize = 0,
     mesh_type: geometrykernels.MeshType,
     normal_type: normals.NormalType = .exact,

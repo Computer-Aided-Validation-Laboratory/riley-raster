@@ -120,17 +120,17 @@ pub fn selectShader(
     comptime Direct: type,
     comptime Pipe: type,
     shaders: anytype,
-    format: shadertypes.RenderFormat,
+    role: shadertypes.RenderRole,
 ) ?shadertypes.SelectedShader(Direct, Pipe) {
     if (comptime @TypeOf(shaders.*) == shadertypes.MeshShaderSetInput) {
-        return switch (format) {
+        return switch (role) {
             .mono => if (shaders.mono_direct) |*shader| .{ .direct = shader } else if (shaders.mono_pipe) |*pipe| .{ .pipe = pipe } else null,
             .ir => if (shaders.ir_direct) |*shader| .{ .direct = shader } else if (shaders.ir_pipe) |*pipe| .{ .pipe = pipe } else null,
             .rgb => if (shaders.rgb_pipe) |*pipe| .{ .pipe = pipe } else null,
             .multifield => if (shaders.multifield_pipe) |*pipe| .{ .pipe = pipe } else null,
         };
     }
-    return switch (format) {
+    return switch (role) {
         .mono => if (shaders.mono) |*exec| switch (exec.*) {
             .direct => |*shader| .{ .direct = shader },
             .pipe => |*pipe| .{ .pipe = pipe },

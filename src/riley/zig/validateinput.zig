@@ -199,7 +199,7 @@ fn checkPipeCompatibility(
                 shadertypes.ShaderMonoInput,
                 shadertypes.ShaderPipeInput,
                 &mesh.shaders,
-                camera.render_format,
+                std.meta.activeTag(camera.render_format),
             ) orelse continue;
             compatible = true;
             const expected = camera.render_format.channels();

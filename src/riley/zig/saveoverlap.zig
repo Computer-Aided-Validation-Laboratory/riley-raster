@@ -386,7 +386,6 @@ pub fn completeSaveSlot(
         slot.camera_idx,
         slot.frame_idx,
         slot.num_fields,
-        slot.pixels_num,
         &slot.frame_arr,
         if (slot.camera.?.render_format == .rgb) 3 else 1,
         slot.camera.?.output_files,

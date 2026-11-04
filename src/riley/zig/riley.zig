@@ -20,6 +20,7 @@ const elemtilebinning = @import("elemtilebinning.zig");
 const elemtilebinning_globbuff = @import("elemtilebinning_globbuff.zig");
 const meshpipeline = @import("meshpipeline.zig");
 const shaderops = @import("shaderops.zig");
+const shadertypes = @import("shadertypes.zig");
 const distortbounds = @import("distortbounds.zig");
 
 const imageio = @import("imageio.zig");
@@ -339,7 +340,7 @@ fn rasterIntoValidated(
 
     // Init. static data across all frames - here we reshape uv's once if we have them so
     // we don't need to do this every frames
-    const mesh_static = try initMeshStaticSlice(static_alloc, meshes, cams);
+    const mesh_static = try createMeshStaticSliceFromInput(static_alloc, meshes, cams);
     const camera_meshes = try initCameraMeshSelections(static_alloc, cams, mesh_static);
 
     // Timing hooks for frame buffer setup, render time and E2E times
@@ -1323,25 +1324,20 @@ fn initCameraPreparedSlice(
     return cameras;
 }
 
-fn initMeshStaticSlice(
+fn createMeshStaticSliceFromInput(
     allocator: std.mem.Allocator,
     meshes: []const meshtypes.MeshInput,
     cameras: []const cameraprojops.CameraPrepared,
 ) ![]meshtypes.MeshStatic {
     const mesh_static = try allocator.alloc(meshtypes.MeshStatic, meshes.len);
 
-    var active_roles = [_]bool{false} ** 4;
-    for (cameras) |camera| active_roles[
-        switch (camera.render_format) {
-            .mono => @as(usize, 0),
-            .rgb => 1,
-            .ir => 2,
-            .multifield => 3,
-        }
-    ] = true;
-    
+    var active_roles = shadertypes.ActiveShaderRoles.initEmpty();
+    for (cameras) |camera| {
+        active_roles.insert(std.meta.activeTag(camera.render_format));
+    }
+
     for (meshes, 0..) |mesh, ii| {
-        mesh_static[ii] = try meshpipeline.initMeshStatic(allocator, &mesh, active_roles);
+        mesh_static[ii] = try meshpipeline.createMeshStaticFromInput(allocator, &mesh, active_roles);
         mesh_static[ii].scene_mesh_idx = ii;
     }
 
@@ -2001,7 +1997,6 @@ fn saveFrame(
             input.camera_idx,
             input.frame_idx,
             input.camera.render_format.channels(),
-            input.camera.pixels_num,
             &ctx.frame_arr,
             if (input.camera.render_format == .rgb) 3 else 1,
             input.camera.output_files,

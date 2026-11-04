@@ -75,32 +75,6 @@ pub fn loadImage(
     };
 }
 
-/// Export planar texture storage without image scaling or digitisation.
-pub fn saveTextureCSV(
-    comptime T: type,
-    tex: anytype,
-    io: std.Io,
-    out_dir: std.Io.Dir,
-    file_name: []const u8,
-) !void {
-    const TexturePtr = @TypeOf(tex);
-    const SaveCtx = struct {
-        fn getVal(ctx: TexturePtr, row: usize, col: usize, ch: usize) F {
-            return textureops.texelToFloat(T, ctx.getVal(ch, row, col));
-        }
-    };
-    try csvio.savePackedGridCSV(
-        io,
-        out_dir,
-        file_name,
-        tex.rows_num,
-        tex.cols_num,
-        tex.array.dims[0],
-        tex,
-        SaveCtx.getVal,
-    );
-}
-
 pub fn saveImage(
     io: std.Io,
     out_dir: std.Io.Dir,
@@ -156,7 +130,6 @@ pub fn saveImages(
     camera_idx: usize,
     frame_idx: usize,
     num_fields: u8,
-    pixels_num: [2]u32,
     frame_arr: *const ndarray.NDArray(F),
     channels: usize,
     opts_slice: []const ImageSaveOpts,
@@ -164,7 +137,6 @@ pub fn saveImages(
 ) !void {
     const save_dir = out_dir orelse return;
     var name_buff: [1024]u8 = undefined;
-    _ = pixels_num;
 
     for (opts_slice) |opts| {
         var ff: usize = 0;
@@ -1541,31 +1513,6 @@ test "FIMG Save and Load Roundtrip" {
             }
         }
     }
-}
-
-test "texture CSV export preserves fixed and dynamic channel layout and raw values" {
-    const allocator = std.testing.allocator;
-    const io = std.testing.io;
-    try ensureTempTestDir(io);
-    defer deleteTempTestDir(io);
-
-    var fixed = try texturetypes.TexDataFix(u16, 3).init(allocator, 2, 2);
-    defer fixed.deinit(allocator);
-    const expected = [_]u16{ 0, 256, 4095, 65535, 10, 20, 30, 40, 100, 200, 300, 400 };
-    @memcpy(fixed.array.slice, &expected);
-    try saveTextureCSV(u16, &fixed, io, std.Io.Dir.cwd(), temp_test_dir ++ "/texture_fixed.csv");
-    var loaded_fixed = try loadImage(u16, 3, allocator, io, temp_test_dir ++ "/texture_fixed.csv", .csv);
-    defer loaded_fixed.deinit(allocator);
-    try std.testing.expectEqualSlices(u16, &expected, loaded_fixed.array.slice);
-
-    var dynamic = try texturetypes.TexDataDyn(F).init(allocator, 2, 2, 2);
-    defer dynamic.deinit(allocator);
-    const floats = [_]F{ -2.5, 0, 1.25, 256, 3, 4, 5, 6 };
-    @memcpy(dynamic.array.slice, &floats);
-    try saveTextureCSV(F, &dynamic, io, std.Io.Dir.cwd(), temp_test_dir ++ "/texture_dynamic.csv");
-    var loaded_dynamic = try loadImage(F, 2, allocator, io, temp_test_dir ++ "/texture_dynamic.csv", .csv);
-    defer loaded_dynamic.deinit(allocator);
-    try std.testing.expectEqualSlices(F, &floats, loaded_dynamic.array.slice);
 }
 
 test "output name format expands fields and zero padding" {

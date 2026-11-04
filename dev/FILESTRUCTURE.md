@@ -28,6 +28,11 @@
   numerical, and operation namespaces are assembled in `api/dataio.zig`,
   `api/maths.zig`, and `api/ops.zig`. Do not add `usingnamespace` or duplicate
   implementation types in the public API.
+- Input-to-Static constructors use `create*StaticFromInput` names, including
+  `createMeshStaticFromInput`; frame preparation uses `prepare*FromStatic`.
+- Shader roles derive from the tags of `shadertypes.RenderFormat`.
+  `ActiveShaderRoles` is an enum set; per-role mesh hit selections use an enum
+  array keyed by the same roles. Avoid positional role arrays and numeric indices.
 - Mesh Static initialization prepares only shader roles used by the render cameras.
   It owns invariant scale factors, normalised function/channel records, pipe
   constants, and per-role geometry requirements. Frame Prepared records borrow

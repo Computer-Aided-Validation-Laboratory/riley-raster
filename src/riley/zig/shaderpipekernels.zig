@@ -375,7 +375,7 @@ fn shadeSource(
             shaderkernels.NodalKernel(N).shade(
                 coord_space,
                 ctx,
-                interp.core(),
+                interp.getRasterHit(),
                 buf,
                 s,
                 scratch,
@@ -385,7 +385,7 @@ fn shadeSource(
             shaderkernels.TexMultiKernel(N, F).shade(
                 coord_space,
                 ctx,
-                interp.core(),
+                interp.getRasterHit(),
                 buf,
                 s,
                 scratch,
@@ -395,7 +395,7 @@ fn shadeSource(
             shaderkernels.TexKernel(N, u8, 1).shade(
                 coord_space,
                 ctx,
-                interp.core(),
+                interp.getRasterHit(),
                 buf,
                 s,
                 scratch,
@@ -405,7 +405,7 @@ fn shadeSource(
             shaderkernels.TexKernel(N, u16, 1).shade(
                 coord_space,
                 ctx,
-                interp.core(),
+                interp.getRasterHit(),
                 buf,
                 s,
                 scratch,
@@ -415,7 +415,7 @@ fn shadeSource(
             shaderkernels.TexKernel(N, F, 1).shade(
                 coord_space,
                 ctx,
-                interp.core(),
+                interp.getRasterHit(),
                 buf,
                 s,
                 scratch,
@@ -425,7 +425,7 @@ fn shadeSource(
             shaderkernels.TexKernel(N, u8, 3).shade(
                 coord_space,
                 ctx,
-                interp.core(),
+                interp.getRasterHit(),
                 buf,
                 s,
                 scratch,
@@ -435,7 +435,7 @@ fn shadeSource(
             shaderkernels.TexKernel(N, u16, 3).shade(
                 coord_space,
                 ctx,
-                interp.core(),
+                interp.getRasterHit(),
                 buf,
                 s,
                 scratch,
@@ -445,7 +445,7 @@ fn shadeSource(
             shaderkernels.TexKernel(N, F, 3).shade(
                 coord_space,
                 ctx,
-                interp.core(),
+                interp.getRasterHit(),
                 buf,
                 s,
                 scratch,
