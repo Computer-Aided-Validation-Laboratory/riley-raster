@@ -29,7 +29,7 @@ class ExodusBlock:
         1-based raw connectivity table of shape `(E, M)` and dtype `np.int64`,
         where `E` is the number of elements and `M` is the number of nodes
         per element.
-    elem_type : EElemType
+    elem_type : ~riley.python.meshconst.EElemType
         Parsed Riley element geometry type.
     """
 
