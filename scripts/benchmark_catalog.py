@@ -28,6 +28,7 @@ EXPERIMENTS = {
 }
 EXPERIMENTS["multiroot"] = {
     "solver": (("--mode", "fast"), ("--mode", "robust")),
+    "shaders": tuple(("--shader", shader) for shader in ("checker", "nodal", "texture", "pipe")),
 }
 EXPERIMENTS["buffer_psf"] = {
     "buffers": tuple(

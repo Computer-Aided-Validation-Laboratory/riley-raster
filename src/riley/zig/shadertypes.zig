@@ -281,13 +281,10 @@ pub const LUTMapPrepared = struct {
         if (T == F) {
             outputs.set(self.register_dest, self.lookup.sample(outputs.get(self.register_source)));
         } else {
-            const values: [buildconfig.SimdWidth]F = @bitCast(outputs.get(self.register_source));
-            const mask: [buildconfig.SimdWidth]bool = active;
-            var result: [buildconfig.SimdWidth]F = undefined;
-            for (&result, values, mask) |*dest, value, enabled| {
-                dest.* = self.lookup.sample(if (enabled) value else self.lookup.lookup.first);
-            }
-            outputs.set(self.register_dest, @bitCast(result));
+            outputs.set(self.register_dest, self.lookup.sampleSIMD(
+                outputs.get(self.register_source),
+                active,
+            ));
         }
     }
 };

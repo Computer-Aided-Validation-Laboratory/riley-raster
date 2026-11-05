@@ -67,6 +67,9 @@ def parse_args() -> argparse.Namespace:
         help="One short run of each mode",
     )
     parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument("--shading-study", action="store_true",
+                        help="Compare checker/nodal/Catmull-Rom/pipe shading across scenes and buffers")
+    parser.add_argument("--binary", type=pathlib.Path, help="Use a preserved benchmark binary")
     args = parser.parse_args()
     if args.typical:
         args.elements_per_type = 250
@@ -92,13 +95,18 @@ def run_case(
     multi_root_edge_mode: str = "on_the_fly",
     buffer_mode: str = "tile_local",
     sub_sample: int | None = None,
+    shader: str = "checker",
 ) -> list[dict[str, str]]:
     exe = ROOT / "bin" / catalog_binary_name("multiroot", simd="off" if backend == "scalar" else "on")
+    if args.binary is not None:
+        exe = args.binary.resolve()
     case_dir = args.out_dir / name
     cmd = [
         str(exe),
         "--out-dir",
         str(case_dir),
+        "--shader",
+        shader,
         "--elements-per-type",
         str(args.elements_per_type),
         "--width",
@@ -169,13 +177,40 @@ def match_flat_shading(args: argparse.Namespace, target: int) -> float:
     )
 
 
+def run_shading_study(args: argparse.Namespace) -> None:
+    rows = []
+    summary = []
+    for scene, shader, buffer_mode in itertools.product(
+        ("multi_root", "one_root"), ("checker", "nodal", "texture", "pipe"),
+        ("tile_local", "global_subpx_full", "global_subpx_stripe"),
+    ):
+        for mode in (("fast", "robust") if scene == "multi_root" else ("fast",)):
+            name = f"{scene}_{shader}_{buffer_mode}_{mode}"
+            samples = run_case(args, "simd", name, mode, scene,
+                               buffer_mode=buffer_mode, shader=shader)
+            rows.extend(samples)
+            item = {"scene": scene, "shader": shader, "buffer_mode": buffer_mode, "mode": mode}
+            for field in FIELDS:
+                values = [float(sample[field]) for sample in samples]
+                median = statistics.median(values)
+                item[f"{field}_median"] = median
+                item[f"{field}_mad"] = statistics.median(abs(value - median) for value in values)
+            summary.append(item)
+    for filename, records in (("shading_raw.csv", rows), ("shading_summary.csv", summary)):
+        with (args.out_dir / filename).open("w", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=records[0].keys())
+            writer.writeheader()
+            writer.writerows(records)
+    print(f"Shading study: {args.out_dir}")
+
+
 def main() -> None:
     args = parse_args()
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     args.out_dir = args.out_root / timestamp
     args.out_dir.mkdir(parents=True, exist_ok=True)
     backends = ("simd",)
-    if not args.skip_build:
+    if not args.skip_build and args.binary is None:
         for backend in backends:
             subprocess.run(
                 [part if not part.startswith("-Doptimize=") else f"-Doptimize={args.optimize}"
@@ -183,6 +218,10 @@ def main() -> None:
                 cwd=ROOT,
                 check=True,
             )
+
+    if args.shading_study:
+        run_shading_study(args)
+        return
 
     modes = ("fast", "robust")
     raw_rows: list[dict[str, str]] = []

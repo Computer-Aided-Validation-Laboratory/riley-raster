@@ -9,6 +9,9 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
+const VecSF = buildconfig.VecSF;
+const VecSB = buildconfig.VecSB;
+const S = buildconfig.SimdWidth;
 const pipe_cfg = buildconfig.config.shaderpipe;
 
 // --------------------------------------------------------------------------------------
@@ -54,13 +57,10 @@ pub const LUTMapStage = struct {
         if (T == F) {
             outputs.set(self.register_dest, self.lookup.sample(outputs.get(self.register_source)));
         } else {
-            const values: [buildconfig.SimdWidth]F = @bitCast(outputs.get(self.register_source));
-            const mask: [buildconfig.SimdWidth]bool = active;
-            var result: [buildconfig.SimdWidth]F = undefined;
-            for (&result, values, mask) |*dest, value, enabled| {
-                dest.* = self.lookup.sample(if (enabled) value else self.lookup.first);
-            }
-            outputs.set(self.register_dest, @bitCast(result));
+            outputs.set(self.register_dest, self.lookup.sampleSIMD(
+                outputs.get(self.register_source),
+                active,
+            ));
         }
     }
 };
@@ -321,9 +321,10 @@ pub const ResolverProgram = struct {
                 if (T == F) {
                     stack[depth - 1] = self.lookups[idx].sample(stack[depth - 1]);
                 } else {
-                    var lanes: [buildconfig.SimdWidth]F = @bitCast(stack[depth - 1]);
-                    for (&lanes) |*lane| lane.* = self.lookups[idx].sample(lane.*);
-                    stack[depth - 1] = @bitCast(lanes);
+                    stack[depth - 1] = self.lookups[idx].sampleSIMD(
+                        stack[depth - 1],
+                        @splat(true),
+                    );
                 }
             },
             .store => |idx| {
@@ -563,9 +564,7 @@ fn evaluateResolver(
             if (T == F) {
                 radiant = radiance.sample(temp);
             } else {
-                var lanes: [buildconfig.SimdWidth]F = @bitCast(temp);
-                for (&lanes) |*lane| lane.* = radiance.sample(lane.*);
-                radiant = @bitCast(lanes);
+                radiant = radiance.sampleSIMD(temp, @splat(true));
             }
             out.*[0] = readRegister(T, inputs, constants, g.emissivity) * radiant;
         },
@@ -584,12 +583,13 @@ fn evaluateResolver(
                 const measured = emissivity * rad_temp + (1 - emissivity) * ambient;
                 out.*[0] = g.radiance.inverseMonotonic(measured) - 273.15;
             } else {
-                const temp_lanes: [buildconfig.SimdWidth]F = @bitCast(temp);
-                const emissivity_lanes: [buildconfig.SimdWidth]F = @bitCast(emissivity);
+                const radiant = radiance.sampleSIMD(temp, @splat(true));
+                const measured = emissivity * radiant +
+                    (@as(T, @splat(1)) - emissivity) * @as(T, @splat(ambient));
+                const measured_lanes: [buildconfig.SimdWidth]F = measured;
                 var result: [buildconfig.SimdWidth]F = undefined;
-                for (&result, temp_lanes, emissivity_lanes) |*lane, t, e| {
-                    const measured = e * radiance.sample(t) + (1 - e) * ambient;
-                    lane.* = g.radiance.inverseMonotonic(measured) - 273.15;
+                for (&result, measured_lanes) |*lane, value| {
+                    lane.* = g.radiance.inverseMonotonic(value) - 273.15;
                 }
                 out.*[0] = @bitCast(result);
             }
@@ -622,6 +622,11 @@ pub const LookupTable = struct {
         if (i == self.values.len - 1) return self.values[i];
         const t = x - @as(F, @floatFromInt(i));
         return self.values[i] + t * (self.values[i + 1] - self.values[i]);
+    }
+
+    pub inline fn sampleSIMD(self: LookupTable, values: VecSF, active: VecSB) VecSF {
+        const last = self.values.len - 1;
+        return sampleLookupSIMD(self, last, @floatFromInt(last), values, active);
     }
 
     pub fn inverseMonotonic(self: LookupTable, value: F) F {
@@ -661,6 +666,10 @@ pub const LookupTablePrepared = struct {
         if (index == self.last) return self.lookup.values[index];
         const t = x - @as(F, @floatFromInt(index));
         return self.lookup.values[index] + t * (self.lookup.values[index + 1] - self.lookup.values[index]);
+    }
+
+    pub inline fn sampleSIMD(self: LookupTablePrepared, values: VecSF, active: VecSB) VecSF {
+        return sampleLookupSIMD(self.lookup, self.last, self.max_index, values, active);
     }
 };
 
@@ -748,6 +757,34 @@ fn readRegister(comptime T: type, inputs: anytype, constants: []const F, registe
         splat(T, constants[register_ref.index])
     else
         inputs.get(register_ref);
+}
+
+inline fn sampleLookupSIMD(
+    lookup: LookupTable,
+    last: usize,
+    max_index: F,
+    values: VecSF,
+    active: VecSB,
+) VecSF {
+    const safe_values = @select(F, active, values, @as(VecSF, @splat(lookup.first)));
+    const zero: VecSF = @splat(0);
+    const max_value: VecSF = @splat(max_index);
+    const x = @min(max_value, @max(zero, (safe_values - @as(VecSF, @splat(lookup.first))) / @as(VecSF, @splat(lookup.step))));
+    const indices: @Vector(S, usize) = @intFromFloat(x);
+    const lower_indices = @min(indices, @as(@Vector(S, usize), @splat(last - 1)));
+    const index_array: [S]usize = lower_indices;
+    var lower: [S]F = undefined;
+    var upper: [S]F = undefined;
+    inline for (0..S) |lane| {
+        const index = index_array[lane];
+        lower[lane] = lookup.values[index];
+        upper[lane] = lookup.values[index + 1];
+    }
+    const fraction = x - @as(VecSF, @floatFromInt(lower_indices));
+    const low: VecSF = lower;
+    const high: VecSF = upper;
+    // Select the exact upper endpoint rather than reconstructing it through subtraction.
+    return @select(F, x >= max_value, high, low + fraction * (high - low));
 }
 
 inline fn splat(comptime T: type, value: F) T {
@@ -964,7 +1001,6 @@ test "normalise handles 2D and 3D vectors including zero" {
 }
 
 test "generic pipe stages match scalar values on SIMD lanes" {
-    const S = buildconfig.SimdWidth;
     var outputs: RegistersOutputSIMD = .{};
     var x: [S]F = undefined;
     var y: [S]F = undefined;
@@ -1072,4 +1108,25 @@ test "register write tracking respects configured capacity and independent banks
         try std.testing.expect(!written.isWritten(outside));
         try std.testing.expectError(error.InvalidRegister, written.recordWrite(outside));
     }
+}
+
+test "forward SIMD lookup matches scalar interpolation and masks inactive samples" {
+    const table = LookupTable{ .first = 10, .step = 2, .values = &.{ -3, 5, 1e16, 1 } };
+    const prepared = LookupTablePrepared.init(table);
+    const samples = [_]F{ -20, 10, 11, 12, 15, 16, 1000, 13 };
+    var values: [S]F = undefined;
+    var mask: [S]bool = undefined;
+    for (0..S) |lane| {
+        mask[lane] = lane % 4 != 3;
+        values[lane] = if (mask[lane]) samples[lane % samples.len] else std.math.nan(F);
+    }
+    const raw: [S]F = table.sampleSIMD(values, mask);
+    const cached: [S]F = prepared.sampleSIMD(values, mask);
+    for (0..S) |lane| {
+        const expected = table.sample(if (mask[lane]) values[lane] else table.first);
+        try std.testing.expectApproxEqAbs(expected, raw[lane], @max(1e-12, @abs(expected) * 1e-14));
+        try std.testing.expectEqual(raw[lane], cached[lane]);
+    }
+    const endpoints: [S]F = table.sampleSIMD(@splat(16), @splat(true));
+    for (endpoints) |value| try std.testing.expectEqual(@as(F, 1), value);
 }

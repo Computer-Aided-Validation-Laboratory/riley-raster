@@ -65,6 +65,12 @@
 - Global subpixel buffer implementation files use `_globbuff` before any
   `_common`, `_scalar`, or `_simd` suffix, to distinguish them from tile-local
   implementations. Function and type names retain Zig casing conventions.
+- Single-root and multi-root Newton SIMD paths share the final contiguous, masked
+  winner-shading pass in `rasterengine_simd.zig`. Solvers populate scratch masks
+  and winning parameter coordinates before that shared pass performs depth tests
+  and shader evaluation.
+- Forward shader-pipe lookup tables use SIMD index/interpolation arithmetic with
+  per-lane gathers. Inverse monotonic lookup remains a scalar search per lane.
 - Raster execution files may use `_tileloc` for the tile-local buffer strategy.
   `rasterengine.zig` is the thin entry-point facade. `rasterengine_tileloc.zig`
   and `rasterengine_globbuff.zig` own their worker lifecycles and scratch

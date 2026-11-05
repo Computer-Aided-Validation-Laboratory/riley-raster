@@ -135,7 +135,7 @@ Zig install targets, binary names, and supported experiment matrices.
 | `sphere2000zoom` | `scripts/bench_sphere2000zoom.py` | `hulls` | — |
 | `thread_geom` | `scripts/bench_thread_geom.py` | `hulls` | — |
 | `dist_psf` | `scripts/bench_dist_psf.py` | `distortion` | Distortion/PSF experiments |
-| `multiroot` | `scripts/bench_multiroot.py` | `solver` | Root policies and edge preparation |
+| `multiroot` | `scripts/bench_multiroot.py` | `solver`, `shaders` | Root policies, shading, and edge preparation |
 | `buffer_psf` | `scripts/bench_buffer_psf.py` | `buffers` | Buffer/PSF/density/SSAA experiments |
 
 ### Compilation and naming
@@ -214,6 +214,22 @@ python scripts/bench_buffer_psf.py --study -- --quick --skip-build
 
 Studies also use the shared command/logging/failure-handling runner.
 Study build adapters use the canonical targets and `bin/` installation location.
+
+The multiroot shading study compares checker, nodal, direct Catmull–Rom texture,
+and a five-stage pipe (texture, checker, nodal, blend, affine map, then modulation
+resolution). It contains no lookup-table stages or lookup-table resolvers. It
+covers multi-root fast/robust solving and one-root controls in all three buffer
+modes. Each scene contains quad4, tri6, quad8, and quad9 elements.
+
+```shell
+python scripts/compile_benchmarks.py multiroot
+python scripts/bench_multiroot.py --study -- --shading-study --typical --runs 15 --warmup 3 --skip-build
+python scripts/bench_multiroot.py --study -- --shading-study --typical --runs 15 --warmup 3 --binary out/baseline/bench_multiroot_f64_simd
+```
+
+The typical profile uses 1,000 elements, 1024×1024 pixels, SSAA=2, and one thread.
+The study writes per-case raw runs and consolidated median/MAD summaries. Preserve
+baseline binaries and keep CPU affinity and system load consistent for comparisons.
 
 ### Geometry-heavy static preparation experiment
 

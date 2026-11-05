@@ -603,18 +603,12 @@ fn rasterNewtonMultiSIMDImpl(
             leaves_on_the_fly[ii].parameter_seed;
     }
 
-    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
-
     const ideal_x_plane = cameraprojops.getIdealXPlaneScratch(
         subpx_scratch.ideal_pix_cent,
     );
     const ideal_y_plane = cameraprojops.getIdealYPlaneScratch(
         subpx_scratch.ideal_pix_cent,
     );
-
-    var nodes_inv_z: [N]F = undefined;
-    inline for (0..N) |nn| nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
         const row = scratch_y * subpx_dom.tile_size;
@@ -787,80 +781,21 @@ fn rasterNewtonMultiSIMDImpl(
         }
     }
 
-    var shaded_px: u64 = 0;
-    for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
-        const row = scratch_y * subpx_dom.tile_size;
-        for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x| {
-            const idx = row + scratch_x;
-
-            if (!subpx_scratch.mask[idx]) continue;
-
-            const xi = subpx_scratch.xi[idx];
-            const eta = subpx_scratch.eta[idx];
-
-            var weights: [N]F = undefined;
-            var d_xi: [N]F = undefined;
-            var d_eta: [N]F = undefined;
-
-            shapefun.shapeFunc(N, xi, eta, &weights, &d_xi, &d_eta);
-
-            const inv_z = GeomKern.calcInvZ(nodes_coords, weights);
-
-            if (inv_z + tol.geometry.depth_buff_inv_z_cmp <
-                subpx_scratch.inv_z[idx])
-            {
-                continue;
-            }
-
-            subpx_scratch.inv_z[idx] = inv_z;
-            subpx_scratch.touched_min_x[scratch_y] =
-                @min(subpx_scratch.touched_min_x[scratch_y], scratch_x);
-            subpx_scratch.touched_max_x[scratch_y] =
-                @max(subpx_scratch.touched_max_x[scratch_y], scratch_x);
-
-            shaded_px += 1;
-
-            const ctx_shade = shadertypes.ShadeContext{
-                .frame_idx = ctx_rast.frame_idx,
-                .elem_idx = overlap.elem_idx,
-                .fields_num = fields_num,
-                .actual_fields = fields_num,
-                .scratch_idx = subpx_scratch.resolveImageIdx(
-                    scratch_x,
-                    scratch_y,
-                    idx,
-                ),
-                .global_subx = rasterengine_common.globalSubpxForReport(
-                    tile.scratch_px.x_min,
-                    sub_samp,
-                    scratch_x,
-                ),
-                .global_suby = rasterengine_common.globalSubpxForReport(
-                    tile.scratch_px.y_min,
-                    sub_samp,
-                    scratch_y,
-                ),
-            };
-
-            const interp_data = ShaderKern.Hit{
-                .weights = weights,
-                .nodes_inv_z = nodes_inv_z,
-                .sub_pixel_z = 1.0 / inv_z,
-                .xi = xi,
-                .eta = eta,
-            };
-
-            ShaderKern.shade(
-                GeomKern.coord_space,
-                ctx_shade,
-                interp_data,
-                shader_buf,
-                shader,
-                &subpx_scratch.image,
-            );
-        }
-    }
-    return shaded_px;
+    return shadeNewtonWinnersSIMD(
+        ScratchBuffs,
+        GeomKern,
+        ShaderKern,
+        ShaderData,
+        ctx_rast,
+        tile,
+        overlap,
+        subpx_dom,
+        rast_bounds,
+        nodes_coords,
+        shader,
+        shader_buf,
+        subpx_scratch,
+    );
 }
 
 fn projectedJacDetPhysicalSIMD(
@@ -1079,20 +1014,6 @@ fn rasterNewtonSIMDImpl(
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
     const N = GeomKern.nodes_num;
-    var shaded_px: u64 = 0;
-
-    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
-    const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
-
-    var nodes_inv_z: [N]F = undefined;
-    var v_nodes_z: [N]VecSF = undefined;
-    var v_nodes_inv_z: [N]VecSF = undefined;
-    inline for (0..N) |nn| {
-        nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
-        v_nodes_z[nn] = @splat(nodes_coords.z[nn]);
-        v_nodes_inv_z[nn] = @splat(nodes_inv_z[nn]);
-    }
 
     const maybe_hull_adaptive = hull_adaptive;
     var elem_tess: hulladaptive.HullAdaptive.Tessellation(GeomKern.tess_triangles_num) = undefined;
@@ -1342,6 +1263,56 @@ fn rasterNewtonSIMDImpl(
                 result.v_resid_y,
             );
         }
+    }
+
+    return shadeNewtonWinnersSIMD(
+        ScratchBuffs,
+        GeomKern,
+        ShaderKern,
+        ShaderData,
+        ctx_rast,
+        tile,
+        overlap,
+        subpx_dom,
+        rast_bounds,
+        nodes_coords,
+        shader,
+        shader_buf,
+        subpx_scratch,
+    );
+}
+
+inline fn shadeNewtonWinnersSIMD(
+    comptime ScratchBuffs: type,
+    comptime GeomKern: type,
+    comptime ShaderKern: type,
+    comptime ShaderData: type,
+    ctx_rast: rasterfrontend.RasterContext,
+    tile: elemtilebinning.ActiveTile,
+    overlap: elemtilebinning.OverlapBBox,
+    subpx_dom: rasterengine_common.SubpxDom,
+    rast_bounds: rasterengine_common.RasterBounds,
+    nodes_coords: rasterfrontend.Vec3Slices(F),
+    shader: *const ShaderData,
+    shader_buf: *const ShaderKern.LocalBuff,
+    subpx_scratch: *ScratchBuffs,
+) u64 {
+    const N = GeomKern.nodes_num;
+    var shaded_px: u64 = 0;
+    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
+    const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
+    const v_lane_idx: VecSU = std.simd.iota(usize, S);
+    const v_start_x_u: VecSU = @splat(rast_bounds.start_x_u);
+    const v_bounds_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
+
+    var nodes_inv_z: [N]F = undefined;
+    var v_nodes_z: [N]VecSF = undefined;
+    var v_nodes_inv_z: [N]VecSF = undefined;
+    inline for (0..N) |nn| {
+        nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
+        v_nodes_z[nn] = @splat(nodes_coords.z[nn]);
+        v_nodes_inv_z[nn] = @splat(nodes_inv_z[nn]);
     }
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
