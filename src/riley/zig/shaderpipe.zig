@@ -9,6 +9,7 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
+const pipe_cfg = buildconfig.config.shaderpipe;
 
 // --------------------------------------------------------------------------------------
 // Shader Pipe Stages
@@ -146,9 +147,9 @@ pub fn identityRegisters(channels: u8) []const Register {
 
 pub fn RegistersOutput(comptime T: type) type {
     return struct {
-        channel: [buildconfig.config.shaderpipe.max_registers]T = undefined,
-        field: [buildconfig.config.shaderpipe.max_registers]T = undefined,
-        parameter: [buildconfig.config.shaderpipe.max_registers]T = undefined,
+        channel: [pipe_cfg.max_registers]T = undefined,
+        field: [pipe_cfg.max_registers]T = undefined,
+        parameter: [pipe_cfg.max_registers]T = undefined,
 
         pub inline fn get(self: *const @This(), register_ref: Register) T {
             return switch (register_ref.kind) {
@@ -174,13 +175,13 @@ pub const RegistersOutputScalar = RegistersOutput(F);
 pub const RegistersOutputSIMD = RegistersOutput(buildconfig.VecSF);
 
 pub const RegistersWritten = struct {
-    const Mask = std.meta.Int(.unsigned, buildconfig.config.shaderpipe.max_registers);
+    const Mask = std.meta.Int(.unsigned, pipe_cfg.max_registers);
     channel: Mask = 0,
     field: Mask = 0,
     parameter: Mask = 0,
 
     pub fn isWritten(self: RegistersWritten, register_ref: Register) bool {
-        if (register_ref.index >= buildconfig.config.shaderpipe.max_registers or register_ref.kind == .constant) return false;
+        if (register_ref.index >= pipe_cfg.max_registers or register_ref.kind == .constant) return false;
         const mask: Mask = @as(Mask, 1) << @intCast(register_ref.index);
         return switch (register_ref.kind) {
             .channel => self.channel & mask != 0,
@@ -191,7 +192,7 @@ pub const RegistersWritten = struct {
     }
 
     pub fn recordWrite(self: *RegistersWritten, register_ref: Register) !void {
-        if (register_ref.index >= buildconfig.config.shaderpipe.max_registers or register_ref.kind == .constant) return error.InvalidRegister;
+        if (register_ref.index >= pipe_cfg.max_registers or register_ref.kind == .constant) return error.InvalidRegister;
         if (self.isWritten(register_ref)) return error.RepeatedWriter;
         const mask: Mask = @as(Mask, 1) << @intCast(register_ref.index);
         switch (register_ref.kind) {
@@ -226,13 +227,19 @@ pub const ResolverProgram = struct {
     lookups: []const LookupTable = &.{},
 
     pub fn validate(self: ResolverProgram, written: RegistersWritten, channels: u8) !void {
-        if (channels == 0 or channels > buildconfig.config.max_image_channels or self.operations.len == 0 or
-            self.operations.len > buildconfig.config.shaderpipe.max_ops or self.constants.len > buildconfig.config.shaderpipe.max_registers)
+        if (channels == 0 or
+            channels > buildconfig.config.max_image_channels or
+            self.operations.len == 0 or
+            self.operations.len > pipe_cfg.max_ops or
+            self.constants.len > pipe_cfg.max_registers)
             return error.InvalidProgram;
+
         for (self.constants) |value| {
             if (!std.math.isFinite(value)) return error.InvalidConstant;
         }
+
         for (self.lookups) |lut| try lut.validate();
+
         var depth: usize = 0;
         var stored: u16 = 0;
         for (self.operations) |op| switch (op) {
@@ -241,7 +248,7 @@ pub const ResolverProgram = struct {
                     if (register_ref.index >= self.constants.len) return error.InvalidRegister;
                 } else if (!written.isWritten(register_ref)) return error.UnwrittenSlot;
                 depth += 1;
-                if (depth > buildconfig.config.shaderpipe.max_stack) return error.InvalidProgram;
+                if (depth > pipe_cfg.max_stack) return error.InvalidProgram;
             },
             .add, .subtract, .multiply, .divide => {
                 if (depth < 2) return error.InvalidProgram;
@@ -272,7 +279,7 @@ pub const ResolverProgram = struct {
 
     pub fn evaluate(self: ResolverProgram, inputs: anytype, channels: u8, out: anytype) void {
         const T = @TypeOf(out.*[0]);
-        var stack: [buildconfig.config.shaderpipe.max_stack]T = undefined;
+        var stack: [pipe_cfg.max_stack]T = undefined;
         var depth: usize = 0;
         for (self.operations) |op| switch (op) {
             .load => |register_ref| {
@@ -670,6 +677,30 @@ pub const SpectralBandResponse = struct {
         temp_last_k: F,
         temp_step_k: F,
     ) !LookupTable {
+        const count = try self.validate(temp_first_k, temp_last_k, temp_step_k);
+        const values = try allocator.alloc(F, count);
+        for (values, 0..) |*result, ti| {
+            const temp = temp_first_k + @as(F, @floatFromInt(ti)) * temp_step_k;
+            var total: F = 0;
+            for (1..self.wavelengths_m.len) |wi| {
+                const a = self.wavelengths_m[wi - 1];
+                const b = self.wavelengths_m[wi];
+                total += (b - a) * 0.5 *
+                    (self.response[wi - 1] * planckSpectralRadiance(a, temp) +
+                        self.response[wi] * planckSpectralRadiance(b, temp));
+            }
+            result.* = total;
+        }
+        return .{ .first = temp_first_k, .step = temp_step_k, .values = values };
+    }
+
+    /// Validate the spectrum and temperature grid, returning the lookup entry count.
+    pub fn validate(
+        self: SpectralBandResponse,
+        temp_first_k: F,
+        temp_last_k: F,
+        temp_step_k: F,
+    ) !usize {
         if (self.wavelengths_m.len < 2 or self.wavelengths_m.len != self.response.len or
             !std.math.isFinite(temp_first_k) or !std.math.isFinite(temp_last_k) or
             !std.math.isFinite(temp_step_k) or temp_first_k <= 0 or
@@ -686,22 +717,9 @@ pub const SpectralBandResponse = struct {
         }
         if (!any_response) return error.InvalidBandResponse;
         const count_f = @ceil((temp_last_k - temp_first_k) / temp_step_k);
-        const count: usize = @as(usize, @intFromFloat(count_f)) + 1;
-        if (count < 2 or count > 65536) return error.InvalidBandResponse;
-        const values = try allocator.alloc(F, count);
-        for (values, 0..) |*result, ti| {
-            const temp = temp_first_k + @as(F, @floatFromInt(ti)) * temp_step_k;
-            var total: F = 0;
-            for (1..self.wavelengths_m.len) |wi| {
-                const a = self.wavelengths_m[wi - 1];
-                const b = self.wavelengths_m[wi];
-                total += (b - a) * 0.5 *
-                    (self.response[wi - 1] * planckSpectralRadiance(a, temp) +
-                        self.response[wi] * planckSpectralRadiance(b, temp));
-            }
-            result.* = total;
-        }
-        return .{ .first = temp_first_k, .step = temp_step_k, .values = values };
+        if (!std.math.isFinite(count_f) or count_f < 1 or count_f > 65535)
+            return error.InvalidBandResponse;
+        return @as(usize, @intFromFloat(count_f)) + 1;
     }
 };
 
@@ -834,6 +852,9 @@ test "band Planck LUT is positive, temperature ordered, and interpolates" {
         .wavelengths_m = &.{ 8e-6, 9e-6, 10e-6, 11e-6, 12e-6 },
         .response = &.{ 0, 1, 1, 1, 0 },
     };
+    try std.testing.expectEqual(@as(usize, 41), try response.validate(280, 320, 1));
+    try std.testing.expectError(error.InvalidBandResponse, response.validate(280, 320, 0));
+    try std.testing.expectError(error.InvalidBandResponse, response.validate(280, 320, 1e-6));
     const lut = try response.prepareRadianceLookup(
         std.testing.allocator,
         280,
@@ -853,7 +874,7 @@ test "band Planck LUT is positive, temperature ordered, and interpolates" {
     };
     try std.testing.expectError(
         error.InvalidBandResponse,
-        bad_response.prepareRadianceLookup(std.testing.allocator, 280, 320, 1),
+        bad_response.prepareRadianceLookup(std.testing.failing_allocator, 280, 320, 1),
     );
 }
 
@@ -1028,7 +1049,7 @@ test "prepared resolver preserves lookup interpolation and ambient radiance" {
 
 test "register write tracking respects configured capacity and independent banks" {
     var written: RegistersWritten = .{};
-    const last_index = buildconfig.config.shaderpipe.max_registers - 1;
+    const last_index = pipe_cfg.max_registers - 1;
     const channel = Register{ .kind = .channel, .index = last_index };
     const field = Register{ .kind = .field, .index = last_index };
     const parameter = Register{ .kind = .parameter, .index = last_index };
@@ -1043,10 +1064,10 @@ test "register write tracking respects configured capacity and independent banks
     try std.testing.expect(written.isWritten(parameter));
     try std.testing.expectError(error.RepeatedWriter, written.recordWrite(channel));
     try std.testing.expectError(error.InvalidRegister, written.recordWrite(.{ .kind = .constant, .index = 0 }));
-    if (comptime buildconfig.config.shaderpipe.max_registers < 256) {
+    if (comptime pipe_cfg.max_registers < 256) {
         const outside = Register{
             .kind = .channel,
-            .index = buildconfig.config.shaderpipe.max_registers,
+            .index = pipe_cfg.max_registers,
         };
         try std.testing.expect(!written.isWritten(outside));
         try std.testing.expectError(error.InvalidRegister, written.recordWrite(outside));

@@ -13,6 +13,7 @@ const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
+const pipe_cfg = buildconfig.config.shaderpipe;
 const S = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 const VecSB = buildconfig.VecSB;
@@ -25,7 +26,7 @@ const simdops = @import("simdops.zig");
 
 pub fn LocalPipeBuff(comptime N: usize) type {
     return struct {
-        stages: [buildconfig.config.shaderpipe.max_stages]shadertypes.LocalShaderBuff(N) = undefined,
+        stages: [pipe_cfg.max_stages]shadertypes.LocalShaderBuff(N) = undefined,
         coords_ref: [3 * N]F = undefined,
         coords_def: [3 * N]F = undefined,
         surf_norm: [3 * N]F = undefined,

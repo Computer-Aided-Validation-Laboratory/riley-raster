@@ -25,6 +25,7 @@ const shaderpipe = @import("shaderpipe.zig");
 const texturetypes = @import("texturetypes.zig");
 
 const F = buildconfig.F;
+const pipe_cfg = buildconfig.config.shaderpipe;
 const max_channels = buildconfig.config.max_image_channels;
 
 // --------------------------------------------------------------------------------------
@@ -596,7 +597,7 @@ fn checkPipeMetadata(
     channels: u8,
 ) InputValidationError!void {
     if (channels == 0 or channels > buildconfig.config.max_image_channels or
-        pipe.stages.len == 0 or pipe.stages.len > buildconfig.config.shaderpipe.max_stages) return error.InvalidShaderPipe;
+        pipe.stages.len == 0 or pipe.stages.len > pipe_cfg.max_stages) return error.InvalidShaderPipe;
     var written: shaderpipe.RegistersWritten = .{};
     for (pipe.stages) |stage| switch (stage) {
         .shader => |src| {
@@ -605,7 +606,7 @@ fn checkPipeMetadata(
             for (0..count) |offset| {
                 var dest = src.register_dest;
                 const index = @as(usize, dest.index) + offset;
-                if (index >= buildconfig.config.shaderpipe.max_registers) return error.InvalidShaderPipe;
+                if (index >= pipe_cfg.max_registers) return error.InvalidShaderPipe;
                 dest.index = @intCast(index);
                 written.recordWrite(dest) catch return error.InvalidShaderPipe;
             }
@@ -663,7 +664,7 @@ fn checkPipeMetadata(
             for (0..m.components) |offset| {
                 const src_idx = @as(usize, m.register_source.index) + offset;
                 const dst_idx = @as(usize, m.register_dest.index) + offset;
-                if (src_idx >= buildconfig.config.shaderpipe.max_registers or dst_idx >= buildconfig.config.shaderpipe.max_registers) {
+                if (src_idx >= pipe_cfg.max_registers or dst_idx >= pipe_cfg.max_registers) {
                     return error.InvalidShaderPipe;
                 }
                 var src = m.register_source;
