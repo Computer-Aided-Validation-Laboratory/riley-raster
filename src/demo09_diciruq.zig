@@ -228,7 +228,6 @@ pub fn main(init: std.process.Init) !void {
         0.65,
     );
     const left = riley.CameraInput{
-        .output_files = &.{.{ .format = .tiff, .file_bits = 16, .adc_bits = 12, .scaling = .{ .fixed = .{ 0, 255 } }, .packing = .upper }},
         .pixels_num = dic_pixels,
         .pixels_size = dic_pitch,
         .pos_world = left_pos,
@@ -238,6 +237,7 @@ pub fn main(init: std.process.Init) !void {
         .sub_sample = 4,
         .render_format = .mono,
         .distort = distort,
+        .output_files = &.{.{ .format = .tiff, .file_bits = 16, .adc_bits = 12, .scaling = .{ .fixed = .{ 0, 255 } }, .packing = .upper }},
     };
 
     const ir_pos = ops.posFillFrameFromRotAndTarg(
@@ -250,7 +250,6 @@ pub fn main(init: std.process.Init) !void {
         0.65,
     );
     const ir = riley.CameraInput{
-        .output_files = &.{.{ .format = .tiff, .file_bits = 16, .scaling = .{ .fixed = .{ 0, 250 } } }},
         .pixels_num = ir_pixels,
         .pixels_size = ir_pitch,
         .pos_world = ir_pos,
@@ -259,6 +258,7 @@ pub fn main(init: std.process.Init) !void {
         .focal_length = 0.035,
         .sub_sample = 4,
         .render_format = .ir,
+        .output_files = &.{.{ .format = .tiff, .file_bits = 16, .scaling = .{ .fixed = .{ 0, 250 } } }},
     };
 
     var right = left;

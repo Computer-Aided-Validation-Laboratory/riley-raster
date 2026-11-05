@@ -139,7 +139,6 @@ pub fn main(init: std.process.Init) !void {
     );
 
     var camera_input = riley.CameraInput{
-        .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }},
         .pixels_num = pixels_num,
         .pixels_size = pixels_size,
         .pos_world = cam_pos,
@@ -148,6 +147,7 @@ pub fn main(init: std.process.Init) !void {
         .focal_length = focal_leng,
         .sub_sample = 4,
         .render_format = .mono,
+        .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }},
     };
 
     // -------------------------------------------------------------------------

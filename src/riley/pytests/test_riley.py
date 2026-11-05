@@ -464,6 +464,15 @@ def _run_demo_case(
     if case_name == "cameramodels":
         assert _has_cameramodel_renders(PROJECT_ROOT / zig_dir)
         assert _has_cameramodel_renders(py_dir_path)
+    if case_name == "shaderpipe_gallery":
+        for directory in (PROJECT_ROOT / zig_dir, py_dir_path):
+            rgb = _render_paths(directory / "e_rgb_expression")
+            assert len(rgb) == 1
+            assert np.asarray(Image.open(rgb[0])).shape == (512, 512, 3)
+            fields = _render_paths(directory / "f_multifield_expression")
+            assert {path.name for path in fields} == {
+                f"cam0_frame0_field{ii}.tiff" for ii in range(4)
+            }
     if case_name == "feature_zoo":
         _verify_feature_zoo_coverage(PROJECT_ROOT / zig_dir)
         _verify_feature_zoo_coverage(py_dir_path)

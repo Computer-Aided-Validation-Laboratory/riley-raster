@@ -431,6 +431,14 @@ The Zig demos use the same numbered names and ordering:
 - Demos that clear previous output share `src/demo_common.zig` (`demo_common.resetOutputDir`). This removes the named demo output directory and recreates it cleanly.
 - `demo05_cameramodels` renders all 6 distortion families with pixel-box, Gaussian (separable/non-separable), aligned anisotropic Gaussian, and rotated anisotropic Gaussian PSFs across all 3 buffer modes (90 comparison images per run under `<distortion>/<psf>/<buffer-mode>/`). Parity checks require the entire matrix to match.
 
+`demo08_shaderpipe_gallery` has six compositions: modulation, RGB identity,
+mono expression blending, emissivity visualisation, RGB expressions, and a
+four-field expression. Each expression output ends with its own `store` operation.
+The RGB expression writes one colour image; the four-field expression writes
+separate TIFFs for the horizontal/vertical gradients, their product, and their
+squared difference. Both Zig and Python demos use the same programs, and demo
+parity checks require all four field images and the RGB image.
+
 ## Public API and C ABI checks
 
 Run `zig build test-public-api` and `zig build test-c-abi` in Debug after changing

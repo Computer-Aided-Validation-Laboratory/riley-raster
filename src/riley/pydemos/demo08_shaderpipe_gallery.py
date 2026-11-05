@@ -6,7 +6,7 @@
 #
 # Authors: scepticalrabbit (Lloyd Fletcher)
 # --------------------------------------------------------------------------
-"""Four small ShaderPipe compositions sharing one procedural scene."""
+"""Six small ShaderPipe compositions sharing one procedural scene."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -84,7 +84,7 @@ def main() -> None:
     fields = tuple(riley.Register(riley.RegisterKind.field, ii) for ii in range(2))
     param = riley.Register(riley.RegisterKind.parameter, 0)
     constants = tuple(
-        riley.Register(riley.RegisterKind.constant, ii) for ii in range(2)
+        riley.Register(riley.RegisterKind.constant, ii) for ii in range(3)
     )
 
     checker = riley.FunctionShader(
@@ -99,6 +99,7 @@ def main() -> None:
         name: str,
         shaders: riley.MeshShaderSet,
         role: riley.RenderFormat = riley.RenderFormat.mono,
+        channels: int = 1,
     ) -> None:
         mesh = riley.create_mesh(
             convention,
@@ -108,6 +109,7 @@ def main() -> None:
             shaders,
         )
         camera.render_format = role
+        camera.render_channels = 3 if role == riley.RenderFormat.rgb else channels
         if role == riley.RenderFormat.rgb:
             camera.output_files = [
                 riley.ImageSaveOpts(
@@ -246,6 +248,99 @@ def main() -> None:
             ),
         ),
         riley.RenderFormat.mono,
+    )
+
+    # --------------------------------------------------------------------------
+    # 6. Composition E: RGB expression with one result per colour channel
+    # --------------------------------------------------------------------------
+    rgb_expression_ops = (
+        # R = clamp(0.65 * field0 + 0.35 * field1, 0, 1)
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[0]),
+        riley.ResolverOp(riley.ResolverOpKind.load, constants[0]),
+        riley.ResolverOp(riley.ResolverOpKind.multiply),
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[1]),
+        riley.ResolverOp(riley.ResolverOpKind.load, constants[1]),
+        riley.ResolverOp(riley.ResolverOpKind.multiply),
+        riley.ResolverOp(riley.ResolverOpKind.add),
+        riley.ResolverOp(riley.ResolverOpKind.clamp01),
+        riley.ResolverOp(riley.ResolverOpKind.store, riley.Register(riley.RegisterKind.channel, 0)),
+
+        # G = clamp(field0 * field1, 0, 1)
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[0]),
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[1]),
+        riley.ResolverOp(riley.ResolverOpKind.multiply),
+        riley.ResolverOp(riley.ResolverOpKind.clamp01),
+        riley.ResolverOp(riley.ResolverOpKind.store, riley.Register(riley.RegisterKind.channel, 1)),
+
+        # B = clamp(1 - field0, 0, 1)
+        riley.ResolverOp(riley.ResolverOpKind.load, constants[2]),
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[0]),
+        riley.ResolverOp(riley.ResolverOpKind.subtract),
+        riley.ResolverOp(riley.ResolverOpKind.clamp01),
+        riley.ResolverOp(riley.ResolverOpKind.store, riley.Register(riley.RegisterKind.channel, 2)),
+    )
+    render(
+        "e_rgb_expression",
+        riley.MeshShaderSet(
+            rgb=riley.ShaderPipe(
+                stages=(
+                    riley.ShaderSource(linear(0.5, 0.0), fields[0]),
+                    riley.ShaderSource(linear(0.0, 0.5), fields[1]),
+                ),
+                resolver=riley.ShaderResolver(
+                    riley.ResolverKind.expression,
+                    operations=rgb_expression_ops,
+                ),
+                constants=(0.65, 0.35, 1.0),
+            ),
+        ),
+        riley.RenderFormat.rgb,
+    )
+
+    # --------------------------------------------------------------------------
+    # 7. Composition F: Four-field expression outputs
+    # --------------------------------------------------------------------------
+    multifield_expression_ops = (
+        # Output 0: horizontal gradient
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[0]),
+        riley.ResolverOp(riley.ResolverOpKind.store, riley.Register(riley.RegisterKind.channel, 0)),
+
+        # Output 1: vertical gradient
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[1]),
+        riley.ResolverOp(riley.ResolverOpKind.store, riley.Register(riley.RegisterKind.channel, 1)),
+
+        # Output 2: product of the gradients
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[0]),
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[1]),
+        riley.ResolverOp(riley.ResolverOpKind.multiply),
+        riley.ResolverOp(riley.ResolverOpKind.store, riley.Register(riley.RegisterKind.channel, 2)),
+
+        # Output 3: squared difference of the gradients
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[0]),
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[1]),
+        riley.ResolverOp(riley.ResolverOpKind.subtract),
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[0]),
+        riley.ResolverOp(riley.ResolverOpKind.load, fields[1]),
+        riley.ResolverOp(riley.ResolverOpKind.subtract),
+        riley.ResolverOp(riley.ResolverOpKind.multiply),
+        riley.ResolverOp(riley.ResolverOpKind.store, riley.Register(riley.RegisterKind.channel, 3)),
+    )
+    render(
+        "f_multifield_expression",
+        riley.MeshShaderSet(
+            multifield=riley.ShaderPipe(
+                stages=(
+                    riley.ShaderSource(linear(0.5, 0.0), fields[0]),
+                    riley.ShaderSource(linear(0.0, 0.5), fields[1]),
+                ),
+                resolver=riley.ShaderResolver(
+                    riley.ResolverKind.expression,
+                    operations=multifield_expression_ops,
+                ),
+            ),
+        ),
+        riley.RenderFormat.multifield,
+        channels=4,
     )
 
 

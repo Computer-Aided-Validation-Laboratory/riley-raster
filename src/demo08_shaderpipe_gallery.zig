@@ -245,6 +245,7 @@ pub fn main(init: std.process.Init) !void {
             },
         },
     };
+
     const expr_ops = [_]riley.ResolverOp{
         .{ .load = field0 },
         .{ .load = .{ .kind = .constant, .index = 0 } },
@@ -256,6 +257,7 @@ pub fn main(init: std.process.Init) !void {
         .clamp01,
         .{ .store = 0 },
     };
+
     const expr_pipe: riley.ShaderPipeInput = .{
         .stages = &expr_stages,
         .resolver = .{
@@ -265,7 +267,9 @@ pub fn main(init: std.process.Init) !void {
             },
         },
     };
+
     mesh.shaders = .{ .mono_pipe = expr_pipe };
+
     try render(
         init.gpa,
         init.io,
@@ -294,6 +298,7 @@ pub fn main(init: std.process.Init) !void {
             },
         },
     };
+
     const emissivity_ops = [_]riley.ResolverOp{
         .{ .load = param0 },
         .{ .load = .{ .kind = .constant, .index = 0 } },
@@ -303,6 +308,7 @@ pub fn main(init: std.process.Init) !void {
         .clamp01,
         .{ .store = 0 },
     };
+
     const emissivity_pipe: riley.ShaderPipeInput = .{
         .stages = &emissivity_stages,
         .resolver = .{
@@ -312,7 +318,9 @@ pub fn main(init: std.process.Init) !void {
             },
         },
     };
+
     mesh.shaders = .{ .mono_pipe = emissivity_pipe };
+
     try render(
         init.gpa,
         init.io,
@@ -320,5 +328,98 @@ pub fn main(init: std.process.Init) !void {
         base_camera,
         .mono,
         "./out/demo08_shaderpipe_gallery/d_emissivity_visualisation",
+    );
+    // -------------------------------------------------------------------------
+    // 6. Composition E: RGB expression with one result per colour channel
+    // -------------------------------------------------------------------------
+    const rgb_expression_ops = [_]riley.ResolverOp{
+        // R = clamp(0.65 * field0 + 0.35 * field1, 0, 1)
+        .{ .load = field0 },
+        .{ .load = .{ .kind = .constant, .index = 0 } },
+        .multiply,
+        .{ .load = field1 },
+        .{ .load = .{ .kind = .constant, .index = 1 } },
+        .multiply,
+        .add,
+        .clamp01,
+        .{ .store = 0 },
+
+        // G = clamp(field0 * field1, 0, 1)
+        .{ .load = field0 },
+        .{ .load = field1 },
+        .multiply,
+        .clamp01,
+        .{ .store = 1 },
+
+        // B = clamp(1 - field0, 0, 1)
+        .{ .load = .{ .kind = .constant, .index = 2 } },
+        .{ .load = field0 },
+        .subtract,
+        .clamp01,
+        .{ .store = 2 },
+    };
+    const rgb_expression_pipe: riley.ShaderPipeInput = .{
+        .stages = &expr_stages,
+        .resolver = .{
+            .expression = .{
+                .operations = &rgb_expression_ops,
+                .constants = &.{ 0.65, 0.35, 1.0 },
+            },
+        },
+    };
+    mesh.shaders = .{ .rgb_pipe = rgb_expression_pipe };
+    try render(
+        init.gpa,
+        init.io,
+        mesh,
+        base_camera,
+        .rgb,
+        "./out/demo08_shaderpipe_gallery/e_rgb_expression",
+    );
+
+    // -------------------------------------------------------------------------
+    // 7. Composition F: Four-field expression outputs
+    // -------------------------------------------------------------------------
+    const multifield_expression_ops = [_]riley.ResolverOp{
+        // Output 0: horizontal gradient
+        .{ .load = field0 },
+        .{ .store = 0 },
+
+        // Output 1: vertical gradient
+        .{ .load = field1 },
+        .{ .store = 1 },
+
+        // Output 2: product of the gradients
+        .{ .load = field0 },
+        .{ .load = field1 },
+        .multiply,
+        .{ .store = 2 },
+
+        // Output 3: squared difference of the gradients
+        .{ .load = field0 },
+        .{ .load = field1 },
+        .subtract,
+        .{ .load = field0 },
+        .{ .load = field1 },
+        .subtract,
+        .multiply,
+        .{ .store = 3 },
+    };
+    const multifield_expression_pipe: riley.ShaderPipeInput = .{
+        .stages = &expr_stages,
+        .resolver = .{
+            .expression = .{
+                .operations = &multifield_expression_ops,
+            },
+        },
+    };
+    mesh.shaders = .{ .multifield_pipe = multifield_expression_pipe };
+    try render(
+        init.gpa,
+        init.io,
+        mesh,
+        base_camera,
+        .{ .multifield = 4 },
+        "./out/demo08_shaderpipe_gallery/f_multifield_expression",
     );
 }
