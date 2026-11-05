@@ -221,12 +221,12 @@ pub const ResolverOp = union(enum) {
     store: u8,
 };
 
-pub const ResolverProgram = struct {
+pub const ResolverProgramInput = struct {
     operations: []const ResolverOp,
     constants: []const F = &.{},
     lookups: []const LookupTable = &.{},
 
-    pub fn validate(self: ResolverProgram, written: RegistersWritten, channels: u8) !void {
+    pub fn validate(self: ResolverProgramInput, written: RegistersWritten, channels: u8) !void {
         if (channels == 0 or
             channels > buildconfig.config.max_image_channels or
             self.operations.len == 0 or
@@ -276,8 +276,14 @@ pub const ResolverProgram = struct {
         if (depth != 0 or stored != (@as(u16, 1) << @intCast(channels)) - 1)
             return error.InvalidProgram;
     }
+};
 
-    pub fn evaluate(self: ResolverProgram, inputs: anytype, channels: u8, out: anytype) void {
+pub const ResolverProgramPrepared = struct {
+    operations: []const ResolverOp,
+    constants: []const F,
+    lookups: []const LookupTablePrepared,
+
+    pub fn evaluate(self: ResolverProgramPrepared, inputs: anytype, channels: u8, out: anytype) void {
         const T = @TypeOf(out.*[0]);
         var stack: [pipe_cfg.max_stack]T = undefined;
         var depth: usize = 0;
@@ -340,23 +346,29 @@ pub const ResolverProgram = struct {
 // Output Resolution
 // --------------------------------------------------------------------------------------
 
-pub const Resolver = union(enum) {
+pub const Modulate = struct {
+    register_sources: []const Register,
+    factor: Register,
+    ambient: F = 0,
+    gain: F = 1,
+};
+
+pub const WeightedSum = struct {
+    register_sources: []const Register,
+    weights: []const F,
+};
+
+pub const GreybodyBolometric = struct {
+    temperature: Register,
+    emissivity: Register,
+};
+
+pub const ResolverInput = union(enum) {
     identity: []const Register,
     sum: []const Register,
-    modulate: struct {
-        register_sources: []const Register,
-        factor: Register,
-        ambient: F = 0,
-        gain: F = 1,
-    },
-    weighted_sum: struct {
-        register_sources: []const Register,
-        weights: []const F,
-    },
-    greybody_bolometric: struct {
-        temperature: Register,
-        emissivity: Register,
-    },
+    modulate: Modulate,
+    weighted_sum: WeightedSum,
+    greybody_bolometric: GreybodyBolometric,
     greybody_band: struct {
         temperature: Register,
         emissivity: Register,
@@ -368,10 +380,10 @@ pub const Resolver = union(enum) {
         radiance: LookupTable,
         ambient_k: F,
     },
-    expression: ResolverProgram,
+    expression: ResolverProgramInput,
 
     pub fn validate(
-        self: Resolver,
+        self: ResolverInput,
         written: RegistersWritten,
         constants: []const F,
         channels: u8,
@@ -455,48 +467,31 @@ pub const Resolver = union(enum) {
             .expression => |p| try p.validate(written, channels),
         }
     }
-
-    pub fn evaluate(
-        self: Resolver,
-        inputs: anytype,
-        constants: []const F,
-        channels: u8,
-        out: anytype,
-    ) void {
-        const ambient = switch (self) {
-            .greybody_band_apparent_c => |g| g.radiance.sample(g.ambient_k),
-            else => 0,
-        };
-        evaluateResolver(false, self, inputs, constants, channels, out, ambient, 0, 0);
-    }
 };
 
-pub fn resolverIdentity(channels: u8) Resolver {
+pub fn resolverIdentity(channels: u8) ResolverInput {
     return .{ .identity = identityRegisters(channels) };
 }
 
-pub const ResolverPrepared = struct {
-    value: Resolver,
-    ambient_radiance: F = 0,
-    lookup_last: usize = 0,
-    lookup_max: F = 0,
-
-    pub fn init(value: Resolver) ResolverPrepared {
-        var result = ResolverPrepared{ .value = value };
-        switch (value) {
-            .greybody_band => |g| {
-                result.lookup_last = g.radiance.values.len - 1;
-                result.lookup_max = @floatFromInt(result.lookup_last);
-            },
-            .greybody_band_apparent_c => |g| {
-                result.lookup_last = g.radiance.values.len - 1;
-                result.lookup_max = @floatFromInt(result.lookup_last);
-                result.ambient_radiance = g.radiance.sample(g.ambient_k);
-            },
-            else => {},
-        }
-        return result;
-    }
+/// Engine representation. Lookup metadata is prepared once and borrows input tables.
+pub const ResolverPrepared = union(enum) {
+    identity: []const Register,
+    sum: []const Register,
+    modulate: Modulate,
+    weighted_sum: WeightedSum,
+    greybody_bolometric: GreybodyBolometric,
+    greybody_band: struct {
+        temperature: Register,
+        emissivity: Register,
+        radiance: LookupTablePrepared,
+    },
+    greybody_band_apparent_c: struct {
+        temperature: Register,
+        emissivity: Register,
+        radiance: LookupTablePrepared,
+        ambient_radiance: F,
+    },
+    expression: ResolverProgramPrepared,
 
     pub inline fn evaluate(
         self: ResolverPrepared,
@@ -505,97 +500,116 @@ pub const ResolverPrepared = struct {
         channels: u8,
         out: anytype,
     ) void {
-        evaluateResolver(true, self.value, inputs, constants, channels, out, self.ambient_radiance, self.lookup_last, self.lookup_max);
+        const T = @TypeOf(out.*[0]);
+        switch (self) {
+            .identity => |registers| for (registers, 0..) |register_ref, ii| {
+                out.*[ii] = readRegister(T, inputs, constants, register_ref);
+            },
+            .sum => |registers| {
+                for (0..channels) |ch| out.*[ch] = splat(T, 0);
+                for (registers, 0..) |register_ref, ii| {
+                    out.*[ii % channels] += readRegister(T, inputs, constants, register_ref);
+                }
+            },
+            .modulate => |m| {
+                const factor = readRegister(T, inputs, constants, m.factor);
+                const ambient_splat = splat(T, m.ambient);
+                const gain_splat = splat(T, m.gain);
+
+                for (m.register_sources, 0..) |register_ref, ii| {
+                    const src_val = readRegister(T, inputs, constants, register_ref);
+                    out.*[ii] = (src_val * factor + ambient_splat) * gain_splat;
+                }
+            },
+            .weighted_sum => |w| {
+                for (0..channels) |ch| out.*[ch] = splat(T, 0);
+
+                for (w.register_sources, w.weights, 0..) |register_ref, weight, ii| {
+                    const src_val = readRegister(T, inputs, constants, register_ref);
+                    out.*[ii % channels] += src_val * splat(T, weight);
+                }
+            },
+            .greybody_bolometric => |g| {
+                const temp = readRegister(T, inputs, constants, g.temperature);
+                const square = temp * temp;
+                const em_val = readRegister(T, inputs, constants, g.emissivity);
+                const stefan_boltzmann = splat(T, 5.670374419e-8);
+                out.*[0] = em_val * stefan_boltzmann * square * square;
+            },
+            .greybody_band => |g| {
+                const radiance = g.radiance;
+                const temp = readRegister(T, inputs, constants, g.temperature);
+
+                var radiant: T = undefined;
+                if (T == F) {
+                    radiant = radiance.sample(temp);
+                } else {
+                    radiant = radiance.sampleSIMD(temp, @splat(true));
+                }
+                out.*[0] = readRegister(T, inputs, constants, g.emissivity) * radiant;
+            },
+            .greybody_band_apparent_c => |g| {
+                const radiance = g.radiance;
+                const temp = readRegister(T, inputs, constants, g.temperature);
+                const emissivity = readRegister(T, inputs, constants, g.emissivity);
+                const ambient = g.ambient_radiance;
+
+                if (T == F) {
+                    const rad_temp = radiance.sample(temp);
+                    const measured = emissivity * rad_temp + (1 - emissivity) * ambient;
+                    out.*[0] = g.radiance.lookup.inverseMonotonic(measured) - 273.15;
+                } else {
+                    const radiant = radiance.sampleSIMD(temp, @splat(true));
+                    const measured = emissivity * radiant +
+                        (@as(T, @splat(1)) - emissivity) * @as(T, @splat(ambient));
+                    const measured_lanes: [buildconfig.SimdWidth]F = measured;
+                    var result: [buildconfig.SimdWidth]F = undefined;
+                    for (&result, measured_lanes) |*lane, value| {
+                        lane.* = g.radiance.lookup.inverseMonotonic(value) - 273.15;
+                    }
+                    out.*[0] = @bitCast(result);
+                }
+            },
+            .expression => |p| p.evaluate(inputs, channels, out),
+        }
     }
 };
 
-fn evaluateResolver(
-    comptime prepared: bool,
-    self: Resolver,
-    inputs: anytype,
-    constants: []const F,
-    channels: u8,
-    out: anytype,
-    ambient_radiance: F,
-    lookup_last: usize,
-    lookup_max: F,
-) void {
-    const T = @TypeOf(out.*[0]);
-    switch (self) {
-        .identity => |registers| for (registers, 0..) |register_ref, ii| {
-            out.*[ii] = readRegister(T, inputs, constants, register_ref);
-        },
-        .sum => |registers| {
-            for (0..channels) |ch| out.*[ch] = splat(T, 0);
-            for (registers, 0..) |register_ref, ii| {
-                out.*[ii % channels] += readRegister(T, inputs, constants, register_ref);
+/// Inputs must already be validated. The caller owns expression lookup metadata;
+/// operations, constants and table values remain borrowed from the input.
+pub fn createResolverPreparedFromInput(
+    outer_alloc: std.mem.Allocator,
+    input: ResolverInput,
+) !ResolverPrepared {
+    return switch (input) {
+        .identity => |value| .{ .identity = value },
+        .sum => |value| .{ .sum = value },
+        .modulate => |value| .{ .modulate = value },
+        .weighted_sum => |value| .{ .weighted_sum = value },
+        .greybody_bolometric => |value| .{ .greybody_bolometric = value },
+        .greybody_band => |value| .{ .greybody_band = .{
+            .temperature = value.temperature,
+            .emissivity = value.emissivity,
+            .radiance = LookupTablePrepared.init(value.radiance),
+        } },
+        .greybody_band_apparent_c => |value| .{ .greybody_band_apparent_c = .{
+            .temperature = value.temperature,
+            .emissivity = value.emissivity,
+            .radiance = LookupTablePrepared.init(value.radiance),
+            .ambient_radiance = value.radiance.sample(value.ambient_k),
+        } },
+        .expression => |value| blk: {
+            const lookups = try outer_alloc.alloc(LookupTablePrepared, value.lookups.len);
+            for (lookups, value.lookups) |*prepared, lookup| {
+                prepared.* = LookupTablePrepared.init(lookup);
             }
+            break :blk .{ .expression = .{
+                .operations = value.operations,
+                .constants = value.constants,
+                .lookups = lookups,
+            } };
         },
-        .modulate => |m| {
-            const factor = readRegister(T, inputs, constants, m.factor);
-            const ambient_splat = splat(T, m.ambient);
-            const gain_splat = splat(T, m.gain);
-
-            for (m.register_sources, 0..) |register_ref, ii| {
-                const src_val = readRegister(T, inputs, constants, register_ref);
-                out.*[ii] = (src_val * factor + ambient_splat) * gain_splat;
-            }
-        },
-        .weighted_sum => |w| {
-            for (0..channels) |ch| out.*[ch] = splat(T, 0);
-
-            for (w.register_sources, w.weights, 0..) |register_ref, weight, ii| {
-                const src_val = readRegister(T, inputs, constants, register_ref);
-                out.*[ii % channels] += src_val * splat(T, weight);
-            }
-        },
-        .greybody_bolometric => |g| {
-            const temp = readRegister(T, inputs, constants, g.temperature);
-            const square = temp * temp;
-            const em_val = readRegister(T, inputs, constants, g.emissivity);
-            const stefan_boltzmann = splat(T, 5.670374419e-8);
-            out.*[0] = em_val * stefan_boltzmann * square * square;
-        },
-        .greybody_band => |g| {
-            const radiance = if (prepared) LookupTablePrepared.initMetadata(g.radiance, lookup_last, lookup_max) else g.radiance;
-            const temp = readRegister(T, inputs, constants, g.temperature);
-
-            var radiant: T = undefined;
-            if (T == F) {
-                radiant = radiance.sample(temp);
-            } else {
-                radiant = radiance.sampleSIMD(temp, @splat(true));
-            }
-            out.*[0] = readRegister(T, inputs, constants, g.emissivity) * radiant;
-        },
-        .greybody_band_apparent_c => |g| {
-            const radiance = if (prepared) LookupTablePrepared.initMetadata(
-                g.radiance,
-                lookup_last,
-                lookup_max,
-            ) else g.radiance;
-            const temp = readRegister(T, inputs, constants, g.temperature);
-            const emissivity = readRegister(T, inputs, constants, g.emissivity);
-            const ambient = ambient_radiance;
-
-            if (T == F) {
-                const rad_temp = radiance.sample(temp);
-                const measured = emissivity * rad_temp + (1 - emissivity) * ambient;
-                out.*[0] = g.radiance.inverseMonotonic(measured) - 273.15;
-            } else {
-                const radiant = radiance.sampleSIMD(temp, @splat(true));
-                const measured = emissivity * radiant +
-                    (@as(T, @splat(1)) - emissivity) * @as(T, @splat(ambient));
-                const measured_lanes: [buildconfig.SimdWidth]F = measured;
-                var result: [buildconfig.SimdWidth]F = undefined;
-                for (&result, measured_lanes) |*lane, value| {
-                    lane.* = g.radiance.inverseMonotonic(value) - 273.15;
-                }
-                out.*[0] = @bitCast(result);
-            }
-        },
-        .expression => |p| p.evaluate(inputs, channels, out),
-    }
+    };
 }
 
 // --------------------------------------------------------------------------------------
@@ -653,11 +667,11 @@ pub const LookupTablePrepared = struct {
     max_index: F,
 
     pub fn init(lookup: LookupTable) LookupTablePrepared {
-        return initMetadata(lookup, lookup.values.len - 1, @floatFromInt(lookup.values.len - 1));
-    }
-
-    fn initMetadata(lookup: LookupTable, last: usize, max_index: F) LookupTablePrepared {
-        return .{ .lookup = lookup, .last = last, .max_index = max_index };
+        return .{
+            .lookup = lookup,
+            .last = lookup.values.len - 1,
+            .max_index = @floatFromInt(lookup.values.len - 1),
+        };
     }
 
     pub inline fn sample(self: LookupTablePrepared, value: F) F {
@@ -796,6 +810,9 @@ inline fn splat(comptime T: type, value: F) T {
 // --------------------------------------------------------------------------------------
 
 test "resolver arithmetic retains earlier outputs" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
     var written: RegistersWritten = .{};
     try written.recordWrite(.{ .kind = .channel, .index = 0 });
     try written.recordWrite(.{ .kind = .channel, .index = 1 });
@@ -816,20 +833,24 @@ test "resolver arithmetic retains earlier outputs" {
         .subtract,
         .{ .store = 1 },
     };
-    const resolver: Resolver = .{ .expression = .{ .operations = &ops } };
+    const resolver: ResolverInput = .{ .expression = .{ .operations = &ops } };
     try resolver.validate(written, &.{}, 2);
     var inputs: RegistersOutputScalar = .{};
     inputs.channel[0] = 0.75;
     inputs.channel[1] = 0.25;
     inputs.parameter[0] = 0.5;
     var out: [2]F = undefined;
-    resolver.evaluate(&inputs, &.{}, 2, &out);
+    const resolver_prepared = try createResolverPreparedFromInput(arena.allocator(), resolver);
+    resolver_prepared.evaluate(&inputs, &.{}, 2, &out);
     try std.testing.expectApproxEqAbs(@as(F, 0.625), out[0], 1e-12);
     try std.testing.expectApproxEqAbs(@as(F, 0.5), out[1], 1e-12);
     try std.testing.expectEqual(@as(F, 0.75), inputs.channel[0]);
 }
 
 test "bolometric emission and LUT agree with independent values" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
     var written: RegistersWritten = .{};
     try written.recordWrite(.{ .kind = .field, .index = 0 });
     try written.recordWrite(.{ .kind = .parameter, .index = 0 });
@@ -837,23 +858,25 @@ test "bolometric emission and LUT agree with independent values" {
     inputs.field[0] = 300;
     inputs.parameter[0] = 0.8;
     var out: [1]F = undefined;
-    const bolometric: Resolver = .{ .greybody_bolometric = .{
+    const bolometric: ResolverInput = .{ .greybody_bolometric = .{
         .temperature = .{ .kind = .field, .index = 0 },
         .emissivity = .{ .kind = .parameter, .index = 0 },
     } };
     try bolometric.validate(written, &.{}, 1);
-    bolometric.evaluate(&inputs, &.{}, 1, &out);
+    const bolometric_prepared = try createResolverPreparedFromInput(arena.allocator(), bolometric);
+    bolometric_prepared.evaluate(&inputs, &.{}, 1, &out);
     const tol: F = if (F == f32) 1e-4 else 1e-9;
     try std.testing.expectApproxEqAbs(@as(F, 367.4402623512), out[0], tol);
 
     const lut = LookupTable{ .first = 290, .step = 20, .values = &.{ 10, 30 } };
-    const band: Resolver = .{ .greybody_band = .{
+    const band: ResolverInput = .{ .greybody_band = .{
         .temperature = .{ .kind = .field, .index = 0 },
         .emissivity = .{ .kind = .parameter, .index = 0 },
         .radiance = lut,
     } };
     try band.validate(written, &.{}, 1);
-    band.evaluate(&inputs, &.{}, 1, &out);
+    const band_prepared = try createResolverPreparedFromInput(arena.allocator(), band);
+    band_prepared.evaluate(&inputs, &.{}, 1, &out);
     try std.testing.expectApproxEqAbs(@as(F, 16), out[0], 1e-12);
 }
 
@@ -862,13 +885,13 @@ test "resolver rejects missing writers and outputs" {
         .{ .load = .{ .kind = .field, .index = 0 } },
         .{ .store = 0 },
     };
-    const prog_missing = ResolverProgram{ .operations = &missing };
+    const prog_missing = ResolverProgramInput{ .operations = &missing };
     try std.testing.expectError(error.UnwrittenSlot, prog_missing.validate(.{}, 1));
     const incomplete = [_]ResolverOp{
         .{ .load = .{ .kind = .constant, .index = 0 } },
         .{ .store = 0 },
     };
-    const prog_incomplete = ResolverProgram{
+    const prog_incomplete = ResolverProgramInput{
         .operations = &incomplete,
         .constants = &.{1},
     };
@@ -916,11 +939,14 @@ test "band Planck LUT is positive, temperature ordered, and interpolates" {
 }
 
 test "apparent temperature includes reflected ambient and inverts band radiance" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
     var written: RegistersWritten = .{};
     try written.recordWrite(.{ .kind = .field, .index = 0 });
     try written.recordWrite(.{ .kind = .parameter, .index = 0 });
     const values = [_]F{ 10, 20, 30, 40, 50 };
-    const resolver: Resolver = .{ .greybody_band_apparent_c = .{
+    const resolver: ResolverInput = .{ .greybody_band_apparent_c = .{
         .temperature = .{ .kind = .field, .index = 0 },
         .emissivity = .{ .kind = .parameter, .index = 0 },
         .radiance = .{ .first = 280, .step = 10, .values = &values },
@@ -931,17 +957,18 @@ test "apparent temperature includes reflected ambient and inverts band radiance"
     inputs.field[0] = 310;
     inputs.parameter[0] = 0.8;
     var output: [1]F = undefined;
-    resolver.evaluate(&inputs, &.{}, 1, &output);
+    const resolver_prepared = try createResolverPreparedFromInput(arena.allocator(), resolver);
+    resolver_prepared.evaluate(&inputs, &.{}, 1, &output);
     try std.testing.expectApproxEqAbs(@as(F, 32.85), output[0], 1e-10);
     inputs.parameter[0] = 1;
-    resolver.evaluate(&inputs, &.{}, 1, &output);
+    resolver_prepared.evaluate(&inputs, &.{}, 1, &output);
     try std.testing.expectApproxEqAbs(@as(F, 36.85), output[0], 1e-10);
     inputs.parameter[0] = 0;
-    resolver.evaluate(&inputs, &.{}, 1, &output);
+    resolver_prepared.evaluate(&inputs, &.{}, 1, &output);
     try std.testing.expectApproxEqAbs(@as(F, 16.85), output[0], 1e-10);
     var bad = values;
     bad[2] = bad[1];
-    const invalid: Resolver = .{ .greybody_band_apparent_c = .{
+    const invalid: ResolverInput = .{ .greybody_band_apparent_c = .{
         .temperature = .{ .kind = .field, .index = 0 },
         .emissivity = .{ .kind = .parameter, .index = 0 },
         .radiance = .{ .first = 280, .step = 10, .values = &bad },
@@ -1057,23 +1084,20 @@ test "prepared resolver preserves lookup interpolation and ambient radiance" {
     const cached = LookupTablePrepared.init(lookup);
     for ([_]F{ 270, 280, 294, 300, 310, 320, 340, 350 }) |value|
         try std.testing.expectEqual(lookup.sample(value), cached.sample(value));
-    const input = Resolver{ .greybody_band_apparent_c = .{
+    const input = ResolverInput{ .greybody_band_apparent_c = .{
         .temperature = .{ .kind = .field, .index = 0 },
         .emissivity = .{ .kind = .parameter, .index = 0 },
         .radiance = lookup,
         .ambient_k = 300,
     } };
-    const prepared = ResolverPrepared.init(input);
-    try std.testing.expectEqual(@as(F, 30), prepared.ambient_radiance);
+    const prepared = try createResolverPreparedFromInput(std.testing.allocator, input);
+    try std.testing.expectEqual(@as(F, 30), prepared.greybody_band_apparent_c.ambient_radiance);
     var values: RegistersOutputScalar = .{};
     values.field[0] = 320;
     values.parameter[0] = 0.5;
     var result: [1]F = undefined;
     prepared.evaluate(&values, &.{}, 1, &result);
     try std.testing.expectApproxEqAbs(@as(F, 310 - 273.15), result[0], 1e-12);
-    var expected: [1]F = undefined;
-    input.evaluate(&values, &.{}, 1, &expected);
-    try std.testing.expectEqual(expected[0], result[0]);
     var vectors: RegistersOutputSIMD = .{};
     vectors.field[0] = @splat(320);
     vectors.parameter[0] = @splat(0.5);
@@ -1129,4 +1153,48 @@ test "forward SIMD lookup matches scalar interpolation and masks inactive sample
     }
     const endpoints: [S]F = table.sampleSIMD(@splat(16), @splat(true));
     for (endpoints) |value| try std.testing.expectEqual(@as(F, 1), value);
+}
+
+test "expression preparation caches lookups and evaluates scalar and SIMD values" {
+    const input: ResolverInput = .{ .expression = .{
+        .operations = &.{
+            .{ .load = .{ .kind = .field, .index = 0 } },
+            .{ .lut = 0 },
+            .{ .load = .{ .kind = .constant, .index = 0 } },
+            .multiply,
+            .{ .store = 0 },
+        },
+        .constants = &.{2},
+        .lookups = &.{.{ .first = 10, .step = 2, .values = &.{ 3, 7, 15 } }},
+    } };
+    var written: RegistersWritten = .{};
+    try written.recordWrite(.{ .kind = .field, .index = 0 });
+    try input.validate(written, &.{}, 1);
+    try std.testing.expectError(
+        error.OutOfMemory,
+        createResolverPreparedFromInput(std.testing.failing_allocator, input),
+    );
+    const prepared = try createResolverPreparedFromInput(std.testing.allocator, input);
+    defer std.testing.allocator.free(prepared.expression.lookups);
+    try std.testing.expectEqual(@as(usize, 2), prepared.expression.lookups[0].last);
+    try std.testing.expectEqual(@as(F, 2), prepared.expression.lookups[0].max_index);
+    var scalar: RegistersOutputScalar = .{};
+    var wide: RegistersOutputSIMD = .{};
+    const samples = [_]F{ 8, 10, 11, 12, 13, 14, 16 };
+    const expected = [_]F{ 6, 6, 10, 14, 22, 30, 30 };
+    var lane_samples: [S]F = undefined;
+    for (0..S) |lane| lane_samples[lane] = samples[lane % samples.len];
+    wide.field[0] = lane_samples;
+    var vector_result: [1]VecSF = undefined;
+    prepared.evaluate(&wide, &.{}, 1, &vector_result);
+    const lanes: [S]F = vector_result[0];
+    for (samples, expected) |sample, result| {
+        scalar.field[0] = sample;
+        var scalar_result: [1]F = undefined;
+        prepared.evaluate(&scalar, &.{}, 1, &scalar_result);
+        try std.testing.expectEqual(result, scalar_result[0]);
+    }
+    for (lanes, 0..) |value, lane| {
+        try std.testing.expectEqual(expected[lane % expected.len], value);
+    }
 }

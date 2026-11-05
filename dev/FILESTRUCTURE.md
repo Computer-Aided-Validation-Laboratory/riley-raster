@@ -23,9 +23,10 @@
   required by generic kernel interfaces may deliberately re-export declarations;
   qualify external declarations inside their implementation bodies.
 - The public Zig API is assembled explicitly in `api/core.zig` and exposed
-  through `api.zig`, which is registered as the `riley` module root so relative
-  imports from `api/core.zig` remain inside the module path. Public load/save,
-  numerical, and operation namespaces are assembled in `api/dataio.zig`,
+  through `api.zig`, the `riley` module root for external consumers. Repository
+  demos import `riley/zig/api.zig` by relative path so standalone `zig run` works;
+  build wrappers supply configuration without a named Riley dependency.
+  Public load/save, numerical, and operation namespaces are assembled in `api/dataio.zig`,
   `api/maths.zig`, and `api/ops.zig`. Do not add `usingnamespace` or duplicate
   implementation types in the public API.
 - Input-to-Static constructors use `create*StaticFromInput` names, including
@@ -34,10 +35,15 @@
   `shaderfill_simd.zig`, exported by the thin `shaderfill.zig` facade.
   Shader selection, conversion, and construction helpers live in `shaderops.zig`.
 - Shader-pipe intermediate addresses are `Register` values. Stage endpoints use
-  `register_source` and `register_dest`; resolver expressions use `ResolverProgram`
+  `register_source` and `register_dest`; resolver expressions use `ResolverProgramInput`
   and `ResolverOp`. Register state is held by `RegistersWritten` and `RegistersOutput`.
   Stage, register, instruction, and stack capacities come from
   `buildconfig.config.shaderpipe`; output channels use `config.max_image_channels`.
+- `ResolverInput` and `ResolverProgramInput` describe and validate resolver inputs.
+  Only `ResolverPrepared` and `ResolverProgramPrepared` evaluate registers. Static
+  construction prepares lookup metadata and ambient radiance once. Prepared
+  resolvers are tagged unions with variant-specific payloads; expression lookup
+  metadata belongs to the static arena, while table values remain borrowed.
 - Shader-pipe stages use `.shader` for shader evaluation, alongside operation
   tags such as `.clamp`, `.blend`, and `.lut_map`.
 - Shader roles derive from the tags of `shadertypes.RenderFormat`.

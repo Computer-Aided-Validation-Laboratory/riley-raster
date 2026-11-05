@@ -379,7 +379,7 @@ fn createShaderPipeStaticFromInput(
 
     return .{
         .stages = stages,
-        .resolver = shaderpipe.ResolverPrepared.init(pipe.resolver),
+        .resolver = try shaderpipe.createResolverPreparedFromInput(allocator, pipe.resolver),
         .constants = pipe.constants,
     };
 }

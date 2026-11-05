@@ -69,7 +69,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
             } }, .register_dest = .{ .kind = .parameter, .index = 0 } } },
         };
         const channel_slots = [_]shaderpipe.Register{.{ .kind = .channel, .index = 0 }};
-        const resolver: shaderpipe.Resolver = .{ .modulate = .{
+        const resolver: shaderpipe.ResolverInput = .{ .modulate = .{
             .register_sources = &channel_slots,
             .factor = .{ .kind = .parameter, .index = 0 },
         } };
@@ -180,7 +180,7 @@ fn runCase(allocator: std.mem.Allocator, io: std.Io, generate_gold: bool) !void 
                 .multiply,
                 .{ .store = 0 },
             };
-            const expression_resolver: shaderpipe.Resolver = .{
+            const expression_resolver: shaderpipe.ResolverInput = .{
                 .expression = .{ .operations = &operations },
             };
             const sphere_expr = [_]shadertypes.ShaderPipeInput{.{

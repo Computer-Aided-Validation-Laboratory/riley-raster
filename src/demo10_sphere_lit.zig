@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const riley = @import("riley");
+const riley = @import("riley/zig/api.zig");
 const maths = riley.maths;
 const datio = riley.dataio;
 const ops = riley.ops;
@@ -103,7 +103,7 @@ pub fn main(init: std.process.Init) !void {
         },
     };
 
-    const lit_resolver: riley.Resolver = .{
+    const lit_resolver: riley.ResolverInput = .{
         .modulate = .{
             .register_sources = &channel_slots,
             .factor = param_slot,

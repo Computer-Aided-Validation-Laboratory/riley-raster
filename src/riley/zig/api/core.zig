@@ -90,7 +90,7 @@ pub const RegisterKind = @import("../shaderpipe.zig").RegisterKind;
 pub const Register = @import("../shaderpipe.zig").Register;
 pub const ResolverOp = @import("../shaderpipe.zig").ResolverOp;
 pub const SpectralBandResponse = @import("../shaderpipe.zig").SpectralBandResponse;
-pub const Resolver = @import("../shaderpipe.zig").Resolver;
+pub const ResolverInput = @import("../shaderpipe.zig").ResolverInput;
 
 // --------------------------------------------------------------------------------------
 // Texture Types

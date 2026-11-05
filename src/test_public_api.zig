@@ -26,7 +26,7 @@ test "public API surface is available through namespaces" {
     _ = riley.BrownConExtParams;
     _ = riley.ShaderPipeInput;
     _ = riley.FuncShaderBuiltin;
-    _ = riley.Resolver;
+    _ = riley.ResolverInput;
 
     _ = maths.F;
     _ = maths.Vec3F;

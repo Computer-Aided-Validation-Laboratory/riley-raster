@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const riley = @import("riley");
+const riley = @import("riley/zig/api.zig");
 const maths = riley.maths;
 const datio = riley.dataio;
 const ops = riley.ops;

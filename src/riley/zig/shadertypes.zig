@@ -125,7 +125,7 @@ pub const ShaderPipeStageInput = union(enum) {
 
 pub const ShaderPipeInput = struct {
     stages: []const ShaderPipeStageInput,
-    resolver: shaderpipe.Resolver,
+    resolver: shaderpipe.ResolverInput,
     constants: []const F = &.{},
 };
 

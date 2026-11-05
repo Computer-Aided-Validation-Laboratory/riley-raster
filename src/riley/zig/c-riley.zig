@@ -1217,7 +1217,7 @@ fn resolverFromC(
     allocator: std.mem.Allocator,
     input: CResolver,
     constants: []const F,
-) !riley.Resolver {
+) !riley.ResolverInput {
     const registers = try pipeRegistersFromC(allocator, input.registers, input.registers_len);
     return switch (input.tag) {
         0 => .{ .identity = registers },

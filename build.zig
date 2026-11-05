@@ -52,7 +52,6 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/riley/zig/api.zig"),
         .target = target,
         .optimize = optimize,
-        .link_libc = true,
     });
     const shared_lib = addRileySharedLibrary(
         b,
@@ -132,7 +131,6 @@ pub fn build(b: *std.Build) void {
         target,
         optimize,
         build_options_module,
-        riley_module,
         .{
             .step_name = "diag-badjac",
             .description = "Run warning-only invalid-Jacobian render diagnostics",
@@ -217,7 +215,6 @@ pub fn build(b: *std.Build) void {
             target,
             optimize,
             build_options_module,
-            riley_module,
             entry,
         );
         run_step.dependOn(&run_artifact.step);
@@ -233,7 +230,6 @@ pub fn build(b: *std.Build) void {
         target,
         optimize,
         build_options_module,
-        riley_module,
         .{
             .step_name = "run-all-demos",
             .description = "Run all demos sequentially through the public API module",
@@ -273,7 +269,6 @@ pub fn build(b: *std.Build) void {
             target,
             optimize,
             build_options_module,
-            riley_module,
             entry,
         );
         if (std.mem.eql(u8, entry.step_name, "gen-gold-failed-distortion")) {
@@ -294,7 +289,6 @@ pub fn build(b: *std.Build) void {
         target,
         optimize,
         build_options_module,
-        riley_module,
         .{
             .step_name = "gen-gold-verif-zig-internal",
             .description = "Generate verification oracle inputs",
@@ -373,7 +367,6 @@ pub fn build(b: *std.Build) void {
             target,
             optimize,
             build_options_module,
-            riley_module,
             entry,
         );
         run_step.dependOn(&run_artifact.step);
@@ -388,7 +381,6 @@ pub fn build(b: *std.Build) void {
             target,
             optimize,
             build_options_module,
-            riley_module,
             entry,
             precision,
             simd,
@@ -501,7 +493,6 @@ fn addRunStep(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
-    riley_module: *std.Build.Module,
     entry: RunEntry,
 ) *std.Build.Step.Run {
     const executable = b.addExecutable(.{
@@ -511,7 +502,7 @@ fn addRunStep(
             target,
             optimize,
             build_options_module,
-            riley_module,
+            null,
             entry.source_path,
             false,
             .executable,
@@ -525,7 +516,6 @@ fn addBenchInstallStep(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
-    riley_module: *std.Build.Module,
     entry: RunEntry,
     precision: []const u8,
     simd: []const u8,
@@ -546,7 +536,7 @@ fn addBenchInstallStep(
             target,
             optimize,
             build_options_module,
-            riley_module,
+            null,
             entry.source_path,
             false,
             .executable,
@@ -577,7 +567,7 @@ fn createRootModule(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
-    riley_module: *std.Build.Module,
+    riley_module: ?*std.Build.Module,
     source_path: []const u8,
     link_libc: bool,
     wrapper_kind: WrapperKind,
@@ -640,7 +630,7 @@ fn buildWrapperImports(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
-    riley_module: *std.Build.Module,
+    riley_module: ?*std.Build.Module,
     source_path: []const u8,
     link_libc: bool,
 ) []const std.Build.Module.Import {
@@ -656,7 +646,7 @@ fn buildWrapperImports(
         .optimize = optimize,
         .link_libc = link_libc,
     });
-    entry_source.addImport("riley", riley_module);
+    if (riley_module) |module| entry_source.addImport("riley", module);
     imports.append(b.allocator, .{
         .name = "entry_source",
         .module = entry_source,

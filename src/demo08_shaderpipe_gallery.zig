@@ -8,12 +8,12 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const riley = @import("riley");
+const riley = @import("riley/zig/api.zig");
 const maths = riley.maths;
 const datio = riley.dataio;
 const ops = riley.ops;
 
-fn linear(x: maths.F, y: maths.F) riley.PipeSourceInput {
+fn createFuncShaderLinearSource(x: maths.F, y: maths.F) riley.PipeSourceInput {
     return .{
         .func = .{
             .builtin = .linear,
@@ -39,6 +39,7 @@ fn render(
 ) !void {
     var selected_camera = base_camera;
     selected_camera.render_format = role;
+
     const save_opts = if (role == .rgb)
         datio.ImageSaveOpts{
             .format = .bmp,
@@ -51,10 +52,13 @@ fn render(
             .file_bits = 16,
             .scaling = .{ .fixed = .{ 0.0, 1.0 } },
         };
+
     selected_camera.output_files = &.{save_opts};
+
     const config = riley.RasterConfig{
         .save_strategy = .disk,
     };
+
     const result = try riley.raster(
         allocator,
         io,
@@ -63,6 +67,7 @@ fn render(
         config,
         path,
     );
+
     if (result) |image| {
         allocator.free(image.slice);
         image.deinit(allocator);
@@ -191,19 +196,19 @@ pub fn main(init: std.process.Init) !void {
     const rgb_stages = [_]riley.ShaderPipeStageInput{
         .{
             .shader = .{
-                .shader = linear(0.5, 0.0),
+                .shader = createFuncShaderLinearSource(0.5, 0.0),
                 .register_dest = ch0,
             },
         },
         .{
             .shader = .{
-                .shader = linear(0.0, 0.5),
+                .shader = createFuncShaderLinearSource(0.0, 0.5),
                 .register_dest = ch1,
             },
         },
         .{
             .shader = .{
-                .shader = linear(0.25, -0.25),
+                .shader = createFuncShaderLinearSource(0.25, -0.25),
                 .register_dest = ch2,
             },
         },
@@ -229,13 +234,13 @@ pub fn main(init: std.process.Init) !void {
     const expr_stages = [_]riley.ShaderPipeStageInput{
         .{
             .shader = .{
-                .shader = linear(0.5, 0.0),
+                .shader = createFuncShaderLinearSource(0.5, 0.0),
                 .register_dest = field0,
             },
         },
         .{
             .shader = .{
-                .shader = linear(0.0, 0.5),
+                .shader = createFuncShaderLinearSource(0.0, 0.5),
                 .register_dest = field1,
             },
         },
