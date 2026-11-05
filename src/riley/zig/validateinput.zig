@@ -607,11 +607,11 @@ fn checkPipeMetadata(
                 const index = @as(usize, dest.index) + offset;
                 if (index >= buildconfig.config.shaderpipe.max_registers) return error.InvalidShaderPipe;
                 dest.index = @intCast(index);
-                written.add(dest) catch return error.InvalidShaderPipe;
+                written.recordWrite(dest) catch return error.InvalidShaderPipe;
             }
         },
         .grey_to_emissivity => |m| {
-            if (!written.has(m.register_source) or m.register_source.kind != .channel or
+            if (!written.isWritten(m.register_source) or m.register_source.kind != .channel or
                 m.register_dest.kind != .parameter or
                 !std.math.isFinite(m.emissivity_at_black) or
                 !std.math.isFinite(m.emissivity_at_white) or
@@ -623,37 +623,37 @@ fn checkPipeMetadata(
             {
                 return error.InvalidShaderPipe;
             }
-            written.add(m.register_dest) catch return error.InvalidShaderPipe;
+            written.recordWrite(m.register_dest) catch return error.InvalidShaderPipe;
         },
         .clamp => |c| {
-            if (!written.has(c.register_source) or !std.math.isFinite(c.lower) or
+            if (!written.isWritten(c.register_source) or !std.math.isFinite(c.lower) or
                 !std.math.isFinite(c.upper) or c.lower > c.upper)
             {
                 return error.InvalidShaderPipe;
             }
-            written.add(c.register_dest) catch return error.InvalidShaderPipe;
+            written.recordWrite(c.register_dest) catch return error.InvalidShaderPipe;
         },
         .affine_map => |m| {
-            if (!written.has(m.register_source) or !std.math.isFinite(m.gain) or
+            if (!written.isWritten(m.register_source) or !std.math.isFinite(m.gain) or
                 !std.math.isFinite(m.offset)) return error.InvalidShaderPipe;
-            written.add(m.register_dest) catch return error.InvalidShaderPipe;
+            written.recordWrite(m.register_dest) catch return error.InvalidShaderPipe;
         },
         .lut_map => |m| {
-            if (!written.has(m.register_source)) return error.InvalidShaderPipe;
+            if (!written.isWritten(m.register_source)) return error.InvalidShaderPipe;
             m.lookup.validate() catch return error.InvalidShaderPipe;
-            written.add(m.register_dest) catch return error.InvalidShaderPipe;
+            written.recordWrite(m.register_dest) catch return error.InvalidShaderPipe;
         },
         .blend => |m| {
-            if (!written.has(m.a) or !written.has(m.b)) return error.InvalidShaderPipe;
+            if (!written.isWritten(m.a) or !written.isWritten(m.b)) return error.InvalidShaderPipe;
             switch (m.alpha) {
                 .fixed => |alpha| if (!std.math.isFinite(alpha)) {
                     return error.InvalidShaderPipe;
                 },
-                .register => |register_ref| if (!written.has(register_ref)) {
+                .register => |register_ref| if (!written.isWritten(register_ref)) {
                     return error.InvalidShaderPipe;
                 },
             }
-            written.add(m.register_dest) catch return error.InvalidShaderPipe;
+            written.recordWrite(m.register_dest) catch return error.InvalidShaderPipe;
         },
         .normalise => |m| {
             if (m.components != 2 and m.components != 3) return error.InvalidShaderPipe;
@@ -668,12 +668,12 @@ fn checkPipeMetadata(
                 }
                 var src = m.register_source;
                 src.index = @intCast(src_idx);
-                if (!written.has(src)) return error.InvalidShaderPipe;
+                if (!written.isWritten(src)) return error.InvalidShaderPipe;
             }
             for (0..m.components) |offset| {
                 var dest = m.register_dest;
                 dest.index += @intCast(offset);
-                written.add(dest) catch return error.InvalidShaderPipe;
+                written.recordWrite(dest) catch return error.InvalidShaderPipe;
             }
         },
     };

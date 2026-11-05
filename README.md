@@ -22,7 +22,7 @@ Riley's Zig core uses `comptime` specialisation and SIMD with `@Vector` to keep 
 Riley uses [Zig 0.16.0](https://ziglang.org/download/). Clone the repository, then build and run the smallest demo:
 
 ```shell
-zig build demo0-quickstart -Doptimize=ReleaseFast
+zig build demo00-quickstart -Doptimize=ReleaseFast
 ```
 
 Renders are written to `out/`. Run the combined test suite with:
@@ -37,7 +37,7 @@ Install the published package:
 
 ```shell
 python -m pip install riley-raster
-python -m riley demo0_quickstart
+python -m riley demo00_quickstart
 ```
 Python renders are written below `out_riley_py/`.
 
@@ -73,13 +73,13 @@ The python tests include parity analysis between the Zig demo output when the re
 Riley provides a series of capability demos in Zig and Python. For example, render the rabbits demo with:
 
 ```shell
-zig build demo2a-rabbits-mono -Doptimize=ReleaseFast
+zig build demo02a-rabbits-mono -Doptimize=ReleaseFast
 ```
 
 The equivalent Python demo is:
 
 ```shell
-python -m riley demo2a_rabbits_mono
+python -m riley demo02a_rabbits_mono
 ```
 
 Browse the complete [Zig demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src) or [Python demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src/riley/pydemos).

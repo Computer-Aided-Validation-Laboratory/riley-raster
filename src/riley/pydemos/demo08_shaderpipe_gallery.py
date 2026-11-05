@@ -129,7 +129,7 @@ def main() -> None:
                 )
             ]
         out_dir = str(
-            Path.cwd() / "out_riley_py" / "demo8_shaderpipe_gallery" / name
+            Path.cwd() / "out_riley_py" / "demo08_shaderpipe_gallery" / name
         )
         riley.raster(mesh, camera, config, out_dir=out_dir)
 

@@ -75,7 +75,7 @@ def main() -> None:
     # --------------------------------------------------------------------------
     data_dir = riley.data.stereocal_case_path()
     texture_path = riley.data.cal_target_texture_path()
-    out_dir = Path.cwd() / "out_riley_py" / "demo4_stereocal"
+    out_dir = Path.cwd() / "out_riley_py" / "demo04_stereocal"
     shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True)
     total_threads = 4

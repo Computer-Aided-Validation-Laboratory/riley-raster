@@ -489,7 +489,7 @@ pub fn main(init: std.process.Init) !void {
     const local_alloc = arena.allocator();
     const io = init.io;
 
-    const out_dir_root = "./out/demo6_featurezoo";
+    const out_dir_root = "./out/demo06_featurezoo";
 
     const pixel_size = [2]maths.F{ 5.3e-6, 5.3e-6 };
     const focal_length: maths.F = 50.0e-3;

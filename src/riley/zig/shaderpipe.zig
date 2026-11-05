@@ -10,28 +10,9 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
-pub const RegisterKind = enum { channel, field, parameter, constant };
-pub const Register = struct { kind: RegisterKind, index: u8 };
-
-pub const identity_channels = blk: {
-    var registers: [buildconfig.config.max_image_channels]Register = undefined;
-    for (&registers, 0..) |*register_ref, index| {
-        register_ref.* = .{ .kind = .channel, .index = @intCast(index) };
-    }
-    break :blk registers;
-};
-
-pub const identity_channels_1: []const Register = identity_channels[0..1];
-pub const identity_channels_3: []const Register = identity_channels[0..3];
-
-pub fn identityRegisters(channels: u8) []const Register {
-    std.debug.assert(channels <= buildconfig.config.max_image_channels);
-    return identity_channels[0..channels];
-}
-
-pub fn resolverIdentity(channels: u8) Resolver {
-    return .{ .identity = identityRegisters(channels) };
-}
+// --------------------------------------------------------------------------------------
+// Shader Pipe Stages
+// --------------------------------------------------------------------------------------
 
 pub const GreyToEmissivityStage = struct {
     register_source: Register,
@@ -110,6 +91,7 @@ pub const NormaliseStage = struct {
 
     pub inline fn apply(self: @This(), outputs: anytype) void {
         const T = @TypeOf(outputs.get(self.register_source));
+
         var values: [3]T = undefined;
         var squared: T = splat(T, 0);
         for (0..self.components) |i| {
@@ -118,6 +100,7 @@ pub const NormaliseStage = struct {
             values[i] = outputs.get(register_ref);
             squared += values[i] * values[i];
         }
+
         if (T == F) {
             const inv_norm: F = if (squared == 0) 0 else 1 / @sqrt(squared);
             for (0..self.components) |i| {
@@ -137,6 +120,29 @@ pub const NormaliseStage = struct {
         }
     }
 };
+
+// --------------------------------------------------------------------------------------
+// Registers for Pipe Stage Outputs
+// --------------------------------------------------------------------------------------
+
+pub const RegisterKind = enum { channel, field, parameter, constant };
+pub const Register = struct { kind: RegisterKind, index: u8 };
+
+pub const identity_channels = blk: {
+    var registers: [buildconfig.config.max_image_channels]Register = undefined;
+    for (&registers, 0..) |*register_ref, index| {
+        register_ref.* = .{ .kind = .channel, .index = @intCast(index) };
+    }
+    break :blk registers;
+};
+
+pub const identity_channels_1: []const Register = identity_channels[0..1];
+pub const identity_channels_3: []const Register = identity_channels[0..3];
+
+pub fn identityRegisters(channels: u8) []const Register {
+    std.debug.assert(channels <= buildconfig.config.max_image_channels);
+    return identity_channels[0..channels];
+}
 
 pub fn RegistersOutput(comptime T: type) type {
     return struct {
@@ -167,6 +173,40 @@ pub fn RegistersOutput(comptime T: type) type {
 pub const RegistersOutputScalar = RegistersOutput(F);
 pub const RegistersOutputSIMD = RegistersOutput(buildconfig.VecSF);
 
+pub const RegistersWritten = struct {
+    const Mask = std.meta.Int(.unsigned, buildconfig.config.shaderpipe.max_registers);
+    channel: Mask = 0,
+    field: Mask = 0,
+    parameter: Mask = 0,
+
+    pub fn isWritten(self: RegistersWritten, register_ref: Register) bool {
+        if (register_ref.index >= buildconfig.config.shaderpipe.max_registers or register_ref.kind == .constant) return false;
+        const mask: Mask = @as(Mask, 1) << @intCast(register_ref.index);
+        return switch (register_ref.kind) {
+            .channel => self.channel & mask != 0,
+            .field => self.field & mask != 0,
+            .parameter => self.parameter & mask != 0,
+            .constant => unreachable,
+        };
+    }
+
+    pub fn recordWrite(self: *RegistersWritten, register_ref: Register) !void {
+        if (register_ref.index >= buildconfig.config.shaderpipe.max_registers or register_ref.kind == .constant) return error.InvalidRegister;
+        if (self.isWritten(register_ref)) return error.RepeatedWriter;
+        const mask: Mask = @as(Mask, 1) << @intCast(register_ref.index);
+        switch (register_ref.kind) {
+            .channel => self.channel |= mask,
+            .field => self.field |= mask,
+            .parameter => self.parameter |= mask,
+            .constant => unreachable,
+        }
+    }
+};
+
+// --------------------------------------------------------------------------------------
+// Resolver Programs
+// --------------------------------------------------------------------------------------
+
 pub const ResolverOp = union(enum) {
     load: Register,
     add,
@@ -178,132 +218,6 @@ pub const ResolverOp = union(enum) {
     clamp: struct { lower: F, upper: F },
     lut: u8,
     store: u8,
-};
-
-pub const LookupTable = struct {
-    first: F,
-    step: F,
-    values: []const F,
-
-    pub fn validate(self: LookupTable) !void {
-        if (!std.math.isFinite(self.first) or !std.math.isFinite(self.step) or
-            self.step <= 0 or self.values.len < 2) return error.InvalidLookup;
-        for (self.values) |value| {
-            if (!std.math.isFinite(value)) return error.InvalidLookup;
-        }
-    }
-
-    pub inline fn sample(self: LookupTable, value: F) F {
-        const max_val = @as(F, @floatFromInt(self.values.len - 1));
-        const x = std.math.clamp((value - self.first) / self.step, 0, max_val);
-        const i: usize = @intFromFloat(x);
-        if (i == self.values.len - 1) return self.values[i];
-        const t = x - @as(F, @floatFromInt(i));
-        return self.values[i] + t * (self.values[i + 1] - self.values[i]);
-    }
-
-    pub fn inverseMonotonic(self: LookupTable, value: F) F {
-        if (value <= self.values[0]) return self.first;
-        const last = self.values.len - 1;
-        if (value >= self.values[last]) {
-            return self.first + self.step * @as(F, @floatFromInt(last));
-        }
-        var lo: usize = 0;
-        var hi: usize = last;
-        while (lo + 1 < hi) {
-            const mid = lo + (hi - lo) / 2;
-            if (self.values[mid] <= value) lo = mid else hi = mid;
-        }
-        const fraction = (value - self.values[lo]) / (self.values[hi] - self.values[lo]);
-        return self.first + self.step * (@as(F, @floatFromInt(lo)) + fraction);
-    }
-};
-
-/// Integrates blackbody spectral radiance against an absolute, dimensionless
-/// camera response. Wavelengths are metres; values are W/(m² sr).
-pub const SpectralBandResponse = struct {
-    wavelengths_m: []const F,
-    response: []const F,
-
-    pub fn prepareRadianceLookup(
-        self: SpectralBandResponse,
-        allocator: std.mem.Allocator,
-        temp_first_k: F,
-        temp_last_k: F,
-        temp_step_k: F,
-    ) !LookupTable {
-        if (self.wavelengths_m.len < 2 or self.wavelengths_m.len != self.response.len or
-            !std.math.isFinite(temp_first_k) or !std.math.isFinite(temp_last_k) or
-            !std.math.isFinite(temp_step_k) or temp_first_k <= 0 or
-            temp_last_k <= temp_first_k or temp_step_k <= 0)
-            return error.InvalidBandResponse;
-        var any_response = false;
-        for (self.wavelengths_m, self.response, 0..) |lambda, weight, i| {
-            if (!std.math.isFinite(lambda) or !std.math.isFinite(weight) or
-                lambda <= 0 or weight < 0 or
-                (i > 0 and lambda <= self.wavelengths_m[i - 1]))
-                return error.InvalidBandResponse;
-            any_response = any_response or weight > 0;
-        }
-        if (!any_response) return error.InvalidBandResponse;
-        const count_f = @ceil((temp_last_k - temp_first_k) / temp_step_k);
-        const count: usize = @as(usize, @intFromFloat(count_f)) + 1;
-        if (count < 2 or count > 65536) return error.InvalidBandResponse;
-        const values = try allocator.alloc(F, count);
-        for (values, 0..) |*result, ti| {
-            const temp = temp_first_k + @as(F, @floatFromInt(ti)) * temp_step_k;
-            var total: F = 0;
-            for (1..self.wavelengths_m.len) |wi| {
-                const a = self.wavelengths_m[wi - 1];
-                const b = self.wavelengths_m[wi];
-                total += (b - a) * 0.5 *
-                    (self.response[wi - 1] * planckSpectralRadiance(a, temp) +
-                        self.response[wi] * planckSpectralRadiance(b, temp));
-            }
-            result.* = total;
-        }
-        return .{ .first = temp_first_k, .step = temp_step_k, .values = values };
-    }
-};
-
-pub fn planckSpectralRadiance(wavelength_m: F, temperature_k: F) F {
-    const h: F = 6.62607015e-34;
-    const c: F = 299792458.0;
-    const k: F = 1.380649e-23;
-    const lambda2 = wavelength_m * wavelength_m;
-    const lambda5 = lambda2 * lambda2 * wavelength_m;
-    const denom = lambda5 * @exp(h * c / (wavelength_m * k * temperature_k)) - lambda5;
-    return (2 * h * c * c) / denom;
-}
-
-pub const RegistersWritten = struct {
-    const Mask = std.meta.Int(.unsigned, buildconfig.config.shaderpipe.max_registers);
-    channel: Mask = 0,
-    field: Mask = 0,
-    parameter: Mask = 0,
-
-    pub fn has(self: RegistersWritten, register_ref: Register) bool {
-        if (register_ref.index >= buildconfig.config.shaderpipe.max_registers or register_ref.kind == .constant) return false;
-        const mask: Mask = @as(Mask, 1) << @intCast(register_ref.index);
-        return switch (register_ref.kind) {
-            .channel => self.channel & mask != 0,
-            .field => self.field & mask != 0,
-            .parameter => self.parameter & mask != 0,
-            .constant => unreachable,
-        };
-    }
-
-    pub fn add(self: *RegistersWritten, register_ref: Register) !void {
-        if (register_ref.index >= buildconfig.config.shaderpipe.max_registers or register_ref.kind == .constant) return error.InvalidRegister;
-        if (self.has(register_ref)) return error.RepeatedWriter;
-        const mask: Mask = @as(Mask, 1) << @intCast(register_ref.index);
-        switch (register_ref.kind) {
-            .channel => self.channel |= mask,
-            .field => self.field |= mask,
-            .parameter => self.parameter |= mask,
-            .constant => unreachable,
-        }
-    }
 };
 
 pub const ResolverProgram = struct {
@@ -325,7 +239,7 @@ pub const ResolverProgram = struct {
             .load => |register_ref| {
                 if (register_ref.kind == .constant) {
                     if (register_ref.index >= self.constants.len) return error.InvalidRegister;
-                } else if (!written.has(register_ref)) return error.UnwrittenSlot;
+                } else if (!written.isWritten(register_ref)) return error.UnwrittenSlot;
                 depth += 1;
                 if (depth > buildconfig.config.shaderpipe.max_stack) return error.InvalidProgram;
             },
@@ -414,9 +328,9 @@ pub const ResolverProgram = struct {
     }
 };
 
-inline fn splat(comptime T: type, value: F) T {
-    return if (T == F) value else @splat(value);
-}
+// --------------------------------------------------------------------------------------
+// Output Resolution
+// --------------------------------------------------------------------------------------
 
 pub const Resolver = union(enum) {
     identity: []const Register,
@@ -462,7 +376,7 @@ pub const Resolver = union(enum) {
                 if (registers.len != channels) return error.InvalidChannels;
                 for (registers) |register_ref| {
                     if (register_ref.kind != .channel) return error.InvalidResolver;
-                    try checkSlot(register_ref, written, constants.len);
+                    try checkRegister(register_ref, written, constants.len);
                 }
             },
             .sum => |registers| {
@@ -471,7 +385,7 @@ pub const Resolver = union(enum) {
                 }
                 for (registers) |register_ref| {
                     if (register_ref.kind != .channel) return error.InvalidResolver;
-                    try checkSlot(register_ref, written, constants.len);
+                    try checkRegister(register_ref, written, constants.len);
                 }
             },
             .modulate => |m| {
@@ -479,17 +393,17 @@ pub const Resolver = union(enum) {
                     !std.math.isFinite(m.gain)) return error.InvalidResolver;
                 for (m.register_sources) |register_ref| {
                     if (register_ref.kind != .channel) return error.InvalidResolver;
-                    try checkSlot(register_ref, written, constants.len);
+                    try checkRegister(register_ref, written, constants.len);
                 }
                 if (m.factor.kind != .parameter) return error.InvalidResolver;
-                try checkSlot(m.factor, written, constants.len);
+                try checkRegister(m.factor, written, constants.len);
             },
             .weighted_sum => |w| {
                 if (w.register_sources.len < channels or w.register_sources.len % channels != 0 or
                     w.register_sources.len != w.weights.len) return error.InvalidResolver;
                 for (w.register_sources) |register_ref| {
                     if (register_ref.kind != .channel) return error.InvalidResolver;
-                    try checkSlot(register_ref, written, constants.len);
+                    try checkRegister(register_ref, written, constants.len);
                 }
                 for (w.weights) |weight| {
                     if (!std.math.isFinite(weight)) return error.InvalidResolver;
@@ -498,14 +412,14 @@ pub const Resolver = union(enum) {
             .greybody_bolometric => |g| {
                 if (channels != 1 or g.temperature.kind != .field or
                     g.emissivity.kind != .parameter) return error.InvalidResolver;
-                try checkSlot(g.temperature, written, constants.len);
-                try checkSlot(g.emissivity, written, constants.len);
+                try checkRegister(g.temperature, written, constants.len);
+                try checkRegister(g.emissivity, written, constants.len);
             },
             .greybody_band => |g| {
                 if (channels != 1 or g.temperature.kind != .field or
                     g.emissivity.kind != .parameter) return error.InvalidResolver;
-                try checkSlot(g.temperature, written, constants.len);
-                try checkSlot(g.emissivity, written, constants.len);
+                try checkRegister(g.temperature, written, constants.len);
+                try checkRegister(g.emissivity, written, constants.len);
                 try g.radiance.validate();
             },
             .greybody_band_apparent_c => |g| {
@@ -516,8 +430,8 @@ pub const Resolver = union(enum) {
                 {
                     return error.InvalidResolver;
                 }
-                try checkSlot(g.temperature, written, constants.len);
-                try checkSlot(g.emissivity, written, constants.len);
+                try checkRegister(g.temperature, written, constants.len);
+                try checkRegister(g.emissivity, written, constants.len);
                 try g.radiance.validate();
                 const num_vals = @as(F, @floatFromInt(g.radiance.values.len - 1));
                 const last_k = g.radiance.first + g.radiance.step * num_vals;
@@ -549,28 +463,9 @@ pub const Resolver = union(enum) {
     }
 };
 
-// Immutable engine-side metadata. User-facing descriptors keep their existing layout.
-pub const LookupTablePrepared = struct {
-    lookup: LookupTable,
-    last: usize,
-    max_index: F,
-
-    pub fn init(lookup: LookupTable) LookupTablePrepared {
-        return initMetadata(lookup, lookup.values.len - 1, @floatFromInt(lookup.values.len - 1));
-    }
-
-    fn initMetadata(lookup: LookupTable, last: usize, max_index: F) LookupTablePrepared {
-        return .{ .lookup = lookup, .last = last, .max_index = max_index };
-    }
-
-    pub inline fn sample(self: LookupTablePrepared, value: F) F {
-        const x = std.math.clamp((value - self.lookup.first) / self.lookup.step, 0, self.max_index);
-        const index: usize = @intFromFloat(x);
-        if (index == self.last) return self.lookup.values[index];
-        const t = x - @as(F, @floatFromInt(index));
-        return self.lookup.values[index] + t * (self.lookup.values[index + 1] - self.lookup.values[index]);
-    }
-};
+pub fn resolverIdentity(channels: u8) Resolver {
+    return .{ .identity = identityRegisters(channels) };
+}
 
 pub const ResolverPrepared = struct {
     value: Resolver,
@@ -620,40 +515,43 @@ fn evaluateResolver(
     const T = @TypeOf(out.*[0]);
     switch (self) {
         .identity => |registers| for (registers, 0..) |register_ref, ii| {
-            out.*[ii] = readSlot(T, inputs, constants, register_ref);
+            out.*[ii] = readRegister(T, inputs, constants, register_ref);
         },
         .sum => |registers| {
             for (0..channels) |ch| out.*[ch] = splat(T, 0);
             for (registers, 0..) |register_ref, ii| {
-                out.*[ii % channels] += readSlot(T, inputs, constants, register_ref);
+                out.*[ii % channels] += readRegister(T, inputs, constants, register_ref);
             }
         },
         .modulate => |m| {
-            const factor = readSlot(T, inputs, constants, m.factor);
+            const factor = readRegister(T, inputs, constants, m.factor);
             const ambient_splat = splat(T, m.ambient);
             const gain_splat = splat(T, m.gain);
+
             for (m.register_sources, 0..) |register_ref, ii| {
-                const src_val = readSlot(T, inputs, constants, register_ref);
+                const src_val = readRegister(T, inputs, constants, register_ref);
                 out.*[ii] = (src_val * factor + ambient_splat) * gain_splat;
             }
         },
         .weighted_sum => |w| {
             for (0..channels) |ch| out.*[ch] = splat(T, 0);
+
             for (w.register_sources, w.weights, 0..) |register_ref, weight, ii| {
-                const src_val = readSlot(T, inputs, constants, register_ref);
+                const src_val = readRegister(T, inputs, constants, register_ref);
                 out.*[ii % channels] += src_val * splat(T, weight);
             }
         },
         .greybody_bolometric => |g| {
-            const temp = readSlot(T, inputs, constants, g.temperature);
+            const temp = readRegister(T, inputs, constants, g.temperature);
             const square = temp * temp;
-            const em_val = readSlot(T, inputs, constants, g.emissivity);
+            const em_val = readRegister(T, inputs, constants, g.emissivity);
             const stefan_boltzmann = splat(T, 5.670374419e-8);
             out.*[0] = em_val * stefan_boltzmann * square * square;
         },
         .greybody_band => |g| {
             const radiance = if (prepared) LookupTablePrepared.initMetadata(g.radiance, lookup_last, lookup_max) else g.radiance;
-            const temp = readSlot(T, inputs, constants, g.temperature);
+            const temp = readRegister(T, inputs, constants, g.temperature);
+
             var radiant: T = undefined;
             if (T == F) {
                 radiant = radiance.sample(temp);
@@ -662,13 +560,18 @@ fn evaluateResolver(
                 for (&lanes) |*lane| lane.* = radiance.sample(lane.*);
                 radiant = @bitCast(lanes);
             }
-            out.*[0] = readSlot(T, inputs, constants, g.emissivity) * radiant;
+            out.*[0] = readRegister(T, inputs, constants, g.emissivity) * radiant;
         },
         .greybody_band_apparent_c => |g| {
-            const radiance = if (prepared) LookupTablePrepared.initMetadata(g.radiance, lookup_last, lookup_max) else g.radiance;
-            const temp = readSlot(T, inputs, constants, g.temperature);
-            const emissivity = readSlot(T, inputs, constants, g.emissivity);
+            const radiance = if (prepared) LookupTablePrepared.initMetadata(
+                g.radiance,
+                lookup_last,
+                lookup_max,
+            ) else g.radiance;
+            const temp = readRegister(T, inputs, constants, g.temperature);
+            const emissivity = readRegister(T, inputs, constants, g.emissivity);
             const ambient = ambient_radiance;
+
             if (T == F) {
                 const rad_temp = radiance.sample(temp);
                 const measured = emissivity * rad_temp + (1 - emissivity) * ambient;
@@ -688,27 +591,163 @@ fn evaluateResolver(
     }
 }
 
-fn checkSlot(register_ref: Register, written: RegistersWritten, constant_count: usize) !void {
-    if (register_ref.kind == .constant) {
-        if (register_ref.index >= constant_count) return error.InvalidRegister;
-    } else if (!written.has(register_ref)) return error.UnwrittenSlot;
+// --------------------------------------------------------------------------------------
+// Lookup Tables and Spectral Response
+// --------------------------------------------------------------------------------------
+
+pub const LookupTable = struct {
+    first: F,
+    step: F,
+    values: []const F,
+
+    pub fn validate(self: LookupTable) !void {
+        if (!std.math.isFinite(self.first) or !std.math.isFinite(self.step) or
+            self.step <= 0 or self.values.len < 2) return error.InvalidLookup;
+        for (self.values) |value| {
+            if (!std.math.isFinite(value)) return error.InvalidLookup;
+        }
+    }
+
+    pub inline fn sample(self: LookupTable, value: F) F {
+        const max_val = @as(F, @floatFromInt(self.values.len - 1));
+        const x = std.math.clamp((value - self.first) / self.step, 0, max_val);
+        const i: usize = @intFromFloat(x);
+        if (i == self.values.len - 1) return self.values[i];
+        const t = x - @as(F, @floatFromInt(i));
+        return self.values[i] + t * (self.values[i + 1] - self.values[i]);
+    }
+
+    pub fn inverseMonotonic(self: LookupTable, value: F) F {
+        if (value <= self.values[0]) return self.first;
+        const last = self.values.len - 1;
+        if (value >= self.values[last]) {
+            return self.first + self.step * @as(F, @floatFromInt(last));
+        }
+        var lo: usize = 0;
+        var hi: usize = last;
+        while (lo + 1 < hi) {
+            const mid = lo + (hi - lo) / 2;
+            if (self.values[mid] <= value) lo = mid else hi = mid;
+        }
+        const fraction = (value - self.values[lo]) / (self.values[hi] - self.values[lo]);
+        return self.first + self.step * (@as(F, @floatFromInt(lo)) + fraction);
+    }
+};
+
+// Immutable engine-side metadata. User-facing descriptors keep their existing layout.
+pub const LookupTablePrepared = struct {
+    lookup: LookupTable,
+    last: usize,
+    max_index: F,
+
+    pub fn init(lookup: LookupTable) LookupTablePrepared {
+        return initMetadata(lookup, lookup.values.len - 1, @floatFromInt(lookup.values.len - 1));
+    }
+
+    fn initMetadata(lookup: LookupTable, last: usize, max_index: F) LookupTablePrepared {
+        return .{ .lookup = lookup, .last = last, .max_index = max_index };
+    }
+
+    pub inline fn sample(self: LookupTablePrepared, value: F) F {
+        const x = std.math.clamp((value - self.lookup.first) / self.lookup.step, 0, self.max_index);
+        const index: usize = @intFromFloat(x);
+        if (index == self.last) return self.lookup.values[index];
+        const t = x - @as(F, @floatFromInt(index));
+        return self.lookup.values[index] + t * (self.lookup.values[index + 1] - self.lookup.values[index]);
+    }
+};
+
+/// Integrates blackbody spectral radiance against an absolute, dimensionless
+/// camera response. Wavelengths are metres; values are W/(m² sr).
+pub const SpectralBandResponse = struct {
+    wavelengths_m: []const F,
+    response: []const F,
+
+    pub fn prepareRadianceLookup(
+        self: SpectralBandResponse,
+        allocator: std.mem.Allocator,
+        temp_first_k: F,
+        temp_last_k: F,
+        temp_step_k: F,
+    ) !LookupTable {
+        if (self.wavelengths_m.len < 2 or self.wavelengths_m.len != self.response.len or
+            !std.math.isFinite(temp_first_k) or !std.math.isFinite(temp_last_k) or
+            !std.math.isFinite(temp_step_k) or temp_first_k <= 0 or
+            temp_last_k <= temp_first_k or temp_step_k <= 0)
+            return error.InvalidBandResponse;
+
+        var any_response = false;
+        for (self.wavelengths_m, self.response, 0..) |lambda, weight, i| {
+            if (!std.math.isFinite(lambda) or !std.math.isFinite(weight) or
+                lambda <= 0 or weight < 0 or
+                (i > 0 and lambda <= self.wavelengths_m[i - 1]))
+                return error.InvalidBandResponse;
+            any_response = any_response or weight > 0;
+        }
+        if (!any_response) return error.InvalidBandResponse;
+        const count_f = @ceil((temp_last_k - temp_first_k) / temp_step_k);
+        const count: usize = @as(usize, @intFromFloat(count_f)) + 1;
+        if (count < 2 or count > 65536) return error.InvalidBandResponse;
+        const values = try allocator.alloc(F, count);
+        for (values, 0..) |*result, ti| {
+            const temp = temp_first_k + @as(F, @floatFromInt(ti)) * temp_step_k;
+            var total: F = 0;
+            for (1..self.wavelengths_m.len) |wi| {
+                const a = self.wavelengths_m[wi - 1];
+                const b = self.wavelengths_m[wi];
+                total += (b - a) * 0.5 *
+                    (self.response[wi - 1] * planckSpectralRadiance(a, temp) +
+                        self.response[wi] * planckSpectralRadiance(b, temp));
+            }
+            result.* = total;
+        }
+        return .{ .first = temp_first_k, .step = temp_step_k, .values = values };
+    }
+};
+
+pub fn planckSpectralRadiance(wavelength_m: F, temperature_k: F) F {
+    const h: F = 6.62607015e-34;
+    const c: F = 299792458.0;
+    const k: F = 1.380649e-23;
+    const lambda2 = wavelength_m * wavelength_m;
+    const lambda5 = lambda2 * lambda2 * wavelength_m;
+    const denom = lambda5 * @exp(h * c / (wavelength_m * k * temperature_k)) - lambda5;
+    return (2 * h * c * c) / denom;
 }
 
-fn readSlot(comptime T: type, inputs: anytype, constants: []const F, register_ref: Register) T {
+// --------------------------------------------------------------------------------------
+// Shared Helpers
+// --------------------------------------------------------------------------------------
+
+fn checkRegister(register_ref: Register, written: RegistersWritten, constant_count: usize) !void {
+    if (register_ref.kind == .constant) {
+        if (register_ref.index >= constant_count) return error.InvalidRegister;
+    } else if (!written.isWritten(register_ref)) return error.UnwrittenSlot;
+}
+
+fn readRegister(comptime T: type, inputs: anytype, constants: []const F, register_ref: Register) T {
     return if (register_ref.kind == .constant)
         splat(T, constants[register_ref.index])
     else
         inputs.get(register_ref);
 }
 
+inline fn splat(comptime T: type, value: F) T {
+    return if (T == F) value else @splat(value);
+}
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
 test "resolver arithmetic retains earlier outputs" {
     var written: RegistersWritten = .{};
-    try written.add(.{ .kind = .channel, .index = 0 });
-    try written.add(.{ .kind = .channel, .index = 1 });
-    try written.add(.{ .kind = .parameter, .index = 0 });
+    try written.recordWrite(.{ .kind = .channel, .index = 0 });
+    try written.recordWrite(.{ .kind = .channel, .index = 1 });
+    try written.recordWrite(.{ .kind = .parameter, .index = 0 });
     try std.testing.expectError(
         error.RepeatedWriter,
-        written.add(.{ .kind = .channel, .index = 0 }),
+        written.recordWrite(.{ .kind = .channel, .index = 0 }),
     );
     const ops = [_]ResolverOp{
         .{ .load = .{ .kind = .channel, .index = 0 } },
@@ -737,8 +776,8 @@ test "resolver arithmetic retains earlier outputs" {
 
 test "bolometric emission and LUT agree with independent values" {
     var written: RegistersWritten = .{};
-    try written.add(.{ .kind = .field, .index = 0 });
-    try written.add(.{ .kind = .parameter, .index = 0 });
+    try written.recordWrite(.{ .kind = .field, .index = 0 });
+    try written.recordWrite(.{ .kind = .parameter, .index = 0 });
     var inputs: RegistersOutputScalar = .{};
     inputs.field[0] = 300;
     inputs.parameter[0] = 0.8;
@@ -820,8 +859,8 @@ test "band Planck LUT is positive, temperature ordered, and interpolates" {
 
 test "apparent temperature includes reflected ambient and inverts band radiance" {
     var written: RegistersWritten = .{};
-    try written.add(.{ .kind = .field, .index = 0 });
-    try written.add(.{ .kind = .parameter, .index = 0 });
+    try written.recordWrite(.{ .kind = .field, .index = 0 });
+    try written.recordWrite(.{ .kind = .parameter, .index = 0 });
     const values = [_]F{ 10, 20, 30, 40, 50 };
     const resolver: Resolver = .{ .greybody_band_apparent_c = .{
         .temperature = .{ .kind = .field, .index = 0 },
@@ -993,23 +1032,23 @@ test "register write tracking respects configured capacity and independent banks
     const channel = Register{ .kind = .channel, .index = last_index };
     const field = Register{ .kind = .field, .index = last_index };
     const parameter = Register{ .kind = .parameter, .index = last_index };
-    try std.testing.expect(!written.has(channel));
-    try written.add(channel);
-    try std.testing.expect(written.has(channel));
-    try std.testing.expect(!written.has(field));
-    try std.testing.expect(!written.has(parameter));
-    try written.add(field);
-    try written.add(parameter);
-    try std.testing.expect(written.has(field));
-    try std.testing.expect(written.has(parameter));
-    try std.testing.expectError(error.RepeatedWriter, written.add(channel));
-    try std.testing.expectError(error.InvalidRegister, written.add(.{ .kind = .constant, .index = 0 }));
+    try std.testing.expect(!written.isWritten(channel));
+    try written.recordWrite(channel);
+    try std.testing.expect(written.isWritten(channel));
+    try std.testing.expect(!written.isWritten(field));
+    try std.testing.expect(!written.isWritten(parameter));
+    try written.recordWrite(field);
+    try written.recordWrite(parameter);
+    try std.testing.expect(written.isWritten(field));
+    try std.testing.expect(written.isWritten(parameter));
+    try std.testing.expectError(error.RepeatedWriter, written.recordWrite(channel));
+    try std.testing.expectError(error.InvalidRegister, written.recordWrite(.{ .kind = .constant, .index = 0 }));
     if (comptime buildconfig.config.shaderpipe.max_registers < 256) {
         const outside = Register{
             .kind = .channel,
             .index = buildconfig.config.shaderpipe.max_registers,
         };
-        try std.testing.expect(!written.has(outside));
-        try std.testing.expectError(error.InvalidRegister, written.add(outside));
+        try std.testing.expect(!written.isWritten(outside));
+        try std.testing.expectError(error.InvalidRegister, written.recordWrite(outside));
     }
 }

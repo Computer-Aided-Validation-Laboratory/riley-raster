@@ -58,7 +58,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const data_dir = "data/FE/platehole3d_2mr_7f/";
     const texture_path = "texture/speckle_mono.bmp";
-    const out_dir_root = "./out/demo3_dicuq";
+    const out_dir_root = "./out/demo03_dicuq";
 
     const config = riley.RasterConfig{
         .render_mode = .offline,

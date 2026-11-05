@@ -51,7 +51,7 @@ pub fn main(init: std.process.Init) !void {
     // 1. Setup paths and parameters
     // -------------------------------------------------------------------------
     const data_dir = "data/FE/platehole3d_2mr_7f/";
-    const out_path = "./out/demo9_diciruq";
+    const out_path = "./out/demo09_diciruq";
 
     // -------------------------------------------------------------------------
     // 2. Load simulation data, displacement, and temperature fields
@@ -314,7 +314,7 @@ pub fn main(init: std.process.Init) !void {
     var writer = metadata.writer(io, &buffer);
     try writer.interface.writeAll(
         "cam0=left DIC (-10 deg), cam1=IR (0 deg), cam2=right DIC (+10 deg)\n" ++
-            "Frames: first and last FE displacement frames from demo3 dataset.\n" ++
+            "Frames: first and last FE displacement frames from demo03 dataset.\n" ++
             "DIC: source 0..255 -> round(source/255*4095)*16 in uint16 TIFF; " ++
             "4096 effective codes, range 0..65520.\n" ++
             "IR: flat 8-14 um band, ambient 293.15 K, black/white emissivity 0.96/0.90.\n" ++

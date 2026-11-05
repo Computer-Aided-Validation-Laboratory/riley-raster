@@ -6,7 +6,6 @@
 #
 # Authors: scepticalrabbit (Lloyd Fletcher)
 # --------------------------------------------------------------------------
-"""One mesh, two camera-selected shaders: direct checker and lit checker."""
 from __future__ import annotations
 
 import shutil
@@ -19,20 +18,14 @@ import riley
 
 def main() -> None:
     # --------------------------------------------------------------------------
-    # 1. Setup paths and parameters
-    # --------------------------------------------------------------------------
-    out_dir = Path.cwd() / "out_riley_py" / "demo7_shaderpipe_quickstart"
-    shutil.rmtree(out_dir, ignore_errors=True)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # --------------------------------------------------------------------------
-    # 2. Create the mesh geometry and shaders
+    # 1. Create the mesh geometry and shader
     # --------------------------------------------------------------------------
     coords = np.array(
         ((-1.0, -1.0, 0.0), (1.0, -1.0, 0.0), (0.0, 1.0, 0.0)),
         dtype=np.float64,
     )
     connect = np.array(((0, 1, 2),), dtype=np.int64)
+
     convention = riley.ConnectConvention(
         riley.EElemType.TRI3,
         riley.EConnectAxis.ROW,
@@ -40,34 +33,11 @@ def main() -> None:
         riley.ENodeOrder.RILEY,
     )
 
-    checker = riley.FunctionShader(
+    shader = riley.FunctionShader(
         builtin=riley.FuncShaderBuiltin.checker,
         coord_mode=riley.FuncCoordMode.world_reference,
         params=riley.FuncShaderParams(coord_scale=(4.0, 4.0)),
         scaling_type=riley.ScaleStrategy.auto,
-    )
-    light = riley.FunctionShader(
-        builtin=riley.FuncShaderBuiltin.linear,
-        coord_mode=riley.FuncCoordMode.world_reference,
-        params=riley.FuncShaderParams(linear_coeffs=(0.625, 0.375, 0.0)),
-        bits=-1,
-        scaling_type=riley.ScaleStrategy.none,
-    )
-
-    channel = riley.Register(riley.RegisterKind.channel, 0)
-    parameter = riley.Register(riley.RegisterKind.parameter, 0)
-
-    stages = (
-        riley.ShaderSource(checker, channel),
-        riley.ShaderSource(light, parameter),
-    )
-    resolver = riley.ShaderResolver(
-        riley.ResolverKind.modulate,
-        registers=(channel,),
-        factor=parameter,
-    )
-    shaders = riley.MeshShaderSet(
-        mono=riley.ShaderPipe(stages=stages, resolver=resolver),
     )
 
     mesh = riley.create_mesh(
@@ -75,16 +45,17 @@ def main() -> None:
         riley.MeshType.tri3opt,
         coords,
         connect,
-        shaders,
+        riley.MeshShaderSet(mono=shader),
     )
 
     # --------------------------------------------------------------------------
-    # 3. Configure and frame the direct and lit cameras
+    # 2. Configure and frame the camera
     # --------------------------------------------------------------------------
     pixels_num = (512, 512)
     pixels_size = (0.02, 0.02)
     focal_length = 1.0
     rotation = (0.0, 0.0, 0.0)
+
     target = riley.roi_cent_from_coords(coords)
     position = riley.pos_frame_mesh(
         mesh,
@@ -95,7 +66,7 @@ def main() -> None:
         target=target,
     )
 
-    direct = riley.Camera(
+    camera = riley.Camera(
         pixels_num=pixels_num,
         pixels_size=pixels_size,
         pos_world=position,
@@ -104,28 +75,30 @@ def main() -> None:
         focal_length=focal_length,
         sub_sample=4,
         render_format=riley.RenderFormat.mono,
-    )
-    lit = riley.Camera(
-        pixels_num=pixels_num,
-        pixels_size=pixels_size,
-        pos_world=position,
-        rot_world=rotation,
-        roi_cent_world=target,
-        focal_length=focal_length,
-        sub_sample=4,
-        render_format=riley.RenderFormat.mono,
+        output_files=[
+            riley.ImageSaveOpts(
+                format=riley.ImageFormat.bmp,
+                file_bits=8,
+                scaling=riley.ScaleStrategy.auto,
+            )
+        ],
     )
 
     # --------------------------------------------------------------------------
-    # 4. Configure the raster engine and render the scene
+    # 3. Configure the raster engine and output path
     # --------------------------------------------------------------------------
     config = riley.RasterConfig(
         parallel=1,
         save_strategy=riley.SaveStrategy.disk,
     )
-    config.output_name_format = "demo7_cam{camera}_frame{frame}_field{field}"
 
-    riley.raster(mesh, (direct, lit), config, out_dir=str(out_dir))
+    out_dir = Path.cwd() / "out_riley_py" / "demo00_quickstart"
+    shutil.rmtree(out_dir, ignore_errors=True)
+
+    # --------------------------------------------------------------------------
+    # 4. Render the scene
+    # --------------------------------------------------------------------------
+    riley.raster(mesh, camera, config, out_dir=str(out_dir))
 
 
 if __name__ == "__main__":

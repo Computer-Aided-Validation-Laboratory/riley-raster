@@ -201,7 +201,7 @@ pub fn PipeKernel(comptime N: usize) type {
         ) void {
             const hit = pipe_buf.completeHit(coord_space, interp, pipe.hit_geometry.selection);
 
-            var outputs: shaderpipe.RegistersOutputScalar = .{};
+            var registers_out: shaderpipe.RegistersOutputScalar = .{};
 
             var source_values: [buildconfig.config.max_image_channels]F = @splat(0);
             var source_output = matslice.MatSlice(F).init(
@@ -234,34 +234,34 @@ pub fn PipeKernel(comptime N: usize) type {
                         for (0..count) |ch| {
                             var dest = src.register_dest;
                             dest.index += @intCast(ch);
-                            outputs.set(dest, source_values[ch]);
+                            registers_out.set(dest, source_values[ch]);
                         }
                     },
                     .grey_to_emissivity => |m| {
-                        const grey = std.math.clamp((outputs.get(m.register_source) - m.greylevel_at_black) /
+                        const grey = std.math.clamp((registers_out.get(m.register_source) - m.greylevel_at_black) /
                             m.greylevel_range, 0, 1);
-                        outputs.set(
+                        registers_out.set(
                             m.register_dest,
                             m.emissivity_at_black + grey * m.emissivity_range,
                         );
                     },
                     .clamp => |c| {
                         const clamped = std.math.clamp(
-                            outputs.get(c.register_source),
+                            registers_out.get(c.register_source),
                             c.lower,
                             c.upper,
                         );
-                        outputs.set(c.register_dest, clamped);
+                        registers_out.set(c.register_dest, clamped);
                     },
-                    .affine_map => |m| m.apply(&outputs),
-                    .lut_map => |m| m.apply(&outputs, true),
-                    .blend => |m| m.apply(&outputs),
-                    .normalise => |m| m.apply(&outputs),
+                    .affine_map => |m| m.apply(&registers_out),
+                    .lut_map => |m| m.apply(&registers_out, true),
+                    .blend => |m| m.apply(&registers_out),
+                    .normalise => |m| m.apply(&registers_out),
                 }
             }
 
             var resolved: [buildconfig.config.max_image_channels]F = undefined;
-            pipe.resolver.evaluate(&outputs, pipe.constants, pipe.channels, &resolved);
+            pipe.resolver.evaluate(&registers_out, pipe.constants, pipe.channels, &resolved);
 
             for (0..pipe.channels) |ch| {
                 const idx = ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx;
@@ -291,7 +291,7 @@ pub fn PipeKernel(comptime N: usize) type {
                 pipe.hit_geometry.selection,
             );
 
-            var outputs: shaderpipe.RegistersOutputSIMD = .{};
+            var registers_out: shaderpipe.RegistersOutputSIMD = .{};
             var stage_ctx = ctx_shade;
 
             for (pipe.stages, 0..) |*stage, si| {
@@ -318,11 +318,11 @@ pub fn PipeKernel(comptime N: usize) type {
                         for (0..count) |ch| {
                             var dest = src.register_dest;
                             dest.index += @intCast(ch);
-                            outputs.set(dest, source_values.values[ch]);
+                            registers_out.set(dest, source_values.values[ch]);
                         }
                     },
                     .grey_to_emissivity => |m| {
-                        const src_val = outputs.get(m.register_source);
+                        const src_val = registers_out.get(m.register_source);
                         const gb = @as(VecSF, @splat(m.greylevel_at_black));
                         const gw_gb = @as(VecSF, @splat(m.greylevel_range));
                         const raw_grey = (src_val - gb) / gw_gb;
@@ -331,23 +331,23 @@ pub fn PipeKernel(comptime N: usize) type {
                         const grey = @min(one, @max(zero, raw_grey));
                         const blk_splat = @as(VecSF, @splat(m.emissivity_at_black));
                         const w_b = @as(VecSF, @splat(m.emissivity_range));
-                        outputs.set(m.register_dest, blk_splat + grey * w_b);
+                        registers_out.set(m.register_dest, blk_splat + grey * w_b);
                     },
                     .clamp => |c| {
                         const upper = @as(VecSF, @splat(c.upper));
                         const lower = @as(VecSF, @splat(c.lower));
-                        const clamped = @min(upper, @max(lower, outputs.get(c.register_source)));
-                        outputs.set(c.register_dest, clamped);
+                        const clamped = @min(upper, @max(lower, registers_out.get(c.register_source)));
+                        registers_out.set(c.register_dest, clamped);
                     },
-                    .affine_map => |m| m.apply(&outputs),
-                    .lut_map => |m| m.apply(&outputs, v_mask_active),
-                    .blend => |m| m.apply(&outputs),
-                    .normalise => |m| m.apply(&outputs),
+                    .affine_map => |m| m.apply(&registers_out),
+                    .lut_map => |m| m.apply(&registers_out, v_mask_active),
+                    .blend => |m| m.apply(&registers_out),
+                    .normalise => |m| m.apply(&registers_out),
                 }
             }
 
             var resolved: [buildconfig.config.max_image_channels]VecSF = undefined;
-            pipe.resolver.evaluate(&outputs, pipe.constants, pipe.channels, &resolved);
+            pipe.resolver.evaluate(&registers_out, pipe.constants, pipe.channels, &resolved);
             for (0..pipe.channels) |ch| {
                 const idx = ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx;
                 if (!ctx_shade.simd_full_vector_store_safe) {
@@ -678,6 +678,10 @@ fn shadeSourceSIMD(
         },
     }
 }
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
 
 test "MeshHit shares selected geometry with scalar and SIMD stages" {
     const N = 3;

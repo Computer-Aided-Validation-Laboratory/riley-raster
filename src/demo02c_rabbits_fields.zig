@@ -90,7 +90,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 4. Render rabbit multi-mesh scene
     // -------------------------------------------------------------------------
-    const out_dir_root = "./out/demo2c_rabbits_fields";
+    const out_dir_root = "./out/demo02c_rabbits_fields";
 
     const images = try riley.raster(
         init.gpa,

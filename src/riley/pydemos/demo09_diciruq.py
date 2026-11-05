@@ -52,7 +52,7 @@ def main() -> None:
     # 1. Setup paths and parameters
     # --------------------------------------------------------------------------
     data_dir = riley.data.platehole_csv_case_path()
-    out_dir = Path.cwd() / "out_riley_py" / "demo9_diciruq"
+    out_dir = Path.cwd() / "out_riley_py" / "demo09_diciruq"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # --------------------------------------------------------------------------
@@ -233,7 +233,7 @@ def main() -> None:
     riley.save_stereo_pair(str(out_dir), "stereo_data_opengl.csv", left, right)
     (out_dir / "acquisition_metadata.txt").write_text(
         "cam0=left DIC (-10 deg), cam1=IR (0 deg), cam2=right DIC (+10 deg)\n"
-        "Frames: first and last FE displacement frames from demo3 dataset.\n"
+        "Frames: first and last FE displacement frames from demo03 dataset.\n"
         "DIC: source 0..255 -> round(source/255*4095)*16 in uint16 TIFF; "
         "4096 effective codes, range 0..65520.\n"
         "IR: flat 8-14 um band, ambient 293.15 K, "

@@ -20,7 +20,7 @@ def main() -> None:
     # --------------------------------------------------------------------------
     # 1. Setup paths and parameters
     # --------------------------------------------------------------------------
-    out_dir = Path.cwd() / "out_riley_py" / "demo2c_rabbits_fields"
+    out_dir = Path.cwd() / "out_riley_py" / "demo02c_rabbits_fields"
     shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True)
 

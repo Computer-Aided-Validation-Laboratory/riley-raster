@@ -24,7 +24,7 @@ def main() -> None:
     # --------------------------------------------------------------------------
     data_dir = riley.data.sphere200_case_path()
     texture_path = riley.data.speckle_texture_path()
-    out_dir_root = Path.cwd() / "out_riley_py" / "demo5_cameramodels"
+    out_dir_root = Path.cwd() / "out_riley_py" / "demo05_cameramodels"
     shutil.rmtree(out_dir_root, ignore_errors=True)
     out_dir_root.mkdir(parents=True)
 

@@ -56,7 +56,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const data_dir = "data/calplate/tri3_calplate3d/";
     const texture_path = "texture/cal_target.tiff";
-    const out_dir_root = "./out/demo4_stereocal";
+    const out_dir_root = "./out/demo04_stereocal";
 
     const total_threads: u16 = 4;
 

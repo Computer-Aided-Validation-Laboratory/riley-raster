@@ -402,25 +402,34 @@ RILEY_FORCE_ZIG_RENDER=1 python -m pytest --pyargs riley.pytests.test_riley -s
 Individual packaged Python demos can also be run directly:
 
 ```bash
-python -m riley demo0_quickstart
-python -m riley demo1_sphere
-python -m riley demo2a_rabbits_mono
-python -m riley demo2b_rabbits_rgb
-python -m riley demo2c_rabbits_fields
-python -m riley demo3_dicuq
-python -m riley demo3_dicuq_from_exodus
-python -m riley demo4_stereocal
-python -m riley demo5_cameramodels
-python -m riley demo6_featurezoo
+python -m riley demo00_quickstart
+python -m riley demo01_sphere
+python -m riley demo02a_rabbits_mono
+python -m riley demo02b_rabbits_rgb
+python -m riley demo02c_rabbits_fields
+python -m riley demo03_dicuq
+python -m riley demo03_dicuq_from_exodus
+python -m riley demo04_stereocal
+python -m riley demo05_cameramodels
+python -m riley demo06_featurezoo
+python -m riley demo07_shaderpipe_quickstart
+python -m riley demo08_shaderpipe_gallery
+python -m riley demo09_diciruq
+python -m riley demo10_sphere_lit
 ```
 
 Python demo output is written to `Path.cwd() / "out_riley_py" / "<demo-name>"`.
+
+Both Zig and Python demos use two-digit numbering (`demo00`, `demo01`,
+`demo02a`, …, `demo10`) in source filenames, CLI/build commands, and output
+directories. `run-all-demos` renders all 13 native demos; parity tests cover
+all 13 and the Python Exodus variant.
 
 The Zig demos use the same numbered names and ordering:
 - The rabbit demos (`demo2a`, `demo2b`, `demo2c`) share mesh loading, shader setup, and layout in `src/demo_rabbits_common.zig`; the Python variants share `demo_rabbits_common.py`.
 - Rabbit parity checks require greater than 10% foreground coverage in every render, ensuring blank or unrendered frames cannot pass verification.
 - Demos that clear previous output share `src/demo_common.zig` (`demo_common.resetOutputDir`). This removes the named demo output directory and recreates it cleanly.
-- `demo5_cameramodels` renders all 6 distortion families with pixel-box, Gaussian (separable/non-separable), aligned anisotropic Gaussian, and rotated anisotropic Gaussian PSFs across all 3 buffer modes (90 comparison images per run under `<distortion>/<psf>/<buffer-mode>/`). Parity checks require the entire matrix to match.
+- `demo05_cameramodels` renders all 6 distortion families with pixel-box, Gaussian (separable/non-separable), aligned anisotropic Gaussian, and rotated anisotropic Gaussian PSFs across all 3 buffer modes (90 comparison images per run under `<distortion>/<psf>/<buffer-mode>/`). Parity checks require the entire matrix to match.
 
 ## Public API and C ABI checks
 

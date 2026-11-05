@@ -25,7 +25,7 @@ pub fn main(init: std.process.Init) !void {
     // 1. Setup paths and parameters
     // -------------------------------------------------------------------------
     const data_dir = "data/min/tri6_sphere200/";
-    const out_dir_root = "./out/demo1_sphere";
+    const out_dir_root = "./out/demo01_sphere";
 
     // -------------------------------------------------------------------------
     // 2. Load mesh data and texture shader

@@ -182,7 +182,7 @@ pub fn main(init: std.process.Init) !void {
         mesh,
         base_camera,
         .mono,
-        "./out/demo8_shaderpipe_gallery/a_modulation",
+        "./out/demo08_shaderpipe_gallery/a_modulation",
     );
 
     // -------------------------------------------------------------------------
@@ -220,7 +220,7 @@ pub fn main(init: std.process.Init) !void {
         mesh,
         base_camera,
         .rgb,
-        "./out/demo8_shaderpipe_gallery/b_rgb",
+        "./out/demo08_shaderpipe_gallery/b_rgb",
     );
 
     // -------------------------------------------------------------------------
@@ -267,7 +267,7 @@ pub fn main(init: std.process.Init) !void {
         mesh,
         base_camera,
         .mono,
-        "./out/demo8_shaderpipe_gallery/c_expression",
+        "./out/demo08_shaderpipe_gallery/c_expression",
     );
 
     // -------------------------------------------------------------------------
@@ -314,6 +314,6 @@ pub fn main(init: std.process.Init) !void {
         mesh,
         base_camera,
         .mono,
-        "./out/demo8_shaderpipe_gallery/d_emissivity_visualisation",
+        "./out/demo08_shaderpipe_gallery/d_emissivity_visualisation",
     );
 }

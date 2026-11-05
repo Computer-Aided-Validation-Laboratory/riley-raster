@@ -92,7 +92,7 @@ pub fn main(init: std.process.Init) !void {
         &.{camera_input},
         &.{mesh_input},
         config,
-        "./out/demo0_quickstart",
+        "./out/demo00_quickstart",
     );
 
     if (images) |img| {

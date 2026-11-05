@@ -29,19 +29,19 @@ def test_rabbit_uv_field_has_one_frame_and_expected_channels(
 
 def test_numbered_demo_cli_modules_are_importable() -> None:
     expected = (
-        "demo0_quickstart",
-        "demo1_sphere",
-        "demo2a_rabbits_mono",
-        "demo2b_rabbits_rgb",
-        "demo2c_rabbits_fields",
-        "demo3_dicuq",
-        "demo3_dicuq_from_exodus",
-        "demo4_stereocal",
-        "demo5_cameramodels",
-        "demo6_featurezoo",
-        "demo7_shaderpipe_quickstart",
-        "demo8_shaderpipe_gallery",
-        "demo9_diciruq",
+        "demo00_quickstart",
+        "demo01_sphere",
+        "demo02a_rabbits_mono",
+        "demo02b_rabbits_rgb",
+        "demo02c_rabbits_fields",
+        "demo03_dicuq",
+        "demo03_dicuq_from_exodus",
+        "demo04_stereocal",
+        "demo05_cameramodels",
+        "demo06_featurezoo",
+        "demo07_shaderpipe_quickstart",
+        "demo08_shaderpipe_gallery",
+        "demo09_diciruq",
         "demo10_sphere_lit",
     )
     assert tuple(_DEMO_FUNCS) == expected

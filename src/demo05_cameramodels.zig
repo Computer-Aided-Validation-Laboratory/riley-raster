@@ -34,7 +34,7 @@ pub fn main(init: std.process.Init) !void {
     };
 
     const data_dir = "data/min/tri6_sphere200/";
-    const out_dir_root = "./out/demo5_cameramodels";
+    const out_dir_root = "./out/demo05_cameramodels";
 
     // -------------------------------------------------------------------------
     // 2. Load mesh data and texture shader

@@ -306,7 +306,7 @@ def render_case(channels: int, bits: int, options: DemoOptions) -> None:
 
 
 def main() -> None:
-    out_dir = Path.cwd() / "out_riley_py" / "demo6_featurezoo"
+    out_dir = Path.cwd() / "out_riley_py" / "demo06_featurezoo"
     pixel_size = (5.3e-6, 5.3e-6)
     focal_length = 50.0e-3
     frame_indices = (0, 1, 2, 3)

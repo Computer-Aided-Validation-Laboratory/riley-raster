@@ -126,7 +126,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     const config = riley.RasterConfig{
         .save_strategy = .disk,
-        .output_name_format = "demo7_cam{camera}_frame{frame}_field{field}",
+        .output_name_format = "demo07_cam{camera}_frame{frame}_field{field}",
     };
 
     // -------------------------------------------------------------------------
@@ -138,7 +138,7 @@ pub fn main(init: std.process.Init) !void {
         &.{ direct_camera, lit_camera },
         &.{mesh},
         config,
-        "./out/demo7_shaderpipe_quickstart",
+        "./out/demo07_shaderpipe_quickstart",
     );
 
     if (images) |image| {

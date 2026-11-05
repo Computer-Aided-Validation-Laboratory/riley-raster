@@ -30,88 +30,109 @@ FLOAT_FALLBACK_ABS_TOL = 0.5
 STANDARD_DEMO_CASES = (
     (
         "quickstart",
-        [str(PYTHON_EXE), "-m", "riley", "demo0_quickstart"],
-        "out/demo0_quickstart",
-        "out_riley_py/demo0_quickstart",
+        [str(PYTHON_EXE), "-m", "riley", "demo00_quickstart"],
+        "out/demo00_quickstart",
+        "out_riley_py/demo00_quickstart",
         None,
     ),
     (
         "sphere",
-        [str(PYTHON_EXE), "-m", "riley", "demo1_sphere"],
-        "out/demo1_sphere",
-        "out_riley_py/demo1_sphere",
+        [str(PYTHON_EXE), "-m", "riley", "demo01_sphere"],
+        "out/demo01_sphere",
+        "out_riley_py/demo01_sphere",
         None,
     ),
     (
         "rabbits_mono",
-        [str(PYTHON_EXE), "-m", "riley", "demo2a_rabbits_mono"],
-        "out/demo2a_rabbits_mono",
-        "out_riley_py/demo2a_rabbits_mono",
+        [str(PYTHON_EXE), "-m", "riley", "demo02a_rabbits_mono"],
+        "out/demo02a_rabbits_mono",
+        "out_riley_py/demo02a_rabbits_mono",
         None,
     ),
     (
         "rabbits_rgb",
-        [str(PYTHON_EXE), "-m", "riley", "demo2b_rabbits_rgb"],
-        "out/demo2b_rabbits_rgb",
-        "out_riley_py/demo2b_rabbits_rgb",
+        [str(PYTHON_EXE), "-m", "riley", "demo02b_rabbits_rgb"],
+        "out/demo02b_rabbits_rgb",
+        "out_riley_py/demo02b_rabbits_rgb",
         None,
     ),
     (
         "rabbits_fields",
-        [str(PYTHON_EXE), "-m", "riley", "demo2c_rabbits_fields"],
-        "out/demo2c_rabbits_fields",
-        "out_riley_py/demo2c_rabbits_fields",
+        [str(PYTHON_EXE), "-m", "riley", "demo02c_rabbits_fields"],
+        "out/demo02c_rabbits_fields",
+        "out_riley_py/demo02c_rabbits_fields",
         None,
     ),
     (
         "dicuq",
-        [str(PYTHON_EXE), "-m", "riley", "demo3_dicuq"],
-        "out/demo3_dicuq",
-        "out_riley_py/demo3_dicuq",
+        [str(PYTHON_EXE), "-m", "riley", "demo03_dicuq"],
+        "out/demo03_dicuq",
+        "out_riley_py/demo03_dicuq",
         2,
     ),
     (
         "stereocal",
-        [str(PYTHON_EXE), "-m", "riley", "demo4_stereocal"],
-        "out/demo4_stereocal",
-        "out_riley_py/demo4_stereocal",
+        [str(PYTHON_EXE), "-m", "riley", "demo04_stereocal"],
+        "out/demo04_stereocal",
+        "out_riley_py/demo04_stereocal",
         8,
     ),
     (
         "cameramodels",
-        [str(PYTHON_EXE), "-m", "riley", "demo5_cameramodels"],
-        "out/demo5_cameramodels",
-        "out_riley_py/demo5_cameramodels",
+        [str(PYTHON_EXE), "-m", "riley", "demo05_cameramodels"],
+        "out/demo05_cameramodels",
+        "out_riley_py/demo05_cameramodels",
         None,
     ),
     (
         "feature_zoo",
-        [str(PYTHON_EXE), "-m", "riley", "demo6_featurezoo"],
-        "out/demo6_featurezoo",
-        "out_riley_py/demo6_featurezoo",
+        [str(PYTHON_EXE), "-m", "riley", "demo06_featurezoo"],
+        "out/demo06_featurezoo",
+        "out_riley_py/demo06_featurezoo",
         None,
     ),
     (
         "shaderpipe_quickstart",
-        [str(PYTHON_EXE), "-m", "riley", "demo7_shaderpipe_quickstart"],
-        "out/demo7_shaderpipe_quickstart",
-        "out_riley_py/demo7_shaderpipe_quickstart",
+        [str(PYTHON_EXE), "-m", "riley", "demo07_shaderpipe_quickstart"],
+        "out/demo07_shaderpipe_quickstart",
+        "out_riley_py/demo07_shaderpipe_quickstart",
+        None,
+    ),
+    (
+        "shaderpipe_gallery",
+        [str(PYTHON_EXE), "-m", "riley", "demo08_shaderpipe_gallery"],
+        "out/demo08_shaderpipe_gallery",
+        "out_riley_py/demo08_shaderpipe_gallery",
+        None,
+    ),
+    (
+        "diciruq",
+        [str(PYTHON_EXE), "-m", "riley", "demo09_diciruq"],
+        "out/demo09_diciruq",
+        "out_riley_py/demo09_diciruq",
+        None,
+    ),
+    (
+        "sphere_lit",
+        [str(PYTHON_EXE), "-m", "riley", "demo10_sphere_lit"],
+        "out/demo10_sphere_lit",
+        "out_riley_py/demo10_sphere_lit",
         None,
     ),
 )
 
 EXODUS_DEMO_CASE = (
     "dic_from_exodus",
-    [str(PYTHON_EXE), "-m", "riley", "demo3_dicuq_from_exodus"],
-    "out/demo3_dicuq",
-    "out_riley_py/demo3_dicuq_from_exodus",
+    [str(PYTHON_EXE), "-m", "riley", "demo03_dicuq_from_exodus"],
+    "out/demo03_dicuq",
+    "out_riley_py/demo03_dicuq_from_exodus",
     2,
 )
 
 CALIBRATION_DEMO_CASE = (
     "stereocal",
-    [str(PYTHON_EXE), "-m", "riley", "demo4_stereocal"],
-    "out_riley_py/demo4_stereocal",
+    [str(PYTHON_EXE), "-m", "riley", "demo04_stereocal"],
+    "out_riley_py/demo04_stereocal",
     8,
 )
 
@@ -156,7 +177,10 @@ def _get_zig_run_cmd() -> list[str]:
     zig_bin = shutil.which("zig") or shutil.which("zig.exe")
     base_cmd = [zig_bin] if zig_bin else [str(PYTHON_EXE), "-m", "ziglang"]
     cmd = list(base_cmd)
-    cmd.extend(["build", "run-all-demos", "-Doptimize=ReleaseFast"])
+    cmd.extend([
+        "build", "run-all-demos", "-Doptimize=ReleaseFast",
+        "-Dprecision=f64", "-Dsimd=on",
+    ])
     if platform.system().lower() == "windows":
         arch = platform.machine().lower()
         if arch in ("amd64", "x86_64"):
@@ -213,7 +237,7 @@ def _has_expected_demo_renders(
     dir_path: Path,
     frames_num: int | None,
 ) -> bool:
-    if dir_path.name == "demo5_cameramodels":
+    if dir_path.name == "demo05_cameramodels":
         return _has_cameramodel_renders(dir_path)
     if frames_num is None:
         return _has_renders(dir_path)
@@ -465,12 +489,12 @@ def test_demo_parity(
     find_spec("netCDF4") is None,
     reason="netCDF4 is required for the exodus Python demo parity test.",
 )
-def test_demo3_dicuq_from_exodus_parity() -> None:
+def test_demo03_dicuq_from_exodus_parity() -> None:
     case_name, python_cmd, zig_dir, py_dir, _ = EXODUS_DEMO_CASE
     _run_demo_case(case_name, python_cmd, zig_dir, py_dir)
 
 
-def test_demo4_stereocal_motion() -> None:
+def test_demo04_stereocal_motion() -> None:
     """The Python calibration helper drives the stereocal demonstration."""
     case_name, python_cmd, py_dir, frames_num = CALIBRATION_DEMO_CASE
     silent_env = dict(os.environ)
