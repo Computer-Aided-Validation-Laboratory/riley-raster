@@ -495,6 +495,7 @@ fn addRunStep(
     build_options_module: *std.Build.Module,
     entry: RunEntry,
 ) *std.Build.Step.Run {
+    // Linking libc selects the C-backed process allocator in optimized builds.
     const executable = b.addExecutable(.{
         .name = entry.step_name,
         .root_module = createRootModule(
@@ -504,7 +505,7 @@ fn addRunStep(
             build_options_module,
             null,
             entry.source_path,
-            false,
+            true,
             .executable,
         ),
     });
@@ -538,7 +539,7 @@ fn addBenchInstallStep(
             build_options_module,
             null,
             entry.source_path,
-            false,
+            true,
             .executable,
         ),
     });

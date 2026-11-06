@@ -308,8 +308,12 @@ and `4thread`. Paper studies retain their separate `paper_bench*.py` workflow;
   `-lc` or named-module flags. Direct demo runs use f64 with SIMD enabled;
   optionally add `-O ReleaseFast` for larger scenes. Run all demos with
   `zig run ./src/run_all_demos.zig -O ReleaseFast`.
-- Demo build targets retain the build-options wrapper but do not register a
-  redundant named `riley` dependency. Use `zig build demo00-quickstart` or the
+- Native executable build targets (including demos and benchmarks) link libc.
+  Optimized builds therefore use the C-backed process allocator; Debug retains
+  Zig's debug allocator. Standalone `zig run` can still run without libc; add
+  `-lc` to match the linkage and allocator selection of the build targets.
+  Demo build targets retain the build-options wrapper without a redundant named
+  `riley` dependency. Use `zig build demo00-quickstart` or the
   suite drivers to select precision, SIMD, solver, or vector-width options.
   Tests such as `test-public-api` that import the named module use `zig build`.
 - Native TIFF loading and saving do not require libc or libtiff. The optional
