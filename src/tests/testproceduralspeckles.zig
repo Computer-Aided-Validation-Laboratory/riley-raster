@@ -30,16 +30,6 @@ const fixture_params: Params = .{
     .radius_mean = 0.3,
 };
 
-test "speckle catalogues contain distinct generation and sampling variants" {
-    try std.testing.expectEqual(@as(usize, 54), speckleconfig.generationConfigs(true).len);
-    try std.testing.expectEqual(@as(usize, 31), speckleconfig.sampleConfigs(true).len);
-    for (speckleconfig.generationConfigs(true), 0..) |config, index| {
-        for (speckleconfig.generationConfigs(true)[0..index]) |previous| {
-            try std.testing.expect(!std.meta.eql(previous, config));
-        }
-    }
-}
-
 test "speckle BMP matches an independently calculated mock gradient" {
     if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
     var tmp = std.testing.tmpDir(.{});

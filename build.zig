@@ -27,6 +27,8 @@ const TestEntry = struct {
     description: []const u8,
     source_path: []const u8,
     filters: []const []const u8 = &.{},
+    use_llvm: ?bool = null,
+    include_paths: []const []const u8 = &.{},
 };
 
 const BuildOptions = struct {
@@ -96,6 +98,11 @@ pub fn build(b: *std.Build) void {
 
     const tests = [_]TestEntry{
         .{
+            .step_name = "test-unit",
+            .description = "Run gold-independent native unit, integration, and tooling tests",
+            .source_path = "src/testunit.zig",
+        },
+        .{
             .step_name = "test-speckle-benchmark",
             .description = "Run focused native material benchmark tests",
             .source_path = "src/bench_speckle_evaluators.zig",
@@ -133,13 +140,19 @@ pub fn build(b: *std.Build) void {
         },
         .{
             .step_name = "test-procedural-speckles",
-            .description = "Run runtime procedural speckle resource tests",
+            .description = "Run procedural speckle integration, CLI, and unit tests",
             .source_path = "src/testproceduralspeckles.zig",
         },
         .{
-            .step_name = "test-speckle-mask",
-            .description = "Run runtime speckle generation, sampling, and demo argument tests",
-            .source_path = "src/testproceduralmasks.zig",
+            .step_name = "test-c-api",
+            .description = "Run native C API tests (f64, SIMD on, defaults-only)",
+            .source_path = "src/riley/zig/c-riley.zig",
+            .filters = &.{"c-riley.test.C "},
+            // Match the production shared library's LLVM backend: dev/THEORY.md records
+            // Zig 0.16 x86_64 Debug native-backend mishandling of floating-point struct
+            // arguments at foreign C ABI boundaries. These units need not reproduce it.
+            .use_llvm = true,
+            .include_paths = &.{"src/riley/cython"},
         },
     };
 
@@ -156,42 +169,38 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&test_run.step);
     }
 
-    const speckle_suites = [_]TestEntry{
-        .{
-            .step_name = "mask",
-            .description = "Run runtime speckle generation and sampling tests",
-            .source_path = "src/testproceduralmasks.zig",
-        },
-        .{
-            .step_name = "resources",
-            .description = "Run runtime speckle production resource tests",
-            .source_path = "src/testproceduralspeckles.zig",
-        },
-    };
-    const speckle_configs_step = b.step(
-        "test-speckle-configs",
-        "Run runtime speckle tests with default and experimental evaluator availability",
+    const configs_step = b.step(
+        "test-configs",
+        "Run native tests across precision, SIMD, and evaluator build configurations",
     );
-    for ([_]bool{ false, true }) |experimental| {
-        const step_name = if (experimental) "test-speckle-experimental" else "test-speckle-default";
-        const test_step = b.step(step_name, "Run one runtime speckle evaluator availability mode");
-        var test_options = options;
-        test_options.enable_all_evaluators = experimental;
-        const test_options_module = createBuildOptionsModule(b, test_options);
-        for (speckle_suites) |suite| {
-            var entry = suite;
-            entry.step_name = b.fmt("{s}-{s}", .{ step_name, suite.step_name });
-            const test_run = addTestRunStep(
-                b,
-                target,
-                optimize,
-                test_options.strip,
-                test_options_module,
-                entry,
-            );
-            test_step.dependOn(&test_run.step);
+
+    for ([_][]const u8{ "f64", "f32" }) |precision| {
+        for ([_][]const u8{ "on", "off" }) |simd| {
+            for ([_]bool{ false, true }) |experimental| {
+                var config_options = options;
+                config_options.precision = precision;
+                config_options.simd = simd;
+                config_options.enable_all_evaluators = experimental;
+                const config_run = addTestRunStep(
+                    b,
+                    target,
+                    optimize,
+                    config_options.strip,
+                    createBuildOptionsModule(b, config_options),
+                    .{
+                        .step_name = b.fmt("test-configs-{s}-{s}-{s}", .{
+                            precision,
+                            simd,
+                            if (experimental) "experimental" else "default",
+                        }),
+                        .description = "Run one native build configuration",
+                        .source_path = "src/testunit.zig",
+                    },
+                );
+
+                configs_step.dependOn(&config_run.step);
+            }
         }
-        speckle_configs_step.dependOn(test_step);
     }
 
     const demos = [_]RunEntry{
@@ -502,6 +511,7 @@ fn addTestRunStep(
         .strip = strip,
         .link_libc = true,
     });
+    for (entry.include_paths) |path| test_module.addIncludePath(b.path(path));
     test_module.addImport("build_options", build_options_module);
     const default_runner_path = b.graph.zig_lib_directory.join(
         b.allocator,
@@ -517,6 +527,7 @@ fn addTestRunStep(
         .name = entry.step_name,
         .root_module = test_module,
         .filters = entry.filters,
+        .use_llvm = entry.use_llvm,
         .test_runner = .{
             .path = b.path("src/dev_support/testrunner.zig"),
             .mode = .simple,

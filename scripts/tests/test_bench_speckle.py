@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import bench_speckle as bench
+from scripts import bench_speckle as bench
 
 
 class BenchmarkTests(unittest.TestCase):

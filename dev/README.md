@@ -11,12 +11,12 @@ This project follows the Computer Aided Validation Laboratory style guides for P
 ## Development Guides
 The `dev/` directory provides comprehensive architectural, mathematical, testing, and conventions documentation for Riley developers:
 
-- [**`dev/TESTING.md`**](./dev/TESTING.md): Complete testing architecture, quickstart commands, descriptions of the 4 test scenes, detailed breakdown of all 8 test suites, gold reference generation, and automated regression diagnostics.
-- [**`dev/THEORY.md`**](./dev/THEORY.md): Mathematical foundations and engine design details, including polynomial camera distortion formulation, distortion-aware rasterisation frontend bounds, render thread budgets, and image save mode mechanics.
-- [**`dev/ASSUMPTIONS.md`**](./dev/ASSUMPTIONS.md): Supported engineering operating envelope, mesh validity contracts, conservative numerical margins, and reasoning guidelines for review.
-- [**`dev/MESHCONVENTION.md`**](./dev/MESHCONVENTION.md): Riley standard mesh representation, surface element definitions (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`), 3D continuum elements, node ordering, and connectivity conventions.
-- [**`dev/FILESTRUCTURE.md`**](./dev/FILESTRUCTURE.md): Repository layout, module naming rules (`io`, `ops`, `kernel`), scalar/SIMD file splitting, and internal code organisation.
-- [**`dev/ABBREVIATIONS.md`**](./dev/ABBREVIATIONS.md): Standardized abbreviations and naming conventions across Zig, C ABI, and Python codebases.
+- [**`dev/TESTING.md`**](TESTING.md): Complete testing architecture, quickstart commands, descriptions of the 4 test scenes, detailed breakdown of all 8 test suites, gold reference generation, and automated regression diagnostics.
+- [**`dev/THEORY.md`**](THEORY.md): Mathematical foundations and engine design details, including polynomial camera distortion formulation, distortion-aware rasterisation frontend bounds, render thread budgets, and image save mode mechanics.
+- [**`dev/ASSUMPTIONS.md`**](ASSUMPTIONS.md): Supported engineering operating envelope, mesh validity contracts, conservative numerical margins, and reasoning guidelines for review.
+- [**`dev/MESHCONVENTION.md`**](MESHCONVENTION.md): Riley standard mesh representation, surface element definitions (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`), 3D continuum elements, node ordering, and connectivity conventions.
+- [**`dev/FILESTRUCTURE.md`**](FILESTRUCTURE.md): Repository layout, module naming rules (`io`, `ops`, `kernel`), scalar/SIMD file splitting, and internal code organisation.
+- [**`dev/ABBREVIATIONS.md`**](ABBREVIATIONS.md): Standardized abbreviations and naming conventions across Zig, C ABI, and Python codebases.
 
 ## Testing Architecture & Core Packaged Suites
 Riley provides a layered testing architecture designed for fast routine verification, rigorous mathematical validation, and exhaustive factorial test coverage:
@@ -24,7 +24,7 @@ Riley provides a layered testing architecture designed for fast routine verifica
 ### Optimization Modes & Execution Policy
 
 Riley strictly separates optimization modes by task type:
-- **Verification and Basic test suites (`test-verif`, `test-basic`)**: Run in **Debug mode without optimisation flags** (default `zig build`), ensuring fastest compilation and developer feedback.
+- **Local Verification and Basic suites (`test-verif`, `test-basic`)**: Run in **Debug mode without optimisation flags** for fast developer feedback; CI runs the combined core suite in **ReleaseSafe**.
 - **Full test suite (`test-full`)**: Run in **ReleaseSafe mode** (`-Doptimize=ReleaseSafe`), enabling optimized factorial sweeps with safety assertions active.
 - **Benchmarks and Performance profiling (`bench-*`, `./scripts/bench_*.py`, `./scripts/perf_*.py`)**: Run in **ReleaseFast mode** (`-Doptimize=ReleaseFast`), ensuring maximum compiler vectorization and realistic production throughput.
 
@@ -37,8 +37,14 @@ Riley strictly separates optimization modes by task type:
 # Local Development: Run verif and basic in parallel across two terminal tabs/jobs (Debug)
 zig build test-verif & zig build test-basic & wait
 
-# CI Combined Verification & Basic Suite (Debug)
-zig build test-verif-basic
+# CI Combined Verification & Basic Suite (ReleaseSafe)
+zig build test-verif-basic -Doptimize=ReleaseSafe
+
+# Gold-independent whole-project unit coverage (Debug)
+zig build test-unit
+
+# Gold-independent precision/SIMD/policy configuration matrix (CI)
+zig build test-configs
 
 # Analytic Verification Suite (Mathematical & Numerical Validation in Debug)
 zig build test-verif
@@ -67,14 +73,20 @@ zig build install-bench-buffer-psf -Doptimize=ReleaseFast -Dsimd=on
 | :--- | :--- | :--- | :--- |
 | **Verification Suite** | `zig build test-verif` | Inverse solver recovery, silhouette area/centroid, depth ordering, and camera distortion oracles (Debug) | `gold/verif/` |
 | **Basic Suite** | `zig build test-basic` | Fast coverage across 1-element, 2-shape FE interaction, and feature zoo cases (Debug) | `gold/basic/` |
-| **Combined Core Suite** | `zig build test-verif-basic` | Primarily for CI: runs verif and basic sequentially in Debug mode | `gold/verif/`, `gold/basic/` |
+| **Combined Core Suite** | `zig build test-verif-basic` (local Debug); CI uses `-Doptimize=ReleaseSafe` | Verification and gold-backed basic comparisons, including the gold-independent unit root | `gold/verif/`, `gold/basic/` |
+| **Whole-project Unit Suite** | `zig build test-unit` | Gold-independent numerical, camera/frontend, speckle/CLI, and native tool/harness correctness tests | In-memory references |
+| **Configuration Matrix** | `zig build test-configs` | Runs the shared unit root across f64/f32, SIMD on/off, and default/experimental evaluator policy | In-memory references |
 | **Full Suite** | `zig build test-full -Doptimize=ReleaseSafe` | Exhaustive sweeps over shaders, textures, PSF/distortion, SSAA, hulls, tiling, scenes, threads, and outputs in ReleaseSafe | `gold/full_*/` |
 | **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | Warning-only renders of intentionally folded one-element frames, with actual/reference/diff artifacts under `fails/*_full_badjac/` | Existing basic and full-hull gold |
 | **Python Pytests** | `.venv/bin/pytest src/riley/pytests/` | Python/Cython API, mesh pipeline, Exodus conversion, and demo parity | Integrated / `gold/` |
-| **Procedural Speckles** | `zig build test-speckle-configs` | Default/experimental evaluator policy, generation, sampling, direct image fill, and mesh preparation | In-memory references |
+| **Procedural Speckles** | Included in `zig build test-basic` and `zig build test-unit`; focused checks use `zig build test-procedural-speckles` | Default integration plus gold-independent generation, sampling, and preparation checks; focused target remains a local convenience | Basic gold / in-memory references |
+| **C API** | `zig build test-c-api` | C interface tests under the fixed public f64/SIMD/default policy | In-memory references |
+| **Native Benchmark Tooling** | Included in `zig build test-unit`; focused checks use `zig build test-speckle-benchmark` | Native benchmark tooling and harness correctness (not performance profiles) | In-memory references |
 
 > [!NOTE]
-> For complete documentation of all 4 test scenes, 8 sub-suites, gold generation, tolerances, and design contracts, see [**`dev/TESTING.md`**](./dev/TESTING.md).
+> For complete documentation of all 4 test scenes, 8 sub-suites, gold generation, tolerances, and design contracts, see [**`dev/TESTING.md`**](TESTING.md).
+
+The whole-project `test-unit` suite and configuration matrix are gold-independent; focused procedural-speckle and native-tool checks remain local conveniences. See [the native unit/configuration testing policy](./TESTING.md#native-unit-and-configuration-testing) for coverage and commands.
 
 ## Precision and SIMD Build Matrix
 The `zig build` workflow supports direct control over precision, SIMD mode, Newton solver mode, and SIMD vector width:
@@ -363,5 +375,5 @@ do not use `--require-equal-output` for these comparisons.
 - Plain `zig run` and `zig test` under `./src/` use the default Riley path of `f64` with SIMD enabled. Run the suite drivers through `zig build` to select precision, SIMD, solver, or vector-width options.
 - The public C ABI is fixed to that same production path.
 - The shared C library explicitly uses LLVM even in Debug: Zig 0.16's self-hosted Debug backend mispasses floating-point struct arguments at the C boundary in camera helpers. Native demo/test backend selection is unchanged.
-- For detailed camera model mathematics, thread budgeting, distortion-aware hulls, and image save mode mechanics, see [**`dev/THEORY.md`**](./dev/THEORY.md).
+- For detailed camera model mathematics, thread budgeting, distortion-aware hulls, and image save mode mechanics, see [**`dev/THEORY.md`**](THEORY.md).
 - Some older benchmark helper scripts remain in `./scripts/` for historical studies. Prefer the current commands above unless you specifically need an archived workflow.
