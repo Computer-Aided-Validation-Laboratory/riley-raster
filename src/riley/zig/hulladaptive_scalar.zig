@@ -6,22 +6,20 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const rasterconfig = @import("rasterconfig.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
 const tol = cfg.tol;
-const frontend = @import("rasterfrontend.zig");
-const edgeops = @import("hulledge.zig");
-const HullEdge = @import("hulledge.zig").HullEdge;
-const EdgeFunMode = @import("rasterconfig.zig").EdgeFunMode;
+const hulledge = @import("hulledge.zig");
 
 const Triangle = struct {
     x: [3]F,
     y: [3]F,
     xi: [3]F,
     eta: [3]F,
-    edges: [3]HullEdge = undefined,
+    edges: [3]hulledge.HullEdge = undefined,
 };
 
 pub const CandidateScalar = struct {
@@ -42,7 +40,7 @@ pub fn Tessellation(comptime NT: usize) type {
             for (&self.triangles) |*tri| {
                 for (0..3) |ii| {
                     const jj = (ii + 1) % 3;
-                    tri.edges[ii] = HullEdge.init(
+                    tri.edges[ii] = hulledge.HullEdge.init(
                         tri.x[ii],
                         tri.y[ii],
                         tri.x[jj],
@@ -57,7 +55,7 @@ pub fn Tessellation(comptime NT: usize) type {
             self: @This(),
             px: F,
             py: F,
-            mode: EdgeFunMode,
+            mode: rasterconfig.EdgeFunMode,
         ) CandidateScalar {
             return self.evaluateScalar(px, py, mode, true);
         }
@@ -66,7 +64,7 @@ pub fn Tessellation(comptime NT: usize) type {
             self: @This(),
             px: F,
             py: F,
-            mode: EdgeFunMode,
+            mode: rasterconfig.EdgeFunMode,
         ) bool {
             return self.evaluateScalar(px, py, mode, false).is_in;
         }
@@ -75,7 +73,7 @@ pub fn Tessellation(comptime NT: usize) type {
             self: @This(),
             px: F,
             py: F,
-            mode: EdgeFunMode,
+            mode: rasterconfig.EdgeFunMode,
             comptime with_seed: bool,
         ) CandidateScalar {
             const eps = tol.hull.scal_inclusion;
@@ -86,19 +84,19 @@ pub fn Tessellation(comptime NT: usize) type {
                         tri.edges[1].eval(px, py) >= 0 and
                         tri.edges[2].eval(px, py) >= 0
                 else blk: {
-                    const e0 = edgeops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
-                    const e1 = edgeops.edgeFun3(tri.x[1], tri.y[1], tri.x[2], tri.y[2], px, py);
-                    const e2 = edgeops.edgeFun3(tri.x[2], tri.y[2], tri.x[0], tri.y[0], px, py);
+                    const e0 = hulledge.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
+                    const e1 = hulledge.edgeFun3(tri.x[1], tri.y[1], tri.x[2], tri.y[2], px, py);
+                    const e2 = hulledge.edgeFun3(tri.x[2], tri.y[2], tri.x[0], tri.y[0], px, py);
                     break :blk e0 >= -eps and e1 >= -eps and e2 >= -eps;
                 };
 
                 if (in_tri) {
                     if (!with_seed) return .{ .is_in = true, .seed_xi = 0, .seed_eta = 0 };
-                    const e0 = edgeops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
-                    const e1 = edgeops.edgeFun3(tri.x[1], tri.y[1], tri.x[2], tri.y[2], px, py);
-                    const e2 = edgeops.edgeFun3(tri.x[2], tri.y[2], tri.x[0], tri.y[0], px, py);
+                    const e0 = hulledge.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
+                    const e1 = hulledge.edgeFun3(tri.x[1], tri.y[1], tri.x[2], tri.y[2], px, py);
+                    const e2 = hulledge.edgeFun3(tri.x[2], tri.y[2], tri.x[0], tri.y[0], px, py);
 
-                    const area = edgeops.edgeFun3(
+                    const area = hulledge.edgeFun3(
                         tri.x[0],
                         tri.y[0],
                         tri.x[1],

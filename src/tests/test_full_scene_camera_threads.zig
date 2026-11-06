@@ -6,9 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const rendergroups = @import("../riley/zig/rendergroups.zig");
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const common = @import("../dev_support/tests.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const iio = @import("../riley/zig/imageio.zig");
@@ -20,8 +23,8 @@ const riley = @import("../riley/zig/riley.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 const NDArray = ndarray.NDArray;
 
 pub const ThreadingCase = struct {
@@ -128,7 +131,7 @@ fn runRender(
     run_config.advanced.raster.buffer_mode = buf_case.mode;
     run_config.parallel = .{ .threads = thread_case.total_threads };
 
-    var render_groups: [4]riley.RenderGroup = undefined;
+    var render_groups: [4]rendergroups.RenderGroup = undefined;
     for (0..thread_case.group_count) |gg| {
         render_groups[gg] = .{
             .io = io,
@@ -196,12 +199,6 @@ fn assertImagesDiffer(
 pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     var config = tcfg.getRasterConfig(.testing);
     config.save_strategy = .memory;
-    config.output.image_save_mode = .grey;
-    config.background_value = 32767.5;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     const gold_dir_root = policy.goldRoot(.full_scene_camera_threads);
 
@@ -212,7 +209,8 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
     defer prep.deinit(allocator);
 
     const meshes = common_full.buildScene3Meshes(&prep, &textures);
-    const cameras = common_full.createScene3Cameras();
+    var cameras = common_full.createScene3Cameras();
+    for (&cameras) |*cam| cam.background_value = 32767.5;
 
     // ----------------------------------------------------------------------
     // 1. Render Reference (1 thread, in_order, tile_local) for all 8 cameras
@@ -446,7 +444,8 @@ fn runAdditionalSceneCameraThreadTests(
 
     const meshes = common_full.buildScene3Meshes(&prep, textures);
     const cameras = common_full.createScene3Cameras();
-    const cam_inp = cameras[0];
+    var cam_inp = cameras[0];
+    cam_inp.background_value = 32767.5;
 
     // 1. Frame batch size per group sweeps (1, 2, 4) in offline and in_order modes
     const batch_sizes = [_]u16{ 1, 2, 4 };
@@ -462,7 +461,7 @@ fn runAdditionalSceneCameraThreadTests(
             run_config.render_mode = render_mode;
             run_config.parallel = .{ .threads = 2 };
 
-            const render_groups = [_]riley.RenderGroup{
+            const render_groups = [_]rendergroups.RenderGroup{
                 .{ .io = io, .workers = 2 },
             };
 
@@ -500,7 +499,7 @@ fn runAdditionalSceneCameraThreadTests(
             run_config.save_strategy = .memory;
             run_config.parallel = .{ .threads = 2 };
 
-            const render_groups = [_]riley.RenderGroup{
+            const render_groups = [_]rendergroups.RenderGroup{
                 .{ .io = io, .workers = 2 },
             };
 
@@ -533,7 +532,7 @@ fn runAdditionalSceneCameraThreadTests(
         run_config.save_strategy = .memory;
         run_config.parallel = .{ .threads = 2 };
 
-        const render_groups = [_]riley.RenderGroup{
+        const render_groups = [_]rendergroups.RenderGroup{
             .{ .io = io, .workers = 2 },
         };
 
@@ -551,7 +550,7 @@ fn runAdditionalSceneCameraThreadTests(
     }
 
     // 4. OpenGL vs OpenCV coordinate systems parity
-    for ([_]camera.CameraCoordSys{ .opengl, .opencv }) |coord_sys| {
+    for ([_]cameratypes.CameraCoordSys{ .opengl, .opencv }) |coord_sys| {
         var cam_test = cam_inp;
         cam_test.coord_sys = coord_sys;
 

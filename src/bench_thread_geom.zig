@@ -6,6 +6,10 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const fieldtypes = @import("riley/zig/fieldtypes.zig");
+const meshtypes = @import("riley/zig/meshtypes.zig");
+const cameratypes = @import("riley/zig/cameratypes.zig");
+const shadertypes = @import("riley/zig/shadertypes.zig");
 const std = @import("std");
 const benchargs = @import("dev_support/benchargs.zig");
 const common = @import("dev_support/benchcommon.zig");
@@ -19,8 +23,8 @@ const texops = @import("riley/zig/textureops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const meshio = @import("riley/zig/meshio.zig");
 const mo = @import("riley/zig/meshpipeline.zig");
-const cam = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframeops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const report = @import("riley/zig/report.zig");
 const NDArray = @import("riley/zig/ndarray.zig").NDArray;
@@ -68,16 +72,16 @@ const RunTiming = struct {
 
 fn duplicateMeshInput(
     allocator: std.mem.Allocator,
-    base_mesh: mo.MeshInput,
+    base_mesh: meshtypes.MeshInput,
     copies_num: usize,
-    out_mesh: *mo.MeshInput,
+    out_mesh: *meshtypes.MeshInput,
 ) !void {
     const base_coords_num = base_mesh.coords.mat.rows_num;
     const new_coords_num = base_coords_num * copies_num;
     const new_coords_mem = try allocator.alloc(F, new_coords_num * 3);
     errdefer allocator.free(new_coords_mem);
 
-    var new_coords = meshio.Coords.init(new_coords_mem, new_coords_num);
+    var new_coords = meshtypes.Coords.init(new_coords_mem, new_coords_num);
 
     var jj: usize = 0;
     while (jj < copies_num) : (jj += 1) {
@@ -104,7 +108,7 @@ fn duplicateMeshInput(
     );
     errdefer allocator.free(new_connect_mem);
 
-    var new_connect = meshio.Connect.init(
+    var new_connect = meshtypes.Connect.init(
         new_connect_mem,
         new_elems_num,
         nodes_per_elem,
@@ -124,8 +128,8 @@ fn duplicateMeshInput(
         }
     }
 
-    var new_shader: shaderops.ShaderInput = undefined;
-    switch (base_mesh.shader) {
+    var new_shader: shadertypes.ShaderMonoInput = undefined;
+    switch (base_mesh.shaders.mono_direct.?) {
         .func => |base_func| {
             var new_uvs: ?NDArray(F) = null;
             if (base_func.uvs) |base_uvs| {
@@ -133,13 +137,12 @@ fn duplicateMeshInput(
                 const new_dims = [_]usize{
                     base_dims[0] * copies_num,
                     base_dims[1],
-                    base_dims[2],
                 };
                 new_uvs = try NDArray(F).initFlat(allocator, &new_dims);
-                const base_elem_size = base_dims[1] * base_dims[2];
+                const base_copy_size = base_uvs.slice.len;
                 jj = 0;
                 while (jj < copies_num) : (jj += 1) {
-                    const dest_start = jj * base_dims[0] * base_elem_size;
+                    const dest_start = jj * base_copy_size;
                     const uvs_slice = new_uvs.?.slice;
                     @memcpy(
                         uvs_slice[dest_start .. dest_start + base_uvs.slice.len],
@@ -153,9 +156,8 @@ fn duplicateMeshInput(
                     .coord_mode = base_func.coord_mode,
                     .builtin = base_func.builtin,
                     .params = base_func.params,
-                    .bits = base_func.bits,
+                    .output_gain = base_func.output_gain,
                     .scaling = base_func.scaling,
-                    .normal_type = base_func.normal_type,
                 },
             };
         },
@@ -169,7 +171,7 @@ fn duplicateMeshInput(
         .coords = new_coords,
         .connect = new_connect,
         .disp = null,
-        .shader = new_shader,
+        .shaders = .{ .mono_direct = new_shader },
     };
 }
 
@@ -198,87 +200,87 @@ fn runAndRecord(
     size_str: []const u8,
     copies_num: usize,
     config: rastcfg.RasterConfig,
-    base_mesh: mo.MeshInput,
-    base_camera: cam.CameraInput,
+    base_mesh: meshtypes.MeshInput,
+    base_camera: cameratypes.CameraInput,
     out_timing: *RunTiming,
+    runs: usize,
+    smoke: bool,
 ) !void {
     _ = etype;
     _ = size_str;
 
-    var run_arena = std.heap.ArenaAllocator.init(allocator);
-    defer run_arena.deinit();
-    const ra = run_arena.allocator();
+    const frames_num: usize = if (smoke) 1 else 64;
+    out_timing.* = .{ .geom_prep_ms = 0, .active_frame_ms = 0, .total_time_ms = 0 };
+    for (0..runs) |_| {
+        var run_arena = std.heap.ArenaAllocator.init(allocator);
+        defer run_arena.deinit();
+        const ra = run_arena.allocator();
 
-    var duplicated_mesh: mo.MeshInput = undefined;
-    try duplicateMeshInput(ra, base_mesh, copies_num, &duplicated_mesh);
+        var duplicated_mesh: meshtypes.MeshInput = undefined;
+        try duplicateMeshInput(ra, base_mesh, copies_num, &duplicated_mesh);
 
-    const num_coords = duplicated_mesh.coords.mat.rows_num;
-    const disp_field = try meshio.Field.initAlloc(ra, 64, num_coords, 3);
-    duplicated_mesh.disp = disp_field;
+        const num_coords = duplicated_mesh.coords.mat.rows_num;
+        const disp_field = try fieldtypes.Field.initAlloc(ra, frames_num, num_coords, 3);
+        duplicated_mesh.disp = disp_field;
 
-    const camera_inputs = try ra.alloc(cam.CameraInput, 64);
-    @memset(camera_inputs, base_camera);
+        const camera_inputs = [_]cameratypes.CameraInput{base_camera};
 
-    const bench_capture = try ra.alloc(report.FrameBenchCapture, 64);
-    for (bench_capture, 0..) |*bc, ii| {
-        bc.* = .{
-            .camera_idx = 0,
-            .frame_idx = ii,
-            .bench_log = .{},
-        };
+        const bench_capture = try ra.alloc(report.FrameBenchCapture, frames_num);
+        for (bench_capture, 0..) |*bc, ii| {
+            bc.* = .{
+                .camera_idx = 0,
+                .frame_idx = ii,
+                .bench_log = .{},
+            };
+        }
+
+        const out_path: ?[]const u8 = if (config.save_strategy == .disk or
+            config.save_strategy == .both)
+            "out/debug_images"
+        else
+            null;
+
+        const e2e_start = Timestamp.now(io, .awake);
+
+        var image_arr = try riley.rasterAdvanced(
+            ra,
+            io,
+            &camera_inputs,
+            &[_]meshtypes.MeshInput{duplicated_mesh},
+            config,
+            out_path,
+            .{ .bench_capture = bench_capture },
+        );
+
+        if (image_arr) |*arr| {
+            ra.free(arr.slice);
+            arr.deinit(ra);
+        }
+
+        const e2e_end = Timestamp.now(io, .awake);
+        const e2e_ms = @as(F, @floatFromInt(
+            e2e_start.durationTo(e2e_end).raw.nanoseconds,
+        )) / 1e6;
+
+        var total_geom_prep_ns: F = 0;
+        var total_active_time_ns: F = 0;
+        for (bench_capture) |bc| {
+            total_geom_prep_ns += bc.bench_log.frame_times.geometry_prep;
+            total_active_time_ns += bc.bench_log.frame_times.active_time;
+        }
+        const avg_geom_prep_ms = total_geom_prep_ns / 1e6 / @as(F, @floatFromInt(frames_num));
+        const avg_active_frame_ms = total_active_time_ns / 1e6 / @as(F, @floatFromInt(frames_num));
+
+        out_timing.geom_prep_ms += avg_geom_prep_ms / @as(F, @floatFromInt(runs));
+        out_timing.active_frame_ms += avg_active_frame_ms / @as(F, @floatFromInt(runs));
+        out_timing.total_time_ms += e2e_ms / @as(F, @floatFromInt(runs));
     }
-
-    const out_path: ?[]const u8 = if (config.save_strategy == .disk or
-        config.save_strategy == .both)
-        "out/debug_images"
-    else
-        null;
-
-    const e2e_start = Timestamp.now(io, .awake);
-
-    var image_arr = try riley.rasterAdvanced(
-        ra,
-        io,
-        camera_inputs[0..1],
-        &[_]mo.MeshInput{duplicated_mesh},
-        config,
-        out_path,
-        .{ .bench_capture = bench_capture },
-    );
-
-    if (image_arr) |*arr| {
-        ra.free(arr.slice);
-        arr.deinit(ra);
-    }
-
-    const e2e_end = Timestamp.now(io, .awake);
-    const e2e_ms = @as(F, @floatFromInt(
-        e2e_start.durationTo(e2e_end).raw.nanoseconds,
-    )) / 1e6;
-
-    var total_geom_prep_ns: F = 0;
-    var total_active_time_ns: F = 0;
-    for (bench_capture) |bc| {
-        total_geom_prep_ns += bc.bench_log.frame_times.geometry_prep;
-        total_active_time_ns += bc.bench_log.frame_times.active_time;
-    }
-    const avg_geom_prep_ms = total_geom_prep_ns / 1e6 / 64.0;
-    const avg_active_frame_ms = total_active_time_ns / 1e6 / 64.0;
-
-    out_timing.* = .{
-        .geom_prep_ms = avg_geom_prep_ms,
-        .active_frame_ms = avg_active_frame_ms,
-        .total_time_ms = e2e_ms,
-    };
 }
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
-    var base_raster_config = tcfg.getRasterConfig(.bench);
-    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
+    const base_raster_config = tcfg.getRasterConfig(.bench);
     var filtered_args: std.ArrayList([*:0]const u8) = .empty;
     defer filtered_args.deinit(outer_alloc);
     try filtered_args.append(outer_alloc, init.minimal.args.vector[0]);
@@ -396,7 +398,9 @@ pub fn main(init: std.process.Init) !void {
         if (err != error.PathAlreadyExists) return err;
     };
 
-    const out_path = "out/bench_thread_geom.csv";
+    try cwd.createDirPath(io, bench_args.out_dir);
+    const out_path = try std.fmt.allocPrint(outer_alloc, "{s}/bench_thread_geom.csv", .{bench_args.out_dir});
+    defer outer_alloc.free(out_path);
     var file = try cwd.createFile(io, out_path, .{});
     defer file.close(io);
 
@@ -419,6 +423,7 @@ pub fn main(init: std.process.Init) !void {
     for (EVAL_ELEMENTS) |etype| {
         for (MESH_SIZES) |size_str| {
             for (MESH_COPIES_LIST) |copies_num| {
+                if (bench_args.smoke and copies_num != 1) continue;
                 if (element_filter) |filter| {
                     if (filter != etype) continue;
                 }
@@ -476,7 +481,7 @@ pub fn main(init: std.process.Init) !void {
                         .sub_sample = render_defaults.sub_sample,
                     },
                 );
-                const base_camera = cam.CameraInput{
+                const base_camera = cameratypes.CameraInput{
                     .pixels_num = camera.pixels_num,
                     .pixels_size = camera.pixels_size,
                     .pos_world = camera.pos_world,
@@ -514,6 +519,8 @@ pub fn main(init: std.process.Init) !void {
                             base_mesh,
                             base_camera,
                             &timing,
+                            bench_args.runs,
+                            bench_args.smoke,
                         );
 
                         try writer.print(
@@ -565,6 +572,8 @@ pub fn main(init: std.process.Init) !void {
                                     base_mesh,
                                     base_camera,
                                     &timing,
+                                    bench_args.runs,
+                                    bench_args.smoke,
                                 );
 
                                 try writer.print(
@@ -612,6 +621,8 @@ pub fn main(init: std.process.Init) !void {
                                 base_mesh,
                                 base_camera,
                                 &timing,
+                                bench_args.runs,
+                                bench_args.smoke,
                             );
 
                             try writer.print(

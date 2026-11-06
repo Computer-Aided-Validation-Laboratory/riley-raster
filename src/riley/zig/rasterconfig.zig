@@ -6,8 +6,6 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
-const std = @import("std");
-const iio = @import("imageio.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
@@ -21,7 +19,6 @@ pub const RasterConfig = struct {
 
     // Core rendering behaviour.
     render_mode: RenderMode = .offline,
-    background_value: F = 0.0,
 
     // Common parallel resource control.
     parallel: ParallelConfig = .auto,
@@ -32,7 +29,8 @@ pub const RasterConfig = struct {
 
     // Sub-configuration groups.
     output: OutputConfig = .{},
-    report: ReportConfig = .{},
+    report_perf: ReportMode = .off,
+    report_console: bool = false,
     validation: ValidateInput = .fast,
 
     // Deep implementation tuning.
@@ -46,17 +44,8 @@ pub const ParallelConfig = union(enum) {
 };
 
 pub const OutputConfig = struct {
-    image_save_mode: ImageSaveMode = .multifield,
-    image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .none },
-    },
     disk_save_overlap: bool = false,
     save_frame_buff_count: usize = buildconfig.SaveFrameBuffCount,
-};
-
-pub const ReportConfig = struct {
-    mode: ReportMode = .bench,
-    full_stats_opts: FullStatsOpts = .{},
 };
 
 pub const AdvancedConfig = struct {
@@ -173,18 +162,9 @@ pub const SaveStrategy = enum {
     none,
 };
 
-pub const ImageSaveMode = enum {
-    grey,
-    rgb,
-    multifield,
-    rgb_to_grey,
-    grey_to_rgb,
-};
-
 pub const ReportMode = enum {
     off,
     bench,
-    full_stats,
 };
 
 pub const HullMode = enum(u32) {
@@ -200,24 +180,4 @@ pub const NewtonSeedMode = enum {
 pub const NewtonSeedReuse = enum {
     off,
     last_conv,
-};
-
-pub const FullStatsOpts = struct {
-    formats: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-        .{ .format = .csv, .bits = null, .scaling = .none },
-    },
-    save_solver_csv: bool = false,
-    save_iter_map: bool = true,
-    save_xi_map: bool = true,
-    save_eta_map: bool = true,
-    save_conv_map: bool = true,
-    save_jac_det_map: bool = true,
-    save_tile_timing_map: bool = true,
-    save_tile_density_map: bool = true,
-    save_tile_occupancy_map: bool = true,
-    save_depth_map: bool = true,
-    save_earlyout_map: bool = true,
-    save_pixel_occupancy_map: bool = true,
-    save_normals_map: bool = false,
 };

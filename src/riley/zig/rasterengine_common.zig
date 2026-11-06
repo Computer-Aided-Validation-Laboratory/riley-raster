@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const meshtypes = @import("meshtypes.zig");
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -13,30 +15,14 @@ const cfg = buildconfig.config;
 const tol = cfg.tol;
 const SimdWidth = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
-const rastcfg = @import("rasterconfig.zig");
-const cam = @import("camera.zig");
-const ReportMode = rastcfg.ReportMode;
-const MatSlice = @import("matslice.zig").MatSlice;
-const NDArray = @import("ndarray.zig").NDArray;
+const rasterconfig = @import("rasterconfig.zig");
 const report = @import("report.zig");
-const rasterreport = @import("rasterreport.zig");
-const frontend = @import("rasterfrontend.zig");
-const elemtilebin = @import("elemtilebinning.zig");
-const edgeops = @import("hulledge.zig");
-const newton = @import("newton.zig");
-const pce = @import("parachunkexec.zig");
-const scratchresolve = @import("scratchresolve.zig");
-const subpxframe = @import("subpxframe_globbuff.zig");
-const scalingpolicy = @import("scalingpolicy.zig");
-const meshpipe = @import("meshpipeline.zig");
-const MeshPrepared = meshpipe.MeshPrepared;
+const rasterfrontend = @import("rasterfrontend.zig");
+const elemtilebinning = @import("elemtilebinning.zig");
 const shaderops = @import("shaderops.zig");
-const NodalPrepared = shaderops.NodalPrepared;
-const TexPrepared = shaderops.TexPrepared;
-const FuncPrepared = shaderops.FuncPrepared;
-const geomkerns = @import("geometrykernels.zig");
-const shadekerns = @import("shaderkernels.zig");
-const Timestamp = std.Io.Clock.Timestamp;
+const geometrykernels = @import("geometrykernels.zig");
+const shaderkernels = @import("shaderkernels.zig");
+const shaderpipekernels = @import("shaderpipekernels.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -60,7 +46,7 @@ pub const RasterBounds = struct {
 };
 
 pub fn tileScratchSubpxSize(
-    ctx_rast: frontend.RasterContext,
+    ctx_rast: rasterfrontend.RasterContext,
 ) usize {
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const raster_halo_px = ctx_rast.camera.prep_psf.halo_px;
@@ -141,7 +127,7 @@ pub const Tri3FixedEdges = struct {
     }
 
     pub fn init(
-        nodes_coords: frontend.Vec3Slices(F),
+        nodes_coords: rasterfrontend.Vec3Slices(F),
         sub_samp: usize,
         start_subx_global: isize,
         start_suby_global: isize,
@@ -257,8 +243,8 @@ pub const Tri3FixedEdges = struct {
 };
 
 fn fillTileIdealCentFullInMem(
-    ctx_rast: frontend.RasterContext,
-    tile: elemtilebin.ActiveTile,
+    ctx_rast: rasterfrontend.RasterContext,
+    tile: elemtilebinning.ActiveTile,
     subpx_scratch: anytype,
     subpx_tile_size: usize,
 ) void {
@@ -273,8 +259,8 @@ fn fillTileIdealCentFullInMem(
 }
 
 fn fillTileIdealCent(
-    ctx_rast: frontend.RasterContext,
-    tile: elemtilebin.ActiveTile,
+    ctx_rast: rasterfrontend.RasterContext,
+    tile: elemtilebinning.ActiveTile,
     subpx_scratch: anytype,
     subpx_tile_size: usize,
 ) !void {
@@ -308,40 +294,49 @@ pub const TileCoreResult = struct {
 
 pub fn rasterTileCore(
     comptime RasterBackend: type,
-    comptime report_mode: ReportMode,
+    comptime report_mode: rasterconfig.ReportMode,
     io: std.Io,
-    ctx_rast: frontend.RasterContext,
+    ctx_rast: rasterfrontend.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    tile: elemtilebin.ActiveTile,
-    overlaps_all: []const elemtilebin.OverlapBBox,
-    meshes: []const MeshPrepared,
-    mesh_hulls: meshpipe.MeshHulls,
+    tile: elemtilebinning.ActiveTile,
+    overlaps_all: []const elemtilebinning.OverlapBBox,
+    meshes: []const meshtypes.MeshPrepared,
+    mesh_hulls: meshtypes.MeshHulls,
     subpx_scratch: *RasterBackend.SubpxScratchBuffs,
     subpx_tile_size: usize,
 ) !TileCoreResult {
     var shaded_px: u64 = 0;
-    // Report aggregate worker-time for the overlap loop. Camera fill is timed
-    // separately and removed below so all three raster phases share one basis.
-    const time_elem_start: ?Timestamp =
+
+    const time_elem_start: ?std.Io.Clock.Timestamp =
         if (comptime report_mode != .off)
-            Timestamp.now(io, .awake)
+            std.Io.Clock.Timestamp.now(io, .awake)
         else
             null;
 
     var camera_fill_ready = false;
     var cam_duration_ns: u64 = 0;
 
-    inline for (@typeInfo(elemtilebin.ElemBin).@"enum".fields) |bin_field| {
-        const bin_tag = @field(elemtilebin.ElemBin, bin_field.name);
-        const geom_tag = comptime elemtilebin.binMeshType(bin_tag);
-        const root_class = comptime elemtilebin.binRootClass(bin_tag);
+    inline for (std.enums.values(elemtilebinning.ElemBin)) |bin_tag| {
+        const geom_tag = comptime elemtilebinning.binMeshType(bin_tag);
+        const root_class = comptime elemtilebinning.binRootClass(bin_tag);
+
         const range = tile.bins[@intFromEnum(bin_tag)];
         const overlaps = overlaps_all[range.start .. range.start + range.count];
+
         for (overlaps) |ov| {
             const mesh_idx: usize = ov.mesh_idx;
             const mesh_ptr = &meshes[mesh_idx];
             std.debug.assert(mesh_ptr.mesh_type == geom_tag);
+
+            const selected = shaderops.selectShader(
+                shadertypes.ShaderMonoPrepared,
+                shadertypes.ShaderPipePrepared,
+                &mesh_ptr.shaders,
+                std.meta.activeTag(ctx_rast.camera.render_format),
+            ) orelse continue;
+
             const coords = &mesh_ptr.coords;
+
             const hull = if (comptime root_class == .multi_root) blk: {
                 std.debug.assert(mesh_idx < mesh_hulls.hull_multiroot_by_mesh.len);
                 if (mesh_hulls.hull_multiroot_by_mesh[mesh_idx]) |*hulls| {
@@ -356,53 +351,79 @@ pub fn rasterTileCore(
                 break :blk null;
             };
 
-            {
-                if (!camera_fill_ready and comptime geom_tag != .tri3opt) {
-                    const time_cam_start: ?Timestamp =
-                        if (comptime report_mode != .off)
-                            Timestamp.now(io, .awake)
-                        else
-                            null;
-                    try fillTileIdealCent(
-                        ctx_rast,
-                        tile,
-                        subpx_scratch,
-                        subpx_tile_size,
-                    );
-                    camera_fill_ready = true;
-                    if (comptime report_mode != .off) {
-                        cam_duration_ns = @intCast(
-                            time_cam_start.?.durationTo(
-                                Timestamp.now(io, .awake),
-                            ).raw.nanoseconds,
-                        );
-                    }
-                }
-                const GK = comptime switch (geom_tag) {
-                    .tri3 => geomkerns.Tri3Kernel(),
-                    .tri3opt => geomkerns.Tri3OptKernel(),
-                    .tri6 => geomkerns.Tri6Kernel(),
-                    .quad4 => geomkerns.Quad4Kernel(),
-                    .quad8 => geomkerns.Quad89Kernel(8),
-                    .quad9 => geomkerns.Quad89Kernel(9),
-                };
-                const N = GK.nodes_num;
+            if (!camera_fill_ready and comptime geom_tag != .tri3opt) {
+                const time_cam_start: ?std.Io.Clock.Timestamp =
+                    if (comptime report_mode != .off)
+                        std.Io.Clock.Timestamp.now(io, .awake)
+                    else
+                        null;
 
-                const mesh_fields_num: u8 = switch (mesh_ptr.shader) {
+                try fillTileIdealCent(
+                    ctx_rast,
+                    tile,
+                    subpx_scratch,
+                    subpx_tile_size,
+                );
+
+                camera_fill_ready = true;
+
+                if (comptime report_mode != .off) {
+                    cam_duration_ns = @intCast(
+                        time_cam_start.?.durationTo(
+                            std.Io.Clock.Timestamp.now(io, .awake),
+                        ).raw.nanoseconds,
+                    );
+                }
+            }
+
+            const GK = comptime switch (geom_tag) {
+                .tri3 => geometrykernels.Tri3Kernel(),
+                .tri3opt => geometrykernels.Tri3OptKernel(),
+                .tri6 => geometrykernels.Tri6Kernel(),
+                .quad4 => geometrykernels.Quad4Kernel(),
+                .quad8 => geometrykernels.Quad89Kernel(8),
+                .quad9 => geometrykernels.Quad89Kernel(9),
+            };
+            const N = GK.nodes_num;
+
+            const mesh_fields_num: u8 = switch (selected) {
+                .pipe => |pipe| pipe.channels,
+                .direct => |direct| switch (direct.*) {
                     .nodal => |s| if (s.elem_field.dims.len == 3)
                         @intCast(s.elem_field.dims[1])
                     else
                         @intCast(s.elem_field.dims[2]),
-                    .tex_u8, .tex_u16, .tex_f => 1,
-                    .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
-                    .func => 1,
-                    .func_rgb => 3,
-                };
+                    .tex_u8, .tex_u16, .tex_f, .func => 1,
+                },
+            };
 
-                switch (mesh_ptr.shader) {
+            switch (selected) {
+                .pipe => |pipe| {
+                    var local_buf: shaderpipekernels.PipeKernel(N).LocalBuff = .{};
+                    local_buf.load(pipe, ov.elem_idx, ctx_rast.frame_idx);
+
+                    shaded_px += try RasterBackend.RasterEngine(
+                        GK,
+                        shaderpipekernels.PipeKernel(N),
+                        shadertypes.ShaderPipePrepared,
+                        root_class,
+                    ).rasterElemInTile(
+                        report_mode,
+                        ctx_rast,
+                        ctx_report,
+                        tile,
+                        ov,
+                        coords,
+                        hull,
+                        pipe,
+                        &local_buf,
+                        subpx_scratch,
+                    );
+                },
+                .direct => |direct| switch (direct.*) {
                     .nodal => |*shader| {
-                        const SK = shadekerns.NodalKernel(N);
-                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                        var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
+
                         const start_idx = if (shader.elem_field.dims.len == 3)
                             shader.elem_field.getFlatIdx(
                                 &[_]usize{ ov.elem_idx, 0, 0 },
@@ -422,15 +443,11 @@ pub fn rasterTileCore(
                             start_idx,
                             mesh_fields_num,
                         );
-                        if (shader.elem_normals) |en| {
-                            const prep_idx = en.map[ov.elem_idx];
-                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                        }
 
                         shaded_px += try RasterBackend.RasterEngine(
                             GK,
-                            SK,
-                            NodalPrepared,
+                            shaderkernels.NodalKernel(N),
+                            shadertypes.NodalPrepared,
                             root_class,
                         ).rasterElemInTile(
                             report_mode,
@@ -446,22 +463,17 @@ pub fn rasterTileCore(
                         );
                     },
                     .tex_u8 => |*shader| {
-                        const SK = shadekerns.TexKernel(N, u8, 1);
-                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                        var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
                         local_shader_buf.load(
                             shader.elem_uvs,
                             ov.elem_idx * 2 * N,
                             2,
                         );
-                        if (shader.elem_normals) |en| {
-                            const prep_idx = en.map[ov.elem_idx];
-                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                        }
 
                         shaded_px += try RasterBackend.RasterEngine(
                             GK,
-                            SK,
-                            TexPrepared(u8, 1),
+                            shaderkernels.TexKernel(N, u8, 1),
+                            shadertypes.TexPrepared(u8, 1),
                             root_class,
                         ).rasterElemInTile(
                             report_mode,
@@ -477,22 +489,17 @@ pub fn rasterTileCore(
                         );
                     },
                     .tex_u16 => |*shader| {
-                        const SK = shadekerns.TexKernel(N, u16, 1);
-                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                        var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
                         local_shader_buf.load(
                             shader.elem_uvs,
                             ov.elem_idx * 2 * N,
                             2,
                         );
-                        if (shader.elem_normals) |en| {
-                            const prep_idx = en.map[ov.elem_idx];
-                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                        }
 
                         shaded_px += try RasterBackend.RasterEngine(
                             GK,
-                            SK,
-                            TexPrepared(u16, 1),
+                            shaderkernels.TexKernel(N, u16, 1),
+                            shadertypes.TexPrepared(u16, 1),
                             root_class,
                         ).rasterElemInTile(
                             report_mode,
@@ -508,105 +515,13 @@ pub fn rasterTileCore(
                         );
                     },
                     .tex_f => |*shader| {
-                        const SK = shadekerns.TexKernel(N, F, 1);
-                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                        var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
                         local_shader_buf.load(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
-                        if (shader.elem_normals) |en| {
-                            const prep_idx = en.map[ov.elem_idx];
-                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                        }
-                        shaded_px += try RasterBackend.RasterEngine(
-                            GK,
-                            SK,
-                            TexPrepared(F, 1),
-                            root_class,
-                        ).rasterElemInTile(
-                            report_mode,
-                            ctx_rast,
-                            ctx_report,
-                            tile,
-                            ov,
-                            coords,
-                            hull,
-                            shader,
-                            &local_shader_buf,
-                            subpx_scratch,
-                        );
-                    },
-                    .tex_rgb_u8 => |*shader| {
-                        const SK = shadekerns.TexKernel(N, u8, 3);
-                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
-                        local_shader_buf.load(
-                            shader.elem_uvs,
-                            ov.elem_idx * 2 * N,
-                            2,
-                        );
-                        if (shader.elem_normals) |en| {
-                            const prep_idx = en.map[ov.elem_idx];
-                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                        }
 
                         shaded_px += try RasterBackend.RasterEngine(
                             GK,
-                            SK,
-                            TexPrepared(u8, 3),
-                            root_class,
-                        ).rasterElemInTile(
-                            report_mode,
-                            ctx_rast,
-                            ctx_report,
-                            tile,
-                            ov,
-                            coords,
-                            hull,
-                            shader,
-                            &local_shader_buf,
-                            subpx_scratch,
-                        );
-                    },
-                    .tex_rgb_u16 => |*shader| {
-                        const SK = shadekerns.TexKernel(N, u16, 3);
-                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
-                        local_shader_buf.load(
-                            shader.elem_uvs,
-                            ov.elem_idx * 2 * N,
-                            2,
-                        );
-                        if (shader.elem_normals) |en| {
-                            const prep_idx = en.map[ov.elem_idx];
-                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                        }
-
-                        shaded_px += try RasterBackend.RasterEngine(
-                            GK,
-                            SK,
-                            TexPrepared(u16, 3),
-                            root_class,
-                        ).rasterElemInTile(
-                            report_mode,
-                            ctx_rast,
-                            ctx_report,
-                            tile,
-                            ov,
-                            coords,
-                            hull,
-                            shader,
-                            &local_shader_buf,
-                            subpx_scratch,
-                        );
-                    },
-                    .tex_rgb_f => |*shader| {
-                        const SK = shadekerns.TexKernel(N, F, 3);
-                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
-                        local_shader_buf.load(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
-                        if (shader.elem_normals) |en| {
-                            const prep_idx = en.map[ov.elem_idx];
-                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                        }
-                        shaded_px += try RasterBackend.RasterEngine(
-                            GK,
-                            SK,
-                            TexPrepared(F, 3),
+                            shaderkernels.TexKernel(N, F, 1),
+                            shadertypes.TexPrepared(F, 1),
                             root_class,
                         ).rasterElemInTile(
                             report_mode,
@@ -622,8 +537,8 @@ pub fn rasterTileCore(
                         );
                     },
                     .func => |*shader| {
-                        const SK = shadekerns.FuncKernel(N, 1);
-                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                        var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
+
                         switch (shader.coord_mode) {
                             .uv => {
                                 local_shader_buf.loadFuncCoords(
@@ -634,29 +549,31 @@ pub fn rasterTileCore(
                             },
                             .world_reference => {
                                 local_shader_buf.loadFuncCoords(
-                                    shader.elem_world_ref.?,
+                                    shader.hit_geometry.coords_ref.?,
                                     ov.elem_idx * 3 * N,
                                     3,
                                 );
                             },
                             .world_deformed => {
                                 local_shader_buf.loadFuncCoords(
-                                    shader.elem_world_def.?,
+                                    shader.hit_geometry.coords_def.?,
                                     ov.elem_idx * 3 * N,
                                     3,
                                 );
                             },
                             .para => {},
                         }
-                        if (shader.elem_normals) |en| {
+
+                        if (shader.needs_normal) {
+                            const en = shader.hit_geometry.surf_norm.?;
                             const prep_idx = en.map[ov.elem_idx];
                             local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                         }
 
                         shaded_px += try RasterBackend.RasterEngine(
                             GK,
-                            SK,
-                            FuncPrepared,
+                            shaderkernels.FuncKernel(N, 1),
+                            shadertypes.FuncPrepared,
                             root_class,
                         ).rasterElemInTile(
                             report_mode,
@@ -671,57 +588,7 @@ pub fn rasterTileCore(
                             subpx_scratch,
                         );
                     },
-                    .func_rgb => |*shader| {
-                        const SK = shadekerns.FuncKernel(N, 3);
-                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
-                        switch (shader.coord_mode) {
-                            .uv => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_uvs.?,
-                                    ov.elem_idx * 2 * N,
-                                    2,
-                                );
-                            },
-                            .world_reference => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_world_ref.?,
-                                    ov.elem_idx * 3 * N,
-                                    3,
-                                );
-                            },
-                            .world_deformed => {
-                                local_shader_buf.loadFuncCoords(
-                                    shader.elem_world_def.?,
-                                    ov.elem_idx * 3 * N,
-                                    3,
-                                );
-                            },
-                            .para => {},
-                        }
-                        if (shader.elem_normals) |en| {
-                            const prep_idx = en.map[ov.elem_idx];
-                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                        }
-
-                        shaded_px += try RasterBackend.RasterEngine(
-                            GK,
-                            SK,
-                            FuncPrepared,
-                            root_class,
-                        ).rasterElemInTile(
-                            report_mode,
-                            ctx_rast,
-                            ctx_report,
-                            tile,
-                            ov,
-                            coords,
-                            hull,
-                            shader,
-                            &local_shader_buf,
-                            subpx_scratch,
-                        );
-                    },
-                }
+                },
             }
         }
     }
@@ -729,7 +596,7 @@ pub fn rasterTileCore(
     const elem_duration_ns: u64 = if (comptime report_mode != .off) blk: {
         const overlap_duration_ns: u64 = @intCast(
             time_elem_start.?.durationTo(
-                Timestamp.now(io, .awake),
+                std.Io.Clock.Timestamp.now(io, .awake),
             ).raw.nanoseconds,
         );
         std.debug.assert(overlap_duration_ns >= cam_duration_ns);
@@ -751,7 +618,7 @@ test "Tri3FixedEdges preserves edge sum across a row" {
     var x = [_]F{ 1.25, 5.5, 2.0 };
     var y = [_]F{ 1.75, 2.5, 6.25 };
     var z = [_]F{ 1.0, 1.0, 1.0 };
-    const nodes = frontend.Vec3Slices(F){
+    const nodes = rasterfrontend.Vec3Slices(F){
         .x = x[0..],
         .y = y[0..],
         .z = z[0..],

@@ -11,6 +11,7 @@ const buildconfig = @import("riley/zig/buildconfig.zig");
 const gen_zoo = @import("gengold/gen_gold_featurezoo.zig");
 const gen_oneelem = @import("gengold/gen_gold_oneelem.zig");
 const gen_twoshapes = @import("gengold/gen_gold_twoshapes.zig");
+const gen_shaderpipe = @import("tests/test_basic_shaderpipe.zig");
 const iio = @import("riley/zig/imageio.zig");
 const policy = @import("dev_support/testpolicy.zig");
 const tcfg = @import("dev_support/testconfig.zig");
@@ -53,16 +54,12 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     const gold_dir = policy.goldRoot(.basic);
 
     std.debug.print("Generating BASIC Gold Suite to {s}...\n\n", .{gold_dir});
 
-    std.debug.print("--- 1/3: OneElem Cases ---\n", .{});
+    std.debug.print("--- 1/4: OneElem Cases ---\n", .{});
     try gen_oneelem.generateAllOneElemCases(
         aa,
         io,
@@ -71,7 +68,7 @@ pub fn main(init: std.process.Init) !void {
         config,
     );
 
-    std.debug.print("\n--- 2/3: TwoShapes Cases ---\n", .{});
+    std.debug.print("\n--- 2/4: TwoShapes Cases ---\n", .{});
     try gen_twoshapes.generateAllTwoShapesCases(
         aa,
         io,
@@ -83,7 +80,7 @@ pub fn main(init: std.process.Init) !void {
         config,
     );
 
-    std.debug.print("\n--- 3/3: FeatureZoo Cases ---\n", .{});
+    std.debug.print("\n--- 3/4: FeatureZoo Cases ---\n", .{});
     try gen_zoo.generateAllFeatureZooCases(
         aa,
         io,
@@ -92,6 +89,9 @@ pub fn main(init: std.process.Init) !void {
         gold_dir,
         config,
     );
+
+    std.debug.print("\n--- 4/4: Shaderpipe Cases ---\n", .{});
+    try gen_shaderpipe.generateGold(aa, io);
 
     std.debug.print("\nBASIC Gold Suite Generation Complete.\n", .{});
 }

@@ -14,7 +14,8 @@ const F = buildconfig.F;
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
 
-const texops = @import("textureops.zig");
+const textureops = @import("textureops.zig");
+const texturetypes = @import("texturetypes.zig");
 const clibtiff = @import("clibtiff.zig");
 
 const imageops = @import("imageops.zig");
@@ -37,24 +38,13 @@ pub const ImageFormat = enum {
 
 pub const ImageSaveOpts = struct {
     format: ImageFormat,
-    bits: ?u8 = 8,
+    file_bits: ?u8 = 8,
+    adc_bits: ?u8 = null,
     scaling: imageops.ScaleStrategy = .none,
-    channels: usize = 1,
-
-    pub fn init(
-        format: ImageFormat,
-        bits: ?u8,
-        scaling: imageops.ScaleStrategy,
-        channels: usize,
-    ) ImageSaveOpts {
-        return .{
-            .format = format,
-            .bits = bits,
-            .scaling = scaling,
-            .channels = channels,
-        };
-    }
+    packing: CodePacking = .spread,
 };
+
+pub const CodePacking = enum { lower, upper, spread };
 
 const OutputNameField = enum {
     camera,
@@ -73,7 +63,7 @@ pub fn loadImage(
     io: std.Io,
     path: []const u8,
     format: ImageFormat,
-) !texops.Tex(T, channels) {
+) !texturetypes.TexDataFix(T, channels) {
     return switch (format) {
         .csv => try loadCSV(T, channels, allocator, io, path),
         .fimg => {
@@ -92,6 +82,7 @@ pub fn saveImage(
     image_arr: *const ndarray.NDArray(F),
     start_field: usize,
     opts: ImageSaveOpts,
+    channels: usize,
 ) !void {
     var name_buff: [1024]u8 = undefined;
     const ext = switch (opts.format) {
@@ -108,10 +99,10 @@ pub fn saveImage(
     );
 
     switch (opts.format) {
-        .csv => try saveCSV(io, out_dir, file_name, image_arr, start_field, opts),
-        .fimg => try saveFIMG(io, out_dir, file_name, image_arr, start_field, opts),
-        .ppm => try savePPM(io, out_dir, file_name, image_arr, start_field, opts),
-        .bmp => try saveBMP(io, out_dir, file_name, image_arr, start_field, opts),
+        .csv => try saveCSV(io, out_dir, file_name, image_arr, start_field, opts, channels),
+        .fimg => try saveFIMG(io, out_dir, file_name, image_arr, start_field, channels),
+        .ppm => try savePPM(io, out_dir, file_name, image_arr, start_field, opts, channels),
+        .bmp => try saveBMP(io, out_dir, file_name, image_arr, start_field, opts, channels),
         .tiff => try saveTIFF(io, out_dir, file_name, image_arr, start_field, opts),
     }
 }
@@ -130,7 +121,7 @@ pub fn saveMatAsImage(
         .dims = &dims,
         .strides = &strides,
     };
-    try saveImage(io, out_dir, file_name_no_ext, &arr, 0, opts);
+    try saveImage(io, out_dir, file_name_no_ext, &arr, 0, opts, 1);
 }
 
 pub fn saveImages(
@@ -139,20 +130,15 @@ pub fn saveImages(
     camera_idx: usize,
     frame_idx: usize,
     num_fields: u8,
-    pixels_num: [2]u32,
     frame_arr: *const ndarray.NDArray(F),
-    channels_override: ?usize,
+    channels: usize,
     opts_slice: []const ImageSaveOpts,
     output_name_format: []const u8,
 ) !void {
     const save_dir = out_dir orelse return;
     var name_buff: [1024]u8 = undefined;
-    _ = pixels_num;
 
     for (opts_slice) |opts| {
-        const channels = channels_override orelse opts.channels;
-        var save_opts = opts;
-        save_opts.channels = channels;
         var ff: usize = 0;
         while (ff + channels <= @as(usize, num_fields)) {
             const file_name = try formatFrameFieldBaseName(
@@ -163,7 +149,7 @@ pub fn saveImages(
                 output_name_format,
             );
 
-            try saveImage(io, save_dir, file_name, frame_arr, ff, save_opts);
+            try saveImage(io, save_dir, file_name, frame_arr, ff, opts, channels);
             ff += channels;
         }
     }
@@ -261,48 +247,6 @@ fn parseOutputNameWidth(spec: []const u8) !usize {
     return width;
 }
 
-test "output name format expands fields and zero padding" {
-    var buff: [64]u8 = undefined;
-    const name = try formatFrameFieldBaseName(
-        &buff,
-        2,
-        7,
-        3,
-        "frame{frame:04}_{camera}_field{field}",
-    );
-    try std.testing.expectEqualStrings("frame0007_2_field3", name);
-}
-
-test "output name format rejects invalid templates" {
-    const invalid_formats = [_][]const u8{
-        "",
-        "cam{rabbits}",
-        "cam{camera",
-        "cam}camera_frame{frame}",
-        "cam{camera}}_frame{frame}",
-        "cam{{camera}}",
-        "cam{camera:4}",
-        "cam{camera:0}",
-        "cam{camera:033}",
-        "folder/frame{frame}",
-        "folder\\frame{frame}",
-    };
-    for (invalid_formats) |format| {
-        try std.testing.expectError(
-            error.InvalidOutputNameFormat,
-            validateOutputNameFormat(format),
-        );
-    }
-}
-
-test "output name format reports a short destination buffer" {
-    var buff: [4]u8 = undefined;
-    try std.testing.expectError(
-        error.NoSpaceLeft,
-        formatFrameFieldBaseName(&buff, 0, 12345, 0, "{frame}"),
-    );
-}
-
 pub fn savePPM(
     io: std.Io,
     out_dir: std.Io.Dir,
@@ -310,6 +254,7 @@ pub fn savePPM(
     image_arr: *const ndarray.NDArray(F),
     start_field: usize,
     opts: ImageSaveOpts,
+    channels_requested: usize,
 ) !void {
     const ppm_file: std.Io.File = try out_dir.createFile(io, file_name, .{});
     defer ppm_file.close(io);
@@ -318,7 +263,7 @@ pub fn savePPM(
     var file_writer = ppm_file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    const bits = opts.bits orelse 8;
+    const bits = opts.file_bits orelse 8;
     const max_val_f = imageops.getScaleMax(bits);
     const max_val = @as(u32, @intFromFloat(max_val_f));
 
@@ -328,8 +273,10 @@ pub fn savePPM(
     try writer.print("P3\n{d} {d}\n{d}\n", .{ cols, rows, max_val });
 
     // We need scaling params per field if we are doing auto scaling
-    var params_array: [buildconfig.config.max_image_channels]imageops.ScalingParams = undefined;
-    const channels = @min(opts.channels, buildconfig.config.max_image_channels);
+    var params_array: [
+        buildconfig.config.max_image_channels
+    ]imageops.ScalingParams = undefined;
+    const channels = @min(channels_requested, buildconfig.config.max_image_channels);
     for (0..channels) |ch| {
         const field_idx = start_field + ch;
         const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
@@ -344,11 +291,7 @@ pub fn savePPM(
                 const raw_val = image_arr.get(&[_]usize{ field_idx, rr, cc });
                 const params = if (ch < channels) params_array[ch] else params_array[0];
 
-                var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
-                if (opts.bits == null) {
-                    val *= imageops.getScaleMax(bits);
-                }
-                const px = @as(u32, @intFromFloat(imageops.applyClamping(val, bits)));
+                const px: u32 = digitise(raw_val, opts, params);
                 try writer.print("{d}", .{px});
                 if (ch < 2) try writer.writeByte(' ');
             }
@@ -360,19 +303,22 @@ pub fn savePPM(
     try writer.flush();
 }
 
-pub fn saveCSV(
+fn saveCSV(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
     image_arr: *const ndarray.NDArray(F),
     start_field: usize,
     opts: ImageSaveOpts,
+    channels_requested: usize,
 ) !void {
     const rows = image_arr.dims[1];
     const cols = image_arr.dims[2];
 
-    var params_array: [buildconfig.config.max_image_channels]imageops.ScalingParams = undefined;
-    const channels = @min(opts.channels, buildconfig.config.max_image_channels);
+    var params_array: [
+        buildconfig.config.max_image_channels
+    ]imageops.ScalingParams = undefined;
+    const channels = @min(channels_requested, buildconfig.config.max_image_channels);
     for (0..channels) |ch| {
         const field_idx = start_field + ch;
         const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
@@ -391,16 +337,9 @@ pub fn saveCSV(
             const raw_val = ctx.image_arr.get(&[_]usize{ field_idx, row, col });
             const params = ctx.params_array[ch];
 
-            var val = imageops.applyScaling(
-                raw_val,
-                ctx.opts.scaling,
-                ctx.opts.bits,
-                params,
-            );
-            if (ctx.opts.scaling == .none and ctx.opts.bits != null) {
-                val = imageops.applyClamping(val, ctx.opts.bits);
-            }
-            return val;
+            if (ctx.opts.file_bits != null)
+                return @floatFromInt(digitise(raw_val, ctx.opts, params));
+            return imageops.applyScaling(raw_val, ctx.opts.scaling, null, params);
         }
     };
 
@@ -421,17 +360,17 @@ pub fn saveCSV(
     );
 }
 
-pub fn saveFIMG(
+fn saveFIMG(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
     image_arr: *const ndarray.NDArray(F),
     start_field: usize,
-    opts: ImageSaveOpts,
+    channels_requested: usize,
 ) !void {
     const rows = image_arr.dims[1];
     const cols = image_arr.dims[2];
-    const channels = @min(opts.channels, buildconfig.config.max_image_channels);
+    const channels = @min(channels_requested, buildconfig.config.max_image_channels);
 
     const file = try out_dir.createFile(io, file_name, .{});
     defer file.close(io);
@@ -459,13 +398,14 @@ pub fn saveFIMG(
     try writer.flush();
 }
 
-pub fn saveBMP(
+fn saveBMP(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
     image_arr: *const ndarray.NDArray(F),
     start_field: usize,
     opts: ImageSaveOpts,
+    channels_requested: usize,
 ) !void {
     const file = try out_dir.createFile(io, file_name, .{});
     defer file.close(io);
@@ -474,7 +414,7 @@ pub fn saveBMP(
     var file_writer = file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    const bits = opts.bits orelse 8;
+    const bits = opts.file_bits orelse 8;
     const is_16bit = (bits == 16);
     const bpp: u16 = if (is_16bit) 48 else 24;
 
@@ -510,8 +450,10 @@ pub fn saveBMP(
     try writer.writeInt(u32, 0, .little);
     try writer.writeInt(u32, 0, .little);
 
-    var params_array: [buildconfig.config.max_image_channels]imageops.ScalingParams = undefined;
-    const channels = @min(opts.channels, buildconfig.config.max_image_channels);
+    var params_array: [
+        buildconfig.config.max_image_channels
+    ]imageops.ScalingParams = undefined;
+    const channels = @min(channels_requested, buildconfig.config.max_image_channels);
     for (0..@min(channels, 3)) |ch| {
         const field_idx = start_field + ch;
         const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
@@ -531,15 +473,11 @@ pub fn saveBMP(
                 const raw_val = image_arr.get(&[_]usize{ field_idx, rr, cc });
                 const params = if (ch < channels) params_array[ch] else params_array[0];
 
-                var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
-                if (opts.bits == null and opts.scaling != .none) {
-                    val *= if (is_16bit) 65535.0 else 255.0;
-                }
-                const px_f = imageops.applyClamping(val, bits);
+                const px = digitise(raw_val, opts, params);
                 if (is_16bit) {
-                    try writer.writeInt(u16, @as(u16, @intFromFloat(px_f)), .little);
+                    try writer.writeInt(u16, px, .little);
                 } else {
-                    try writer.writeByte(@as(u8, @intFromFloat(px_f)));
+                    try writer.writeByte(@intCast(px));
                 }
             }
         }
@@ -547,7 +485,8 @@ pub fn saveBMP(
     }
     try writer.flush();
 }
-pub fn saveTIFF(
+
+fn saveTIFF(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
@@ -567,7 +506,7 @@ pub fn saveTIFF(
     var file_writer = file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    const bits = opts.bits orelse 8;
+    const bits = opts.file_bits orelse 8;
     const width = @as(u32, @intCast(image.cols_num));
     const height = @as(u32, @intCast(image.rows_num));
     const pixel_data_offset: u32 = 8;
@@ -581,22 +520,16 @@ pub fn saveTIFF(
     try writer.writeInt(u32, ifd_offset, .little);
 
     const params = imageops.getScalingParams(&image, opts.scaling);
-    const max_v = imageops.getScaleMax(bits);
 
     // 2. Pixel Data
     for (0..image.rows_num) |r| {
         for (0..image.cols_num) |c| {
             const raw_val = image.get(r, c);
-            var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
-            if (opts.bits == null and opts.scaling != .none) {
-                val *= max_v;
-            }
-
-            const px_clamped = imageops.applyClamping(val, bits);
+            const px = digitise(raw_val, opts, params);
             if (bits == 16) {
-                try writer.writeInt(u16, @as(u16, @intFromFloat(px_clamped)), .little);
+                try writer.writeInt(u16, px, .little);
             } else {
-                try writer.writeByte(@as(u8, @intFromFloat(px_clamped)));
+                try writer.writeByte(@intCast(px));
             }
         }
     }
@@ -644,7 +577,7 @@ pub fn loadPPM(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !texturetypes.TexDataFix(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -695,7 +628,7 @@ pub fn loadPPM(
     const height = try std.fmt.parseInt(usize, height_str, 10);
     const max_val = try std.fmt.parseInt(u32, max_val_str, 10);
 
-    var tex = try texops.Tex(T, channels).init(allocator, height, width);
+    var tex = try texturetypes.TexDataFix(T, channels).init(allocator, height, width);
     errdefer tex.deinit(allocator);
 
     const max_val_f = @as(F, @floatFromInt(max_val));
@@ -736,7 +669,7 @@ pub fn loadCSV(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !texturetypes.TexDataFix(T, channels) {
     const array = if (channels == 1)
         try csvio.loadScalarCsv2D(allocator, io, path)
     else
@@ -749,7 +682,7 @@ pub fn loadCSV(
 
     const rows = array.dims[0];
     const cols = array.dims[1];
-    var tex = try texops.Tex(T, channels).init(allocator, rows, cols);
+    var tex = try texturetypes.TexDataFix(T, channels).init(allocator, rows, cols);
     errdefer tex.deinit(allocator);
 
     for (0..rows) |rr| {
@@ -873,7 +806,7 @@ fn loadFIMGTex(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !texturetypes.TexDataFix(T, channels) {
     const array = try loadFIMG(allocator, io, path);
     defer {
         allocator.free(array.slice);
@@ -885,7 +818,7 @@ fn loadFIMGTex(
         return error.ChannelMismatch;
     }
 
-    var tex = try texops.Tex(T, channels).init(
+    var tex = try texturetypes.TexDataFix(T, channels).init(
         allocator,
         array.dims[1],
         array.dims[2],
@@ -910,7 +843,7 @@ pub fn loadBMP(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !texturetypes.TexDataFix(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -943,7 +876,7 @@ pub fn loadBMP(
     const abs_height = @as(usize, @intCast(@abs(height)));
     const abs_width = @as(usize, @intCast(@abs(width)));
 
-    var tex = try texops.Tex(T, channels).init(
+    var tex = try texturetypes.TexDataFix(T, channels).init(
         allocator,
         abs_height,
         abs_width,
@@ -1040,7 +973,7 @@ pub fn loadTIFF(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !texturetypes.TexDataFix(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -1098,7 +1031,7 @@ pub fn loadTIFF(
 
     if (samples_per_pixel != 1) return error.UnsuppedTIFFColorSpace;
 
-    var tex = try texops.Tex(T, channels).init(
+    var tex = try texturetypes.TexDataFix(T, channels).init(
         allocator,
         height,
         width,
@@ -1143,7 +1076,7 @@ pub fn CLoadTIFF(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !texturetypes.TexDataFix(T, channels) {
     _ = io;
     var libtiff = try clibtiff.LibTiff.init();
     defer libtiff.deinit();
@@ -1165,7 +1098,7 @@ pub fn CLoadTIFF(
 
     if (libtiff.readRGBAImage(tif, w, h, raster.ptr, 0) == 0) return error.ReadFailed;
 
-    var tex = try texops.Tex(T, channels).init(allocator, h, w);
+    var tex = try texturetypes.TexDataFix(T, channels).init(allocator, h, w);
     errdefer tex.deinit(allocator);
 
     for (0..h) |row| {
@@ -1227,11 +1160,28 @@ fn convertValue(comptime T: type, val: anytype) T {
     }
 }
 
+fn digitise(value: F, opts: ImageSaveOpts, params: imageops.ScalingParams) u16 {
+    const file_bits = opts.file_bits.?;
+    const adc_bits = opts.adc_bits orelse file_bits;
+
+    const adc_max = imageops.getScaleMax(adc_bits);
+    const adc_value = imageops.applyScaling(value, opts.scaling, adc_bits, params);
+
+    const code = @as(u16, @intFromFloat(@round(std.math.clamp(adc_value, 0, adc_max))));
+
+    if (adc_bits == file_bits) return code;
+    const file_max = imageops.getScaleMax(file_bits);
+
+    return switch (opts.packing) {
+        .lower => code,
+        .upper => code << @as(u4, @intCast(file_bits - adc_bits)),
+        .spread => @intFromFloat(@round(@as(F, @floatFromInt(code)) * file_max / adc_max)),
+    };
+}
+
 // --------------------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------------------
-
-const testing = std.testing;
 
 const frac_tol: F = if (F == f32) 1e-2 else 1e-6;
 
@@ -1251,7 +1201,7 @@ fn deleteTempTestDir(io: std.Io) void {
 }
 
 test "Verify hand-written TIFF loader" {
-    const allocator = testing.allocator;
+    const allocator = std.testing.allocator;
     const io = std.testing.io;
     const cwd = std.Io.Dir.cwd();
     try ensureTempTestDir(io);
@@ -1276,7 +1226,7 @@ test "Verify hand-written TIFF loader" {
         out_dir,
         temp_test_dir ++ "/speckle_mono",
         &mat,
-        .{ .format = .tiff, .bits = 8, .scaling = .none },
+        .{ .format = .tiff, .file_bits = 8, .scaling = .none },
     );
 
     var tex_zig = try loadImage(
@@ -1289,20 +1239,20 @@ test "Verify hand-written TIFF loader" {
     );
     defer tex_zig.deinit(allocator);
 
-    try testing.expectEqual(rows_num, tex_zig.rows_num);
-    try testing.expectEqual(cols_num, tex_zig.cols_num);
+    try std.testing.expectEqual(rows_num, tex_zig.rows_num);
+    try std.testing.expectEqual(cols_num, tex_zig.cols_num);
 
     for (0..rows_num) |rr| {
         for (0..cols_num) |cc| {
             const expected = mat_mem[rr * cols_num + cc];
             const actual = tex_zig.getVal(0, rr, cc);
-            try testing.expectEqual(expected, actual);
+            try std.testing.expectEqual(expected, actual);
         }
     }
 }
 
 test "Save and Load All Formats 8-bit and 16-bit" {
-    const allocator = testing.allocator;
+    const allocator = std.testing.allocator;
     const io = std.testing.io;
     const cwd = std.Io.Dir.cwd();
     try ensureTempTestDir(io);
@@ -1339,7 +1289,7 @@ test "Save and Load All Formats 8-bit and 16-bit" {
                 out_dir,
                 base_name,
                 &mat,
-                .{ .format = fmt, .bits = bits, .scaling = .auto },
+                .{ .format = fmt, .file_bits = bits, .scaling = .auto },
             );
 
             var ext_buff: [1024]u8 = undefined;
@@ -1367,8 +1317,8 @@ test "Save and Load All Formats 8-bit and 16-bit" {
                     fmt,
                 );
                 defer loaded.deinit(allocator);
-                try testing.expectEqual(rows, loaded.rows_num);
-                try testing.expectEqual(cols, loaded.cols_num);
+                try std.testing.expectEqual(rows, loaded.rows_num);
+                try std.testing.expectEqual(cols, loaded.cols_num);
             } else {
                 var loaded = try loadImage(
                     u16,
@@ -1379,15 +1329,54 @@ test "Save and Load All Formats 8-bit and 16-bit" {
                     fmt,
                 );
                 defer loaded.deinit(allocator);
-                try testing.expectEqual(rows, loaded.rows_num);
-                try testing.expectEqual(cols, loaded.cols_num);
+                try std.testing.expectEqual(rows, loaded.rows_num);
+                try std.testing.expectEqual(cols, loaded.cols_num);
             }
         }
     }
 }
 
+test "TIFF ADC packing and range scaling" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    try ensureTempTestDir(io);
+    defer deleteTempTestDir(io);
+    const samples = [_]F{ 0, 63.75, 127.5, 191.25, 255, 300 };
+    const mat = matslice.MatSlice(F).init(@constCast(&samples), 2, 3);
+    try saveMatAsImage(io, std.Io.Dir.cwd(), temp_test_dir ++ "/dic_grid", &mat, .{
+        .format = .tiff,
+        .file_bits = 16,
+        .adc_bits = 12,
+        .scaling = .{ .fixed = .{ 0, 255 } },
+        .packing = .upper,
+    });
+    var dic = try loadImage(u16, 1, allocator, io, temp_test_dir ++ "/dic_grid.tiff", .tiff);
+    defer dic.deinit(allocator);
+    const expected_dic = [_]u16{ 0, 16384, 32768, 49136, 65520, 65520 };
+    for (dic.array.slice, expected_dic) |actual, expected| {
+        try std.testing.expectEqual(expected, actual);
+    }
+    for (dic.array.slice) |code| {
+        try std.testing.expectEqual(@as(u16, 0), code % 16);
+    }
+
+    const temperatures = [_]F{ 0, 25, 50, 100, 200, 250 };
+    const thermal = matslice.MatSlice(F).init(@constCast(&temperatures), 2, 3);
+    try saveMatAsImage(io, std.Io.Dir.cwd(), temp_test_dir ++ "/ir_linear", &thermal, .{
+        .format = .tiff,
+        .file_bits = 16,
+        .scaling = .{ .fixed = .{ 0, 250 } },
+    });
+    var ir = try loadImage(u16, 1, allocator, io, temp_test_dir ++ "/ir_linear.tiff", .tiff);
+    defer ir.deinit(allocator);
+    for (ir.array.slice, temperatures) |code, celsius| {
+        const expected_celsius = @as(F, @floatFromInt(code)) * 250 / 65535;
+        try std.testing.expectApproxEqAbs(celsius, expected_celsius, @as(F, 0.002));
+    }
+}
+
 test "Scaling Strategy: Fractional" {
-    const allocator = testing.allocator;
+    const allocator = std.testing.allocator;
     const io = std.testing.io;
     const cwd = std.Io.Dir.cwd();
     try ensureTempTestDir(io);
@@ -1407,7 +1396,7 @@ test "Scaling Strategy: Fractional" {
     // Test 1: Frac [0.4, 0.6], bits = null (CSV) -> should map [0, 10] to [0.4, 0.6]
     const opts1 = ImageSaveOpts{
         .format = .csv,
-        .bits = null,
+        .file_bits = null,
         .scaling = .{ .frac = .{ 0.4, 0.6 } },
     };
     try saveMatAsImage(io, cwd, temp_test_dir ++ "/test_frac_float", &mat, opts1);
@@ -1421,15 +1410,15 @@ test "Scaling Strategy: Fractional" {
         .csv,
     );
     defer loaded1.deinit(allocator);
-    try testing.expectApproxEqAbs(loaded1.getVal(0, 0, 0), 0.4, frac_tol);
-    try testing.expectApproxEqAbs(loaded1.getVal(0, 0, 1), 0.6, frac_tol);
-    try testing.expectApproxEqAbs(loaded1.getVal(0, 1, 0), 0.5, frac_tol);
-    try testing.expectApproxEqAbs(loaded1.getVal(0, 1, 1), 0.45, frac_tol);
+    try std.testing.expectApproxEqAbs(loaded1.getVal(0, 0, 0), 0.4, frac_tol);
+    try std.testing.expectApproxEqAbs(loaded1.getVal(0, 0, 1), 0.6, frac_tol);
+    try std.testing.expectApproxEqAbs(loaded1.getVal(0, 1, 0), 0.5, frac_tol);
+    try std.testing.expectApproxEqAbs(loaded1.getVal(0, 1, 1), 0.45, frac_tol);
 
     // Test 2: Frac [0.4, 0.6], bits = 8 (CSV) -> should map [0, 10] to [0.4*255, 0.6*255]
     const opts2 = ImageSaveOpts{
         .format = .csv,
-        .bits = 8,
+        .file_bits = 8,
         .scaling = .{ .frac = .{ 0.4, 0.6 } },
     };
     try saveMatAsImage(io, cwd, temp_test_dir ++ "/test_frac_bits", &mat, opts2);
@@ -1443,24 +1432,24 @@ test "Scaling Strategy: Fractional" {
         .csv,
     );
     defer loaded2.deinit(allocator);
-    try testing.expectApproxEqAbs(
+    try std.testing.expectApproxEqAbs(
         loaded2.getVal(0, 0, 0),
-        0.4 * 255.0,
+        102.0,
         frac_tol,
     );
-    try testing.expectApproxEqAbs(
+    try std.testing.expectApproxEqAbs(
         loaded2.getVal(0, 0, 1),
-        0.6 * 255.0,
+        153.0,
         frac_tol,
     );
-    try testing.expectApproxEqAbs(
+    try std.testing.expectApproxEqAbs(
         loaded2.getVal(0, 1, 0),
-        0.5 * 255.0,
+        128.0,
         frac_tol,
     );
-    try testing.expectApproxEqAbs(
+    try std.testing.expectApproxEqAbs(
         loaded2.getVal(0, 1, 1),
-        0.45 * 255.0,
+        115.0,
         frac_tol,
     );
 }
@@ -1474,7 +1463,7 @@ test "FIMG Save and Load Roundtrip" {
     const height: usize = 3;
     const channels: usize = 2;
 
-    var tex = try texops.Tex(F, channels).init(
+    var tex = try texturetypes.TexDataFix(F, channels).init(
         allocator,
         height,
         width,
@@ -1505,10 +1494,9 @@ test "FIMG Save and Load Roundtrip" {
 
     const opts = ImageSaveOpts{
         .format = .fimg,
-        .channels = channels,
     };
 
-    try saveImage(io, cwd, file_base, &arr, 0, opts);
+    try saveImage(io, cwd, file_base, &arr, 0, opts, channels);
 
     var loaded = try loadImage(F, channels, allocator, io, file_full, .fimg);
     defer loaded.deinit(allocator);
@@ -1525,4 +1513,46 @@ test "FIMG Save and Load Roundtrip" {
             }
         }
     }
+}
+
+test "output name format expands fields and zero padding" {
+    var buff: [64]u8 = undefined;
+    const name = try formatFrameFieldBaseName(
+        &buff,
+        2,
+        7,
+        3,
+        "frame{frame:04}_{camera}_field{field}",
+    );
+    try std.testing.expectEqualStrings("frame0007_2_field3", name);
+}
+
+test "output name format rejects invalid templates" {
+    const invalid_formats = [_][]const u8{
+        "",
+        "cam{rabbits}",
+        "cam{camera",
+        "cam}camera_frame{frame}",
+        "cam{camera}}_frame{frame}",
+        "cam{{camera}}",
+        "cam{camera:4}",
+        "cam{camera:0}",
+        "cam{camera:033}",
+        "folder/frame{frame}",
+        "folder\\frame{frame}",
+    };
+    for (invalid_formats) |format| {
+        try std.testing.expectError(
+            error.InvalidOutputNameFormat,
+            validateOutputNameFormat(format),
+        );
+    }
+}
+
+test "output name format reports a short destination buffer" {
+    var buff: [4]u8 = undefined;
+    try std.testing.expectError(
+        error.NoSpaceLeft,
+        formatFrameFieldBaseName(&buff, 0, 12345, 0, "{frame}"),
+    );
 }

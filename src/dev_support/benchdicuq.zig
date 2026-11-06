@@ -6,6 +6,10 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const rasterconfig = @import("../riley/zig/rasterconfig.zig");
+const rendergroups = @import("../riley/zig/rendergroups.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
+const meshtypes = @import("../riley/zig/meshtypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
@@ -18,21 +22,21 @@ const uvio = @import("../riley/zig/uvio.zig");
 const iio = @import("../riley/zig/imageio.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
-const texops = @import("../riley/zig/textureops.zig");
-const camera_mod = @import("../riley/zig/camera.zig");
-const cameraops = @import("../riley/zig/cameraops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
+const camera_mod = @import("../riley/zig/cameraprojops.zig");
+const cameraops = @import("../riley/zig/cameraframeops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const sceneops = @import("../riley/zig/sceneops.zig");
 const report = @import("../riley/zig/report.zig");
 const tcfg = @import("testconfig.zig");
 
-const CameraInput = camera_mod.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 pub const PreparedDicuqBenchmark = struct {
     mesh_input: MeshInput,
     camera_inputs: [2]CameraInput,
-    samp_cfg: texops.TextureSampleConfig,
+    samp_cfg: textypes.TexSampConfig,
     fov_scale: F,
 };
 
@@ -153,24 +157,20 @@ const DicuqE2EStatsRow = struct {
     e2e_tpx_mpx_s: ?F,
 };
 
-pub fn getBaseRasterConfig() riley.RasterConfig {
+pub fn getBaseRasterConfig() rasterconfig.RasterConfig {
     var base_raster_config = tcfg.getRasterConfig(.bench);
     // Thread counts include the caller thread.
     base_raster_config.parallel = .{ .threads = 1 };
     base_raster_config.save_strategy = .disk;
     base_raster_config.advanced.raster.tile_size_min = 8;
     base_raster_config.advanced.raster.tile_size_max = 128;
-    base_raster_config.background_value = 128.0;
-    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
     return base_raster_config;
 }
 
 pub fn makeSampleConfig(
     bench_args: benchargs.BenchArgs,
-) !texops.TextureSampleConfig {
-    const samp_cfg = texops.TextureSampleConfig{
+) !textypes.TexSampConfig {
+    const samp_cfg = textypes.TexSampConfig{
         .sample = bench_args.sample orelse .cubic_catmull_rom,
         .mode = bench_args.sample_mode orelse .direct,
     };
@@ -184,7 +184,7 @@ pub fn prepareBenchmark(
     allocator: std.mem.Allocator,
     io: std.Io,
     defaults: DicuqDefaults,
-    samp_cfg: texops.TextureSampleConfig,
+    samp_cfg: textypes.TexSampConfig,
 ) !PreparedDicuqBenchmark {
     const data_dir = defaults.data_dir;
     const coord_path = try std.fmt.allocPrint(
@@ -246,13 +246,13 @@ pub fn prepareBenchmark(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = sim_data.disp,
-        .shader = .{ .tex_u8 = .{
+        .shaders = .{ .mono_direct = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = samp_cfg,
-            .bits = 8,
+
             .scaling = .none,
-        } },
+        } } },
     };
 
     const pixel_size = defaults.pixels_size;
@@ -300,6 +300,7 @@ pub fn prepareBenchmark(
                 .roi_cent_world = roi_pos,
                 .focal_length = focal_length,
                 .sub_sample = defaults.sub_sample,
+                .background_value = 128.0,
             },
             .{
                 .pixels_num = defaults.pixels_num,
@@ -309,6 +310,7 @@ pub fn prepareBenchmark(
                 .roi_cent_world = roi_pos,
                 .focal_length = focal_length,
                 .sub_sample = defaults.sub_sample,
+                .background_value = 128.0,
             },
         },
         .samp_cfg = samp_cfg,
@@ -318,7 +320,7 @@ pub fn prepareBenchmark(
 
 pub fn calcCaseName(
     allocator: std.mem.Allocator,
-    samp_cfg: texops.TextureSampleConfig,
+    samp_cfg: textypes.TexSampConfig,
 ) ![]const u8 {
     return common.calcCaseName(
         allocator,
@@ -333,10 +335,10 @@ pub fn calcCaseName(
 pub fn runBenchmark(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    render_groups: []const riley.RenderGroup,
+    render_groups: []const rendergroups.RenderGroup,
     camera_inputs: []const CameraInput,
     mesh_input: MeshInput,
-    config: riley.RasterConfig,
+    config: rasterconfig.RasterConfig,
     out_dir_path: ?[]const u8,
 ) !DicuqRunResult {
     const frame_count = if (mesh_input.disp) |disp|

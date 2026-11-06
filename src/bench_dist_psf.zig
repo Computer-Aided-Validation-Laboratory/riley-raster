@@ -6,6 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("riley/zig/cameramodels.zig");
+const rendergroups = @import("riley/zig/rendergroups.zig");
+const fieldtypes = @import("riley/zig/fieldtypes.zig");
+const cameratypes = @import("riley/zig/cameratypes.zig");
+const meshtypes = @import("riley/zig/meshtypes.zig");
+const shadertypes = @import("riley/zig/shadertypes.zig");
 const std = @import("std");
 
 const benchstats = @import("dev_support/benchstats.zig");
@@ -15,8 +21,8 @@ const orch = @import("dev_support/orchestration.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const riley = @import("riley/zig/riley.zig");
-const cam = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframeops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshio = @import("riley/zig/meshio.zig");
@@ -167,6 +173,8 @@ const poly_deg7_pincushion_coeffs = [_]F{
 };
 
 pub const BenchDistPsfArgs = struct {
+    pixels_num: [2]u32 = DEFAULT_PIXELS_NUM,
+    sub_sample: u32 = DEFAULT_SUB_SAMPLE,
     out_dir: []const u8 = DEFAULT_OUT_DIR,
     image_out_dir: []const u8 = "",
     mesh_subset: MeshSubset = .all,
@@ -178,7 +186,7 @@ pub const BenchDistPsfArgs = struct {
     total_threads: u16 = 1,
     max_raster_workers_per_job: u16 = 1,
     hull_mode: rastcfg.HullMode = .on_convex_fallback,
-    subpixel_center_map: cam.SubPixelCenterMap = .per_tile,
+    subpixel_center_map: cameratypes.SubPixelCenterMap = .per_tile,
     save_strategy: rastcfg.SaveStrategy = .memory,
 };
 
@@ -254,6 +262,12 @@ fn parseDistPsfArgs(args: anytype) !BenchDistPsfArgs {
             } else if (std.mem.eql(u8, arg, "--psf")) {
                 result.psf_case = std.meta.stringToEnum(PSFCase, val) orelse
                     return error.InvalidPSFCase;
+            } else if (std.mem.eql(u8, arg, "--pixels-x")) {
+                result.pixels_num[0] = try std.fmt.parseInt(u32, val, 10);
+            } else if (std.mem.eql(u8, arg, "--pixels-y")) {
+                result.pixels_num[1] = try std.fmt.parseInt(u32, val, 10);
+            } else if (std.mem.eql(u8, arg, "--sub-sample")) {
+                result.sub_sample = try std.fmt.parseInt(u32, val, 10);
             } else if (std.mem.eql(u8, arg, "--runs")) {
                 result.runs = try std.fmt.parseInt(usize, val, 10);
             } else if (std.mem.eql(u8, arg, "--frames")) {
@@ -272,7 +286,7 @@ fn parseDistPsfArgs(args: anytype) !BenchDistPsfArgs {
                     result.subpixel_center_map = .per_tile;
                 } else {
                     result.subpixel_center_map = std.meta.stringToEnum(
-                        cam.SubPixelCenterMap,
+                        cameratypes.SubPixelCenterMap,
                         val,
                     ) orelse return error.InvalidSubpixelCenterMap;
                 }
@@ -285,7 +299,7 @@ fn parseDistPsfArgs(args: anytype) !BenchDistPsfArgs {
     return result;
 }
 
-fn createDistortModel(case: DistortCase) cam.DistortParams {
+fn createDistortModel(case: DistortCase) cameramodels.DistortParams {
     return switch (case) {
         .none, .all => .none,
         .brown_zero => .{ .brown_con = .{
@@ -357,7 +371,7 @@ fn createDistortModel(case: DistortCase) cam.DistortParams {
     };
 }
 
-fn createPSF(case: PSFCase) cam.PointSpreadFunc {
+fn createPSF(case: PSFCase) cameramodels.PointSpreadFunc {
     return switch (case) {
         .pixel_box, .all => .{ .pixel_box = .{} },
         .gaussian_0p5 => .{ .gaussian = .{
@@ -404,11 +418,8 @@ pub fn main(init: std.process.Init) !void {
     base_raster_config.parallel = .{ .threads = bench_args.total_threads };
     base_raster_config.advanced.solver.oneroot.hull_mode = bench_args.hull_mode;
     base_raster_config.save_strategy = bench_args.save_strategy;
-    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
-    var groups = try riley.ManagedRenderGroups.init(
+    var groups = try rendergroups.ManagedRenderGroups.init(
         outer_alloc,
         init.minimal,
         bench_args.total_threads,
@@ -474,9 +485,9 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print(
         "Starting Distortion & PSF Benchmark ({d}x{d}, SSAA={d}, {d} runs, {d} threads)...\n",
         .{
-            DEFAULT_PIXELS_NUM[0],
-            DEFAULT_PIXELS_NUM[1],
-            DEFAULT_SUB_SAMPLE,
+            bench_args.pixels_num[0],
+            bench_args.pixels_num[1],
+            bench_args.sub_sample,
             bench_args.runs,
             bench_args.total_threads,
         },
@@ -545,7 +556,7 @@ pub fn main(init: std.process.Init) !void {
                     const roi_pos = sceneops.boundsCenter(&sim_data.coords);
                     const cam_pos = cameraops.posFillFrameFromRot(
                         &sim_data.coords,
-                        DEFAULT_PIXELS_NUM,
+                        bench_args.pixels_num,
                         DEFAULT_PIXEL_SIZE,
                         DEFAULT_FOCAL_LENG,
                         DEFAULT_ROT,
@@ -555,21 +566,21 @@ pub fn main(init: std.process.Init) !void {
                     const distort_params = createDistortModel(distort_case);
                     const psf_params = createPSF(psf_case);
 
-                    const cam_input = cam.CameraInput{
-                        .pixels_num = DEFAULT_PIXELS_NUM,
+                    const cam_input = cameratypes.CameraInput{
+                        .pixels_num = bench_args.pixels_num,
                         .pixels_size = DEFAULT_PIXEL_SIZE,
                         .pos_world = cam_pos,
                         .rot_world = DEFAULT_ROT,
                         .roi_cent_world = roi_pos,
                         .focal_length = DEFAULT_FOCAL_LENG,
-                        .sub_sample = DEFAULT_SUB_SAMPLE,
+                        .sub_sample = bench_args.sub_sample,
                         .distort = distort_params,
                         .psf = psf_params,
                         .subpixel_center_map = bench_args.subpixel_center_map,
                     };
 
                     // Function shader: eggbox grid with 5 pixels per period (0.1 world units)
-                    const shader_input = shaderops.ShaderInput{
+                    const shader_input = shadertypes.ShaderMonoInput{
                         .func = .{
                             .builtin = .eggbox,
                             .coord_mode = .world_reference,
@@ -583,14 +594,14 @@ pub fn main(init: std.process.Init) !void {
                                     },
                                 },
                             },
-                            .bits = 8,
+
                             .scaling = .none,
                         },
                     };
 
-                    var disp_field: ?meshio.Field = null;
+                    var disp_field: ?fieldtypes.Field = null;
                     if (bench_args.frames > 1) {
-                        disp_field = try meshio.Field.initAlloc(
+                        disp_field = try fieldtypes.Field.initAlloc(
                             local_alloc,
                             bench_args.frames,
                             sim_data.coords.mat.rows_num,
@@ -599,12 +610,12 @@ pub fn main(init: std.process.Init) !void {
                     }
                     defer if (disp_field) |*df| df.deinit(local_alloc);
 
-                    const mesh_input = meshpipe.MeshInput{
+                    const mesh_input = meshtypes.MeshInput{
                         .mesh_type = mt,
                         .coords = sim_data.coords,
                         .connect = sim_data.connect,
                         .disp = disp_field,
-                        .shader = shader_input,
+                        .shaders = .{ .mono_direct = shader_input },
                     };
 
                     const needs_images_arr = base_raster_config.save_strategy == .memory or
@@ -612,8 +623,8 @@ pub fn main(init: std.process.Init) !void {
                     var image_arr: ?NDArray(F) = null;
                     if (needs_images_arr) {
                         const dims = try riley.calcAllFramesImageDims(
-                            &[_]cam.CameraInput{cam_input},
-                            &[_]meshpipe.MeshInput{mesh_input},
+                            &[_]cameratypes.CameraInput{cam_input},
+                            &[_]meshtypes.MeshInput{mesh_input},
                             base_raster_config,
                         );
                         image_arr = try NDArray(F).initFlat(
@@ -663,8 +674,8 @@ pub fn main(init: std.process.Init) !void {
                         try riley.rasterAdvancedInto(
                             local_alloc,
                             io,
-                            &[_]cam.CameraInput{cam_input},
-                            &[_]meshpipe.MeshInput{mesh_input},
+                            &[_]cameratypes.CameraInput{cam_input},
+                            &[_]meshtypes.MeshInput{mesh_input},
                             base_raster_config,
                             out_img_path,
                             if (image_arr) |*arr| arr else null,
@@ -692,14 +703,14 @@ pub fn main(init: std.process.Init) !void {
 
                             const total_elems = sim_data.connect.getElemsNum();
                             const vis_elems = total_elems;
-                            const total_px = @as(u64, DEFAULT_PIXELS_NUM[0]) *
-                                @as(u64, DEFAULT_PIXELS_NUM[1]);
+                            const total_px = @as(u64, bench_args.pixels_num[0]) *
+                                @as(u64, bench_args.pixels_num[1]);
                             const shaded_px = total_px;
 
                             const metrics = common.calcMetrics(
                                 mt,
-                                DEFAULT_PIXELS_NUM,
-                                DEFAULT_SUB_SAMPLE,
+                                bench_args.pixels_num,
+                                bench_args.sub_sample,
                                 frame_e2e_ms,
                                 frame_times,
                                 capture.bench_log,
@@ -791,7 +802,7 @@ pub fn main(init: std.process.Init) !void {
         io,
         "Distortion & PSF Benchmark",
         bench_args.out_dir,
-        DEFAULT_PIXELS_NUM,
+        bench_args.pixels_num,
         stats.stats_list.items,
         32,
     );

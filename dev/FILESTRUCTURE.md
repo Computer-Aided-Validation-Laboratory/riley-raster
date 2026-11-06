@@ -4,6 +4,61 @@
 - All file names should be lower case unless directly exposed as a struct
 - Use io as a suffix for files that contain operations for reading and writing to disk e.g. imageio.zig
 - Use ops as a suffix for collections of utility/data operation functions e.g. meshops.zig
+- Mesh, camera, and shader input/static/prepared declarations live in
+  `meshtypes.zig`, `cameratypes.zig`, and `shadertypes.zig`. Texture storage and
+  sampling configuration declarations live in `texturetypes.zig`; sampling operations
+  and coefficient LUTs live in `textureops*.zig`. Timing structs live in `report.zig`.
+  Canonical mesh
+  coordinate, connectivity, and field declarations live in `meshtypes.zig` and
+  `fieldtypes.zig`. Internal code imports declarations from those owners.
+- Internal implementation code imports modules and qualifies external types, functions,
+  and shared constants through the owning module, for example `report.GeomTimes`
+  and `std.Io.Clock.Timestamp`. Use a lowercase namespace matching the source
+  filename, including scalar/SIMD suffixes. Do not introduce local declaration
+  aliases or route internal imports through unrelated re-exports.
+  `buildconfig.zig` is the shorthand exception: `F`, SIMD types, `cfg`, and
+  configuration-derived constants may remain unqualified. Local types, generic
+  parameters, and ordinary local values such as allocator handles are unaffected.
+  Public API facades, thin implementation-selection wrappers, and associated types
+  required by generic kernel interfaces may deliberately re-export declarations;
+  qualify external declarations inside their implementation bodies.
+- The public Zig API is assembled explicitly in `api/core.zig` and exposed
+  through `api.zig`, the `riley` module root for external consumers. Repository
+  demos import `riley/zig/api.zig` by relative path so standalone `zig run` works;
+  build wrappers supply configuration without a named Riley dependency.
+  Public load/save, numerical, and operation namespaces are assembled in `api/dataio.zig`,
+  `api/maths.zig`, and `api/ops.zig`. Do not add `usingnamespace` or duplicate
+  implementation types in the public API.
+- Input-to-Static constructors use `create*StaticFromInput` names, including
+  `createMeshStaticFromInput`; frame preparation uses `prepare*FromStatic`.
+- Shader evaluation fill functions live in `shaderfill_scalar.zig` and
+  `shaderfill_simd.zig`, exported by the thin `shaderfill.zig` facade.
+  Shader selection, conversion, and construction helpers live in `shaderops.zig`.
+- Shader-pipe intermediate addresses are `Register` values. Stage endpoints use
+  `register_source` and `register_dest`; resolver expressions use `ResolverProgramInput`
+  and `ResolverOp`. Register state is held by `RegistersWritten` and `RegistersOutput`.
+  Stage, register, instruction, and stack capacities come from
+  `buildconfig.config.shaderpipe`; output channels use `config.max_image_channels`.
+- `ResolverInput` and `ResolverProgramInput` describe and validate resolver inputs.
+  Only `ResolverPrepared` and `ResolverProgramPrepared` evaluate registers. Static
+  construction prepares lookup metadata and ambient radiance once. Prepared
+  resolvers are tagged unions with variant-specific payloads; expression lookup
+  metadata belongs to the static arena, while table values remain borrowed.
+- Shader-pipe stages use `.shader` for shader evaluation, alongside operation
+  tags such as `.clamp`, `.blend`, and `.lut_map`.
+- Shader roles derive from the tags of `shadertypes.RenderFormat`.
+  `ActiveShaderRoles` is an enum set; per-role mesh hit selections use an enum
+  array keyed by the same roles. Avoid positional role arrays and numeric indices.
+- Mesh Static initialization prepares only shader roles used by the render cameras.
+  It owns invariant scale factors, normalised function/channel records, pipe
+  constants, and per-role geometry requirements. Frame Prepared records borrow
+  immutable metadata from this storage; the static arena must outlive all frame
+  workers. Frame-dependent nodal scaling and visible-element gathering remain in
+  frame preparation. Geometry caches proportional to element count are not added
+  merely to avoid arithmetic.
+- Camera framing and placement helpers live in `cameraframeops.zig`; camera
+  slice preparation is private render setup in `riley.zig`; projection lives in
+  `cameraprojops*.zig`.
 - Use the kernel suffix for files defining structs containing only comptime known constants and inline functions e.g. geometrykernels
 - If a scalar/simd split is required the top level file name becomes a thin wrapper with no implementation details then all implementation and tests is moved into _common.zig, _simd.zig, _scalar.zig files.
 - File names should not have underscores unless using _common, _simd or _scalar
@@ -16,6 +71,12 @@
 - Global subpixel buffer implementation files use `_globbuff` before any
   `_common`, `_scalar`, or `_simd` suffix, to distinguish them from tile-local
   implementations. Function and type names retain Zig casing conventions.
+- Single-root and multi-root Newton SIMD paths share the final contiguous, masked
+  winner-shading pass in `rasterengine_simd.zig`. Solvers populate scratch masks
+  and winning parameter coordinates before that shared pass performs depth tests
+  and shader evaluation.
+- Forward shader-pipe lookup tables use SIMD index/interpolation arithmetic with
+  per-lane gathers. Inverse monotonic lookup remains a scalar search per lane.
 - Raster execution files may use `_tileloc` for the tile-local buffer strategy.
   `rasterengine.zig` is the thin entry-point facade. `rasterengine_tileloc.zig`
   and `rasterengine_globbuff.zig` own their worker lifecycles and scratch

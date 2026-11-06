@@ -6,9 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameratypes = @import("riley/zig/cameratypes.zig");
+const meshtypes = @import("riley/zig/meshtypes.zig");
 const std = @import("std");
 const riley = @import("riley/zig/riley.zig");
-const cam = @import("riley/zig/camera.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
@@ -20,7 +22,13 @@ const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const F = @import("riley/zig/buildconfig.zig").F;
 const Timestamp = std.Io.Clock.Timestamp;
 
+const shadertypes = @import("riley/zig/shadertypes.zig");
+const texturetypes = @import("riley/zig/texturetypes.zig");
+const fieldtypes = @import("riley/zig/fieldtypes.zig");
+const ndarray = @import("riley/zig/ndarray.zig");
+
 const SceneKind = enum { multi_root, one_root };
+const ShaderCase = enum { checker, nodal, texture, pipe };
 
 const BenchArgs = struct {
     out_dir: []const u8 = "out/bench_stats_multiroot",
@@ -32,6 +40,7 @@ const BenchArgs = struct {
     threads: u16 = 1,
     sub_sample: u32 = 1,
     scene: SceneKind = .multi_root,
+    shader: ShaderCase = .checker,
     flat_scale: F = 1,
     mode: rastcfg.MultirootSolverMode = .fast,
     one_root_edge_mode: rastcfg.EdgeFunMode = .on_the_fly,
@@ -76,6 +85,9 @@ fn parseArgs(args: anytype) !BenchArgs {
         } else if (std.mem.eql(u8, key, "--scene")) {
             result.scene = std.meta.stringToEnum(SceneKind, value) orelse
                 return error.InvalidScene;
+        } else if (std.mem.eql(u8, key, "--shader")) {
+            result.shader = std.meta.stringToEnum(ShaderCase, value) orelse
+                return error.InvalidShader;
         } else if (std.mem.eql(u8, key, "--flat-scale")) {
             result.flat_scale = try std.fmt.parseFloat(F, value);
         } else if (std.mem.eql(u8, key, "--mode")) {
@@ -246,7 +258,7 @@ fn makeMesh(
     mesh_type: gk.MeshType,
     group_idx: usize,
     args: BenchArgs,
-) !meshpipe.MeshInput {
+) !meshtypes.MeshInput {
     const coord_values = try outer_alloc.alloc(F, args.elements_per_type * N * 3);
     const connect_values = try outer_alloc.alloc(
         usize,
@@ -276,27 +288,97 @@ fn makeMesh(
             connect_values[node_idx] = node_idx;
         }
     }
+    const checker = shadertypes.FuncInput{
+        .coord_mode = .world_reference,
+        .builtin = .checker,
+        .params = .{
+            .coord_scale = .{ 4, 4 },
+            .settings = .{ .checker = .{} },
+        },
+        .scaling = .auto,
+    };
+    var shaders: shadertypes.MeshShaderSetInput = .{};
+    if (args.shader == .checker) {
+        shaders.mono_direct = .{ .func = checker };
+    } else {
+        const nodes_num = args.elements_per_type * N;
+        const nodal_field = try fieldtypes.Field.initAlloc(outer_alloc, 1, nodes_num, 1);
+        const uvs = try ndarray.NDArray(F).initFlat(outer_alloc, &.{ nodes_num, 2 });
+        const parents = comptime gk.parentNodeCoords(N);
+        for (0..args.elements_per_type) |ee| {
+            for (parents, 0..) |parent, nn| {
+                const index = ee * N + nn;
+                const u = if (N == 6) parent[0] else 0.5 * (parent[0] + 1);
+                const v = if (N == 6) parent[1] else 0.5 * (parent[1] + 1);
+                uvs.slice[index * 2] = u;
+                uvs.slice[index * 2 + 1] = v;
+                nodal_field.array_mem[index] = 0.1 + 0.35 * u + 0.45 * v;
+            }
+        }
+        const nodal = shadertypes.NodalInput{ .field = nodal_field, .scaling = .none };
+        if (args.shader == .nodal) {
+            shaders.mono_direct = .{ .nodal = nodal };
+        } else {
+            var texture = try texturetypes.TexDataFix(u8, 1).init(outer_alloc, 256, 256);
+            for (0..256) |row| {
+                for (0..256) |col| {
+                    const value = (row *% 73 +% col *% 151 +% ((row *% col) ^ 173)) % 256;
+                    texture.setVal(0, row, col, @intCast(value));
+                }
+            }
+            const texture_input = shadertypes.TexInput(texturetypes.TexDataFix(u8, 1)){
+                .tex = texture,
+                .uvs = uvs,
+                .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .direct },
+                .scaling = .none,
+                .output_gain = 1.0 / 255.0,
+            };
+            if (args.shader == .texture) {
+                shaders.mono_direct = .{ .tex_u8 = texture_input };
+            } else {
+                const stages = try outer_alloc.alloc(shadertypes.ShaderPipeStageInput, 5);
+                stages[0] = .{ .shader = .{
+                    .shader = .{ .tex_u8 = texture_input },
+                    .register_dest = .{ .kind = .channel, .index = 0 },
+                } };
+                stages[1] = .{ .shader = .{
+                    .shader = .{ .func = checker },
+                    .register_dest = .{ .kind = .field, .index = 0 },
+                } };
+                stages[2] = .{ .shader = .{
+                    .shader = .{ .nodal = nodal },
+                    .register_dest = .{ .kind = .field, .index = 1 },
+                } };
+                stages[3] = .{ .blend = .{
+                    .a = .{ .kind = .channel, .index = 0 },
+                    .b = .{ .kind = .field, .index = 0 },
+                    .register_dest = .{ .kind = .channel, .index = 1 },
+                    .alpha = .{ .fixed = 0.35 },
+                } };
+                stages[4] = .{ .affine_map = .{
+                    .register_source = .{ .kind = .field, .index = 1 },
+                    .register_dest = .{ .kind = .parameter, .index = 0 },
+                    .gain = 0.2,
+                    .offset = 0.8,
+                } };
+                const sources = try outer_alloc.alloc(@import("riley/zig/shaderpipe.zig").Register, 1);
+                sources[0] = .{ .kind = .channel, .index = 1 };
+                shaders.mono_pipe = .{
+                    .stages = stages,
+                    .resolver = .{ .modulate = .{
+                        .register_sources = sources,
+                        .factor = .{ .kind = .parameter, .index = 0 },
+                    } },
+                };
+            }
+        }
+    }
     return .{
         .mesh_type = mesh_type,
-        .coords = meshio.Coords.init(
-            coord_values,
-            args.elements_per_type * N,
-        ),
-        .connect = meshio.Connect.init(
-            connect_values,
-            args.elements_per_type,
-            N,
-        ),
+        .coords = meshtypes.Coords.init(coord_values, args.elements_per_type * N),
+        .connect = meshtypes.Connect.init(connect_values, args.elements_per_type, N),
         .disp = null,
-        .shader = .{ .func = .{
-            .coord_mode = .world_reference,
-            .builtin = .checker,
-            .params = .{
-                .coord_scale = .{ 4, 4 },
-                .settings = .{ .checker = .{} },
-            },
-            .scaling = .auto,
-        } },
+        .shaders = shaders,
     };
 }
 
@@ -314,13 +396,13 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const local_alloc = arena.allocator();
 
-    const meshes = [_]meshpipe.MeshInput{
+    const meshes = [_]meshtypes.MeshInput{
         try makeMesh(4, local_alloc, .quad4, 0, args),
         try makeMesh(6, local_alloc, .tri6, 1, args),
         try makeMesh(8, local_alloc, .quad8, 2, args),
         try makeMesh(9, local_alloc, .quad9, 3, args),
     };
-    const camera = cam.CameraInput{
+    const camera = cameratypes.CameraInput{
         .pixels_num = .{ args.width, args.height },
         .pixels_size = .{ 1, 1 },
         .pos_world = .{ .vec = .{ 0, 0, 0 } },
@@ -332,7 +414,7 @@ pub fn main(init: std.process.Init) !void {
     const config = rastcfg.RasterConfig{
         .parallel = .{ .threads = args.threads },
         .save_strategy = .none,
-        .report = .{ .mode = .bench },
+        .report_perf = .bench,
         .advanced = .{
             .raster = .{ .buffer_mode = args.buffer_mode },
             .solver = .{
@@ -352,7 +434,7 @@ pub fn main(init: std.process.Init) !void {
     var buffered = file.writer(io, &write_buf);
     const writer = &buffered.interface;
     try writer.writeAll(
-        "scene,flat_scale,mode,buffer_mode,one_root_edge_mode,multi_root_edge_mode," ++
+        "scene,shader,flat_scale,mode,buffer_mode,one_root_edge_mode,multi_root_edge_mode," ++
             "run,elements,width,height,sub_sample," ++
             "visible,shaded,solver_calls,solver_iters,solver_diverged," ++
             "geometry_ms,prepare_ms,raster_ms,active_ms,e2e_ms," ++
@@ -384,11 +466,12 @@ pub fn main(init: std.process.Init) !void {
             @as(F, @floatFromInt(args.height)) / 1e6;
         const seconds = e2e_ms / 1e3;
         try writer.print(
-            "{s},{d:.6},{s},{s},{s},{s},{d},{d},{d},{d},{d}," ++
+            "{s},{s},{d:.6},{s},{s},{s},{s},{d},{d},{d},{d},{d}," ++
                 "{d},{d},{d},{d},{d},{d:.6},{d:.6},{d:.6}," ++
                 "{d:.6},{d:.6},{d:.6},{d:.6}\n",
             .{
                 @tagName(args.scene),
+                @tagName(args.shader),
                 args.flat_scale,
                 @tagName(args.mode),
                 @tagName(args.buffer_mode),

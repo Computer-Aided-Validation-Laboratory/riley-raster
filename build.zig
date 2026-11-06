@@ -2,8 +2,8 @@ const std = @import("std");
 
 const riley_version = std.SemanticVersion{
     .major = 2026,
-    .minor = 10,
-    .patch = 3,
+    .minor = 11,
+    .patch = 0,
 };
 
 const RunEntry = struct {
@@ -48,11 +48,17 @@ pub fn build(b: *std.Build) void {
         newton_solver,
         simd_vector_width,
     );
+    const riley_module = b.addModule("riley", .{
+        .root_source_file = b.path("src/riley/zig/api.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const shared_lib = addRileySharedLibrary(
         b,
         target,
         optimize,
         build_options_module,
+        riley_module,
     );
     shared_lib.installHeader(
         b.path("src/riley/cython/riley.h"),
@@ -60,12 +66,22 @@ pub fn build(b: *std.Build) void {
     );
     b.installArtifact(shared_lib);
 
+    const abi_module = b.createModule(.{
+        .root_source_file = b.path("src/test_c_abi.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    abi_module.addIncludePath(b.path("src/riley/cython"));
+    abi_module.addCSourceFile(.{
+        .file = b.path("src/tests/c_abi_layout.c"),
+        .flags = &.{"-std=c11"},
+    });
+    const abi_test = b.addTest(.{ .root_module = abi_module, .use_llvm = true });
+    const abi_step = b.step("test-c-abi", "Check every public C descriptor against the C compiler layout");
+    abi_step.dependOn(&b.addRunArtifact(abi_test).step);
+
     const tests = [_]TestEntry{
-        .{
-            .step_name = "test-poly",
-            .description = "Run camera-model unit tests across supported build configurations",
-            .source_path = "src/test_poly.zig",
-        },
         .{
             .step_name = "test-verif-basic",
             .description = "Run the verification and BASIC test suites in one build",
@@ -82,14 +98,14 @@ pub fn build(b: *std.Build) void {
             .source_path = "src/test_full.zig",
         },
         .{
-            .step_name = "test-full-badjac",
-            .description = "Save warning-only invalid-Jacobian render diagnostics",
-            .source_path = "src/test_full_badjac.zig",
-        },
-        .{
             .step_name = "test-verif",
             .description = "Run the focused analytic verification suite",
             .source_path = "src/test_verif.zig",
+        },
+        .{
+            .step_name = "test-public-api",
+            .description = "Compile-check the public Riley Zig API",
+            .source_path = "src/test_public_api.zig",
         },
     };
 
@@ -100,56 +116,94 @@ pub fn build(b: *std.Build) void {
             target,
             optimize,
             build_options_module,
+            riley_module,
             entry,
         );
         test_step.dependOn(&test_run.step);
     }
 
+    const diag_badjac_step = b.step(
+        "diag-badjac",
+        "Run warning-only invalid-Jacobian render diagnostics",
+    );
+    const diag_badjac_run = addRunStep(
+        b,
+        target,
+        optimize,
+        build_options_module,
+        .{
+            .step_name = "diag-badjac",
+            .description = "Run warning-only invalid-Jacobian render diagnostics",
+            .source_path = "src/root.zig",
+        },
+    );
+    diag_badjac_step.dependOn(&diag_badjac_run.step);
+
     const demos = [_]RunEntry{
         .{
-            .step_name = "demo0-quickstart",
+            .step_name = "demo00-quickstart",
             .description = "Run the triangle quickstart demo",
-            .source_path = "src/demo0_quickstart.zig",
+            .source_path = "src/demo00_quickstart.zig",
         },
         .{
-            .step_name = "demo1-sphere",
+            .step_name = "demo01-sphere",
             .description = "Run the sphere demo",
-            .source_path = "src/demo1_sphere.zig",
+            .source_path = "src/demo01_sphere.zig",
         },
         .{
-            .step_name = "demo2a-rabbits-mono",
+            .step_name = "demo02a-rabbits-mono",
             .description = "Run the rabbits demo",
-            .source_path = "src/demo2a_rabbits_mono.zig",
+            .source_path = "src/demo02a_rabbits_mono.zig",
         },
         .{
-            .step_name = "demo2b-rabbits-rgb",
+            .step_name = "demo02b-rabbits-rgb",
             .description = "Run the rabbits RGB demo",
-            .source_path = "src/demo2b_rabbits_rgb.zig",
+            .source_path = "src/demo02b_rabbits_rgb.zig",
         },
         .{
-            .step_name = "demo2c-rabbits-fields",
+            .step_name = "demo02c-rabbits-fields",
             .description = "Run the rabbits fields demo",
-            .source_path = "src/demo2c_rabbits_fields.zig",
+            .source_path = "src/demo02c_rabbits_fields.zig",
         },
         .{
-            .step_name = "demo3-dicuq",
+            .step_name = "demo03-dicuq",
             .description = "Run the DIC UQ demo",
-            .source_path = "src/demo3_dicuq.zig",
+            .source_path = "src/demo03_dicuq.zig",
         },
         .{
-            .step_name = "demo4-stereocal",
+            .step_name = "demo04-stereocal",
             .description = "Run the stereo calibration demo",
-            .source_path = "src/demo4_stereocal.zig",
+            .source_path = "src/demo04_stereocal.zig",
         },
         .{
-            .step_name = "demo5-cameramodels",
+            .step_name = "demo05-cameramodels",
             .description = "Run all camera distortion and PSF models",
-            .source_path = "src/demo5_cameramodels.zig",
+            .source_path = "src/demo05_cameramodels.zig",
         },
         .{
-            .step_name = "demo6-featurezoo",
+            .step_name = "demo06-featurezoo",
             .description = "Run the complete feature-zoo demo",
-            .source_path = "src/demo6_featurezoo.zig",
+            .source_path = "src/demo06_featurezoo.zig",
+        },
+        .{
+            .step_name = "demo07-shaderpipe-quickstart",
+            .description = "Run the ShaderSet quickstart demo",
+            .source_path = "src/demo07_shaderpipe_quickstart.zig",
+        },
+        .{
+            .step_name = "demo08-shaderpipe-gallery",
+            .description = "Run the ShaderPipe gallery demo",
+            .source_path = "src/demo08_shaderpipe_gallery.zig",
+        },
+        .{
+            .step_name = "demo09-diciruq",
+            .description = "Run the multimodal DIC and IR demo",
+            .source_path = "src/demo09_diciruq.zig",
+        },
+        .{
+            .step_name = "demo10-sphere-lit",
+            .description = "Run the lit sphere shaderpipe demo",
+            .source_path = "src/demo10_sphere_lit.zig",
         },
     };
 
@@ -167,6 +221,23 @@ pub fn build(b: *std.Build) void {
         demos_step.dependOn(&run_artifact.step);
     }
 
+    const run_all_demos_step = b.step(
+        "run-all-demos",
+        "Run all demos sequentially through the public API module",
+    );
+    const run_all_demos_artifact = addRunStep(
+        b,
+        target,
+        optimize,
+        build_options_module,
+        .{
+            .step_name = "run-all-demos",
+            .description = "Run all demos sequentially through the public API module",
+            .source_path = "src/run_all_demos.zig",
+        },
+    );
+    run_all_demos_step.dependOn(&run_all_demos_artifact.step);
+
     const generators = [_]RunEntry{
         .{
             .step_name = "gen-gold-basic",
@@ -181,7 +252,7 @@ pub fn build(b: *std.Build) void {
         .{
             .step_name = "gen-gold-failed-distortion",
             .description = "Regenerate only distortion gold cases listed in fails/",
-            .source_path = "src/gen_gold_failed_distortion.zig",
+            .source_path = "src/gen_gold_full.zig",
         },
         .{
             .step_name = "gen-gold-verif-zig",
@@ -200,6 +271,9 @@ pub fn build(b: *std.Build) void {
             build_options_module,
             entry,
         );
+        if (std.mem.eql(u8, entry.step_name, "gen-gold-failed-distortion")) {
+            run_artifact.addArg("--failed-distortion-only");
+        }
         run_step.dependOn(&run_artifact.step);
         if (std.mem.eql(u8, entry.step_name, "gen-gold-full")) {
             gold_step.dependOn(&run_artifact.step);
@@ -324,7 +398,7 @@ pub fn build(b: *std.Build) void {
     const docs_obj = b.addObject(.{
         .name = "riley",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/riley/zig/riley.zig"),
+            .root_source_file = b.path("src/riley/zig/api.zig"),
             .target = target,
             .optimize = optimize,
             .link_libc = true,
@@ -346,6 +420,7 @@ fn addRileySharedLibrary(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
+    riley_module: *std.Build.Module,
 ) *std.Build.Step.Compile {
     const shared_lib = b.addLibrary(.{
         .linkage = .dynamic,
@@ -359,6 +434,7 @@ fn addRileySharedLibrary(
             target,
             optimize,
             build_options_module,
+            riley_module,
             "src/riley/zig/c-riley.zig",
             true,
             .library,
@@ -373,6 +449,7 @@ fn addTestRunStep(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
+    riley_module: *std.Build.Module,
     entry: TestEntry,
 ) *std.Build.Step.Run {
     const test_module = b.createModule(.{
@@ -382,6 +459,7 @@ fn addTestRunStep(
         .link_libc = true,
     });
     test_module.addImport("build_options", build_options_module);
+    test_module.addImport("riley", riley_module);
     const default_runner_path = b.graph.zig_lib_directory.join(
         b.allocator,
         &.{ "compiler", "test_runner.zig" },
@@ -417,6 +495,7 @@ fn addRunStep(
     build_options_module: *std.Build.Module,
     entry: RunEntry,
 ) *std.Build.Step.Run {
+    // Linking libc selects the C-backed process allocator in optimized builds.
     const executable = b.addExecutable(.{
         .name = entry.step_name,
         .root_module = createRootModule(
@@ -424,8 +503,9 @@ fn addRunStep(
             target,
             optimize,
             build_options_module,
+            null,
             entry.source_path,
-            false,
+            true,
             .executable,
         ),
     });
@@ -457,8 +537,9 @@ fn addBenchInstallStep(
             target,
             optimize,
             build_options_module,
+            null,
             entry.source_path,
-            false,
+            true,
             .executable,
         ),
     });
@@ -487,6 +568,7 @@ fn createRootModule(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
+    riley_module: ?*std.Build.Module,
     source_path: []const u8,
     link_libc: bool,
     wrapper_kind: WrapperKind,
@@ -502,6 +584,7 @@ fn createRootModule(
         target,
         optimize,
         build_options_module,
+        riley_module,
         source_path,
         link_libc,
     );
@@ -548,6 +631,7 @@ fn buildWrapperImports(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     build_options_module: *std.Build.Module,
+    riley_module: ?*std.Build.Module,
     source_path: []const u8,
     link_libc: bool,
 ) []const std.Build.Module.Import {
@@ -557,14 +641,16 @@ fn buildWrapperImports(
         .module = build_options_module,
     }) catch @panic("OOM building imports.");
 
+    const entry_source = b.createModule(.{
+        .root_source_file = b.path(source_path),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = link_libc,
+    });
+    if (riley_module) |module| entry_source.addImport("riley", module);
     imports.append(b.allocator, .{
         .name = "entry_source",
-        .module = b.createModule(.{
-            .root_source_file = b.path(source_path),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = link_libc,
-        }),
+        .module = entry_source,
     }) catch @panic("OOM building entry source import.");
     return imports.items;
 }

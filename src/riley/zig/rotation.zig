@@ -6,11 +6,9 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const matstack = @import("matstack.zig");
 const std = @import("std");
-const print = std.debug.print;
-const expectEqual = std.testing.expectEqual;
 const buildconfig = @import("buildconfig.zig");
-const Mat33F = @import("matstack.zig").Mat33F;
 const F = buildconfig.F;
 
 // --------------------------------------------------------------------------------------
@@ -21,7 +19,7 @@ pub const Rotation = struct {
     alpha_z: F = 0.0,
     beta_y: F = 0.0,
     gamma_x: F = 0.0,
-    matrix: Mat33F = undefined,
+    matrix: matstack.Mat33F = undefined,
 
     const Self = @This();
 
@@ -65,7 +63,7 @@ pub const Rotation = struct {
         self.matrix.matPrint();
     }
 
-    pub fn fromMat33(mat: Mat33F) Rotation {
+    pub fn fromMat33(mat: matstack.Mat33F) Rotation {
         const r20 = mat.get(2, 0);
         const r21 = mat.get(2, 1);
         const r22 = mat.get(2, 2);

@@ -7,14 +7,14 @@
 # Authors: scepticalrabbit (Lloyd Fletcher)
 # --------------------------------------------------------------------------
 __all__ = [
-    "demo0_quickstart",
-    "demo1_sphere",
-    "demo2a_rabbits_mono",
-    "demo2b_rabbits_rgb",
-    "demo2c_rabbits_fields",
-    "demo3_dicuq",
-    "demo3_dicuq_from_exodus",
-    "demo4_stereocal",
-    "demo5_cameramodels",
-    "demo6_featurezoo",
+    "demo00_quickstart",
+    "demo01_sphere",
+    "demo02a_rabbits_mono",
+    "demo02b_rabbits_rgb",
+    "demo02c_rabbits_fields",
+    "demo03_dicuq",
+    "demo03_dicuq_from_exodus",
+    "demo04_stereocal",
+    "demo05_cameramodels",
+    "demo06_featurezoo",
 ]

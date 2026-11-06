@@ -11,7 +11,7 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
 const shapefun = @import("shapefun.zig");
-const rastcfg = @import("rasterconfig.zig");
+const rasterconfig = @import("rasterconfig.zig");
 
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
@@ -115,7 +115,7 @@ pub const NewtonResRobustSIMD = struct {
 // --------------------------------------------------------------------------------------
 
 pub inline fn selectSeed(
-    seed_reuse: rastcfg.NewtonSeedReuse,
+    seed_reuse: rasterconfig.NewtonSeedReuse,
     base_seed: NewtonSeed,
     seed_state: NewtonSeedState,
 ) NewtonSeed {
@@ -443,17 +443,16 @@ pub fn evaluateSolveState(
 // --------------------------------------------------------------------------------------
 
 test "calcJacDet2D regular elems" {
-    const testing = std.testing;
     const det_tol: F = if (comptime F == f32) 1e-4 else 1e-9;
     const quad_det_tol: F = if (comptime F == f32) 1e-4 else 1e-12;
 
     const tri_x = [_]F{ 0.0, 10.0, 5.0 };
     const tri_y = [_]F{ 0.0, 0.0, 8.660254037844386 };
     const tri_det = calcJacDet2D(3, 0.2, 0.3, &tri_x, &tri_y);
-    try testing.expectApproxEqAbs(86.60254037844386, tri_det, det_tol);
+    try std.testing.expectApproxEqAbs(86.60254037844386, tri_det, det_tol);
 
     const quad_x = [_]F{ 0.0, 10.0, 10.0, 0.0 };
     const quad_y = [_]F{ 0.0, 0.0, 10.0, 10.0 };
     const quad_det = calcJacDet2D(4, 0.0, 0.0, &quad_x, &quad_y);
-    try testing.expectApproxEqAbs(25.0, quad_det, quad_det_tol);
+    try std.testing.expectApproxEqAbs(25.0, quad_det, quad_det_tol);
 }

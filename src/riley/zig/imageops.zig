@@ -12,7 +12,8 @@ const F = buildconfig.F;
 const tol = buildconfig.config.tol;
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
-const texops = @import("textureops.zig");
+const textureops = @import("textureops.zig");
+const texturetypes = @import("texturetypes.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -69,8 +70,8 @@ pub fn getScaleFactors(
 
 pub fn getScalingParamsTex(
     comptime T: type,
-    comptime channels: usize,
-    tex: *const texops.Tex(T, channels),
+    comptime channels: ?usize,
+    tex: *const (if (channels) |count| texturetypes.TexDataFix(T, count) else texturetypes.TexDataDyn(T)),
     strategy: ScaleStrategy,
 ) ScalingParams {
     switch (strategy) {
@@ -79,7 +80,7 @@ pub fn getScalingParamsTex(
             var px_min: F = std.math.inf(F);
             var px_max: F = -std.math.inf(F);
             for (tex.array.slice) |val| {
-                const val_f = texops.texelToFloat(T, val);
+                const val_f = textureops.texelToFloat(T, val);
                 if (val_f < px_min) px_min = val_f;
                 if (val_f > px_max) px_max = val_f;
             }

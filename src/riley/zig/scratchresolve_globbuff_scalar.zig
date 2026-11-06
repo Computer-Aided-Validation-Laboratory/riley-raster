@@ -6,23 +6,23 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
-const cam = @import("camera.zig");
+const cameraprojops = @import("cameraprojops.zig");
 const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const common = @import("scratchresolve_globbuff_common.zig");
-const subpxframe = @import("subpxframe_globbuff.zig");
+const scratchresolve_globbuff_common = @import("scratchresolve_globbuff_common.zig");
+const subpxframe_globbuff = @import("subpxframe_globbuff.zig");
 
 pub fn resolveGlobBuff(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    target: *const subpxframe.SubpxTarget,
-    camera: *const cam.CameraPrepared,
+    target: *const subpxframe_globbuff.SubpxTarget,
+    camera: *const cameraprojops.CameraPrepared,
     background_value: F,
     image_out_arr: *ndarray.NDArray(F),
     requested_workers: u16,
 ) !usize {
-    return common.resolveParallelGlobBuff(
+    return scratchresolve_globbuff_common.resolveParallelGlobBuff(
         false,
         outer_alloc,
         io,
@@ -39,15 +39,15 @@ pub fn resolveGlobBuff(
 pub fn resolveRowsGlobBuff(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    target: *const subpxframe.SubpxTarget,
-    camera: *const cam.CameraPrepared,
+    target: *const subpxframe_globbuff.SubpxTarget,
+    camera: *const cameraprojops.CameraPrepared,
     background_value: F,
     image_out_arr: *ndarray.NDArray(F),
     image_y_min: usize,
     image_y_max: usize,
     requested_workers: u16,
 ) !usize {
-    return common.resolveParallelGlobBuff(
+    return scratchresolve_globbuff_common.resolveParallelGlobBuff(
         false,
         outer_alloc,
         io,

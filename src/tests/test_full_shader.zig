@@ -6,9 +6,13 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const shaderfunc = @import("../riley/zig/shaderfunc.zig");
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const common_test = @import("../dev_support/tests.zig");
 const fullcase_shader = @import("fullcase_shader.zig");
@@ -18,12 +22,13 @@ const mo = @import("../riley/zig/meshpipeline.zig");
 const policy = @import("../dev_support/testpolicy.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const riley = @import("../riley/zig/riley.zig");
-const shaderops = @import("../riley/zig/shaderops_common.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
+const normals = @import("../riley/zig/normals.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 const Timestamp = std.Io.Clock.Timestamp;
 const FullShaderCase = fullcase_shader.FullShaderCase;
 const FullNodalCase = fullcase_shader.FullNodalCase;
@@ -51,12 +56,15 @@ pub fn runFullShaderCaseTest(
         .{ gold_dir_root, case_dir_name },
     );
 
-    const meshes = fullcase_shader.buildShaderCaseMeshes(
+    const meshes = try fullcase_shader.buildShaderCaseMeshes(
+        aa,
         mesh_type,
         prep,
         textures,
         case,
     );
+    var selected_camera = prep.camera_input;
+    selected_camera.render_format = if (case.isRgb()) .rgb else .mono;
 
     var run_config = config;
     run_config.save_strategy = .memory;
@@ -65,7 +73,7 @@ pub fn runFullShaderCaseTest(
     const result = try riley.raster(
         aa,
         io,
-        &[_]CameraInput{prep.camera_input},
+        &[_]CameraInput{selected_camera},
         &meshes,
         run_config,
         null,
@@ -203,13 +211,13 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
         .quad9,
         .tri3opt,
     };
-    const normal_types = [_]shaderops.NormalType{
+    const normal_types = [_]normals.NormalType{
         .none,
         .avg,
         .exact,
     };
     const bool_values = [_]bool{ false, true };
-    const builtins = [_]shaderops.FuncShaderBuiltin{
+    const builtins = [_]shaderfunc.FuncShaderBuiltin{
         .constant,
         .linear,
         .quadratic,
@@ -220,7 +228,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
         .lambertian_normal_z,
         .eggbox,
     };
-    const coord_modes = [_]shaderops.FuncCoordMode{
+    const coord_modes = [_]shaderfunc.FuncCoordMode{
         .para,
         .uv,
         .world_reference,
@@ -373,7 +381,8 @@ fn runNodalScalingTests(
             defer arena.deinit();
             const aa = arena.allocator();
 
-            const meshes = fullcase_shader.buildShaderCaseMeshes(
+            const meshes = try fullcase_shader.buildShaderCaseMeshes(
+                aa,
                 .tri3,
                 &prep,
                 &textures,
@@ -382,18 +391,19 @@ fn runNodalScalingTests(
                         .is_rgb = is_rgb,
                         .scaling = scaling_mode,
                         .scale_over = .within_frames,
-                        .normal_type = .none,
                     },
                 },
             );
 
             var run_config = config;
             run_config.save_strategy = .memory;
+            var selected_camera = prep.camera_input;
+            selected_camera.render_format = if (is_rgb) .rgb else .mono;
 
             const result = try riley.raster(
                 aa,
                 io,
-                &[_]CameraInput{prep.camera_input},
+                &[_]CameraInput{selected_camera},
                 &meshes,
                 run_config,
                 null,

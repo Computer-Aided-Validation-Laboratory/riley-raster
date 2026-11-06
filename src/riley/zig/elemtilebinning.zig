@@ -6,15 +6,13 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const geometrykernels = @import("geometrykernels.zig");
 const std = @import("std");
 const F = @import("buildconfig.zig").F;
-const pce = @import("parachunkexec.zig");
+const parachunkexec = @import("parachunkexec.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
-const MeshType = @import("geometrykernels.zig").MeshType;
-const distbounds = @import("distortbounds.zig");
-const frontend = @import("rasterfrontend.zig");
-const ElemBBox = frontend.ElemBBox;
-const ElemRootClass = frontend.ElemRootClass;
+const distortbounds = @import("distortbounds.zig");
+const rasterfrontend = @import("rasterfrontend.zig");
 
 //------------------------------------------------------------------------------------------
 // Element Type and Root Class Bins
@@ -41,8 +39,8 @@ pub const ElemBinRange = struct {
 };
 
 pub fn binForElem(
-    mesh_type: MeshType,
-    classes: []const ElemRootClass,
+    mesh_type: geometrykernels.MeshType,
+    classes: []const rasterfrontend.ElemRootClass,
     elem_idx: usize,
 ) ElemBin {
     return switch (mesh_type) {
@@ -67,7 +65,7 @@ pub fn binForElem(
     };
 }
 
-pub fn binMeshType(comptime elem_bin: ElemBin) MeshType {
+pub fn binMeshType(comptime elem_bin: ElemBin) geometrykernels.MeshType {
     return switch (elem_bin) {
         .tri3 => .tri3,
         .tri3opt => .tri3opt,
@@ -78,7 +76,7 @@ pub fn binMeshType(comptime elem_bin: ElemBin) MeshType {
     };
 }
 
-pub fn binRootClass(comptime elem_bin: ElemBin) ElemRootClass {
+pub fn binRootClass(comptime elem_bin: ElemBin) rasterfrontend.ElemRootClass {
     return switch (elem_bin) {
         .tri6_multi_root,
         .quad4_multi_root,
@@ -103,8 +101,8 @@ pub const OverlapBBox = struct {
 };
 
 pub fn clipElemBBoxToTile(
-    elem_bbox: ElemBBox,
-    floating: ?distbounds.DistortBounds,
+    elem_bbox: rasterfrontend.ElemBBox,
+    floating: ?distortbounds.DistortBounds,
     mesh_idx: usize,
     scratch_x_min: i32,
     scratch_x_max: i32,
@@ -120,10 +118,10 @@ pub fn clipElemBBoxToTile(
         return .{
             .mesh_idx = mesh_idx,
             .elem_idx = elem_bbox.elem_idx,
-            .x_min = frontend.boundIndMinSigned(clamp_x_min, scratch_x_min),
-            .x_max = frontend.boundIndMaxSigned(clamp_x_max, scratch_x_max),
-            .y_min = frontend.boundIndMinSigned(clamp_y_min, scratch_y_min),
-            .y_max = frontend.boundIndMaxSigned(clamp_y_max, scratch_y_max),
+            .x_min = rasterfrontend.boundIndMinSigned(clamp_x_min, scratch_x_min),
+            .x_max = rasterfrontend.boundIndMaxSigned(clamp_x_max, scratch_x_max),
+            .y_min = rasterfrontend.boundIndMinSigned(clamp_y_min, scratch_y_min),
+            .y_max = rasterfrontend.boundIndMaxSigned(clamp_y_max, scratch_y_max),
         };
     }
     return .{
@@ -180,7 +178,7 @@ pub const TileElemOverlaps = struct {
 
 pub fn binElemsInSceneTileLoc(
     allocator: std.mem.Allocator,
-    chunk_exec: *pce.ParaChunkExecutor,
+    chunk_exec: *parachunkexec.ParaChunkExecutor,
     workers_num: usize,
     tile_size: u16,
     tiles_num_x: usize,
@@ -189,10 +187,10 @@ pub fn binElemsInSceneTileLoc(
     screen_px_y: u16,
     halo_px: u16,
     elems_in_image_by_mesh: []const usize,
-    elem_bboxes_by_mesh: []const []ElemBBox,
-    elem_float_bboxes_by_mesh: []const ?[]distbounds.DistortBounds,
-    mesh_types: []const MeshType,
-    root_classes_by_mesh: []const []ElemRootClass,
+    elem_bboxes_by_mesh: []const []rasterfrontend.ElemBBox,
+    elem_float_bboxes_by_mesh: []const ?[]distortbounds.DistortBounds,
+    mesh_types: []const geometrykernels.MeshType,
+    root_classes_by_mesh: []const []rasterfrontend.ElemRootClass,
 ) !TileElemOverlaps {
     const tiles_num = tiles_num_x * tiles_num_y;
 
@@ -226,7 +224,7 @@ pub fn binElemsInSceneTileLoc(
             workers_num,
         );
 
-        pce.runStaticRange(
+        parachunkexec.runStaticRange(
             chunk_exec,
             &count_stage,
             runTilingCount,
@@ -336,7 +334,7 @@ pub fn binElemsInSceneTileLoc(
             workers_num,
         );
 
-        pce.runStaticRange(
+        parachunkexec.runStaticRange(
             chunk_exec,
             &fill_stage,
             runTilingFill,
@@ -355,9 +353,9 @@ const TilingCountStage = struct {
     tiles_num_y: usize,
     halo_px: u16,
     elems_num: usize,
-    elem_bbox_slice: []const ElemBBox,
-    mesh_type: MeshType,
-    root_classes: []const ElemRootClass,
+    elem_bbox_slice: []const rasterfrontend.ElemBBox,
+    mesh_type: geometrykernels.MeshType,
+    root_classes: []const rasterfrontend.ElemRootClass,
 };
 
 fn runTilingCount(
@@ -409,10 +407,10 @@ const TilingFillStage = struct {
     screen_px_y: u16,
     halo_px: u16,
     mesh_idx: usize,
-    elem_bbox_slice: []const ElemBBox,
-    float_bbox_slice: ?[]const distbounds.DistortBounds,
-    mesh_type: MeshType,
-    root_classes: []const ElemRootClass,
+    elem_bbox_slice: []const rasterfrontend.ElemBBox,
+    float_bbox_slice: ?[]const distortbounds.DistortBounds,
+    mesh_type: geometrykernels.MeshType,
+    root_classes: []const rasterfrontend.ElemRootClass,
 };
 
 fn runTilingFill(
@@ -431,7 +429,7 @@ fn runTilingFill(
             tiling.root_classes,
             elem_bbox.elem_idx,
         ));
-        const floating: ?distbounds.DistortBounds = if (tiling.float_bbox_slice) |float_bboxes|
+        const floating: ?distortbounds.DistortBounds = if (tiling.float_bbox_slice) |float_bboxes|
             float_bboxes[ee]
         else
             null;
@@ -485,7 +483,7 @@ fn runTilingFill(
 }
 
 fn calcElemTileRange(
-    elem_bbox: ElemBBox,
+    elem_bbox: rasterfrontend.ElemBBox,
     tile_size: u16,
     halo_px: u16,
     tiles_num_x: usize,

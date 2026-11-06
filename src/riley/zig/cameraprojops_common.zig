@@ -1,0 +1,517 @@
+// --------------------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: scepticalrabbit (Lloyd Fletcher)
+// --------------------------------------------------------------------------------------
+const std = @import("std");
+
+const cameratypes = @import("cameratypes.zig");
+const vecstack = @import("vecstack.zig");
+const rotation = @import("rotation.zig");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
+const cameramodels = @import("cameramodels.zig");
+const cameraprojops_scalar = @import("cameraprojops_scalar.zig");
+const cameraprojops_simd = @import("cameraprojops_simd.zig");
+
+const cfg = buildconfig.config;
+const camera_impl = if (cfg.simd == .on) cameraprojops_simd else cameraprojops_scalar;
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Func
+// --------------------------------------------------------------------------------------
+
+pub inline fn calcPixelCenterCoord(pixel: usize) F {
+    return @as(F, @floatFromInt(pixel)) + 0.5;
+}
+
+pub inline fn storeIdealPairScratch(
+    ideal_pixel_centers: []F,
+    scratch_idx: usize,
+    ideal_x: F,
+    ideal_y: F,
+) void {
+    const plane_stride = ideal_pixel_centers.len / 2;
+    ideal_pixel_centers[scratch_idx] = ideal_x;
+    ideal_pixel_centers[plane_stride + scratch_idx] = ideal_y;
+}
+
+pub inline fn getIdealXPlaneScratch(ideal_pixel_centers: []F) []F {
+    const plane_stride = ideal_pixel_centers.len / 2;
+    return ideal_pixel_centers[0..plane_stride];
+}
+
+pub inline fn getIdealYPlaneScratch(ideal_pixel_centers: []F) []F {
+    const plane_stride = ideal_pixel_centers.len / 2;
+    return ideal_pixel_centers[plane_stride .. plane_stride * 2];
+}
+
+pub fn allCamerasSharePixels(cameras: []const cameratypes.CameraPreparedType(camera_impl)) bool {
+    std.debug.assert(cameras.len != 0);
+
+    const pixels_num = cameras[0].pixels_num;
+    for (cameras[1..]) |camera| {
+        if (!std.meta.eql(camera.pixels_num, pixels_num)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// --------------------------------------------------------------------------------------
+// Generic Low-Level Helpers
+// --------------------------------------------------------------------------------------
+
+const test_tol: F = 1e-4;
+const unit_abs_tol: F = if (F == f32) 1e-4 else 1e-10;
+const unit_rel_tol: F = if (F == f32) 1e-3 else 1e-6;
+const sum_abs_tol: F = if (F == f32) 1e-5 else 1e-12;
+const pix_num = [_]u32{ 500, 500 };
+const pix_size = [_]F{ 5e-3, 5e-3 };
+const foc_leng: F = 50.0;
+const rotat_world = rotation.Rotation.init(
+    0,
+    0,
+    std.math.degreesToRadians(-45),
+);
+const bb: F = 20.0;
+const coord_n: usize = 8;
+const coord_x = [_]F{ -bb, bb, bb, -bb, -bb, bb, bb, -bb };
+const coord_y = [_]F{ bb, bb, -bb, -bb, bb, bb, -bb, -bb };
+const coord_z = [_]F{ bb, bb, bb, bb, -bb, -bb, -bb, -bb };
+const roi_world_arr = [_]F{ 0, 0, 0 };
+const roi_world = vecstack.Vec3F.initSlice(&roi_world_arr);
+const sub_samp: u32 = 2;
+
+fn expectApproxEqRelAbs(
+    expected: F,
+    actual: F,
+    rel_tol: F,
+    abs_tol: F,
+) !void {
+    const diff = @abs(expected - actual);
+    if (diff <= abs_tol) {
+        return;
+    }
+
+    const scale = @max(@abs(expected), @abs(actual));
+    if (scale == 0.0) {
+        return error.TestExpectedApproxEqRelAbs;
+    }
+    if (diff / scale > rel_tol) {
+        return error.TestExpectedApproxEqRelAbs;
+    }
+}
+
+fn checkDistortGridInv(
+    comptime Evaluator: type,
+    distort: Evaluator.Params,
+    rel_tol: F,
+    abs_tol: F,
+) !void {
+    const grid_num = 25;
+    const min_coord = -0.45;
+    const max_coord = 0.45;
+    const coord_step = (max_coord - min_coord) / @as(F, grid_num - 1);
+
+    for (0..grid_num) |jj| {
+        const y = min_coord + @as(F, @floatFromInt(jj)) * coord_step;
+        for (0..grid_num) |ii| {
+            const x = min_coord + @as(F, @floatFromInt(ii)) * coord_step;
+            const distorted = Evaluator.ford(distort, x, y);
+            const recovered = try Evaluator.inv(distort, distorted.x, distorted.y);
+            try expectApproxEqRelAbs(x, recovered.x, rel_tol, abs_tol);
+            try expectApproxEqRelAbs(y, recovered.y, rel_tol, abs_tol);
+        }
+    }
+}
+
+fn checkBrownConExtGridInv(
+    distort: cameramodels.BrownConExt,
+    rel_tol: F,
+    abs_tol: F,
+) !void {
+    const grid_num = 25;
+    for (0..grid_num) |jj| {
+        const y = -0.45 + @as(F, @floatFromInt(jj)) * 0.9 / @as(F, grid_num - 1);
+        for (0..grid_num) |ii| {
+            const x = -0.45 + @as(F, @floatFromInt(ii)) * 0.9 / @as(F, grid_num - 1);
+            const distorted = distort.ford(x, y);
+            const recovered = try distort.inv(distorted.x, distorted.y);
+            try expectApproxEqRelAbs(x, recovered.x, rel_tol, abs_tol);
+            try expectApproxEqRelAbs(y, recovered.y, rel_tol, abs_tol);
+        }
+    }
+}
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
+test "CameraPrepared.init" {
+    const input = cameratypes.CameraInput{
+        .pixels_num = pix_num,
+        .pixels_size = pix_size,
+        .pos_world = vecstack.initVec3(F, 0.0, 800.0, 800.0),
+        .rot_world = rotat_world,
+        .roi_cent_world = roi_world,
+        .focal_length = foc_leng,
+        .sub_sample = sub_samp,
+        .subpixel_center_map = .full_in_mem,
+    };
+
+    const camera = try cameratypes.CameraPreparedType(camera_impl).init(std.testing.allocator, input);
+    defer camera.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(pix_num, camera.pixels_num);
+    try std.testing.expectEqual(pix_size, camera.pixels_size);
+    try std.testing.expectEqual(foc_leng, camera.focal_length);
+    try std.testing.expectEqual(sub_samp, camera.sub_sample);
+}
+
+test "CameraPrepared.init rejects singular distortion before camera setup" {
+    try std.testing.expectError(
+        error.SingularTiltProjection,
+        cameratypes.CameraPreparedType(camera_impl).init(std.testing.allocator, .{
+            .pixels_num = .{ 10, 10 },
+            .pixels_size = .{ 0.01, 0.01 },
+            .pos_world = vecstack.Vec3F.initZeros(),
+            .rot_world = rotation.Rotation.init(0, 0, 0),
+            .roi_cent_world = vecstack.Vec3F.initZeros(),
+            .focal_length = 1.0,
+            .sub_sample = 1,
+            .distort = .{ .brown_con_ext = .{
+                .tau_y = std.math.pi / 2.0,
+            } },
+        }),
+    );
+}
+
+test "BrownConrady.forwardInv" {
+    const bc = cameramodels.BrownCon.Params{
+        .k1 = -0.2,
+        .k2 = 0.03,
+        .k3 = -0.005,
+        .p1 = 0.001,
+        .p2 = -0.0015,
+    };
+
+    const x_ideal = 0.1;
+    const y_ideal = -0.15;
+
+    const distorted = cameramodels.BrownCon.ford(bc, x_ideal, y_ideal);
+    const recovered = try cameramodels.BrownCon.inv(bc, distorted.x, distorted.y);
+
+    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, unit_abs_tol);
+    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
+}
+
+test "BrownConradyExt.forwardInv" {
+    const bc_ext_params = cameramodels.BrownConExt.Params{
+        .k1 = -0.18,
+        .k2 = 0.02,
+        .k3 = -0.004,
+        .k4 = 0.01,
+        .k5 = -0.002,
+        .k6 = 0.0004,
+        .p1 = 0.0012,
+        .p2 = -0.0018,
+    };
+
+    const x_ideal = -0.12;
+    const y_ideal = 0.18;
+
+    const bc_ext = try cameramodels.BrownConExt.init(bc_ext_params);
+    const distorted = bc_ext.ford(x_ideal, y_ideal);
+    const recovered = try bc_ext.inv(distorted.x, distorted.y);
+
+    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, unit_abs_tol);
+    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
+}
+
+test "Polynomial.forwardOnlyRoundTrip" {
+    const model = cameramodels.DistortModel{
+        .poly = .{
+            .degree = 1,
+            .mode = .displacement,
+            .coeffs = &.{ 0.0, 0.0, 0.04, 0.01, -0.015, 0.03 },
+        },
+    };
+
+    const x_ideal = 0.12;
+    const y_ideal = -0.18;
+    const distorted = cameramodels.fordDistortModelScal(
+        model,
+        x_ideal,
+        y_ideal,
+    );
+    const recovered = try cameramodels.invDistortModelScal(
+        model,
+        distorted.x,
+        distorted.y,
+    );
+
+    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, unit_abs_tol);
+    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
+}
+
+test "BrownConradyPolynomial.forwardInv" {
+    const model = cameramodels.DistortModel{
+        .brown_con_poly = .{
+            .brown_con = .{
+                .k1 = -0.08,
+                .k2 = 0.01,
+                .k3 = -0.002,
+                .p1 = 0.0004,
+                .p2 = -0.0007,
+            },
+            .poly = .{
+                .degree = 2,
+                .mode = .displacement,
+                .coeffs = &.{
+                    0.0,   0.0,   0.01,  -0.004, -0.005, 0.012,
+                    0.002, 0.001, 0.001, -0.002, -0.001, 0.0015,
+                },
+            },
+        },
+    };
+
+    const x_ideal = 0.09;
+    const y_ideal = -0.14;
+    const distorted = cameramodels.fordDistortModelScal(
+        model,
+        x_ideal,
+        y_ideal,
+    );
+    const recovered = try cameramodels.invDistortModelScal(
+        model,
+        distorted.x,
+        distorted.y,
+    );
+
+    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, unit_abs_tol);
+    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
+}
+
+test "BrownConrady.gridInvRoundTrip" {
+    const bc_mild = cameramodels.BrownCon.Params{
+        .k1 = -0.08,
+        .k2 = 0.01,
+        .k3 = -0.002,
+        .p1 = 0.0004,
+        .p2 = -0.0007,
+    };
+    const bc_strong = cameramodels.BrownCon.Params{
+        .k1 = -0.2,
+        .k2 = 0.03,
+        .k3 = -0.005,
+        .p1 = 0.001,
+        .p2 = -0.0015,
+    };
+
+    try checkDistortGridInv(
+        cameramodels.BrownCon,
+        bc_mild,
+        unit_rel_tol,
+        unit_rel_tol,
+    );
+    try checkDistortGridInv(
+        cameramodels.BrownCon,
+        bc_strong,
+        unit_rel_tol,
+        unit_rel_tol,
+    );
+}
+
+test "BrownConradyExt.gridInvRoundTrip" {
+    const bc_ext_mild_params = cameramodels.BrownConExt.Params{
+        .k1 = -0.09,
+        .k2 = 0.012,
+        .k3 = -0.0015,
+        .k4 = 0.004,
+        .k5 = -0.0008,
+        .k6 = 0.00015,
+        .p1 = 0.0005,
+        .p2 = -0.0006,
+    };
+    const bc_ext_strong_params = cameramodels.BrownConExt.Params{
+        .k1 = -0.18,
+        .k2 = 0.02,
+        .k3 = -0.004,
+        .k4 = 0.01,
+        .k5 = -0.002,
+        .k6 = 0.0004,
+        .p1 = 0.0012,
+        .p2 = -0.0018,
+    };
+
+    try checkBrownConExtGridInv(
+        try cameramodels.BrownConExt.init(bc_ext_mild_params),
+        unit_rel_tol,
+        unit_rel_tol,
+    );
+    try checkBrownConExtGridInv(
+        try cameramodels.BrownConExt.init(bc_ext_strong_params),
+        unit_rel_tol,
+        unit_rel_tol,
+    );
+}
+
+test "CameraPrepared.distortionNone" {
+    const input = cameratypes.CameraInput{
+        .pixels_num = .{ 10, 10 },
+        .pixels_size = .{ 0.01, 0.01 },
+        .pos_world = vecstack.Vec3F.initZeros(),
+        .rot_world = rotation.Rotation.init(0, 0, 0),
+        .roi_cent_world = vecstack.Vec3F.initZeros(),
+        .focal_length = 1.0,
+        .sub_sample = 1,
+        .distort = .none,
+        .subpixel_center_map = .full_in_mem,
+    };
+
+    const camera = try cameratypes.CameraPreparedType(camera_impl).init(std.testing.allocator, input);
+    defer camera.deinit(std.testing.allocator);
+
+    const x_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 0 });
+    try std.testing.expectApproxEqAbs(0.5, x_ideal, unit_abs_tol);
+}
+
+test "CameraPrepared.brownConradyExtDistortionApplied" {
+    const distort = cameramodels.BrownConExt.Params{
+        .k1 = -0.18,
+        .k2 = 0.02,
+        .k3 = -0.004,
+        .k4 = 0.01,
+        .k5 = -0.002,
+        .k6 = 0.0004,
+        .p1 = 0.0012,
+        .p2 = -0.0018,
+    };
+    const input = cameratypes.CameraInput{
+        .pixels_num = .{ 10, 10 },
+        .pixels_size = .{ 0.01, 0.01 },
+        .pos_world = vecstack.Vec3F.initZeros(),
+        .rot_world = rotation.Rotation.init(0, 0, 0),
+        .roi_cent_world = vecstack.Vec3F.initZeros(),
+        .focal_length = 1.0,
+        .sub_sample = 1,
+        .distort = .{ .brown_con_ext = distort },
+        .subpixel_center_map = .full_in_mem,
+    };
+
+    const camera = try cameratypes.CameraPreparedType(camera_impl).init(std.testing.allocator, input);
+    defer camera.deinit(std.testing.allocator);
+
+    const x_off = 0.5 * @as(F, @floatFromInt(input.pixels_num[0]));
+    const y_off = 0.5 * @as(F, @floatFromInt(input.pixels_num[1]));
+    const fx = input.focal_length / input.pixels_size[0];
+    const fy = input.focal_length / input.pixels_size[1];
+    const x_d = (0.5 - x_off) / fx;
+    const y_d = (0.5 - y_off) / fy;
+    const solved = try (try cameramodels.BrownConExt.init(distort)).inv(x_d, y_d);
+
+    const x_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 0 });
+    const y_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 1 });
+    try expectApproxEqRelAbs(
+        solved.x * fx + x_off,
+        x_ideal,
+        unit_rel_tol,
+        unit_rel_tol,
+    );
+    try expectApproxEqRelAbs(
+        solved.y * fy + y_off,
+        y_ideal,
+        unit_rel_tol,
+        unit_rel_tol,
+    );
+}
+
+test "PreparedPSF gaussian kernels normalize" {
+    var prep = try cameramodels.PreparedPSF.init(
+        std.testing.allocator,
+        .{ .gaussian = .{
+            .sigma_px = 0.35,
+            .supp_rad_px = 1.25,
+            .separable = .yes,
+        } },
+        2,
+    );
+    defer prep.deinit(std.testing.allocator);
+
+    var sum_x: F = 0.0;
+    var sum_y: F = 0.0;
+    for (prep.weights_x) |weight| sum_x += weight;
+    for (prep.weights_y) |weight| sum_y += weight;
+
+    try std.testing.expectApproxEqAbs(1.0, sum_x, sum_abs_tol);
+    try std.testing.expectApproxEqAbs(1.0, sum_y, sum_abs_tol);
+    try std.testing.expectEqual(@as(u16, 2), prep.halo_px);
+}
+
+test "PreparedPSF isotropic gaussian separable matches non-separable outer product" {
+    var prepared_sep = try cameramodels.PreparedPSF.init(
+        std.testing.allocator,
+        .{ .gaussian = .{
+            .sigma_px = 0.35,
+            .supp_rad_px = 1.25,
+            .separable = .yes,
+        } },
+        2,
+    );
+    defer prepared_sep.deinit(std.testing.allocator);
+
+    var prepared_nonsep = try cameramodels.PreparedPSF.init(
+        std.testing.allocator,
+        .{ .gaussian = .{
+            .sigma_px = 0.35,
+            .supp_rad_px = 1.25,
+            .separable = .no,
+        } },
+        2,
+    );
+    defer prepared_nonsep.deinit(std.testing.allocator);
+
+    const width = 2 * prepared_sep.radius_x_subpx + 1;
+    for (0..prepared_nonsep.weights_2d.len) |ii| {
+        const yy = ii / width;
+        const xx = ii % width;
+        const expected = prepared_sep.weights_y[yy] *
+            prepared_sep.weights_x[xx];
+        try std.testing.expectApproxEqAbs(
+            expected,
+            prepared_nonsep.weights_2d[ii],
+            sum_abs_tol,
+        );
+    }
+}
+
+test "camera preparation propagates polynomial inverse errors without leaking" {
+    var input = cameratypes.CameraInput{
+        .pixels_num = .{ 2, 2 },
+        .pixels_size = .{ 0.001, 0.001 },
+        .pos_world = vecstack.Vec3F.initSlice(&.{ 0.0, 0.0, 1.0 }),
+        .rot_world = rotation.Rotation.init(0.0, 0.0, 0.0),
+        .roi_cent_world = vecstack.Vec3F.initZeros(),
+        .focal_length = 0.1,
+        .sub_sample = 1,
+        .subpixel_center_map = .full_in_mem,
+        .distort = .{ .poly = .{
+            .degree = 1,
+            .mode = .displacement,
+            .coeffs = &.{ 0.0, 0, -1.0, 0, 0.0, 0 },
+        } },
+    };
+    try std.testing.expectError(
+        error.SingularJac,
+        cameratypes.CameraPreparedType(camera_impl).init(std.testing.allocator, input),
+    );
+    input.subpixel_center_map = .per_tile;
+    try std.testing.expectError(
+        error.SingularJac,
+        cameratypes.CameraPreparedType(camera_impl).init(std.testing.allocator, input),
+    );
+}
