@@ -152,6 +152,33 @@ def validate_native(native, config):
         require(type(native['backface_rejections']) is int and native['backface_rejections'] >= 0, 'invalid rejection count')
 
 
+def catalogue_sampling_routes(catalogue):
+    """Read native canonicalization; never duplicate evaluator-specific policy here."""
+    fields = ('evaluator', 'pattern', 'neighbors', 'soft_edges')
+    samples = catalogue['sampling_configs']
+    routes = {}
+    require(isinstance(samples, list) and samples, 'missing native sampling catalogue')
+    require(len({tuple(row[k] for k in fields) for row in samples}) == len(samples),
+            'duplicate native sampling config')
+    for row in catalogue['configs']:
+        key = tuple(row[k] for k in fields)
+        index = row['sampling_index']
+        require(type(index) is int and 0 <= index < len(samples), 'invalid native sampling index')
+        require(row['sampling'] == samples[index], 'native canonical config/index mismatch')
+        require(key not in routes, 'duplicate native generation config')
+        routes[key] = dict(sampling_index=index, sampling=row['sampling'])
+    return routes
+
+
+def validate_sampling_identity(identity, generation, routes):
+    """Validate stored generation and actual dispatch as distinct prepared identities."""
+    key = tuple(generation[k] for k in ('evaluator', 'pattern', 'neighbors', 'soft_edges'))
+    route = routes[key]
+    require(identity['generation_evaluator'] == generation['evaluator'], 'wrong stored generation identity')
+    require(identity['sampling_index'] == route['sampling_index'], 'wrong actual sampling index')
+    require(identity['sampling_evaluator'] == route['sampling']['evaluator'], 'wrong actual sampling evaluator')
+
+
 def fingerprint(native):
     return tuple(native.get(k) for k in ('checksum', 'shaded_samples', 'backface_rejections', 'image_samples'))
 

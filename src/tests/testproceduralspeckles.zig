@@ -28,8 +28,8 @@ const fixture_params: Params = .{
 };
 
 test "speckle catalogues contain distinct generation and sampling variants" {
-    try std.testing.expectEqual(@as(usize, 54), speckleconfig.generationConfigs(true).len);
-    try std.testing.expectEqual(@as(usize, 31), speckleconfig.sampleConfigs(true).len);
+    try std.testing.expectEqual(@as(usize, 60), speckleconfig.generationConfigs(true).len);
+    try std.testing.expectEqual(@as(usize, 36), speckleconfig.sampleConfigs(true).len);
     for (speckleconfig.generationConfigs(true), 0..) |config, index| {
         for (speckleconfig.generationConfigs(true)[0..index]) |previous| {
             try std.testing.expect(!std.meta.eql(previous, config));
@@ -129,6 +129,8 @@ fn expectPreparedResources(
         .list_indexed => .strip_list,
         .cell_binned => .cell_binned,
         .classified_indexed => .classified,
+        .classified_binned_22, .classified_binned_23, .classified_binned_34 => .direct_classified,
+        .classified_binned_42, .classified_binned_46, .classified_binned_49 => .rect_bin_classified,
         .direct_fixed => .direct_fixed,
         .mask_1bit, .mask_u8 => .mask,
         .cell_hash, .mock => .none,

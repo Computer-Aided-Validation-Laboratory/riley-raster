@@ -133,22 +133,79 @@ fn recordNeighbors(opts: Options, resolved: policy.Config) ?u8 {
     return @intFromEnum(neighbors);
 }
 
-fn listEvaluators() void {
-    std.debug.print("{{\"evaluators\":[", .{});
-    inline for (std.enums.values(policy.Evaluator), 0..) |evaluator, i| {
-        std.debug.print("{s}\"{s}\"", .{ if (i == 0) "" else ",", policy.evaluatorName(evaluator) });
+pub const EvaluatorRecord = struct {
+    evaluator: []const u8,
+    pattern: ?[]const u8,
+    neighbors: ?u8,
+    soft_edges: ?bool,
+};
+const GenerationRecord = struct {
+    evaluator: []const u8,
+    pattern: ?[]const u8,
+    neighbors: ?u8,
+    soft_edges: ?bool,
+    sampling_index: u8,
+    sampling: EvaluatorRecord,
+};
+const EvaluatorCatalogue = struct {
+    evaluators: [std.enums.values(policy.Evaluator).len + 1][]const u8,
+    overrides_enabled: bool,
+    configs: [policy.generationConfigs(build.enable_all_evaluators).len]GenerationRecord,
+    sampling_configs: [speckle.kernel_configs.len]EvaluatorRecord,
+};
+
+fn evaluatorRecord(cfg: policy.Config) EvaluatorRecord {
+    return .{
+        .evaluator = policy.evaluatorName(std.meta.activeTag(cfg)),
+        .pattern = if (cfg.pattern()) |pattern| @tagName(pattern) else null,
+        .neighbors = if (cfg.neighborhood()) |neighbors| @intFromEnum(neighbors) else null,
+        .soft_edges = if (cfg.edges()) |edges| edges == .soft else null,
+    };
+}
+
+/// Catalogue consumers need no evaluator-specific copies of canonicalization rules.
+pub fn evaluatorCatalogue() EvaluatorCatalogue {
+    var out: EvaluatorCatalogue = undefined;
+    for (std.enums.values(policy.Evaluator), 0..) |evaluator, i| out.evaluators[i] = policy.evaluatorName(evaluator);
+    out.evaluators[out.evaluators.len - 1] = "texture";
+    out.overrides_enabled = build.enable_all_evaluators;
+    for (speckle.kernel_configs, 0..) |config, i| out.sampling_configs[i] = evaluatorRecord(config);
+    for (policy.generationConfigs(build.enable_all_evaluators), 0..) |config, i| {
+        const generation = evaluatorRecord(config);
+        const index = policy.sampleConfigIndex(build.enable_all_evaluators, config);
+        out.configs[i] = .{ .evaluator = generation.evaluator, .pattern = generation.pattern, .neighbors = generation.neighbors, .soft_edges = generation.soft_edges, .sampling_index = index, .sampling = out.sampling_configs[index] };
     }
-    std.debug.print(",\"texture\"],\"overrides_enabled\":{},\"configs\":[", .{build.enable_all_evaluators});
-    for (policy.generationConfigs(true), 0..) |cfg, i| {
-        std.debug.print("{s}{{\"evaluator\":\"{s}\",\"pattern\":", .{ if (i == 0) "" else ",", policy.evaluatorName(std.meta.activeTag(cfg)) });
-        if (cfg.pattern()) |pattern| std.debug.print("\"{s}\"", .{@tagName(pattern)}) else std.debug.print("null", .{});
-        std.debug.print(",\"neighbors\":", .{});
-        if (cfg.neighborhood()) |neighbors| std.debug.print("{d}", .{@intFromEnum(neighbors)}) else std.debug.print("null", .{});
-        std.debug.print(",\"soft_edges\":", .{});
-        if (cfg.edges()) |edges| std.debug.print("{}", .{edges == .soft}) else std.debug.print("null", .{});
-        std.debug.print("}}", .{});
+    return out;
+}
+
+pub const PreparedIdentity = struct {
+    generation_evaluator: ?[]const u8 = null,
+    sampling_evaluator: ?[]const u8 = null,
+    sampling_index: ?u8 = null,
+    backing: []const u8 = "none",
+};
+
+/// Stored generation controls and actual dispatch are deliberately separate identities.
+pub fn preparedIdentity(resources: *const speckle.Resources) PreparedIdentity {
+    var out: PreparedIdentity = .{ .sampling_index = resources.kernel_index, .backing = @tagName(std.meta.activeTag(resources.data)) };
+    if (resources.kernel_index) |index| out.sampling_evaluator = policy.evaluatorName(std.meta.activeTag(speckle.kernel_configs[index]));
+    const stored: ?speckle.Speckle2DParams = switch (resources.data) {
+        .none => null,
+        .classified => |data| data.speckles.params,
+        inline .direct_classified, .cell_binned, .direct_fixed, .mask, .perlin, .list, .strip_list => |data| data.params,
+        .rect_bin_classified => |data| data.payload.params,
+    };
+    if (stored) |params| {
+        // These immutable parameters already passed the preparation boundary.
+        const generation = params.resolve() catch unreachable;
+        out.generation_evaluator = policy.evaluatorName(std.meta.activeTag(generation));
+        std.debug.assert(resources.kernel_index == policy.sampleConfigIndex(build.enable_all_evaluators, generation));
     }
-    std.debug.print("]}}\n", .{});
+    return out;
+}
+
+fn listEvaluators(allocator: std.mem.Allocator) !void {
+    std.debug.print("{s}\n", .{try std.json.Stringify.valueAlloc(allocator, evaluatorCatalogue(), .{})});
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -159,7 +216,7 @@ pub fn main(init: std.process.Init) !void {
     const args = try alloc.alloc([]const u8, raw_args.len);
     for (raw_args, 0..) |arg, n| args[n] = std.mem.span(arg);
     if (args.len == 2 and std.mem.eql(u8, args[1], "--list-evaluators")) {
-        listEvaluators();
+        try listEvaluators(alloc);
         return;
     }
     const opts = try Options.parse(args);
@@ -176,6 +233,7 @@ pub fn main(init: std.process.Init) !void {
     var image_samples: usize = 0;
     var resource_bytes: usize = 0;
     var duplicated_disk_records: usize = 0;
+    var prepared_identity: PreparedIdentity = .{};
     if (opts.mode == .evaluation) {
         const config = opts.rasterConfig();
         const cam = try camera.CameraPrepared.init(alloc, cameraInput(scene.sim, opts));
@@ -193,6 +251,16 @@ pub fn main(init: std.process.Init) !void {
                 duplicated_disk_records = binned.recordCount();
             },
             .strip_list => |strip| resource_bytes = strip.centers.len * @sizeOf([2]F) + strip.disks.len * @sizeOf(speckle.SpeckleDisk2D),
+            .classified => |classified| resource_bytes = classified.states.len * @sizeOf(u16) + classified.speckles.centers.len * @sizeOf([2]F) + classified.speckles.disks.len * @sizeOf(speckle.SpeckleDisk2D),
+            .direct_classified => |direct| {
+                resource_bytes = direct.byteSize();
+                duplicated_disk_records = direct.record_count;
+            },
+
+            .rect_bin_classified => |data| {
+                resource_bytes = data.byteSize();
+                duplicated_disk_records = data.payload.record_count;
+            },
             else => {},
         }
         const eval_start = std.Io.Timestamp.now(io, .awake);
@@ -200,6 +268,7 @@ pub fn main(init: std.process.Init) !void {
         render_ns = eval_start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
         combined_ns = resource_ns + render_ns;
         result = evaluation.result();
+        prepared_identity = preparedIdentity(&resources); // After both timers and reduction.
     } else {
         const mesh = try scene.mesh(alloc, opts, texture);
         const cam_input = cameraInput(scene.sim, opts);
@@ -243,6 +312,7 @@ pub fn main(init: std.process.Init) !void {
         .texture_mode = @tagName(opts.textureConfig().mode),
         .resource_bytes = resource_bytes,
         .duplicated_disk_records = duplicated_disk_records,
+        .prepared_identity = prepared_identity,
         .resource_ns = resource_ns,
         .render_ns = render_ns,
         .combined_ns = combined_ns,

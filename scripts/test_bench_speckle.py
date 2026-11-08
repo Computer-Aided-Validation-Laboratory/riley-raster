@@ -149,6 +149,22 @@ class BenchmarkTests(unittest.TestCase):
                 self.assertEqual({k: config[k] for k in row}, row)
             self.assertIn('radius', (root / 'result/comparison.md').read_text())
 
+    def test_native_generation_sampling_mapping_is_generic(self):
+        sample = dict(evaluator='shared-sampler', pattern='disk', neighbors=9, soft_edges=False)
+        generation = dict(evaluator='new-generation', pattern='disk', neighbors=9, soft_edges=False)
+        catalogue = dict(sampling_configs=[sample], configs=[dict(generation, sampling_index=0, sampling=sample)])
+        routes = bench.catalogue_sampling_routes(catalogue)
+        identity = dict(generation_evaluator='new-generation', sampling_evaluator='shared-sampler', sampling_index=0)
+        bench.validate_sampling_identity(identity, generation, routes)
+        for changed in (dict(identity, generation_evaluator='shared-sampler'),
+                        dict(identity, sampling_evaluator='new-generation'), dict(identity, sampling_index=1)):
+            with self.assertRaises(ValueError):
+                bench.validate_sampling_identity(changed, generation, routes)
+        for changed in (dict(generation, sampling_index=1, sampling=sample),
+                        dict(generation, sampling_index=0, sampling=generation)):
+            with self.assertRaises(ValueError):
+                bench.catalogue_sampling_routes(dict(sampling_configs=[sample], configs=[changed]))
+
     def test_schedules(self):
         for repeats in range(2, 42, 2):
             first, second = bench.schedules(repeats)
