@@ -90,16 +90,6 @@ pub const Config = union(Evaluator) {
             .mock => null,
         };
     }
-
-    /// Capability, not the current edge setting. Mock's raw pattern is checked at the boundary.
-    pub fn supportsSoftEdges(self: Config) bool {
-        return switch (self) {
-            .cell_hash, .mask_u8 => |field| field == .disk,
-            .list_naive, .list_indexed, .cell_binned => |shape| shape == .disk,
-            .mock => true,
-            else => false,
-        };
-    }
 };
 
 pub const ResolveError = error{
@@ -354,8 +344,6 @@ test "exhaustive external controls preserve acceptance errors and resolved seman
                         try std.testing.expectEqual(if (selected == .mock) null else pattern, config.pattern());
                         try std.testing.expectEqual(if (selected == .mock or pattern == .perlin) null else std.enums.fromInt(Neighborhood, n), config.neighborhood());
                         try std.testing.expectEqual(if (selected == .mock or pattern != .disk) null else edges, config.edges());
-                        const capable = selected == .mock or (pattern == .disk and (selected == .cell_hash or selected == .list_naive or selected == .list_indexed or selected == .cell_binned or selected == .mask_u8));
-                        try std.testing.expectEqual(capable, config.supportsSoftEdges());
                         var matches: usize = 0;
                         for (generationConfigs(enabled)) |candidate| matches += @intFromBool(std.meta.eql(config, candidate));
                         try std.testing.expectEqual(@as(usize, 1), matches);

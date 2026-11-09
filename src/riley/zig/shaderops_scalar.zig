@@ -860,7 +860,6 @@ test "direct fixed scalar handles active inactive cells and scaling" {
         const direct: speckle.DirectFixedSpeckle2D = .{
             .params = speckle_params,
             .cells = &cells,
-            .cell_origin = .{ 0, 0 },
             .cell_dims = .{ 3, 2 },
             .radius2 = 0.25 * 0.25,
         };

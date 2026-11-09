@@ -96,20 +96,12 @@ pub const Speckle2DParams = struct {
     // Prepared generators rely on this single validation and never repeat it.
     fn validateResolved(self: Speckle2DParams, config: speckleconfig.Config) !void {
         const evaluator = std.meta.activeTag(config);
-        // Only mock erases its pattern; softness still obeys the raw pattern contract.
-        const pattern = config.pattern() orelse self.pattern;
         for (self.cells_per_uv) |cell_count| {
             if (!std.math.isFinite(cell_count) or cell_count <= 0.0) {
                 return error.InvalidSpeckleCellsPerUV;
             }
         }
-        if (self.edge_softness != 0.0) {
-            if (pattern != .disk) {
-                return error.SpeckleEdgeSoftnessRequiresDisk;
-            }
-            if (!config.supportsSoftEdges()) return error.SpeckleEvaluatorRequiresHardEdges;
-        }
-        if (evaluator != .mock and pattern == .perlin) {
+        if (config.pattern() == .perlin) {
             if (!std.math.isFinite(self.perlin_coverage_threshold)) {
                 return error.InvalidSpecklePerlinCoverageThreshold;
             }
@@ -213,9 +205,8 @@ pub const ClassifiedIndexedSpeckle2D = struct {
 
 pub const DirectFixedSpeckle2D = struct {
     params: Speckle2DParams,
-    /// Packed descriptors; zero denotes an inactive cell.
+    /// Packed descriptors in zero-origin row-major cells; zero denotes an inactive cell.
     cells: []const u64,
-    cell_origin: [2]i64,
     cell_dims: [2]usize,
     radius2: F,
 };
@@ -1111,7 +1102,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     }
                 }
             }
-            const outer = if (speckle_shape == .disk and configured_soft_edges) params.radius_mean + edge else params.radius_mean;
             const inner = @max(0.0, params.radius_mean - edge);
             const sigma = params.radius_mean / 3.0;
             const max_outer = params.radius_mean + params.radius_jitter + edge;
@@ -1121,7 +1111,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                 .centers = if (fixed_radius) records else &.{},
                 .cell_origin = bounds.min,
                 .cell_dims = bounds.dims,
-                .outer2 = if (fixed_radius) outer * outer else 0.0,
+                .outer2 = if (fixed_radius) support2 else 0.0,
                 .inner2 = if (fixed_radius) inner * inner else 0.0,
                 .sigma2 = if (fixed_radius) sigma * sigma else 0.0,
                 .max_outer_radius2 = max_outer * max_outer,
@@ -1259,10 +1249,10 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             errdefer allocator.free(cells);
             @memset(cells, 0);
             if (params.occupancy != 0.0) {
-                var cell_y = cell_bounds.min[1];
                 for (0..cell_bounds.dims[1]) |yy| {
-                    var cell_x = cell_bounds.min[0];
+                    const cell_y: i64 = @intCast(yy);
                     for (0..cell_bounds.dims[0]) |xx| {
+                        const cell_x: i64 = @intCast(xx);
                         const hash = hashSpeckleCell(cell_x, cell_y, params.seed);
                         if (params.occupancy == 1.0 or
                             randomUnitFromHash(hash, 0) < params.occupancy)
@@ -1270,16 +1260,13 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                             cells[yy * cell_bounds.dims[0] + xx] =
                                 directFixedSpeckleDescriptor(cell_x, cell_y, hash, params.radius_mean);
                         }
-                        cell_x += 1;
                     }
-                    cell_y += 1;
                 }
             }
 
             return .{
                 .params = params,
                 .cells = cells,
-                .cell_origin = cell_bounds.min,
                 .cell_dims = cell_bounds.dims,
                 .radius2 = params.radius_mean * params.radius_mean,
             };
@@ -1550,7 +1537,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             radius: F,
             edge_softness: F,
         ) F {
-            const outer_radius = if (speckle_shape == .disk and configured_soft_edges)
+            const outer_radius = if (configured_soft_edges)
                 radius + edge_softness
             else
                 radius;
@@ -1808,11 +1795,11 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             cell_x: i64,
             cell_y: i64,
         ) usize {
-            const rel_x: usize = @intCast(cell_x - direct.cell_origin[0]);
-            const rel_y: usize = @intCast(cell_y - direct.cell_origin[1]);
-            std.debug.assert(rel_x < direct.cell_dims[0]);
-            std.debug.assert(rel_y < direct.cell_dims[1]);
-            return rel_y * direct.cell_dims[0] + rel_x;
+            const column: usize = @intCast(cell_x);
+            const row: usize = @intCast(cell_y);
+            std.debug.assert(column < direct.cell_dims[0]);
+            std.debug.assert(row < direct.cell_dims[1]);
+            return row * direct.cell_dims[0] + column;
         }
 
         inline fn evalDirectFixedSpeckle2D(
@@ -2905,8 +2892,8 @@ test "direct fixed generation is contained and exact" {
     for (first.cells, 0..) |descriptor, index| {
         const xx = index % first.cell_dims[0];
         const yy = index / first.cell_dims[0];
-        const cell_x = first.cell_origin[0] + @as(i64, @intCast(xx));
-        const cell_y = first.cell_origin[1] + @as(i64, @intCast(yy));
+        const cell_x: i64 = @intCast(xx);
+        const cell_y: i64 = @intCast(yy);
         const hash = hashSpeckleCell(cell_x, cell_y, params.seed);
         const expected_active = randomUnitFromHash(hash, 0) < params.occupancy;
         try testing.expectEqual(expected_active, descriptor != 0);
@@ -3301,7 +3288,6 @@ test "direct fixed prepared SIMD handles active and inactive lanes" {
     const direct: DirectFixedSpeckle2D = .{
         .params = params,
         .cells = &cells,
-        .cell_origin = .{ 0, 0 },
         .cell_dims = .{ 3, 2 },
         .radius2 = 0.25 * 0.25,
     };
@@ -3583,17 +3569,6 @@ test "speckle numeric parameters validate common and shape-specific contracts" {
     try direct.validateResolved(.direct_fixed);
     direct.radius_mean = std.math.nextAfter(F, direct.radius_mean, std.math.inf(F));
     try std.testing.expectError(error.InvalidDirectFixedSpeckleRadius, direct.validateResolved(.direct_fixed));
-
-    // Every evaluator capability is checked once, without instantiating numerical tests per layout.
-    for (speckleconfig.generationConfigs(true)) |config| {
-        errdefer std.debug.print("softness validation evaluator={s} pattern={any} neighbors={any} edges={any}\n", .{ @tagName(std.meta.activeTag(config)), config.pattern(), config.neighborhood(), config.edges() });
-        const params = Speckle2DParams{ .pattern = config.pattern() orelse .disk, .edge_softness = 0.05 };
-        if (config.pattern() != null and config.pattern() != .disk) {
-            try std.testing.expectError(error.SpeckleEdgeSoftnessRequiresDisk, params.validateResolved(config));
-        } else if (!config.supportsSoftEdges()) {
-            try std.testing.expectError(error.SpeckleEvaluatorRequiresHardEdges, params.validateResolved(config));
-        } else try params.validateResolved(config);
-    }
 }
 
 test "Perlin accepts negative zero settings and preserves exact uniform foreground samples" {
