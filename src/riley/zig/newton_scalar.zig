@@ -11,7 +11,7 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
 const shapefun = @import("shapefun.zig");
-const common = @import("newton_common.zig");
+const newton_common = @import("newton_common.zig");
 
 const iter_max = cfg.raster_newton_iter_max;
 const tol = cfg.tol;
@@ -22,7 +22,7 @@ pub const FrozenJacConfig = struct {
 };
 
 pub const FrozenJacResult = struct {
-    seed: common.NewtonSeed,
+    seed: newton_common.NewtonSeed,
     frozen_iters: u8 = 0,
     residual_evals: u16 = 0,
     jacobian_evals: u16 = 0,
@@ -38,11 +38,11 @@ pub fn refineSeedFrozenScal(
     elem_node_x: []const F,
     elem_node_y: []const F,
     elem_node_w: []const F,
-    seed: common.NewtonSeed,
+    seed: newton_common.NewtonSeed,
     config: FrozenJacConfig,
 ) FrozenJacResult {
     var result = FrozenJacResult{ .seed = seed };
-    if (config.max_iters == 0 or !common.isSeedFinite(seed)) return result;
+    if (config.max_iters == 0 or !newton_common.isSeedFinite(seed)) return result;
 
     var term_x: [N]F = undefined;
     var term_y: [N]F = undefined;
@@ -106,11 +106,11 @@ pub fn refineSeedFrozenScal(
             step_xi *= step_scale;
             step_eta *= step_scale;
         }
-        const next = common.NewtonSeed{
+        const next = newton_common.NewtonSeed{
             .xi = current.xi - step_xi,
             .eta = current.eta - step_eta,
         };
-        if (!common.isSeedFinite(next)) {
+        if (!newton_common.isSeedFinite(next)) {
             result.fell_back = true;
             break;
         }
@@ -163,7 +163,7 @@ test "frozen Jacobian refinement keeps the original seed for singular maps" {
     const node_x = [_]F{0} ** 4;
     const node_y = [_]F{0} ** 4;
     const node_w = [_]F{1} ** 4;
-    const seed = common.NewtonSeed{ .xi = 0.1, .eta = -0.2 };
+    const seed = newton_common.NewtonSeed{ .xi = 0.1, .eta = -0.2 };
     const result = refineSeedFrozenScal(
         4,
         0.2,
@@ -192,7 +192,7 @@ pub fn solveFastScal(
     xi_seed: F,
     eta_seed: F,
     node_vals: *[N]F,
-) common.NewtonResFastScal {
+) newton_common.NewtonResFastScal {
     const strict_resid_norm_tol = tol.newton.norm_resid;
     const relaxed_resid_norm_tol = tol.newton.stagnation_norm_resid;
     const abs_det_tol = tol.newton.rel_det;
@@ -350,7 +350,7 @@ pub fn solveRobustScal(
     xi_seed: F,
     eta_seed: F,
     node_vals: *[N]F,
-) common.NewtonResRobustScal {
+) newton_common.NewtonResRobustScal {
     const strict_resid_norm_tol = tol.newton.norm_resid;
     const relaxed_resid_norm_tol = tol.newton.stagnation_norm_resid;
     const rel_det_tol_sq = tol.newton.rel_det * tol.newton.rel_det;
@@ -377,7 +377,7 @@ pub fn solveRobustScal(
     var iters: u8 = 0;
     var resid_x: F = 0.0;
     var resid_y: F = 0.0;
-    var status: common.NewtonStatus = .fail_iter_lim;
+    var status: newton_common.NewtonStatus = .fail_iter_lim;
     var pre_dom_conv = false;
 
     for (0..iter_max) |ii| {
@@ -508,16 +508,16 @@ pub fn solveRobustScal(
         eta = next_eta;
     }
 
-    if (common.isPreDomConvStatus(status)) {
+    if (newton_common.isPreDomConvStatus(status)) {
         pre_dom_conv = true;
     }
-    if (common.isConvStatus(status) and !isInParaDom(N, xi, eta, eps)) {
+    if (newton_common.isConvStatus(status) and !isInParaDom(N, xi, eta, eps)) {
         status = .fail_dom;
         pre_dom_conv = true;
     }
 
     return .{
-        .conv = common.isConvStatus(status) and status != .fail_dom,
+        .conv = newton_common.isConvStatus(status) and status != .fail_dom,
         .pre_dom_conv = pre_dom_conv,
         .iters = iters,
         .status = status,

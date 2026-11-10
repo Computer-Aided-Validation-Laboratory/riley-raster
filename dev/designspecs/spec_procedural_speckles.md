@@ -20,7 +20,7 @@ The shader is invoked after all the visibility and in/out testing, when we need 
 
 ## Inputs
 - Defined as a shader attached to a `MeshInput`
-    - Option in the `ShaderInput` tagged union in `shaderops_common.zig` - possibly `SpeckInput` and then with shader kernel `SpeckKernel`?
+    - Options in the `ShaderMonoInput` and `PipeSourceInput` tagged unions in `shadertypes.zig` - possibly `SpeckInput` and then a shader kernel `SpeckKernel`?
     - Prototype based on the analytic function shader `FuncInput`, as this has machinery for different coordinate interpolations (UV, world deformed, world undeformed) and normals.
 - User-defined speckle pattern characteristics:
     - Speckle pattern method: disk/sphere, Gaussian blob, Perlin noise, etc. (Look in the literature for some other possibilities, but this is a good minimum set.)

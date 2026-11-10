@@ -7,13 +7,10 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const std = @import("std");
-const print = std.debug.print;
-const assert = std.debug.assert;
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
-const SliceOps = @import("sliceops.zig");
-const ValIdx = SliceOps.ValIdx;
+const sliceops = @import("sliceops.zig");
 
 const EType = buildconfig.F;
 pub const Vec2F = Vec2T(EType);
@@ -119,20 +116,20 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
             return @sqrt(self.norm());
         }
 
-        pub fn max(self: *const Self) ValIdx(T) {
-            return SliceOps.max(T, &self.vec);
+        pub fn max(self: *const Self) sliceops.ValIdx(T) {
+            return sliceops.max(T, &self.vec);
         }
 
-        pub fn min(self: *const Self) ValIdx(T) {
-            return SliceOps.min(T, &self.vec);
+        pub fn min(self: *const Self) sliceops.ValIdx(T) {
+            return sliceops.min(T, &self.vec);
         }
 
         pub fn sum(self: *const Self) T {
-            return SliceOps.sum(T, &self.vec);
+            return sliceops.sum(T, &self.vec);
         }
 
         pub fn mean(self: *const Self) T {
-            return SliceOps.mean(T, &self.vec);
+            return sliceops.mean(T, &self.vec);
         }
 
         pub fn apply(
@@ -147,11 +144,11 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
         }
 
         pub fn vecPrint(self: *const Self) void {
-            print("[", .{});
+            std.debug.print("[", .{});
             for (0..elem_n) |ii| {
-                print("{e:.6},", .{self.vec[ii]});
+                std.debug.print("{e:.6},", .{self.vec[ii]});
             }
-            print("]\n", .{});
+            std.debug.print("]\n", .{});
         }
     };
 }
@@ -209,7 +206,7 @@ pub fn insertSortVec3(comptime T: type, slice: []Vec3T(T)) void {
         var jj = ii;
         while (jj > 0 and (slice[jj - 1].x() > value.x() or
             (slice[jj - 1].x() == value.x() and (slice[jj - 1].y() > value.y() or
-            (slice[jj - 1].y() == value.y() and slice[jj - 1].z() > value.z())))))
+                (slice[jj - 1].y() == value.y() and slice[jj - 1].z() > value.z())))))
         {
             slice[jj] = slice[jj - 1];
             jj -= 1;
@@ -234,8 +231,8 @@ pub const Vec3Ops = struct {
 
 pub const Vec3SliceOps = struct {
     pub fn max(comptime T: type, vec: []Vec3T(T), ind: usize) T {
-        assert(vec.len > 0);
-        assert(ind < 3);
+        std.debug.assert(vec.len > 0);
+        std.debug.assert(ind < 3);
 
         var val: T = vec[0].get(ind);
         for (vec[1..]) |vv| {
@@ -248,8 +245,8 @@ pub const Vec3SliceOps = struct {
     }
 
     pub fn min(comptime T: type, vec: []Vec3T(T), ind: usize) T {
-        assert(vec.len > 0);
-        assert(ind < 3);
+        std.debug.assert(vec.len > 0);
+        std.debug.assert(ind < 3);
 
         var val: T = vec[0].get(ind);
         for (vec[1..]) |vv| {
@@ -266,9 +263,6 @@ pub const Vec3SliceOps = struct {
 // Tests
 // --------------------------------------------------------------------------------------
 
-const expectEqual = std.testing.expectEqual;
-const expectEqualSlices = std.testing.expectEqualSlices;
-
 test "VecSliceOps.max" {
     var vec_slice: [3]Vec3F = undefined;
     vec_slice[0] = initVec3(F, -1.0, 2.0, 7.0);
@@ -283,9 +277,9 @@ test "VecSliceOps.max" {
     const exp_max_y: F = 2.0;
     const exp_max_z: F = 7.0;
 
-    try expectEqual(exp_max_x, max_x);
-    try expectEqual(exp_max_y, max_y);
-    try expectEqual(exp_max_z, max_z);
+    try std.testing.expectEqual(exp_max_x, max_x);
+    try std.testing.expectEqual(exp_max_y, max_y);
+    try std.testing.expectEqual(exp_max_z, max_z);
 }
 
 test "Vec.apply" {
@@ -297,40 +291,40 @@ test "Vec.apply" {
 
     const vec_sqrt = vec0.apply(std.math.sqrt);
 
-    try expectEqualSlices(EType, &vec_exp_ones.vec, &vec_sqrt.vec);
+    try std.testing.expectEqualSlices(EType, &vec_exp_ones.vec, &vec_sqrt.vec);
 
     const vec1 = VecStack(vec_len, EType).initZeros();
     const vec_atan = vec1.apply(std.math.atan);
 
-    try expectEqualSlices(EType, &vec_exp_zeros.vec, &vec_atan.vec);
+    try std.testing.expectEqualSlices(EType, &vec_exp_zeros.vec, &vec_atan.vec);
 
-    const vec_e = vec1.apply(SliceOps.exp);
+    const vec_e = vec1.apply(sliceops.exp);
 
-    try expectEqualSlices(EType, &vec_exp_ones.vec, &vec_e.vec);
+    try std.testing.expectEqualSlices(EType, &vec_exp_ones.vec, &vec_e.vec);
 }
 
 test "Vec.max" {
     const v0 = [_]EType{ 1, 3, 6, 7, 8, 1, -2, -3, 0, 5 };
     const vec0 = VecStack(v0.len, EType).initSlice(&v0);
 
-    const exp_val = ValIdx(EType){
+    const exp_val = sliceops.ValIdx(EType){
         .val = 8,
         .idx = 4,
     };
 
-    try expectEqual(exp_val, vec0.max());
+    try std.testing.expectEqual(exp_val, vec0.max());
 }
 
 test "Vec.min" {
     const v0 = [_]EType{ 1, 3, 6, 7, 8, 1, -2, -3, 0, 5 };
     const vec0 = VecStack(v0.len, EType).initSlice(&v0);
 
-    const exp_val = ValIdx(EType){
+    const exp_val = sliceops.ValIdx(EType){
         .val = -3,
         .idx = 7,
     };
 
-    try expectEqual(exp_val, vec0.min());
+    try std.testing.expectEqual(exp_val, vec0.min());
 }
 
 test "Vec.sum" {
@@ -339,7 +333,7 @@ test "Vec.sum" {
 
     const exp_val: EType = 26;
 
-    try expectEqual(exp_val, vec0.sum());
+    try std.testing.expectEqual(exp_val, vec0.sum());
 }
 
 test "Vec.mean" {
@@ -348,7 +342,7 @@ test "Vec.mean" {
 
     const exp_val: EType = 2.6;
 
-    try expectEqual(exp_val, vec0.mean());
+    try std.testing.expectEqual(exp_val, vec0.mean());
 }
 
 test "Vec3F.add" {
@@ -356,7 +350,7 @@ test "Vec3F.add" {
     const vec1 = Vec3F.initFill(2);
     const vec_exp = Vec3F.initFill(3);
 
-    try expectEqualSlices(EType, &vec0.add(vec1).vec, &vec_exp.vec);
+    try std.testing.expectEqualSlices(EType, &vec0.add(vec1).vec, &vec_exp.vec);
 }
 
 test "Vec3F.sub" {
@@ -364,7 +358,7 @@ test "Vec3F.sub" {
     const vec1 = Vec3F.initFill(7);
     const vec_exp = Vec3F.initFill(-6);
 
-    try expectEqualSlices(EType, &vec0.sub(vec1).vec, &vec_exp.vec);
+    try std.testing.expectEqualSlices(EType, &vec0.sub(vec1).vec, &vec_exp.vec);
 }
 
 test "Vec3F.mulScal" {
@@ -372,7 +366,7 @@ test "Vec3F.mulScal" {
     const scal: EType = 1.23;
     const vec_exp = Vec3F.initFill(scal);
 
-    try expectEqualSlices(EType, &vec0.mulScal(scal).vec, &vec_exp.vec);
+    try std.testing.expectEqualSlices(EType, &vec0.mulScal(scal).vec, &vec_exp.vec);
 }
 
 test "Vec3F.dot" {
@@ -381,8 +375,8 @@ test "Vec3F.dot" {
     var vec1 = Vec3F.initFill(fill);
     const dot_exp: EType = 3 * fill * fill;
 
-    try expectEqual(vec0.dot(vec1), dot_exp);
-    try expectEqual(vec1.dot(vec0), dot_exp);
+    try std.testing.expectEqual(vec0.dot(vec1), dot_exp);
+    try std.testing.expectEqual(vec1.dot(vec0), dot_exp);
 }
 
 test "Vec3F.norm" {
@@ -390,7 +384,7 @@ test "Vec3F.norm" {
     var vec0 = Vec3F.initFill(fill);
     const norm_exp: EType = 3 * fill * fill;
 
-    try expectEqual(vec0.norm(), norm_exp);
+    try std.testing.expectEqual(vec0.norm(), norm_exp);
 }
 
 test "Vec3F.length" {
@@ -398,7 +392,7 @@ test "Vec3F.length" {
     const leng_exp = @sqrt(arr[0] * arr[0] + arr[1] * arr[1] + arr[2] * arr[2]);
     var vec = Vec3F.initSlice(&arr);
 
-    try expectEqual(vec.vecLen(), leng_exp);
+    try std.testing.expectEqual(vec.vecLen(), leng_exp);
 }
 
 test "Vec3Ops.cross" {
@@ -409,20 +403,20 @@ test "Vec3Ops.cross" {
     const v2 = [_]EType{ 0.0, 0.0, 1.0 };
     const cross_exp = Vec3F.initSlice(&v2);
 
-    try expectEqual(Vec3Ops.cross(F, vec0, vec1), cross_exp);
+    try std.testing.expectEqual(Vec3Ops.cross(F, vec0, vec1), cross_exp);
 }
 
 test "Vec2Ops.cross2" {
     const u = initVec2(F, 2.0, 3.0);
     const v = initVec2(F, 4.0, 5.0);
-    try expectEqual(@as(F, -2.0), Vec2Ops.cross2(F, u, v));
+    try std.testing.expectEqual(@as(F, -2.0), Vec2Ops.cross2(F, u, v));
 }
 
 test "Vec2Ops.cross3" {
     const pt_a = initVec2(F, 1.0, 1.0);
     const pt_b = initVec2(F, 3.0, 4.0);
     const pt_c = initVec2(F, 5.0, 6.0);
-    try expectEqual(@as(F, -2.0), Vec2Ops.cross3(F, pt_a, pt_b, pt_c));
+    try std.testing.expectEqual(@as(F, -2.0), Vec2Ops.cross3(F, pt_a, pt_b, pt_c));
 }
 
 test "insertSortVec2" {
@@ -441,7 +435,7 @@ test "insertSortVec2" {
         initVec2(F, 3.0, 1.0),
         initVec2(F, 3.0, 4.0),
     };
-    try expectEqualSlices(Vec2F, &expected, &points);
+    try std.testing.expectEqualSlices(Vec2F, &expected, &points);
 }
 
 test "insertSortVec3" {
@@ -458,6 +452,5 @@ test "insertSortVec3" {
         initVec3(F, 2.0, 3.0, 2.0),
         initVec3(F, 2.0, 3.0, 5.0),
     };
-    try expectEqualSlices(Vec3F, &expected, &points);
+    try std.testing.expectEqualSlices(Vec3F, &expected, &points);
 }
-

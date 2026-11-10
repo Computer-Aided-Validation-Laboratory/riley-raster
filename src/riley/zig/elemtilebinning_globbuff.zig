@@ -7,10 +7,10 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const std = @import("std");
-const distbounds = @import("distortbounds.zig");
-const geomkerns = @import("geometrykernels.zig");
-const frontend = @import("rasterfrontend.zig");
-const elemtilebin = @import("elemtilebinning.zig");
+const distortbounds = @import("distortbounds.zig");
+const geometrykernels = @import("geometrykernels.zig");
+const rasterfrontend = @import("rasterfrontend.zig");
+const elemtilebinning = @import("elemtilebinning.zig");
 
 pub fn binElemsInSceneGlobBuff(
     outer_alloc: std.mem.Allocator,
@@ -21,11 +21,11 @@ pub fn binElemsInSceneGlobBuff(
     core_y_px_max: u16,
     halo_px: u16,
     elems_in_image_by_mesh: []const usize,
-    elem_bboxes_by_mesh: []const []frontend.ElemBBox,
-    elem_float_bboxes_by_mesh: []const ?[]distbounds.DistortBounds,
-    mesh_types: []const geomkerns.MeshType,
-    root_classes_by_mesh: []const []frontend.ElemRootClass,
-) !elemtilebin.TileElemOverlaps {
+    elem_bboxes_by_mesh: []const []rasterfrontend.ElemBBox,
+    elem_float_bboxes_by_mesh: []const ?[]distortbounds.DistortBounds,
+    mesh_types: []const geometrykernels.MeshType,
+    root_classes_by_mesh: []const []rasterfrontend.ElemRootClass,
+) !elemtilebinning.TileElemOverlaps {
     const tiles_x = try std.math.divCeil(usize, screen_px_x, tile_size);
     std.debug.assert(core_y_px_min < core_y_px_max);
     std.debug.assert(core_y_px_max <= screen_px_y);
@@ -45,7 +45,7 @@ pub fn binElemsInSceneGlobBuff(
     // Pass 1: Count overlaps per tile and bin by iterating over elements.
     const tile_elem_counts = try outer_alloc.alloc(
         usize,
-        tiles_num * elemtilebin.bin_count,
+        tiles_num * elemtilebinning.bin_count,
     );
     defer outer_alloc.free(tile_elem_counts);
     @memset(tile_elem_counts, 0);
@@ -57,12 +57,12 @@ pub fn binElemsInSceneGlobBuff(
         const r_classes = root_classes_by_mesh[mesh_idx];
 
         for (elem_bboxes[0..count], 0..) |elem_bbox, ee| {
-            const bin_idx = @intFromEnum(elemtilebin.binForElem(
+            const bin_idx = @intFromEnum(elemtilebinning.binForElem(
                 m_type,
                 r_classes,
                 elem_bbox.elem_idx,
             ));
-            const floating: ?distbounds.DistortBounds = if (maybe_float_bboxes) |fb|
+            const floating: ?distortbounds.DistortBounds = if (maybe_float_bboxes) |fb|
                 fb[ee]
             else
                 null;
@@ -111,7 +111,7 @@ pub fn binElemsInSceneGlobBuff(
                     else
                         @as(i32, @intCast((xx + 1) * tile_size));
 
-                    const overlap = elemtilebin.clipElemBBoxToTile(
+                    const overlap = elemtilebinning.clipElemBBoxToTile(
                         elem_bbox,
                         floating,
                         mesh_idx,
@@ -126,7 +126,7 @@ pub fn binElemsInSceneGlobBuff(
                         continue;
                     }
                     const tile_idx = yy * tiles_x + xx;
-                    tile_elem_counts[tile_idx * elemtilebin.bin_count + bin_idx] += 1;
+                    tile_elem_counts[tile_idx * elemtilebinning.bin_count + bin_idx] += 1;
                 }
             }
         }
@@ -137,22 +137,22 @@ pub fn binElemsInSceneGlobBuff(
     var num_active_tiles: usize = 0;
     for (0..tiles_num) |tile_idx| {
         var tile_count: usize = 0;
-        for (0..elemtilebin.bin_count) |bb| {
-            tile_count += tile_elem_counts[tile_idx * elemtilebin.bin_count + bb];
+        for (0..elemtilebinning.bin_count) |bb| {
+            tile_count += tile_elem_counts[tile_idx * elemtilebinning.bin_count + bb];
         }
         overlap_total += tile_count;
         if (tile_count > 0) num_active_tiles += 1;
     }
 
     const active_tiles = try outer_alloc.alloc(
-        elemtilebin.ActiveTile,
+        elemtilebinning.ActiveTile,
         num_active_tiles,
     );
-    const overlaps = try outer_alloc.alloc(elemtilebin.OverlapBBox, overlap_total);
+    const overlaps = try outer_alloc.alloc(elemtilebinning.OverlapBBox, overlap_total);
 
     const tile_write_inds = try outer_alloc.alloc(
         usize,
-        tiles_num * elemtilebin.bin_count,
+        tiles_num * elemtilebinning.bin_count,
     );
     defer outer_alloc.free(tile_write_inds);
 
@@ -181,16 +181,16 @@ pub fn binElemsInSceneGlobBuff(
             const tile_idx = yy * tiles_x + xx;
 
             var tile_count: usize = 0;
-            var ranges = [_]elemtilebin.ElemBinRange{.{}} ** elemtilebin.bin_count;
-            for (0..elemtilebin.bin_count) |bb| {
+            var ranges = [_]elemtilebinning.ElemBinRange{.{}} ** elemtilebinning.bin_count;
+            for (0..elemtilebinning.bin_count) |bb| {
                 const b_count = tile_elem_counts[
-                    tile_idx * elemtilebin.bin_count + bb
+                    tile_idx * elemtilebinning.bin_count + bb
                 ];
                 ranges[bb] = .{
                     .start = current_off + tile_count,
                     .count = b_count,
                 };
-                tile_write_inds[tile_idx * elemtilebin.bin_count + bb] =
+                tile_write_inds[tile_idx * elemtilebinning.bin_count + bb] =
                     current_off + tile_count;
                 tile_count += b_count;
             }
@@ -227,12 +227,12 @@ pub fn binElemsInSceneGlobBuff(
         const r_classes = root_classes_by_mesh[mesh_idx];
 
         for (elem_bboxes[0..count], 0..) |elem_bbox, ee| {
-            const bin_idx = @intFromEnum(elemtilebin.binForElem(
+            const bin_idx = @intFromEnum(elemtilebinning.binForElem(
                 m_type,
                 r_classes,
                 elem_bbox.elem_idx,
             ));
-            const floating: ?distbounds.DistortBounds = if (maybe_float_bboxes) |fb|
+            const floating: ?distortbounds.DistortBounds = if (maybe_float_bboxes) |fb|
                 fb[ee]
             else
                 null;
@@ -280,7 +280,7 @@ pub fn binElemsInSceneGlobBuff(
                     else
                         @as(i32, @intCast((xx + 1) * tile_size));
 
-                    const overlap = elemtilebin.clipElemBBoxToTile(
+                    const overlap = elemtilebinning.clipElemBBoxToTile(
                         elem_bbox,
                         floating,
                         mesh_idx,
@@ -296,11 +296,11 @@ pub fn binElemsInSceneGlobBuff(
                     }
                     const tile_idx = yy * tiles_x + xx;
                     const write_idx = tile_write_inds[
-                        tile_idx * elemtilebin.bin_count + bin_idx
+                        tile_idx * elemtilebinning.bin_count + bin_idx
                     ];
                     overlaps[write_idx] = overlap;
                     tile_write_inds[
-                        tile_idx * elemtilebin.bin_count + bin_idx
+                        tile_idx * elemtilebinning.bin_count + bin_idx
                     ] = write_idx + 1;
                 }
             }
@@ -314,7 +314,7 @@ pub fn binElemsInSceneGlobBuff(
 }
 
 test "global sub-pixel tiles own disjoint cores and retain halo only at frame edges" {
-    var elem_bboxes = [_]frontend.ElemBBox{.{
+    var elem_bboxes = [_]rasterfrontend.ElemBBox{.{
         .elem_idx = 0,
         .x_min = -2,
         .x_max = 12,
@@ -322,10 +322,10 @@ test "global sub-pixel tiles own disjoint cores and retain halo only at frame ed
         .y_max = 11,
     }};
     const elems_in_image = [_]usize{1};
-    const elem_bboxes_by_mesh = [_][]frontend.ElemBBox{elem_bboxes[0..]};
-    const elem_float_bboxes_by_mesh = [_]?[]distbounds.DistortBounds{null};
-    const mesh_types = [_]geomkerns.MeshType{.tri3};
-    const root_classes_by_mesh = [_][]frontend.ElemRootClass{&.{}};
+    const elem_bboxes_by_mesh = [_][]rasterfrontend.ElemBBox{elem_bboxes[0..]};
+    const elem_float_bboxes_by_mesh = [_]?[]distortbounds.DistortBounds{null};
+    const mesh_types = [_]geometrykernels.MeshType{.tri3};
+    const root_classes_by_mesh = [_][]rasterfrontend.ElemRootClass{&.{}};
     const sub_sample: i32 = 2;
     const halo_px: u16 = 2;
     const screen_w_px: u16 = 10;

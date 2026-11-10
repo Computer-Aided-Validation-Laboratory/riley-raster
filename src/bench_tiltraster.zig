@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("riley/zig/cameramodels.zig");
 const std = @import("std");
 
 const benchargs = @import("dev_support/benchargs.zig");
@@ -15,10 +16,10 @@ const common = @import("dev_support/benchcommon.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const riley = @import("riley/zig/riley.zig");
-const cam = @import("riley/zig/camera.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
-const texops = @import("riley/zig/textureops.zig");
+const textypes = @import("riley/zig/texturetypes.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const F = buildconfig.F;
 
@@ -26,7 +27,6 @@ const config = common.BenchConfig{ .run = .all };
 
 const DEFAULT_OUT_DIR = "out/bench_stats_tiltraster";
 const DEFAULT_IMAGE_OUT_DIR = "out/bench_images_tiltraster";
-const DEFAULT_DATA_DIR_SUFFIX = "fullraster";
 const DEFAULT_PIXELS_NUM = [2]u32{ 1600, 1000 };
 const DEFAULT_SUB_SAMPLE: u32 = 2;
 const DEFAULT_FOCAL_LENG: F = @floatCast(50.0e-3);
@@ -47,9 +47,6 @@ pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
     var base_raster_config = tcfg.getRasterConfig(.bench);
-    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
     base_raster_config.save_strategy = .memory;
     var default_bench_args = benchargs.defaultBenchArgs(
         DEFAULT_OUT_DIR,
@@ -70,7 +67,7 @@ pub fn main(init: std.process.Init) !void {
     );
     defer threaded_io.deinit();
     const io = threaded_io.io();
-    const distort_model: cam.DistortParams = switch (bench_args.distort) {
+    const distort_model: cameramodels.DistortParams = switch (bench_args.distort) {
         .none => .none,
         .brown => .{
             .brown_con = .{
@@ -122,7 +119,7 @@ pub fn main(init: std.process.Init) !void {
         .func,
         .func_rgb,
     };
-    const samp_cfgs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]textypes.TexSampConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
@@ -137,6 +134,7 @@ pub fn main(init: std.process.Init) !void {
     };
     const tex_func_cases = [_]common.TexFuncCase{
         .{ .builtin = .constant, .coord_mode = .param },
+        .{ .builtin = .lambertian_normal_z, .coord_mode = .param },
         .{ .builtin = .constant, .coord_mode = .uv },
         .{ .builtin = .linear, .coord_mode = .param },
         .{ .builtin = .linear, .coord_mode = .uv },
@@ -146,6 +144,12 @@ pub fn main(init: std.process.Init) !void {
         .{ .builtin = .sinusoidal, .coord_mode = .uv },
         .{ .builtin = .sinusoidal_approx, .coord_mode = .param },
         .{ .builtin = .sinusoidal_approx, .coord_mode = .uv },
+    };
+    const shaderpipe_func_cases = [_]common.TexFuncCase{
+        .{ .builtin = .checker, .coord_mode = .param },
+    };
+    const multisource_func_cases = [_]common.TexFuncCase{
+        .{ .builtin = .checker, .coord_mode = .world_reference },
     };
 
     var stats = try benchstats.BenchStatsCollector.init(
@@ -211,7 +215,13 @@ pub fn main(init: std.process.Init) !void {
             shader_types[0..],
             tex_func_shader_types[0..],
             samp_cfgs[0..],
-            tex_func_cases[0..],
+            if (bench_args.shader_subset == .shaderpipe_multisource)
+                multisource_func_cases[0..]
+            else if (bench_args.shader_subset == .shaderpipe_baseline or
+                bench_args.shader_subset == .shaderpipe_compare)
+                shaderpipe_func_cases[0..]
+            else
+                tex_func_cases[0..],
         ),
         .u16 => try runBenchmarksForTextureType(
             u16,
@@ -225,7 +235,13 @@ pub fn main(init: std.process.Init) !void {
             shader_types[0..],
             tex_func_shader_types[0..],
             samp_cfgs[0..],
-            tex_func_cases[0..],
+            if (bench_args.shader_subset == .shaderpipe_multisource)
+                multisource_func_cases[0..]
+            else if (bench_args.shader_subset == .shaderpipe_baseline or
+                bench_args.shader_subset == .shaderpipe_compare)
+                shaderpipe_func_cases[0..]
+            else
+                tex_func_cases[0..],
         ),
     }
 
@@ -252,7 +268,7 @@ fn runBenchmarksForTextureType(
     mesh_types: []const gk.MeshType,
     shader_types: []const common.ShaderType,
     tex_func_shader_types: []const common.ShaderType,
-    samp_cfgs: []const texops.TextureSampleConfig,
+    samp_cfgs: []const textypes.TexSampConfig,
     tex_func_cases: []const common.TexFuncCase,
 ) !void {
     const texture_grey = try loadBenchmarkTexture(
@@ -273,6 +289,7 @@ fn runBenchmarksForTextureType(
     defer texture_rgb.deinit(outer_alloc);
 
     for (mesh_types) |mt| {
+        if (bench_args.smoke and mt != .tri3) continue;
         if (!shouldRunMeshType(bench_args.mesh_subset, mt)) {
             continue;
         }
@@ -284,13 +301,31 @@ fn runBenchmarksForTextureType(
         else
             shader_types;
         for (selected_shader_types) |st| {
+            if (bench_args.smoke and st != .nodal_grey) continue;
+            if (bench_args.shader_subset == .shaderpipe_multisource) continue;
             for (samp_cfgs) |sc| {
+                if (bench_args.smoke and sc.sample != .linear) continue;
+                if (bench_args.sample) |sample| if (sc.sample != sample) continue;
+                if (bench_args.sample_mode) |mode| if (sc.mode != mode) continue;
+                if (bench_args.shader_subset == .static_preparation and
+                    (sc.mode != .direct or (sc.sample != .linear and sc.sample != .cubic_catmull_rom))) continue;
+                if (bench_args.shader_subset == .shaderpipe_baseline or
+                    bench_args.shader_subset == .shaderpipe_compare)
+                {
+                    if (st != .nodal_grey and st != .tex8_grey) continue;
+                    if (st == .tex8_grey and
+                        (sc.mode != .direct or
+                            (sc.sample != .linear and sc.sample != .cubic_catmull_rom)))
+                    {
+                        continue;
+                    }
+                }
                 var data_dir_buf: [256]u8 = undefined;
                 const folder_name = if (mt == .tri3opt) "tri3" else @tagName(mt);
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
-                    "data/tilt/{s}_{s}",
-                    .{ folder_name, DEFAULT_DATA_DIR_SUFFIX },
+                    "{s}/{s}_{s}",
+                    .{ bench_args.data_dir, folder_name, bench_args.data_suffix },
                 );
 
                 if (common.shouldRun(config, mt, st, sc, data_dir)) {
@@ -298,80 +333,21 @@ fn runBenchmarksForTextureType(
                         sc
                     else
                         null;
-                    const case_name = try common.calcCaseName(
+                    try runShaderCase(
+                        T,
                         outer_alloc,
+                        io,
+                        stats,
+                        bench_args,
+                        base_raster_config,
+                        render_defaults,
+                        texture_grey,
+                        texture_rgb,
                         mt,
                         st,
                         samp_cfg,
                         null,
-                        1.0,
-                    );
-                    defer outer_alloc.free(case_name);
-
-                    std.debug.print("Case: {s}\n", .{case_name});
-
-                    var case_samples = try benchstats.CaseSamples.init(
-                        outer_alloc,
-                        bench_args.runs,
-                    );
-                    defer case_samples.deinit(outer_alloc);
-
-                    for (0..bench_args.runs) |rr| {
-                        const run_out_dir_base = if (bench_args.save_strategy == .disk or
-                            bench_args.save_strategy == .both)
-                            bench_args.out_dir
-                        else
-                            "";
-                        const raster_config = benchargs.applyRasterConfig(
-                            base_raster_config,
-                            bench_args,
-                        );
-
-                        var res = try common.runBenchmarkWithImageOut(
-                            T,
-                            outer_alloc,
-                            io,
-                            mt,
-                            st,
-                            samp_cfg,
-                            null,
-                            data_dir,
-                            render_defaults,
-                            texture_grey,
-                            texture_rgb,
-                            raster_config,
-                            run_out_dir_base,
-                            bench_args.image_out_dir,
-                        );
-                        defer res.deinit(outer_alloc);
-
-                        try stats.appendRunResult(
-                            outer_alloc,
-                            rr,
-                            case_name,
-                            mt,
-                            st,
-                            samp_cfg,
-                            null,
-                            res,
-                        );
-                        try stats.writeRunCSV(
-                            outer_alloc,
-                            io,
-                            bench_args.out_dir,
-                            rr,
-                        );
-                        case_samples.record(rr, res);
-                    }
-
-                    try stats.appendCaseStats(
-                        outer_alloc,
-                        case_name,
-                        mt,
-                        st,
-                        samp_cfg,
-                        null,
-                        &case_samples,
+                        data_dir,
                     );
                 }
             }
@@ -382,91 +358,174 @@ fn runBenchmarksForTextureType(
         }
 
         for (tex_func_shader_types) |st| {
+            if (bench_args.smoke) continue;
             for (tex_func_cases) |tex_func_case| {
+                if (bench_args.shader_subset == .static_preparation and
+                    !(tex_func_case.builtin == .lambertian_normal_z or
+                        (tex_func_case.builtin == .linear and tex_func_case.coord_mode == .uv))) continue;
+                if (bench_args.shader_subset == .shaderpipe_multisource and
+                    (st != .func or tex_func_case.builtin != .checker or
+                        tex_func_case.coord_mode != .world_reference))
+                {
+                    continue;
+                }
+                if ((bench_args.shader_subset == .shaderpipe_baseline or
+                    bench_args.shader_subset == .shaderpipe_compare) and
+                    (st != .func or tex_func_case.builtin != .checker or
+                        tex_func_case.coord_mode != .param))
+                {
+                    continue;
+                }
                 var data_dir_buf: [256]u8 = undefined;
                 const folder_name = if (mt == .tri3opt) "tri3" else @tagName(mt);
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
-                    "data/tilt/{s}_{s}",
-                    .{ folder_name, DEFAULT_DATA_DIR_SUFFIX },
+                    "{s}/{s}_{s}",
+                    .{ bench_args.data_dir, folder_name, bench_args.data_suffix },
                 );
-                const case_name = try common.calcCaseName(
+                try runShaderCase(
+                    T,
                     outer_alloc,
+                    io,
+                    stats,
+                    bench_args,
+                    base_raster_config,
+                    render_defaults,
+                    texture_grey,
+                    texture_rgb,
                     mt,
                     st,
                     null,
                     tex_func_case,
-                    1.0,
-                );
-                defer outer_alloc.free(case_name);
-
-                std.debug.print("Case: {s}\n", .{case_name});
-
-                var case_samples = try benchstats.CaseSamples.init(
-                    outer_alloc,
-                    bench_args.runs,
-                );
-                defer case_samples.deinit(outer_alloc);
-
-                for (0..bench_args.runs) |rr| {
-                    const run_out_dir_base = if (bench_args.save_strategy == .disk or
-                        bench_args.save_strategy == .both)
-                        bench_args.out_dir
-                    else
-                        "";
-                    const raster_config = benchargs.applyRasterConfig(
-                        base_raster_config,
-                        bench_args,
-                    );
-
-                    var res = try common.runBenchmarkWithImageOut(
-                        T,
-                        outer_alloc,
-                        io,
-                        mt,
-                        st,
-                        null,
-                        tex_func_case,
-                        data_dir,
-                        render_defaults,
-                        texture_grey,
-                        texture_rgb,
-                        raster_config,
-                        run_out_dir_base,
-                        bench_args.image_out_dir,
-                    );
-                    defer res.deinit(outer_alloc);
-
-                    try stats.appendRunResult(
-                        outer_alloc,
-                        rr,
-                        case_name,
-                        mt,
-                        st,
-                        null,
-                        tex_func_case,
-                        res,
-                    );
-                    try stats.writeRunCSV(
-                        outer_alloc,
-                        io,
-                        bench_args.out_dir,
-                        rr,
-                    );
-                    case_samples.record(rr, res);
-                }
-
-                try stats.appendCaseStats(
-                    outer_alloc,
-                    case_name,
-                    mt,
-                    st,
-                    null,
-                    tex_func_case,
-                    &case_samples,
+                    data_dir,
                 );
             }
         }
+    }
+}
+
+fn runShaderCase(
+    comptime T: type,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    stats: *benchstats.BenchStatsCollector,
+    bench_args: benchargs.BenchArgs,
+    base_raster_config: rastcfg.RasterConfig,
+    render_defaults: common.BenchRenderDefaults,
+    texture_grey: textypes.TexDataFix(T, 1),
+    texture_rgb: textypes.TexDataFix(T, 3),
+    mt: gk.MeshType,
+    st: common.ShaderType,
+    samp_cfg: ?textypes.TexSampConfig,
+    tex_func_case: ?common.TexFuncCase,
+    data_dir: []const u8,
+) !void {
+    const static_preparation = bench_args.shader_subset == .static_preparation;
+    const multisource = bench_args.shader_subset == .shaderpipe_multisource;
+    const compare = bench_args.shader_subset == .shaderpipe_compare or multisource or static_preparation;
+    const paths: []const common.BenchShaderPath = if (compare)
+        if (static_preparation)
+            &.{ .direct, .static_preparation }
+        else if (multisource)
+            &.{ .direct, .multi_source_pipe }
+        else
+            &.{ .direct, .one_stage_pipe }
+    else
+        &.{.direct};
+    const base_name = try common.calcCaseName(
+        outer_alloc,
+        mt,
+        st,
+        samp_cfg,
+        tex_func_case,
+        1.0,
+    );
+    defer outer_alloc.free(base_name);
+    const direct_name = if (compare)
+        try std.fmt.allocPrint(outer_alloc, "{s}_direct", .{base_name})
+    else
+        base_name;
+    defer if (compare) outer_alloc.free(direct_name);
+    const pipe_name = if (static_preparation)
+        try std.fmt.allocPrint(outer_alloc, "{s}_static_preparation", .{base_name})
+    else if (multisource)
+        try std.fmt.allocPrint(outer_alloc, "{s}_multi_source_pipe", .{base_name})
+    else if (compare)
+        try std.fmt.allocPrint(outer_alloc, "{s}_one_stage_pipe", .{base_name})
+    else
+        "";
+    defer if (compare) outer_alloc.free(pipe_name);
+    const names = [_][]const u8{ direct_name, pipe_name };
+
+    var samples = [_]benchstats.CaseSamples{
+        try benchstats.CaseSamples.init(outer_alloc, bench_args.runs),
+        try benchstats.CaseSamples.init(outer_alloc, bench_args.runs),
+    };
+    defer for (&samples) |*sample| sample.deinit(outer_alloc);
+
+    const note_str = if (static_preparation)
+        " (direct / preparation stress pipe)"
+    else if (multisource)
+        " (direct / three-source pipe)"
+    else if (compare)
+        " (direct / one-stage pipe)"
+    else
+        "";
+    std.debug.print("Case: {s}{s}\n", .{ base_name, note_str });
+    const run_out_dir_base = if (bench_args.save_strategy == .disk or
+        bench_args.save_strategy == .both)
+        bench_args.out_dir
+    else
+        "";
+    const raster_config = benchargs.applyRasterConfig(base_raster_config, bench_args);
+
+    for (0..bench_args.runs) |rr| {
+        for (0..paths.len) |ii| {
+            const path_idx = if (rr % 2 == 0) ii else paths.len - 1 - ii;
+            var case_defaults = render_defaults;
+            case_defaults.shader_path = paths[path_idx];
+            var res = try common.runBenchmarkWithImageOut(
+                T,
+                outer_alloc,
+                io,
+                mt,
+                st,
+                samp_cfg,
+                tex_func_case,
+                data_dir,
+                case_defaults,
+                texture_grey,
+                texture_rgb,
+                raster_config,
+                run_out_dir_base,
+                bench_args.image_out_dir,
+            );
+            defer res.deinit(outer_alloc);
+            try stats.appendRunResult(
+                outer_alloc,
+                rr,
+                names[path_idx],
+                mt,
+                st,
+                samp_cfg,
+                tex_func_case,
+                res,
+            );
+            samples[path_idx].record(rr, res);
+        }
+        try stats.writeRunCSV(outer_alloc, io, bench_args.out_dir, rr);
+    }
+
+    for (paths, 0..) |_, idx| {
+        try stats.appendCaseStats(
+            outer_alloc,
+            names[idx],
+            mt,
+            st,
+            samp_cfg,
+            tex_func_case,
+            &samples[idx],
+        );
     }
 }
 
@@ -502,6 +561,7 @@ fn writeStudyMetadata(
     var buffered_writer = file.writer(io, &write_buf);
     const writer = &buffered_writer.interface;
 
+    try writer.print("data_dir={s}\ndata_suffix={s}\n", .{ bench_args.data_dir, bench_args.data_suffix });
     try writer.print("texture_storage={s}\n", .{
         @tagName(bench_args.texture_storage),
     });
@@ -523,7 +583,7 @@ fn loadBenchmarkTexture(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !textypes.TexDataFix(T, channels) {
     if (T == u8) {
         return iio.loadImage(
             u8,
@@ -554,11 +614,11 @@ fn loadBenchmarkTexture(
 fn scaleTexture8To16(
     comptime channels: usize,
     allocator: std.mem.Allocator,
-    texture_u8: texops.Tex(u8, channels),
-) !texops.Tex(u16, channels) {
+    texture_u8: textypes.TexDataFix(u8, channels),
+) !textypes.TexDataFix(u16, channels) {
     defer texture_u8.deinit(allocator);
 
-    var texture_u16 = try texops.Tex(u16, channels).init(
+    var texture_u16 = try textypes.TexDataFix(u16, channels).init(
         allocator,
         texture_u8.rows_num,
         texture_u8.cols_num,

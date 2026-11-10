@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------------------
 const cfg = @import("buildconfig.zig").config;
 const std = @import("std");
-const cam = @import("camera.zig");
+const cameraprojops = @import("cameraprojops.zig");
 const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -16,13 +16,13 @@ const impl = if (cfg.simd == .on)
     @import("scratchresolve_globbuff_simd.zig")
 else
     @import("scratchresolve_globbuff_scalar.zig");
-const subpxframe = @import("subpxframe_globbuff.zig");
+const subpxframe_globbuff = @import("subpxframe_globbuff.zig");
 
 pub fn resolveGlobBuff(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    target: *const subpxframe.SubpxTarget,
-    camera: *const cam.CameraPrepared,
+    target: *const subpxframe_globbuff.SubpxTarget,
+    camera: *const cameraprojops.CameraPrepared,
     background_value: F,
     image_out_arr: *ndarray.NDArray(F),
     requested_workers: u16,
@@ -41,8 +41,8 @@ pub fn resolveGlobBuff(
 pub fn resolveRowsGlobBuff(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    target: *const subpxframe.SubpxTarget,
-    camera: *const cam.CameraPrepared,
+    target: *const subpxframe_globbuff.SubpxTarget,
+    camera: *const cameraprojops.CameraPrepared,
     background_value: F,
     image_out_arr: *ndarray.NDArray(F),
     image_y_min: usize,

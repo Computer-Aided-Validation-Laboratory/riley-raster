@@ -14,6 +14,7 @@ import numpy
 
 DIST_NAME = "riley-raster"
 PROJECT_ROOT = Path(__file__).resolve().parent
+subprocess.check_call([sys.executable, str(PROJECT_ROOT / "scripts" / "gen_c_abi.py"), "--check"])
 
 # -----------------------------------------------------------------------------
 # Platform-specific utilities
@@ -99,8 +100,9 @@ class RileyBuildPy(build_py):
         ensure_python_package_data()
         self.run_command("build_ext")
 
-        generated_lib = Path(self.build_lib) / "riley" / "cython" / lib_link_name("c_riley")
-        source_lib = PROJECT_ROOT / "src" / "riley" / "cython" / lib_link_name("c_riley")
+        lib_name = lib_link_name("c_riley")
+        generated_lib = Path(self.build_lib) / "riley" / "cython" / lib_name
+        source_lib = PROJECT_ROOT / "src" / "riley" / "cython" / lib_name
         if generated_lib.is_file():
             shutil.copy2(generated_lib, source_lib)
 
@@ -108,7 +110,8 @@ class RileyBuildPy(build_py):
 
     def _get_data_files(self):
         data_files = super()._get_data_files()
-        generated_lib = Path(self.build_lib) / "riley" / "cython" / lib_link_name("c_riley")
+        lib_name = lib_link_name("c_riley")
+        generated_lib = Path(self.build_lib) / "riley" / "cython" / lib_name
         source_dir = PROJECT_ROOT / "src" / "riley" / "cython"
         if generated_lib.is_file():
             data_files.append((
@@ -134,6 +137,19 @@ class MultiBuildExt(build_ext):
         zig_source = PROJECT_ROOT / "src" / "riley" / "zig" / "c-riley.zig"
         zig_lib_output = out_dir / lib_link_name("c_riley")
 
+        if (
+            zig_lib_output.is_file()
+            and zig_lib_output.stat().st_mtime >= max(
+                path.stat().st_mtime
+                for path in (PROJECT_ROOT / "src" / "riley" / "zig").rglob("*.zig")
+            )
+        ):
+            print(80 * "-")
+            print("Zig: Shared Library is up to date, skipping rebuild.")
+            print(f"Target: {zig_lib_output}")
+            print(80 * "-")
+            return
+
         print(80 * "-")
         print("Zig: Building Shared Library")
         print(f"Source: {zig_source}")
@@ -156,7 +172,8 @@ class MultiBuildExt(build_ext):
                 macos_target_arch = "x86_64"
             else:
                 raise RuntimeError(
-                    f"Unsupported macOS architecture for Zig build: {macos_arch}"
+                    "Unsupported macOS architecture for Zig build: "
+                    f"{macos_arch}"
                 )
             zig_target_args = ["-target", f"{macos_target_arch}-macos.11.0"]
             zig_soname_args = [
@@ -288,7 +305,9 @@ is_darwin = system == "darwin"
 # Configure compiler flags based on OS to support both MSVC and GCC/Clang
 if is_windows:
     cython_compile_args = ["/fp:fast", "/O2"]
-    cython_link_args = ["msvcrt.lib", "ucrt.lib", "vcruntime.lib", "kernel32.lib",]
+    cython_link_args = [
+        "msvcrt.lib", "ucrt.lib", "vcruntime.lib", "kernel32.lib",
+    ]
     runtime_lib_dirs = []
 elif is_darwin:
     cython_compile_args = ["-ffast-math", "-O3"]

@@ -12,16 +12,20 @@ import argparse
 import importlib
 
 _DEMO_FUNCS = {
-    "demo0_quickstart": "riley.pydemos.demo0_quickstart",
-    "demo1_sphere": "riley.pydemos.demo1_sphere",
-    "demo2a_rabbits_mono": "riley.pydemos.demo2a_rabbits_mono",
-    "demo2b_rabbits_rgb": "riley.pydemos.demo2b_rabbits_rgb",
-    "demo2c_rabbits_fields": "riley.pydemos.demo2c_rabbits_fields",
-    "demo3_dicuq": "riley.pydemos.demo3_dicuq",
-    "demo3_dicuq_from_exodus": "riley.pydemos.demo3_dicuq_from_exodus",
-    "demo4_stereocal": "riley.pydemos.demo4_stereocal",
-    "demo5_cameramodels": "riley.pydemos.demo5_cameramodels",
-    "demo6_featurezoo": "riley.pydemos.demo6_featurezoo",
+    "demo00_quickstart": "riley.pydemos.demo00_quickstart",
+    "demo01_sphere": "riley.pydemos.demo01_sphere",
+    "demo02a_rabbits_mono": "riley.pydemos.demo02a_rabbits_mono",
+    "demo02b_rabbits_rgb": "riley.pydemos.demo02b_rabbits_rgb",
+    "demo02c_rabbits_fields": "riley.pydemos.demo02c_rabbits_fields",
+    "demo03_dicuq": "riley.pydemos.demo03_dicuq",
+    "demo03_dicuq_from_exodus": "riley.pydemos.demo03_dicuq_from_exodus",
+    "demo04_stereocal": "riley.pydemos.demo04_stereocal",
+    "demo05_cameramodels": "riley.pydemos.demo05_cameramodels",
+    "demo06_featurezoo": "riley.pydemos.demo06_featurezoo",
+    "demo07_shaderpipe_quickstart": "riley.pydemos.demo07_shaderpipe_quickstart",
+    "demo08_shaderpipe_gallery": "riley.pydemos.demo08_shaderpipe_gallery",
+    "demo09_diciruq": "riley.pydemos.demo09_diciruq",
+    "demo10_sphere_lit": "riley.pydemos.demo10_sphere_lit",
 }
 
 
@@ -36,7 +40,7 @@ def main() -> None:
 
     if args.command is None:
         parser.error(
-            "expected a command such as 'demo0_quickstart' or 'test'. "
+            "expected a command such as 'demo00_quickstart' or 'test'. "
             f"Available demos: {', '.join(sorted(_DEMO_FUNCS))}.",
         )
 

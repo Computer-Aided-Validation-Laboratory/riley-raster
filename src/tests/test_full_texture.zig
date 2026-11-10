@@ -6,9 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const common_test = @import("../dev_support/tests.zig");
 const fullcase_tex = @import("fullcase_texture.zig");
@@ -20,10 +22,11 @@ const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const riley = @import("../riley/zig/riley.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 const Timestamp = std.Io.Clock.Timestamp;
 const FullTexSamplingCase = fullcase_tex.FullTexSamplingCase;
 const all_tex_samp_configs = fullcase_tex.all_tex_samp_configs;
@@ -49,12 +52,15 @@ pub fn runFullTexCaseTest(
         .{ gold_dir_root, case_dir_name },
     );
 
-    const meshes = fullcase_tex.buildTexSamplingCaseMeshes(
+    const meshes = try fullcase_tex.buildTexSamplingCaseMeshes(
+        aa,
         mesh_type,
         prep,
         textures,
         case,
     );
+    var selected_camera = prep.camera_input;
+    selected_camera.render_format = if (case.is_rgb) .rgb else .mono;
 
     var run_config = config;
     run_config.save_strategy = .memory;
@@ -64,7 +70,7 @@ pub fn runFullTexCaseTest(
     const result = try riley.raster(
         aa,
         io,
-        &[_]CameraInput{prep.camera_input},
+        &[_]CameraInput{selected_camera},
         &meshes,
         run_config,
         null,
@@ -221,7 +227,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
 }
 
 fn runTexSampConfigContractTests() !void {
-    const invalid_configs = [_]texops.TexSampConfig{
+    const invalid_configs = [_]textypes.TexSampConfig{
         .{ .sample = .nearest, .mode = .lut },
         .{ .sample = .nearest, .mode = .lut_lerp },
         .{ .sample = .linear, .mode = .lut },
@@ -230,13 +236,13 @@ fn runTexSampConfigContractTests() !void {
 
     for (invalid_configs) |cfg_invalid| {
         try std.testing.expect(!cfg_invalid.isValid());
-        const sanitized = cfg_invalid.sanitize();
-        try std.testing.expect(sanitized.isValid());
-        try std.testing.expectEqual(texops.TexSampMode.direct, sanitized.mode);
-        try std.testing.expectEqual(cfg_invalid.sample, sanitized.sample);
+        const sanitised = cfg_invalid.sanitise();
+        try std.testing.expect(sanitised.isValid());
+        try std.testing.expectEqual(textypes.TexSampMode.direct, sanitised.mode);
+        try std.testing.expectEqual(cfg_invalid.sample, sanitised.sample);
     }
 
-    const valid_configs = [_]texops.TexSampConfig{
+    const valid_configs = [_]textypes.TexSampConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
@@ -247,16 +253,16 @@ fn runTexSampConfigContractTests() !void {
 
     for (valid_configs) |cfg_valid| {
         try std.testing.expect(cfg_valid.isValid());
-        const sanitized = cfg_valid.sanitize();
-        try std.testing.expectEqual(cfg_valid.mode, sanitized.mode);
-        try std.testing.expectEqual(cfg_valid.sample, sanitized.sample);
+        const sanitised = cfg_valid.sanitise();
+        try std.testing.expectEqual(cfg_valid.mode, sanitised.mode);
+        try std.testing.expectEqual(cfg_valid.sample, sanitised.sample);
     }
 }
 
 fn runUVBoundaryDirectSamplingTests(allocator: std.mem.Allocator) !void {
     @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
 
-    var tex_u8 = try texops.Tex(u8, 1).init(allocator, 4, 4);
+    var tex_u8 = try textypes.TexDataFix(u8, 1).init(allocator, 4, 4);
     defer tex_u8.deinit(allocator);
     for (0..4) |rr| {
         for (0..4) |cc| {
@@ -265,7 +271,7 @@ fn runUVBoundaryDirectSamplingTests(allocator: std.mem.Allocator) !void {
         }
     }
 
-    var tex_f64 = try texops.Tex(F, 3).init(allocator, 4, 4);
+    var tex_f64 = try textypes.TexDataFix(F, 3).init(allocator, 4, 4);
     defer tex_f64.deinit(allocator);
     for (0..4) |rr| {
         for (0..4) |cc| {
@@ -430,18 +436,18 @@ fn runUVBoundaryDirectSamplingTests(allocator: std.mem.Allocator) !void {
 fn runSmallTextureFilterSupportTests(allocator: std.mem.Allocator) !void {
     @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
 
-    var tex_1x1 = try texops.Tex(u8, 1).init(allocator, 1, 1);
+    var tex_1x1 = try textypes.TexDataFix(u8, 1).init(allocator, 1, 1);
     defer tex_1x1.deinit(allocator);
     tex_1x1.setVal(0, 0, 0, 180);
 
-    var tex_2x2 = try texops.Tex(u16, 1).init(allocator, 2, 2);
+    var tex_2x2 = try textypes.TexDataFix(u16, 1).init(allocator, 2, 2);
     defer tex_2x2.deinit(allocator);
     tex_2x2.setVal(0, 0, 0, 1000);
     tex_2x2.setVal(0, 0, 1, 2000);
     tex_2x2.setVal(0, 1, 0, 3000);
     tex_2x2.setVal(0, 1, 1, 4000);
 
-    var tex_3x3 = try texops.Tex(F, 1).init(allocator, 3, 3);
+    var tex_3x3 = try textypes.TexDataFix(F, 1).init(allocator, 3, 3);
     defer tex_3x3.deinit(allocator);
     for (0..3) |rr| {
         for (0..3) |cc| {
@@ -516,13 +522,13 @@ fn runUVBoundaryRasterPipelineTests(
         &[_]usize{ nodes_num, 2 },
     );
 
-    var tex_small = try texops.Tex(u8, 1).init(aa, 2, 2);
+    var tex_small = try textypes.TexDataFix(u8, 1).init(aa, 2, 2);
     tex_small.setVal(0, 0, 0, 50);
     tex_small.setVal(0, 0, 1, 120);
     tex_small.setVal(0, 1, 0, 180);
     tex_small.setVal(0, 1, 1, 240);
 
-    const test_configs = [_]texops.TexSampConfig{
+    const test_configs = [_]textypes.TexSampConfig{
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
         .{ .sample = .lanczos3, .mode = .lut },
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
@@ -535,14 +541,13 @@ fn runUVBoundaryRasterPipelineTests(
                 .coords = prep.sphere_coords,
                 .connect = prep.sphere_connect,
                 .disp = prep.sphere_disp,
-                .shader = .{
+                .shaders = .{ .mono_direct = .{
                     .tex_u8 = .{
                         .uvs = out_of_range_uvs,
                         .tex = tex_small,
                         .samp_cfg = samp_cfg,
-                        .normal_type = .none,
                     },
-                },
+                } },
             },
         };
 

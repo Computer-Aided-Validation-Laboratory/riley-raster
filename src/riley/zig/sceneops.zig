@@ -6,12 +6,13 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const fieldtypes = @import("fieldtypes.zig");
+const meshtypes = @import("meshtypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
-const matrix = @import("matstack.zig");
-const meshio = @import("meshio.zig");
+const matstack = @import("matstack.zig");
 const rotation = @import("rotation.zig");
-const vec = @import("vecstack.zig");
+const vecstack = @import("vecstack.zig");
 const F = buildconfig.F;
 
 // --------------------------------------------------------------------------------------
@@ -122,15 +123,15 @@ pub fn selectEvenlySpacedFrameIndices(
 /// The caller must deinit the returned field with outer_alloc.
 pub fn selectFieldFrames(
     outer_alloc: std.mem.Allocator,
-    field: *const meshio.Field,
+    field: *const fieldtypes.Field,
     frame_indices: []const usize,
-) !meshio.Field {
+) !fieldtypes.Field {
     if (frame_indices.len == 0) return error.NoFrames;
     for (frame_indices) |source_frame| {
         if (source_frame >= field.getTimeN()) return error.FrameOutOfBounds;
     }
 
-    var selected = try meshio.Field.initAlloc(
+    var selected = try fieldtypes.Field.initAlloc(
         outer_alloc,
         frame_indices.len,
         field.getCoordN(),
@@ -179,9 +180,9 @@ pub fn meshGroupLen(group: MeshGroup) usize {
 
 pub fn duplicateCoords(
     allocator: std.mem.Allocator,
-    coords: meshio.Coords,
-) !meshio.Coords {
-    const coords_dup = try meshio.Coords.initAlloc(
+    coords: meshtypes.Coords,
+) !meshtypes.Coords {
+    const coords_dup = try meshtypes.Coords.initAlloc(
         allocator,
         coords.mat.rows_num,
     );
@@ -265,7 +266,7 @@ pub fn appendMeshGroupDuplicate(
     return meshGroupSpan(group_start, mesh_dups.len);
 }
 
-pub fn boundsForCoords(coords: *const meshio.Coords) Bounds3D {
+pub fn boundsForCoords(coords: *const meshtypes.Coords) Bounds3D {
     std.debug.assert(coords.mat.rows_num > 0);
 
     var bounds = Bounds3D{
@@ -329,8 +330,8 @@ pub fn boundsForMeshGroup(
     return bounds;
 }
 
-pub fn meanCenter(coords: *const meshio.Coords) vec.Vec3F {
-    var center_world = vec.Vec3F.initZeros();
+pub fn meanCenter(coords: *const meshtypes.Coords) vecstack.Vec3F {
+    var center_world = vecstack.Vec3F.initZeros();
     const coords_num = coords.mat.rows_num;
 
     for (0..coords_num) |nn| {
@@ -344,9 +345,9 @@ pub fn meanCenter(coords: *const meshio.Coords) vec.Vec3F {
     );
 }
 
-pub fn boundsCenter(coords: *const meshio.Coords) vec.Vec3F {
+pub fn boundsCenter(coords: *const meshtypes.Coords) vecstack.Vec3F {
     const bounds = boundsForCoords(coords);
-    return vec.initVec3(
+    return vecstack.initVec3(
         F,
         bounds.center[0],
         bounds.center[1],
@@ -354,9 +355,9 @@ pub fn boundsCenter(coords: *const meshio.Coords) vec.Vec3F {
     );
 }
 
-pub fn boundsCenterOverMeshes(meshes: anytype) vec.Vec3F {
+pub fn boundsCenterOverMeshes(meshes: anytype) vecstack.Vec3F {
     const bounds = boundsForMeshes(meshes);
-    return vec.initVec3(
+    return vecstack.initVec3(
         F,
         bounds.center[0],
         bounds.center[1],
@@ -366,11 +367,11 @@ pub fn boundsCenterOverMeshes(meshes: anytype) vec.Vec3F {
 
 pub fn extentInRotatedFrame(
     cam_rot: rotation.Rotation,
-    coords_world: *const meshio.Coords,
+    coords_world: *const meshtypes.Coords,
 ) [2]F {
     std.debug.assert(coords_world.mat.rows_num > 0);
 
-    const world_to_cam_mat = matrix.Mat33Ops.inv(F, cam_rot.matrix);
+    const world_to_cam_mat = matstack.Mat33Ops.inv(F, cam_rot.matrix);
     var coord_cam = world_to_cam_mat.mulVec(coords_world.getVec3(0));
     var bb_max = [_]F{ coord_cam.get(0), coord_cam.get(1) };
     var bb_min = [_]F{ coord_cam.get(0), coord_cam.get(1) };
@@ -396,7 +397,7 @@ pub fn extentInRotatedFrameOverMeshes(
 ) [2]F {
     std.debug.assert(meshes.len > 0);
 
-    const world_to_cam_mat = matrix.Mat33Ops.inv(F, cam_rot.matrix);
+    const world_to_cam_mat = matstack.Mat33Ops.inv(F, cam_rot.matrix);
     var is_first = true;
     var bb_max = [_]F{ 0.0, 0.0 };
     var bb_min = [_]F{ 0.0, 0.0 };
@@ -426,12 +427,12 @@ pub fn extentInRotatedFrameOverMeshes(
 }
 
 pub fn transformCoords(
-    transform: matrix.Mat44F,
-    coords: *meshio.Coords,
+    transform: matstack.Mat44F,
+    coords: *meshtypes.Coords,
 ) void {
     for (0..coords.mat.rows_num) |nn| {
         const coord_world = coords.getVec3(nn);
-        const coord_out = matrix.Mat44Ops.mulVec3(F, transform, coord_world);
+        const coord_out = matstack.Mat44Ops.mulVec3(F, transform, coord_world);
         coords.mat.set(nn, 0, coord_out.get(0));
         coords.mat.set(nn, 1, coord_out.get(1));
         coords.mat.set(nn, 2, coord_out.get(2));
@@ -439,14 +440,14 @@ pub fn transformCoords(
 }
 
 pub fn moveMesh(
-    transform: matrix.Mat44F,
+    transform: matstack.Mat44F,
     mesh: anytype,
 ) void {
     transformCoords(transform, &mesh.coords);
 }
 
 pub fn moveMeshGroup(
-    transform: matrix.Mat44F,
+    transform: matstack.Mat44F,
     meshes: anytype,
     group: MeshGroup,
 ) void {
@@ -459,7 +460,7 @@ pub fn moveMeshGroup(
 }
 
 pub fn translateCoords(
-    coords: *meshio.Coords,
+    coords: *meshtypes.Coords,
     translation: [3]F,
 ) void {
     for (0..coords.mat.rows_num) |nn| {
@@ -499,7 +500,7 @@ pub fn translateMeshGroup(
 }
 
 pub fn centerCoordsAt(
-    coords: *meshio.Coords,
+    coords: *meshtypes.Coords,
     targ_center: [3]F,
 ) void {
     const bounds = boundsForCoords(coords);
@@ -531,7 +532,7 @@ pub fn centerMeshGroupAt(
 }
 
 pub fn positionCoordsRelative(
-    coords: *meshio.Coords,
+    coords: *meshtypes.Coords,
     reference_bounds: Bounds3D,
     reference_anchor: [3]AxisAnchor,
     moving_anchor: [3]AxisAnchor,
@@ -905,7 +906,7 @@ test "even frame selection retains short sequences" {
 
 test "field selection copies the requested source frames" {
     const alloc = std.testing.allocator;
-    var field = try meshio.Field.initAlloc(alloc, 4, 2, 1);
+    var field = try fieldtypes.Field.initAlloc(alloc, 4, 2, 1);
     defer field.deinit(alloc);
     for (0..4) |frame_idx| {
         for (0..2) |node_idx| {
@@ -947,7 +948,7 @@ test "frame selection handles empty inputs and single frames" {
 
 test "field frame selection preserves ordering and cleans up invalid selections" {
     const alloc = std.testing.allocator;
-    var field = try meshio.Field.initAlloc(alloc, 2, 1, 2);
+    var field = try fieldtypes.Field.initAlloc(alloc, 2, 1, 2);
     defer field.deinit(alloc);
     field.array.set(&.{ 0, 0, 0 }, 10.0);
     field.array.set(&.{ 0, 0, 1 }, 11.0);
@@ -968,7 +969,7 @@ test "field frame selection preserves ordering and cleans up invalid selections"
 }
 
 test "boundsForCoords and meanCenter" {
-    var coords = try meshio.Coords.initAlloc(std.testing.allocator, 3);
+    var coords = try meshtypes.Coords.initAlloc(std.testing.allocator, 3);
     defer std.testing.allocator.free(coords.mem);
 
     coords.mat.set(0, 0, -1.0);
@@ -995,13 +996,13 @@ test "boundsForCoords and meanCenter" {
 
 test "boundsForMeshGroup supps explicit indices" {
     const TestMesh = struct {
-        coords: meshio.Coords,
+        coords: meshtypes.Coords,
     };
 
-    var mesh_coords = [_]meshio.Coords{
-        try meshio.Coords.initAlloc(std.testing.allocator, 1),
-        try meshio.Coords.initAlloc(std.testing.allocator, 1),
-        try meshio.Coords.initAlloc(std.testing.allocator, 1),
+    var mesh_coords = [_]meshtypes.Coords{
+        try meshtypes.Coords.initAlloc(std.testing.allocator, 1),
+        try meshtypes.Coords.initAlloc(std.testing.allocator, 1),
+        try meshtypes.Coords.initAlloc(std.testing.allocator, 1),
     };
     defer {
         for (mesh_coords) |coords| {
@@ -1035,7 +1036,7 @@ test "boundsForMeshGroup supps explicit indices" {
 }
 
 test "translateCoords and centerCoordsAt" {
-    var coords = try meshio.Coords.initAlloc(std.testing.allocator, 2);
+    var coords = try meshtypes.Coords.initAlloc(std.testing.allocator, 2);
     defer std.testing.allocator.free(coords.mem);
 
     coords.mat.set(0, 0, 0.0);
@@ -1056,7 +1057,7 @@ test "translateCoords and centerCoordsAt" {
 }
 
 test "centerCoordsAt moves bounds to nonzero target without deforming coordinates" {
-    var coords = try meshio.Coords.initAlloc(std.testing.allocator, 3);
+    var coords = try meshtypes.Coords.initAlloc(std.testing.allocator, 3);
     defer std.testing.allocator.free(coords.mem);
     const original = [3][3]F{
         .{ -2.0, 1.0, -5.0 },
@@ -1086,12 +1087,12 @@ test "centerCoordsAt moves bounds to nonzero target without deforming coordinate
 
 test "overlapMeshGroupBounds overlaps selected axes" {
     const TestMesh = struct {
-        coords: meshio.Coords,
+        coords: meshtypes.Coords,
     };
 
-    var left_coords = try meshio.Coords.initAlloc(std.testing.allocator, 2);
+    var left_coords = try meshtypes.Coords.initAlloc(std.testing.allocator, 2);
     defer std.testing.allocator.free(left_coords.mem);
-    var right_coords = try meshio.Coords.initAlloc(std.testing.allocator, 2);
+    var right_coords = try meshtypes.Coords.initAlloc(std.testing.allocator, 2);
     defer std.testing.allocator.free(right_coords.mem);
 
     left_coords.mat.set(0, 0, -1.0);
@@ -1135,14 +1136,14 @@ test "overlapMeshGroupBounds overlaps selected axes" {
 }
 
 test "transformCoords applies affine transform" {
-    var coords = try meshio.Coords.initAlloc(std.testing.allocator, 1);
+    var coords = try meshtypes.Coords.initAlloc(std.testing.allocator, 1);
     defer std.testing.allocator.free(coords.mem);
 
     coords.mat.set(0, 0, 1.0);
     coords.mat.set(0, 1, 2.0);
     coords.mat.set(0, 2, 3.0);
 
-    var transform = matrix.Mat44F.initIdentity();
+    var transform = matstack.Mat44F.initIdentity();
     transform.set(0, 0, 2.0);
     transform.set(1, 1, 3.0);
     transform.set(2, 2, 4.0);

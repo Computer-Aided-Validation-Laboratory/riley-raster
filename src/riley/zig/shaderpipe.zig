@@ -1,0 +1,1815 @@
+// --------------------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: scepticalrabbit (Lloyd Fletcher)
+// --------------------------------------------------------------------------------------
+const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
+const VecSF = buildconfig.VecSF;
+const VecSB = buildconfig.VecSB;
+const S = buildconfig.SimdWidth;
+const pipe_cfg = buildconfig.config.shaderpipe;
+
+// --------------------------------------------------------------------------------------
+// Physical Constants (SI Units) and Lookup Limits
+// --------------------------------------------------------------------------------------
+
+const stefan_boltzmann_constant: F = 5.670374419e-8; // W/(m² K⁴)
+const planck_constant: F = 6.62607015e-34; // J s
+const speed_of_light: F = 299792458.0; // m/s
+const boltzmann_constant: F = 1.380649e-23; // J/K
+const kelvin_celsius_offset: F = 273.15;
+const max_radiance_lookup_intervals: usize = 65535;
+
+// --------------------------------------------------------------------------------------
+// Shader Pipe Stages
+// --------------------------------------------------------------------------------------
+
+pub const GreyToEmissivityStage = struct {
+    register_source: Register,
+    register_dest: Register,
+    emissivity_at_black: F,
+    emissivity_at_white: F,
+    greylevel_at_black: F = 0,
+    greylevel_at_white: F = 1,
+};
+
+pub const ClampStage = struct {
+    register_source: Register,
+    register_dest: Register,
+    lower: F,
+    upper: F,
+};
+
+pub const AffineMapStage = struct {
+    register_source: Register,
+    register_dest: Register,
+    gain: F,
+    offset: F,
+
+    pub inline fn apply(self: @This(), outputs: anytype) void {
+        const T = @TypeOf(outputs.get(self.register_source));
+        outputs.set(self.register_dest, outputs.get(self.register_source) * splat(T, self.gain) +
+            splat(T, self.offset));
+    }
+};
+
+pub const LUTMapStage = struct {
+    register_source: Register,
+    register_dest: Register,
+    lookup: LookupTable,
+
+    pub inline fn apply(self: @This(), outputs: anytype, active: anytype) void {
+        const T = @TypeOf(outputs.get(self.register_source));
+        if (T == F) {
+            outputs.set(self.register_dest, self.lookup.sample(outputs.get(self.register_source)));
+        } else {
+            outputs.set(self.register_dest, self.lookup.sampleSIMD(
+                outputs.get(self.register_source),
+                active,
+            ));
+        }
+    }
+};
+
+pub const BlendWeight = union(enum) { fixed: F, register: Register };
+
+pub const BlendStage = struct {
+    a: Register,
+    b: Register,
+    register_dest: Register,
+    alpha: BlendWeight,
+
+    pub inline fn apply(self: @This(), outputs: anytype) void {
+        const T = @TypeOf(outputs.get(self.a));
+        const alpha = switch (self.alpha) {
+            .fixed => |value| splat(T, value),
+            .register => |register_ref| outputs.get(register_ref),
+        };
+        const a = outputs.get(self.a);
+        const b = outputs.get(self.b);
+        outputs.set(self.register_dest, (splat(T, 1) - alpha) * a + alpha * b);
+    }
+};
+
+pub const NormaliseStage = struct {
+    register_source: Register,
+    register_dest: Register,
+    components: u8,
+
+    pub inline fn apply(self: @This(), outputs: anytype) void {
+        const T = @TypeOf(outputs.get(self.register_source));
+
+        var values: [3]T = undefined;
+        var squared: T = splat(T, 0);
+        for (0..self.components) |i| {
+            var register_ref = self.register_source;
+            register_ref.index += @intCast(i);
+            values[i] = outputs.get(register_ref);
+            squared += values[i] * values[i];
+        }
+
+        if (T == F) {
+            const inv_norm: F = if (squared == 0) 0 else 1 / @sqrt(squared);
+            for (0..self.components) |i| {
+                var dest = self.register_dest;
+                dest.index += @intCast(i);
+                outputs.set(dest, values[i] * inv_norm);
+            }
+        } else {
+            const positive = squared > splat(T, 0);
+            const safe_squared = @select(F, positive, squared, splat(T, 1));
+            const inv_norm = @select(F, positive, splat(T, 1) / @sqrt(safe_squared), splat(T, 0));
+            for (0..self.components) |i| {
+                var dest = self.register_dest;
+                dest.index += @intCast(i);
+                outputs.set(dest, values[i] * inv_norm);
+            }
+        }
+    }
+};
+
+// --------------------------------------------------------------------------------------
+// Registers for Pipe Stage Outputs
+// --------------------------------------------------------------------------------------
+
+pub const RegisterKind = enum { channel, field, parameter, constant };
+pub const Register = struct { kind: RegisterKind, index: u8 };
+
+pub const identity_channels = blk: {
+    var registers: [buildconfig.config.max_image_channels]Register = undefined;
+    for (&registers, 0..) |*register_ref, index| {
+        register_ref.* = .{ .kind = .channel, .index = @intCast(index) };
+    }
+    break :blk registers;
+};
+
+pub const identity_channels_1: []const Register = identity_channels[0..1];
+pub const identity_channels_3: []const Register = identity_channels[0..3];
+
+pub fn identityRegisters(channels: u8) []const Register {
+    std.debug.assert(channels <= buildconfig.config.max_image_channels);
+    return identity_channels[0..channels];
+}
+
+pub fn RegistersOutput(comptime T: type) type {
+    return struct {
+        channel: [pipe_cfg.max_registers]T = undefined,
+        field: [pipe_cfg.max_registers]T = undefined,
+        parameter: [pipe_cfg.max_registers]T = undefined,
+
+        pub inline fn get(self: *const @This(), register_ref: Register) T {
+            return switch (register_ref.kind) {
+                .channel => self.channel[register_ref.index],
+                .field => self.field[register_ref.index],
+                .parameter => self.parameter[register_ref.index],
+                .constant => unreachable,
+            };
+        }
+
+        pub inline fn set(self: *@This(), register_ref: Register, value: T) void {
+            switch (register_ref.kind) {
+                .channel => self.channel[register_ref.index] = value,
+                .field => self.field[register_ref.index] = value,
+                .parameter => self.parameter[register_ref.index] = value,
+                .constant => unreachable,
+            }
+        }
+    };
+}
+
+pub const RegistersOutputScalar = RegistersOutput(F);
+pub const RegistersOutputSIMD = RegistersOutput(buildconfig.VecSF);
+
+pub const RegistersWritten = struct {
+    const Mask = std.meta.Int(.unsigned, pipe_cfg.max_registers);
+    channel: Mask = 0,
+    field: Mask = 0,
+    parameter: Mask = 0,
+
+    pub fn isWritten(self: RegistersWritten, register_ref: Register) bool {
+        if (register_ref.index >= pipe_cfg.max_registers or register_ref.kind == .constant) return false;
+        const mask: Mask = @as(Mask, 1) << @intCast(register_ref.index);
+        return switch (register_ref.kind) {
+            .channel => self.channel & mask != 0,
+            .field => self.field & mask != 0,
+            .parameter => self.parameter & mask != 0,
+            .constant => unreachable,
+        };
+    }
+
+    pub fn recordWrite(self: *RegistersWritten, register_ref: Register) !void {
+        if (register_ref.index >= pipe_cfg.max_registers or register_ref.kind == .constant) return error.InvalidRegister;
+        if (self.isWritten(register_ref)) return error.RepeatedWriter;
+        const mask: Mask = @as(Mask, 1) << @intCast(register_ref.index);
+        switch (register_ref.kind) {
+            .channel => self.channel |= mask,
+            .field => self.field |= mask,
+            .parameter => self.parameter |= mask,
+            .constant => unreachable,
+        }
+    }
+};
+
+// --------------------------------------------------------------------------------------
+// Resolver Programs
+// --------------------------------------------------------------------------------------
+
+pub const ResolverOp = union(enum) {
+    load: Register,
+    add,
+    subtract,
+    multiply,
+    divide,
+    power4,
+    clamp01,
+    clamp: struct { lower: F, upper: F },
+    lut: u8,
+    store: u8,
+};
+
+pub const ResolverProgramInput = struct {
+    operations: []const ResolverOp,
+    constants: []const F = &.{},
+    lookups: []const LookupTable = &.{},
+
+    pub fn validate(self: ResolverProgramInput, written: RegistersWritten, channels: u8) !void {
+        if (channels == 0 or
+            channels > buildconfig.config.max_image_channels or
+            self.operations.len == 0 or
+            self.operations.len > pipe_cfg.max_ops or
+            self.constants.len > pipe_cfg.max_registers)
+            return error.InvalidProgram;
+
+        for (self.constants) |value| {
+            if (!std.math.isFinite(value)) return error.InvalidConstant;
+        }
+
+        for (self.lookups) |lut| try lut.validate();
+
+        var depth: usize = 0;
+        var stored: u16 = 0;
+        for (self.operations) |op| switch (op) {
+            .load => |register_ref| {
+                if (register_ref.kind == .constant) {
+                    if (register_ref.index >= self.constants.len) return error.InvalidRegister;
+                } else if (!written.isWritten(register_ref)) return error.UnwrittenSlot;
+                depth += 1;
+                if (depth > pipe_cfg.max_stack) return error.InvalidProgram;
+            },
+            .add, .subtract, .multiply, .divide => {
+                if (depth < 2) return error.InvalidProgram;
+                depth -= 1;
+            },
+            .power4, .clamp01 => {
+                if (depth < 1) return error.InvalidProgram;
+            },
+            .clamp => |bounds| {
+                if (depth < 1 or !std.math.isFinite(bounds.lower) or
+                    !std.math.isFinite(bounds.upper) or bounds.lower > bounds.upper)
+                    return error.InvalidProgram;
+            },
+            .lut => |idx| {
+                if (depth < 1 or idx >= self.lookups.len) return error.InvalidProgram;
+            },
+            .store => |idx| {
+                if (depth != 1 or idx >= channels) return error.InvalidProgram;
+                const bit: u16 = @as(u16, 1) << @intCast(idx);
+                if (stored & bit != 0) return error.InvalidProgram;
+                stored |= bit;
+                depth = 0;
+            },
+        };
+        if (depth != 0 or stored != (@as(u16, 1) << @intCast(channels)) - 1)
+            return error.InvalidProgram;
+    }
+};
+
+pub const ResolverProgramPrepared = struct {
+    operations: []const ResolverOp,
+    constants: []const F,
+    lookups: []const LookupTablePrepared,
+
+    pub fn evaluate(self: ResolverProgramPrepared, inputs: anytype, out: anytype) void {
+        const T = @TypeOf(out.*[0]);
+        var stack: [pipe_cfg.max_stack]T = undefined;
+        var depth: usize = 0;
+        for (self.operations) |op| switch (op) {
+            .load => |register_ref| {
+                stack[depth] = if (register_ref.kind == .constant)
+                    splat(T, self.constants[register_ref.index])
+                else
+                    inputs.get(register_ref);
+                depth += 1;
+            },
+            .add => {
+                depth -= 1;
+                stack[depth - 1] += stack[depth];
+            },
+            .subtract => {
+                depth -= 1;
+                stack[depth - 1] -= stack[depth];
+            },
+            .multiply => {
+                depth -= 1;
+                stack[depth - 1] *= stack[depth];
+            },
+            .divide => {
+                depth -= 1;
+                stack[depth - 1] /= stack[depth];
+            },
+            .power4 => {
+                const v = stack[depth - 1];
+                stack[depth - 1] = (v * v) * (v * v);
+            },
+            .clamp01 => {
+                stack[depth - 1] = @min(splat(T, 1), @max(splat(T, 0), stack[depth - 1]));
+            },
+            .clamp => |bounds| {
+                const lower = splat(T, bounds.lower);
+                const upper = splat(T, bounds.upper);
+                stack[depth - 1] = @min(upper, @max(lower, stack[depth - 1]));
+            },
+            .lut => |idx| {
+                if (T == F) {
+                    stack[depth - 1] = self.lookups[idx].sample(stack[depth - 1]);
+                } else {
+                    stack[depth - 1] = self.lookups[idx].sampleSIMD(
+                        stack[depth - 1],
+                        @splat(true),
+                    );
+                }
+            },
+            .store => |idx| {
+                out.*[idx] = stack[0];
+                depth = 0;
+            },
+        };
+    }
+};
+
+// --------------------------------------------------------------------------------------
+// Output Resolution
+// --------------------------------------------------------------------------------------
+
+pub const Modulate = struct {
+    register_sources: []const Register,
+    factor: Register,
+    ambient: F = 0,
+    gain: F = 1,
+};
+
+pub const WeightedSum = struct {
+    register_sources: []const Register,
+    weights: []const F,
+};
+
+pub const GreybodyBolometric = struct {
+    temperature: Register,
+    emissivity: Register,
+};
+
+pub const ResolverInput = union(enum) {
+    identity: []const Register,
+    sum: []const Register,
+    modulate: Modulate,
+    weighted_sum: WeightedSum,
+    greybody_bolometric: GreybodyBolometric,
+    greybody_band: struct {
+        temperature: Register,
+        emissivity: Register,
+        radiance: LookupTable,
+    },
+    greybody_band_apparent_c: struct {
+        temperature: Register,
+        emissivity: Register,
+        radiance: LookupTable,
+        ambient_k: F,
+    },
+    expression: ResolverProgramInput,
+
+    pub fn validate(
+        self: ResolverInput,
+        written: RegistersWritten,
+        constants: []const F,
+        channels: u8,
+    ) !void {
+        if (channels == 0 or channels > buildconfig.config.max_image_channels) {
+            return error.InvalidChannels;
+        }
+        switch (self) {
+            .identity => |registers| {
+                if (registers.len != channels) return error.InvalidChannels;
+                for (registers) |register_ref| {
+                    if (register_ref.kind != .channel) return error.InvalidResolver;
+                    try checkRegister(register_ref, written, constants.len);
+                }
+            },
+            .sum => |registers| {
+                if (registers.len < channels or registers.len % channels != 0) {
+                    return error.InvalidChannels;
+                }
+                for (registers) |register_ref| {
+                    if (register_ref.kind != .channel) return error.InvalidResolver;
+                    try checkRegister(register_ref, written, constants.len);
+                }
+            },
+            .modulate => |m| {
+                if (m.register_sources.len != channels or !std.math.isFinite(m.ambient) or
+                    !std.math.isFinite(m.gain)) return error.InvalidResolver;
+                for (m.register_sources) |register_ref| {
+                    if (register_ref.kind != .channel) return error.InvalidResolver;
+                    try checkRegister(register_ref, written, constants.len);
+                }
+                if (m.factor.kind != .parameter) return error.InvalidResolver;
+                try checkRegister(m.factor, written, constants.len);
+            },
+            .weighted_sum => |w| {
+                if (w.register_sources.len < channels or w.register_sources.len % channels != 0 or
+                    w.register_sources.len != w.weights.len) return error.InvalidResolver;
+                for (w.register_sources) |register_ref| {
+                    if (register_ref.kind != .channel) return error.InvalidResolver;
+                    try checkRegister(register_ref, written, constants.len);
+                }
+                for (w.weights) |weight| {
+                    if (!std.math.isFinite(weight)) return error.InvalidResolver;
+                }
+            },
+            .greybody_bolometric => |g| {
+                if (channels != 1 or g.temperature.kind != .field or
+                    g.emissivity.kind != .parameter) return error.InvalidResolver;
+                try checkRegister(g.temperature, written, constants.len);
+                try checkRegister(g.emissivity, written, constants.len);
+            },
+            .greybody_band => |g| {
+                if (channels != 1 or g.temperature.kind != .field or
+                    g.emissivity.kind != .parameter) return error.InvalidResolver;
+                try checkRegister(g.temperature, written, constants.len);
+                try checkRegister(g.emissivity, written, constants.len);
+                try g.radiance.validate();
+            },
+            .greybody_band_apparent_c => |g| {
+                if (channels != 1 or
+                    g.temperature.kind != .field or
+                    g.emissivity.kind != .parameter or
+                    !std.math.isFinite(g.ambient_k))
+                {
+                    return error.InvalidResolver;
+                }
+                try checkRegister(g.temperature, written, constants.len);
+                try checkRegister(g.emissivity, written, constants.len);
+                try g.radiance.validate();
+                const num_vals = @as(F, @floatFromInt(g.radiance.values.len - 1));
+                const last_k = g.radiance.first + g.radiance.step * num_vals;
+                if (g.ambient_k < g.radiance.first or g.ambient_k > last_k) {
+                    return error.InvalidResolver;
+                }
+                for (1..g.radiance.values.len) |ii| {
+                    if (g.radiance.values[ii] <= g.radiance.values[ii - 1]) {
+                        return error.InvalidResolver;
+                    }
+                }
+            },
+            .expression => |p| try p.validate(written, channels),
+        }
+    }
+};
+
+pub fn resolverIdentity(channels: u8) ResolverInput {
+    return .{ .identity = identityRegisters(channels) };
+}
+
+pub const ResolverPrepared = union(enum) {
+    identity: []const Register,
+    sum: []const Register,
+    modulate: Modulate,
+    weighted_sum: WeightedSum,
+    greybody_bolometric: GreybodyBolometric,
+    greybody_band: struct {
+        temperature: Register,
+        emissivity: Register,
+        radiance: LookupTablePrepared,
+    },
+    greybody_band_apparent_c: struct {
+        temperature: Register,
+        emissivity: Register,
+        radiance: LookupTablePrepared,
+        ambient_radiance: F,
+    },
+    expression: ResolverProgramPrepared,
+
+    pub inline fn evaluate(
+        self: ResolverPrepared,
+        inputs: anytype,
+        constants: []const F,
+        channels: u8,
+        out: anytype,
+    ) void {
+        const T = @TypeOf(out.*[0]);
+        switch (self) {
+            .identity => |registers| for (registers, 0..) |register_ref, ii| {
+                out.*[ii] = readRegister(T, inputs, constants, register_ref);
+            },
+            .sum => |registers| {
+                for (0..channels) |ch| out.*[ch] = splat(T, 0);
+                for (registers, 0..) |register_ref, ii| {
+                    out.*[ii % channels] += readRegister(T, inputs, constants, register_ref);
+                }
+            },
+            .modulate => |m| {
+                const factor = readRegister(T, inputs, constants, m.factor);
+                const ambient_splat = splat(T, m.ambient);
+                const gain_splat = splat(T, m.gain);
+
+                for (m.register_sources, 0..) |register_ref, ii| {
+                    const src_val = readRegister(T, inputs, constants, register_ref);
+                    out.*[ii] = (src_val * factor + ambient_splat) * gain_splat;
+                }
+            },
+            .weighted_sum => |w| {
+                for (0..channels) |ch| out.*[ch] = splat(T, 0);
+
+                for (w.register_sources, w.weights, 0..) |register_ref, weight, ii| {
+                    const src_val = readRegister(T, inputs, constants, register_ref);
+                    out.*[ii % channels] += src_val * splat(T, weight);
+                }
+            },
+            .greybody_bolometric => |g| {
+                const temp = readRegister(T, inputs, constants, g.temperature);
+                const square = temp * temp;
+                const em_val = readRegister(T, inputs, constants, g.emissivity);
+                const stefan_boltzmann = splat(T, stefan_boltzmann_constant);
+                out.*[0] = em_val * stefan_boltzmann * square * square;
+            },
+            .greybody_band => |g| {
+                const radiance = g.radiance;
+                const temp = readRegister(T, inputs, constants, g.temperature);
+
+                var radiant: T = undefined;
+                if (T == F) {
+                    radiant = radiance.sample(temp);
+                } else {
+                    radiant = radiance.sampleSIMD(temp, @splat(true));
+                }
+                out.*[0] = readRegister(T, inputs, constants, g.emissivity) * radiant;
+            },
+            .greybody_band_apparent_c => |g| {
+                const radiance = g.radiance;
+                const temp = readRegister(T, inputs, constants, g.temperature);
+                const emissivity = readRegister(T, inputs, constants, g.emissivity);
+                const ambient = g.ambient_radiance;
+
+                if (T == F) {
+                    const rad_temp = radiance.sample(temp);
+                    const measured = emissivity * rad_temp + (1 - emissivity) * ambient;
+                    out.*[0] = g.radiance.lookup.inverseMonotonic(measured) - kelvin_celsius_offset;
+                } else {
+                    const radiant = radiance.sampleSIMD(temp, @splat(true));
+                    const measured = emissivity * radiant +
+                        (@as(T, @splat(1)) - emissivity) * @as(T, @splat(ambient));
+                    const measured_lanes: [buildconfig.SimdWidth]F = measured;
+                    var result: [buildconfig.SimdWidth]F = undefined;
+                    for (&result, measured_lanes) |*lane, value| {
+                        lane.* = g.radiance.lookup.inverseMonotonic(value) - kelvin_celsius_offset;
+                    }
+                    out.*[0] = @bitCast(result);
+                }
+            },
+            .expression => |p| p.evaluate(inputs, out),
+        }
+    }
+};
+
+pub fn createResolverPreparedFromInput(
+    outer_alloc: std.mem.Allocator,
+    input: ResolverInput,
+) !ResolverPrepared {
+    return switch (input) {
+        .identity => |value| .{ .identity = value },
+        .sum => |value| .{ .sum = value },
+        .modulate => |value| .{ .modulate = value },
+        .weighted_sum => |value| .{ .weighted_sum = value },
+        .greybody_bolometric => |value| .{ .greybody_bolometric = value },
+        .greybody_band => |value| .{ .greybody_band = .{
+            .temperature = value.temperature,
+            .emissivity = value.emissivity,
+            .radiance = LookupTablePrepared.init(value.radiance),
+        } },
+        .greybody_band_apparent_c => |value| .{ .greybody_band_apparent_c = .{
+            .temperature = value.temperature,
+            .emissivity = value.emissivity,
+            .radiance = LookupTablePrepared.init(value.radiance),
+            .ambient_radiance = value.radiance.sample(value.ambient_k),
+        } },
+        .expression => |value| blk: {
+            const lookups = try outer_alloc.alloc(LookupTablePrepared, value.lookups.len);
+            for (lookups, value.lookups) |*prepared, lookup| {
+                prepared.* = LookupTablePrepared.init(lookup);
+            }
+            break :blk .{ .expression = .{
+                .operations = value.operations,
+                .constants = value.constants,
+                .lookups = lookups,
+            } };
+        },
+    };
+}
+
+// --------------------------------------------------------------------------------------
+// Lookup Tables and Spectral Response
+// --------------------------------------------------------------------------------------
+
+pub const LookupTable = struct {
+    first: F,
+    step: F,
+    values: []const F,
+
+    pub fn validate(self: LookupTable) !void {
+        if (!std.math.isFinite(self.first) or !std.math.isFinite(self.step) or
+            self.step <= 0 or self.values.len < 2) return error.InvalidLookup;
+        for (self.values) |value| {
+            if (!std.math.isFinite(value)) return error.InvalidLookup;
+        }
+    }
+
+    pub inline fn sample(self: LookupTable, value: F) F {
+        const max_val = @as(F, @floatFromInt(self.values.len - 1));
+        const x = std.math.clamp((value - self.first) / self.step, 0, max_val);
+        const i: usize = @intFromFloat(x);
+        if (i == self.values.len - 1) return self.values[i];
+        const t = x - @as(F, @floatFromInt(i));
+        return self.values[i] + t * (self.values[i + 1] - self.values[i]);
+    }
+
+    pub inline fn sampleSIMD(self: LookupTable, values: VecSF, active: VecSB) VecSF {
+        const last = self.values.len - 1;
+        return sampleLookupSIMD(self, last, @floatFromInt(last), values, active);
+    }
+
+    pub fn inverseMonotonic(self: LookupTable, value: F) F {
+        if (value <= self.values[0]) return self.first;
+        const last = self.values.len - 1;
+        if (value >= self.values[last]) {
+            return self.first + self.step * @as(F, @floatFromInt(last));
+        }
+        var lo: usize = 0;
+        var hi: usize = last;
+        while (lo + 1 < hi) {
+            const mid = lo + (hi - lo) / 2;
+            if (self.values[mid] <= value) lo = mid else hi = mid;
+        }
+        const fraction = (value - self.values[lo]) / (self.values[hi] - self.values[lo]);
+        return self.first + self.step * (@as(F, @floatFromInt(lo)) + fraction);
+    }
+};
+
+pub const LookupTablePrepared = struct {
+    lookup: LookupTable,
+    last: usize,
+    max_index: F,
+
+    pub fn init(lookup: LookupTable) LookupTablePrepared {
+        return .{
+            .lookup = lookup,
+            .last = lookup.values.len - 1,
+            .max_index = @floatFromInt(lookup.values.len - 1),
+        };
+    }
+
+    pub inline fn sample(self: LookupTablePrepared, value: F) F {
+        const x = std.math.clamp((value - self.lookup.first) / self.lookup.step, 0, self.max_index);
+        const index: usize = @intFromFloat(x);
+        if (index == self.last) return self.lookup.values[index];
+        const t = x - @as(F, @floatFromInt(index));
+        return self.lookup.values[index] + t * (self.lookup.values[index + 1] - self.lookup.values[index]);
+    }
+
+    pub inline fn sampleSIMD(self: LookupTablePrepared, values: VecSF, active: VecSB) VecSF {
+        return sampleLookupSIMD(self.lookup, self.last, self.max_index, values, active);
+    }
+};
+
+/// Integrates blackbody spectral radiance against an absolute, dimensionless
+/// camera response. Wavelengths are metres; values are W/(m² sr).
+pub const SpectralBandResponse = struct {
+    wavelengths_m: []const F,
+    response: []const F,
+
+    pub fn prepareRadianceLookup(
+        self: SpectralBandResponse,
+        allocator: std.mem.Allocator,
+        temp_first_k: F,
+        temp_last_k: F,
+        temp_step_k: F,
+    ) !LookupTable {
+        const count = try self.validate(temp_first_k, temp_last_k, temp_step_k);
+        const values = try allocator.alloc(F, count);
+        for (values, 0..) |*result, ti| {
+            const temp = temp_first_k + @as(F, @floatFromInt(ti)) * temp_step_k;
+            var total: F = 0;
+            for (1..self.wavelengths_m.len) |wi| {
+                const a = self.wavelengths_m[wi - 1];
+                const b = self.wavelengths_m[wi];
+                total += (b - a) * 0.5 *
+                    (self.response[wi - 1] * planckSpectralRadiance(a, temp) +
+                        self.response[wi] * planckSpectralRadiance(b, temp));
+            }
+            result.* = total;
+        }
+        return .{ .first = temp_first_k, .step = temp_step_k, .values = values };
+    }
+
+    /// Validate the spectrum and temperature grid, returning the lookup entry count.
+    pub fn validate(
+        self: SpectralBandResponse,
+        temp_first_k: F,
+        temp_last_k: F,
+        temp_step_k: F,
+    ) !usize {
+        if (self.wavelengths_m.len < 2 or self.wavelengths_m.len != self.response.len or
+            !std.math.isFinite(temp_first_k) or !std.math.isFinite(temp_last_k) or
+            !std.math.isFinite(temp_step_k) or temp_first_k <= 0 or
+            temp_last_k <= temp_first_k or temp_step_k <= 0)
+            return error.InvalidBandResponse;
+
+        var any_response = false;
+        for (self.wavelengths_m, self.response, 0..) |lambda, weight, i| {
+            if (!std.math.isFinite(lambda) or !std.math.isFinite(weight) or
+                lambda <= 0 or weight < 0 or
+                (i > 0 and lambda <= self.wavelengths_m[i - 1]))
+                return error.InvalidBandResponse;
+            any_response = any_response or weight > 0;
+        }
+        if (!any_response) return error.InvalidBandResponse;
+        const count_f = @ceil((temp_last_k - temp_first_k) / temp_step_k);
+        if (!std.math.isFinite(count_f) or count_f < 1 or count_f > max_radiance_lookup_intervals)
+            return error.InvalidBandResponse;
+        return @as(usize, @intFromFloat(count_f)) + 1;
+    }
+};
+
+pub fn planckSpectralRadiance(wavelength_m: F, temperature_k: F) F {
+    const lambda2 = wavelength_m * wavelength_m;
+    const lambda5 = lambda2 * lambda2 * wavelength_m;
+    const exponent = planck_constant * speed_of_light /
+        (wavelength_m * boltzmann_constant * temperature_k);
+    const denom = lambda5 * @exp(exponent) - lambda5;
+    return (2 * planck_constant * speed_of_light * speed_of_light) / denom;
+}
+
+// --------------------------------------------------------------------------------------
+// Shared Helpers
+// --------------------------------------------------------------------------------------
+
+fn checkRegister(register_ref: Register, written: RegistersWritten, constant_count: usize) !void {
+    if (register_ref.kind == .constant) {
+        if (register_ref.index >= constant_count) return error.InvalidRegister;
+    } else if (!written.isWritten(register_ref)) return error.UnwrittenSlot;
+}
+
+fn readRegister(comptime T: type, inputs: anytype, constants: []const F, register_ref: Register) T {
+    return if (register_ref.kind == .constant)
+        splat(T, constants[register_ref.index])
+    else
+        inputs.get(register_ref);
+}
+
+inline fn sampleLookupSIMD(
+    lookup: LookupTable,
+    last: usize,
+    max_index: F,
+    values: VecSF,
+    active: VecSB,
+) VecSF {
+    const safe_values = @select(F, active, values, @as(VecSF, @splat(lookup.first)));
+    const zero: VecSF = @splat(0);
+    const max_value: VecSF = @splat(max_index);
+    const x = @min(max_value, @max(zero, (safe_values - @as(VecSF, @splat(lookup.first))) / @as(VecSF, @splat(lookup.step))));
+    const indices: @Vector(S, usize) = @intFromFloat(x);
+    const lower_indices = @min(indices, @as(@Vector(S, usize), @splat(last - 1)));
+    const index_array: [S]usize = lower_indices;
+    var lower: [S]F = undefined;
+    var upper: [S]F = undefined;
+    inline for (0..S) |lane| {
+        const index = index_array[lane];
+        lower[lane] = lookup.values[index];
+        upper[lane] = lookup.values[index + 1];
+    }
+    const fraction = x - @as(VecSF, @floatFromInt(lower_indices));
+    const low: VecSF = lower;
+    const high: VecSF = upper;
+    // Select the exact upper endpoint rather than reconstructing it through subtraction.
+    return @select(F, x >= max_value, high, low + fraction * (high - low));
+}
+
+inline fn splat(comptime T: type, value: F) T {
+    return if (T == F) value else @splat(value);
+}
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
+test "resolver arithmetic retains earlier outputs" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var written: RegistersWritten = .{};
+    try written.recordWrite(.{ .kind = .channel, .index = 0 });
+    try written.recordWrite(.{ .kind = .channel, .index = 1 });
+    try written.recordWrite(.{ .kind = .parameter, .index = 0 });
+    const ops = [_]ResolverOp{
+        .{ .load = .{ .kind = .channel, .index = 0 } },
+        .{ .load = .{ .kind = .parameter, .index = 0 } },
+        .multiply,
+        .{ .load = .{ .kind = .channel, .index = 1 } },
+        .add,
+        .{ .store = 0 },
+        .{ .load = .{ .kind = .channel, .index = 0 } },
+        .{ .load = .{ .kind = .channel, .index = 1 } },
+        .subtract,
+        .{ .store = 1 },
+    };
+    const resolver: ResolverInput = .{ .expression = .{ .operations = &ops } };
+    try resolver.validate(written, &.{}, 2);
+    var inputs: RegistersOutputScalar = .{};
+    inputs.channel[0] = 0.75;
+    inputs.channel[1] = 0.25;
+    inputs.parameter[0] = 0.5;
+    var out: [2]F = undefined;
+    const resolver_prepared = try createResolverPreparedFromInput(arena.allocator(), resolver);
+    resolver_prepared.evaluate(&inputs, &.{}, 2, &out);
+    try std.testing.expectApproxEqAbs(@as(F, 0.625), out[0], 1e-12);
+    try std.testing.expectApproxEqAbs(@as(F, 0.5), out[1], 1e-12);
+    try std.testing.expectEqual(@as(F, 0.75), inputs.channel[0]);
+}
+
+test "bolometric emission and LUT agree with independent values" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var written: RegistersWritten = .{};
+    try written.recordWrite(.{ .kind = .field, .index = 0 });
+    try written.recordWrite(.{ .kind = .parameter, .index = 0 });
+    var inputs: RegistersOutputScalar = .{};
+    inputs.field[0] = 300;
+    inputs.parameter[0] = 0.8;
+    var out: [1]F = undefined;
+    const bolometric: ResolverInput = .{ .greybody_bolometric = .{
+        .temperature = .{ .kind = .field, .index = 0 },
+        .emissivity = .{ .kind = .parameter, .index = 0 },
+    } };
+    try bolometric.validate(written, &.{}, 1);
+    const bolometric_prepared = try createResolverPreparedFromInput(arena.allocator(), bolometric);
+    bolometric_prepared.evaluate(&inputs, &.{}, 1, &out);
+    const tol: F = if (F == f32) 1e-4 else 1e-9;
+    try std.testing.expectApproxEqAbs(@as(F, 367.4402623512), out[0], tol);
+
+    const lut = LookupTable{ .first = 290, .step = 20, .values = &.{ 10, 30 } };
+    const band: ResolverInput = .{ .greybody_band = .{
+        .temperature = .{ .kind = .field, .index = 0 },
+        .emissivity = .{ .kind = .parameter, .index = 0 },
+        .radiance = lut,
+    } };
+    try band.validate(written, &.{}, 1);
+    const band_prepared = try createResolverPreparedFromInput(arena.allocator(), band);
+    band_prepared.evaluate(&inputs, &.{}, 1, &out);
+    try std.testing.expectApproxEqAbs(@as(F, 16), out[0], 1e-12);
+}
+
+test "band Planck LUT is positive, temperature ordered, and interpolates" {
+    const rel_tol: F = if (F == f32) 1e-5 else 1e-12;
+    try std.testing.expectApproxEqRel(
+        @as(F, 9_924_033.330070695),
+        planckSpectralRadiance(10e-6, 300),
+        rel_tol,
+    );
+    const response: SpectralBandResponse = .{
+        .wavelengths_m = &.{ 8e-6, 9e-6, 10e-6, 11e-6, 12e-6 },
+        .response = &.{ 0, 1, 1, 1, 0 },
+    };
+    try std.testing.expectEqual(@as(usize, 41), try response.validate(280, 320, 1));
+    try std.testing.expectError(error.InvalidBandResponse, response.validate(280, 320, 0));
+    try std.testing.expectError(error.InvalidBandResponse, response.validate(280, 320, 1e-6));
+    const lut = try response.prepareRadianceLookup(
+        std.testing.allocator,
+        280,
+        320,
+        1,
+    );
+    defer std.testing.allocator.free(lut.values);
+    for (lut.values, 0..) |value, i| {
+        try std.testing.expect(value > 0);
+        if (i > 0) try std.testing.expect(value > lut.values[i - 1]);
+    }
+    // Independent 60-digit Decimal Planck calculation and response-weighted integral.
+    try std.testing.expectApproxEqRel(@as(F, 29.327279517889548), lut.values[20], rel_tol);
+    const midpoint = lut.sample(300.5);
+    const interp_tol: F = if (F == f32) 1e-6 else 1e-12;
+    const avg_val = (lut.values[20] + lut.values[21]) / 2;
+    try std.testing.expectApproxEqRel(avg_val, midpoint, interp_tol);
+    const bad_response = SpectralBandResponse{
+        .wavelengths_m = &.{ 10e-6, 9e-6 },
+        .response = &.{ 1, 1 },
+    };
+    try std.testing.expectError(
+        error.InvalidBandResponse,
+        bad_response.prepareRadianceLookup(std.testing.failing_allocator, 280, 320, 1),
+    );
+}
+
+test "apparent temperature includes reflected ambient and inverts band radiance" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var written: RegistersWritten = .{};
+    try written.recordWrite(.{ .kind = .field, .index = 0 });
+    try written.recordWrite(.{ .kind = .parameter, .index = 0 });
+    const values = [_]F{ 10, 20, 30, 40, 50 };
+    const resolver: ResolverInput = .{ .greybody_band_apparent_c = .{
+        .temperature = .{ .kind = .field, .index = 0 },
+        .emissivity = .{ .kind = .parameter, .index = 0 },
+        .radiance = .{ .first = 280, .step = 10, .values = &values },
+        .ambient_k = 290,
+    } };
+    try resolver.validate(written, &.{}, 1);
+    var inputs: RegistersOutputScalar = .{};
+    inputs.field[0] = 310;
+    inputs.parameter[0] = 0.8;
+    var output: [1]F = undefined;
+    const resolver_prepared = try createResolverPreparedFromInput(arena.allocator(), resolver);
+    resolver_prepared.evaluate(&inputs, &.{}, 1, &output);
+    try std.testing.expectApproxEqAbs(@as(F, 32.85), output[0], 1e-10);
+    inputs.parameter[0] = 1;
+    resolver_prepared.evaluate(&inputs, &.{}, 1, &output);
+    try std.testing.expectApproxEqAbs(@as(F, 36.85), output[0], 1e-10);
+    inputs.parameter[0] = 0;
+    resolver_prepared.evaluate(&inputs, &.{}, 1, &output);
+    try std.testing.expectApproxEqAbs(@as(F, 16.85), output[0], 1e-10);
+    var bad = values;
+    bad[2] = bad[1];
+    const invalid: ResolverInput = .{ .greybody_band_apparent_c = .{
+        .temperature = .{ .kind = .field, .index = 0 },
+        .emissivity = .{ .kind = .parameter, .index = 0 },
+        .radiance = .{ .first = 280, .step = 10, .values = &bad },
+        .ambient_k = 290,
+    } };
+    try std.testing.expectError(error.InvalidResolver, invalid.validate(written, &.{}, 1));
+}
+
+test "generic pipe stages compose with fixed and register blend weights" {
+    const c0 = Register{ .kind = .channel, .index = 0 };
+    const c1 = Register{ .kind = .channel, .index = 1 };
+    const f0 = Register{ .kind = .field, .index = 0 };
+    const f1 = Register{ .kind = .field, .index = 1 };
+    const f2 = Register{ .kind = .field, .index = 2 };
+    const p0 = Register{ .kind = .parameter, .index = 0 };
+    var outputs: RegistersOutputScalar = .{};
+    outputs.set(c0, 0.25);
+    outputs.set(c1, 0.75);
+    outputs.set(p0, 0.5);
+    (AffineMapStage{ .register_source = c0, .register_dest = f0, .gain = 2, .offset = 0.1 })
+        .apply(&outputs);
+    const values = [_]F{ 0, 10 };
+    const lut = LUTMapStage{ .register_source = f0, .register_dest = f1, .lookup = .{ .first = 0, .step = 1, .values = &values } };
+    lut.apply(&outputs, true);
+    (BlendStage{ .a = f1, .b = c1, .register_dest = f2, .alpha = .{ .register = p0 } })
+        .apply(&outputs);
+    try std.testing.expectApproxEqAbs(@as(F, 3.375), outputs.get(f2), 1e-6);
+    (BlendStage{ .a = c0, .b = c1, .register_dest = .{ .kind = .field, .index = 3 }, .alpha = .{ .fixed = -1 } }).apply(&outputs);
+    try std.testing.expectApproxEqAbs(@as(F, -0.25), outputs.field[3], 1e-6);
+    outputs.set(f0, -2);
+    lut.apply(&outputs, true);
+    try std.testing.expectEqual(@as(F, 0), outputs.get(f1));
+    outputs.set(f0, 3);
+    lut.apply(&outputs, true);
+    try std.testing.expectEqual(@as(F, 10), outputs.get(f1));
+}
+
+test "normalise handles 2D and 3D vectors including zero" {
+    var outputs: RegistersOutputScalar = .{};
+    outputs.field[0] = 3;
+    outputs.field[1] = 4;
+    outputs.field[2] = 0;
+    const src = Register{ .kind = .field, .index = 0 };
+    const dst = Register{ .kind = .channel, .index = 0 };
+    (NormaliseStage{ .register_source = src, .register_dest = dst, .components = 2 }).apply(&outputs);
+    try std.testing.expectApproxEqAbs(@as(F, 0.6), outputs.channel[0], 1e-6);
+    try std.testing.expectApproxEqAbs(@as(F, 0.8), outputs.channel[1], 1e-6);
+    outputs.field[0] = 2;
+    outputs.field[1] = -3;
+    outputs.field[2] = 6;
+    (NormaliseStage{ .register_source = src, .register_dest = .{ .kind = .channel, .index = 2 }, .components = 3 }).apply(&outputs);
+    for ([_]F{ 2.0 / 7.0, -3.0 / 7.0, 6.0 / 7.0 }, 0..) |expected, i| {
+        try std.testing.expectApproxEqAbs(expected, outputs.channel[2 + i], 1e-12);
+    }
+    outputs.field[0] = 0;
+    outputs.field[1] = 0;
+    outputs.field[2] = 0;
+    (NormaliseStage{ .register_source = src, .register_dest = .{ .kind = .channel, .index = 5 }, .components = 3 }).apply(&outputs);
+    try std.testing.expectEqual(@as(F, 0), outputs.channel[5]);
+    try std.testing.expectEqual(@as(F, 0), outputs.channel[6]);
+    try std.testing.expectEqual(@as(F, 0), outputs.channel[7]);
+}
+
+test "generic pipe stages match scalar values on SIMD lanes" {
+    var outputs: RegistersOutputSIMD = .{};
+    var x: [S]F = undefined;
+    var y: [S]F = undefined;
+    var alpha: [S]F = undefined;
+    var active: buildconfig.VecSB = @splat(true);
+    for (0..S) |lane| {
+        x[lane] = @as(F, @floatFromInt(lane)) / @as(F, @floatFromInt(S));
+        y[lane] = 0.75;
+        alpha[lane] = x[lane];
+    }
+    active[S - 1] = false;
+    x[S - 1] = std.math.nan(F);
+    outputs.channel[0] = @bitCast(x);
+    outputs.channel[1] = @bitCast(y);
+    outputs.parameter[0] = @bitCast(alpha);
+    (AffineMapStage{ .register_source = .{ .kind = .channel, .index = 0 }, .register_dest = .{ .kind = .field, .index = 0 }, .gain = 2, .offset = 0.1 })
+        .apply(&outputs);
+    const values = [_]F{ 0, 10 };
+    (LUTMapStage{ .register_source = .{ .kind = .field, .index = 0 }, .register_dest = .{ .kind = .field, .index = 1 }, .lookup = .{ .first = 0, .step = 1, .values = &values } })
+        .apply(&outputs, active);
+    (BlendStage{ .a = .{ .kind = .field, .index = 1 }, .b = .{ .kind = .channel, .index = 1 }, .register_dest = .{ .kind = .field, .index = 2 }, .alpha = .{ .register = .{ .kind = .parameter, .index = 0 } } })
+        .apply(&outputs);
+    const result: [S]F = @bitCast(outputs.field[2]);
+    for (0..S - 1) |lane| {
+        const lut_val = @min(@as(F, 10), (2 * x[lane] + 0.1) * 10);
+        const expected = (1 - alpha[lane]) * lut_val + alpha[lane] * y[lane];
+        try std.testing.expectApproxEqAbs(expected, result[lane], 1e-12);
+    }
+    var vx: [S]F = undefined;
+    var vy: [S]F = undefined;
+    var vz: [S]F = undefined;
+    for (0..S) |lane| {
+        const scale: F = @floatFromInt(lane);
+        vx[lane] = 2 * scale;
+        vy[lane] = -3 * scale;
+        vz[lane] = 6 * scale;
+    }
+    outputs.field[3] = @bitCast(vx);
+    outputs.field[4] = @bitCast(vy);
+    outputs.field[5] = @bitCast(vz);
+    (NormaliseStage{ .register_source = .{ .kind = .field, .index = 3 }, .register_dest = .{ .kind = .channel, .index = 3 }, .components = 3 })
+        .apply(&outputs);
+    const nx: [S]F = @bitCast(outputs.channel[3]);
+    const ny: [S]F = @bitCast(outputs.channel[4]);
+    const nz: [S]F = @bitCast(outputs.channel[5]);
+    for (0..S) |lane| {
+        try std.testing.expectApproxEqAbs(if (lane == 0) @as(F, 0) else 2.0 / 7.0, nx[lane], 1e-12);
+        try std.testing.expectApproxEqAbs(if (lane == 0) @as(F, 0) else -3.0 / 7.0, ny[lane], 1e-12);
+        try std.testing.expectApproxEqAbs(if (lane == 0) @as(F, 0) else 6.0 / 7.0, nz[lane], 1e-12);
+    }
+}
+
+test "prepared resolver preserves lookup interpolation and ambient radiance" {
+    const lookup = LookupTable{ .first = 280, .step = 20, .values = &.{ 10, 30, 70, 110 } };
+    const cached = LookupTablePrepared.init(lookup);
+    for ([_]F{ 270, 280, 294, 300, 310, 320, 340, 350 }) |value|
+        try std.testing.expectEqual(lookup.sample(value), cached.sample(value));
+    const input = ResolverInput{ .greybody_band_apparent_c = .{
+        .temperature = .{ .kind = .field, .index = 0 },
+        .emissivity = .{ .kind = .parameter, .index = 0 },
+        .radiance = lookup,
+        .ambient_k = 300,
+    } };
+    const prepared = try createResolverPreparedFromInput(std.testing.allocator, input);
+    var values: RegistersOutputScalar = .{};
+    values.field[0] = 320;
+    values.parameter[0] = 0.5;
+    var result: [1]F = undefined;
+    prepared.evaluate(&values, &.{}, 1, &result);
+    try std.testing.expectApproxEqAbs(@as(F, 310 - 273.15), result[0], 1e-12);
+    var vectors: RegistersOutputSIMD = .{};
+    const temperatures = [_]F{ 280, 290, 300, 310, 320, 330, 340, 320 };
+    const emissivities = [_]F{ 0, 1, 0.25, 0.5, 0.75, 1, 0.5, 0.5 };
+    const expected_celsius = [_]F{ 26.85, 16.85, 26.85, 31.85, 41.85, 56.85, 46.85, 36.85 };
+    var temp_lanes: [S]F = undefined;
+    var emissivity_lanes: [S]F = undefined;
+    for (0..S) |lane| {
+        temp_lanes[lane] = temperatures[lane % temperatures.len];
+        emissivity_lanes[lane] = emissivities[lane % emissivities.len];
+    }
+    vectors.field[0] = temp_lanes;
+    vectors.parameter[0] = emissivity_lanes;
+    var vector_result: [1]buildconfig.VecSF = undefined;
+    prepared.evaluate(&vectors, &.{}, 1, &vector_result);
+    const lanes: [buildconfig.SimdWidth]F = @bitCast(vector_result[0]);
+    for (lanes, 0..) |value, lane| {
+        try std.testing.expectApproxEqAbs(expected_celsius[lane % expected_celsius.len], value, 1e-10);
+        values.field[0] = temp_lanes[lane];
+        values.parameter[0] = emissivity_lanes[lane];
+        prepared.evaluate(&values, &.{}, 1, &result);
+        try std.testing.expectApproxEqAbs(result[0], value, 1e-12);
+    }
+}
+
+test "register write tracking respects configured capacity and independent banks" {
+    var written: RegistersWritten = .{};
+    const last_index = pipe_cfg.max_registers - 1;
+    const channel = Register{ .kind = .channel, .index = last_index };
+    const field = Register{ .kind = .field, .index = last_index };
+    const parameter = Register{ .kind = .parameter, .index = last_index };
+    try std.testing.expect(!written.isWritten(channel));
+    try written.recordWrite(channel);
+    try std.testing.expect(written.isWritten(channel));
+    try std.testing.expect(!written.isWritten(field));
+    try std.testing.expect(!written.isWritten(parameter));
+    try written.recordWrite(field);
+    try written.recordWrite(parameter);
+    try std.testing.expect(written.isWritten(field));
+    try std.testing.expect(written.isWritten(parameter));
+    try std.testing.expectError(error.RepeatedWriter, written.recordWrite(channel));
+    try std.testing.expectError(error.InvalidRegister, written.recordWrite(.{ .kind = .constant, .index = 0 }));
+    if (comptime pipe_cfg.max_registers < 256) {
+        const outside = Register{
+            .kind = .channel,
+            .index = pipe_cfg.max_registers,
+        };
+        try std.testing.expect(!written.isWritten(outside));
+        try std.testing.expectError(error.InvalidRegister, written.recordWrite(outside));
+    }
+}
+
+test "forward SIMD lookup matches scalar interpolation and masks inactive samples" {
+    const table = LookupTable{ .first = 10, .step = 2, .values = &.{ -3, 5, 1e16, 1 } };
+    const prepared = LookupTablePrepared.init(table);
+    const samples = [_]F{ -20, 10, 11, 12, 15, 16, 1000, 13 };
+    var values: [S]F = undefined;
+    var mask: [S]bool = undefined;
+    for (0..S) |lane| {
+        mask[lane] = lane % 4 != 3;
+        values[lane] = if (mask[lane]) samples[lane % samples.len] else std.math.nan(F);
+    }
+    const raw: [S]F = table.sampleSIMD(values, mask);
+    const cached: [S]F = prepared.sampleSIMD(values, mask);
+    for (0..S) |lane| {
+        const expected = table.sample(if (mask[lane]) values[lane] else table.first);
+        try std.testing.expectApproxEqAbs(expected, raw[lane], @max(1e-12, @abs(expected) * 1e-14));
+        try std.testing.expectEqual(raw[lane], cached[lane]);
+    }
+    const endpoints: [S]F = table.sampleSIMD(@splat(16), @splat(true));
+    for (endpoints) |value| try std.testing.expectEqual(@as(F, 1), value);
+}
+
+test "expression preparation caches lookups and evaluates scalar and SIMD values" {
+    const input: ResolverInput = .{ .expression = .{
+        .operations = &.{
+            .{ .load = .{ .kind = .field, .index = 0 } },
+            .{ .lut = 0 },
+            .{ .load = .{ .kind = .constant, .index = 0 } },
+            .multiply,
+            .{ .store = 0 },
+        },
+        .constants = &.{2},
+        .lookups = &.{.{ .first = 10, .step = 2, .values = &.{ 3, 7, 15 } }},
+    } };
+    var written: RegistersWritten = .{};
+    try written.recordWrite(.{ .kind = .field, .index = 0 });
+    try input.validate(written, &.{}, 1);
+    try std.testing.expectError(
+        error.OutOfMemory,
+        createResolverPreparedFromInput(std.testing.failing_allocator, input),
+    );
+    const prepared = try createResolverPreparedFromInput(std.testing.allocator, input);
+    defer std.testing.allocator.free(prepared.expression.lookups);
+    var scalar: RegistersOutputScalar = .{};
+    var wide: RegistersOutputSIMD = .{};
+    const samples = [_]F{ 8, 10, 11, 12, 13, 14, 16 };
+    const expected = [_]F{ 6, 6, 10, 14, 22, 30, 30 };
+    var lane_samples: [S]F = undefined;
+    for (0..S) |lane| lane_samples[lane] = samples[lane % samples.len];
+    wide.field[0] = lane_samples;
+    var vector_result: [1]VecSF = undefined;
+    prepared.evaluate(&wide, &.{}, 1, &vector_result);
+    const lanes: [S]F = vector_result[0];
+    for (samples, expected) |sample, result| {
+        scalar.field[0] = sample;
+        var scalar_result: [1]F = undefined;
+        prepared.evaluate(&scalar, &.{}, 1, &scalar_result);
+        try std.testing.expectEqual(result, scalar_result[0]);
+    }
+    for (lanes, 0..) |value, lane| {
+        try std.testing.expectEqual(expected[lane % expected.len], value);
+    }
+}
+
+test "expression validation rejects malformed stacks operands and stores" {
+    const load: ResolverOp = .{ .load = .{ .kind = .constant, .index = 0 } };
+    const cases = [_]struct {
+        operations: []const ResolverOp,
+        channels: u8 = 1,
+        expected: anyerror = error.InvalidProgram,
+    }{
+        .{ .operations = &.{} },
+        .{ .operations = &.{ .add, .{ .store = 0 } } },
+        .{ .operations = &.{ load, .subtract, .{ .store = 0 } } },
+        .{ .operations = &.{ load, .multiply, .{ .store = 0 } } },
+        .{ .operations = &.{ load, .divide, .{ .store = 0 } } },
+        .{ .operations = &.{ .power4, .{ .store = 0 } } },
+        .{ .operations = &.{ .clamp01, .{ .store = 0 } } },
+        .{ .operations = &.{ .{ .clamp = .{ .lower = 0, .upper = 1 } }, .{ .store = 0 } } },
+        .{ .operations = &.{ load, .{ .clamp = .{ .lower = 2, .upper = 1 } }, .{ .store = 0 } } },
+        .{
+            .operations = &.{
+                load,
+                .{
+                    .clamp = .{
+                        .lower = std.math.nan(F),
+                        .upper = 1,
+                    },
+                },
+                .{ .store = 0 },
+            },
+        },
+
+        .{
+            .operations = &.{
+                load,
+                .{
+                    .clamp = .{
+                        .lower = 0,
+                        .upper = std.math.inf(F),
+                    },
+                },
+                .{ .store = 0 },
+            },
+        },
+
+        .{ .operations = &.{ .{ .lut = 0 }, .{ .store = 0 } } },
+        .{ .operations = &.{ load, .{ .lut = 1 }, .{ .store = 0 } } },
+        .{
+            .operations = &.{
+                .{
+                    .load = .{
+                        .kind = .constant,
+                        .index = 1,
+                    },
+                },
+                .{ .store = 0 },
+            },
+            .expected = error.InvalidRegister,
+        },
+
+        .{
+            .operations = &.{
+                .{
+                    .load = .{
+                        .kind = .field,
+                        .index = 0,
+                    },
+                },
+                .{ .store = 0 },
+            },
+            .expected = error.UnwrittenSlot,
+        },
+
+        .{ .operations = &.{.{ .store = 0 }} },
+        .{ .operations = &.{ load, load, .{ .store = 0 } } },
+        .{ .operations = &.{ load, .{ .store = 1 } } },
+        .{ .operations = &.{ load, .{ .store = 0 }, load, .{ .store = 0 } } },
+        .{ .operations = &.{load} },
+        .{ .operations = &.{ load, .{ .store = 0 }, load } },
+        .{ .operations = &.{ load, .{ .store = 0 } }, .channels = 2 },
+        .{ .operations = &.{ load, .{ .store = 0 } }, .channels = 0 },
+        .{
+            .operations = &.{
+                load,
+                .{ .store = 0 },
+            },
+            .channels = buildconfig.config.max_image_channels + 1,
+        },
+    };
+    for (cases) |case| {
+        const program: ResolverProgramInput = .{
+            .operations = case.operations,
+            .lookups = &.{.{ .first = 0, .step = 1, .values = &.{ 0, 1 } }},
+            .constants = &.{1},
+        };
+        try std.testing.expectError(case.expected, program.validate(.{}, case.channels));
+    }
+    const too_deep = [_]ResolverOp{load} ** (pipe_cfg.max_stack + 1) ++
+        [_]ResolverOp{.add} ** pipe_cfg.max_stack ++ [_]ResolverOp{.{ .store = 0 }};
+    try std.testing.expectError(error.InvalidProgram, (ResolverProgramInput{
+        .operations = &too_deep,
+        .constants = &.{1},
+    }).validate(.{}, 1));
+    const too_long = [_]ResolverOp{load} ++ [_]ResolverOp{.clamp01} ** (pipe_cfg.max_ops - 1) ++
+        [_]ResolverOp{.{ .store = 0 }};
+    try std.testing.expectError(error.InvalidProgram, (ResolverProgramInput{
+        .operations = &too_long,
+        .constants = &.{1},
+    }).validate(.{}, 1));
+    const too_many_constants = [_]F{1} ** (pipe_cfg.max_registers + 1);
+    try std.testing.expectError(error.InvalidProgram, (ResolverProgramInput{
+        .operations = &.{ load, .{ .store = 0 } },
+        .constants = &too_many_constants,
+    }).validate(.{}, 1));
+    for ([_]F{ std.math.nan(F), std.math.inf(F) }) |value| {
+        try std.testing.expectError(error.InvalidConstant, (ResolverProgramInput{
+            .operations = &.{ load, .{ .store = 0 } },
+            .constants = &.{value},
+        }).validate(.{}, 1));
+    }
+    // Exactly the supported stack depth remains usable, including reduction and store.
+    const operations = [_]ResolverOp{load} ** pipe_cfg.max_stack ++
+        [_]ResolverOp{.add} ** (pipe_cfg.max_stack - 1) ++ [_]ResolverOp{.{ .store = 0 }};
+    const program: ResolverInput = .{
+        .expression = .{
+            .operations = &operations,
+            .constants = &.{1},
+        },
+    };
+    try program.validate(.{}, &.{}, 1);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const prepared = try createResolverPreparedFromInput(arena.allocator(), program);
+    const inputs: RegistersOutputScalar = .{};
+    var result: [1]F = undefined;
+    prepared.evaluate(&inputs, &.{}, 1, &result);
+    try std.testing.expectEqual(@as(F, pipe_cfg.max_stack), result[0]);
+}
+
+test "expression division power and clamps preserve operand order and SIMD lanes" {
+    const field = Register{ .kind = .field, .index = 0 };
+    const c0 = Register{ .kind = .constant, .index = 0 };
+    const input: ResolverInput = .{ .expression = .{
+        .constants = &.{2},
+        .operations = &.{
+            .{ .load = field },
+            .{ .load = c0 },
+            .divide,
+            .{ .store = 0 },
+
+            .{ .load = c0 },
+            .{ .load = field },
+            .divide,
+            .{ .store = 1 },
+
+            .{ .load = field },
+            .power4,
+            .{ .store = 2 },
+            .{ .load = field },
+
+            .{
+                .clamp = .{
+                    .lower = -1,
+                    .upper = 2,
+                },
+            },
+            .{ .store = 3 },
+            .{ .load = field },
+            .clamp01,
+
+            .{ .store = 4 },
+        },
+    } };
+    var written: RegistersWritten = .{};
+    try written.recordWrite(field);
+    try input.validate(written, &.{}, 5);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const prepared = try createResolverPreparedFromInput(arena.allocator(), input);
+    const samples = [_]F{ -2, -1, 0.5, 1, 2, 4 };
+    const expected = [_][5]F{
+        .{ -1, -1, 16, -1, 0 },         .{ -0.5, -2, 1, -1, 0 },
+        .{ 0.25, 4, 0.0625, 0.5, 0.5 }, .{ 0.5, 2, 1, 1, 1 },
+        .{ 1, 1, 16, 2, 1 },            .{ 2, 0.5, 256, 2, 1 },
+    };
+    var scalar: RegistersOutputScalar = .{};
+    for (samples, expected) |sample, reference| {
+        scalar.set(field, sample);
+        var result: [5]F = undefined;
+        prepared.evaluate(&scalar, &.{}, 5, &result);
+        try std.testing.expectEqualSlices(F, &reference, &result);
+    }
+    var values: [S]F = undefined;
+    for (&values, 0..) |*value, lane| value.* = samples[lane % samples.len];
+    var wide: RegistersOutputSIMD = .{};
+    wide.set(field, values);
+    var result: [5]VecSF = undefined;
+    prepared.evaluate(&wide, &.{}, 5, &result);
+    for (result, 0..) |channel, ch| {
+        const lanes: [S]F = channel;
+        for (0..S) |lane| {
+            try std.testing.expectEqual(expected[lane % samples.len][ch], lanes[lane]);
+        }
+    }
+}
+
+test "resolvers preserve channel ordering grouping weights and modulation order" {
+    const sources = [_]Register{
+        .{ .kind = .channel, .index = 0 }, .{ .kind = .channel, .index = 1 },
+        .{ .kind = .channel, .index = 2 }, .{ .kind = .channel, .index = 3 },
+    };
+    const parameter = Register{ .kind = .parameter, .index = 0 };
+    var written: RegistersWritten = .{};
+    for (sources) |source| try written.recordWrite(source);
+    try written.recordWrite(parameter);
+    const cases = [_]struct { input: ResolverInput, expected: [2]F }{
+        .{ .input = .{ .identity = &.{ sources[1], sources[0] } }, .expected = .{ 3, 2 } },
+        .{ .input = .{ .sum = &sources }, .expected = .{ 7, 10 } },
+        .{
+            .input = .{
+                .weighted_sum = .{
+                    .register_sources = &sources,
+                    .weights = &.{
+                        2,
+                        -1,
+                        3,
+                        0.5,
+                    },
+                },
+            },
+            .expected = .{
+                19,
+                0.5,
+            },
+        },
+
+        .{
+            .input = .{
+                .modulate = .{
+                    .register_sources = sources[0..2],
+                    .factor = parameter,
+                    .ambient = 1,
+                    .gain = 3,
+                },
+            },
+            .expected = .{
+                6,
+                7.5,
+            },
+        },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    for (cases) |case| {
+        try case.input.validate(written, &.{}, 2);
+        const prepared = try createResolverPreparedFromInput(arena.allocator(), case.input);
+        var scalar: RegistersOutputScalar = .{};
+        var wide: RegistersOutputSIMD = .{};
+        for ([_]F{ 2, 3, 5, 7 }, sources) |value, source| {
+            scalar.set(source, value);
+            var lanes: [S]F = undefined;
+            for (&lanes, 0..) |*dest, lane| dest.* = value * @as(F, @floatFromInt(lane + 1));
+            wide.set(source, lanes);
+        }
+        scalar.set(parameter, 0.5);
+        wide.set(parameter, @splat(0.5));
+        var result: [2]F = undefined;
+        prepared.evaluate(&scalar, &.{}, 2, &result);
+        try std.testing.expectEqualSlices(F, &case.expected, &result);
+        var vector_result: [2]VecSF = undefined;
+        prepared.evaluate(&wide, &.{}, 2, &vector_result);
+        for (vector_result, 0..) |channel, ch| {
+            const lanes: [S]F = channel;
+            for (0..S) |lane| {
+                const scale: F = @floatFromInt(lane + 1);
+                const expected = switch (case.input) {
+                    .modulate => (case.expected[ch] - 3) * scale + 3,
+                    else => case.expected[ch] * scale,
+                };
+                try std.testing.expectEqual(expected, lanes[lane]);
+            }
+        }
+    }
+}
+
+test "resolver validation rejects incompatible channels registers and coefficients" {
+    const ch = Register{ .kind = .channel, .index = 0 };
+    const unwritten = Register{ .kind = .channel, .index = 1 };
+    const field = Register{ .kind = .field, .index = 0 };
+    const parameter = Register{ .kind = .parameter, .index = 0 };
+    var written: RegistersWritten = .{};
+    for ([_]Register{ ch, field, parameter }) |reg| try written.recordWrite(reg);
+    const cases = [_]struct {
+        input: ResolverInput,
+        channels: u8 = 1,
+        expected: anyerror = error.InvalidResolver,
+    }{
+        .{ .input = .{ .identity = &.{ch} }, .channels = 0, .expected = error.InvalidChannels },
+        .{
+            .input = .{
+                .identity = &.{
+                    ch,
+                },
+            },
+            .channels = buildconfig.config.max_image_channels + 1,
+            .expected = error.InvalidChannels,
+        },
+
+        .{ .input = .{ .identity = &.{ch} }, .channels = 2, .expected = error.InvalidChannels },
+        .{ .input = .{ .identity = &.{field} } },
+        .{ .input = .{ .identity = &.{unwritten} }, .expected = error.UnwrittenSlot },
+        .{ .input = .{ .sum = &.{} }, .expected = error.InvalidChannels },
+        .{
+            .input = .{
+                .sum = &.{
+                    ch,
+                    ch,
+                    ch,
+                },
+            },
+            .channels = 2,
+            .expected = error.InvalidChannels,
+        },
+
+        .{ .input = .{ .sum = &.{parameter} } },
+        .{ .input = .{ .sum = &.{unwritten} }, .expected = error.UnwrittenSlot },
+        .{
+            .input = .{
+                .modulate = .{
+                    .register_sources = &.{
+                        ch,
+                    },
+                    .factor = parameter,
+                },
+            },
+            .channels = 2,
+        },
+
+        .{ .input = .{ .modulate = .{ .register_sources = &.{field}, .factor = parameter } } },
+        .{ .input = .{ .modulate = .{ .register_sources = &.{ch}, .factor = field } } },
+        .{
+            .input = .{
+                .modulate = .{
+                    .register_sources = &.{
+                        unwritten,
+                    },
+                    .factor = parameter,
+                },
+            },
+            .expected = error.UnwrittenSlot,
+        },
+
+        .{
+            .input = .{
+                .modulate = .{
+                    .register_sources = &.{
+                        ch,
+                    },
+                    .factor = parameter,
+                    .ambient = std.math.nan(F),
+                },
+            },
+        },
+
+        .{
+            .input = .{
+                .modulate = .{
+                    .register_sources = &.{
+                        ch,
+                    },
+                    .factor = parameter,
+                    .gain = std.math.inf(F),
+                },
+            },
+        },
+
+        .{ .input = .{ .weighted_sum = .{ .register_sources = &.{ch}, .weights = &.{} } } },
+        .{
+            .input = .{
+                .weighted_sum = .{
+                    .register_sources = &.{
+                        ch,
+                    },
+                    .weights = &.{1},
+                },
+            },
+            .channels = 2,
+        },
+
+        .{
+            .input = .{
+                .weighted_sum = .{
+                    .register_sources = &.{
+                        ch,
+                        ch,
+                        ch,
+                    },
+                    .weights = &.{
+                        1,
+                        1,
+                        1,
+                    },
+                },
+            },
+            .channels = 2,
+        },
+
+        .{ .input = .{ .weighted_sum = .{ .register_sources = &.{field}, .weights = &.{1} } } },
+        .{
+            .input = .{
+                .weighted_sum = .{
+                    .register_sources = &.{
+                        unwritten,
+                    },
+                    .weights = &.{1},
+                },
+            },
+            .expected = error.UnwrittenSlot,
+        },
+
+        .{
+            .input = .{
+                .weighted_sum = .{
+                    .register_sources = &.{
+                        ch,
+                    },
+                    .weights = &.{
+                        std.math.nan(F),
+                    },
+                },
+            },
+        },
+
+        .{
+            .input = .{
+                .greybody_bolometric = .{
+                    .temperature = field,
+                    .emissivity = parameter,
+                },
+            },
+            .channels = 2,
+        },
+
+        .{ .input = .{ .greybody_bolometric = .{ .temperature = ch, .emissivity = parameter } } },
+        .{ .input = .{ .greybody_bolometric = .{ .temperature = field, .emissivity = ch } } },
+        .{
+            .input = .{
+                .greybody_bolometric = .{
+                    .temperature = .{
+                        .kind = .field,
+                        .index = 1,
+                    },
+                    .emissivity = parameter,
+                },
+            },
+            .expected = error.UnwrittenSlot,
+        },
+
+        .{
+            .input = .{
+                .greybody_band = .{
+                    .temperature = field,
+                    .emissivity = parameter,
+                    .radiance = .{
+                        .first = 280,
+                        .step = 0,
+                        .values = &.{
+                            1,
+                            2,
+                        },
+                    },
+                },
+            },
+            .expected = error.InvalidLookup,
+        },
+    };
+    for (cases) |case| try std.testing.expectError(
+        case.expected,
+        case.input.validate(written, &.{}, case.channels),
+    );
+    var apparent: ResolverInput = .{ .greybody_band_apparent_c = .{
+        .temperature = field,
+        .emissivity = parameter,
+        .radiance = .{ .first = 280, .step = 10, .values = &.{ 1, 3, 9 } },
+        .ambient_k = 290,
+    } };
+    for ([_]F{ std.math.nan(F), 279, 301 }) |ambient| {
+        apparent.greybody_band_apparent_c.ambient_k = ambient;
+        try std.testing.expectError(error.InvalidResolver, apparent.validate(written, &.{}, 1));
+    }
+    for ([_]F{ 280, 300 }) |ambient| {
+        apparent.greybody_band_apparent_c.ambient_k = ambient;
+        try apparent.validate(written, &.{}, 1);
+    }
+    apparent.greybody_band_apparent_c.radiance.values = &.{ 1, 3, 2 };
+    try std.testing.expectError(error.InvalidResolver, apparent.validate(written, &.{}, 1));
+}
+
+test "lookup validation rejects invalid grids and inverse sampling clamps and interpolates" {
+    const invalid = [_]LookupTable{
+        .{ .first = 0, .step = 1, .values = &.{} },
+        .{ .first = 0, .step = 1, .values = &.{1} },
+        .{ .first = 0, .step = 0, .values = &.{ 1, 2 } },
+        .{ .first = 0, .step = -1, .values = &.{ 1, 2 } },
+        .{ .first = std.math.nan(F), .step = 1, .values = &.{ 1, 2 } },
+        .{ .first = 0, .step = std.math.inf(F), .values = &.{ 1, 2 } },
+        .{ .first = 0, .step = 1, .values = &.{ 1, std.math.nan(F) } },
+        .{ .first = 0, .step = 1, .values = &.{ std.math.inf(F), 2 } },
+    };
+    for (invalid) |lookup| try std.testing.expectError(error.InvalidLookup, lookup.validate());
+    // Non-monotonic tables are valid for forward sampling; inverse resolvers impose ordering.
+    try (LookupTable{ .first = 0, .step = 1, .values = &.{ 3, -1, 2 } }).validate();
+    const table: LookupTable = .{ .first = 10, .step = 2, .values = &.{ 1, 3, 9, 21 } };
+    const samples = [_]F{ -5, 1, 2, 3, 6, 9, 15, 21, 30 };
+    const expected = [_]F{ 10, 10, 11, 12, 13, 14, 15, 16, 16 };
+    for (samples, expected) |value, result| {
+        try std.testing.expectEqual(result, table.inverseMonotonic(value));
+    }
+    const malformed_program: ResolverProgramInput = .{
+        .operations = &.{
+            .{ .load = .{ .kind = .constant, .index = 0 } }, .{ .lut = 0 }, .{ .store = 0 },
+        },
+        .constants = &.{1},
+        .lookups = invalid[0..1],
+    };
+    try std.testing.expectError(error.InvalidLookup, malformed_program.validate(.{}, 1));
+}
+
+test "spectral response validation rejects malformed spectra and temperature grids" {
+    const cases = [_]SpectralBandResponse{
+        .{ .wavelengths_m = &.{}, .response = &.{} },
+        .{ .wavelengths_m = &.{8e-6}, .response = &.{1} },
+        .{ .wavelengths_m = &.{ 8e-6, 12e-6 }, .response = &.{1} },
+        .{ .wavelengths_m = &.{ 0, 12e-6 }, .response = &.{ 1, 1 } },
+        .{ .wavelengths_m = &.{ 8e-6, 8e-6 }, .response = &.{ 1, 1 } },
+        .{ .wavelengths_m = &.{ 12e-6, 8e-6 }, .response = &.{ 1, 1 } },
+        .{ .wavelengths_m = &.{ 8e-6, std.math.inf(F) }, .response = &.{ 1, 1 } },
+        .{ .wavelengths_m = &.{ 8e-6, 12e-6 }, .response = &.{ 0, 0 } },
+        .{ .wavelengths_m = &.{ 8e-6, 12e-6 }, .response = &.{ -1, 1 } },
+        .{ .wavelengths_m = &.{ 8e-6, 12e-6 }, .response = &.{ 1, std.math.nan(F) } },
+    };
+    for (cases) |response| {
+        try std.testing.expectError(error.InvalidBandResponse, response.validate(280, 320, 1));
+    }
+    const valid: SpectralBandResponse = .{
+        .wavelengths_m = &.{
+            8e-6,
+            12e-6,
+        },
+        .response = &.{
+            1,
+            1,
+        },
+    };
+    const grids = [_][3]F{
+        .{
+            0,
+            320,
+            1,
+        },
+        .{
+            320,
+            280,
+            1,
+        },
+        .{
+            300,
+            300,
+            1,
+        },
+        .{
+            280,
+            320,
+            0,
+        },
+        .{
+            280,
+            320,
+            -1,
+        },
+
+        .{
+            std.math.nan(F),
+            320,
+            1,
+        },
+        .{
+            280,
+            std.math.inf(F),
+            1,
+        },
+        .{
+            280,
+            320,
+            std.math.nan(F),
+        },
+        .{
+            280,
+            320,
+            1e-6,
+        },
+    };
+    for (grids) |grid| {
+        try std.testing.expectError(
+            error.InvalidBandResponse,
+            valid.validate(grid[0], grid[1], grid[2]),
+        );
+    }
+    try std.testing.expectEqual(@as(usize, 65536), try valid.validate(1, 65536, 1));
+    try std.testing.expectError(error.InvalidBandResponse, valid.validate(1, 65537, 1));
+    try std.testing.expectError(
+        error.OutOfMemory,
+        valid.prepareRadianceLookup(std.testing.failing_allocator, 280, 320, 1),
+    );
+}

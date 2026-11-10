@@ -94,15 +94,15 @@ pub fn getRasterConfig(mode: RasterConfigMode) rastcfg.RasterConfig {
     switch (mode) {
         .gold_gen, .preview => {
             config.parallel = .serial;
-            config.report = .{ .mode = .off };
+            config.report_perf = .off;
         },
         .testing => {
             config.parallel = .{ .threads = TOTAL_THREADS };
-            config.report = .{ .mode = .off };
+            config.report_perf = .off;
         },
         .bench => {
             config.parallel = .serial;
-            config.report = .{ .mode = .bench };
+            config.report_perf = .bench;
         },
     }
 

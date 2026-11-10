@@ -6,9 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("../riley/zig/cameramodels.zig");
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const common_test = @import("../dev_support/tests.zig");
 const fullcase_dist_psf = @import("fullcase_dist_psf.zig");
@@ -19,8 +22,8 @@ const riley = @import("../riley/zig/riley.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 const Timestamp = std.Io.Clock.Timestamp;
 
 pub const BufferModeCase = struct {
@@ -68,11 +71,11 @@ pub fn runFullDistPsfCaseTest(
     camera_input.sub_sample = ssaa;
     camera_input.distort = dist_case.distort;
     camera_input.psf = psf_case.psf;
+    camera_input.background_value = common_full.grey_background_scene1;
 
     var run_config = config;
     run_config.save_strategy = .memory;
     run_config.advanced.raster.buffer_mode = buf_case.mode;
-    run_config.background_value = common_full.grey_background_scene1;
 
     const start_time = Timestamp.now(io, .awake);
     const result = try riley.raster(
@@ -244,7 +247,7 @@ fn runAdditionalDistPsfTests(
 
     const extra_dist_cases = [_]struct {
         tag: []const u8,
-        distort: camera.DistortParams,
+        distort: cameramodels.DistortParams,
     }{
         .{
             .tag = "standalone_poly",
@@ -278,7 +281,7 @@ fn runAdditionalDistPsfTests(
 
     const extra_psf_cases = [_]struct {
         tag: []const u8,
-        psf: camera.PointSpreadFunc,
+        psf: cameramodels.PointSpreadFunc,
     }{
         .{
             .tag = "rotated_anisotropic_gaussian",
@@ -307,11 +310,11 @@ fn runAdditionalDistPsfTests(
         cam_tile.sub_sample = 2;
         cam_tile.distort = dist_case.distort;
         cam_tile.psf = .{ .pixel_box = .{} };
+        cam_tile.background_value = common_full.grey_background_scene1;
 
         var config_tile = config;
         config_tile.save_strategy = .memory;
         config_tile.advanced.raster.buffer_mode = .tile_local;
-        config_tile.background_value = common_full.grey_background_scene1;
 
         var config_global = config_tile;
         config_global.advanced.raster.buffer_mode = .global_subpx_full;
@@ -359,11 +362,11 @@ fn runAdditionalDistPsfTests(
         cam_tile.sub_sample = 2;
         cam_tile.distort = .none;
         cam_tile.psf = psf_case.psf;
+        cam_tile.background_value = common_full.grey_background_scene1;
 
         var config_tile = config;
         config_tile.save_strategy = .memory;
         config_tile.advanced.raster.buffer_mode = .tile_local;
-        config_tile.background_value = common_full.grey_background_scene1;
 
         var config_global = config_tile;
         config_global.advanced.raster.buffer_mode = .global_subpx_full;
@@ -419,11 +422,12 @@ fn runBrownConPolyEquivalenceRender(
     } };
     var poly_camera = brown_camera;
     poly_camera.distort = .{ .poly = equivalent.poly };
+    brown_camera.background_value = common_full.grey_background_scene1;
+    poly_camera.background_value = common_full.grey_background_scene1;
 
     var run_config = config;
     run_config.save_strategy = .memory;
     run_config.advanced.raster.buffer_mode = .global_subpx_full;
-    run_config.background_value = common_full.grey_background_scene1;
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();

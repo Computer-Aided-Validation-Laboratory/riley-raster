@@ -16,15 +16,10 @@ const VecSF = buildconfig.VecSF;
 const VecSU8 = buildconfig.VecSU8;
 const tol = cfg.tol;
 
-const frontend = @import("rasterfrontend.zig");
-const edgeops = @import("hulledge.zig");
+const rasterfrontend = @import("rasterfrontend.zig");
+const hulledge = @import("hulledge.zig");
 const newton = @import("newton.zig");
-const NewtonSeed = newton.NewtonSeed;
-const NewtonSeedSIMD = newton.NewtonSeedSIMD;
-const shapefun = @import("shapefun.zig");
-const NDArray = @import("ndarray.zig").NDArray;
-const Vec3Slices = frontend.Vec3Slices;
-const rastcfg = @import("rasterconfig.zig");
+const rasterconfig = @import("rasterconfig.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -108,7 +103,7 @@ pub fn GeometryResultSIMD(comptime N: usize) type {
 
 pub inline fn calcInvZClip(
     comptime N: usize,
-    nodes: Vec3Slices(F),
+    nodes: rasterfrontend.Vec3Slices(F),
     weights: [N]F,
 ) F {
     var sum_weighted_z: F = 0.0;
@@ -185,8 +180,8 @@ pub fn Tri3Kernel() type {
         pub const coord_space = .raster;
         pub const solver_kind = .hyperb;
 
-        pub inline fn getInvElemArea(nodes: Vec3Slices(F)) F {
-            return 1.0 / edgeops.edgeFun3(
+        pub inline fn getInvElemArea(nodes: rasterfrontend.Vec3Slices(F)) F {
+            return 1.0 / hulledge.edgeFun3(
                 nodes.x[0],
                 nodes.y[0],
                 nodes.x[1],
@@ -197,7 +192,7 @@ pub fn Tri3Kernel() type {
         }
 
         pub inline fn solveWeightsHyperb(
-            nodes: Vec3Slices(F),
+            nodes: rasterfrontend.Vec3Slices(F),
             pixel_x: F,
             pixel_y: F,
             inv_area: F,
@@ -212,13 +207,13 @@ pub fn Tri3Kernel() type {
         }
 
         pub inline fn getWeightsAt(
-            nodes: Vec3Slices(F),
+            nodes: rasterfrontend.Vec3Slices(F),
             pixel_x: F,
             pixel_y: F,
             inv_area: F,
         ) [nodes_num]F {
             return [_]F{
-                edgeops.edgeFun3(
+                hulledge.edgeFun3(
                     nodes.x[1],
                     nodes.y[1],
                     nodes.x[2],
@@ -226,7 +221,7 @@ pub fn Tri3Kernel() type {
                     pixel_x,
                     pixel_y,
                 ) * inv_area,
-                edgeops.edgeFun3(
+                hulledge.edgeFun3(
                     nodes.x[2],
                     nodes.y[2],
                     nodes.x[0],
@@ -234,7 +229,7 @@ pub fn Tri3Kernel() type {
                     pixel_x,
                     pixel_y,
                 ) * inv_area,
-                edgeops.edgeFun3(
+                hulledge.edgeFun3(
                     nodes.x[0],
                     nodes.y[0],
                     nodes.x[1],
@@ -253,7 +248,7 @@ pub fn Tri3Kernel() type {
                 weights[2] >= -edge_tol;
         }
 
-        pub inline fn calcInvZ(nodes: Vec3Slices(F), weights: [nodes_num]F) F {
+        pub inline fn calcInvZ(nodes: rasterfrontend.Vec3Slices(F), weights: [nodes_num]F) F {
             var inv_z: F = 0.0;
 
             inline for (0..nodes_num) |nn| {
@@ -264,7 +259,7 @@ pub fn Tri3Kernel() type {
         }
 
         pub inline fn solveWeightsHyperbSIMD(
-            nodes: Vec3Slices(F),
+            nodes: rasterfrontend.Vec3Slices(F),
             v_pixel_x: VecSF,
             v_pixel_y: VecSF,
             v_inv_area: VecSF,
@@ -301,13 +296,13 @@ pub fn Tri3Kernel() type {
         }
 
         pub inline fn getWeightsAtSIMD(
-            nodes: Vec3Slices(F),
+            nodes: rasterfrontend.Vec3Slices(F),
             v_pixel_x: VecSF,
             v_pixel_y: VecSF,
             v_inv_area: VecSF,
         ) [nodes_num]VecSF {
             return [_]VecSF{
-                edgeops.edgeFun3SIMD(
+                hulledge.edgeFun3SIMD(
                     nodes.x[1],
                     nodes.y[1],
                     nodes.x[2],
@@ -315,7 +310,7 @@ pub fn Tri3Kernel() type {
                     v_pixel_x,
                     v_pixel_y,
                 ) * v_inv_area,
-                edgeops.edgeFun3SIMD(
+                hulledge.edgeFun3SIMD(
                     nodes.x[2],
                     nodes.y[2],
                     nodes.x[0],
@@ -323,7 +318,7 @@ pub fn Tri3Kernel() type {
                     v_pixel_x,
                     v_pixel_y,
                 ) * v_inv_area,
-                edgeops.edgeFun3SIMD(
+                hulledge.edgeFun3SIMD(
                     nodes.x[0],
                     nodes.y[0],
                     nodes.x[1],
@@ -356,7 +351,7 @@ pub fn Tri3Kernel() type {
             return v_inv_z;
         }
 
-        pub inline fn getSIMDInvZ(nodes: Vec3Slices(F)) [nodes_num]VecSF {
+        pub inline fn getSIMDInvZ(nodes: rasterfrontend.Vec3Slices(F)) [nodes_num]VecSF {
             var out: [nodes_num]VecSF = undefined;
             inline for (0..nodes_num) |ii| {
                 out[ii] = @splat(1.0 / nodes.z[ii]);
@@ -374,7 +369,7 @@ pub fn Tri3OptKernel() type {
         pub const coord_space = .raster;
         pub const solver_kind = .hyperb;
 
-        pub inline fn getSIMDInvZ(nodes: Vec3Slices(F)) [nodes_num]VecSF {
+        pub inline fn getSIMDInvZ(nodes: rasterfrontend.Vec3Slices(F)) [nodes_num]VecSF {
             var out: [nodes_num]VecSF = undefined;
             inline for (0..nodes_num) |ii| {
                 out[ii] = @splat(1.0 / nodes.z[ii]);
@@ -393,9 +388,9 @@ pub fn Tri6Kernel() type {
         pub const solver_kind = .newton;
 
         pub inline fn initSeed(
-            seed_mode: rastcfg.NewtonSeedMode,
-            hull_seed: ?NewtonSeed,
-        ) NewtonSeed {
+            seed_mode: rasterconfig.NewtonSeedMode,
+            hull_seed: ?newton.NewtonSeed,
+        ) newton.NewtonSeed {
             if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
@@ -405,9 +400,9 @@ pub fn Tri6Kernel() type {
         }
 
         pub inline fn initSeedSIMD(
-            seed_mode: rastcfg.NewtonSeedMode,
-            hull_seed: ?NewtonSeedSIMD,
-        ) NewtonSeedSIMD {
+            seed_mode: rasterconfig.NewtonSeedMode,
+            hull_seed: ?newton.NewtonSeedSIMD,
+        ) newton.NewtonSeedSIMD {
             if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
@@ -424,7 +419,7 @@ pub fn Tri6Kernel() type {
         }
 
         pub inline fn solveWeightsNewton(
-            nodes: Vec3Slices(F),
+            nodes: rasterfrontend.Vec3Slices(F),
             pixel_x: F,
             pixel_y: F,
             x_offset: F,
@@ -499,7 +494,7 @@ pub fn Tri6Kernel() type {
         }
 
         pub inline fn solveWeightsNewtonSIMD(
-            nodes: Vec3Slices(F),
+            nodes: rasterfrontend.Vec3Slices(F),
             v_pixel_x: VecSF,
             v_pixel_y: VecSF,
             v_xi_seed: VecSF,
@@ -584,7 +579,7 @@ pub fn Tri6Kernel() type {
             };
         }
 
-        pub inline fn calcInvZ(nodes: Vec3Slices(F), weights: [nodes_num]F) F {
+        pub inline fn calcInvZ(nodes: rasterfrontend.Vec3Slices(F), weights: [nodes_num]F) F {
             return calcInvZClip(nodes_num, nodes, weights);
         }
     };
@@ -599,9 +594,9 @@ pub fn Quad4Kernel() type {
         pub const solver_kind = .newton;
 
         pub inline fn initSeed(
-            seed_mode: rastcfg.NewtonSeedMode,
-            hull_seed: ?NewtonSeed,
-        ) NewtonSeed {
+            seed_mode: rasterconfig.NewtonSeedMode,
+            hull_seed: ?newton.NewtonSeed,
+        ) newton.NewtonSeed {
             if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
@@ -611,9 +606,9 @@ pub fn Quad4Kernel() type {
         }
 
         pub inline fn initSeedSIMD(
-            seed_mode: rastcfg.NewtonSeedMode,
-            hull_seed: ?NewtonSeedSIMD,
-        ) NewtonSeedSIMD {
+            seed_mode: rasterconfig.NewtonSeedMode,
+            hull_seed: ?newton.NewtonSeedSIMD,
+        ) newton.NewtonSeedSIMD {
             if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
@@ -630,7 +625,7 @@ pub fn Quad4Kernel() type {
         }
 
         pub inline fn solveWeightsNewton(
-            nodes: Vec3Slices(F),
+            nodes: rasterfrontend.Vec3Slices(F),
             pixel_x: F,
             pixel_y: F,
             x_offset: F,
@@ -706,7 +701,7 @@ pub fn Quad4Kernel() type {
         }
 
         pub inline fn solveWeightsNewtonSIMD(
-            nodes: Vec3Slices(F),
+            nodes: rasterfrontend.Vec3Slices(F),
             v_pixel_x: VecSF,
             v_pixel_y: VecSF,
             v_xi_seed: VecSF,
@@ -791,7 +786,7 @@ pub fn Quad4Kernel() type {
             };
         }
 
-        pub inline fn calcInvZ(nodes: Vec3Slices(F), weights: [nodes_num]F) F {
+        pub inline fn calcInvZ(nodes: rasterfrontend.Vec3Slices(F), weights: [nodes_num]F) F {
             return calcInvZClip(nodes_num, nodes, weights);
         }
     };
@@ -806,9 +801,9 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const solver_kind = .newton;
 
         pub inline fn initSeed(
-            seed_mode: rastcfg.NewtonSeedMode,
-            hull_seed: ?NewtonSeed,
-        ) NewtonSeed {
+            seed_mode: rasterconfig.NewtonSeedMode,
+            hull_seed: ?newton.NewtonSeed,
+        ) newton.NewtonSeed {
             if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
@@ -818,9 +813,9 @@ pub fn Quad89Kernel(comptime N: usize) type {
         }
 
         pub inline fn initSeedSIMD(
-            seed_mode: rastcfg.NewtonSeedMode,
-            hull_seed: ?NewtonSeedSIMD,
-        ) NewtonSeedSIMD {
+            seed_mode: rasterconfig.NewtonSeedMode,
+            hull_seed: ?newton.NewtonSeedSIMD,
+        ) newton.NewtonSeedSIMD {
             if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
@@ -837,7 +832,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
         }
 
         pub inline fn solveWeightsNewton(
-            nodes: Vec3Slices(F),
+            nodes: rasterfrontend.Vec3Slices(F),
             pixel_x: F,
             pixel_y: F,
             x_offset: F,
@@ -912,7 +907,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
         }
 
         pub inline fn solveWeightsNewtonSIMD(
-            nodes: Vec3Slices(F),
+            nodes: rasterfrontend.Vec3Slices(F),
             v_pixel_x: VecSF,
             v_pixel_y: VecSF,
             v_xi_seed: VecSF,
@@ -997,7 +992,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
             };
         }
 
-        pub inline fn calcInvZ(nodes: Vec3Slices(F), weights: [nodes_num]F) F {
+        pub inline fn calcInvZ(nodes: rasterfrontend.Vec3Slices(F), weights: [nodes_num]F) F {
             return calcInvZClip(nodes_num, nodes, weights);
         }
     };

@@ -9,152 +9,10 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const print = std.debug.print;
-const time = std.time;
-const assert = std.debug.assert;
 
-const Vec3F = @import("vecstack.zig").Vec3F;
-const slice = @import("sliceops.zig");
-
-const MatSlice = @import("matslice.zig").MatSlice;
-const NDArray = @import("ndarray.zig").NDArray;
 const csvio = @import("csvio.zig");
-
-// --------------------------------------------------------------------------------------
-// Public Constants & Public Types
-// --------------------------------------------------------------------------------------
-
-pub const Coords = struct {
-    mat: MatSlice(F),
-    mem: []F,
-
-    const Self: type = @This();
-
-    pub fn init(mem: []F, coords_num: usize) Self {
-        assert(mem.len == coords_num * 3);
-        const mat_coords = MatSlice(F).init(mem, coords_num, 3);
-
-        return .{
-            .mat = mat_coords,
-            .mem = mem,
-        };
-    }
-
-    pub fn initAlloc(outer_alloc: std.mem.Allocator, coords_num: usize) !Self {
-        const mat_mem = try outer_alloc.alloc(F, coords_num * 3);
-
-        return init(mat_mem, coords_num);
-    }
-
-    pub inline fn x(self: *const Self, ind: usize) F {
-        return self.mat.get(ind, 0);
-    }
-
-    pub inline fn y(self: *const Self, ind: usize) F {
-        return self.mat.get(ind, 1);
-    }
-
-    pub inline fn z(self: *const Self, ind: usize) F {
-        return self.mat.get(ind, 2);
-    }
-
-    pub fn getVecSlice(self: *const Self, ind: usize) []F {
-        return self.mat.getSlice(ind);
-    }
-
-    pub fn getVec3(self: *const Coords, ind: usize) Vec3F {
-        const vec_slice = self.mat.getSlice(ind);
-        const vec = Vec3F.initSlice(vec_slice);
-        return vec;
-    }
-};
-
-pub const Connect = struct {
-    table: MatSlice(usize),
-    table_mem: []usize,
-
-    const Self: type = @This();
-
-    pub fn init(mem: []usize, elems_num: usize, nodes_per_elem: usize) Self {
-        assert(mem.len == elems_num * nodes_per_elem);
-
-        const mat_table = MatSlice(usize).init(mem, elems_num, nodes_per_elem);
-
-        return .{
-            .table = mat_table,
-            .table_mem = mem,
-        };
-    }
-
-    pub fn initAlloc(
-        outer_alloc: std.mem.Allocator,
-        elems_num: usize,
-        nodes_per_elem: usize,
-    ) !Self {
-        const mat_mem = try outer_alloc.alloc(usize, elems_num * nodes_per_elem);
-
-        return init(mat_mem, elems_num, nodes_per_elem);
-    }
-
-    pub inline fn getElemsNum(self: Self) usize {
-        return self.table.rows_num;
-    }
-
-    pub inline fn getNodesPerElem(self: Self) usize {
-        return self.table.cols_num;
-    }
-
-    pub fn deinit(self: *Self, outer_alloc: std.mem.Allocator) void {
-        outer_alloc.free(self.table_mem);
-    }
-
-    pub fn getElem(self: *const Self, elem_num: usize) []usize {
-        const ind_start: usize = elem_num * self.getNodesPerElem();
-        const ind_end: usize = ind_start + self.getNodesPerElem();
-        return self.table_mem[ind_start..ind_end];
-    }
-};
-
-pub const Field = struct {
-    array: NDArray(F),
-    array_mem: []F,
-
-    const Self = @This();
-
-    pub fn initAlloc(
-        outer_alloc: std.mem.Allocator,
-        time_n: usize,
-        coord_n: usize,
-        fields_n: u8,
-    ) !Self {
-        const mem_array = try outer_alloc.alloc(F, time_n * coord_n * fields_n);
-        @memset(mem_array, 0.0);
-
-        const mem_dims = [3]usize{ time_n, coord_n, @as(usize, fields_n) };
-        const arr = try NDArray(F).init(outer_alloc, mem_array, mem_dims[0..]);
-
-        return .{
-            .array = arr,
-            .array_mem = mem_array,
-        };
-    }
-
-    pub inline fn getTimeN(self: *const Self) usize {
-        return self.array.dims[0];
-    }
-    pub inline fn getCoordN(self: *const Self) usize {
-        return self.array.dims[1];
-    }
-    pub inline fn getFieldsN(self: *const Self) u8 {
-        std.debug.assert(self.array.dims[2] <= std.math.maxInt(u8));
-        return @intCast(self.array.dims[2]);
-    }
-
-    pub fn deinit(self: *Self, outer_alloc: std.mem.Allocator) void {
-        outer_alloc.free(self.array_mem);
-        self.array.deinit(outer_alloc);
-    }
-};
+const meshtypes = @import("meshtypes.zig");
+const fieldtypes = @import("fieldtypes.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -163,9 +21,9 @@ pub const Field = struct {
 pub fn parseCoords(
     outer_alloc: std.mem.Allocator,
     csv_lines: *const std.ArrayList([]const u8),
-) !Coords {
+) !meshtypes.Coords {
     const coord_count: usize = csv_lines.items.len;
-    var coords = try Coords.initAlloc(outer_alloc, coord_count);
+    var coords = try meshtypes.Coords.initAlloc(outer_alloc, coord_count);
 
     const num_coords: u8 = 3;
     var num_count: u8 = 0;
@@ -193,7 +51,7 @@ pub fn parseCoords(
 pub fn parseConnect(
     outer_alloc: std.mem.Allocator,
     csv_lines: *const std.ArrayList([]const u8),
-) !Connect {
+) !meshtypes.Connect {
     const elem_count = csv_lines.items.len;
 
     var split_iter = std.mem.splitScalar(u8, csv_lines.items[0], ',');
@@ -203,7 +61,7 @@ pub fn parseConnect(
         nodes_per_elem += 1;
     }
 
-    const connect = try Connect.initAlloc(outer_alloc, elem_count, nodes_per_elem);
+    const connect = try meshtypes.Connect.initAlloc(outer_alloc, elem_count, nodes_per_elem);
 
     var elem: usize = 0;
     var node: usize = 0;
@@ -238,7 +96,7 @@ pub fn getFieldTimeN(csv_lines: *const std.ArrayList([]const u8)) usize {
 
 pub fn parseField(
     csv_lines: *const std.ArrayList([]const u8),
-    field: *Field,
+    field: *fieldtypes.Field,
     field_n: u8,
 ) !void {
 
@@ -277,10 +135,10 @@ pub const SimDataFiles = struct {
 };
 
 pub const SimData = struct {
-    coords: Coords,
-    connect: Connect,
-    field: ?Field,
-    disp: ?Field,
+    coords: meshtypes.Coords,
+    connect: meshtypes.Connect,
+    field: ?fieldtypes.Field,
+    disp: ?fieldtypes.Field,
 
     pub fn deinit(self: *SimData, outer_alloc: std.mem.Allocator) void {
         outer_alloc.free(self.coords.mem);
@@ -316,14 +174,14 @@ pub fn loadSimData(
 
     //--------------------------------------------------------------------------
     // Parse field (optional)
-    var field: ?Field = null;
+    var field: ?fieldtypes.Field = null;
     if (field_paths) |fp| {
         if (fp.len > 0) {
             lines = try csvio.readCsvToList(arena_alloc, io, fp[0]);
             const time_n: usize = getFieldTimeN(&lines);
             const coord_n: usize = lines.items.len;
             std.debug.assert(fp.len <= std.math.maxInt(u8));
-            field = try Field.initAlloc(outer_alloc, time_n, coord_n, @intCast(fp.len));
+            field = try fieldtypes.Field.initAlloc(outer_alloc, time_n, coord_n, @intCast(fp.len));
             try parseField(&lines, &field.?, 0);
             lines.clearRetainingCapacity();
 
@@ -337,14 +195,14 @@ pub fn loadSimData(
 
     //--------------------------------------------------------------------------
     // Parse displacement (optional)
-    var disp: ?Field = null;
+    var disp: ?fieldtypes.Field = null;
     if (disp_paths) |dp| {
         if (dp.len > 0) {
             lines = try csvio.readCsvToList(arena_alloc, io, dp[0]);
             const time_n: usize = getFieldTimeN(&lines);
             const coord_n: usize = lines.items.len;
             std.debug.assert(dp.len <= std.math.maxInt(u8));
-            disp = try Field.initAlloc(outer_alloc, time_n, coord_n, @intCast(dp.len));
+            disp = try fieldtypes.Field.initAlloc(outer_alloc, time_n, coord_n, @intCast(dp.len));
             try parseField(&lines, &disp.?, 0);
             lines.clearRetainingCapacity();
 

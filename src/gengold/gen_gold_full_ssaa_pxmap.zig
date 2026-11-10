@@ -6,9 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const fullcase_ssaa_pxmap = @import("../tests/fullcase_ssaa_pxmap.zig");
 const fullfixtures = @import("../dev_support/fullfixtures.zig");
 const iio = @import("../riley/zig/imageio.zig");
@@ -20,8 +22,8 @@ const riley = @import("../riley/zig/riley.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 pub const DistCase = fullcase_ssaa_pxmap.DistCase;
 pub const PsfCase = fullcase_ssaa_pxmap.PsfCase;
@@ -69,16 +71,14 @@ pub fn generateSsaaPxmapCase(
     camera_input.distort = dist_case.distort;
     camera_input.psf = psf_case.psf;
     camera_input.subpixel_center_map = pxmap_case.map_mode;
-
-    var case_config = config;
-    case_config.background_value = fullfixtures.grey_background_scene1;
+    camera_input.background_value = fullfixtures.grey_background_scene1;
 
     const images = try riley.raster(
         allocator,
         io,
         &[_]CameraInput{camera_input},
         &meshes,
-        case_config,
+        config,
         out_dir_path,
     );
 
@@ -125,11 +125,6 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
-    config.background_value = fullfixtures.grey_background_scene1;
 
     const gold_dir_root = policy.goldRoot(.full_ssaa_pxmap);
     try generateAllFullSsaaPxmapCases(allocator, io, gold_dir_root, config);

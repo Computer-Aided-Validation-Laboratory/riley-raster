@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-from bench_common import run_benchmark_matrix
-
+from benchmark_harness import main
 
 if __name__ == "__main__":
-    raise SystemExit(run_benchmark_matrix("bench_sphere2000"))
+    raise SystemExit(main("sphere2000"))
