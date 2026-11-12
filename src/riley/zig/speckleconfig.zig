@@ -21,17 +21,12 @@ pub const Evaluator = enum(u8) {
     mask_1bit,
     mask_u8,
     mock,
-    classified_binned_22,
-    classified_binned_23,
-    classified_binned_34,
-    classified_binned_42,
-    classified_binned_46,
-    classified_binned_49,
+    classified_binned,
 };
 
 pub fn isClassified(evaluator: Evaluator) bool {
     return switch (evaluator) {
-        .classified_indexed, .classified_binned_22, .classified_binned_23, .classified_binned_34, .classified_binned_42, .classified_binned_46, .classified_binned_49 => true,
+        .classified_indexed, .classified_binned => true,
         else => false,
     };
 }
@@ -56,12 +51,7 @@ pub const Config = union(Evaluator) {
     mask_1bit: Neighborhood,
     mask_u8: Field,
     mock: void,
-    classified_binned_22: void,
-    classified_binned_23: void,
-    classified_binned_34: void,
-    classified_binned_42: void,
-    classified_binned_46: void,
-    classified_binned_49: void,
+    classified_binned: void,
 
     pub fn pattern(self: Config) ?Pattern {
         return switch (self) {
@@ -71,7 +61,7 @@ pub const Config = union(Evaluator) {
                 .gaussian => .gaussian,
             },
             .gradient_lattice => .perlin,
-            .classified_indexed, .classified_binned_22, .classified_binned_23, .classified_binned_34, .classified_binned_42, .classified_binned_46, .classified_binned_49, .direct_fixed, .mask_1bit => .disk,
+            .classified_indexed, .classified_binned, .direct_fixed, .mask_1bit => .disk,
             .mock => null,
         };
     }
@@ -87,7 +77,7 @@ pub const Config = union(Evaluator) {
                 .disk => |disk| disk.neighborhood,
                 .gaussian => |neighbors| neighbors,
             },
-            .classified_indexed, .classified_binned_22, .classified_binned_23, .classified_binned_34, .classified_binned_42, .classified_binned_46, .classified_binned_49 => .nine,
+            .classified_indexed, .classified_binned => .nine,
             .direct_fixed => .one,
             .mask_1bit => |neighbors| neighbors,
             .gradient_lattice, .mock => null,
@@ -104,7 +94,7 @@ pub const Config = union(Evaluator) {
                 .disk => |disk| disk.edges,
                 .gaussian => null,
             },
-            .classified_indexed, .classified_binned_22, .classified_binned_23, .classified_binned_34, .classified_binned_42, .classified_binned_46, .classified_binned_49, .direct_fixed, .mask_1bit => .hard,
+            .classified_indexed, .classified_binned, .direct_fixed, .mask_1bit => .hard,
             .gradient_lattice => null,
             .mock => null,
         };
@@ -153,12 +143,7 @@ pub fn evaluatorName(evaluator: Evaluator) []const u8 {
         .list_indexed => "list-indexed",
         .cell_binned => "cell-binned",
         .classified_indexed => "classified-indexed",
-        .classified_binned_22 => "classified-binned-22",
-        .classified_binned_23 => "classified-binned-23",
-        .classified_binned_34 => "classified-binned-34",
-        .classified_binned_42 => "classified-binned-42",
-        .classified_binned_46 => "classified-binned-46",
-        .classified_binned_49 => "classified-binned-49",
+        .classified_binned => "classified-binned",
 
         .direct_fixed => "direct-fixed",
         .mask_1bit => "mask-1bit",
@@ -199,7 +184,7 @@ pub fn resolve(
         .mask_1bit => if (pattern != .disk) return error.Mask1BitRequiresDisk,
         .classified_indexed => if (pattern != .disk or neighbors != .nine)
             return error.ClassifiedIndexedRequiresDiskAndNineNeighbors,
-        .classified_binned_22, .classified_binned_23, .classified_binned_34, .classified_binned_42, .classified_binned_46, .classified_binned_49 => if (pattern != .disk or neighbors != .nine)
+        .classified_binned => if (pattern != .disk or neighbors != .nine)
             return error.ClassifiedBinnedRequiresDiskAndNineNeighbors,
         .direct_fixed => if (pattern != .disk or neighbors != .one)
             return error.DirectFixedRequiresDiskAndOneNeighbor,
@@ -208,7 +193,7 @@ pub fn resolve(
     if (edges == .soft) {
         if (pattern != .disk) return error.SpeckleEdgeSoftnessRequiresDisk;
         switch (selected) {
-            .classified_indexed, .classified_binned_22, .classified_binned_23, .classified_binned_34, .classified_binned_42, .classified_binned_46, .classified_binned_49, .direct_fixed, .mask_1bit, .gradient_lattice => return error.SpeckleEvaluatorRequiresHardEdges,
+            .classified_indexed, .classified_binned, .direct_fixed, .mask_1bit, .gradient_lattice => return error.SpeckleEvaluatorRequiresHardEdges,
             else => {},
         }
     }
@@ -237,12 +222,7 @@ pub fn resolve(
         },
         .gradient_lattice => .gradient_lattice,
         .classified_indexed => .classified_indexed,
-        .classified_binned_22 => .classified_binned_22,
-        .classified_binned_23 => .classified_binned_23,
-        .classified_binned_34 => .classified_binned_34,
-        .classified_binned_42 => .classified_binned_42,
-        .classified_binned_46 => .classified_binned_46,
-        .classified_binned_49 => .classified_binned_49,
+        .classified_binned => .classified_binned,
 
         .direct_fixed => .direct_fixed,
         .mask_1bit => .{ .mask_1bit = neighbors },
@@ -253,7 +233,6 @@ pub fn resolve(
 /// Masks ignore generation policy; naive lists retain centers/radii rather than a neighborhood.
 pub fn canonicalizeSampleConfig(config: Config) Config {
     return switch (config) {
-        .classified_binned_49 => .classified_binned_46,
         .mask_1bit => .{ .mask_1bit = .nine },
         .mask_u8 => .{ .mask_u8 = .{ .disk = .{ .neighborhood = .nine, .edges = .hard } } },
         .list_naive => |shape| .{ .list_naive = switch (shape) {
@@ -275,7 +254,7 @@ const default_configs = [_]Config{
     .gradient_lattice,
 };
 const Catalogue = struct {
-    configs: [60]Config = undefined,
+    configs: [55]Config = undefined,
     len: usize = 0,
 
     fn appendUnique(self: *Catalogue, config: Config) void {
@@ -318,12 +297,7 @@ fn enumerateGenerationConfigs() Catalogue {
     for (default_configs) |config| result.appendUnique(config);
     result.appendUnique(.direct_fixed);
     result.appendUnique(.mock);
-    result.appendUnique(.classified_binned_22);
-    result.appendUnique(.classified_binned_23);
-    result.appendUnique(.classified_binned_34);
-    result.appendUnique(.classified_binned_42);
-    result.appendUnique(.classified_binned_46);
-    result.appendUnique(.classified_binned_49);
+    result.appendUnique(.classified_binned);
 
     inline for (.{ Evaluator.cell_hash, Evaluator.mask_u8 }) |evaluator|
         result.appendUnique(@unionInit(Config, @tagName(evaluator), Field.perlin));
@@ -374,16 +348,13 @@ test "enum boundary conversions and pattern/evaluator spellings" {
 
 test "classified evaluator names distinguish indexed strips from bins" {
     try std.testing.expectEqual(Evaluator.classified_indexed, parseEvaluator("classified-indexed").?);
-    try std.testing.expectEqual(null, parseEvaluator("classified-binned"));
+    try std.testing.expectEqual(Evaluator.classified_binned, parseEvaluator("classified-binned").?);
     try std.testing.expectEqual(Config.classified_indexed, try resolve(false, .disk, null, null, .hard));
-    try std.testing.expect(isClassified(.classified_indexed));
-    inline for (.{ "22", "23", "34", "42", "46", "49" }) |suffix| {
-        const evaluator = parseEvaluator("classified-binned-" ++ suffix).?;
+    inline for (.{ Evaluator.classified_indexed, Evaluator.classified_binned }) |evaluator| {
         try std.testing.expect(isClassified(evaluator));
-        try std.testing.expectEqual(null, parseEvaluator("classified-indexed-" ++ suffix));
         try std.testing.expectEqual(@as(?Neighborhood, .nine), (try resolve(true, .disk, evaluator, null, .hard)).neighborhood());
-        try std.testing.expectError(error.ClassifiedBinnedRequiresDiskAndNineNeighbors, resolve(true, .disk, evaluator, .four, .hard));
     }
+    try std.testing.expectError(error.ClassifiedBinnedRequiresDiskAndNineNeighbors, resolve(true, .disk, .classified_binned, .four, .hard));
 }
 
 test "exhaustive external controls preserve acceptance errors and resolved semantics" {
@@ -436,8 +407,8 @@ test "exhaustive external controls preserve acceptance errors and resolved seman
 }
 
 test "catalogues contain exactly the valid policies and canonical sampler behaviors" {
-    try std.testing.expectEqual(60, generationConfigs(true).len);
-    try std.testing.expectEqual(36, sampleConfigs(true).len);
+    try std.testing.expectEqual(55, generationConfigs(true).len);
+    try std.testing.expectEqual(32, sampleConfigs(true).len);
     try std.testing.expectEqual(4, generationConfigs(false).len);
     try std.testing.expectEqual(4, sampleConfigs(false).len);
     inline for (.{ false, true }) |enabled| {

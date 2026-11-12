@@ -132,7 +132,7 @@ Non-mock Perlin rejects neighborhood overrides; hard/soft edges apply only to di
 
 | Pattern | Default evaluator | Native alternatives |
 | --- | --- | --- |
-| Hard disk | `classified-indexed` (9 neighbors) | `cell-hash`, `list-indexed`, `list-naive`, `cell-binned`, `direct-fixed`, masks |
+| Hard disk | `classified-indexed` (9 neighbors) | `cell-hash`, `list-indexed`, `list-naive`, `cell-binned`, `classified-binned`, `direct-fixed`, masks |
 | Soft disk | `cell-binned` (9 neighbors) | `cell-hash`, `list-indexed`, `list-naive`, `mask-u8` |
 | Gaussian | `cell-binned` (9 neighbors) | `cell-hash`, `list-indexed`, `list-naive`, `mask-u8` |
 | Perlin | `gradient-lattice` | `cell-hash`, `mask-u8` |
@@ -187,11 +187,14 @@ Finite UVs clamp to `[0,1]` before procedural scaling.
   test only candidate owners. The 256 MiB state limit returns
   `SpeckleClassificationTooLarge` on excess or checked size overflow.
   Its candidates reference owner-indexed strips, not procedural-cell bins.
-- **`classified-binned-22/23/34/42/46/49`:** experimental hard-disk variants
-  retain procedural-cell bins. Variant 22 uses bin-local candidate masks;
-  23/34 traverse full bin lists (34 uses resolution 8); 42 uses 8×4
-  classification, 46 groups sampling by bin, and 49 prepares classifications
-  from bins while sharing 46's sampling kernel. These are not default evaluators.
+- **`classified-binned`:** experimental hard-disk evaluator with procedural-cell
+  bins and local 8×4 classification, independent of the build-wide mask resolution.
+  Preparation classifies bins with reachable-domain-clipped FG32/AMB32 certificates;
+  sampling uses exact disk fallback with variable-radius lanes grouped by bin.
+  Fixed radii retain nine-slot X/Y planes; variable radii retain CSR X/Y/radius²
+  planes. The 256 MiB logical classification and 512 MiB peak preparation limits
+  return `SpeckleClassificationTooLarge` without fallback. This is distinct from
+  the owner-strip `classified-indexed` algorithm and does not change defaults.
 - **`cell-binned`:** setup bins touching support into procedural cells. Fixed
   radii use nine-slot X/Y planes and byte counts; variable radii use CSR records.
   Fixed Gaussians reduce paired squared distances before one exponential;

@@ -192,8 +192,8 @@ pub fn preparedIdentity(resources: *const speckle.Resources) PreparedIdentity {
     const stored: ?speckle.Speckle2DParams = switch (resources.data) {
         .none => null,
         .classified => |data| data.speckles.params,
-        inline .direct_classified, .cell_binned, .direct_fixed, .mask, .perlin, .list, .strip_list => |data| data.params,
-        .rect_bin_classified => |data| data.payload.params,
+        inline .cell_binned, .direct_fixed, .mask, .perlin, .list, .strip_list => |data| data.params,
+        .classified_binned => |data| data.payload.params,
     };
     if (stored) |params| {
         // These immutable parameters already passed the preparation boundary.
@@ -252,12 +252,7 @@ pub fn main(init: std.process.Init) !void {
             },
             .strip_list => |strip| resource_bytes = strip.centers.len * @sizeOf([2]F) + strip.disks.len * @sizeOf(speckle.SpeckleDisk2D),
             .classified => |classified| resource_bytes = classified.states.len * @sizeOf(u16) + classified.speckles.centers.len * @sizeOf([2]F) + classified.speckles.disks.len * @sizeOf(speckle.SpeckleDisk2D),
-            .direct_classified => |direct| {
-                resource_bytes = direct.byteSize();
-                duplicated_disk_records = direct.record_count;
-            },
-
-            .rect_bin_classified => |data| {
+            .classified_binned => |data| {
                 resource_bytes = data.byteSize();
                 duplicated_disk_records = data.payload.record_count;
             },
@@ -361,13 +356,24 @@ test "speckle benchmark named options and default gate" {
         try std.testing.expect(opts.softness > 0);
         try std.testing.expectEqual(policy.Evaluator.cell_hash, opts.evaluator.?);
     } else try std.testing.expectError(error.SpeckleOverridesDisabled, Options.parse(args));
-    const candidate = &.{ "bench", "--evaluator", "classified-indexed", "--jitter", "0.08" };
-    if (comptime build.enable_all_evaluators) {
-        const opts = try Options.parse(candidate);
-        try std.testing.expectEqual(policy.Evaluator.classified_indexed, opts.evaluator.?);
-        try std.testing.expectEqual(@as(F, 0.08), opts.jitter);
-        try std.testing.expectError(error.ClassifiedIndexedRequiresDiskAndNineNeighbors, Options.parse(&.{ "bench", "--evaluator", "classified-indexed", "--neighbors", "4" }));
-    } else try std.testing.expectError(error.SpeckleOverridesDisabled, Options.parse(candidate));
+    inline for (.{ policy.Evaluator.classified_indexed, policy.Evaluator.classified_binned }) |evaluator| {
+        const name = policy.evaluatorName(evaluator);
+        const args_classified = &.{ "bench", "--evaluator", name, "--jitter", "0.08" };
+        if (comptime build.enable_all_evaluators) {
+            const opts = try Options.parse(args_classified);
+            try std.testing.expectEqual(evaluator, opts.evaluator.?);
+            try std.testing.expectEqual(@as(F, 0.08), opts.jitter);
+            var params = opts.params();
+            params.cells_per_uv = .{ 3.17, 2.31 };
+            var resources = try speckle.Resources.init(std.testing.allocator, params);
+            defer resources.deinit(std.testing.allocator);
+            const identity = preparedIdentity(&resources);
+            try std.testing.expectEqualStrings(name, identity.generation_evaluator.?);
+            try std.testing.expectEqualStrings(name, identity.sampling_evaluator.?);
+            try std.testing.expectEqualStrings(if (evaluator == .classified_indexed) "classified" else "classified_binned", identity.backing);
+            try std.testing.expectError(if (evaluator == .classified_indexed) error.ClassifiedIndexedRequiresDiskAndNineNeighbors else error.ClassifiedBinnedRequiresDiskAndNineNeighbors, Options.parse(&.{ "bench", "--evaluator", name, "--neighbors", "4" }));
+        } else try std.testing.expectError(error.SpeckleOverridesDisabled, Options.parse(args_classified));
+    }
 }
 const Scene = struct {
     sim: meshio.SimData,
