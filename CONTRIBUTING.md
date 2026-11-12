@@ -1,6 +1,6 @@
 # Contributing to riley-raster
 
-Thank you for wanting to contribute to the development of riley-raster. Before contributing, please read this page, along with our [Code of Conduct](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/CODE_OF_CONDUCT.md) and [Security](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/SECURITY.md) guidelines.
+Thank you for wanting to contribute to the development of riley-raster. Before contributing, please read this page, along with our [Code of Conduct](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/CODE_OF_CONDUCT.md), [Security](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/SECURITY.md), and relevant [Style](https://github.com/Computer-Aided-Validation-Laboratory/styleguides/tree/main/guides) guidelines.
 
 
 ## Reporting Security Concerns
@@ -24,6 +24,8 @@ Code contributions should be associated with an issue or feature request. Please
 Please be aware that all riley-raster code is under the [MIT Licencse](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/LICENSE). It is your responsiblity to ensure that all contributions are compatible with this.
 
 ## AI Usage
+
+Refer to the AI guide included in our [style guides](https://github.com/Computer-Aided-Validation-Laboratory/styleguides/tree/main/guides) for more information on using AI sensibly and effectively. 
 
 The riley-raster project has strict rules for AI usage:
 
