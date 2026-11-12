@@ -71,6 +71,7 @@ riley = [
 
 [tool.pytest.ini_options]
 testpaths = ["src/riley/pytests"]
+pythonpath = ["."]
 filterwarnings = [
   "ignore:.*Setting the shape on a NumPy array.*:DeprecationWarning",
 ]

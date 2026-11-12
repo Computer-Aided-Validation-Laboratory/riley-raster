@@ -318,6 +318,7 @@ pub fn buildShaderCaseMeshes(
                     .checker_smooth => .{ .checker_smooth = .{} },
                     .lambertian_normal_z => .{ .lambertian_normal_z = .{} },
                     .eggbox => .{ .eggbox = .{} },
+                    .speckle => .{ .speckle = .{} },
                 },
             };
 
