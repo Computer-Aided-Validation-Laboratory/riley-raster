@@ -44,3 +44,27 @@ jobs:
       - name: Run whole-project configuration tests (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: zig build test-configs
+
+      - name: Run 32-bit Linux default-policy speckle tests (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build test-procedural-speckles -Dtarget=x86-linux-musl -Dstrip=true
+
+      - name: Run 32-bit Linux experimental speckle tests (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build test-procedural-speckles -Dtarget=x86-linux-musl -Dstrip=true -Denable-all-evaluators=true
+
+      - name: Python setup for native runner smoke (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Build experimental native speckle benchmark (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build install-bench-speckle-evaluators -Doptimize=ReleaseFast -Dstrip=true -Denable-all-evaluators=true
+
+      - name: Run native benchmark runner smoke (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          RILEY_SPECKLE_BENCH_BINARY: zig-out/bin/bench_speckle_evaluators_f64_simd
+        run: python -m unittest scripts.tests.test_bench_speckle.NativeBenchmarkTests

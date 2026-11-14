@@ -146,7 +146,7 @@ test "runtime speckle patterns prepare their production resources" {
         softness: F = 0.0,
         evaluator: Evaluator,
     }{
-        .{ .pattern = .disk, .evaluator = .classified_indexed },
+        .{ .pattern = .disk, .evaluator = .classified_binned },
         .{ .pattern = .disk, .softness = 0.03, .evaluator = .cell_binned },
         .{ .pattern = .gaussian, .evaluator = .cell_binned },
         .{ .pattern = .perlin, .evaluator = .gradient_lattice },
@@ -178,14 +178,59 @@ test "runtime speckle patterns prepare their production resources" {
     try expectPreparedResources(std.testing.allocator, &mesh_input, direct, .direct_fixed, .one);
 }
 
-test "cell-binned rendered images equal independent analytic evaluators" {
-    if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
+test "production default speckle renders cover fields deformation buffers and worker counts without overrides" {
+    // This is integration/determinism coverage, not an independent field oracle. The
+    // independent default field oracles live in speckleops; cross-evaluator E2E stays gated.
+    try expectAnalyticRenders(false);
+}
 
-    const cases = [_]struct { pattern: Pattern, jitter: F, curved: bool }{
-        .{ .pattern = .disk, .jitter = 0, .curved = false },
-        .{ .pattern = .disk, .jitter = 0.25, .curved = true },
+test "analytic speckle renders agree across evaluators buffers and serial or parallel execution" {
+    if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
+    try expectAnalyticRenders(true);
+}
+
+fn expectAnalyticRenders(comptime compare_evaluators: bool) !void {
+    const Case = struct {
+        pattern: Pattern,
+        jitter: F,
+        curved: bool,
+        radius: F = fixture_params.radius_mean,
+        occupancy: F = fixture_params.occupancy,
+        softness: F = 0,
+        perlin_transition: F = 0.12,
+        neighbors: ?speckleconfig.Neighborhood = null,
+    };
+    const cases: []const Case = if (compare_evaluators) &.{
+        .{ .pattern = .disk, .jitter = 0, .curved = false, .softness = 0.06 },
+        .{ .pattern = .disk, .jitter = 0.25, .curved = true, .softness = 0.06 },
+        .{ .pattern = .disk, .jitter = 0, .curved = true },
+        .{ .pattern = .disk, .jitter = 0.25, .curved = false },
+        .{ .pattern = .disk, .jitter = 0, .curved = false, .radius = 0.425, .occupancy = 1 },
+        .{ .pattern = .disk, .jitter = 0, .curved = true, .radius = 0.425, .occupancy = 1 },
         .{ .pattern = .gaussian, .jitter = 0, .curved = true },
         .{ .pattern = .gaussian, .jitter = 0.25, .curved = false },
+        .{ .pattern = .perlin, .jitter = 0, .curved = false, .perlin_transition = 0 },
+        .{ .pattern = .perlin, .jitter = 0, .curved = true },
+        // One-neighbor support (radius + jitter + softness) must stay <= 0.5.
+        // Four-neighbor centers use a different generation domain; compare each
+        // against a naive list generated with the same stencil, not the nine default.
+        .{ .pattern = .disk, .neighbors = .one, .jitter = 0.1, .curved = false },
+        .{ .pattern = .disk, .neighbors = .one, .jitter = 0.1, .curved = true },
+        .{ .pattern = .disk, .neighbors = .four, .jitter = 0.25, .radius = 0.425, .curved = false },
+        .{ .pattern = .disk, .neighbors = .four, .jitter = 0.25, .radius = 0.425, .curved = true },
+        .{ .pattern = .disk, .neighbors = .one, .jitter = 0.1, .softness = 0.06, .curved = false },
+        .{ .pattern = .disk, .neighbors = .one, .jitter = 0.1, .softness = 0.06, .curved = true },
+        .{ .pattern = .disk, .neighbors = .four, .jitter = 0.25, .softness = 0.06, .curved = false },
+        .{ .pattern = .disk, .neighbors = .four, .jitter = 0.25, .softness = 0.06, .curved = true },
+        .{ .pattern = .gaussian, .neighbors = .one, .jitter = 0.1, .curved = false },
+        .{ .pattern = .gaussian, .neighbors = .one, .jitter = 0.1, .curved = true },
+        .{ .pattern = .gaussian, .neighbors = .four, .jitter = 0.25, .radius = 0.425, .curved = false },
+        .{ .pattern = .gaussian, .neighbors = .four, .jitter = 0.25, .radius = 0.425, .curved = true },
+    } else &.{
+        .{ .pattern = .disk, .jitter = 0, .curved = true, .radius = 0.425, .occupancy = 1 },
+        .{ .pattern = .disk, .jitter = 0.25, .curved = false, .softness = 0.06 },
+        .{ .pattern = .gaussian, .jitter = 0.25, .curved = true },
+        .{ .pattern = .perlin, .jitter = 0, .curved = false },
     };
     const camera_input: camera.CameraInput = .{
         .pixels_num = .{ 32, 24 },
@@ -221,8 +266,13 @@ test "cell-binned rendered images equal independent analytic evaluators" {
         }
         var params = fixture_params;
         params.pattern = case.pattern;
-        params.edge_softness = if (case.pattern == .disk) 0.06 else 0;
+        params.edge_softness = case.softness;
+        params.perlin_coverage_transition_width = case.perlin_transition;
         params.radius_jitter = case.jitter;
+        params.radius_mean = case.radius;
+        params.occupancy = case.occupancy;
+        params.neighbor_count = case.neighbors;
+        try params.validate();
         var mesh: meshpipeline.MeshInput = .{
             .mesh_type = .tri6,
             .coords = meshio.Coords.init(&coords, 6),
@@ -249,11 +299,15 @@ test "cell-binned rendered images equal independent analytic evaluators" {
                     .global_subpx_stripe_size_override = 8,
                 } },
             };
-            errdefer std.debug.print("render equality case {d}: {s}, jitter={d}, curved={}, buffer={s}\n", .{
-                case_idx, @tagName(case.pattern), case.jitter, case.curved, @tagName(buffer_mode),
+            errdefer std.debug.print("render equality case {d}: {s}, radius={d}, occupancy={d}, jitter={d}, neighbors={any}, curved={}, buffer={s}\n", .{
+                case_idx, @tagName(case.pattern), case.radius, case.occupancy, case.jitter, case.neighbors, case.curved, @tagName(buffer_mode),
             });
-            // Keep overrides absent for the first render to exercise the production default.
-            mesh.shader.speckle.params.evaluator = null;
+            // Only experimental builds compare against production reference evaluators.
+            // Default smoke tests compare the 1-worker omitted-override baseline with 4 workers.
+            mesh.shader.speckle.params.evaluator = if (comptime compare_evaluators)
+                if (case.pattern == .perlin) .cell_hash else .list_naive
+            else
+                null;
             var expected = (try riley.rasterAdvanced(
                 std.testing.allocator,
                 std.testing.io,
@@ -291,31 +345,46 @@ test "cell-binned rendered images equal independent analytic evaluators" {
             }
             try std.testing.expect(changed > 20);
 
-            // List-indexed is the previous default; cell-hash independently generates owners.
+            // A null evaluator exercises automatic resolution; reduced stencils still
+            // require their experimental neighborhood override. Only smoke cases omit both.
+            // The gated reference shares generation, not the accelerated sampling structures.
             // Masks approximate the field and deliberately do not participate in exact equality.
-            for ([_]Evaluator{ .cell_binned, .list_indexed, .cell_hash }) |evaluator| {
-                mesh.shader.speckle.params.evaluator = evaluator;
-                var actual = (try riley.rasterAdvanced(
-                    std.testing.allocator,
-                    std.testing.io,
-                    &.{camera_input},
-                    &.{mesh},
-                    config,
-                    null,
-                    .{ .render_groups = .{ .supplied = &.{.{ .io = std.testing.io, .workers = 1 }} } },
-                )) orelse return error.NoResult;
-                defer {
-                    std.testing.allocator.free(actual.slice);
-                    actual.deinit(std.testing.allocator);
-                }
-                try std.testing.expectEqualSlices(usize, expected.dims, actual.dims);
-                for (expected.slice, actual.slice, 0..) |reference, value, ii| {
-                    // Numeric equality intentionally accepts opposite signs of zero.
-                    if (reference != value) {
-                        std.debug.print("{s}: frame {d}, pixel {d}: expected {d}, found {d}\n", .{
-                            @tagName(evaluator), ii / frame_pixels, ii % frame_pixels, reference, value,
-                        });
-                        return error.TestExpectedEqual;
+            const evaluators: []const ?Evaluator = if (!compare_evaluators)
+                &.{null}
+            else if (case.neighbors != null)
+                &.{ null, .list_indexed }
+            else if (case.pattern == .perlin)
+                &.{ null, .gradient_lattice, .cell_hash }
+            else if (case.pattern == .disk and case.softness == 0)
+                &.{ null, .classified_binned, .classified_indexed, .cell_binned, .list_indexed, .list_naive, .cell_hash }
+            else
+                &.{ null, .cell_binned, .list_indexed, .list_naive, .cell_hash };
+            const worker_counts: []const u16 = if (compare_evaluators) &.{ 1, 4 } else &.{4};
+            for (evaluators) |evaluator| {
+                for (worker_counts) |workers| {
+                    mesh.shader.speckle.params.evaluator = evaluator;
+                    var actual = (try riley.rasterAdvanced(
+                        std.testing.allocator,
+                        std.testing.io,
+                        &.{camera_input},
+                        &.{mesh},
+                        config,
+                        null,
+                        .{ .render_groups = .{ .supplied = &.{.{ .io = std.testing.io, .workers = workers }} } },
+                    )) orelse return error.NoResult;
+                    defer {
+                        std.testing.allocator.free(actual.slice);
+                        actual.deinit(std.testing.allocator);
+                    }
+                    try std.testing.expectEqualSlices(usize, expected.dims, actual.dims);
+                    for (expected.slice, actual.slice, 0..) |reference, value, ii| {
+                        // Numeric equality intentionally accepts opposite signs of zero.
+                        if (reference != value) {
+                            std.debug.print("{s}, {d} workers: frame {d}, pixel {d}: expected {d}, found {d}\n", .{
+                                if (evaluator) |selected| @tagName(selected) else "default", workers, ii / frame_pixels, ii % frame_pixels, reference, value,
+                            });
+                            return error.TestExpectedEqual;
+                        }
                     }
                 }
             }
@@ -330,13 +399,9 @@ fn expectPreparedResources(
     evaluator: Evaluator,
     neighbors: ?speckleconfig.Neighborhood,
 ) !void {
-    const expected = try speckleconfig.resolve(
-        true,
-        params.pattern,
-        evaluator,
-        neighbors,
-        if (params.edge_softness > 0.0) .soft else .hard,
-    );
+    const expected = try params.resolve();
+    try std.testing.expectEqual(evaluator, std.meta.activeTag(expected));
+    try std.testing.expectEqual(neighbors, expected.neighborhood());
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     var mesh_input = base_input.*;
@@ -357,6 +422,7 @@ fn expectPreparedResources(
         .list_indexed => .strip_list,
         .cell_binned => .cell_binned,
         .classified_indexed => .classified,
+        .classified_binned => .classified_binned,
         .direct_fixed => .direct_fixed,
         .mask_1bit, .mask_u8 => .mask,
         .cell_hash, .mock => .none,

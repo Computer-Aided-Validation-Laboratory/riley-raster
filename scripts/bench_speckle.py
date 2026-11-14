@@ -12,11 +12,17 @@ from pathlib import Path
 import random
 import shutil
 import statistics
+import struct
 import subprocess
+import sys
+import time
 
 ROOT = Path(__file__).resolve().parent.parent
 METRICS = ('resource_ns', 'render_ns', 'combined_ns')
 FACTORS = ('threads', 'scene', 'pattern', 'jitter', 'occupancy', 'neighbors', 'softness')
+BUILD_FIELDS = ('precision', 'simd', 'simd_vector_width', 'newton_solver', 'enable_all_evaluators',
+                'speckle_mask_samples_per_cell', 'optimize', 'strip', 'zig_version', 'target_arch', 'cpu_model', 'cpu_features')
+RESOURCE_FIELDS = ('resource_bytes', 'duplicated_disk_records', 'record_capacity')
 
 
 def require(ok, message):
@@ -55,9 +61,10 @@ def design(args):
     require(args.perlin_threshold is None or math.isfinite(args.perlin_threshold), 'Perlin threshold must be finite')
     require(args.perlin_transition is None or (math.isfinite(args.perlin_transition) and args.perlin_transition >= 0),
             'Perlin transition must be finite and nonnegative')
+    require(all(x == 'available-cpus' or x.isdecimal() and int(x) > 0 for x in args.workers or ()),
+            'workers must be positive integers or available-cpus')
     workers = sorted(set(available_cpus() if x == 'available-cpus' else int(x)
                          for x in (args.workers or ['1', 'available-cpus'])))
-    require(all(x > 0 for x in workers), 'workers must be positive')
     for values in (args.jitter, args.occupancy):
         require(all(math.isfinite(x) and 0 <= x <= 1 for x in (values or [])), 'jitter/occupancy must be in [0,1]')
     components = [(['plate', 'sphere'], ['hard', 'gaussian'], [0, .08], [.7, 1], [1, 4, 9])]
@@ -135,12 +142,18 @@ def freeze(original, destination):
 
 
 def validate_native(native, config):
-
+    require(isinstance(native, dict), 'BENCH record must be a JSON object')
     for key, value in config.items():
         if value is not None:
             actual = native.get(key)
             numeric = type(value) in (int, float) and type(actual) in (int, float)
-            require(actual == value and (numeric or type(actual) is type(value)), f'native config echo mismatch: {key}')
+            # Native decimal echoes represent the selected precision, not Python's f64 request.
+            try:
+                equal = (struct.pack('f', actual) == struct.pack('f', value)
+                         if native.get('precision') == 'f32' and type(value) is float and numeric else actual == value)
+            except OverflowError as exc:
+                raise ValueError(f'native config echo outside f32 range: {key}') from exc
+            require(equal and (numeric or type(actual) is type(value)), f'native config echo mismatch: {key}')
     for metric in METRICS:
         require(type(native.get(metric)) is int and native[metric] >= 0, f'invalid {metric}: integer ns required')
     require(native['combined_ns'] == native['resource_ns'] + native['render_ns'], 'invalid combined timing')
@@ -153,6 +166,43 @@ def validate_native(native, config):
     require(type(native.get('image_samples')) is int and native['image_samples'] == images, 'invalid mono image sample count')
     if 'backface_rejections' in native:
         require(type(native['backface_rejections']) is int and native['backface_rejections'] >= 0, 'invalid rejection count')
+    require(native.get('precision') in ('f32', 'f64'), 'missing/invalid native precision')
+    require(native.get('simd') in ('on', 'off'), 'missing/invalid native SIMD mode')
+    require(isinstance(native.get('workload_mode'), str) and native['workload_mode'], 'missing native workload_mode')
+    for key in RESOURCE_FIELDS:
+        value = native.get(key)
+        require(value is None or type(value) is int and value >= 0, 'invalid resource metric: ' + key)
+    if native.get('record_capacity') is not None and native.get('duplicated_disk_records') is not None:
+        require(native['duplicated_disk_records'] <= native['record_capacity'], 'live records exceed capacity')
+
+
+def catalogue_sampling_routes(catalogue):
+    """Read native canonicalization; never duplicate evaluator-specific policy here."""
+    fields = ('evaluator', 'pattern', 'neighbors', 'soft_edges')
+    samples = catalogue['sampling_configs']
+    routes = {}
+    require(isinstance(samples, list) and samples, 'missing native sampling catalogue')
+    require(len({tuple(row[k] for k in fields) for row in samples}) == len(samples),
+            'duplicate native sampling config')
+    for row in catalogue['configs']:
+        key = tuple(row[k] for k in fields)
+        index = row['sampling_index']
+        require(type(index) is int and 0 <= index < len(samples), 'invalid native sampling index')
+        require(key not in routes, 'duplicate native generation config')
+        routes[key] = dict(sampling_index=index, sampling=row['sampling'])
+    return routes
+
+
+def validate_sampling_identity(identity, generation, routes):
+    """Validate stored generation and actual dispatch as distinct prepared identities."""
+    key = tuple(generation[k] for k in ('evaluator', 'pattern', 'neighbors', 'soft_edges'))
+    route = routes[key]
+    require(isinstance(identity.get('backing'), str) and identity['backing'], 'invalid prepared backing identity')
+    stored_generation = None if identity.get('backing') == 'none' else generation['evaluator']
+    require(identity['generation_evaluator'] == stored_generation, 'wrong stored generation identity')
+    require(type(identity['sampling_index']) is int and identity['sampling_index'] == route['sampling_index'],
+            'wrong actual sampling index')
+    require(identity['sampling_evaluator'] == route['sampling']['evaluator'], 'wrong actual sampling evaluator')
 
 
 def fingerprint(native):
@@ -222,6 +272,13 @@ def report(out, metadata, groups, outputs):
              f"Output mismatch cases: {sum(outputs[i, 'A'] != outputs[i, 'B'] for i in range(n))}.", '',
              f"| Case | Factors ({', '.join(factors)}) | Metric | A ns | B ns | B/A | p | Holm p | Detected |",
              '|---|---|---|---:|---:|---:|---:|---:|---|']
+    lines.insert(2, 'Native identity: ' + '; '.join(
+        f"{v}: SHA256 {spec['sha256']}"
+        for v, spec in metadata['variants'].items()) + '. See metadata.json for exact build/workload identities and catalogues.')
+    lines.insert(3, 'Resource metrics are nullable (uncollected is not zero). duplicated_disk_records counts live bin records; '
+                 'record_capacity includes unused allocated slots. Resource storage is inspected only after timed sampling. '
+                 'Byte metrics account for retained backing allocations, not peak preparation storage, process RSS or allocator overhead. '
+                 'Full-render resource/prepared identities are uncollected. Raw native records and full process logs are retained.')
     if metadata.get('skip_output_checks', False):
         lines.insert(2, 'Within-repeat and cross-variant output consistency checks disabled; no image consistency guarantee.')
     for r in records:
@@ -241,11 +298,13 @@ def parser():
         'occupancy=1/neighbors=1 unless occupancy is explicit or inclusion flag is set. '
         'Two sweeps use balanced ABBA prefixes and inverses; no warmups. Native validates catalog compatibility '
         '(--list-evaluators); each process must emit one BENCH JSON record. Fresh output only; no resume. '
-        'Artifacts: metadata.json, samples.jsonl, comparison.json/.md and frozen assets.')
+        'Artifacts: metadata.json, samples.jsonl, commands.jsonl, complete logs, comparison.json/.md and frozen assets. '
+        'Each binary must emit its native sampling catalogue, prepared identities and complete build identity. '
+        'Build configurations and resolved CPU-feature sets must match across variants.')
     p.add_argument('--out', type=Path, required=True, help='fresh comparison directory')
     p.add_argument('--profile', choices=('tuning', 'full', 'full-render'), default='tuning', help='full is evaluation-only')
-    p.add_argument('--a', default='cell-hash', help='catalog evaluator or texture')
-    p.add_argument('--b', default='list-indexed', help='catalog evaluator or texture')
+    p.add_argument('--a', default='cell-binned', help='catalog evaluator or texture')
+    p.add_argument('--b', default='list-indexed', help='catalog evaluator or texture; use classified-binned with --patterns hard --neighbors 9')
     p.add_argument('--binary', type=Path, default=ROOT / 'zig-out/bin/bench_speckle_evaluators_f64_simd', help='common native binary')
     for v in 'ab':
         p.add_argument('--binary-' + v, type=Path, help='override common binary for ' + v.upper())
@@ -271,67 +330,232 @@ def parser():
                    help='texture sampling: Catmull–Rom uses lut_lerp; nearest/linear use direct')
     p.add_argument('--alpha', type=float, help='override profile family-wise alpha')
     p.add_argument('--repeats', type=int, help='override even TOTAL runs per variant >=2; never capped')
-    p.add_argument('--metrics', nargs='+', choices=('setup', 'render', 'combined'), help='override jointly tested metrics')
+    p.add_argument('--metrics', nargs='+', choices=('setup', 'render', 'combined'),
+                   help='jointly tested metrics: setup=resource_ns, render=render_ns (evaluation-only unless --profile full-render), combined=combined_ns')
     p.add_argument('--permutations', type=int, default=100000, help='Monte Carlo draws for large repeat counts')
     output_checks = p.add_mutually_exclusive_group()
     output_checks.add_argument('--require-equal-output', action='store_true', help='also require exact cross-variant fingerprints')
     output_checks.add_argument('--skip-output-checks', action='store_true', help='disable within-repeat and cross-variant fingerprint checks; retain native validation')
-    p.add_argument('--timeout-seconds', type=float, default=900, help='per-process timeout')
+    p.add_argument('--timeout-seconds', type=float, default=900, help='per-native-process timeout')
     return p
 
 
+def run_logged(command, out, label, timeout=None):
+    """Preserve complete child output and exact argv, including failures and timeouts."""
+    logs = out / 'logs'
+    logs.mkdir(exist_ok=True)
+    record = dict(command=command, cwd=str(ROOT), started_ns=time.time_ns(), label=label)
+    stdout, stderr = '', ''
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, cwd=ROOT)
+        stdout, stderr = result.stdout, result.stderr
+        record['returncode'] = result.returncode
+    except subprocess.TimeoutExpired as exc:
+        stdout, stderr = exc.stdout or '', exc.stderr or ''
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode(errors='replace')
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode(errors='replace')
+        record['timeout_seconds'] = timeout
+        raise ValueError(f'command timed out after {timeout}s; full logs: {logs / label}') from exc
+    except OSError as exc:
+        record['error'] = str(exc)
+        raise OSError(f'{exc}; full logs: {logs / label}') from exc
+    finally:
+        record['finished_ns'] = time.time_ns()
+        (logs / (label + '.stdout')).write_text(stdout)
+        (logs / (label + '.stderr')).write_text(stderr)
+        (logs / (label + '.command.json')).write_text(json.dumps(record, indent=2) + '\n')
+        with (out / 'commands.jsonl').open('a') as stream:
+            stream.write(json.dumps(record) + '\n')
+    require(result.returncode == 0, f'command failed ({result.returncode}); full logs: {logs / label}')
+    return result
+
+
+def generation_config(catalogue, config):
+    require(config['evaluator'] in catalogue['evaluators'], 'evaluator absent from native catalogue')
+    if config['evaluator'] == 'texture':
+        return None
+    require(catalogue['overrides_enabled'] is True, 'native evaluator overrides disabled')
+    controls = dict(evaluator=config['evaluator'], pattern='disk' if config['pattern'] in ('hard', 'soft')
+                    else config['pattern'], neighbors=config['neighbors'], soft_edges=config['softness'] > 0)
+    matches = [row for row in catalogue['configs']
+               if all(row[k] is None or row[k] == value for k, value in controls.items())]
+    require(len(matches) == 1, 'requested controls have no unique native generation configuration')
+    return {k: matches[0][k] for k in controls}
+
+
+def case_config(metadata, case, variant):
+    u, w = metadata['cells'][case['scene']]
+    return dict(metadata['config'], **case, mode=metadata['mode'],
+                evaluator=metadata['variants'][variant]['evaluator'], cells_u=u, cells_v=w)
+
+
+def comparable_build_identity(build):
+    """Copy of a build identity for comparison; CPU features are a set, so native order is ignored."""
+    return dict(build, cpu_features=sorted(build['cpu_features']))
+
+
+def validate_identity(native, config, spec, routes, generation):
+    build = spec['build_identity']
+    require(native['precision'] == build['precision'] and native['simd'] == build['simd'],
+            'native precision/SIMD differs from frozen identity')
+    require(native['workload_mode'] == spec['workload_modes'][config['mode']], 'native workload_mode mismatch')
+    native_build = native.get('build_identity')
+    require(isinstance(native_build, dict) and isinstance(native_build.get('cpu_features'), list)
+            and all(isinstance(name, str) for name in native_build['cpu_features'])
+            and comparable_build_identity(native_build) == comparable_build_identity(build),
+            'native build identity differs from catalogue')
+    require(all(key in native for key in RESOURCE_FIELDS), 'missing nullable resource metrics')
+    require('prepared_identity' in native, 'missing prepared identity field')
+    identity = native['prepared_identity']
+    if config['mode'] == 'evaluation':
+        require(isinstance(identity, dict), 'missing prepared identity')
+        if generation is not None:
+            validate_sampling_identity(identity, generation, routes)
+        else:
+            require(identity == dict(generation_evaluator=None, sampling_evaluator=None,
+                                     sampling_index=None, backing='none'), 'texture has procedural prepared identity')
+    else:
+        require(identity is None, 'full-render prepared identity was not collected')
+
+
+class SampleValidator:
+    """Cache per-variant routes/case controls; inspect each new observation exactly once."""
+    def __init__(self, metadata):
+        self.metadata = metadata
+        self.routes = {variant: catalogue_sampling_routes(spec['catalogue'])
+                       for variant, spec in metadata['variants'].items()}
+        self.cases = {}
+        for i, case in enumerate(metadata['configurations']):
+            for variant, spec in metadata['variants'].items():
+                config = case_config(metadata, case, variant)
+                self.cases[i, variant] = (config, generation_config(spec['catalogue'], config))
+        self.outputs, self.positions = {}, set()
+        self.groups = defaultdict(list)
+
+    def add(self, row):
+        metadata = self.metadata
+        i, sweep, position, variant = (row[k] for k in ('case_id', 'sweep', 'position', 'variant'))
+        require(type(i) is int and 0 <= i < len(metadata['configurations'])
+                and type(sweep) is int and sweep in (0, 1), 'invalid sample location')
+        require(type(position) is int and 0 <= position < len(metadata['schedules'][sweep]), 'invalid sample position')
+        require(metadata['schedules'][sweep][position] == variant, 'sample order differs from schedule')
+        location = (i, sweep, position)
+        require(location not in self.positions, 'duplicate sample position')
+        native = row['native']
+        config, generation = self.cases[i, variant]
+        validate_native(native, config)
+        validate_identity(native, config, metadata['variants'][variant], self.routes[variant], generation)
+        key, value = (i, variant), fingerprint(native)
+        if not metadata['skip_output_checks']:
+            require(key not in self.outputs or self.outputs[key] == value, 'output differs across within-variant repeats')
+        other = (i, 'B' if variant == 'A' else 'A')
+        if metadata['require_equal_output'] and other in self.outputs:
+            require(self.outputs[other] == value, 'cross-variant output differs')
+        self.positions.add(location)
+        self.outputs[key] = value
+        self.groups[i, sweep, variant].append(native)
+
+    def finish(self):
+        require(len(self.positions) == len(self.metadata['configurations']) * self.metadata['repeats'] * 2,
+                'partial results cannot produce complete-comparison statistics')
+        return self.groups, self.outputs
+
+
+def run_comparison(out, metadata):
+    """Supervise both sweeps, validating each flushed observation once; never resume."""
+    validator = SampleValidator(metadata)
+    with (out / 'samples.jsonl').open('x') as stream:
+        for sweep in (0, 1):
+            for i in range(len(metadata['configurations'])):
+                for position, variant in enumerate(metadata['schedules'][sweep]):
+                    spec = metadata['variants'][variant]
+                    config = validator.cases[i, variant][0]
+                    command = [spec['file'], *[item for k, value in config.items() if value is not None
+                                              for item in ('--' + k.replace('_', '-'), str(value))]]
+                    label = f'sweep-{sweep}-case-{i}-position-{position}-{variant}'
+                    result = run_logged(command, out, label, metadata['timeout_seconds'])
+                    try:
+                        records = [line[6:] for line in (result.stdout + '\n' + result.stderr).splitlines()
+                                   if line.startswith('BENCH ')]
+                        require(len(records) == 1, 'expected exactly one BENCH JSON record')
+                        row = dict(case_id=i, sweep=sweep, position=position, variant=variant, command=command,
+                                   binary_sha256=spec['sha256'], native=json.loads(records[0]))
+                        # Preserve even the failing observation; never report a partial comparison.
+                        stream.write(json.dumps(row) + '\n')
+                        stream.flush()
+                        validator.add(row)
+                    except (ValueError, KeyError, TypeError, IndexError) as exc:
+                        raise ValueError(f'{exc}; full logs: {out / "logs" / label}') from exc
+                print(f"Sweep {sweep + 1}, case {i + 1}/{len(metadata['configurations'])}", flush=True)
+    return validator.finish()
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+
     p = parser()
     args = p.parse_args(argv)
     try:
         out = args.out.resolve()
-        require(not out.exists() or not any(out.iterdir()), 'use a fresh output directory; results are never overwritten')
+        require(not out.exists() or not any(out.iterdir()), 'use a fresh output directory; no resume; results are never overwritten')
         metadata = design(args)
+        metadata.update(timeout_seconds=args.timeout_seconds, runner_argv=argv,
+                        runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                        resource_metric_semantics=dict(
+                            resource_bytes='retained backing bytes, excluding allocator overhead; null if uncollected',
+                            duplicated_disk_records='live bin records summed from counts; null if uncollected',
+                            record_capacity='allocated record slots, including unused slots; null if uncollected'))
         (out / 'binaries').mkdir(parents=True)
         frozen = {}
-        for v in 'AB':
-            original = (getattr(args, 'binary_' + v.lower()) or args.binary).resolve()
+        for variant in 'AB':
+            original = (getattr(args, 'binary_' + variant.lower()) or args.binary).resolve()
             if original not in frozen:
-                frozen[original] = freeze(original, out / 'binaries' / v)
-            metadata['variants'][v] = dict(frozen[original], evaluator=getattr(args, v.lower()))
+                frozen[original] = freeze(original, out / 'binaries' / variant)
+            metadata['variants'][variant] = dict(frozen[original], evaluator=getattr(args, variant.lower()))
         if args.texture:
             metadata['texture_asset'] = freeze(args.texture, out / ('texture' + args.texture.suffix))
             metadata['config']['texture'] = metadata['texture_asset']['file']
-        (out / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
-        groups, outputs = defaultdict(list), {}
-        total = len(metadata['configurations']) * metadata['repeats'] * 2
-        print(f"{args.profile}: {len(metadata['configurations'])} configurations, {total} processes")
-        with (out / 'samples.jsonl').open('w') as stream:
-            for sweep, order in enumerate(metadata['schedules']):
-                for i, case in enumerate(metadata['configurations']):
-                    for position, v in enumerate(order):
-                        spec = metadata['variants'][v]
-                        u, w = metadata['cells'][case['scene']]
-                        config = dict(metadata['config'])
-                        config.update(case, mode=metadata['mode'],
-                                      evaluator=spec['evaluator'], cells_u=u, cells_v=w)
-                        command = [spec['file'], *[item for k, value in config.items() if value is not None
-                                                  for item in ('--' + k.replace('_', '-'), str(value))]]
-                        result = subprocess.run(command, capture_output=True, text=True, timeout=args.timeout_seconds, cwd=ROOT)
-                        require(result.returncode == 0, f'native failed ({result.returncode}): {result.stderr[-4000:]}')
-                        records = [line[6:] for line in (result.stdout + '\n' + result.stderr).splitlines() if line.startswith('BENCH ')]
-                        require(len(records) == 1, 'expected exactly one BENCH JSON record')
-                        native = json.loads(records[0])
-                        validate_native(native, config)
-                        key, value = (i, v), fingerprint(native)
-                        if not args.skip_output_checks:
-                            require(key not in outputs or outputs[key] == value, 'output differs across within-variant repeats')
-                        other = (i, 'B' if v == 'A' else 'A')
-                        if args.require_equal_output and other in outputs:
-                            require(outputs[other] == value, 'cross-variant output differs')
-                        outputs[key] = value
-                        groups[i, sweep, v].append(native)
-                        stream.write(json.dumps(dict(case_id=i, sweep=sweep, position=position, variant=v, native=native)) + '\n')
-                        stream.flush()
-                    print(f"Sweep {sweep + 1}, case {i + 1}/{len(metadata['configurations'])}", flush=True)
+        metadata_path = out / 'metadata.json'
+        metadata_path.write_text(json.dumps(metadata, indent=2) + '\n')
+        catalogues = {}
+        for variant, spec in metadata['variants'].items():
+            if spec['file'] not in catalogues:
+                result = run_logged([spec['file'], '--list-evaluators'], out,
+                                    'catalogue-' + variant, args.timeout_seconds)
+                records = [json.loads(line) for line in (result.stdout + '\n' + result.stderr).splitlines()
+                           if line.startswith('{')]
+                require(len(records) == 1, 'expected exactly one native evaluator catalogue')
+                catalogues[spec['file']] = records[0]
+            spec['catalogue'] = catalogues[spec['file']]
+            catalogue_sampling_routes(spec['catalogue'])
+            spec.update(build_identity=spec['catalogue']['build_identity'],
+                        workload_modes=spec['catalogue']['workload_modes'])
+            require(set(spec['build_identity']) == set(BUILD_FIELDS), 'incomplete/unknown build identity fields')
+            features = spec['build_identity']['cpu_features']
+            require(isinstance(features, list) and all(isinstance(name, str) and name for name in features)
+                    and len(features) == len(set(features)), 'CPU features must be unique enabled Zig feature names')
+            require(spec['build_identity']['precision'] in ('f32', 'f64') and spec['build_identity']['simd'] in ('on', 'off'),
+                    'invalid precision/SIMD identity')
+            require(spec['build_identity']['optimize'] == 'ReleaseFast' and spec['build_identity']['strip'] is True,
+                    'benchmarks require ReleaseFast with debug information stripped')
+            require(isinstance(spec['workload_modes'], dict) and isinstance(spec['workload_modes'].get(metadata['mode']), str)
+                    and spec['workload_modes'][metadata['mode']], 'missing workload identity')
+            for case in metadata['configurations']:
+                generation_config(spec['catalogue'], case_config(metadata, case, variant))
+            metadata_path.write_text(json.dumps(metadata, indent=2) + '\n')
+        a, b = (metadata['variants'][variant] for variant in 'AB')
+        require(comparable_build_identity(a['build_identity']) == comparable_build_identity(b['build_identity']),
+                'A/B build configurations differ')
+        require(a['workload_modes'][metadata['mode']] == b['workload_modes'][metadata['mode']],
+                'A/B workload modes differ')
+        print(f"{args.profile}: {len(metadata['configurations'])} configurations, "
+              f"{len(metadata['configurations']) * metadata['repeats'] * 2} samples; two independent timing blocks", flush=True)
+        groups, outputs = run_comparison(out, metadata)
         report(out, metadata, groups, outputs)
         return 0
-    except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as exc:
+    except (ValueError, KeyError, TypeError, IndexError, OSError, subprocess.SubprocessError) as exc:
         p.exit(1, f'error: {exc}\n')
 
 

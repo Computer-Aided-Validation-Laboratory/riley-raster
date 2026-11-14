@@ -1825,7 +1825,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             outer_alloc: std.mem.Allocator,
             speckle_static: *const shaderops.SpeckleStatic,
         ) !shaderops.ShaderPrepared {
-            // Match the former function shader's normalized range, not sampled extrema.
+            // Scale the nominal [0, 1] field range, not sampled or transformed extrema.
+            // Shader preparation does not clamp; integer image output clamps on save.
             const factors = imageops.getScaleFactors(
                 speckle_static.scaling,
                 speckle_static.bits,
@@ -1961,8 +1962,17 @@ test "speckle preparation gathers visible UVs and borrows static resources acros
     try std.testing.expectEqual(@as(u8, 1), countOutputFields(&.{input}));
     try std.testing.expectEqualSlices(usize, &.{ 2, 2, 3 }, static.elem_uvs.dims);
     try std.testing.expectEqualSlices(F, &.{ 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1 }, static.elem_uvs.slice);
-    try std.testing.expect(static.resources.data == .classified);
-    const states = static.resources.data.classified.states.ptr;
+    try std.testing.expect(static.resources.data == .classified_binned);
+    const binned = static.resources.data.classified_binned;
+    try std.testing.expectEqual(@as(usize, 0), binned.offsets.len);
+    try std.testing.expectEqual(@as(usize, 20), binned.headers.len);
+    try std.testing.expectEqual(binned.headers.len, binned.counts.len);
+    try std.testing.expectEqual(binned.counts.len * 18, binned.coordinates.len);
+    const coordinates = binned.coordinates.ptr;
+    const counts = binned.counts.ptr;
+    const headers = binned.headers.ptr;
+    // Borrow identity alone would miss replacing backing inside the same Resources object.
+    const storage = .{ coordinates, counts, headers };
 
     var executor = pce.ParaChunkExecutor.init(std.testing.io, 1);
     // Exercise shader preparation independently of projection/culling.
@@ -1985,10 +1995,11 @@ test "speckle preparation gathers visible UVs and borrows static resources acros
             const prepared = mesh_prep.shader.speckle;
             try std.testing.expectEqualSlices(F, &.{ 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1 }, prepared.elem_uvs.slice);
             try std.testing.expectEqual(&static.resources, prepared.resources);
-            try std.testing.expectEqual(states, prepared.resources.data.classified.states.ptr);
-            try std.testing.expectEqual(static.resources.kernel_index, prepared.resources.kernel_index);
+            const records = prepared.resources.data.classified_binned;
+            try std.testing.expectEqualDeep(storage, .{ records.coordinates.ptr, records.counts.ptr, records.headers.ptr });
             try std.testing.expectEqualDeep(.{ static.params, static.output_scale, static.output_offset }, .{ prepared.params, prepared.output_scale, prepared.output_offset });
-            // The old function path always used min=0/range=1, even for fixed bounds.
+            // Auto/fixed scaling uses nominal min=0/range=1; fractional scaling maps
+            // that nominal interval to the requested output fraction.
             const max: F = if (bits) |b| @floatFromInt((@as(u32, 1) << @intCast(b)) - 1) else 1;
             const expected_mul: F = switch (strategy) {
                 .none => 1,
@@ -2007,13 +2018,16 @@ test "speckle preparation gathers visible UVs and borrows static resources acros
     const next = next_mesh.shader.speckle;
     try std.testing.expectEqualSlices(F, static.elem_uvs.slice[0..6], next.elem_uvs.slice);
     try std.testing.expectEqual(&static.resources, next.resources);
-    try std.testing.expectEqual(states, next.resources.data.classified.states.ptr);
+    const next_records = next.resources.data.classified_binned;
+    try std.testing.expectEqualDeep(storage, .{ next_records.coordinates.ptr, next_records.counts.ptr, next_records.headers.ptr });
     pipeline.mesh_workspace.elems_in_image = 0;
     var empty_mesh: MeshPrepared = undefined;
     try pipeline.prepareShader(alloc, &empty_mesh);
     const empty = empty_mesh.shader.speckle;
     try std.testing.expectEqual(@as(usize, 0), empty.elem_uvs.slice.len);
     try std.testing.expectEqual(next.resources, empty.resources);
+    const empty_records = empty.resources.data.classified_binned;
+    try std.testing.expectEqualDeep(storage, .{ empty_records.coordinates.ptr, empty_records.counts.ptr, empty_records.headers.ptr });
 
     const other_mesh = try initMeshStatic(alloc, &input);
     pipeline.mesh_static = &other_mesh;
@@ -2021,7 +2035,12 @@ test "speckle preparation gathers visible UVs and borrows static resources acros
     try pipeline.prepareShader(alloc, &other_prep);
     try std.testing.expectEqual(&other_mesh.shader.speckle.resources, other_prep.shader.speckle.resources);
     try std.testing.expect(other_prep.shader.speckle.resources != next.resources);
-    try std.testing.expectEqual(states, next.resources.data.classified.states.ptr);
+    const other_records = other_prep.shader.speckle.resources.data.classified_binned;
+    try std.testing.expect(other_records.coordinates.ptr != coordinates);
+    try std.testing.expect(other_records.counts.ptr != counts);
+    try std.testing.expect(other_records.headers.ptr != headers);
+    const retained = next.resources.data.classified_binned;
+    try std.testing.expectEqualDeep(storage, .{ retained.coordinates.ptr, retained.counts.ptr, retained.headers.ptr });
 }
 
 test "speckle static setup releases partial allocations" {

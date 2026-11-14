@@ -26,6 +26,61 @@ const shaderops = @import("riley/zig/shaderops.zig");
 const texops = @import("riley/zig/textureops.zig");
 const imageio = @import("riley/zig/imageio.zig");
 const F = build.F;
+const builtin = @import("builtin");
+
+// Use resolved feature bits, not the model's defaults: -mcpu can add/remove features.
+// Names follow the target's feature enum order, which is deterministic.
+const cpu_features = blk: {
+    @setEvalBranchQuota(100000);
+    const all = builtin.cpu.arch.allFeaturesList();
+    var count: usize = 0;
+    for (all, 0..) |_, index| {
+        if (builtin.cpu.features.isEnabled(@intCast(index))) count += 1;
+    }
+    var names: [count][]const u8 = undefined;
+    var next: usize = 0;
+    for (all, 0..) |feature, index| {
+        if (builtin.cpu.features.isEnabled(@intCast(index))) {
+            names[next] = feature.name;
+            next += 1;
+        }
+    }
+    break :blk names;
+};
+
+const BuildIdentity = struct {
+    precision: []const u8,
+    simd: []const u8,
+    simd_vector_width: usize,
+    newton_solver: []const u8,
+    enable_all_evaluators: bool,
+    speckle_mask_samples_per_cell: usize,
+    optimize: []const u8,
+    strip: bool,
+    zig_version: []const u8,
+    target_arch: []const u8,
+    cpu_model: []const u8,
+    cpu_features: []const []const u8,
+};
+
+fn buildIdentity() BuildIdentity {
+    return .{
+        .precision = @typeName(F),
+        .simd = @tagName(build.config.simd),
+        .simd_vector_width = build.SimdWidth,
+        .newton_solver = @tagName(build.NewtonMode),
+        .enable_all_evaluators = build.enable_all_evaluators,
+        .speckle_mask_samples_per_cell = build.speckle_mask_samples_per_cell,
+        .optimize = @tagName(builtin.mode),
+        .strip = builtin.strip_debug_info,
+        .zig_version = builtin.zig_version_string,
+        .target_arch = @tagName(builtin.cpu.arch),
+        .cpu_model = builtin.cpu.model.name,
+        .cpu_features = &cpu_features,
+    };
+}
+
+const workload_modes = .{ .evaluation = bench.workload_mode, .@"full-render" = "production-raster-advanced-memory-v2" };
 
 const Options = struct {
     mode: enum { evaluation, @"full-render" } = .evaluation,
@@ -133,22 +188,112 @@ fn recordNeighbors(opts: Options, resolved: policy.Config) ?u8 {
     return @intFromEnum(neighbors);
 }
 
-fn listEvaluators() void {
-    std.debug.print("{{\"evaluators\":[", .{});
-    inline for (std.enums.values(policy.Evaluator), 0..) |evaluator, i| {
-        std.debug.print("{s}\"{s}\"", .{ if (i == 0) "" else ",", policy.evaluatorName(evaluator) });
+const EvaluatorRecord = struct {
+    evaluator: []const u8,
+    pattern: ?[]const u8,
+    neighbors: ?u8,
+    soft_edges: ?bool,
+};
+const GenerationRecord = struct {
+    evaluator: []const u8,
+    pattern: ?[]const u8,
+    neighbors: ?u8,
+    soft_edges: ?bool,
+    sampling_index: u8,
+    sampling: EvaluatorRecord,
+};
+const EvaluatorCatalogue = struct {
+    evaluators: [std.enums.values(policy.Evaluator).len + 1][]const u8,
+    overrides_enabled: bool,
+    configs: [policy.generationConfigs(build.enable_all_evaluators).len]GenerationRecord,
+    sampling_configs: [speckle.kernel_configs.len]EvaluatorRecord,
+    build_identity: @TypeOf(buildIdentity()),
+    workload_modes: @TypeOf(workload_modes),
+};
+
+fn evaluatorRecord(cfg: policy.Config) EvaluatorRecord {
+    return .{
+        .evaluator = policy.evaluatorName(std.meta.activeTag(cfg)),
+        .pattern = if (cfg.pattern()) |pattern| @tagName(pattern) else null,
+        .neighbors = if (cfg.neighborhood()) |neighbors| @intFromEnum(neighbors) else null,
+        .soft_edges = if (cfg.edges()) |edges| edges == .soft else null,
+    };
+}
+
+/// Catalogue consumers need no evaluator-specific copies of canonicalization rules.
+fn evaluatorCatalogue() EvaluatorCatalogue {
+    var out: EvaluatorCatalogue = undefined;
+    for (std.enums.values(policy.Evaluator), 0..) |evaluator, i| out.evaluators[i] = policy.evaluatorName(evaluator);
+    out.evaluators[out.evaluators.len - 1] = "texture";
+    out.overrides_enabled = build.enable_all_evaluators;
+    out.build_identity = buildIdentity();
+    out.workload_modes = workload_modes;
+    for (speckle.kernel_configs, 0..) |config, i| out.sampling_configs[i] = evaluatorRecord(config);
+    for (policy.generationConfigs(build.enable_all_evaluators), 0..) |config, i| {
+        const generation = evaluatorRecord(config);
+        const index = policy.sampleConfigIndex(build.enable_all_evaluators, config);
+        out.configs[i] = .{ .evaluator = generation.evaluator, .pattern = generation.pattern, .neighbors = generation.neighbors, .soft_edges = generation.soft_edges, .sampling_index = index, .sampling = out.sampling_configs[index] };
     }
-    std.debug.print(",\"texture\"],\"overrides_enabled\":{},\"configs\":[", .{build.enable_all_evaluators});
-    for (policy.generationConfigs(true), 0..) |cfg, i| {
-        std.debug.print("{s}{{\"evaluator\":\"{s}\",\"pattern\":", .{ if (i == 0) "" else ",", policy.evaluatorName(std.meta.activeTag(cfg)) });
-        if (cfg.pattern()) |pattern| std.debug.print("\"{s}\"", .{@tagName(pattern)}) else std.debug.print("null", .{});
-        std.debug.print(",\"neighbors\":", .{});
-        if (cfg.neighborhood()) |neighbors| std.debug.print("{d}", .{@intFromEnum(neighbors)}) else std.debug.print("null", .{});
-        std.debug.print(",\"soft_edges\":", .{});
-        if (cfg.edges()) |edges| std.debug.print("{}", .{edges == .soft}) else std.debug.print("null", .{});
-        std.debug.print("}}", .{});
+
+    return out;
+}
+
+const PreparedIdentity = struct {
+    generation_evaluator: ?[]const u8 = null,
+    sampling_evaluator: ?[]const u8 = null,
+    sampling_index: ?u8 = null,
+    backing: []const u8 = "none",
+};
+
+/// Stored generation controls and actual dispatch are deliberately separate identities.
+fn preparedIdentity(resources: *const speckle.Resources) PreparedIdentity {
+    var out: PreparedIdentity = .{ .sampling_index = resources.kernel_index, .backing = @tagName(std.meta.activeTag(resources.data)) };
+    if (resources.kernel_index) |index| out.sampling_evaluator = policy.evaluatorName(std.meta.activeTag(speckle.kernel_configs[index]));
+    const stored: ?speckle.Speckle2DParams = switch (resources.data) {
+        .none => null,
+        .classified => |data| data.speckles.params,
+        inline .cell_binned, .classified_binned, .direct_fixed, .mask, .perlin, .list, .strip_list => |data| data.params,
+    };
+    if (stored) |params| {
+        // These immutable parameters already passed the preparation boundary.
+        const generation = params.resolve() catch unreachable;
+        out.generation_evaluator = policy.evaluatorName(std.meta.activeTag(generation));
+        std.debug.assert(resources.kernel_index == policy.sampleConfigIndex(build.enable_all_evaluators, generation));
     }
-    std.debug.print("]}}\n", .{});
+    return out;
+}
+
+const ResourceMetrics = struct {
+    // Null means not collected, rather than a measured zero.
+    resource_bytes: ?usize = null,
+    duplicated_disk_records: ?usize = null,
+    record_capacity: ?usize = null,
+};
+
+/// Call only after timed sampling: summing counts must not warm the evaluator's storage.
+fn resourceMetrics(resources: *const speckle.Resources) ResourceMetrics {
+    var out: ResourceMetrics = .{};
+    switch (resources.data) {
+        .cell_binned => |data| {
+            out.resource_bytes = data.byteSize();
+            out.duplicated_disk_records = data.recordCount();
+        },
+        .strip_list => |data| out.resource_bytes = data.centers.len * @sizeOf([2]F) + data.disks.len * @sizeOf(speckle.SpeckleDisk2D),
+        .classified => |data| out.resource_bytes = data.states.len * @sizeOf(u16) + data.speckles.centers.len * @sizeOf([2]F) + data.speckles.disks.len * @sizeOf(speckle.SpeckleDisk2D),
+        .classified_binned => |data| {
+            out.resource_bytes = data.byteSize();
+            var live: usize = 0;
+            for (data.counts) |count| live += count;
+            out.duplicated_disk_records = live;
+            out.record_capacity = data.slots;
+        },
+        else => {},
+    }
+    return out;
+}
+
+fn listEvaluators(allocator: std.mem.Allocator) !void {
+    std.debug.print("{s}\n", .{try std.json.Stringify.valueAlloc(allocator, evaluatorCatalogue(), .{})});
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -159,7 +304,7 @@ pub fn main(init: std.process.Init) !void {
     const args = try alloc.alloc([]const u8, raw_args.len);
     for (raw_args, 0..) |arg, n| args[n] = std.mem.span(arg);
     if (args.len == 2 and std.mem.eql(u8, args[1], "--list-evaluators")) {
-        listEvaluators();
+        try listEvaluators(alloc);
         return;
     }
     const opts = try Options.parse(args);
@@ -174,9 +319,8 @@ pub fn main(init: std.process.Init) !void {
     var combined_ns: i96 = 0;
     var result: bench.Result = .{};
     var image_samples: usize = 0;
-    // Null means not collected, rather than a measured zero.
-    var resource_bytes: ?usize = null;
-    var duplicated_disk_records: ?usize = null;
+    var resource_metrics: ResourceMetrics = .{};
+    var prepared_identity: ?PreparedIdentity = null;
     if (opts.mode == .evaluation) {
         const config = opts.rasterConfig();
         const cam = try camera.CameraPrepared.init(alloc, cameraInput(scene.sim, opts));
@@ -192,16 +336,10 @@ pub fn main(init: std.process.Init) !void {
         if (prepared) |shader| try evaluation.evaluateTexture(shader, opts.frames) else try evaluation.evaluate(params, &resources, opts.frames);
         render_ns = eval_start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
         // Inspect backing storage only after sampling, without warming one evaluator's counts.
-        switch (resources.data) {
-            .cell_binned => |binned| {
-                resource_bytes = binned.byteSize();
-                duplicated_disk_records = binned.recordCount();
-            },
-            .strip_list => |strip| resource_bytes = strip.centers.len * @sizeOf([2]F) + strip.disks.len * @sizeOf(speckle.SpeckleDisk2D),
-            else => {},
-        }
+        resource_metrics = resourceMetrics(&resources);
         combined_ns = resource_ns + render_ns;
         result = evaluation.result();
+        prepared_identity = preparedIdentity(&resources); // After both timers and reduction.
     } else {
         const mesh = try scene.mesh(alloc, opts, texture);
         const cam_input = cameraInput(scene.sim, opts);
@@ -222,7 +360,9 @@ pub fn main(init: std.process.Init) !void {
     const resolved = try policy.resolve(build.enable_all_evaluators, if (opts.texture_material) .disk else opts.pattern, if (opts.texture_material) null else opts.evaluator, if (opts.texture_material) null else opts.neighbors, if (!opts.texture_material and opts.softness > 0) .soft else .hard);
     const record = .{
         .mode = @tagName(opts.mode),
-        .workload_mode = if (opts.mode == .evaluation) bench.workload_mode else "production-raster-advanced-memory-v2",
+        .workload_mode = switch (opts.mode) {
+            inline else => |mode| @field(workload_modes, @tagName(mode)),
+        },
         .evaluator = if (opts.texture_material) "texture" else policy.evaluatorName(std.meta.activeTag(resolved)),
         .scene = if (opts.plate) "plate" else "sphere",
         .pattern = if (opts.pattern == .disk) (if (opts.softness > 0) "soft" else "hard") else @tagName(opts.pattern),
@@ -243,8 +383,10 @@ pub fn main(init: std.process.Init) !void {
         .texture = opts.texture,
         .texture_filter = @tagName(opts.texture_filter),
         .texture_mode = @tagName(opts.textureConfig().mode),
-        .resource_bytes = resource_bytes,
-        .duplicated_disk_records = duplicated_disk_records,
+        .resource_bytes = resource_metrics.resource_bytes,
+        .duplicated_disk_records = resource_metrics.duplicated_disk_records,
+        .record_capacity = resource_metrics.record_capacity,
+        .prepared_identity = prepared_identity,
         .resource_ns = resource_ns,
         .render_ns = render_ns,
         .combined_ns = combined_ns,
@@ -256,6 +398,7 @@ pub fn main(init: std.process.Init) !void {
         .image_samples = image_samples,
         .precision = @typeName(F),
         .simd = @tagName(build.config.simd),
+        .build_identity = buildIdentity(),
     };
     std.debug.print("BENCH {s}\n", .{try std.json.Stringify.valueAlloc(alloc, record, .{})});
 }
@@ -266,13 +409,98 @@ fn cameraInput(sim: meshio.SimData, opts: Options) camera.CameraInput {
     return .{ .pixels_num = opts.pixels(), .pixels_size = pixel_size, .pos_world = cameraops.posFillFrameFromRot(&sim.coords, opts.pixels(), pixel_size, 0.05, rotation, 1.15), .rot_world = rotation, .roi_cent_world = sceneops.boundsCenter(&sim.coords), .focal_length = 0.05, .sub_sample = 1, .subpixel_center_map = .per_tile };
 }
 
-test "speckle benchmark neighbor metadata preserves requested mock controls" {
-    const perlin = try policy.resolve(true, .perlin, null, null, .hard);
+test "speckle benchmark catalogue follows the current build policy" {
+    const catalogue = evaluatorCatalogue();
+    try std.testing.expectEqual(build.enable_all_evaluators, catalogue.overrides_enabled);
+    var reached: [catalogue.sampling_configs.len]bool = @splat(false);
+    for (policy.generationConfigs(build.enable_all_evaluators), catalogue.configs, 0..) |config, row, i| {
+        try std.testing.expectEqualStrings(policy.evaluatorName(std.meta.activeTag(config)), row.evaluator);
+        const canonical = evaluatorRecord(policy.canonicalizeSampleConfig(config));
+        try std.testing.expectEqualDeep(canonical, row.sampling);
+        reached[row.sampling_index] = true;
+        for (catalogue.configs[i + 1 ..]) |other| {
+            try std.testing.expect(!std.mem.eql(u8, row.evaluator, other.evaluator) or
+                !std.mem.eql(u8, row.pattern orelse "", other.pattern orelse "") or
+                row.neighbors != other.neighbors or row.soft_edges != other.soft_edges);
+        }
+    }
+    for (reached) |sampled| try std.testing.expect(sampled);
+    if (comptime !build.enable_all_evaluators) {
+        const expected = [_]EvaluatorRecord{
+            .{ .evaluator = "classified-binned", .pattern = "disk", .neighbors = 9, .soft_edges = false },
+            .{ .evaluator = "cell-binned", .pattern = "disk", .neighbors = 9, .soft_edges = true },
+            .{ .evaluator = "cell-binned", .pattern = "gaussian", .neighbors = 9, .soft_edges = null },
+            .{ .evaluator = "gradient-lattice", .pattern = "perlin", .neighbors = null, .soft_edges = null },
+        };
+        try std.testing.expectEqualDeep(expected, catalogue.sampling_configs);
+    }
+}
+
+test "speckle benchmark default options prepare production evaluator identities" {
+    for ([_][]const u8{ "hard", "soft", "gaussian", "perlin" }, [_][]const u8{ "classified-binned", "cell-binned", "cell-binned", "gradient-lattice" }) |pattern, evaluator| {
+        var opts = try Options.parse(&.{ "bench", "--pattern", pattern });
+        opts.cells_u = 4;
+        opts.cells_v = 3;
+        try std.testing.expectEqual(null, opts.evaluator);
+        try std.testing.expectEqual(null, opts.neighbors);
+        var resources = try speckle.Resources.init(std.testing.allocator, opts.params());
+        defer resources.deinit(std.testing.allocator);
+        const identity = preparedIdentity(&resources);
+        try std.testing.expectEqualStrings(evaluator, identity.generation_evaluator.?);
+        try std.testing.expectEqualStrings(evaluator, identity.sampling_evaluator.?);
+        try std.testing.expectEqualStrings(if (std.mem.eql(u8, pattern, "hard")) "classified_binned" else if (std.mem.eql(u8, pattern, "perlin")) "perlin" else "cell_binned", identity.backing);
+        const resolved = try opts.params().resolve();
+        try std.testing.expectEqual(recordNeighbors(opts, resolved), if (std.mem.eql(u8, pattern, "perlin")) @as(?u8, null) else 9);
+    }
+}
+
+test "speckle benchmark CPU feature identity covers exactly the resolved target" {
+    const identity = buildIdentity();
+    const all = builtin.cpu.arch.allFeaturesList();
+    var enabled: usize = 0;
+    for (all, 0..) |feature, index| {
+        var occurrences: usize = 0;
+        for (identity.cpu_features) |name| {
+            if (std.mem.eql(u8, name, feature.name)) occurrences += 1;
+        }
+        const expected: usize = if (builtin.cpu.features.isEnabled(@intCast(index))) 1 else 0;
+        try std.testing.expectEqual(expected, occurrences);
+        enabled += expected;
+    }
+    try std.testing.expectEqual(enabled, identity.cpu_features.len);
+}
+
+test "speckle benchmark resource metrics distinguish live records from capacity" {
+    const uncollected = resourceMetrics(&.{});
+    try std.testing.expectEqualDeep(ResourceMetrics{}, uncollected);
+    const coordinates: [36]F = @splat(0);
+    const resources: speckle.Resources = .{ .data = .{ .classified_binned = .{
+        .params = .{},
+        .dims = .{ 16, 4 },
+        .cell_dims = .{ 2, 1 },
+        .coordinates = &coordinates,
+        .slots = 18,
+        .headers = &.{ 0, 0 },
+        .counts = &.{ 1, 3 },
+        .offsets = &.{},
+    } } };
+    const metrics = resourceMetrics(&resources);
+    try std.testing.expectEqual(@as(?usize, 4), metrics.duplicated_disk_records);
+    try std.testing.expectEqual(@as(?usize, 18), metrics.record_capacity);
+    try std.testing.expectEqual(@as(?usize, 16 + 36 * @sizeOf(F) + 2), metrics.resource_bytes);
+}
+
+test "speckle benchmark default neighbor metadata" {
+    const perlin = try policy.resolve(build.enable_all_evaluators, .perlin, null, null, .hard);
     try std.testing.expectEqual(@as(?u8, null), recordNeighbors(.{ .pattern = .perlin }, perlin));
+    try std.testing.expectEqual(@as(?u8, 9), recordNeighbors(.{ .texture_material = true }, perlin));
+}
+
+test "speckle benchmark neighbor metadata preserves requested mock controls" {
+    if (comptime !build.enable_all_evaluators) return error.SkipZigTest;
     const mock = try policy.resolve(true, .perlin, .mock, .four, .hard);
     try std.testing.expectEqual(@as(?u8, 4), recordNeighbors(.{ .evaluator = .mock, .pattern = .perlin, .neighbors = .four }, mock));
     try std.testing.expectEqual(@as(?u8, 9), recordNeighbors(.{ .evaluator = .mock }, mock));
-    try std.testing.expectEqual(@as(?u8, 9), recordNeighbors(.{ .texture_material = true }, perlin));
 }
 
 test "speckle benchmark named options and default gate" {
@@ -293,13 +521,24 @@ test "speckle benchmark named options and default gate" {
         try std.testing.expect(opts.softness > 0);
         try std.testing.expectEqual(policy.Evaluator.cell_hash, opts.evaluator.?);
     } else try std.testing.expectError(error.SpeckleOverridesDisabled, Options.parse(args));
-    const candidate = &.{ "bench", "--evaluator", "classified-indexed", "--jitter", "0.08" };
-    if (comptime build.enable_all_evaluators) {
-        const opts = try Options.parse(candidate);
-        try std.testing.expectEqual(policy.Evaluator.classified_indexed, opts.evaluator.?);
-        try std.testing.expectEqual(@as(F, 0.08), opts.jitter);
-        try std.testing.expectError(error.ClassifiedIndexedRequiresDiskAndNineNeighbors, Options.parse(&.{ "bench", "--evaluator", "classified-indexed", "--neighbors", "4" }));
-    } else try std.testing.expectError(error.SpeckleOverridesDisabled, Options.parse(candidate));
+    inline for (.{ policy.Evaluator.classified_indexed, policy.Evaluator.classified_binned }) |evaluator| {
+        const name = policy.evaluatorName(evaluator);
+        const args_classified = &.{ "bench", "--evaluator", name, "--jitter", "0.08" };
+        if (comptime build.enable_all_evaluators) {
+            const opts = try Options.parse(args_classified);
+            try std.testing.expectEqual(evaluator, opts.evaluator.?);
+            try std.testing.expectEqual(@as(F, 0.08), opts.jitter);
+            var params = opts.params();
+            params.cells_per_uv = .{ 3.17, 2.31 };
+            var resources = try speckle.Resources.init(std.testing.allocator, params);
+            defer resources.deinit(std.testing.allocator);
+            const identity = preparedIdentity(&resources);
+            try std.testing.expectEqualStrings(name, identity.generation_evaluator.?);
+            try std.testing.expectEqualStrings(name, identity.sampling_evaluator.?);
+            try std.testing.expectEqualStrings(if (evaluator == .classified_indexed) "classified" else "classified_binned", identity.backing);
+            try std.testing.expectError(if (evaluator == .classified_indexed) error.ClassifiedIndexedRequiresDiskAndNineNeighbors else error.ClassifiedBinnedRequiresDiskAndNineNeighbors, Options.parse(&.{ "bench", "--evaluator", name, "--neighbors", "4" }));
+        } else try std.testing.expectError(error.SpeckleOverridesDisabled, Options.parse(args_classified));
+    }
 }
 const Scene = struct {
     sim: meshio.SimData,
@@ -437,21 +676,18 @@ test "speckle benchmark workers depth resets and texture filters" {
         const fixture = try TestFixture.init(alloc, opts, 8);
         var single = try fixture.evaluation(alloc, 1);
         var parallel = try fixture.evaluation(alloc, 4);
-        const Variant = enum { hard, soft, gaussian, perlin, perlin_mask, nearest, linear, cubic_catmull_rom };
+        const Variant = enum { hard, soft, gaussian, perlin, hash_hard, hash_soft, hash_gaussian, perlin_mask, nearest, linear, cubic_catmull_rom };
         for (std.enums.values(Variant)) |variant| {
-            if (variant == .perlin_mask and !build.enable_all_evaluators) continue;
+            const experimental = variant == .perlin_mask or variant == .hash_hard or variant == .hash_soft or variant == .hash_gaussian;
+            if (experimental and !build.enable_all_evaluators) continue;
             var params = opts.params();
             params.pattern = switch (variant) {
-                .gaussian => .gaussian,
+                .gaussian, .hash_gaussian => .gaussian,
                 .perlin, .perlin_mask => .perlin,
                 else => .disk,
             };
-            params.edge_softness = if (variant == .soft) 0.1 else 0;
-            if (comptime build.enable_all_evaluators) params.evaluator = switch (variant) {
-                .perlin => .gradient_lattice,
-                .perlin_mask => .mask_u8,
-                else => .cell_hash,
-            };
+            params.edge_softness = if (variant == .soft or variant == .hash_soft) 0.1 else 0;
+            if (experimental) params.evaluator = if (variant == .perlin_mask) .mask_u8 else .cell_hash;
             const texture_variant = variant == .nearest or variant == .linear or variant == .cubic_catmull_rom;
             opts.texture_filter = if (texture_variant) std.meta.stringToEnum(texops.TexSamp, @tagName(variant)).? else .linear;
             var resources = if (texture_variant) speckle.Resources{} else try speckle.Resources.init(alloc, params);

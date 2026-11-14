@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------------------
 //! Resolved speckle policy and compile-time specialization catalogues.
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
 
 pub const Pattern = enum(u8) { disk = 0, gaussian = 1, perlin = 2 };
 pub const Evaluator = enum(u8) {
@@ -17,11 +18,13 @@ pub const Evaluator = enum(u8) {
     list_indexed,
     cell_binned,
     classified_indexed, // Owner-aligned classification with exact masked hard-disk fallback.
+    classified_binned,
     direct_fixed,
     mask_1bit,
     mask_u8,
     mock,
 };
+
 pub const Neighborhood = enum(u8) { one = 1, four = 4, nine = 9 };
 pub const MaskResolution = enum(u8) { eight = 8, twelve = 12, sixteen = 16 };
 pub const Edges = enum { hard, soft };
@@ -39,6 +42,7 @@ pub const Config = union(Evaluator) {
     list_indexed: Shape,
     cell_binned: Shape,
     classified_indexed: void,
+    classified_binned: void,
     direct_fixed: void,
     mask_1bit: Neighborhood,
     mask_u8: Field,
@@ -52,7 +56,7 @@ pub const Config = union(Evaluator) {
                 .gaussian => .gaussian,
             },
             .gradient_lattice => .perlin,
-            .classified_indexed, .direct_fixed, .mask_1bit => .disk,
+            .classified_indexed, .classified_binned, .direct_fixed, .mask_1bit => .disk,
             .mock => null,
         };
     }
@@ -68,7 +72,7 @@ pub const Config = union(Evaluator) {
                 .disk => |disk| disk.neighborhood,
                 .gaussian => |neighbors| neighbors,
             },
-            .classified_indexed => .nine,
+            .classified_indexed, .classified_binned => .nine,
             .direct_fixed => .one,
             .mask_1bit => |neighbors| neighbors,
             .gradient_lattice, .mock => null,
@@ -85,7 +89,7 @@ pub const Config = union(Evaluator) {
                 .disk => |disk| disk.edges,
                 .gaussian => null,
             },
-            .classified_indexed, .direct_fixed, .mask_1bit => .hard,
+            .classified_indexed, .classified_binned, .direct_fixed, .mask_1bit => .hard,
             .gradient_lattice => null,
             .mock => null,
         };
@@ -99,6 +103,7 @@ pub const ResolveError = error{
     GradientLatticeRequiresPerlin,
     Mask1BitRequiresDisk,
     ClassifiedIndexedRequiresDiskAndNineNeighbors,
+    ClassifiedBinnedRequiresDiskAndNineNeighbors,
     DirectFixedRequiresDiskAndOneNeighbor,
     SpeckleEdgeSoftnessRequiresDisk,
     SpeckleEvaluatorRequiresHardEdges,
@@ -123,6 +128,7 @@ pub fn evaluatorName(evaluator: Evaluator) []const u8 {
         .list_indexed => "list-indexed",
         .cell_binned => "cell-binned",
         .classified_indexed => "classified-indexed",
+        .classified_binned => "classified-binned",
         .direct_fixed => "direct-fixed",
         .mask_1bit => "mask-1bit",
         .mask_u8 => "mask-u8",
@@ -146,12 +152,7 @@ pub fn resolve(
     const neighbors = neighbor_count orelse
         if (evaluator == .direct_fixed) .one else default_neighborhood;
     const selected = evaluator orelse switch (pattern) {
-        .disk => if (neighbors != .nine)
-            Evaluator.list_indexed
-        else if (edges == .hard)
-            Evaluator.classified_indexed
-        else
-            Evaluator.cell_binned,
+        .disk => if (neighbors != .nine) Evaluator.list_indexed else if (edges == .hard) Evaluator.classified_binned else Evaluator.cell_binned,
         .gaussian => if (neighbors == .nine) Evaluator.cell_binned else Evaluator.list_indexed,
         .perlin => Evaluator.gradient_lattice,
     };
@@ -162,6 +163,8 @@ pub fn resolve(
         .mask_1bit => if (pattern != .disk) return error.Mask1BitRequiresDisk,
         .classified_indexed => if (pattern != .disk or neighbors != .nine)
             return error.ClassifiedIndexedRequiresDiskAndNineNeighbors,
+        .classified_binned => if (pattern != .disk or neighbors != .nine)
+            return error.ClassifiedBinnedRequiresDiskAndNineNeighbors,
         .direct_fixed => if (pattern != .disk or neighbors != .one)
             return error.DirectFixedRequiresDiskAndOneNeighbor,
         else => {},
@@ -169,7 +172,7 @@ pub fn resolve(
     if (edges == .soft) {
         if (pattern != .disk) return error.SpeckleEdgeSoftnessRequiresDisk;
         switch (selected) {
-            .classified_indexed, .direct_fixed, .mask_1bit, .gradient_lattice => return error.SpeckleEvaluatorRequiresHardEdges,
+            .classified_indexed, .classified_binned, .direct_fixed, .mask_1bit, .gradient_lattice => return error.SpeckleEvaluatorRequiresHardEdges,
             else => {},
         }
     }
@@ -198,6 +201,7 @@ pub fn resolve(
         },
         .gradient_lattice => .gradient_lattice,
         .classified_indexed => .classified_indexed,
+        .classified_binned => .classified_binned,
         .direct_fixed => .direct_fixed,
         .mask_1bit => .{ .mask_1bit = neighbors },
         .mock => .mock,
@@ -222,13 +226,13 @@ pub fn canonicalizeSampleConfig(config: Config) Config {
 }
 
 const default_configs = [_]Config{
-    .classified_indexed,
+    .classified_binned,
     .{ .cell_binned = .{ .disk = .{ .neighborhood = .nine, .edges = .soft } } },
     .{ .cell_binned = .{ .gaussian = .nine } },
     .gradient_lattice,
 };
 const Catalogue = struct {
-    configs: [54]Config = undefined,
+    configs: [55]Config = undefined,
     len: usize = 0,
 
     fn appendUnique(self: *Catalogue, config: Config) void {
@@ -255,12 +259,25 @@ pub fn sampleConfigs(comptime enable_all_evaluators: bool) []const Config {
     return catalogue.configs[0..catalogue.len];
 }
 
+/// Resolve a generation policy to its actual, deduplicated sampling kernel.
+pub fn sampleConfigIndex(comptime enabled: bool, config: Config) u8 {
+    @setEvalBranchQuota(100_000);
+    const canonical = canonicalizeSampleConfig(config);
+    for (sampleConfigs(enabled), 0..) |sample, index| {
+        if (std.meta.eql(sample, canonical)) return @intCast(index);
+    }
+    unreachable; // Resolved policies and the catalogue share availability rules.
+}
+
 fn enumerateGenerationConfigs() Catalogue {
     @setEvalBranchQuota(100_000);
     var result: Catalogue = .{};
     for (default_configs) |config| result.appendUnique(config);
     result.appendUnique(.direct_fixed);
     result.appendUnique(.mock);
+    result.appendUnique(.classified_indexed);
+    result.appendUnique(.classified_binned);
+
     inline for (.{ Evaluator.cell_hash, Evaluator.mask_u8 }) |evaluator|
         result.appendUnique(@unionInit(Config, @tagName(evaluator), Field.perlin));
     for (std.enums.values(Neighborhood)) |neighbors| {
@@ -300,25 +317,77 @@ test "enum boundary conversions and pattern/evaluator spellings" {
         try std.testing.expectEqual(pattern, parsePattern(@tagName(pattern)).?);
     for ([_][]const u8{ "", "Disk", "hard", "soft", " perlin" }) |name|
         try std.testing.expectEqual(null, parsePattern(name));
-    for (std.enums.values(Evaluator)) |evaluator| {
-        try std.testing.expectEqual(evaluator, parseEvaluator(evaluatorName(evaluator)).?);
+    const evaluator_names = [_][]const u8{
+        "cell-hash",          "gradient-lattice",  "list-naive",   "list-indexed", "cell-binned",
+        "classified-indexed", "classified-binned", "direct-fixed", "mask-1bit",    "mask-u8",
+        "mock",
+    };
+    for (std.enums.values(Evaluator), evaluator_names) |evaluator, name| {
+        try std.testing.expectEqualStrings(name, evaluatorName(evaluator));
+        try std.testing.expectEqual(evaluator, parseEvaluator(name).?);
         if (evaluator != .mock) try std.testing.expectEqual(null, parseEvaluator(@tagName(evaluator)));
     }
     for ([_][]const u8{ "", "Cell-hash", " mask-u8", "mask", "MASK-U8", "unknown-evaluator" }) |name|
         try std.testing.expectEqual(null, parseEvaluator(name));
 }
 
+test "automatic defaults use classified hard disks binned soft disks and Gaussians and a Perlin lattice" {
+    for ([_]struct { pattern: Pattern, edges: Edges, evaluator: Evaluator }{
+        .{ .pattern = .disk, .edges = .hard, .evaluator = .classified_binned },
+        .{ .pattern = .disk, .edges = .soft, .evaluator = .cell_binned },
+        .{ .pattern = .gaussian, .edges = .hard, .evaluator = .cell_binned },
+        .{ .pattern = .perlin, .edges = .hard, .evaluator = .gradient_lattice },
+    }) |case| {
+        const config = try resolve(buildconfig.enable_all_evaluators, case.pattern, null, null, case.edges);
+        try std.testing.expectEqual(case.evaluator, std.meta.activeTag(config));
+        try std.testing.expectEqual(case.pattern, config.pattern().?);
+    }
+}
+
+test "experimental reduced neighborhoods automatically select indexed lists" {
+    if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
+    for ([_]Pattern{ .disk, .gaussian }) |pattern| {
+        for ([_]Neighborhood{ .one, .four }) |neighbors| {
+            for (std.enums.values(Edges)) |edges| {
+                if (pattern == .gaussian and edges == .soft) continue;
+                try std.testing.expectEqual(Evaluator.list_indexed, std.meta.activeTag(try resolve(true, pattern, null, neighbors, edges)));
+            }
+        }
+    }
+}
+
+test "classified evaluator names distinguish indexed strips from bins" {
+    try std.testing.expectEqual(Evaluator.classified_indexed, parseEvaluator("classified-indexed").?);
+    try std.testing.expectEqual(Evaluator.classified_binned, parseEvaluator("classified-binned").?);
+}
+
+test "classified overrides are rejected in defaults-only builds" {
+    for ([_]Evaluator{ .classified_indexed, .classified_binned }) |evaluator|
+        try std.testing.expectError(error.SpeckleOverridesDisabled, resolve(false, .disk, evaluator, null, .hard));
+}
+
+test "experimental classified policies retain nine hard disk neighbors" {
+    if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
+    inline for (.{ Evaluator.classified_indexed, Evaluator.classified_binned }) |evaluator| {
+        const config = try resolve(true, .disk, evaluator, null, .hard);
+        try std.testing.expectEqual(evaluator, std.meta.activeTag(config));
+        try std.testing.expectEqual(@as(?Neighborhood, .nine), config.neighborhood());
+    }
+    try std.testing.expectError(error.ClassifiedBinnedRequiresDiskAndNineNeighbors, resolve(true, .disk, .classified_binned, .four, .hard));
+}
+
 test "exhaustive external controls preserve acceptance errors and resolved semantics" {
     inline for (.{ false, true }) |enabled| {
+        if (comptime enabled and !buildconfig.enable_all_evaluators) continue;
         for (std.enums.values(Pattern)) |pattern| {
             for (0..std.enums.values(Evaluator).len + 1) |choice| {
-                const evaluator: ?Evaluator = if (choice == std.enums.values(Evaluator).len) null else @enumFromInt(choice);
+                const evaluator: ?Evaluator = if (choice == std.enums.values(Evaluator).len) null else std.enums.values(Evaluator)[choice];
                 for ([_]?Neighborhood{ null, .one, .four, .nine }) |neighbors| {
                     for (std.enums.values(Edges)) |edges| {
                         // Independent raw-tuple oracle: original validation order, before erasure.
                         const n: u8 = if (neighbors) |value| @intFromEnum(value) else if (evaluator == .direct_fixed) 1 else 9;
                         const selected = evaluator orelse switch (pattern) {
-                            .disk => if (n != 9) Evaluator.list_indexed else if (edges == .hard) Evaluator.classified_indexed else Evaluator.cell_binned,
+                            .disk => if (n != 9) Evaluator.list_indexed else if (edges == .hard) Evaluator.classified_binned else Evaluator.cell_binned,
                             .gaussian => if (n == 9) Evaluator.cell_binned else Evaluator.list_indexed,
                             .perlin => Evaluator.gradient_lattice,
                         };
@@ -329,9 +398,10 @@ test "exhaustive external controls preserve acceptance errors and resolved seman
                             if (selected == .gradient_lattice and pattern != .perlin) break :blk error.GradientLatticeRequiresPerlin;
                             if (selected == .mask_1bit and pattern != .disk) break :blk error.Mask1BitRequiresDisk;
                             if (selected == .classified_indexed and (pattern != .disk or n != 9)) break :blk error.ClassifiedIndexedRequiresDiskAndNineNeighbors;
+                            if (selected == .classified_binned and (pattern != .disk or n != 9)) break :blk error.ClassifiedBinnedRequiresDiskAndNineNeighbors;
                             if (selected == .direct_fixed and (pattern != .disk or n != 1)) break :blk error.DirectFixedRequiresDiskAndOneNeighbor;
                             if (edges == .soft and pattern != .disk) break :blk error.SpeckleEdgeSoftnessRequiresDisk;
-                            if (edges == .soft and (selected == .classified_indexed or selected == .direct_fixed or selected == .mask_1bit or selected == .gradient_lattice)) break :blk error.SpeckleEvaluatorRequiresHardEdges;
+                            if (edges == .soft and (selected == .classified_indexed or selected == .classified_binned or selected == .direct_fixed or selected == .mask_1bit or selected == .gradient_lattice)) break :blk error.SpeckleEvaluatorRequiresHardEdges;
                             break :blk null;
                         };
                         const actual = resolve(enabled, pattern, evaluator, neighbors, edges);
@@ -355,23 +425,31 @@ test "exhaustive external controls preserve acceptance errors and resolved seman
 }
 
 test "catalogues contain exactly the valid policies and canonical sampler behaviors" {
-    try std.testing.expectEqual(54, generationConfigs(true).len);
-    try std.testing.expectEqual(31, sampleConfigs(true).len);
-    try std.testing.expectEqual(4, generationConfigs(false).len);
-    try std.testing.expectEqual(4, sampleConfigs(false).len);
-    inline for (.{ false, true }) |enabled| {
-        for (generationConfigs(enabled), 0..) |config, index| {
-            for (generationConfigs(enabled)[index + 1 ..]) |other| try std.testing.expect(!std.meta.eql(config, other));
-            const resolved = try resolve(true, config.pattern() orelse .disk, std.meta.activeTag(config), config.neighborhood(), config.edges() orelse .hard);
-            try std.testing.expectEqualDeep(config, resolved);
-            const canonical = canonicalizeSampleConfig(config);
-            try std.testing.expectEqualDeep(canonical, canonicalizeSampleConfig(canonical));
-            var matches: usize = 0;
-            for (sampleConfigs(enabled)) |sample| matches += @intFromBool(std.meta.eql(sample, canonical));
-            try std.testing.expectEqual(@as(usize, 1), matches);
-        }
-        for (sampleConfigs(enabled), 0..) |config, index| {
-            for (sampleConfigs(enabled)[index + 1 ..]) |other| try std.testing.expect(!std.meta.eql(config, other));
-        }
+    if (comptime buildconfig.enable_all_evaluators) {
+        try std.testing.expectEqual(55, generationConfigs(true).len);
+        try std.testing.expectEqual(32, sampleConfigs(true).len);
+    }
+    const expected_defaults = [_]Config{
+        .classified_binned,
+        .{ .cell_binned = .{ .disk = .{ .neighborhood = .nine, .edges = .soft } } },
+        .{ .cell_binned = .{ .gaussian = .nine } },
+        .gradient_lattice,
+    };
+    try std.testing.expectEqualDeep(&expected_defaults, generationConfigs(false));
+    try std.testing.expectEqualDeep(&expected_defaults, sampleConfigs(false));
+    const enabled = buildconfig.enable_all_evaluators;
+    for (generationConfigs(enabled), 0..) |config, index| {
+        for (generationConfigs(enabled)[index + 1 ..]) |other| try std.testing.expect(!std.meta.eql(config, other));
+        const resolved = try resolve(enabled, config.pattern() orelse .disk, if (enabled) std.meta.activeTag(config) else null, if (enabled) config.neighborhood() else null, config.edges() orelse .hard);
+        try std.testing.expectEqualDeep(config, resolved);
+        const canonical = canonicalizeSampleConfig(config);
+        try std.testing.expectEqualDeep(canonical, canonicalizeSampleConfig(canonical));
+        try std.testing.expectEqualDeep(canonical, sampleConfigs(enabled)[sampleConfigIndex(enabled, config)]);
+        var matches: usize = 0;
+        for (sampleConfigs(enabled)) |sample| matches += @intFromBool(std.meta.eql(sample, canonical));
+        try std.testing.expectEqual(@as(usize, 1), matches);
+    }
+    for (sampleConfigs(enabled), 0..) |config, index| {
+        for (sampleConfigs(enabled)[index + 1 ..]) |other| try std.testing.expect(!std.meta.eql(config, other));
     }
 }

@@ -295,6 +295,13 @@ pub fn printProceduralConfig(
                 buildconfig.speckle_mask_samples_per_cell,
             },
         );
+    } else if (evaluator == .classified_binned) {
+        std.debug.print(
+            "  classifier: fixed 8 x 4 microcells per procedural bin " ++
+                "(independent of mask resolution)\n" ++
+                "  classification: exact FG/BG certificates; ambiguous samples use exact disk fallback\n",
+            .{},
+        );
     }
 
     if (evaluator == .mask_1bit or evaluator == .mask_u8) {
@@ -369,10 +376,10 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\  --output <path>       Output directory (default: {s})
         \\  --help                Show this help
         \\
-        \\Experimental native overrides (require -Denable-all-evaluators=true):
+        \\Native overrides (require -Denable-all-evaluators=true, even for defaults):
         \\  --evaluator <name>    cell-hash, list-naive, list-indexed, cell-binned,
-        \\                        classified-indexed, direct-fixed, mask-1bit, mask-u8,
-        \\                        gradient-lattice, or mock
+        \\                        classified-indexed, classified-binned, direct-fixed,
+        \\                        mask-1bit, mask-u8, gradient-lattice, or mock
         \\  --neighbors <count>   1, 4, or 9 (Perlin: mock only)
         \\  Omit both overrides for automatic selection; default builds reject either.
         \\  An omitted neighbor count is 9, or 1 for an explicit direct-fixed evaluator.
@@ -383,12 +390,17 @@ fn printUsage(comptime spec: DemoSpec) void {
         \\  Size + jitter + softness <= 0.5 for one neighbor, or <= 1 otherwise.
         \\  Hard disks exclude their circumference; zero-radius draws are empty.
         \\  Softness must be finite and nonnegative; positive values enable soft disks.
-        \\  Gaussian/Perlin, classified-indexed, direct-fixed and mask-1bit
-        \\  require softness 0. Classified-indexed requires disk/9 neighbors; direct-fixed
-        \\  requires disk/1, zero jitter and hard edges; mask-1bit requires hard disks.
-        \\  Defaults: classified-indexed for hard disks, cell-binned for soft disks
-        \\  and Gaussians (list-indexed with 1/4 neighbors), gradient-lattice for Perlin.
-        \\  All defaults evaluate analytic coverage.
+        \\  Gaussian/Perlin, classified-indexed, classified-binned, direct-fixed and
+        \\  mask-1bit require softness 0. Both classified evaluators require disk/9
+        \\  neighbors; direct-fixed requires disk/1, zero jitter and hard edges;
+        \\  mask-1bit requires hard disks.
+        \\  Defaults: classified-binned for hard disks with 9 neighbors, cell-binned
+        \\  for soft disks and Gaussians with 9 neighbors, list-indexed with 1/4
+        \\  neighbors, gradient-lattice for Perlin. All defaults evaluate analytic coverage.
+        \\  Standard hard disks use exact FG/BG certificates on fixed 8 x 4 microcells
+        \\  per bin, with exact disk fallback for ambiguous samples, not a sampled mask.
+        \\  Mask resolution controls experimental masks/classified-indexed, not this grid.
+        \\  Defaults are not a guarantee of fastest evaluation for every workload.
         \\  Perlin supports gradient-lattice, cell-hash, mask-u8 or mock.
         \\  Masks use approximate nearest-grid coverage. Threshold is finite;
         \\  transition is finite and >= 0.

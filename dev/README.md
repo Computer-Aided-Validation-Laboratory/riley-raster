@@ -17,6 +17,18 @@ The `dev/` directory provides comprehensive architectural, mathematical, testing
 - [**`dev/MESHCONVENTION.md`**](MESHCONVENTION.md): Riley standard mesh representation, surface element definitions (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`), 3D continuum elements, node ordering, and connectivity conventions.
 - [**`dev/FILESTRUCTURE.md`**](FILESTRUCTURE.md): Repository layout, module naming rules (`io`, `ops`, `kernel`), scalar/SIMD file splitting, and internal code organisation.
 - [**`dev/ABBREVIATIONS.md`**](ABBREVIATIONS.md): Standardized abbreviations and naming conventions across Zig, C ABI, and Python codebases.
+- [**`dev/DOCS.md`**](DOCS.md): Build and preview the combined Sphinx Python API and Zig API documentation.
+
+## Python development and distribution
+
+Use `pip install -e ".[dev,docs]"` for pip-installable extras, or
+`uv sync --group dev --group docs` for checkout dependency groups. Both carry
+matching development/documentation tools; groups are not published extras.
+
+Windows wheel publication targets AMD64. The source-build selector separately
+matches the Python interpreter, retaining `win32` → `x86-windows-msvc` as well as
+AMD64 and ARM64 mappings. A mapping does not promise a published wheel or CI
+coverage: source installs also require compatible dependencies and a C compiler.
 
 ## Testing Architecture & Core Packaged Suites
 Riley provides a layered testing architecture designed for fast routine verification, rigorous mathematical validation, and exhaustive factorial test coverage:
@@ -79,14 +91,18 @@ zig build install-bench-buffer-psf -Doptimize=ReleaseFast -Dsimd=on
 | **Full Suite** | `zig build test-full -Doptimize=ReleaseSafe` | Exhaustive sweeps over shaders, textures, PSF/distortion, SSAA, hulls, tiling, scenes, threads, and outputs in ReleaseSafe | `gold/full_*/` |
 | **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | Warning-only renders of intentionally folded one-element frames, with actual/reference/diff artifacts under `fails/*_full_badjac/` | Existing basic and full-hull gold |
 | **Python Pytests** | `.venv/bin/pytest src/riley/pytests/` | Python/Cython API, mesh pipeline, Exodus conversion, and demo parity | Integrated / `gold/` |
-| **Procedural Speckles** | Included in `zig build test-basic` and `zig build test-unit`; focused checks use `zig build test-procedural-speckles` | Default integration plus gold-independent generation, sampling, and preparation checks; focused target remains a local convenience | Basic gold / in-memory references |
+| **Procedural Speckles** | Included in `zig build test-basic` and `zig build test-unit`; focused checks use `zig build test-procedural-speckles` | Default integration plus gold-independent generation, sampling, and preparation checks; focused target also checks 32-bit size handling in Ubuntu CI | Basic gold / in-memory references |
 | **C API** | `zig build test-c-api` | C interface tests under the fixed public f64/SIMD/default policy | In-memory references |
 | **Native Benchmark Tooling** | Included in `zig build test-unit`; focused checks use `zig build test-speckle-benchmark` | Native benchmark tooling and harness correctness (not performance profiles) | In-memory references |
 
 > [!NOTE]
 > For complete documentation of all 4 test scenes, 8 sub-suites, gold generation, tolerances, and design contracts, see [**`dev/TESTING.md`**](TESTING.md).
 
-The whole-project `test-unit` suite and configuration matrix are gold-independent; focused procedural-speckle and native-tool checks remain local conveniences. See [the native unit/configuration testing policy](./TESTING.md#native-unit-and-configuration-testing) for coverage and commands.
+The whole-project `test-unit` suite and configuration matrix are gold-independent.
+Ubuntu CI also runs focused default/experimental procedural tests on 32-bit Linux
+and the opt-in native benchmark runner smoke. Other focused native-tool checks
+remain local conveniences. See [the native unit/configuration testing policy](./TESTING.md#native-unit-and-configuration-testing)
+for coverage, gating, and portable smoke-test commands.
 
 ## Precision and SIMD Build Matrix
 The `zig build` workflow supports direct control over precision, SIMD mode, Newton solver mode, and SIMD vector width:
@@ -144,20 +160,30 @@ Non-mock Perlin rejects neighborhood overrides; hard/soft edges apply only to di
 
 | Pattern | Default evaluator | Native alternatives |
 | --- | --- | --- |
-| Hard disk | `classified-indexed` (9 neighbors) | `cell-hash`, `list-indexed`, `list-naive`, `cell-binned`, `direct-fixed`, masks |
+| Hard disk | `classified-binned` (9 neighbors) | `cell-binned`, `cell-hash`, `list-indexed`, `list-naive`, `classified-indexed`, `direct-fixed`, masks |
 | Soft disk | `cell-binned` (9 neighbors) | `cell-hash`, `list-indexed`, `list-naive`, `mask-u8` |
 | Gaussian | `cell-binned` (9 neighbors) | `cell-hash`, `list-indexed`, `list-naive`, `mask-u8` |
 | Perlin | `gradient-lattice` | `cell-hash`, `mask-u8` |
 
 Native one/four-neighbour modes default to `list-indexed` for disks and Gaussians.
+`classified-binned` reuses spatial bins and exact foreground/background certificates
+on a fixed 8×4 microcell grid per bin, skipping disk tests where certified and
+using exact disk fallback for ambiguous samples. `cell-binned` reuses spatial bins
+without classification for soft disks and Gaussians. These choices reduce repeated
+owner searches and disk tests, but do not guarantee the fastest evaluator for every workload.
+`classified-binned` is available automatically in standard builds; explicitly
+selecting it, or any evaluator/neighborhood override, still requires
+`-Denable-all-evaluators=true`.
 All defaults preserve analytic coverage. Masks use nearest-grid sampling;
 `mask-u8` also quantizes coverage to bytes. `mock` provides raw-arithmetic ablation.
-Defaults favor evaluation throughput with reused resources; `list-indexed` can be
-preferable for short runs or lower preparation/storage costs.
+Explicit evaluator overrides are available for native workload-specific
+experiments; benchmark representative inputs before choosing an alternative.
 
-`-Dspeckle-mask-samples-per-cell=8|12|16` selects mask/classification resolution
-(default 12), represented by `MaskResolution` in Zig. Classification resolution
-affects acceleration, not analytic field fidelity; masks remain approximations.
+`-Dspeckle-mask-samples-per-cell=8|12|16` selects resolution for experimental
+masks and `classified-indexed` (default 12), represented by `MaskResolution` in
+Zig. It does not control the default `classified-binned` grid, which is always
+8×4 per procedural bin. Classification resolution affects acceleration, not
+analytic field fidelity; masks remain approximations.
 A fixed seed does not guarantee identical f32/f64 results.
 
 ### Benchmarking
@@ -179,10 +205,27 @@ Per-case radii are passed to and validated against native metadata. For example:
 [{"threads":1,"scene":"plate","pattern":"gaussian","radius":0.4,"jitter":0,"occupancy":1,"neighbors":9,"softness":0}]
 ```
 
-`resource_bytes` in native JSON measures backing allocations for evaluation-mode
-cell-binned and list-indexed runs, not peak process memory. `duplicated_disk_records`
-counts stored cell-binned record references in evaluation mode. Uncollected values
-are `null`, including both metrics for other backings, textures, and full-render runs.
+`resource_bytes` in native JSON measures retained backing allocations for
+`cell-binned`, `list-indexed`, `classified-indexed`, and `classified-binned`
+evaluation-mode runs, not peak process memory. `duplicated_disk_records` counts
+live binned record references, excluding fixed-layout padding. Classified bins
+also report `record_capacity`, including unused slots. These diagnostics do not
+measure preparation scratch or peak process RSS. Uncollected values are `null`,
+including metrics for textures and full-render runs.
+
+Build the experimental benchmark and compare two exact hard-disk evaluators:
+
+```shell
+zig build install-bench-speckle-evaluators -Doptimize=ReleaseFast -Dstrip=true -Denable-all-evaluators=true
+python3 scripts/bench_speckle.py --out out/classified_binned_tuning --profile tuning --a cell-binned --b classified-binned --patterns hard --neighbors 9 --require-equal-output
+```
+
+`--profile tuning` uses combined preparation and evaluation time as its primary
+metric. `--profile full` measures static-geometry evaluation, while
+`--profile full-render` measures production rendering. Use `--workers` to select
+worker budgets and `--help` for repeat counts, workload controls, and statistical
+options. Compare matching workloads and build settings, retain every result,
+and use a fresh output directory for each comparison.
 
 ### Implementation constraints
 
@@ -223,6 +266,19 @@ Callers discard inactive lanes.
   bits and a foreground flag. Certified cells avoid disk tests; other samples
   test only candidate owners. State storage is checked before owner generation;
   unrepresentable grids return `SpeckleClassificationTooLarge`.
+  Its candidates reference owner-indexed strips, not procedural-cell bins.
+- **`classified-binned`:** default nine-neighbor hard-disk evaluator with procedural-cell
+  bins and local 8×4 classification, independent of the build-wide mask resolution.
+  Preparation classifies bins with reachable-domain-clipped FG32/AMB32 certificates:
+  certified foreground/background microcells skip disk tests; ambiguous samples
+  use exact disk fallback with variable-radius lanes grouped by bin.
+  Fixed radii retain nine-slot X/Y planes; variable radii retain CSR X/Y/radius²
+  planes. Preparation checks storage and index representability, with no fixed
+  memory budget; unrepresentable classification returns
+  `SpeckleClassificationTooLarge`, while representable allocation failures
+  propagate `OutOfMemory`. This is distinct from the owner-strip
+  `classified-indexed` algorithm. Automatic hard-nine selection is available in
+  standard builds; explicit selection requires native evaluator overrides.
 - **`cell-binned`:** setup bins touching support into procedural cells. Fixed
   radii use nine-slot X/Y planes and byte counts; variable radii use CSR records.
   Fixed Gaussians reduce paired squared distances before one exponential;
@@ -241,6 +297,9 @@ precision/build under strict round-to-nearest with gradual underflow. Positive
 and negative zero are interchangeable; nonzero results must agree without a
 tolerance. Preserve gradient expressions, interpolation order, transition division,
 and color arithmetic where rewriting them changes nonzero results through rounding.
+Gaussian reductions that select the smallest distance term before calling
+`@exp` assume that `@exp` is monotone nondecreasing over the supported arguments;
+this applies to scalar and SIMD implementations.
 
 ## Benchmark Binaries
 The benchmark entry points exposed through `zig build` are:
@@ -355,15 +414,16 @@ BMP texture. The texture default matches the production shader:
 compile-time constants; setup timing includes texture UV preparation or
 procedural resource generation, not image loading/decoding.
 
-Using the experimental benchmark binary (`-Denable-all-evaluators=true`):
+Build the stripped ReleaseFast experimental binary before either comparison:
 
 ```shell
-python3 scripts/bench_speckle.py --out out/texture_vs_disk --profile full-render --a texture --b classified-indexed --texture texture/speckle_mono.bmp --patterns hard --neighbors 9
+zig build install-bench-speckle-evaluators -Doptimize=ReleaseFast -Dstrip=true -Denable-all-evaluators=true
+python3 scripts/bench_speckle.py --out out/texture_vs_disk --profile full-render --a texture --b classified-binned --texture texture/speckle_mono.bmp --patterns hard --neighbors 9
 python3 scripts/bench_speckle.py --out out/texture_vs_gaussian --profile full-render --a texture --b cell-binned --texture texture/speckle_mono.bmp --patterns gaussian --neighbors 9
 ```
 
 Use `--profile full` for static-geometry evaluation instead of production rendering.
-The integrated multiroot pipeline reports workload IDs
+The native benchmark harness reports workload IDs
 `static-geometry-depth-accumulator-v2` and `production-raster-advanced-memory-v2`.
 Compare timings only between matching workload IDs and configurations.
 Each comparison needs a fresh output directory. The texture is frozen, not regenerated
@@ -372,8 +432,9 @@ do not use `--require-equal-output` for these comparisons.
 
 ## Additional Notes
 
+- Some benchmark helper scripts remain in `./scripts/`, including `./scripts/legacy/`. Their presence does not make them part of the current verification workflow; use the packaged test suites above for correctness and `scripts/bench_speckle.py` for speckle evaluator comparisons.
+
 - Plain `zig run` and `zig test` under `./src/` use the default Riley path of `f64` with SIMD enabled. Run the suite drivers through `zig build` to select precision, SIMD, solver, or vector-width options.
 - The public C ABI is fixed to that same production path.
-- The shared C library explicitly uses LLVM even in Debug: Zig 0.16's self-hosted Debug backend mispasses floating-point struct arguments at the C boundary in camera helpers. Native demo/test backend selection is unchanged.
+- The shared C library explicitly uses LLVM even in Debug: Zig 0.16's self-hosted Debug backend mispasses floating-point struct arguments at the C boundary in camera helpers. Native demos and tests select their backends independently.
 - For detailed camera model mathematics, thread budgeting, distortion-aware hulls, and image save mode mechanics, see [**`dev/THEORY.md`**](THEORY.md).
-- Some older benchmark helper scripts remain in `./scripts/` for historical studies. Prefer the current commands above unless you specifically need an archived workflow.

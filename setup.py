@@ -14,6 +14,7 @@ import numpy
 
 DIST_NAME = "riley-raster"
 PROJECT_ROOT = Path(__file__).resolve().parent
+REQUIRED_ZIG_VERSION = "0.16.0"
 
 # -----------------------------------------------------------------------------
 # Platform-specific utilities
@@ -52,7 +53,7 @@ def lib_link_name(lib_name: str) -> str:
 
 
 def get_windows_target_triple() -> str:
-    """Return the Zig target matching the Python interpreter being built."""
+    """Match the Python interpreter, independently of published wheel architectures."""
     platform_tag = sysconfig.get_platform().lower()
     if platform_tag == "win32":
         return "x86-windows-msvc"
@@ -64,6 +65,34 @@ def get_windows_target_triple() -> str:
     raise RuntimeError(
         f"Unsupported Windows Python platform for Zig build: {platform_tag}"
     )
+
+
+def select_zig_runner() -> list[str]:
+    """Use PATH Zig only at the pinned version, otherwise try bundled ziglang."""
+    zig_bin = shutil.which("zig")
+    candidates = [[zig_bin]] if zig_bin else []
+    candidates.append([sys.executable, "-m", "ziglang"])
+    failures = []
+    for runner in candidates:
+        try:
+            version = subprocess.check_output(
+                runner + ["version"],
+                text=True,
+                stderr=subprocess.STDOUT,
+                timeout=10,
+            ).strip()
+        except (OSError, subprocess.SubprocessError) as exc:
+            failures.append(f"{' '.join(runner)}: {exc}")
+            continue
+        if version == REQUIRED_ZIG_VERSION:
+            return runner
+        failures.append(f"{' '.join(runner)}: version {version!r}")
+    raise RuntimeError(
+        f"Riley requires Zig {REQUIRED_ZIG_VERSION}. "
+        f"Install ziglang=={REQUIRED_ZIG_VERSION} in the build environment "
+        "or put that Zig version on PATH. " + "; ".join(failures)
+    )
+
 
 # -----------------------------------------------------------------------------
 # Generated package data sync
@@ -182,9 +211,11 @@ class MultiBuildExt(build_ext):
 
         print(f"Zig build command:\nzig {' '.join(zig_build)}\n")
 
+        zig_runner = select_zig_runner()
+
         try:
             subprocess.check_call(
-                [sys.executable, "-m", "ziglang"] + zig_build
+                zig_runner + zig_build
             )
             print("Zig build successful\n")
 

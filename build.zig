@@ -13,7 +13,7 @@ const speckleconfig = @import("src/riley/zig/speckleconfig.zig");
 const riley_version = std.SemanticVersion{
     .major = 2026,
     .minor = 10,
-    .patch = 2,
+    .patch = 3,
 };
 
 const RunEntry = struct {
@@ -74,7 +74,7 @@ pub fn build(b: *std.Build) void {
     const mask_samples = b.option(
         u8,
         "speckle-mask-samples-per-cell",
-        "Speckle mask/classification resolution per cell: 8, 12, or 16",
+        "Experimental mask/classified-indexed resolution per cell: 8, 12, or 16 (not classified-binned)",
     ) orelse @intFromEnum(speckleconfig.default_mask_resolution);
     options.speckle_mask_resolution = std.enums.fromInt(speckleconfig.MaskResolution, mask_samples) orelse
         @panic("Supported -Dspeckle-mask-samples-per-cell values are 8, 12, and 16.");

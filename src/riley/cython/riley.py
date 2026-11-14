@@ -150,10 +150,13 @@ class Speckle2DParams:
     only points where ``distance**2 < radius**2``; zero-radius draws are empty.
 
     The Python/C binding uses the native defaults-only build. Hard disks use
-    ``classified-indexed``; soft disks and Gaussian blobs use ``cell-binned``;
-    Perlin uses ``gradient-lattice``. These defaults evaluate the analytic
-    patterns without texture sampling or coverage quantization.
-    Evaluator and neighbor overrides are not exposed.
+    ``classified-binned``; soft disks and Gaussian blobs use ``cell-binned``
+    (all with nine neighbors). Perlin uses ``gradient-lattice``. Hard disks
+    use exact foreground/background certificates on a fixed 8×4 microcell grid
+    per procedural bin and exact disk fallback for ambiguous samples. These
+    defaults evaluate analytic patterns without texture sampling or coverage
+    quantization; they are not a guarantee of fastest evaluation for every
+    workload. Evaluator and neighbor overrides are not exposed in Python/C.
     Resources are prepared once per mesh and reused for every frame.
 
     The Python binding uses f64. On each axis, the padded procedural interval
@@ -161,10 +164,11 @@ class Speckle2DParams:
     ``[-2**45, 2**45]`` to retain sub-cell precision. Native resource generation
     rejects storage sizes that cannot be represented on the target, without
     imposing fixed memory budgets. Size failures raise ``RuntimeError`` containing
-    ``SpeckleClassificationTooLarge``, ``SpeckleCellBinsTooLarge``, or
-    ``SpecklePerlinLatticeTooLarge``, depending on the evaluator. Perlin never
-    silently falls back to hashing; representable allocations that cannot be
-    satisfied raise ``RuntimeError`` containing ``OutOfMemory``.
+    ``SpeckleClassificationTooLarge`` for hard disks,
+    ``SpeckleCellBinsTooLarge`` for soft disks or Gaussian blobs, or
+    ``SpecklePerlinLatticeTooLarge`` for Perlin. Perlin never silently falls
+    back to hashing; representable allocations that cannot be satisfied raise
+    ``RuntimeError`` containing ``OutOfMemory``.
 
     Construction does not validate these values.
     Invalid pattern identifiers raise ``ValueError`` during binding conversion.
