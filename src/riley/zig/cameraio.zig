@@ -737,7 +737,6 @@ fn loadDistort(
 // --------------------------------------------------------------------------------------
 
 const testing = std.testing;
-const temp_test_dir = "out/test_cameraio";
 
 fn initTestCamera(
     pos_world: [3]F,
@@ -795,16 +794,9 @@ fn readSummaryBaseline(
 test "camera I/O preserves physical stereo baseline across OpenGL and OpenCV exports" {
     const allocator = testing.allocator;
     const io = testing.io;
-    const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, "out", .default_dir) catch |err| {
-        if (err != error.PathAlreadyExists) return err;
-    };
-    cwd.deleteTree(io, temp_test_dir) catch {};
-    try cwd.createDir(io, temp_test_dir, .default_dir);
-    defer cwd.deleteTree(io, temp_test_dir) catch {};
-
-    var out_dir = try cwd.openDir(io, temp_test_dir, .{});
-    defer out_dir.close(io);
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const out_dir = tmp.dir;
 
     const cam0 = initTestCamera(.{ 0.0125, 0.0175, 0.1600 }, 0.0, 0.0, 0.0, .opengl);
     const cam1 = initTestCamera(.{ 0.0675, 0.0175, 0.1500 }, 0.0, 0.35, 0.0, .opengl);

@@ -1,5 +1,5 @@
-sceneops
----------------
+Scene operations
+================
 
 .. automodule:: riley.python.sceneops
    :members:

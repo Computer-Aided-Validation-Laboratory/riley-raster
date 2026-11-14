@@ -108,6 +108,21 @@ typedef struct c_camera_input {
     uint32_t subpixel_center_map;
 } CCameraInput;
 
+typedef struct c_speckle_2d_params {
+    uint32_t seed;
+    uint32_t pattern; /* 0: disk, 1: gaussian, 2: perlin; fixed across frames. */
+    double cells_per_uv_0;
+    double cells_per_uv_1;
+    double occupancy;
+    double radius_mean;
+    double radius_jitter;
+    double edge_softness;
+    double perlin_coverage_threshold;
+    double perlin_coverage_transition_width;
+    double foreground;
+    double background;
+} CSpeckle2DParams;
+
 typedef struct c_func_shader_params {
     double coord_scale_0;
     double coord_scale_1;
@@ -186,15 +201,12 @@ typedef struct c_func_shader_params {
     double eggbox_pitch_1;
     double eggbox_phase_0;
     double eggbox_phase_1;
-    double extra_0;
-    double extra_1;
-    double extra_2;
-    double extra_3;
+
 } CFuncShaderParams;
 
 
 typedef struct c_shader_input {
-    uint32_t shader_tag;
+    uint32_t shader_tag; /* 0: tex, 1: tex_rgb, 2: nodal, 3: func, 4: func_rgb, 5: nodal_rgb, 6: speckle */
     CArray2DF64 uvs;
     CArray3DF64 tex;
     CArray3DU8 tex_u8;
@@ -212,6 +224,9 @@ typedef struct c_shader_input {
     uint32_t func_shader_coord_mode;
     CFuncShaderParams func_shader_params;
     uint32_t normal_type;
+    CSpeckle2DParams speckle_params;
+    double speckle_output_scale;
+    double speckle_output_offset;
 } CShaderInput;
 
 typedef struct c_mesh_input {

@@ -17,7 +17,12 @@ These two documentation suites are merged so that the Zig API documentation is a
 
 ## 2. Installing Documentation Dependencies
 
-Documentation dependencies (`sphinx` and `shibuya`) are defined in [pyproject.toml](file:///home/lloydf/riley-raster/pyproject.toml) under both `[project.optional-dependencies]` (`docs`) and `[dependency-groups]` (`docs`).
+Documentation dependencies (`sphinx` and `shibuya`) are defined in [pyproject.toml](../pyproject.toml) under both `[project.optional-dependencies]` (`docs`) and `[dependency-groups]` (`docs`).
+
+Use an editable installation of the project, not just the `docs` dependency group.
+Sphinx autodoc imports the checkout's `src/riley` package via `docs/conf.py`, which
+requires the Cython extension and Zig shared library built in place. The editable
+install commands below build both; rerun the install after changing native code.
 
 ### Using `uv` (Recommended)
 
@@ -91,4 +96,4 @@ Open [http://localhost:8000](http://localhost:8000) in your browser. The Zig API
 
 ## 4. Continuous Deployment (GitHub Pages)
 
-The documentation automatically builds and deploys to GitHub Pages on every push to `main` via the GitHub Actions workflow at [.github/workflows/deploy-pages.yml](file:///home/lloydf/riley-raster/.github/workflows/deploy-pages.yml).
+The documentation automatically builds and deploys to GitHub Pages on every push to `main` via the GitHub Actions workflow at [.github/workflows/deploy-pages.yml](../.github/workflows/deploy-pages.yml).

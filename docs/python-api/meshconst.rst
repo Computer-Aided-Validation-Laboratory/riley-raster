@@ -1,5 +1,5 @@
-meshconst
----------------
+Mesh constants
+==============
 
 .. automodule:: riley.python.meshconst
    :members:

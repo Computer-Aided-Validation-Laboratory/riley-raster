@@ -6,6 +6,7 @@ Welcome to the Python API reference. Select a module below to view its documenta
 .. toctree::
    :maxdepth: 1
 
+   python-api/calibration
    python-api/exodusio
    python-api/frameops
    python-api/meshconst
@@ -13,5 +14,6 @@ Welcome to the Python API reference. Select a module below to view its documenta
    python-api/meshio
    python-api/rileyconfig
    python-api/sceneops
+   python-api/speckles
    python-api/textureio
    python-api/uvtools

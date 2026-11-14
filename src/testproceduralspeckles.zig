@@ -1,0 +1,17 @@
+// --------------------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2026 James Panayis
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: James Panayis
+// --------------------------------------------------------------------------------------
+
+test {
+    _ = @import("tests/testproceduralspeckles.zig");
+    _ = @import("dev_support/proceduraldemo.zig");
+    _ = @import("riley/zig/speckleops.zig");
+    _ = @import("riley/zig/shaderops_common.zig");
+    _ = @import("riley/zig/shaderops_scalar.zig");
+    _ = @import("riley/zig/shaderops_simd.zig");
+}

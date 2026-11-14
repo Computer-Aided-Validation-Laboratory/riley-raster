@@ -86,6 +86,58 @@ python -m riley demo2a_rabbits_mono
 
 Browse the complete [Zig demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src) or [Python demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src/riley/pydemos). The image links below are absolute GitHub URLs so they render both on GitHub and on PyPI.
 
+### Procedural speckles
+
+UV-based grayscale patterns are selected per mesh and stay fixed across its frames:
+
+| Pattern | Appearance | Main controls |
+| --- | --- | --- |
+| `disk` | Circular speckles with hard or softened boundaries | Radius, jitter, occupancy, softness |
+| `gaussian` | Graded blobs with finite support | Radius, jitter, occupancy |
+| `perlin` | Thresholded gradient noise | Coverage threshold and transition width |
+
+All patterns share seed, cell density, and foreground/background controls.
+[Speckle2DParams](./src/riley/cython/riley.py) documents the parameters. Attach a
+`SpeckleShader` directly to a mesh; it requires UVs and produces grayscale output:
+
+```python
+shader = riley.SpeckleShader(
+    uvs=uvs,
+    params=riley.Speckle2DParams(pattern=riley.SpecklePattern.disk, seed=42),
+)
+```
+
+Evaluators are selected automatically; see the
+[developer notes](./dev/README.md#procedural-generation) for native experiments.
+
+For a standalone image of the whole field, without mesh data, UV files, a camera, or
+supersampling, run the direct pattern demo:
+
+```shell
+zig build demo-procedural-pattern -Doptimize=ReleaseFast -- --pattern disk --seed 42
+```
+
+It writes `<pattern>.bmp` into the `--output` directory (default
+`out/procedural_pattern/`), replacing any earlier file of that name. The image is a
+grayscale-valued 24-bit BGR BMP, 1024 × 1024 by default (`--width`, `--height`),
+over a 64 × 64 procedural grid. Set `--cells-u` / `--cells-v` proportional to the
+width / height to keep disks round. Intensities map directly to 0–255 without
+contrast stretching, so the default foreground 0 is black and background 1 is white.
+Use a separate output directory per variant, for example:
+
+```shell
+zig build demo-procedural-pattern -- --pattern disk --occupancy 0.2 --seed 42 --output out/disk_sparse
+zig build demo-procedural-pattern -- --pattern disk --occupancy 0.9 --seed 42 --output out/disk_dense
+zig build demo-procedural-pattern -- --pattern gaussian --seed 42 --output out/gaussian
+zig build demo-procedural-pattern -- --pattern perlin --seed 42 --output out/perlin
+```
+
+Render the same patterns on a UV-mapped sphere with:
+
+```shell
+zig build demo-procedural-sphere200 -Doptimize=ReleaseFast -- --pattern gaussian
+```
+
 ### Rabbits demo
 
 The rabbit scene combines all supported element types and the principal shader families in a single render.
@@ -129,7 +181,7 @@ For a mathematical and architectural overview, see the engrXiv preprint: [Riley:
 ## C Interface
 `Riley` provides a C-compatible API for use from other languages. The Python bindings use this interface through Cython, but it can also be called from C or from any language with a C FFI.
 
-The public C ABI is intentionally fixed to the production Riley build with: precision=`f64`, SIMD=`on`. The extern types and functions live in [`src/riley/zig/c-riley.zig`](./src/riley/zig/c-riley.zig).
+The public C ABI requires precision=`f64`, SIMD=`on`, and `enable-all-evaluators=false`. The extern types and functions live in [`src/riley/zig/c-riley.zig`](./src/riley/zig/c-riley.zig).
 
 ## Citing Riley
 If you have found `Riley` useful you can cite it using:

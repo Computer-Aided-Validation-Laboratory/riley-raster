@@ -1,5 +1,5 @@
-exodusio
----------------
+Exodus I/O
+==========
 
 .. automodule:: riley.python.exodusio
    :members:

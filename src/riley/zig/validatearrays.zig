@@ -137,6 +137,11 @@ fn checkMeshShaderArrays(mesh: meshpipe.MeshInput) InputArrayError!void {
                 return error.NonFiniteTexels;
             }
         },
+        .speckle => |speckle_shader| {
+            if (!isFiniteSlice(speckle_shader.uvs.slice)) {
+                return error.NonFiniteUvs;
+            }
+        },
         .nodal => |nodal_shader| {
             if (!isFiniteSlice(nodal_shader.field.array_mem)) {
                 return error.NonFiniteNodalFields;
@@ -170,4 +175,32 @@ fn isFiniteSlice(values: []const F) bool {
         }
     }
     return true;
+}
+
+test "full speckle array validation scans UVs and connectivity" {
+    const meshio = @import("meshio.zig");
+    const alloc = std.testing.allocator;
+    var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+    var connect = [_]usize{ 0, 1, 2 };
+    // Finite UVs outside [0,1] remain valid; sampling clamps them.
+    var values = [_]F{ -0.5, 0, 1.5, 0, 0, 1 };
+    const uvs = try ndarray.NDArray(F).init(alloc, &values, &.{ 3, 2 });
+    defer uvs.deinit(alloc);
+    const mesh = meshpipe.MeshInput{
+        .mesh_type = .tri3,
+        .coords = meshio.Coords.init(&coords, 3),
+        .connect = meshio.Connect.init(&connect, 1, 3),
+        .disp = null,
+        .shader = .{ .speckle = .{ .uvs = uvs } },
+    };
+    try checkRenderArrs(&.{mesh});
+    for ([_]F{ std.math.nan(F), std.math.inf(F), -std.math.inf(F) }) |invalid| {
+        values[0] = invalid;
+        try std.testing.expectError(error.NonFiniteUvs, checkRenderArrs(&.{mesh}));
+    }
+    values[0] = 0;
+    connect[2] = 3;
+    try std.testing.expectError(error.InvalidConnectivityIndex, checkRenderArrs(&.{mesh}));
+    connect[2] = 1;
+    try std.testing.expectError(error.DegenerateElementIndices, checkRenderArrs(&.{mesh}));
 }
