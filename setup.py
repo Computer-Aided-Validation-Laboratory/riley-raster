@@ -182,9 +182,12 @@ class MultiBuildExt(build_ext):
 
         print(f"Zig build command:\nzig {' '.join(zig_build)}\n")
 
+        zig_bin = shutil.which("zig")
+        zig_runner = [zig_bin] if zig_bin else [sys.executable, "-m", "ziglang"]
+
         try:
             subprocess.check_call(
-                [sys.executable, "-m", "ziglang"] + zig_build
+                zig_runner + zig_build
             )
             print("Zig build successful\n")
 
