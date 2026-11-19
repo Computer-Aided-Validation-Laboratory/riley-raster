@@ -339,7 +339,7 @@ pub const PolyMap = struct {
 };
 
 fn polyValue(comptime T: type, value: F) T {
-    if (T == F) return value;
+    if (comptime T == F) return value;
     return @splat(value);
 }
 

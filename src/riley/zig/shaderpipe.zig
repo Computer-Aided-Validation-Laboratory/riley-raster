@@ -65,14 +65,12 @@ pub const LUTMapStage = struct {
 
     pub inline fn apply(self: @This(), outputs: anytype, active: anytype) void {
         const T = @TypeOf(outputs.get(self.register_source));
-        if (T == F) {
-            outputs.set(self.register_dest, self.lookup.sample(outputs.get(self.register_source)));
-        } else {
-            outputs.set(self.register_dest, self.lookup.sampleSIMD(
-                outputs.get(self.register_source),
-                active,
-            ));
-        }
+        const value = outputs.get(self.register_source);
+        const mapped = if (comptime T == F)
+            self.lookup.sample(value)
+        else
+            self.lookup.sampleSIMD(value, active);
+        outputs.set(self.register_dest, mapped);
     }
 };
 
@@ -113,22 +111,17 @@ pub const NormaliseStage = struct {
             squared += values[i] * values[i];
         }
 
-        if (T == F) {
-            const inv_norm: F = if (squared == 0) 0 else 1 / @sqrt(squared);
-            for (0..self.components) |i| {
-                var dest = self.register_dest;
-                dest.index += @intCast(i);
-                outputs.set(dest, values[i] * inv_norm);
-            }
-        } else {
+        const inv_norm: T = if (comptime T == F)
+            if (squared == 0) 0 else 1 / @sqrt(squared)
+        else blk: {
             const positive = squared > splat(T, 0);
             const safe_squared = @select(F, positive, squared, splat(T, 1));
-            const inv_norm = @select(F, positive, splat(T, 1) / @sqrt(safe_squared), splat(T, 0));
-            for (0..self.components) |i| {
-                var dest = self.register_dest;
-                dest.index += @intCast(i);
-                outputs.set(dest, values[i] * inv_norm);
-            }
+            break :blk @select(F, positive, splat(T, 1) / @sqrt(safe_squared), splat(T, 0));
+        };
+        for (0..self.components) |i| {
+            var dest = self.register_dest;
+            dest.index += @intCast(i);
+            outputs.set(dest, values[i] * inv_norm);
         }
     }
 };
@@ -335,14 +328,10 @@ pub const ResolverProgramPrepared = struct {
                 stack[depth - 1] = @min(upper, @max(lower, stack[depth - 1]));
             },
             .lut => |idx| {
-                if (T == F) {
-                    stack[depth - 1] = self.lookups[idx].sample(stack[depth - 1]);
-                } else {
-                    stack[depth - 1] = self.lookups[idx].sampleSIMD(
-                        stack[depth - 1],
-                        @splat(true),
-                    );
-                }
+                stack[depth - 1] = if (comptime T == F)
+                    self.lookups[idx].sample(stack[depth - 1])
+                else
+                    self.lookups[idx].sampleSIMD(stack[depth - 1], @splat(true));
             },
             .store => |idx| {
                 out.*[idx] = stack[0];
@@ -549,12 +538,10 @@ pub const ResolverPrepared = union(enum) {
                 const radiance = g.radiance;
                 const temp = readRegister(T, inputs, constants, g.temperature);
 
-                var radiant: T = undefined;
-                if (T == F) {
-                    radiant = radiance.sample(temp);
-                } else {
-                    radiant = radiance.sampleSIMD(temp, @splat(true));
-                }
+                const radiant = if (comptime T == F)
+                    radiance.sample(temp)
+                else
+                    radiance.sampleSIMD(temp, @splat(true));
                 out.*[0] = readRegister(T, inputs, constants, g.emissivity) * radiant;
             },
             .greybody_band_apparent_c => |g| {
@@ -563,14 +550,14 @@ pub const ResolverPrepared = union(enum) {
                 const emissivity = readRegister(T, inputs, constants, g.emissivity);
                 const ambient = g.ambient_radiance;
 
-                if (T == F) {
-                    const rad_temp = radiance.sample(temp);
-                    const measured = emissivity * rad_temp + (1 - emissivity) * ambient;
+                const radiant = if (comptime T == F)
+                    radiance.sample(temp)
+                else
+                    radiance.sampleSIMD(temp, @splat(true));
+                const measured = emissivity * radiant + (splat(T, 1) - emissivity) * splat(T, ambient);
+                if (comptime T == F) {
                     out.*[0] = g.radiance.lookup.inverseMonotonic(measured) - kelvin_celsius_offset;
                 } else {
-                    const radiant = radiance.sampleSIMD(temp, @splat(true));
-                    const measured = emissivity * radiant +
-                        (@as(T, @splat(1)) - emissivity) * @as(T, @splat(ambient));
                     const measured_lanes: [buildconfig.SimdWidth]F = measured;
                     var result: [buildconfig.SimdWidth]F = undefined;
                     for (&result, measured_lanes) |*lane, value| {
@@ -807,7 +794,7 @@ inline fn sampleLookupSIMD(
 }
 
 inline fn splat(comptime T: type, value: F) T {
-    return if (T == F) value else @splat(value);
+    return if (comptime T == F) value else @splat(value);
 }
 
 // --------------------------------------------------------------------------------------

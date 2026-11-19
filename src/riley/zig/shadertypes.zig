@@ -252,12 +252,12 @@ pub const BlendPrepared = struct {
     pub inline fn apply(self: BlendPrepared, outputs: anytype) void {
         const T = @TypeOf(outputs.get(self.a));
         const alpha: T = switch (self.alpha) {
-            .fixed => |v| if (T == F) v else @splat(v),
+            .fixed => |v| if (comptime T == F) v else @splat(v),
             .register => |register_ref| outputs.get(register_ref),
         };
         const complement: T = switch (self.alpha) {
-            .fixed => if (T == F) self.fixed_complement else @splat(self.fixed_complement),
-            .register => (if (T == F) @as(F, 1) else @as(T, @splat(1))) - alpha,
+            .fixed => if (comptime T == F) self.fixed_complement else @splat(self.fixed_complement),
+            .register => (if (comptime T == F) @as(F, 1) else @as(T, @splat(1))) - alpha,
         };
         outputs.set(self.register_dest, complement * outputs.get(self.a) + alpha * outputs.get(self.b));
     }
@@ -278,14 +278,12 @@ pub const LUTMapPrepared = struct {
 
     pub inline fn apply(self: LUTMapPrepared, outputs: anytype, active: anytype) void {
         const T = @TypeOf(outputs.get(self.register_source));
-        if (T == F) {
-            outputs.set(self.register_dest, self.lookup.sample(outputs.get(self.register_source)));
-        } else {
-            outputs.set(self.register_dest, self.lookup.sampleSIMD(
-                outputs.get(self.register_source),
-                active,
-            ));
-        }
+        const value = outputs.get(self.register_source);
+        const mapped = if (comptime T == F)
+            self.lookup.sample(value)
+        else
+            self.lookup.sampleSIMD(value, active);
+        outputs.set(self.register_dest, mapped);
     }
 };
 
