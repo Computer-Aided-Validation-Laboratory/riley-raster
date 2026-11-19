@@ -137,19 +137,6 @@ class MultiBuildExt(build_ext):
         zig_source = PROJECT_ROOT / "src" / "riley" / "zig" / "c-riley.zig"
         zig_lib_output = out_dir / lib_link_name("c_riley")
 
-        if (
-            zig_lib_output.is_file()
-            and zig_lib_output.stat().st_mtime >= max(
-                path.stat().st_mtime
-                for path in (PROJECT_ROOT / "src" / "riley" / "zig").rglob("*.zig")
-            )
-        ):
-            print(80 * "-")
-            print("Zig: Shared Library is up to date, skipping rebuild.")
-            print(f"Target: {zig_lib_output}")
-            print(80 * "-")
-            return
-
         print(80 * "-")
         print("Zig: Building Shared Library")
         print(f"Source: {zig_source}")

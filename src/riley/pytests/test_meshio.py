@@ -482,6 +482,36 @@ def test_create_mesh_triangulates_tri6_to_tri3() -> None:
     assert mesh.connect.shape == (4, 3)
 
 
+@pytest.mark.parametrize("shader_kind", ("nodal", "function"))
+def test_create_mesh_preserves_shader_output_transform(shader_kind: str) -> None:
+    coords = coords_3d(riley.EElemType.TRI3)
+    connect = np.arange(coords.shape[0], dtype=np.uintp).reshape((1, -1))
+    convention = riley.ConnectConvention(
+        riley.EElemType.TRI3,
+        riley.EConnectAxis.ROW,
+        0,
+        riley.ENodeOrder.RILEY,
+    )
+    shader = (
+        riley.NodalShader(np.arange(coords.shape[0], dtype=np.float64)[:, None])
+        if shader_kind == "nodal"
+        else function_shader()
+    )
+    shader.output_gain = 2.5
+    shader.output_offset = -0.75
+
+    mesh = riley.create_mesh(
+        convention,
+        riley.MeshType.tri3,
+        coords,
+        connect,
+        riley.MeshShaderSet(mono=shader),
+    )
+
+    assert mesh.shaders.mono.output_gain == shader.output_gain
+    assert mesh.shaders.mono.output_offset == shader.output_offset
+
+
 def test_create_mesh_supports_temporal_fields() -> None:
     coords = coords_3d(riley.EElemType.TRI3)
     connect = np.arange(coords.shape[0], dtype=np.uintp).reshape((1, -1))

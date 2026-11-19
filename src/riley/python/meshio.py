@@ -356,6 +356,8 @@ def _prepare_shader(
             return NodalShader(
                 field=field_out,
                 bits=shader.bits,
+                output_gain=shader.output_gain,
+                output_offset=shader.output_offset,
                 scaling_type=shader.scaling_type,
                 scaling_min=shader.scaling_min,
                 scaling_max=shader.scaling_max,
@@ -392,6 +394,8 @@ def _prepare_shader(
                 uvs=uvs_out,
                 channels=shader.channels,
                 bits=shader.bits,
+                output_gain=shader.output_gain,
+                output_offset=shader.output_offset,
                 scaling_type=shader.scaling_type,
                 scaling_min=shader.scaling_min,
                 scaling_max=shader.scaling_max,

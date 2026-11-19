@@ -1132,6 +1132,7 @@ fn runBenchmarkInternal(
         .roi_cent_world = camera.roi_cent_world,
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
+        .distort = render_defaults.distort,
         .render_format = if (render_defaults.shader_path == .static_preparation) .ir else if (calcOutputChannels(shader_type) == 3) .rgb else .mono,
     };
 

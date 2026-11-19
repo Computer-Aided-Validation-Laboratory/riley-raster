@@ -206,11 +206,7 @@ fn checkPipeCompatibility(
             const expected = camera.render_format.channels();
             switch (selected) {
                 .direct => if (expected != 1) return error.UnsuppedImageModeFieldCount,
-                .pipe => |pipe| try checkPipeMetadata(
-                    pipe.*,
-                    mesh.coords.mat.rows_num,
-                    expected,
-                ),
+                .pipe => {},
             }
         }
         if (!compatible) {
@@ -406,8 +402,17 @@ fn checkMeshesMetadata(
             try checkShaderMonoMetadata(shader, mesh.coords.mat.rows_num);
         if (shaders.ir_pipe) |pipe|
             try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 1);
-        if (shaders.multifield_pipe) |_| {
-            // output arity is supplied by a selecting camera
+        if (shaders.multifield_pipe) |pipe| {
+            var checked_channels = [_]bool{false} ** (max_channels + 1);
+            for (cam_inps) |camera| {
+                if (camera.render_format != .multifield) continue;
+                const channels = camera.render_format.multifield;
+                if (channels == 0 or channels > max_channels)
+                    return error.InvalidRenderFormatChannels;
+                if (checked_channels[channels]) continue;
+                try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, channels);
+                checked_channels[channels] = true;
+            }
         }
     }
 }
@@ -1107,6 +1112,47 @@ test "raster configuration rejects invalid distortion edge spacing" {
             checkRasterConfig(config),
         );
     }
+}
+
+test "pipe metadata validates every distinct requested multifield channel count" {
+    var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+    var connect = [_]usize{ 0, 1, 2 };
+    const ch0 = shaderpipe.Register{ .kind = .channel, .index = 0 };
+    const stages = [_]shadertypes.ShaderPipeStageInput{
+        .{ .shader = .{
+            .shader = .{ .func = .{ .builtin = .constant } },
+            .register_dest = ch0,
+        } },
+    };
+    const meshes = [_]meshtypes.MeshInput{.{
+        .mesh_type = .tri3,
+        .coords = meshtypes.Coords.init(&coords, 3),
+        .connect = meshtypes.Connect.init(&connect, 1, 3),
+        .disp = null,
+        .shaders = .{ .multifield_pipe = .{
+            .stages = &stages,
+            .resolver = .{ .identity = &.{ch0} },
+        } },
+    }};
+    var cameras = [_]cameratypes.CameraInput{.{
+        .pixels_num = .{ 16, 16 },
+        .pixels_size = .{ 1, 1 },
+        .pos_world = .initSlice(&.{ 0, 0, 1 }),
+        .rot_world = .init(0, 0, 0),
+        .roi_cent_world = .initSlice(&.{ 0, 0, 0 }),
+        .focal_length = 1,
+        .sub_sample = 1,
+    }} ** 3;
+    for (&cameras) |*camera| camera.render_format = .{ .multifield = 1 };
+    try checkMeshesMetadata(&meshes, &cameras);
+    try checkPipeCompatibility(&cameras, &meshes);
+
+    cameras[2].render_format = .{ .multifield = 2 };
+    try std.testing.expectError(error.InvalidShaderPipe, checkMeshesMetadata(&meshes, &cameras));
+    cameras[2].render_format = .{ .multifield = 0 };
+    try std.testing.expectError(error.InvalidRenderFormatChannels, checkMeshesMetadata(&meshes, &cameras));
+    cameras[2].render_format = .{ .multifield = max_channels + 1 };
+    try std.testing.expectError(error.InvalidRenderFormatChannels, checkMeshesMetadata(&meshes, &cameras));
 }
 
 test "generic pipe stages validate ordered reads and single writers" {
