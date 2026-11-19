@@ -1,0 +1,731 @@
+// --------------------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: scepticalrabbit (Lloyd Fletcher)
+// --------------------------------------------------------------------------------------
+
+const geometrykernels = @import("geometrykernels.zig");
+const matslice = @import("matslice.zig");
+const shadertypes = @import("shadertypes.zig");
+const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
+const pipe_cfg = buildconfig.config.shaderpipe;
+const S = buildconfig.SimdWidth;
+const VecSF = buildconfig.VecSF;
+const VecSB = buildconfig.VecSB;
+const shaderops = @import("shaderops.zig");
+const shaderfill = @import("shaderfill.zig");
+const meshhit = @import("meshhit.zig");
+const shaderpipe = @import("shaderpipe.zig");
+const shaderkernels = @import("shaderkernels.zig");
+const simdops = @import("simdops.zig");
+
+pub fn LocalPipeBuff(comptime N: usize) type {
+    return struct {
+        stages: [pipe_cfg.max_stages]shadertypes.LocalShaderBuff(N) = undefined,
+        coords_ref: [3 * N]F = undefined,
+        coords_def: [3 * N]F = undefined,
+        surf_norm: [3 * N]F = undefined,
+
+        pub fn load(
+            self: *@This(),
+            pipe: *const shadertypes.ShaderPipePrepared,
+            elem_idx: usize,
+            frame_idx: usize,
+        ) void {
+            if (pipe.hit_geometry.coords_ref) |array| {
+                const start = elem_idx * 3 * N;
+                @memcpy(self.coords_ref[0 .. 3 * N], array.slice[start .. start + 3 * N]);
+            }
+
+            if (pipe.hit_geometry.coords_def) |array| {
+                const start = elem_idx * 3 * N;
+                @memcpy(self.coords_def[0 .. 3 * N], array.slice[start .. start + 3 * N]);
+            }
+
+            if (pipe.hit_geometry.surf_norm) |normals| {
+                const start = normals.map[elem_idx] * 3 * N;
+                @memcpy(self.surf_norm[0 .. 3 * N], normals.array.slice[start .. start + 3 * N]);
+            }
+
+            for (pipe.stages, 0..) |stage, si| {
+                const source = switch (stage) {
+                    .shader => |source| source,
+                    else => continue,
+                };
+                const buf = &self.stages[si];
+
+                switch (source.shader) {
+                    .nodal => |shader| {
+                        const count: u8 = if (shader.elem_field.dims.len == 3)
+                            @intCast(shader.elem_field.dims[1])
+                        else
+                            @intCast(shader.elem_field.dims[2]);
+
+                        const frame_dim = shader.elem_field.dims[0] - 1;
+
+                        const idx = if (shader.elem_field.dims.len == 3)
+                            shader.elem_field.getFlatIdx(&.{ elem_idx, 0, 0 })
+                        else
+                            shader.elem_field.getFlatIdx(&.{
+                                @min(frame_idx, frame_dim),
+                                elem_idx,
+                                0,
+                                0,
+                            });
+
+                        buf.load(shader.elem_field, idx, count);
+                    },
+                    .tex_u8 => |shader| {
+                        buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .tex_u16 => |shader| {
+                        buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .tex_f => |shader| {
+                        buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .tex_rgb_u8 => |shader| {
+                        buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .tex_rgb_u16 => |shader| {
+                        buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .tex_rgb_f => |shader| {
+                        buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .tex_multi_f => |shader| {
+                        buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .func, .func_rgb, .func_multi => |shader| {
+                        if (shader.coord_mode == .uv) {
+                            buf.loadFuncCoords(shader.elem_uvs.?, elem_idx * 2 * N, 2);
+                        }
+                    },
+                }
+            }
+        }
+
+        pub inline fn completeHit(
+            self: *const @This(),
+            comptime coord_space: geometrykernels.CoordSpace,
+            base: meshhit.MeshHit(N),
+            selection: meshhit.MeshHitSelection,
+        ) meshhit.MeshHit(N) {
+            if (selection.count() == 0) return base;
+
+            var hit = base;
+            if (selection.contains(.coords_ref)) {
+                hit.coords_ref = meshhit.interpCoords(N, coord_space, &self.coords_ref, base);
+            }
+
+            if (selection.contains(.coords_def)) {
+                hit.coords_def = meshhit.interpCoords(N, coord_space, &self.coords_def, base);
+            }
+
+            if (selection.contains(.surf_norm)) {
+                hit.surf_norm = meshhit.interpCoords(N, .clip_px_leng, &self.surf_norm, base);
+            }
+
+            return hit;
+        }
+
+        pub inline fn completeHitSIMD(
+            self: *const @This(),
+            comptime coord_space: geometrykernels.CoordSpace,
+            mask: VecSB,
+            weights: [N]VecSF,
+            nodes_inv_z: [N]VecSF,
+            subpx_z: VecSF,
+            selection: meshhit.MeshHitSelection,
+        ) meshhit.MeshHitGeomSIMD {
+            if (selection.count() == 0) return .{};
+
+            var hit: meshhit.MeshHitGeomSIMD = .{};
+            if (selection.contains(.coords_ref)) {
+                hit.coords_ref = meshhit.interpCoordsSIMD(
+                    N,
+                    coord_space,
+                    &self.coords_ref,
+                    mask,
+                    weights,
+                    nodes_inv_z,
+                    subpx_z,
+                );
+            }
+
+            if (selection.contains(.coords_def)) {
+                hit.coords_def = meshhit.interpCoordsSIMD(
+                    N,
+                    coord_space,
+                    &self.coords_def,
+                    mask,
+                    weights,
+                    nodes_inv_z,
+                    subpx_z,
+                );
+            }
+
+            if (selection.contains(.surf_norm)) {
+                hit.surf_norm = meshhit.interpCoordsSIMD(
+                    N,
+                    .clip_px_leng,
+                    &self.surf_norm,
+                    mask,
+                    weights,
+                    nodes_inv_z,
+                    subpx_z,
+                );
+            }
+
+            return hit;
+        }
+    };
+}
+
+pub fn PipeKernel(comptime N: usize) type {
+    return struct {
+        pub const LocalBuff = LocalPipeBuff(N);
+        pub const Hit = meshhit.MeshHit(N);
+
+        pub fn shade(
+            comptime coord_space: geometrykernels.CoordSpace,
+            ctx_shade: shadertypes.ShadeContext,
+            interp: meshhit.MeshHit(N),
+            pipe_buf: *const LocalBuff,
+            pipe: *const shadertypes.ShaderPipePrepared,
+            spx_image_scratch: *matslice.MatSlice(F),
+        ) void {
+            const hit = pipe_buf.completeHit(coord_space, interp, pipe.hit_geometry.selection);
+
+            var registers_out: shaderpipe.RegistersOutputScalar = .{};
+
+            var source_values: [buildconfig.config.max_image_channels]F = @splat(0);
+            var source_output = matslice.MatSlice(F).init(
+                &source_values,
+                buildconfig.config.max_image_channels,
+                1,
+            );
+
+            var stage_ctx = ctx_shade;
+            stage_ctx.scratch_idx = 0;
+            stage_ctx.simd_full_vector_store_safe = false;
+
+            for (pipe.stages, 0..) |*stage, si| {
+                switch (stage.*) {
+                    .shader => |*src| {
+                        const count = src.channels;
+
+                        stage_ctx.actual_fields = count;
+
+                        shadeSource(
+                            N,
+                            coord_space,
+                            stage_ctx,
+                            hit,
+                            &pipe_buf.stages[si],
+                            &src.shader,
+                            &source_output,
+                        );
+
+                        for (0..count) |ch| {
+                            var dest = src.register_dest;
+                            dest.index += @intCast(ch);
+                            registers_out.set(dest, source_values[ch]);
+                        }
+                    },
+                    .grey_to_emissivity => |m| {
+                        const grey = std.math.clamp((registers_out.get(m.register_source) - m.greylevel_at_black) /
+                            m.greylevel_range, 0, 1);
+                        registers_out.set(
+                            m.register_dest,
+                            m.emissivity_at_black + grey * m.emissivity_range,
+                        );
+                    },
+                    .clamp => |c| {
+                        const clamped = std.math.clamp(
+                            registers_out.get(c.register_source),
+                            c.lower,
+                            c.upper,
+                        );
+                        registers_out.set(c.register_dest, clamped);
+                    },
+                    .affine_map => |m| m.apply(&registers_out),
+                    .lut_map => |m| m.apply(&registers_out, true),
+                    .blend => |m| m.apply(&registers_out),
+                    .normalise => |m| m.apply(&registers_out),
+                }
+            }
+
+            var resolved: [buildconfig.config.max_image_channels]F = undefined;
+            pipe.resolver.evaluate(&registers_out, pipe.constants, pipe.channels, &resolved);
+
+            for (0..pipe.channels) |ch| {
+                const idx = ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx;
+                spx_image_scratch.slice[idx] = resolved[ch];
+            }
+        }
+
+        pub fn shadeSIMD(
+            comptime coord_space: geometrykernels.CoordSpace,
+            ctx_shade: shadertypes.ShadeContext,
+            v_mask_active: VecSB,
+            v_weights: [N]VecSF,
+            v_xi: VecSF,
+            v_eta: VecSF,
+            v_nodes_inv_z: [N]VecSF,
+            v_subpx_z: VecSF,
+            pipe_buf: *const LocalBuff,
+            pipe: *const shadertypes.ShaderPipePrepared,
+            spx_image_scratch: *matslice.MatSlice(F),
+        ) void {
+            const hit = pipe_buf.completeHitSIMD(
+                coord_space,
+                v_mask_active,
+                v_weights,
+                v_nodes_inv_z,
+                v_subpx_z,
+                pipe.hit_geometry.selection,
+            );
+
+            var registers_out: shaderpipe.RegistersOutputSIMD = .{};
+            var stage_ctx = ctx_shade;
+
+            for (pipe.stages, 0..) |*stage, si| {
+                switch (stage.*) {
+                    .shader => |*src| {
+                        const count = src.channels;
+                        stage_ctx.actual_fields = count;
+                        var source_values: shaderfill.VectorSink(buildconfig.config.max_image_channels) = .{};
+                        shadeSourceSIMD(
+                            N,
+                            coord_space,
+                            stage_ctx,
+                            v_mask_active,
+                            v_weights,
+                            v_xi,
+                            v_eta,
+                            v_nodes_inv_z,
+                            v_subpx_z,
+                            hit,
+                            &pipe_buf.stages[si],
+                            &src.shader,
+                            &source_values,
+                        );
+                        for (0..count) |ch| {
+                            var dest = src.register_dest;
+                            dest.index += @intCast(ch);
+                            registers_out.set(dest, source_values.values[ch]);
+                        }
+                    },
+                    .grey_to_emissivity => |m| {
+                        const src_val = registers_out.get(m.register_source);
+                        const gb = @as(VecSF, @splat(m.greylevel_at_black));
+                        const gw_gb = @as(VecSF, @splat(m.greylevel_range));
+                        const raw_grey = (src_val - gb) / gw_gb;
+                        const one = @as(VecSF, @splat(1));
+                        const zero = @as(VecSF, @splat(0));
+                        const grey = @min(one, @max(zero, raw_grey));
+                        const blk_splat = @as(VecSF, @splat(m.emissivity_at_black));
+                        const w_b = @as(VecSF, @splat(m.emissivity_range));
+                        registers_out.set(m.register_dest, blk_splat + grey * w_b);
+                    },
+                    .clamp => |c| {
+                        const upper = @as(VecSF, @splat(c.upper));
+                        const lower = @as(VecSF, @splat(c.lower));
+                        const clamped = @min(upper, @max(lower, registers_out.get(c.register_source)));
+                        registers_out.set(c.register_dest, clamped);
+                    },
+                    .affine_map => |m| m.apply(&registers_out),
+                    .lut_map => |m| m.apply(&registers_out, v_mask_active),
+                    .blend => |m| m.apply(&registers_out),
+                    .normalise => |m| m.apply(&registers_out),
+                }
+            }
+
+            var resolved: [buildconfig.config.max_image_channels]VecSF = undefined;
+            pipe.resolver.evaluate(&registers_out, pipe.constants, pipe.channels, &resolved);
+            for (0..pipe.channels) |ch| {
+                const idx = ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx;
+                if (!ctx_shade.simd_full_vector_store_safe) {
+                    const lanes: [S]F = resolved[ch];
+                    const mask: [S]bool = v_mask_active;
+                    inline for (0..S) |lane| if (mask[lane]) {
+                        spx_image_scratch.slice[idx + lane] = lanes[lane];
+                    };
+                } else {
+                    simdops.storeMaskedVecSF(
+                        spx_image_scratch.slice,
+                        idx,
+                        v_mask_active,
+                        resolved[ch],
+                    );
+                }
+            }
+        }
+    };
+}
+
+fn shadeSource(
+    comptime N: usize,
+    comptime coord_space: geometrykernels.CoordSpace,
+    ctx: shadertypes.ShadeContext,
+    interp: meshhit.MeshHit(N),
+    buf: *const shadertypes.LocalShaderBuff(N),
+    source: *const shadertypes.PipeSourcePrepared,
+    scratch: *matslice.MatSlice(F),
+) void {
+    switch (source.*) {
+        .nodal => |*s| {
+            shaderkernels.NodalKernel(N).shade(
+                coord_space,
+                ctx,
+                interp.getRasterHit(),
+                buf,
+                s,
+                scratch,
+            );
+        },
+        .tex_multi_f => |*s| {
+            shaderkernels.TexMultiKernel(N, F).shade(
+                coord_space,
+                ctx,
+                interp.getRasterHit(),
+                buf,
+                s,
+                scratch,
+            );
+        },
+        .tex_u8 => |*s| {
+            shaderkernels.TexKernel(N, u8, 1).shade(
+                coord_space,
+                ctx,
+                interp.getRasterHit(),
+                buf,
+                s,
+                scratch,
+            );
+        },
+        .tex_u16 => |*s| {
+            shaderkernels.TexKernel(N, u16, 1).shade(
+                coord_space,
+                ctx,
+                interp.getRasterHit(),
+                buf,
+                s,
+                scratch,
+            );
+        },
+        .tex_f => |*s| {
+            shaderkernels.TexKernel(N, F, 1).shade(
+                coord_space,
+                ctx,
+                interp.getRasterHit(),
+                buf,
+                s,
+                scratch,
+            );
+        },
+        .tex_rgb_u8 => |*s| {
+            shaderkernels.TexKernel(N, u8, 3).shade(
+                coord_space,
+                ctx,
+                interp.getRasterHit(),
+                buf,
+                s,
+                scratch,
+            );
+        },
+        .tex_rgb_u16 => |*s| {
+            shaderkernels.TexKernel(N, u16, 3).shade(
+                coord_space,
+                ctx,
+                interp.getRasterHit(),
+                buf,
+                s,
+                scratch,
+            );
+        },
+        .tex_rgb_f => |*s| {
+            shaderkernels.TexKernel(N, F, 3).shade(
+                coord_space,
+                ctx,
+                interp.getRasterHit(),
+                buf,
+                s,
+                scratch,
+            );
+        },
+        .func => |*s| {
+            shaderkernels.FuncKernel(N, 1).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                scratch,
+            );
+        },
+        .func_rgb => |*s| {
+            shaderkernels.FuncKernel(N, 3).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                scratch,
+            );
+        },
+        .func_multi => |*s| {
+            shaderkernels.FuncKernel(N, 0).shade(
+                coord_space,
+                ctx,
+                interp,
+                buf,
+                s,
+                scratch,
+            );
+        },
+    }
+}
+
+fn shadeSourceSIMD(
+    comptime N: usize,
+    comptime coord_space: geometrykernels.CoordSpace,
+    ctx: shadertypes.ShadeContext,
+    mask: VecSB,
+    weights: [N]VecSF,
+    xi: VecSF,
+    eta: VecSF,
+    inv_z: [N]VecSF,
+    subpx_z: VecSF,
+    hit: meshhit.MeshHitGeomSIMD,
+    buf: *const shadertypes.LocalShaderBuff(N),
+    source: *const shadertypes.PipeSourcePrepared,
+    sink: anytype,
+) void {
+    switch (source.*) {
+        .nodal => |*s| {
+            shaderkernels.NodalKernel(N).shadeSIMDTo(
+                coord_space,
+                ctx,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .tex_multi_f => |*s| {
+            shaderkernels.TexMultiKernel(N, F).shadeSIMDTo(
+                coord_space,
+                ctx,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .tex_u8 => |*s| {
+            shaderkernels.TexKernel(N, u8, 1).shadeSIMDTo(
+                coord_space,
+                ctx,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .tex_u16 => |*s| {
+            shaderkernels.TexKernel(N, u16, 1).shadeSIMDTo(
+                coord_space,
+                ctx,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .tex_f => |*s| {
+            shaderkernels.TexKernel(N, F, 1).shadeSIMDTo(
+                coord_space,
+                ctx,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .tex_rgb_u8 => |*s| {
+            shaderkernels.TexKernel(N, u8, 3).shadeSIMDTo(
+                coord_space,
+                ctx,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .tex_rgb_u16 => |*s| {
+            shaderkernels.TexKernel(N, u16, 3).shadeSIMDTo(
+                coord_space,
+                ctx,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .tex_rgb_f => |*s| {
+            shaderkernels.TexKernel(N, F, 3).shadeSIMDTo(
+                coord_space,
+                ctx,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .func => |*s| {
+            shaderkernels.FuncKernel(N, 1).shadeSIMDToHit(
+                coord_space,
+                ctx,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                hit,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .func_rgb => |*s| {
+            shaderkernels.FuncKernel(N, 3).shadeSIMDToHit(
+                coord_space,
+                ctx,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                hit,
+                buf,
+                s,
+                sink,
+            );
+        },
+        .func_multi => |*s| {
+            shaderkernels.FuncKernel(N, 0).shadeSIMDToHit(
+                coord_space,
+                ctx,
+                mask,
+                weights,
+                xi,
+                eta,
+                inv_z,
+                subpx_z,
+                hit,
+                buf,
+                s,
+                sink,
+            );
+        },
+    }
+}
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
+test "MeshHit shares selected geometry with scalar and SIMD stages" {
+    const N = 3;
+    const test_tol: F = if (F == f32) 1e-5 else 1e-12;
+    var buff: LocalPipeBuff(N) = .{};
+    buff.coords_ref = .{ 1, 3, 5, 2, 4, 6, 7, 8, 9 };
+    buff.coords_def = .{ 2, 4, 6, 3, 5, 7, 8, 9, 10 };
+    buff.surf_norm = .{ 0, 0, 0, 0, 0, 0, 1, 0, 1 };
+    const base: meshhit.MeshHit(N) = .{
+        .weights = .{ 0.2, 0.3, 0.5 },
+        .nodes_inv_z = .{ 1, 2, 4 },
+        .sub_pixel_z = 0.5,
+        .xi = 0.3,
+        .eta = 0.5,
+    };
+    var selection = meshhit.MeshHitSelection.initEmpty();
+    const empty_hit = buff.completeHit(.raster, base, selection);
+    try std.testing.expect(empty_hit.coords_ref == null);
+    try std.testing.expect(empty_hit.coords_def == null);
+    try std.testing.expect(empty_hit.surf_norm == null);
+
+    selection.insert(.coords_ref);
+    selection.insert(.coords_def);
+    selection.insert(.surf_norm);
+    const clip_hit = buff.completeHit(.clip_px_leng, base, selection);
+    try std.testing.expectApproxEqAbs(@as(F, 3.6), clip_hit.coords_ref.?[0], test_tol);
+    try std.testing.expectApproxEqAbs(@as(F, 4.6), clip_hit.coords_def.?[0], test_tol);
+    try std.testing.expectApproxEqAbs(@as(F, 0.7), clip_hit.surf_norm.?[2], test_tol);
+    const raster_hit = buff.completeHit(.raster, base, selection);
+    try std.testing.expectApproxEqAbs(@as(F, 6.0), raster_hit.coords_ref.?[0], test_tol);
+    try std.testing.expectApproxEqAbs(@as(F, 0.7), raster_hit.surf_norm.?[2], test_tol);
+
+    const v_weights = [N]VecSF{ @splat(0.2), @splat(0.3), @splat(0.5) };
+    const v_inv_z = [N]VecSF{ @splat(1), @splat(2), @splat(4) };
+    const v_hit = buff.completeHitSIMD(
+        .raster,
+        @splat(true),
+        v_weights,
+        v_inv_z,
+        @splat(0.5),
+        selection,
+    );
+    try std.testing.expectApproxEqAbs(raster_hit.coords_ref.?[0], v_hit.coords_ref.?[0][0], test_tol);
+    try std.testing.expectApproxEqAbs(raster_hit.coords_def.?[1], v_hit.coords_def.?[1][0], test_tol);
+    try std.testing.expectApproxEqAbs(raster_hit.surf_norm.?[2], v_hit.surf_norm.?[2][0], test_tol);
+}

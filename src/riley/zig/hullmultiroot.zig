@@ -7,54 +7,54 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const cfg = @import("buildconfig.zig").config;
-const common = @import("hullmultiroot_common.zig");
-const simd_impl = @import("hullmultiroot_simd.zig");
+const hullmultiroot_common = @import("hullmultiroot_common.zig");
+const hullmultiroot_simd = @import("hullmultiroot_simd.zig");
 
 pub const HullMultiRoot = struct {
     pub const HullEdge = @import("hulledge.zig").HullEdge;
-    pub const Points = common.Points;
-    pub const HullPolyPreCalc = common.HullPolyPreCalc;
-    pub const HullPolyOnTheFly = common.HullPolyOnTheFly;
-    pub const BezierLeafPreCalc = common.BezierLeafPreCalc;
-    pub const BezierLeafOnTheFly = common.BezierLeafOnTheFly;
-    pub const PrepareEdgesFn = common.PrepareEdgesFn;
-    pub const buildPointsFromClip = common.buildPointsFromClip;
-    pub const calcEdgeTol = common.calcEdgeTol;
+    pub const Points = hullmultiroot_common.Points;
+    pub const HullPolyPreCalc = hullmultiroot_common.HullPolyPreCalc;
+    pub const HullPolyOnTheFly = hullmultiroot_common.HullPolyOnTheFly;
+    pub const BezierLeafPreCalc = hullmultiroot_common.BezierLeafPreCalc;
+    pub const BezierLeafOnTheFly = hullmultiroot_common.BezierLeafOnTheFly;
+    pub const PrepareEdgesFn = hullmultiroot_common.PrepareEdgesFn;
+    pub const buildPointsFromClip = hullmultiroot_common.buildPointsFromClip;
+    pub const calcEdgeTol = hullmultiroot_common.calcEdgeTol;
 
-    pub const prepareEdgesScalar = common.prepareEdgesScalar;
-    pub const prepareEdgesSIMD = simd_impl.prepareEdgesSIMD;
+    pub const prepareEdgesScalar = hullmultiroot_common.prepareEdgesScalar;
+    pub const prepareEdgesSIMD = hullmultiroot_simd.prepareEdgesSIMD;
     pub const prepareEdges = if (cfg.simd == .on)
-        simd_impl.prepareEdgesSIMD
+        hullmultiroot_simd.prepareEdgesSIMD
     else
-        common.prepareEdgesScalar;
+        hullmultiroot_common.prepareEdgesScalar;
 
     pub const prepareFourBezierLeavesPreCalcScalar =
-        common.prepareFourBezierLeavesPreCalcScalar;
+        hullmultiroot_common.prepareFourBezierLeavesPreCalcScalar;
     pub const prepareFourBezierLeavesPreCalcSIMD =
-        simd_impl.prepareFourBezierLeavesPreCalcSIMD;
+        hullmultiroot_simd.prepareFourBezierLeavesPreCalcSIMD;
     pub const prepareFourBezierLeavesPreCalc = if (cfg.simd == .on)
-        simd_impl.prepareFourBezierLeavesPreCalcSIMD
+        hullmultiroot_simd.prepareFourBezierLeavesPreCalcSIMD
     else
-        common.prepareFourBezierLeavesPreCalcScalar;
+        hullmultiroot_common.prepareFourBezierLeavesPreCalcScalar;
 
     pub const prepareFourBezierLeavesOnTheFlyScalar =
-        common.prepareFourBezierLeavesOnTheFlyScalar;
+        hullmultiroot_common.prepareFourBezierLeavesOnTheFlyScalar;
     pub const prepareFourBezierLeavesOnTheFlySIMD =
-        simd_impl.prepareFourBezierLeavesOnTheFlySIMD;
+        hullmultiroot_simd.prepareFourBezierLeavesOnTheFlySIMD;
     pub const prepareFourBezierLeavesOnTheFly = if (cfg.simd == .on)
-        simd_impl.prepareFourBezierLeavesOnTheFlySIMD
+        hullmultiroot_simd.prepareFourBezierLeavesOnTheFlySIMD
     else
-        common.prepareFourBezierLeavesOnTheFlyScalar;
+        hullmultiroot_common.prepareFourBezierLeavesOnTheFlyScalar;
 
-    pub const containsPreCalcScalar = common.containsPreCalcScalar;
-    pub const containsPreCalcSIMD = simd_impl.containsPreCalcSIMD;
+    pub const containsPreCalcScalar = hullmultiroot_common.containsPreCalcScalar;
+    pub const containsPreCalcSIMD = hullmultiroot_simd.containsPreCalcSIMD;
 
-    pub const containsOnTheFlyScalar = common.containsOnTheFlyScalar;
-    pub const containsOnTheFlySIMD = simd_impl.containsOnTheFlySIMD;
+    pub const containsOnTheFlyScalar = hullmultiroot_common.containsOnTheFlyScalar;
+    pub const containsOnTheFlySIMD = hullmultiroot_simd.containsOnTheFlySIMD;
 
-    pub const childMaskPreCalcScalar = common.childMaskPreCalcScalar;
-    pub const childMaskPreCalcSIMD = simd_impl.childMaskPreCalcSIMD;
+    pub const childMaskPreCalcScalar = hullmultiroot_common.childMaskPreCalcScalar;
+    pub const childMaskPreCalcSIMD = hullmultiroot_simd.childMaskPreCalcSIMD;
 
-    pub const childMaskOnTheFlyScalar = common.childMaskOnTheFlyScalar;
-    pub const childMaskOnTheFlySIMD = simd_impl.childMaskOnTheFlySIMD;
+    pub const childMaskOnTheFlyScalar = hullmultiroot_common.childMaskOnTheFlyScalar;
+    pub const childMaskOnTheFlySIMD = hullmultiroot_simd.childMaskOnTheFlySIMD;
 };

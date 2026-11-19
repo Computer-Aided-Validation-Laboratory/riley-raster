@@ -6,10 +6,10 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const ndarray = @import("ndarray.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const NDArray = @import("ndarray.zig").NDArray;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -69,7 +69,7 @@ pub fn loadScalarCsv2D(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !NDArray(F) {
+) !ndarray.NDArray(F) {
     var lines = try readCsvToList(allocator, io, path);
     defer freeCsvLines(allocator, &lines);
     return loadScalarCsv2DFromLines(allocator, lines.items);
@@ -78,12 +78,12 @@ pub fn loadScalarCsv2D(
 pub fn loadScalarCsv2DFromLines(
     allocator: std.mem.Allocator,
     lines: []const []const u8,
-) !NDArray(F) {
+) !ndarray.NDArray(F) {
     if (lines.len == 0) return error.EmptyCsv;
 
     const rows_num = lines.len;
     const cols_num = countCsvCols(lines[0]);
-    var array = try NDArray(F).initFlat(
+    var array = try ndarray.NDArray(F).initFlat(
         allocator,
         &[_]usize{ rows_num, cols_num },
     );
@@ -116,7 +116,7 @@ pub fn loadPackedCsv2D(
     io: std.Io,
     path: []const u8,
     channels: usize,
-) !NDArray(F) {
+) !ndarray.NDArray(F) {
     var lines = try readCsvToList(allocator, io, path);
     defer freeCsvLines(allocator, &lines);
     return loadPackedCsv2DFromLines(allocator, lines.items, channels);
@@ -126,12 +126,12 @@ pub fn loadPackedCsv2DFromLines(
     allocator: std.mem.Allocator,
     lines: []const []const u8,
     channels: usize,
-) !NDArray(F) {
+) !ndarray.NDArray(F) {
     if (lines.len == 0) return error.EmptyCsv;
 
     const rows_num = lines.len;
     const cols_num = countCsvCols(lines[0]);
-    var array = try NDArray(F).initFlat(
+    var array = try ndarray.NDArray(F).initFlat(
         allocator,
         &[_]usize{ rows_num, cols_num, channels },
     );

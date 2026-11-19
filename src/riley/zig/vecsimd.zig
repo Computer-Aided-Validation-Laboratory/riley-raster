@@ -6,14 +6,9 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
-const std = @import("std");
-const print = std.debug.print;
+const ndarray = @import("ndarray.zig");
 
 const matstack = @import("matstack.zig");
-const Mat44Ops = matstack.Mat44Ops;
-const Mat44T = matstack.Mat44T;
-
-const NDArray = @import("ndarray.zig").NDArray;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -96,7 +91,7 @@ pub fn Vec3SIMD(comptime N: usize, comptime T: type) type {
 pub fn loadElemVec3SIMD(
     comptime N: usize,
     comptime T: type,
-    elem_array: *const NDArray(T),
+    elem_array: *const ndarray.NDArray(T),
     elem_idx: usize,
 ) !Vec3SIMD(N, T) {
     var start_slice: usize = elem_array.getFlatIdx(&[_]usize{ elem_idx, 0, 0 });
@@ -118,7 +113,7 @@ pub fn loadElemVec3SIMD(
 pub fn saveElemVec3SIMD(
     comptime N: usize,
     comptime T: type,
-    elem_array: *NDArray(T),
+    elem_array: *ndarray.NDArray(T),
     elem_idx: usize,
     vec: Vec3SIMD(N, T),
 ) !void {
@@ -136,7 +131,7 @@ pub fn saveElemVec3SIMD(
 pub fn mat44Mul(
     comptime N: usize,
     comptime T: type,
-    mat: Mat44T(T),
+    mat: matstack.Mat44T(T),
     vec: Vec3SIMD(N, T),
 ) Vec3SIMD(N, T) {
     var vec_res: Vec3SIMD(N, T) = undefined;
@@ -222,7 +217,7 @@ pub fn loadVecSIMDFromElemArray(
     comptime D: usize,
     comptime N: usize,
     comptime T: type,
-    elem_array: *const NDArray(T),
+    elem_array: *const ndarray.NDArray(T),
     elem_idx: usize,
 ) !VecSIMD(D, N, T) {
     const stride = elem_array.strides[1];
@@ -240,7 +235,7 @@ pub fn saveVecSIMDToElemArray(
     comptime D: usize,
     comptime N: usize,
     comptime T: type,
-    elem_array: *NDArray(T),
+    elem_array: *ndarray.NDArray(T),
     elem_idx: usize,
     vec: VecSIMD(D, N, T),
 ) !void {

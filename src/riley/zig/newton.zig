@@ -7,9 +7,9 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const buildconfig = @import("buildconfig.zig");
-const common = @import("newton_common.zig");
-const scal = @import("newton_scalar.zig");
-const simd = @import("newton_simd.zig");
+const newton_common = @import("newton_common.zig");
+const newton_scalar = @import("newton_scalar.zig");
+const newton_simd = @import("newton_simd.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -26,11 +26,11 @@ pub fn solveScal(
     eta_seed: buildconfig.F,
     node_vals: *[N]buildconfig.F,
 ) if (buildconfig.config.newton_solver_mode == .robust)
-    common.NewtonResRobustScal
+    newton_common.NewtonResRobustScal
 else
-    common.NewtonResFastScal {
+    newton_common.NewtonResFastScal {
     if (comptime buildconfig.config.newton_solver_mode == .robust) {
-        return scal.solveRobustScal(
+        return newton_scalar.solveRobustScal(
             N,
             targ_x,
             targ_y,
@@ -43,7 +43,7 @@ else
         );
     }
 
-    return scal.solveFastScal(
+    return newton_scalar.solveFastScal(
         N,
         targ_x,
         targ_y,
@@ -67,11 +67,11 @@ pub fn solveSIMD(
     v_eta_seed: buildconfig.VecSF,
     v_node_vals: *[N]buildconfig.VecSF,
 ) if (buildconfig.config.newton_solver_mode == .robust)
-    common.NewtonResRobustSIMD
+    newton_common.NewtonResRobustSIMD
 else
-    common.NewtonResFastSIMD {
+    newton_common.NewtonResFastSIMD {
     if (comptime buildconfig.config.newton_solver_mode == .robust) {
-        return simd.solveRobustSIMD(
+        return newton_simd.solveRobustSIMD(
             N,
             v_targ_x,
             v_targ_y,
@@ -84,7 +84,7 @@ else
         );
     }
 
-    return simd.solveFastSIMD(
+    return newton_simd.solveFastSIMD(
         N,
         v_targ_x,
         v_targ_y,
@@ -97,34 +97,34 @@ else
     );
 }
 
-pub const reportSolve = scal.reportSolve;
-pub const selectSeed = common.selectSeed;
-pub const isSeedFinite = common.isSeedFinite;
-pub const updateSeedState = common.updateSeedState;
-pub const applySeedReuseInPlace = common.applySeedReuseInPlace;
-pub const updateSeedStateFromSIMDResult = common.updateSeedStateFromSIMDResult;
-pub const evaluateSeedQuality = common.evaluateSeedQuality;
-pub const evaluateSolveState = common.evaluateSolveState;
-pub const calcJacDet2D = common.calcJacDet2D;
-pub const isConvStatus = common.isConvStatus;
-pub const isPreDomConvStatus = common.isPreDomConvStatus;
-pub const hitIterLimitStatus = common.hitIterLimitStatus;
-pub const statusLabel = common.statusLabel;
-pub const refineSeedFrozenScal = scal.refineSeedFrozenScal;
-pub const FrozenJacConfig = scal.FrozenJacConfig;
-pub const FrozenJacResult = scal.FrozenJacResult;
+pub const reportSolve = newton_scalar.reportSolve;
+pub const selectSeed = newton_common.selectSeed;
+pub const isSeedFinite = newton_common.isSeedFinite;
+pub const updateSeedState = newton_common.updateSeedState;
+pub const applySeedReuseInPlace = newton_common.applySeedReuseInPlace;
+pub const updateSeedStateFromSIMDResult = newton_common.updateSeedStateFromSIMDResult;
+pub const evaluateSeedQuality = newton_common.evaluateSeedQuality;
+pub const evaluateSolveState = newton_common.evaluateSolveState;
+pub const calcJacDet2D = newton_common.calcJacDet2D;
+pub const isConvStatus = newton_common.isConvStatus;
+pub const isPreDomConvStatus = newton_common.isPreDomConvStatus;
+pub const hitIterLimitStatus = newton_common.hitIterLimitStatus;
+pub const statusLabel = newton_common.statusLabel;
+pub const refineSeedFrozenScal = newton_scalar.refineSeedFrozenScal;
+pub const FrozenJacConfig = newton_scalar.FrozenJacConfig;
+pub const FrozenJacResult = newton_scalar.FrozenJacResult;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const NewtonSeed = common.NewtonSeed;
-pub const NewtonSeedSIMD = common.NewtonSeedSIMD;
-pub const NewtonSeedState = common.NewtonSeedState;
-pub const NewtonSeedQuality = common.NewtonSeedQuality;
-pub const NewtonEvalState = common.NewtonEvalState;
-pub const NewtonStatus = common.NewtonStatus;
-pub const NewtonResFastScal = common.NewtonResFastScal;
-pub const NewtonResRobustScal = common.NewtonResRobustScal;
-pub const NewtonResFastSIMD = common.NewtonResFastSIMD;
-pub const NewtonResRobustSIMD = common.NewtonResRobustSIMD;
+pub const NewtonSeed = newton_common.NewtonSeed;
+pub const NewtonSeedSIMD = newton_common.NewtonSeedSIMD;
+pub const NewtonSeedState = newton_common.NewtonSeedState;
+pub const NewtonSeedQuality = newton_common.NewtonSeedQuality;
+pub const NewtonEvalState = newton_common.NewtonEvalState;
+pub const NewtonStatus = newton_common.NewtonStatus;
+pub const NewtonResFastScal = newton_common.NewtonResFastScal;
+pub const NewtonResRobustScal = newton_common.NewtonResRobustScal;
+pub const NewtonResFastSIMD = newton_common.NewtonResFastSIMD;
+pub const NewtonResRobustSIMD = newton_common.NewtonResRobustSIMD;

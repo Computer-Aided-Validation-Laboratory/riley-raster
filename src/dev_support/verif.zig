@@ -6,10 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("../riley/zig/cameramodels.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
-const cam = @import("../riley/zig/camera.zig");
+const cam = @import("../riley/zig/cameraprojops.zig");
 const csvio = @import("../riley/zig/csvio.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const iio = @import("../riley/zig/imageio.zig");
@@ -188,7 +189,7 @@ pub fn idealToObservedRaster(
     const x_norm = (ideal_xy[0] - offsets.x_off) / focal_px.fx;
     const y_norm = (ideal_xy[1] - offsets.y_off) / focal_px.fy;
 
-    const distorted = cam.fordDistortModelScal(
+    const distorted = cameramodels.fordDistortModelScal(
         camera.distort,
         x_norm,
         y_norm,
@@ -208,7 +209,7 @@ pub fn observedToIdealRaster(
     const x_dist = (observed_xy[0] - offsets.x_off) / focal_px.fx;
     const y_dist = (observed_xy[1] - offsets.y_off) / focal_px.fy;
 
-    const solved = try cam.invDistortModelScal(
+    const solved = try cameramodels.invDistortModelScal(
         camera.distort,
         x_dist,
         y_dist,
@@ -697,10 +698,10 @@ pub fn writeScalarMapBmp(
         0,
         .{
             .format = .bmp,
-            .bits = 8,
+            .file_bits = 8,
             .scaling = .auto,
-            .channels = 1,
         },
+        1,
     );
 }
 
@@ -736,10 +737,10 @@ pub fn writeBinaryMaskBmp(
         0,
         .{
             .format = .bmp,
-            .bits = 8,
+            .file_bits = 8,
             .scaling = .{ .fixed = .{ 0.0, 1.0 } },
-            .channels = 1,
         },
+        1,
     );
 }
 

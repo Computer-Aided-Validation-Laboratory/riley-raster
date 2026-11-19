@@ -6,9 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const common_test = @import("../dev_support/tests.zig");
 const fullcase_ssaa_pxmap = @import("fullcase_ssaa_pxmap.zig");
@@ -20,8 +22,8 @@ const riley = @import("../riley/zig/riley.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 const Timestamp = std.Io.Clock.Timestamp;
 
 pub fn runFullSsaaPxmapCaseTest(
@@ -60,10 +62,10 @@ pub fn runFullSsaaPxmapCaseTest(
     camera_input.distort = dist_case.distort;
     camera_input.psf = psf_case.psf;
     camera_input.subpixel_center_map = pxmap_case.map_mode;
+    camera_input.background_value = common_full.grey_background_scene1;
 
     var run_config = config;
     run_config.save_strategy = .memory;
-    run_config.background_value = common_full.grey_background_scene1;
 
     const start_time = Timestamp.now(io, .awake);
 
@@ -181,7 +183,7 @@ fn runPxmapEquivalenceTests(
     const meshes = [_]MeshInput{mesh};
 
     // 1. No-distortion control: full_in_mem and per_tile must match exactly.
-    const pxmap_modes = [_]camera.SubPixelCenterMap{
+    const pxmap_modes = [_]cameratypes.SubPixelCenterMap{
         .full_in_mem,
         .per_tile,
     };
@@ -203,10 +205,10 @@ fn runPxmapEquivalenceTests(
         cam_input.distort = .none;
         cam_input.psf = .{ .pixel_box = .{} };
         cam_input.subpixel_center_map = mode;
+        cam_input.background_value = common_full.grey_background_scene1;
 
         var run_config = config;
         run_config.save_strategy = .memory;
-        run_config.background_value = common_full.grey_background_scene1;
 
         const result = try riley.raster(
             aa,

@@ -6,6 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("riley/zig/cameramodels.zig");
+const shaderfunc = @import("riley/zig/shaderfunc.zig");
+const cameratypes = @import("riley/zig/cameratypes.zig");
+const meshtypes = @import("riley/zig/meshtypes.zig");
+const shadertypes = @import("riley/zig/shadertypes.zig");
 const std = @import("std");
 
 const riley = @import("riley/zig/riley.zig");
@@ -16,19 +21,19 @@ const mo = @import("riley/zig/meshpipeline.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
-const camera_mod = @import("riley/zig/camera.zig");
-const cameraops = @import("riley/zig/cameraops.zig");
+const camera_mod = @import("riley/zig/cameraprojops.zig");
+const cameraops = @import("riley/zig/cameraframeops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
-const MeshInput = mo.MeshInput;
+const MeshInput = meshtypes.MeshInput;
 const MeshType = gk.MeshType;
-const CameraInput = camera_mod.CameraInput;
-const DistortModel = camera_mod.DistortParams;
-const BrownCon = camera_mod.BrownCon;
-const PointSpreadFunc = camera_mod.PointSpreadFunc;
-const FuncShaderBuiltin = shaderops.FuncShaderBuiltin;
-const FuncShaderParams = shaderops.FuncShaderParams;
+const CameraInput = cameratypes.CameraInput;
+const DistortModel = cameramodels.DistortParams;
+const BrownCon = cameramodels.BrownCon;
+const PointSpreadFunc = cameramodels.PointSpreadFunc;
+const FuncShaderBuiltin = shaderfunc.FuncShaderBuiltin;
+const FuncShaderParams = shaderfunc.FuncShaderParams;
 
 const OUT_DIR_ROOT = "./out/distortion";
 const PIXELS_NUM = [2]u32{ 1600, 1000 };
@@ -112,7 +117,7 @@ fn ensureDir(io: std.Io, dir_path: []const u8) !void {
 }
 
 fn makeCameraInput(
-    coords: *const meshio.Coords,
+    coords: *const meshtypes.Coords,
     distort: DistortModel,
     psf: PointSpreadFunc,
 ) CameraInput {
@@ -126,6 +131,7 @@ fn makeCameraInput(
         FOV_SCALE,
     );
     return .{
+        .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }},
         .pixels_num = PIXELS_NUM,
         .pixels_size = PIXELS_SIZE,
         .pos_world = cam_pos,
@@ -163,15 +169,14 @@ fn renderCase(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = .{ .func = .{
+        .shaders = .{ .mono_direct = .{ .func = .{
             .uvs = uvs.array,
             .coord_mode = .uv,
             .builtin = SHADER_BUILTIN,
             .params = SHADER_PARAMS,
-            .bits = 8,
+
             .scaling = .none,
-            .normal_type = .none,
-        } },
+        } } },
     };
     const camera_input = makeCameraInput(
         &sim_data.coords,
@@ -207,13 +212,7 @@ pub fn main(init: std.process.Init) !void {
     const config = rastcfg.RasterConfig{
         .save_strategy = .disk,
         .parallel = .{ .threads = RENDER_THREADS },
-        .output = .{
-            .image_save_mode = .grey,
-            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 1 },
-            },
-        },
-        .report = .{ .mode = .off },
+        .report_perf = .off,
     };
 
     try ensureDir(io, OUT_DIR_ROOT);

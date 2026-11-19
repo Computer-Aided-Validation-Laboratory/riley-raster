@@ -6,9 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameramodels = @import("riley/zig/cameramodels.zig");
+const cameratypes = @import("riley/zig/cameratypes.zig");
+const meshtypes = @import("riley/zig/meshtypes.zig");
 const std = @import("std");
 const riley = @import("riley/zig/riley.zig");
-const cam = @import("riley/zig/camera.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
@@ -163,7 +166,7 @@ fn makeMesh(
     mesh_type: gk.MeshType,
     group_idx: usize,
     args: BenchArgs,
-) !meshpipe.MeshInput {
+) !meshtypes.MeshInput {
     const coord_values = try outer_alloc.alloc(
         F,
         args.elements_per_type * N * 3,
@@ -196,17 +199,17 @@ fn makeMesh(
     }
     return .{
         .mesh_type = mesh_type,
-        .coords = meshio.Coords.init(
+        .coords = meshtypes.Coords.init(
             coord_values,
             args.elements_per_type * N,
         ),
-        .connect = meshio.Connect.init(
+        .connect = meshtypes.Connect.init(
             connect_values,
             args.elements_per_type,
             N,
         ),
         .disp = null,
-        .shader = .{ .func = .{
+        .shaders = .{ .mono_direct = .{ .func = .{
             .coord_mode = .world_reference,
             .builtin = .checker,
             .params = .{
@@ -214,7 +217,7 @@ fn makeMesh(
                 .settings = .{ .checker = .{} },
             },
             .scaling = .auto,
-        } },
+        } } },
     };
 }
 
@@ -232,14 +235,14 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const local_alloc = arena.allocator();
 
-    const meshes = [_]meshpipe.MeshInput{
+    const meshes = [_]meshtypes.MeshInput{
         try makeMesh(4, local_alloc, .quad4, 0, args),
         try makeMesh(6, local_alloc, .tri6, 1, args),
         try makeMesh(8, local_alloc, .quad8, 2, args),
         try makeMesh(9, local_alloc, .quad9, 3, args),
     };
 
-    const psf: cam.PointSpreadFunc = switch (args.psf) {
+    const psf: cameramodels.PointSpreadFunc = switch (args.psf) {
         .none => .{ .pixel_box = .{} },
         .gaussian_1_0 => .{ .gaussian = .{
             .sigma_px = 1.0,
@@ -253,7 +256,7 @@ pub fn main(init: std.process.Init) !void {
         } },
     };
 
-    const camera = cam.CameraInput{
+    const camera = cameratypes.CameraInput{
         .pixels_num = .{ args.width, args.height },
         .pixels_size = .{ 1, 1 },
         .pos_world = .{ .vec = .{ 0, 0, 0 } },
@@ -267,7 +270,7 @@ pub fn main(init: std.process.Init) !void {
     const config = rastcfg.RasterConfig{
         .parallel = .{ .threads = args.threads },
         .save_strategy = .none,
-        .report = .{ .mode = .bench },
+        .report_perf = .bench,
         .advanced = .{
             .raster = .{ .buffer_mode = args.buffer_mode },
         },

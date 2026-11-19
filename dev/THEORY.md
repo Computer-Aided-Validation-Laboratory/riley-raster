@@ -48,8 +48,8 @@ Each term stores its $x$-output and $y$-output coefficients contiguously. Degree
 
 ```zig
 const coeffs = [_]F{ 0, 0, 0.01, 0, 0, -0.01 };
-const poly = try cam.PolyMap.init(1, .displacement, &coeffs);
-const distort = try cam.DistortModel.init(.{ .poly = poly });
+const poly = try cameramodels.PolyMap.init(1, .displacement, &coeffs);
+const distort = try cameramodels.DistortModel.init(.{ .poly = poly });
 ```
 
 ### Lifetime and Evaluation Semantics
@@ -115,7 +115,7 @@ In Python, `riley.RasterConfig(parallel=...)` passes thread settings directly to
 Advanced callers providing custom I/O or external group management use:
 
 ```zig
-var managed_groups = try ManagedRenderGroups.init(outer_alloc, minimal, thread_budget, max_groups);
+var managed_groups = try rendergroups.ManagedRenderGroups.init(outer_alloc, minimal, thread_budget, max_groups);
 defer managed_groups.deinit(outer_alloc);
 
 const images = try riley.rasterAdvanced(
@@ -144,5 +144,5 @@ const images = try riley.rasterAdvanced(
 | `grey_to_rgb` | 1 | 3 | Replicates 1 greyscale channel across R, G, and B |
 
 - **Strict Input Validation**: Mismatched channel counts throw an immediate validation error unless validation is explicitly set to `.off`.
-- **Bit Depths and Formats**: Controlled independently via `ImageSaveOpts`: formats include `.bmp`, `.tiff`, `.csv`, and `.fimg`; scaling supports `.none`, `.auto`, `.fixed`, and `.frac`.
+- **Bit Depths and Formats**: Each `ImageSaveOpts` selects format, optional `file_bits` and `adc_bits`, value scaling (`.none`, `.auto`, `.fixed`, `.frac`), and ADC code packing (`.spread`, `.lower`, `.upper`). Floating CSV/FIMG use `file_bits = null` and `adc_bits = null`.
 - **Compiler Requirements**: Shared C library builds explicitly enforce LLVM backend compilation in Debug mode to prevent floating-point struct ABI corruption present in Zig 0.16's self-hosted x86_64 Debug backend.

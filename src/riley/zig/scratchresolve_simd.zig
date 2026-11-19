@@ -6,11 +6,10 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameramodels = @import("cameramodels.zig");
 const std = @import("std");
-const frontend = @import("rasterfrontend.zig");
-const elemtilebin = @import("elemtilebinning.zig");
-const cam = @import("camera.zig");
-const common = @import("scratchresolve_common.zig");
+const elemtilebinning = @import("elemtilebinning.zig");
+const scratchresolve_common = @import("scratchresolve_common.zig");
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
@@ -21,21 +20,12 @@ const S = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 
 // --------------------------------------------------------------------------------------
-// Public Constants & Public Types
-// --------------------------------------------------------------------------------------
-
-pub const ScratchTileGeometry = common.ScratchTileGeometry;
-pub const getScratchField = common.getScratchField;
-pub const setScratchField = common.setScratchField;
-pub const sampleScratchOrBackground = common.sampleScratchOrBackground;
-
-// --------------------------------------------------------------------------------------
 // Public Entry-Point Functions
 // --------------------------------------------------------------------------------------
 
 pub fn avgScratchCoreSIMD(
-    tile: elemtilebin.ActiveTile,
-    scratch_geom: ScratchTileGeometry,
+    tile: elemtilebinning.ActiveTile,
+    scratch_geom: scratchresolve_common.ScratchTileGeometry,
     sub_samp: usize,
     spx_stride: usize,
     fields_num: u8,
@@ -191,7 +181,7 @@ pub fn avgScratchCoreSIMD(
                             } else {
                                 const scratch_flat_idx = scratch_row_offset +
                                     spx_start_x + col_idx;
-                                field_sum += getScratchField(
+                                field_sum += scratchresolve_common.getScratchField(
                                     spx_image_scratch,
                                     scratch_flat_idx,
                                     ff,
@@ -211,8 +201,8 @@ pub fn avgScratchCoreSIMD(
 pub fn filterScratchSeparableSIMD(
     fields_num: u8,
     background_value: F,
-    psf: cam.PreparedPSF,
-    scratch_geom: ScratchTileGeometry,
+    psf: cameramodels.PreparedPSF,
+    scratch_geom: scratchresolve_common.ScratchTileGeometry,
     sub_samp: usize,
     spx_stride: usize,
     src: *const matslice.MatSlice(F),
@@ -288,7 +278,7 @@ pub fn filterScratchSeparableSIMD(
                         @intCast(kk),
                     ) - @as(isize, @intCast(radius_x));
 
-                    sum_h += psf.weights_x[kk] * sampleScratchOrBackground(
+                    sum_h += psf.weights_x[kk] * scratchresolve_common.sampleScratchOrBackground(
                         src,
                         @as(isize, @intCast(xx)) + x_off,
                         @as(isize, @intCast(yy)),
@@ -299,7 +289,7 @@ pub fn filterScratchSeparableSIMD(
                     );
                 }
 
-                setScratchField(
+                scratchresolve_common.setScratchField(
                     tmp,
                     yy * spx_stride + xx,
                     ff,
@@ -390,7 +380,7 @@ pub fn filterScratchSeparableSIMD(
                         @intCast(kk),
                     ) - @as(isize, @intCast(radius_y));
 
-                    sum_v += psf.weights_y[kk] * sampleScratchOrBackground(
+                    sum_v += psf.weights_y[kk] * scratchresolve_common.sampleScratchOrBackground(
                         tmp,
                         @as(isize, @intCast(xx)),
                         @as(isize, @intCast(yy)) + y_off,
@@ -401,7 +391,7 @@ pub fn filterScratchSeparableSIMD(
                     );
                 }
 
-                setScratchField(
+                scratchresolve_common.setScratchField(
                     dst,
                     yy * spx_stride + xx,
                     ff,
@@ -415,8 +405,8 @@ pub fn filterScratchSeparableSIMD(
 pub fn filterScratchNonSeparableSIMD(
     fields_num: u8,
     background_value: F,
-    psf: cam.PreparedPSF,
-    scratch_geom: ScratchTileGeometry,
+    psf: cameramodels.PreparedPSF,
+    scratch_geom: scratchresolve_common.ScratchTileGeometry,
     sub_samp: usize,
     spx_stride: usize,
     src: *const matslice.MatSlice(F),
@@ -522,7 +512,7 @@ pub fn filterScratchNonSeparableSIMD(
                         @intCast(ky),
                     ) - @as(isize, @intCast(radius_y));
 
-                    sum += psf.weights_2d[kk] * sampleScratchOrBackground(
+                    sum += psf.weights_2d[kk] * scratchresolve_common.sampleScratchOrBackground(
                         src,
                         @as(isize, @intCast(xx)) + x_off,
                         @as(isize, @intCast(yy)) + y_off,
@@ -533,7 +523,7 @@ pub fn filterScratchNonSeparableSIMD(
                     );
                 }
 
-                setScratchField(
+                scratchresolve_common.setScratchField(
                     dst,
                     yy * spx_stride + xx,
                     ff,
@@ -552,7 +542,7 @@ inline fn loadScratchRowSIMD(
     src: *const matslice.MatSlice(F),
     x: isize,
     y: isize,
-    scratch_geom: ScratchTileGeometry,
+    scratch_geom: scratchresolve_common.ScratchTileGeometry,
     spx_stride: usize,
     field_idx: usize,
     background_value: F,
@@ -576,7 +566,7 @@ inline fn loadScratchRowSIMD(
 
     var result: [S]F = undefined;
     for (0..S) |ii| {
-        result[ii] = sampleScratchOrBackground(
+        result[ii] = scratchresolve_common.sampleScratchOrBackground(
             src,
             x + @as(isize, @intCast(ii)),
             y,

@@ -51,7 +51,7 @@ maths/
 *.png
 *.jpg
 
-# Keep the min test suite to ship with the repo
+# Keep the basic test suite to ship with the repo
 !data/min/
 !data/min/**/*.csv
 !data/cubes/
@@ -60,10 +60,6 @@ maths/
 !data/shapes/**/*.msh
 !data/shapes/**/*.e
 !data/rabbits/outline/*.svg
-!gold/min/
-!gold/min/**/*.fimg
-!gold/min/**/*.bmp
-!gold/min/**/*.csv
 !gold/basic/
 !gold/basic/**/*.fimg
 !gold/perf_stats_ref/
@@ -73,7 +69,9 @@ maths/
 !gold/perf_stats_ref/**/*.txt
 !gold/perf_stats_ref/**/*.md
 !gold/verif/
-!gold/verif/**
+!gold/verif/**/*.fimg
+!gold/verif/**/*.csv
+!gold/verif/README.md
 
 
 # Keep our other test suite data committed to the repo

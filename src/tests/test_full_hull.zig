@@ -6,10 +6,14 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const shaderfunc = @import("../riley/zig/shaderfunc.zig");
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
-const cameraops = @import("../riley/zig/cameraops.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
+const cameraops = @import("../riley/zig/cameraframeops.zig");
 const common = @import("../dev_support/tests.zig");
 const common_full = @import("../dev_support/fullfixtures.zig");
 const fullcase_hull = @import("fullcase_hull.zig");
@@ -19,12 +23,12 @@ const orch = @import("../dev_support/orchestration.zig");
 const policy = @import("../dev_support/testpolicy.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const riley = @import("../riley/zig/riley.zig");
-const shaderops = @import("../riley/zig/shaderops_common.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 const Timestamp = std.Io.Clock.Timestamp;
 
 const HullStatusCase = fullcase_hull.HullStatusCase;
@@ -75,6 +79,7 @@ fn runOneElemHullCaseTest(
         .roi_cent_world = prepared.camera.roi_cent_world,
         .focal_length = prepared.camera.focal_length,
         .sub_sample = 2,
+        .background_value = 127.5,
         .distort = .none,
         .psf = psf_case.psf,
     };
@@ -88,7 +93,7 @@ fn runOneElemHullCaseTest(
         );
     }
 
-    const shader_params = shaderops.FuncShaderParams{
+    const shader_params = shaderfunc.FuncShaderParams{
         .coord_scale = .{ 4.0, 4.0 },
         .settings = .{ .checker = .{} },
     };
@@ -98,17 +103,16 @@ fn runOneElemHullCaseTest(
         .coords = prepared.sim_data.coords,
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
-        .shader = .{
+        .shaders = .{ .mono_direct = .{
             .func = .{
                 .uvs = null,
                 .coord_mode = .para,
                 .builtin = .checker,
                 .params = shader_params,
-                .bits = 8,
+                .output_gain = 255.0,
                 .scaling = .auto,
-                .normal_type = .none,
             },
-        },
+        } },
     };
 
     const case_dir_name = try fullcase_hull.formatCaseDirName(
@@ -365,8 +369,7 @@ fn runScene2HullCaseTest(
 }
 
 pub fn run(allocator: std.mem.Allocator, io: std.Io) !void {
-    var config = tcfg.getRasterConfig(.testing);
-    config.background_value = 127.5;
+    const config = tcfg.getRasterConfig(.testing);
     const gold_dir_root = policy.goldRoot(.full_hull);
     const data_dir_root = "data/edge";
 

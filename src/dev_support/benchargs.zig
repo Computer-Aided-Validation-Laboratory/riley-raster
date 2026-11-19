@@ -6,12 +6,16 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
-const cam = @import("../riley/zig/camera.zig");
+const cam = @import("../riley/zig/cameraprojops.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 
 pub const BenchArgs = struct {
+    smoke: bool = false,
+    data_dir: []const u8 = "data/tilt",
+    data_suffix: []const u8 = "fullraster",
     out_dir: []const u8,
     image_out_dir: []const u8,
     render_mode: rastcfg.RenderMode,
@@ -23,11 +27,11 @@ pub const BenchArgs = struct {
     geom_scheduling_mode: rastcfg.GeometrySchedulingMode,
     max_raster_workers_per_job: u16,
     hull_mode: rastcfg.HullMode,
-    subpixel_center_map: cam.SubPixelCenterMap,
+    subpixel_center_map: cameratypes.SubPixelCenterMap,
     save_strategy: rastcfg.SaveStrategy,
     disk_save_overlap: bool,
-    sample: ?texops.TexSample,
-    sample_mode: ?texops.TexSampleMode,
+    sample: ?textypes.TexSamp,
+    sample_mode: ?textypes.TexSampMode,
     texture_storage: TextureStorage,
     shader_subset: ShaderSubset,
     mesh_subset: MeshSubset,
@@ -49,8 +53,12 @@ pub const TextureStorage = enum {
 };
 
 pub const ShaderSubset = enum {
+    static_preparation,
     all,
     texture,
+    shaderpipe_baseline,
+    shaderpipe_compare,
+    shaderpipe_multisource,
 };
 
 pub const MeshSubset = enum {
@@ -137,7 +145,11 @@ pub fn parseArgsWithDefaults(
             const value = argToSlice(args[ii + 1]);
             skip_next = true;
 
-            if (std.mem.eql(u8, arg, "--render-mode")) {
+            if (std.mem.eql(u8, arg, "--data-dir")) {
+                bench_args.data_dir = value;
+            } else if (std.mem.eql(u8, arg, "--data-suffix")) {
+                bench_args.data_suffix = value;
+            } else if (std.mem.eql(u8, arg, "--render-mode")) {
                 bench_args.render_mode =
                     try parseEnum(rastcfg.RenderMode, value);
             } else if (std.mem.eql(u8, arg, "--render-group-count")) {
@@ -165,7 +177,7 @@ pub fn parseArgsWithDefaults(
                     try parseEnum(rastcfg.HullMode, value);
             } else if (std.mem.eql(u8, arg, "--subpixel-center-map")) {
                 bench_args.subpixel_center_map =
-                    try parseEnum(cam.SubPixelCenterMap, value);
+                    try parseEnum(cameratypes.SubPixelCenterMap, value);
             } else if (std.mem.eql(u8, arg, "--save-strategy")) {
                 bench_args.save_strategy =
                     try parseSaveStrategy(value);
@@ -175,10 +187,10 @@ pub fn parseArgsWithDefaults(
                 bench_args.image_out_dir = value;
             } else if (std.mem.eql(u8, arg, "--sample")) {
                 bench_args.sample =
-                    try parseEnum(texops.TexSample, value);
+                    try parseEnum(textypes.TexSamp, value);
             } else if (std.mem.eql(u8, arg, "--sample-mode")) {
                 bench_args.sample_mode =
-                    try parseEnum(texops.TexSampleMode, value);
+                    try parseEnum(textypes.TexSampMode, value);
             } else if (std.mem.eql(u8, arg, "--texture-storage")) {
                 bench_args.texture_storage =
                     try parseEnum(TextureStorage, value);
@@ -196,6 +208,8 @@ pub fn parseArgsWithDefaults(
                 bench_args.pixels_num[1] = try parseInt(u32, value);
             } else if (std.mem.eql(u8, arg, "--sub-sample")) {
                 bench_args.sub_sample = try parseInt(u32, value);
+            } else if (std.mem.eql(u8, arg, "--smoke")) {
+                bench_args.smoke = try parseBool(value);
             } else if (std.mem.eql(u8, arg, "--runs")) {
                 bench_args.runs = try parseInt(usize, value);
             } else if (std.mem.eql(u8, arg, "--distort")) {
@@ -384,7 +398,7 @@ test "parse bench args named options" {
         bench_args.hull_mode,
     );
     try std.testing.expectEqual(
-        cam.SubPixelCenterMap.per_tile,
+        cameratypes.SubPixelCenterMap.per_tile,
         bench_args.subpixel_center_map,
     );
     try std.testing.expectEqual(
@@ -392,11 +406,11 @@ test "parse bench args named options" {
         bench_args.save_strategy,
     );
     try std.testing.expectEqual(
-        texops.TexSample.linear,
+        textypes.TexSamp.linear,
         bench_args.sample.?,
     );
     try std.testing.expectEqual(
-        texops.TexSampleMode.direct,
+        textypes.TexSampMode.direct,
         bench_args.sample_mode.?,
     );
     try std.testing.expectEqual(

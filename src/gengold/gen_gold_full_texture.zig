@@ -6,9 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const camera = @import("../riley/zig/camera.zig");
+const camera = @import("../riley/zig/cameraprojops.zig");
 const fullcase_tex = @import("../tests/fullcase_texture.zig");
 const fullfixtures = @import("../dev_support/fullfixtures.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
@@ -21,8 +23,8 @@ const riley = @import("../riley/zig/riley.zig");
 const tcfg = @import("../dev_support/testconfig.zig");
 
 const F = buildconfig.F;
-const CameraInput = camera.CameraInput;
-const MeshInput = mo.MeshInput;
+const CameraInput = cameratypes.CameraInput;
+const MeshInput = meshtypes.MeshInput;
 
 pub const FullTexSamplingCase = fullcase_tex.FullTexSamplingCase;
 pub const all_tex_samp_configs = fullcase_tex.all_tex_samp_configs;
@@ -50,17 +52,24 @@ pub fn generateFullTexCase(
     var out_dir = try orch.openDirEnsured(io, out_dir_path);
     out_dir.close(io);
 
-    const meshes = fullcase_tex.buildTexSamplingCaseMeshes(
+    const meshes = try fullcase_tex.buildTexSamplingCaseMeshes(
+        allocator,
         mesh_type,
         prep,
         textures,
         case,
     );
+    defer if (case.is_rgb) {
+        allocator.free(meshes[0].shaders.rgb_pipe.?.stages);
+        allocator.free(meshes[1].shaders.rgb_pipe.?.stages);
+    };
+    var selected_camera = prep.camera_input;
+    selected_camera.render_format = if (case.is_rgb) .rgb else .mono;
 
     const images = try riley.raster(
         allocator,
         io,
-        &[_]CameraInput{prep.camera_input},
+        &[_]CameraInput{selected_camera},
         &meshes,
         config,
         out_dir_path,
@@ -129,10 +138,6 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.gold_gen);
     config.save_strategy = .disk;
-    config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .fimg, .bits = null, .scaling = .none },
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
 
     const gold_dir_root = policy.goldRoot(.full_texture);
     std.debug.print(

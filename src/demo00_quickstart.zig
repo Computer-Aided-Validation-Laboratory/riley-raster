@@ -1,0 +1,102 @@
+// --------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: scepticalrabbit (Lloyd Fletcher)
+// --------------------------------------------------------------------------
+const std = @import("std");
+
+const riley = @import("riley/zig/api.zig");
+const maths = riley.maths;
+const datio = riley.dataio;
+const ops = riley.ops;
+
+pub fn main(init: std.process.Init) !void {
+    // -------------------------------------------------------------------------
+    // 1. Create the mesh geometry and shader
+    // -------------------------------------------------------------------------
+    var coord_values = [_]maths.F{
+        -1.0, -1.0, 0.0,
+        1.0,  -1.0, 0.0,
+        0.0,  1.0,  0.0,
+    };
+    var connect_values = [_]usize{ 0, 1, 2 };
+    const coords = riley.Coords.init(&coord_values, 3);
+    const connect = riley.Connect.init(&connect_values, 1, 3);
+
+    const checker: riley.ShaderMonoInput = .{ .func = .{
+        .coord_mode = .world_reference,
+        .builtin = .checker,
+        .params = .{
+            .coord_scale = .{ 4.0, 4.0 },
+            .settings = .{ .checker = .{} },
+        },
+        .scaling = .auto,
+    } };
+
+    const mesh_input = riley.MeshInput{
+        .mesh_type = .tri3opt,
+        .coords = coords,
+        .connect = connect,
+        .disp = null,
+        .shaders = .{ .mono_direct = checker },
+    };
+
+    // -------------------------------------------------------------------------
+    // 2. Configure and frame the camera
+    // -------------------------------------------------------------------------
+    const pixels_num = [2]u32{ 512, 512 };
+    const pixels_size = [2]maths.F{ 0.02, 0.02 };
+    const focal_length: maths.F = 1.0;
+    const rotation = maths.Rotation.init(0.0, 0.0, 0.0);
+
+    const target = ops.boundsCenter(&coords);
+
+    const position = ops.posFillFrameFromRotAndTarg(
+        &coords,
+        target,
+        pixels_num,
+        pixels_size,
+        focal_length,
+        rotation,
+        1.0,
+    );
+
+    const camera_input = riley.CameraInput{
+        .pixels_num = pixels_num,
+        .pixels_size = pixels_size,
+        .pos_world = position,
+        .rot_world = rotation,
+        .roi_cent_world = target,
+        .focal_length = focal_length,
+        .sub_sample = 4,
+        .render_format = .mono,
+        .output_files = &.{.{ .format = .bmp, .file_bits = 8, .scaling = .auto }},
+    };
+
+    // -------------------------------------------------------------------------
+    // 3. Configure the raster engine and output path
+    // -------------------------------------------------------------------------
+    const config = riley.RasterConfig{
+        .save_strategy = .disk,
+    };
+
+    // -------------------------------------------------------------------------
+    // 4. Render the scene
+    // -------------------------------------------------------------------------
+    const images = try riley.raster(
+        init.gpa,
+        init.io,
+        &.{camera_input},
+        &.{mesh_input},
+        config,
+        "./out/demo00_quickstart",
+    );
+
+    if (images) |img| {
+        init.gpa.free(img.slice);
+        img.deinit(init.gpa);
+    }
+}

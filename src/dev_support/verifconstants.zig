@@ -1,4 +1,6 @@
 // --------------------------------------------------------------------------
+const cameramodels = @import("../riley/zig/cameramodels.zig");
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 // Riley: A High Performance Rasteriser for DIC UQ
@@ -8,7 +10,7 @@ const F = buildconfig.F;
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
-const cam = @import("../riley/zig/camera.zig");
+const cam = @import("../riley/zig/cameraprojops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const rotation = @import("../riley/zig/rotation.zig");
 
@@ -16,20 +18,20 @@ pub const output_dir_name = "verif";
 
 pub const CameraDistortCase = struct {
     case_name: []const u8,
-    distort: cam.DistortParams,
+    distort: cameramodels.DistortParams,
 };
 
 pub const DistortCase = struct {
     case_name: []const u8,
     mesh_type: gk.MeshType,
     data_dir: []const u8,
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
 };
 
 fn edgeCameraInput(
     pos_world: [3]F,
     roi_cent_world: [3]F,
-) cam.CameraInput {
+) cameratypes.CameraInput {
     return .{
         .pixels_num = .{ 800, 500 },
         .pixels_size = .{ 5.3e-6, 5.3e-6 },
@@ -48,7 +50,7 @@ fn brownConradyDistort(
     k3: F,
     p1: F,
     p2: F,
-) cam.DistortParams {
+) cameramodels.DistortParams {
     return .{
         .brown_con = .{
             .k1 = k1,
@@ -69,7 +71,7 @@ fn brownConradyExtDistort(
     k6: F,
     p1: F,
     p2: F,
-) cam.DistortParams {
+) cameramodels.DistortParams {
     return .{
         .brown_con_ext = .{
             .k1 = k1,
@@ -91,8 +93,8 @@ fn fixturePolyCoeffs(
 ) []const F {
     const Storage = struct {
         const pairs = blk: {
-            var data: [2 * cam.polyTermCount(degree)]F = undefined;
-            for (0..cam.polyTermCount(degree)) |ii| {
+            var data: [2 * cameramodels.polyTermCount(degree)]F = undefined;
+            for (0..cameramodels.polyTermCount(degree)) |ii| {
                 data[2 * ii] = cu[ii];
                 data[2 * ii + 1] = cv[ii];
             }
@@ -106,7 +108,7 @@ fn standalonePolyDistort(
     comptime degree: u8,
     comptime coeffs_u: [10]F,
     comptime coeffs_v: [10]F,
-) cam.DistortParams {
+) cameramodels.DistortParams {
     return .{
         .poly = .{
             .degree = degree,
@@ -125,7 +127,7 @@ fn brownConradyPolyDistort(
     comptime degree: u8,
     comptime coeffs_u: [10]F,
     comptime coeffs_v: [10]F,
-) cam.DistortParams {
+) cameramodels.DistortParams {
     return .{
         .brown_con_poly = .{
             .brown_con = .{
@@ -156,7 +158,7 @@ fn brownConradyExtPolyDistort(
     comptime degree: u8,
     comptime coeffs_u: [10]F,
     comptime coeffs_v: [10]F,
-) cam.DistortParams {
+) cameramodels.DistortParams {
     return .{
         .brown_con_ext_poly = .{
             .brown_con_ext = .{
@@ -284,9 +286,9 @@ pub const camera_distort_cases = [_]CameraDistortCase{
 };
 
 pub fn cameraInputWithDistort(
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
     distort_case: CameraDistortCase,
-) cam.CameraInput {
+) cameratypes.CameraInput {
     var distorted_camera_input = camera_input;
     distorted_camera_input.distort = distort_case.distort;
     return distorted_camera_input;

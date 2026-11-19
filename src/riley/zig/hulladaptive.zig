@@ -7,17 +7,17 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const cfg = @import("buildconfig.zig").config;
-const common = @import("hulladaptive_common.zig");
+const hulladaptive_common = @import("hulladaptive_common.zig");
 const impl = if (cfg.simd == .on)
     @import("hulladaptive_simd.zig")
 else
     @import("hulladaptive_scalar.zig");
-const simd_impl = @import("hulladaptive_simd.zig");
+const hulladaptive_simd = @import("hulladaptive_simd.zig");
 
 pub const HullAdaptive = struct {
-    pub const Points = common.Points;
-    pub const buildPointsFromClip = common.buildPointsFromClip;
+    pub const Points = hulladaptive_common.Points;
+    pub const buildPointsFromClip = hulladaptive_common.buildPointsFromClip;
     pub const Tessellation = impl.Tessellation;
     pub const makeTessellation = impl.makeTessellation;
-    pub const CandidateSeedSIMD = simd_impl.CandidateSeedSIMD;
+    pub const CandidateSeedSIMD = hulladaptive_simd.CandidateSeedSIMD;
 };

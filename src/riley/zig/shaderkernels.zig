@@ -18,4 +18,5 @@ else
 
 pub const NodalKernel = impl.NodalKernel;
 pub const TexKernel = impl.TexKernel;
+pub const TexMultiKernel = impl.TexMultiKernel;
 pub const FuncKernel = impl.FuncKernel;

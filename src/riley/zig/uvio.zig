@@ -6,11 +6,10 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const ndarray = @import("ndarray.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const assert = std.debug.assert;
-const NDArray = @import("ndarray.zig").NDArray;
 const csvio = @import("csvio.zig");
 
 // --------------------------------------------------------------------------------------
@@ -18,7 +17,7 @@ const csvio = @import("csvio.zig");
 // --------------------------------------------------------------------------------------
 
 pub const UVMap = struct {
-    array: NDArray(F),
+    array: ndarray.NDArray(F),
     buff: []F,
 
     const Self = @This();
@@ -29,7 +28,7 @@ pub const UVMap = struct {
 
         const dims = [_]usize{ nodes_num, 2 }; // u, v
 
-        const array = try NDArray(F).init(outer_alloc, buff, dims[0..]);
+        const array = try ndarray.NDArray(F).init(outer_alloc, buff, dims[0..]);
 
         return .{
             .array = array,
@@ -43,23 +42,23 @@ pub const UVMap = struct {
     }
 
     pub fn getU(self: *const Self, node_idx: usize) F {
-        assert(node_idx < self.array.dims[0]);
+        std.debug.assert(node_idx < self.array.dims[0]);
         return self.array.get(&[_]usize{ node_idx, 0 });
     }
 
     pub fn getV(self: *const Self, node_idx: usize) F {
-        assert(node_idx < self.array.dims[0]);
+        std.debug.assert(node_idx < self.array.dims[0]);
         return self.array.get(&[_]usize{ node_idx, 1 });
     }
 
     pub fn getUV(self: *const Self, node_idx: usize) []F {
-        assert(node_idx < self.array.dims[0]);
+        std.debug.assert(node_idx < self.array.dims[0]);
         const start = node_idx * 2;
         return self.buff[start .. start + 2];
     }
 
     pub fn setUV(self: *Self, node_idx: usize, u: F, v: F) void {
-        assert(node_idx < self.array.dims[0]);
+        std.debug.assert(node_idx < self.array.dims[0]);
         self.array.set(&[_]usize{ node_idx, 0 }, u);
         self.array.set(&[_]usize{ node_idx, 1 }, v);
     }
@@ -73,7 +72,7 @@ pub fn loadUVs(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !NDArray(F) {
+) !ndarray.NDArray(F) {
     const uv_arr = try csvio.loadScalarCsv2D(outer_alloc, io, path);
 
     if (uv_arr.dims.len != 2 or uv_arr.dims[1] != 2) {
@@ -98,60 +97,58 @@ pub fn loadUVMap(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !
 // Tests
 // --------------------------------------------------------------------------------------
 
-const testing = std.testing;
-
 test "Load UVMap from committed tri3 sphere fixture" {
-    const allocator = testing.allocator;
+    const allocator = std.testing.allocator;
     const io = std.testing.io;
 
     const path = "data/min/tri3_sphere200/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
     defer uv_map.deinit(allocator);
 
-    try testing.expectEqual(@as(usize, 256), uv_map.array.dims[0]);
+    try std.testing.expectEqual(@as(usize, 256), uv_map.array.dims[0]);
 
     // First row: 0.4, 0.4
-    try testing.expectApproxEqAbs(@as(F, 0.4), uv_map.getU(0), 1e-8);
-    try testing.expectApproxEqAbs(@as(F, 0.4), uv_map.getV(0), 1e-8);
+    try std.testing.expectApproxEqAbs(@as(F, 0.4), uv_map.getU(0), 1e-8);
+    try std.testing.expectApproxEqAbs(@as(F, 0.4), uv_map.getV(0), 1e-8);
 
     // Last row: 0.6, 0.6
-    try testing.expectApproxEqAbs(@as(F, 0.6), uv_map.getU(255), 1e-8);
-    try testing.expectApproxEqAbs(@as(F, 0.6), uv_map.getV(255), 1e-8);
+    try std.testing.expectApproxEqAbs(@as(F, 0.6), uv_map.getU(255), 1e-8);
+    try std.testing.expectApproxEqAbs(@as(F, 0.6), uv_map.getV(255), 1e-8);
 
     const uv = uv_map.getUV(0);
-    try testing.expectApproxEqAbs(@as(F, 0.4), uv[0], 1e-8);
-    try testing.expectApproxEqAbs(@as(F, 0.4), uv[1], 1e-8);
+    try std.testing.expectApproxEqAbs(@as(F, 0.4), uv[0], 1e-8);
+    try std.testing.expectApproxEqAbs(@as(F, 0.4), uv[1], 1e-8);
 }
 
 test "Load UVMap from committed tri6 sphere fixture" {
-    const allocator = testing.allocator;
+    const allocator = std.testing.allocator;
     const io = std.testing.io;
 
     const path = "data/min/tri6_sphere200/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
     defer uv_map.deinit(allocator);
 
-    try testing.expectEqual(@as(usize, 961), uv_map.array.dims[0]);
+    try std.testing.expectEqual(@as(usize, 961), uv_map.array.dims[0]);
 }
 
 test "Load UVMap from committed tri3 twoelems fixture" {
-    const allocator = testing.allocator;
+    const allocator = std.testing.allocator;
     const io = std.testing.io;
 
     const path = "data/min/tri3_twoelems/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
     defer uv_map.deinit(allocator);
 
-    try testing.expectEqual(@as(usize, 4), uv_map.array.dims[0]);
+    try std.testing.expectEqual(@as(usize, 4), uv_map.array.dims[0]);
 }
 
 test "Load UVMap from committed tri6 twoelems fixture" {
-    const allocator = testing.allocator;
+    const allocator = std.testing.allocator;
     const io = std.testing.io;
 
     const path = "data/min/tri6_twoelems/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
     defer uv_map.deinit(allocator);
 
-    try testing.expectEqual(@as(usize, 10), uv_map.array.dims[0]);
+    try std.testing.expectEqual(@as(usize, 10), uv_map.array.dims[0]);
 }

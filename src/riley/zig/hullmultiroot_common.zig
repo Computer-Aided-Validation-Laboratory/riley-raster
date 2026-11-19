@@ -9,18 +9,14 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const cam = @import("camera.zig");
-const distbounds = @import("distortbounds.zig");
-const geomkerns = @import("geometrykernels.zig");
-const rastcfg = @import("rasterconfig.zig");
-const frontend = @import("rasterfrontend.zig");
-const edgeops = @import("hulledge.zig");
+const cameraprojops = @import("cameraprojops.zig");
+const distortbounds = @import("distortbounds.zig");
+const geometrykernels = @import("geometrykernels.zig");
+const rasterfrontend = @import("rasterfrontend.zig");
+const hulledge = @import("hulledge.zig");
 const shapefun = @import("shapefun.zig");
 const tol = buildconfig.config.tol;
 const vecstack = @import("vecstack.zig");
-const Vec2F = vecstack.Vec2F;
-const Vec2Ops = vecstack.Vec2Ops;
-const HullEdge = @import("hulledge.zig").HullEdge;
 
 pub const Points = struct {
     x: [9]F = undefined,
@@ -43,8 +39,8 @@ pub const Points = struct {
 
 pub fn buildPointsFromClip(
     comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    coords: frontend.ElemCoords(N),
+    camera: *const cameraprojops.CameraPrepared,
+    coords: rasterfrontend.ElemCoords(N),
 ) Points {
     const controls = controlNet(N, coords);
     const K = controls.x.len;
@@ -52,7 +48,7 @@ pub fn buildPointsFromClip(
     const x_off = 0.5 * @as(F, @floatFromInt(camera.pixels_num[0]));
     const y_off = 0.5 * @as(F, @floatFromInt(camera.pixels_num[1]));
 
-    var points: [K]Vec2F = undefined;
+    var points: [K]vecstack.Vec2F = undefined;
     var all_positive = true;
 
     for (0..K) |nn| {
@@ -74,7 +70,7 @@ pub fn buildPointsFromClip(
     // vertices of the positive-depth control polytope clipped at the near
     // plane. All control pairs include every actual polytope edge.
     const near_z = tol.culling.projective_z_min;
-    var bounds = distbounds.DistortBounds.initEmpty();
+    var bounds = distortbounds.DistortBounds.initEmpty();
     var has_point = false;
     for (0..K) |ii| {
         if (controls.z[ii] > near_z) {
@@ -94,7 +90,7 @@ pub fn buildPointsFromClip(
     }
 
     const halo: F = @floatFromInt(camera.prep_psf.halo_px);
-    const sensor: distbounds.DistortBounds = camera.ideal_sensor_bounds orelse .{
+    const sensor: distortbounds.DistortBounds = camera.ideal_sensor_bounds orelse .{
         .x_min = -halo,
         .x_max = @as(F, @floatFromInt(camera.pixels_num[0])) + halo,
         .y_min = -halo,
@@ -118,16 +114,16 @@ pub fn calcEdgeTol(x: []const F, y: []const F, tol_edge: []F) void {
 pub const PrepareEdgesFn = *const fn (
     x: []const F,
     y: []const F,
-    edges: []HullEdge,
+    edges: []hulledge.HullEdge,
 ) void;
 
-pub fn prepareEdgesScalar(x: []const F, y: []const F, edges: []HullEdge) void {
+pub fn prepareEdgesScalar(x: []const F, y: []const F, edges: []hulledge.HullEdge) void {
     std.debug.assert(x.len == y.len and x.len == edges.len);
     for (0..x.len) |ii| {
         const jj = (ii + 1) % x.len;
         const dx = x[jj] - x[ii];
         const dy = y[jj] - y[ii];
-        edges[ii] = HullEdge.init(
+        edges[ii] = hulledge.HullEdge.init(
             x[ii],
             y[ii],
             x[jj],
@@ -138,7 +134,7 @@ pub fn prepareEdgesScalar(x: []const F, y: []const F, edges: []HullEdge) void {
 }
 
 pub const HullPolyPreCalc = struct {
-    edges: [9]HullEdge = undefined,
+    edges: [9]hulledge.HullEdge = undefined,
     count: u8 = 0,
 };
 
@@ -161,7 +157,7 @@ pub fn containsOnTheFlyScalar(poly: *const HullPolyOnTheFly, px: F, py: F) bool 
     if (poly.count < 3) return false;
     for (0..poly.count) |ii| {
         const jj = (ii + 1) % poly.count;
-        const edge = edgeops.edgeFun3(
+        const edge = hulledge.edgeFun3(
             poly.x[ii],
             poly.y[ii],
             poly.x[jj],
@@ -208,16 +204,16 @@ pub fn childMaskOnTheFlyScalar(
     return mask;
 }
 
-fn fromPoints(points_in: []const Vec2F) Points {
-    var points: [9]Vec2F = undefined;
+fn fromPoints(points_in: []const vecstack.Vec2F) Points {
+    var points: [9]vecstack.Vec2F = undefined;
     @memcpy(points[0..points_in.len], points_in);
     vecstack.insertSortVec2(F, points[0..points_in.len]);
 
-    var chain: [18]Vec2F = undefined;
+    var chain: [18]vecstack.Vec2F = undefined;
     var count: usize = 0;
     for (points[0..points_in.len]) |point| {
         while (count >= 2 and
-            Vec2Ops.cross3(F, chain[count - 2], chain[count - 1], point) <= 0)
+            vecstack.Vec2Ops.cross3(F, chain[count - 2], chain[count - 1], point) <= 0)
         {
             count -= 1;
         }
@@ -231,7 +227,7 @@ fn fromPoints(points_in: []const Vec2F) Points {
         ii -= 1;
         const point = points[ii];
         while (count > lower_count and
-            Vec2Ops.cross3(F, chain[count - 2], chain[count - 1], point) <= 0)
+            vecstack.Vec2Ops.cross3(F, chain[count - 2], chain[count - 1], point) <= 0)
         {
             count -= 1;
         }
@@ -269,7 +265,7 @@ fn fromPoints(points_in: []const Vec2F) Points {
     return result;
 }
 
-fn rectHull(bounds: distbounds.DistortBounds) Points {
+fn rectHull(bounds: distortbounds.DistortBounds) Points {
     return .{
         .x = [_]F{ bounds.x_min, bounds.x_min, bounds.x_max, bounds.x_max } ++
             [_]F{0} ** 5,
@@ -281,11 +277,11 @@ fn rectHull(bounds: distbounds.DistortBounds) Points {
 
 fn controlNet(
     comptime N: usize,
-    coords: frontend.ElemCoords(N),
-) frontend.ElemCoords(if (N == 8) 9 else N) {
+    coords: rasterfrontend.ElemCoords(N),
+) rasterfrontend.ElemCoords(if (N == 8) 9 else N) {
     const K = if (N == 8) 9 else N;
 
-    var controls: frontend.ElemCoords(K) = undefined;
+    var controls: rasterfrontend.ElemCoords(K) = undefined;
     if (comptime N == 4) {
         controls = coords;
         return controls;
@@ -313,7 +309,7 @@ fn controlNet(
         return controls;
     }
 
-    var nodes: frontend.ElemCoords(9) = undefined;
+    var nodes: rasterfrontend.ElemCoords(9) = undefined;
     for (0..N) |nn| {
         nodes.x[nn] = coords.x[nn];
         nodes.y[nn] = coords.y[nn];
@@ -347,7 +343,7 @@ fn controlNet(
         dst[grid[2][1]] = row2;
         dst[grid[2][2]] = src[2];
     }
-    
+
     return controls;
 }
 pub const BezierLeafPreCalc = struct {
@@ -419,13 +415,13 @@ fn fixedChildRegion(
 
 fn projectChildPoints(
     comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    coords: frontend.ElemCoords(N),
+    camera: *const cameraprojops.CameraPrepared,
+    coords: rasterfrontend.ElemCoords(N),
     region: BezierPatchRegion,
 ) Points {
-    const parents = comptime geomkerns.parentNodeCoords(N);
+    const parents = comptime geometrykernels.parentNodeCoords(N);
 
-    var child: frontend.ElemCoords(N) = undefined;
+    var child: rasterfrontend.ElemCoords(N) = undefined;
 
     for (parents, 0..) |node_uv, ii| {
         const uv = mapPointToParentRegion(region, node_uv);
@@ -476,8 +472,8 @@ fn calcChildBBox(
 fn prepareBezierLeafPreCalc(
     comptime N: usize,
     comptime prepare_edges: PrepareEdgesFn,
-    camera: *const cam.CameraPrepared,
-    coords: frontend.ElemCoords(N),
+    camera: *const cameraprojops.CameraPrepared,
+    coords: rasterfrontend.ElemCoords(N),
     region: BezierPatchRegion,
 ) BezierLeafPreCalc {
     const projected = projectChildPoints(N, camera, coords, region);
@@ -508,8 +504,8 @@ fn prepareBezierLeafPreCalc(
 
 fn prepareBezierLeafOnTheFly(
     comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    coords: frontend.ElemCoords(N),
+    camera: *const cameraprojops.CameraPrepared,
+    coords: rasterfrontend.ElemCoords(N),
     region: BezierPatchRegion,
 ) BezierLeafOnTheFly {
     const projected = projectChildPoints(N, camera, coords, region);
@@ -536,8 +532,8 @@ fn prepareBezierLeafOnTheFly(
 pub fn prepareFourBezierLeavesPreCalc(
     comptime N: usize,
     comptime prepare_edges: PrepareEdgesFn,
-    camera: *const cam.CameraPrepared,
-    coords: frontend.ElemCoords(N),
+    camera: *const cameraprojops.CameraPrepared,
+    coords: rasterfrontend.ElemCoords(N),
     output: *[4]BezierLeafPreCalc,
 ) void {
     inline for (0..4) |ii| {
@@ -554,8 +550,8 @@ pub fn prepareFourBezierLeavesPreCalc(
 
 pub fn prepareFourBezierLeavesOnTheFly(
     comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    coords: frontend.ElemCoords(N),
+    camera: *const cameraprojops.CameraPrepared,
+    coords: rasterfrontend.ElemCoords(N),
     output: *[4]BezierLeafOnTheFly,
 ) void {
     inline for (0..4) |ii| {
@@ -571,8 +567,8 @@ pub fn prepareFourBezierLeavesOnTheFly(
 
 pub fn prepareFourBezierLeavesPreCalcScalar(
     comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    coords: frontend.ElemCoords(N),
+    camera: *const cameraprojops.CameraPrepared,
+    coords: rasterfrontend.ElemCoords(N),
     output: *[4]BezierLeafPreCalc,
 ) void {
     prepareFourBezierLeavesPreCalc(
@@ -586,8 +582,8 @@ pub fn prepareFourBezierLeavesPreCalcScalar(
 
 pub fn prepareFourBezierLeavesOnTheFlyScalar(
     comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    coords: frontend.ElemCoords(N),
+    camera: *const cameraprojops.CameraPrepared,
+    coords: rasterfrontend.ElemCoords(N),
     output: *[4]BezierLeafOnTheFly,
 ) void {
     prepareFourBezierLeavesOnTheFly(
@@ -608,7 +604,7 @@ test "quad control net matches the tensor transform" {
         .{ 1, 0, 0 }, .{ -0.5, 2, -0.5 }, .{ 0, 0, 1 },
     };
     inline for (.{ 8, 9 }) |N| {
-        var coords: frontend.ElemCoords(N) = undefined;
+        var coords: rasterfrontend.ElemCoords(N) = undefined;
         for (0..N) |ii| {
             const v: F = @floatFromInt(ii);
             coords.x[ii] = v * v - 3 * v + 7;
@@ -616,7 +612,7 @@ test "quad control net matches the tensor transform" {
             coords.z[ii] = 1 + 0.125 * v;
         }
         const actual = controlNet(N, coords);
-        var nodes: frontend.ElemCoords(9) = undefined;
+        var nodes: rasterfrontend.ElemCoords(9) = undefined;
         for (0..N) |ii| {
             nodes.x[ii] = coords.x[ii];
             nodes.y[ii] = coords.y[ii];

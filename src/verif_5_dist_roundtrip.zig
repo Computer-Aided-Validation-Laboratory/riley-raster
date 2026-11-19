@@ -6,10 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("riley/zig/cameramodels.zig");
+const cameratypes = @import("riley/zig/cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
-const cam = @import("riley/zig/camera.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
 const orch = @import("dev_support/orchestration.zig");
 const verif = @import("dev_support/verif.zig");
 const vconst = @import("dev_support/verifconstants.zig");
@@ -75,7 +77,7 @@ fn invDistortWithIters(
     var y_guess = y_dist;
 
     for (0..max_iters) |ii| {
-        const fwd = if (Evaluator == cam.BrownConExt)
+        const fwd = if (Evaluator == cameramodels.BrownConExt)
             distort.fordWithJac(x_guess, y_guess)
         else
             Evaluator.fordWithJac(distort, x_guess, y_guess);
@@ -135,7 +137,7 @@ fn observedToIdealRasterWithIters(
         },
         .brown_con => |distort| blk: {
             const solved = try invDistortWithIters(
-                cam.BrownCon,
+                cameramodels.BrownCon,
                 distort,
                 x_dist,
                 y_dist,
@@ -148,7 +150,7 @@ fn observedToIdealRasterWithIters(
         },
         .brown_con_ext => |distort| blk: {
             const solved = try invDistortWithIters(
-                cam.BrownConExt,
+                cameramodels.BrownConExt,
                 distort,
                 x_dist,
                 y_dist,
@@ -163,7 +165,7 @@ fn observedToIdealRasterWithIters(
         .brown_con_poly,
         .brown_con_ext_poly,
         => blk: {
-            const solved = try cam.invDistortModelScal(
+            const solved = try cameramodels.invDistortModelScal(
                 camera.distort,
                 x_dist,
                 y_dist,
@@ -179,7 +181,7 @@ fn observedToIdealRasterWithIters(
 
 fn buildPixelSampleGrid(
     allocator: std.mem.Allocator,
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
 ) !std.ArrayList(PixelSample) {
     var sample_list: std.ArrayList(PixelSample) = .empty;
     try sample_list.ensureTotalCapacity(
@@ -218,7 +220,7 @@ fn buildPixelSampleGrid(
 }
 
 fn isInSensorBounds(
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
     ideal_x: F,
     ideal_y: F,
 ) bool {
@@ -230,7 +232,7 @@ fn isInSensorBounds(
 
 pub fn evalPixelSample(
     camera: *const cam.CameraPrepared,
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
     sample: PixelSample,
 ) DistortRoundTripRecord {
     const nan = std.math.nan(F);

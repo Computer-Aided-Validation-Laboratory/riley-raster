@@ -13,8 +13,7 @@ const eval_branch_quota = buildconfig.comptime_eval_branch_quota;
 const cfg = buildconfig.config;
 const tol = cfg.tol;
 const lut_size = cfg.interp_lut_size;
-const NDArray = @import("ndarray.zig").NDArray;
-const csvio = @import("csvio.zig");
+const texturetypes = @import("texturetypes.zig");
 
 // --------------------------------------------------------------------------------------
 // Strategy Map:
@@ -43,107 +42,8 @@ const csvio = @import("csvio.zig");
 // -------------------------------------------------------------------------------------
 
 // --------------------------------------------------------------------------------------
-// Public Constants & Public Types
-// --------------------------------------------------------------------------------------
-
-pub const TexSamp = enum {
-    nearest,
-    linear,
-    cubic_catmull_rom,
-    cubic_mitchell_netravali,
-    lanczos3,
-    cubic_bspline,
-    quintic_bspline,
-    lanczos2,
-};
-
-pub const TexSampMode = enum {
-    direct,
-    lut,
-    lut_lerp,
-};
-
-pub const TexSampConfig = struct {
-    sample: TexSamp,
-    mode: TexSampMode = .direct,
-
-    pub fn isValid(self: TexSampConfig) bool {
-        return switch (self.sample) {
-            .nearest, .linear => self.mode == .direct,
-            else => true,
-        };
-    }
-
-    pub fn sanitize(self: TexSampConfig) TexSampConfig {
-        return switch (self.sample) {
-            .nearest, .linear => .{ .sample = self.sample, .mode = .direct },
-            else => self,
-        };
-    }
-};
-
-// --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
-
-pub fn Tex(comptime T: type, comptime C: usize) type {
-    return struct {
-        array: NDArray(T),
-        rows_num: usize,
-        cols_num: usize,
-
-        const Self = @This();
-
-        pub fn init(allocator: std.mem.Allocator, rows: usize, cols: usize) !Self {
-            const dims = &[_]usize{ C, rows, cols };
-            const array = try NDArray(T).initFlat(allocator, dims);
-            return .{
-                .array = array,
-                .rows_num = rows,
-                .cols_num = cols,
-            };
-        }
-
-        pub fn deinit(self: *const Self, allocator: std.mem.Allocator) void {
-            allocator.free(self.array.slice);
-            self.array.deinit(allocator);
-        }
-
-        pub fn setVal(self: *Self, ch: usize, row: usize, col: usize, val: T) void {
-            const tex_flat_idx = self.array.subBase2(ch, row) + col;
-            self.array.setFlat(tex_flat_idx, val);
-        }
-
-        pub fn getVal(self: *const Self, ch: usize, row: usize, col: usize) T {
-            const tex_flat_idx = self.array.subBase2(ch, row) + col;
-            return self.array.getFlat(tex_flat_idx);
-        }
-
-        pub fn saveCSV(
-            self: *const Self,
-            io: std.Io,
-            out_dir: std.Io.Dir,
-            file_name: []const u8,
-        ) !void {
-            const SaveCtx = struct {
-                fn getVal(ctx: *const Self, row: usize, col: usize, ch: usize) F {
-                    return texelToFloat(T, ctx.getVal(ch, row, col));
-                }
-            };
-
-            try csvio.savePackedGridCSV(
-                io,
-                out_dir,
-                file_name,
-                self.rows_num,
-                self.cols_num,
-                C,
-                self,
-                SaveCtx.getVal,
-            );
-        }
-    };
-}
 
 pub fn texelToFloat(comptime T: type, val: T) F {
     return switch (@typeInfo(T)) {
@@ -155,7 +55,7 @@ pub fn texelToFloat(comptime T: type, val: T) F {
 
 pub fn sampScal(
     comptime C: usize,
-    comptime config: TexSampConfig,
+    comptime config: texturetypes.TexSampConfig,
     tex: anytype,
     u: F,
     v: F,
@@ -247,7 +147,7 @@ pub fn sampScal(
 }
 
 pub fn sampGrey(
-    comptime config: TexSampConfig,
+    comptime config: texturetypes.TexSampConfig,
     tex: anytype,
     u: F,
     v: F,
@@ -339,8 +239,8 @@ pub fn sampConvo(
 
 fn sampTex4Tap(
     comptime C: usize,
-    comptime sample: TexSamp,
-    comptime mode: TexSampMode,
+    comptime sample: texturetypes.TexSamp,
+    comptime mode: texturetypes.TexSampMode,
     tex: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
@@ -422,8 +322,8 @@ fn sampTex4Tap(
 
 fn sampTex6Tap(
     comptime C: usize,
-    comptime sample: TexSamp,
-    comptime mode: TexSampMode,
+    comptime sample: texturetypes.TexSamp,
+    comptime mode: texturetypes.TexSampMode,
     tex: anytype,
     tex_x_i: isize,
     tex_y_i: isize,

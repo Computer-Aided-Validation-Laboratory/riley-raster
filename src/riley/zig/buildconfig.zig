@@ -26,7 +26,15 @@ pub const comptime_eval_branch_quota: comptime_int = 50000;
 // Main Config
 // --------------------------------------------------------------------------------------
 
+pub const ShaderPipeConfig = struct {
+    max_stages: comptime_int = 8,
+    max_registers: comptime_int = 16,
+    max_ops: comptime_int = 64,
+    max_stack: comptime_int = 16,
+};
+
 pub const BuildConfig = struct {
+    shaderpipe: ShaderPipeConfig = .{},
     simd: SimdMode = default_simd,
     newton_solver_mode: NewtonSolverMode = default_newton_solver_mode,
     simd_vec_width: comptime_int = defaultSimdVecWidthForPrecision(F),
@@ -39,6 +47,19 @@ pub const BuildConfig = struct {
     precision: type = F,
     tol: Tol = defaultTolForPrecision(F),
 };
+
+comptime {
+    if (config.shaderpipe.max_registers < config.max_image_channels or
+        config.shaderpipe.max_registers > 256)
+    {
+        @compileError("Shader-pipe registers must cover image channels and fit a u8 index");
+    }
+    if (config.shaderpipe.max_stages < 1 or config.shaderpipe.max_ops < 1 or
+        config.shaderpipe.max_stack < 1)
+    {
+        @compileError("Shader-pipe capacity limits must be positive");
+    }
+}
 
 pub const default_precision = parsePrecision(build_options.precision);
 pub const F = default_precision;

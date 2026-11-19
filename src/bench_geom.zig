@@ -16,7 +16,7 @@ const rastcfg = @import("riley/zig/rasterconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
-const texops = @import("riley/zig/textureops.zig");
+const textypes = @import("riley/zig/texturetypes.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const F = buildconfig.F;
 
@@ -40,10 +40,7 @@ const DEFAULT_ROT = Rotation.init(0, 0, 0);
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
-    var base_raster_config = tcfg.getRasterConfig(.bench);
-    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
+    const base_raster_config = tcfg.getRasterConfig(.bench);
     var default_bench_args = benchargs.defaultBenchArgs(
         DEFAULT_OUT_DIR,
         base_raster_config,
@@ -102,7 +99,7 @@ pub fn main(init: std.process.Init) !void {
         .func,
         .func_rgb,
     };
-    const samp_cfgs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]textypes.TexSampConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
@@ -164,13 +161,16 @@ pub fn main(init: std.process.Init) !void {
     );
 
     for (mesh_types) |mt| {
+        if (bench_args.smoke and mt != .tri3) continue;
         for (shader_types) |st| {
+            if (bench_args.smoke and st != .nodal_grey) continue;
             for (samp_cfgs) |sc| {
+                if (bench_args.smoke and sc.sample != .linear) continue;
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
                     "data/bench/{s}_{s}",
-                    .{ @tagName(mt), DEFAULT_DATA_DIR_SUFFIX },
+                    .{ @tagName(if (mt == .tri3opt) gk.MeshType.tri3 else mt), DEFAULT_DATA_DIR_SUFFIX },
                 );
 
                 if (common.shouldRun(config, mt, st, sc, data_dir)) {
@@ -256,12 +256,13 @@ pub fn main(init: std.process.Init) !void {
         }
 
         for (tex_func_shader_types) |st| {
+            if (bench_args.smoke) continue;
             for (tex_func_cases) |tex_func_case| {
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
                     "data/bench/{s}_{s}",
-                    .{ @tagName(mt), DEFAULT_DATA_DIR_SUFFIX },
+                    .{ @tagName(if (mt == .tri3opt) gk.MeshType.tri3 else mt), DEFAULT_DATA_DIR_SUFFIX },
                 );
 
                 const case_name = try common.calcCaseName(

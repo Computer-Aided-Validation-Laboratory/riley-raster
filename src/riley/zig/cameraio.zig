@@ -6,13 +6,14 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
+const cameramodels = @import("cameramodels.zig");
+const cameratypes = @import("cameratypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 
-const cam = @import("camera.zig");
-const cameraops = @import("cameraops.zig");
+const cameraframeops = @import("cameraframeops.zig");
 const rotation = @import("rotation.zig");
-const vec = @import("vecstack.zig");
+const vecstack = @import("vecstack.zig");
 const F = buildconfig.F;
 
 // --------------------------------------------------------------------------------------
@@ -24,9 +25,9 @@ pub fn saveCamera(
     out_dir: std.Io.Dir,
     file_name: []const u8,
     camera_idx: usize,
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
 ) !void {
-    const metrics = cameraops.calcPlaneMetrics(camera_input);
+    const metrics = cameraframeops.calcPlaneMetrics(camera_input);
 
     const csv_file = try out_dir.createFile(io, file_name, .{});
     defer csv_file.close(io);
@@ -53,6 +54,7 @@ pub fn saveCamera(
         camera_input.focal_length,
     });
     try writer.print("{s},{d}\n", .{ "sub_sample", camera_input.sub_sample });
+    try writer.print("{s},{e}\n", .{ "background_value", camera_input.background_value });
     var pos_val = camera_input.pos_world;
     var rot_val = camera_input.rot_world;
 
@@ -148,7 +150,7 @@ pub fn saveCamera(
 
 /// Owns CSV-loaded coefficient storage; keep alive until rendering completes.
 pub const LoadedCamera = struct {
-    camera_input: cam.CameraInput,
+    camera_input: cameratypes.CameraInput,
     coeffs: ?[]const F,
 
     pub fn init(
@@ -165,13 +167,13 @@ pub const LoadedCamera = struct {
         const coord_sys = blk: {
             if (kv.get("coord_sys")) |sys_str| {
                 if (std.mem.eql(u8, sys_str, "opencv")) {
-                    break :blk cam.CameraCoordSys.opencv;
+                    break :blk cameratypes.CameraCoordSys.opencv;
                 }
             }
-            break :blk cam.CameraCoordSys.opengl;
+            break :blk cameratypes.CameraCoordSys.opengl;
         };
 
-        var camera_input = cam.CameraInput{
+        var camera_input = cameratypes.CameraInput{
             .pixels_num = .{
                 try std.fmt.parseInt(u32, try requireValue(&kv, "pixels_x"), 10),
                 try std.fmt.parseInt(u32, try requireValue(&kv, "pixels_y"), 10),
@@ -212,12 +214,13 @@ pub const LoadedCamera = struct {
                 try requireValue(&kv, "sub_sample"),
                 10,
             ),
+            .background_value = try parseOptionalFloatValue(&kv, "background_value", 0.0),
             .distort = try loadDistort(&kv, poly),
             .coord_sys = coord_sys,
         };
 
         if (coord_sys == .opencv) {
-            camera_input = cameraops.toOpenGLInput(camera_input);
+            camera_input = cameraframeops.toOpenGLInput(camera_input);
             camera_input.coord_sys = .opencv;
         }
 
@@ -232,7 +235,7 @@ pub fn saveStereoPair(
     io: std.Io,
     out_dir: std.Io.Dir,
     stereo_file_name: []const u8,
-    stereo_pair: cam.StereoPairInput,
+    stereo_pair: cameratypes.StereoPairInput,
 ) !void {
     var suffix: []const u8 = "";
     if (stereo_file_name.len > 11 and std.mem.eql(
@@ -262,12 +265,12 @@ pub fn saveStereoPair(
 
     const cam0 = stereo_pair.cameras[0];
     const cam1 = stereo_pair.cameras[1];
-    const cam0_opengl = cameraops.toOpenGLInput(cam0);
-    const cam1_opengl = cameraops.toOpenGLInput(cam1);
+    const cam0_opengl = cameraframeops.toOpenGLInput(cam0);
+    const cam1_opengl = cameraframeops.toOpenGLInput(cam1);
     const baseline = calculateStereoBaseline(stereo_pair);
     const baseline_len = baseline.vecLen();
-    const cam0_metrics = cameraops.calcPlaneMetrics(cam0);
-    const cam1_metrics = cameraops.calcPlaneMetrics(cam1);
+    const cam0_metrics = cameraframeops.calcPlaneMetrics(cam0);
+    const cam1_metrics = cameraframeops.calcPlaneMetrics(cam1);
 
     const csv_file = try out_dir.createFile(io, stereo_file_name, .{});
     defer csv_file.close(io);
@@ -345,7 +348,7 @@ pub fn saveStereoPair(
 
 pub const LoadedStereoPair = struct {
     loaded_cameras: [2]LoadedCamera,
-    stereo_pair: cam.StereoPairInput,
+    stereo_pair: cameratypes.StereoPairInput,
 
     pub fn init(
         outer_alloc: std.mem.Allocator,
@@ -371,7 +374,7 @@ pub const LoadedStereoPair = struct {
     }
 };
 
-fn calculateStereoBaseline(stereo_pair: cam.StereoPairInput) vec.Vec3F {
+fn calculateStereoBaseline(stereo_pair: cameratypes.StereoPairInput) vecstack.Vec3F {
     const cam0 = stereo_pair.cameras[0];
     const cam1 = stereo_pair.cameras[1];
     return cam1.pos_world.sub(cam0.pos_world);
@@ -442,12 +445,12 @@ fn requireValue(
     return kv.get(key) orelse error.MissingCameraField;
 }
 
-fn writePolyMetadata(writer: *std.Io.Writer, poly_params: ?cam.PolyMap) !void {
+fn writePolyMetadata(writer: *std.Io.Writer, poly_params: ?cameramodels.PolyMap) !void {
     if (poly_params) |poly| {
         try poly.validate();
         try writer.print("poly_degree,{d}\npoly_mode,{s}\n", .{ poly.degree, @tagName(poly.mode) });
         var key_buf: [64]u8 = undefined;
-        for (0..cam.polyTermCount(poly.degree)) |ii| {
+        for (0..cameramodels.polyTermCount(poly.degree)) |ii| {
             for (0..2) |axis| {
                 const key = try std.fmt.bufPrint(
                     &key_buf,
@@ -482,9 +485,9 @@ fn parseOptionalFloatValue(
 
 fn writeExtendedDistort(
     writer: *std.Io.Writer,
-    model: ?cam.BrownConExt.Params,
+    model: ?cameramodels.BrownConExt.Params,
 ) !void {
-    const ext = model orelse cam.BrownConExt.Params{};
+    const ext = model orelse cameramodels.BrownConExt.Params{};
     try writer.print("{s},{d:.12}\n", .{ "s1", ext.s1 });
     try writer.print("{s},{d:.12}\n", .{ "s2", ext.s2 });
     try writer.print("{s},{d:.12}\n", .{ "s3", ext.s3 });
@@ -496,7 +499,7 @@ fn writeExtendedDistort(
 fn loadPoly(
     outer_alloc: std.mem.Allocator,
     kv: *const std.StringHashMap([]const u8),
-) !?cam.PolyMap {
+) !?cameramodels.PolyMap {
     if ((try parseOptionalU8Value(kv, "poly_has_inv", 0)) != 0 or
         kv.contains("poly_inv_u_0") or kv.contains("poly_inv_v_0"))
         return error.UnsupportedInvPoly;
@@ -505,13 +508,13 @@ fn loadPoly(
         !std.mem.eql(u8, model, "brown_conrady_polynomial") and
         !std.mem.eql(u8, model, "brown_conrady_ext_polynomial")) return null;
     const degree = try std.fmt.parseInt(u8, try requireValue(kv, "poly_degree"), 10);
-    if (degree < 1 or degree > cam.POLY_MAX_DEGREE) return error.InvalidPolyDegree;
+    if (degree < 1 or degree > cameramodels.POLY_MAX_DEGREE) return error.InvalidPolyDegree;
     const mode_str = try requireValue(kv, "poly_mode");
-    const mode = std.meta.stringToEnum(cam.PolyMode, mode_str) orelse return error.InvalidPolyMode;
-    const coeffs = try outer_alloc.alloc(F, 2 * cam.polyTermCount(degree));
+    const mode = std.meta.stringToEnum(cameramodels.PolyMode, mode_str) orelse return error.InvalidPolyMode;
+    const coeffs = try outer_alloc.alloc(F, 2 * cameramodels.polyTermCount(degree));
     errdefer outer_alloc.free(coeffs);
     var key_buf: [64]u8 = undefined;
-    for (0..cam.polyTermCount(degree)) |ii| {
+    for (0..cameramodels.polyTermCount(degree)) |ii| {
         for (0..2) |axis| {
             const key = try std.fmt.bufPrint(
                 &key_buf,
@@ -529,16 +532,16 @@ fn loadPoly(
             return error.InvalidPolyCoeffCount;
         const index = std.fmt.parseInt(usize, suffix[0..sep], 10) catch
             return error.InvalidPolyCoeffCount;
-        if (index >= cam.polyTermCount(degree) or
+        if (index >= cameramodels.polyTermCount(degree) or
             (!std.mem.eql(u8, suffix[sep + 1 ..], "x") and
                 !std.mem.eql(u8, suffix[sep + 1 ..], "y"))) return error.InvalidPolyCoeffCount;
     }
-    return try cam.PolyMap.init(degree, mode, coeffs);
+    return try cameramodels.PolyMap.init(degree, mode, coeffs);
 }
 
 fn writeDistort(
     writer: *std.Io.Writer,
-    distort: cam.DistortParams,
+    distort: cameramodels.DistortParams,
 ) !void {
     switch (distort) {
         .none => {
@@ -660,8 +663,8 @@ fn writeDistort(
 
 fn loadDistort(
     kv: *const std.StringHashMap([]const u8),
-    poly: ?cam.PolyMap,
-) !cam.DistortParams {
+    poly: ?cameramodels.PolyMap,
+) !cameramodels.DistortParams {
     const model_name = try requireValue(kv, "distortion_model");
     if (std.mem.eql(u8, model_name, "none")) {
         return .none;
@@ -736,7 +739,6 @@ fn loadDistort(
 // Tests
 // --------------------------------------------------------------------------------------
 
-const testing = std.testing;
 const temp_test_dir = "out/test_cameraio";
 
 fn initTestCamera(
@@ -744,29 +746,29 @@ fn initTestCamera(
     alpha_z: F,
     beta_y: F,
     gamma_x: F,
-    coord_sys: cam.CameraCoordSys,
-) cam.CameraInput {
+    coord_sys: cameratypes.CameraCoordSys,
+) cameratypes.CameraInput {
     return .{
         .pixels_num = .{ 640, 480 },
         .pixels_size = .{ 3.45e-6, 3.45e-6 },
-        .pos_world = vec.initVec3(F, pos_world[0], pos_world[1], pos_world[2]),
+        .pos_world = vecstack.initVec3(F, pos_world[0], pos_world[1], pos_world[2]),
         .rot_world = rotation.Rotation.init(alpha_z, beta_y, gamma_x),
-        .roi_cent_world = vec.initVec3(F, 0.01, 0.02, 0.0),
+        .roi_cent_world = vecstack.initVec3(F, 0.01, 0.02, 0.0),
         .focal_length = 50.0e-3,
         .sub_sample = 2,
         .coord_sys = coord_sys,
     };
 }
 
-fn expectVecApproxEqual(expected: vec.Vec3F, actual: vec.Vec3F) !void {
+fn expectVecApproxEqual(expected: vecstack.Vec3F, actual: vecstack.Vec3F) !void {
     const tol: F = if (F == f32) 1.0e-5 else 1.0e-11;
-    try testing.expectApproxEqAbs(expected.get(0), actual.get(0), tol);
-    try testing.expectApproxEqAbs(expected.get(1), actual.get(1), tol);
-    try testing.expectApproxEqAbs(expected.get(2), actual.get(2), tol);
+    try std.testing.expectApproxEqAbs(expected.get(0), actual.get(0), tol);
+    try std.testing.expectApproxEqAbs(expected.get(1), actual.get(1), tol);
+    try std.testing.expectApproxEqAbs(expected.get(2), actual.get(2), tol);
 }
 
 const StereoBaselineSummary = struct {
-    baseline: vec.Vec3F,
+    baseline: vecstack.Vec3F,
     length: F,
 };
 
@@ -779,7 +781,7 @@ fn readSummaryBaseline(
     var kv = try parseKeyValueCsv(allocator, io, dir, file_name);
     defer deinitKeyValueCsv(allocator, &kv);
     return .{
-        .baseline = vec.initVec3(
+        .baseline = vecstack.initVec3(
             F,
             try std.fmt.parseFloat(F, try requireValue(&kv, "baseline_x_m")),
             try std.fmt.parseFloat(F, try requireValue(&kv, "baseline_y_m")),
@@ -793,8 +795,8 @@ fn readSummaryBaseline(
 }
 
 test "camera I/O preserves physical stereo baseline across OpenGL and OpenCV exports" {
-    const allocator = testing.allocator;
-    const io = testing.io;
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
     const cwd = std.Io.Dir.cwd();
     cwd.createDir(io, "out", .default_dir) catch |err| {
         if (err != error.PathAlreadyExists) return err;
@@ -863,8 +865,8 @@ test "camera I/O preserves physical stereo baseline across OpenGL and OpenCV exp
     try expectVecApproxEqual(expected_baseline, opencv_summary.baseline);
     const expected_baseline_len = expected_baseline.vecLen();
     const tol: F = if (F == f32) 1.0e-5 else 1.0e-11;
-    try testing.expectApproxEqAbs(expected_baseline_len, opengl_summary.length, tol);
-    try testing.expectApproxEqAbs(expected_baseline_len, opencv_summary.length, tol);
+    try std.testing.expectApproxEqAbs(expected_baseline_len, opengl_summary.length, tol);
+    try std.testing.expectApproxEqAbs(expected_baseline_len, opencv_summary.length, tol);
 }
 
 test "polynomial CSV rejects inverse metadata and invalid forward metadata" {
@@ -890,16 +892,16 @@ test "polynomial camera CSV round trips each order and chained model" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     for ([_]u8{ 1, 2, 3, 4, 5, 6, 7 }) |degree| {
-        for ([_]cam.PolyMode{ .coordinate, .displacement }) |mode| {
+        for ([_]cameramodels.PolyMode{ .coordinate, .displacement }) |mode| {
             var coeffs = [_]F{0} ** 72;
-            for (coeffs[0 .. 2 * cam.polyTermCount(degree)], 0..) |*value, ii|
+            for (coeffs[0 .. 2 * cameramodels.polyTermCount(degree)], 0..) |*value, ii|
                 value.* = @as(F, @floatFromInt(ii + 1)) * 1e-15;
-            const poly = try cam.PolyMap.init(
+            const poly = try cameramodels.PolyMap.init(
                 degree,
                 mode,
-                coeffs[0 .. 2 * cam.polyTermCount(degree)],
+                coeffs[0 .. 2 * cameramodels.polyTermCount(degree)],
             );
-            const variants = [_]cam.DistortParams{
+            const variants = [_]cameramodels.DistortParams{
                 .{ .poly = poly },
                 .{ .brown_con_poly = .{ .poly = poly } },
                 .{ .brown_con_ext_poly = .{ .poly = poly } },
@@ -910,16 +912,16 @@ test "polynomial camera CSV round trips each order and chained model" {
                 try saveCamera(io, tmp.dir, "camera.csv", 0, camera_input);
                 const loaded = try LoadedCamera.init(allocator, io, tmp.dir, "camera.csv");
                 defer loaded.deinit(allocator);
-                const loaded_model = try cam.DistortModel.init(loaded.camera_input.distort);
+                const loaded_model = try cameramodels.DistortModel.init(loaded.camera_input.distort);
                 const actual = switch (loaded_model) {
                     .poly => |map| map,
                     .brown_con_poly => |chain| chain.poly,
                     .brown_con_ext_poly => |chain| chain.poly,
                     else => return error.TestUnexpectedResult,
                 };
-                try testing.expectEqual(degree, actual.degree);
-                try testing.expectEqual(mode, actual.mode);
-                try testing.expectEqualSlices(F, poly.coeffs, actual.coeffs);
+                try std.testing.expectEqual(degree, actual.degree);
+                try std.testing.expectEqual(mode, actual.mode);
+                try std.testing.expectEqualSlices(F, poly.coeffs, actual.coeffs);
             }
         }
     }

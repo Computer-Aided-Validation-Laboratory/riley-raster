@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const cameramodels = @import("riley/zig/cameramodels.zig");
 const std = @import("std");
 
 const benchargs = @import("dev_support/benchargs.zig");
@@ -15,10 +16,10 @@ const common = @import("dev_support/benchcommon.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const riley = @import("riley/zig/riley.zig");
-const cam = @import("riley/zig/camera.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
-const texops = @import("riley/zig/textureops.zig");
+const textypes = @import("riley/zig/texturetypes.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const F = buildconfig.F;
 
@@ -47,9 +48,6 @@ pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
     var base_raster_config = tcfg.getRasterConfig(.bench);
-    base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-    };
     base_raster_config.save_strategy = .memory;
     var default_bench_args = benchargs.defaultBenchArgs(
         DEFAULT_OUT_DIR,
@@ -70,7 +68,7 @@ pub fn main(init: std.process.Init) !void {
     );
     defer threaded_io.deinit();
     const io = threaded_io.io();
-    const distort_model: cam.DistortParams = switch (bench_args.distort) {
+    const distort_model: cameramodels.DistortParams = switch (bench_args.distort) {
         .none => .none,
         .brown => .{
             .brown_con = .{
@@ -122,7 +120,7 @@ pub fn main(init: std.process.Init) !void {
         .func,
         .func_rgb,
     };
-    const samp_cfgs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]textypes.TexSampConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
@@ -246,7 +244,7 @@ fn runBenchmarksForTextureType(
     mesh_types: []const gk.MeshType,
     shader_types: []const common.ShaderType,
     tex_func_shader_types: []const common.ShaderType,
-    samp_cfgs: []const texops.TextureSampleConfig,
+    samp_cfgs: []const textypes.TexSampConfig,
     tex_func_cases: []const common.TexFuncCase,
 ) !void {
     const texture_grey = try loadBenchmarkTexture(
@@ -267,17 +265,20 @@ fn runBenchmarksForTextureType(
     defer texture_rgb.deinit(outer_alloc);
 
     for (mesh_types) |mt| {
+        if (bench_args.smoke and mt != .tri3) continue;
         const selected_shader_types = if (bench_args.shader_subset == .texture)
             texture_shader_types[0..]
         else
             shader_types;
         for (selected_shader_types) |st| {
+            if (bench_args.smoke and st != .nodal_grey) continue;
             for (samp_cfgs) |sc| {
+                if (bench_args.smoke and sc.sample != .linear) continue;
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
                     "data/bench/{s}_{s}",
-                    .{ @tagName(mt), DEFAULT_DATA_DIR_SUFFIX },
+                    .{ @tagName(if (mt == .tri3opt) gk.MeshType.tri3 else mt), DEFAULT_DATA_DIR_SUFFIX },
                 );
 
                 if (common.shouldRun(config, mt, st, sc, data_dir)) {
@@ -369,12 +370,13 @@ fn runBenchmarksForTextureType(
         }
 
         for (tex_func_shader_types) |st| {
+            if (bench_args.smoke) continue;
             for (tex_func_cases) |tex_func_case| {
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
                     "data/bench/{s}_{s}",
-                    .{ @tagName(mt), DEFAULT_DATA_DIR_SUFFIX },
+                    .{ @tagName(if (mt == .tri3opt) gk.MeshType.tri3 else mt), DEFAULT_DATA_DIR_SUFFIX },
                 );
                 const case_name = try common.calcCaseName(
                     outer_alloc,
@@ -494,7 +496,7 @@ fn loadBenchmarkTexture(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Tex(T, channels) {
+) !textypes.TexDataFix(T, channels) {
     if (T == u8) {
         return iio.loadImage(
             u8,
@@ -525,11 +527,11 @@ fn loadBenchmarkTexture(
 fn scaleTexture8To16(
     comptime channels: usize,
     allocator: std.mem.Allocator,
-    texture_u8: texops.Tex(u8, channels),
-) !texops.Tex(u16, channels) {
+    texture_u8: textypes.TexDataFix(u8, channels),
+) !textypes.TexDataFix(u16, channels) {
     defer texture_u8.deinit(allocator);
 
-    var texture_u16 = try texops.Tex(u16, channels).init(
+    var texture_u16 = try textypes.TexDataFix(u16, channels).init(
         allocator,
         texture_u8.rows_num,
         texture_u8.cols_num,

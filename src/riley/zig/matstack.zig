@@ -7,16 +7,10 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const std = @import("std");
-const print = std.debug.print;
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
 const vecstack = @import("vecstack.zig");
-const VecStack = vecstack.VecStack;
-const Vec2T = vecstack.Vec2T;
-const Vec3T = vecstack.Vec3T;
-const Vec2F = vecstack.Vec2F;
-const Vec3F = vecstack.Vec3F;
 
 const TestType = F;
 pub const Mat22F = Mat22T(buildconfig.F);
@@ -107,17 +101,17 @@ pub fn MatStack(
             self.mat[row][col] = val;
         }
 
-        pub fn getRowVec(self: *const Self, row: usize) VecStack(cols_n, T) {
-            const vec = VecStack(cols_n, T).initSlice(&self.mat[row]);
+        pub fn getRowVec(self: *const Self, row: usize) vecstack.VecStack(cols_n, T) {
+            const vec = vecstack.VecStack(cols_n, T).initSlice(&self.mat[row]);
             return vec;
         }
 
-        pub fn getColVec(self: *const Self, col: usize) VecStack(rows_n, T) {
+        pub fn getColVec(self: *const Self, col: usize) vecstack.VecStack(rows_n, T) {
             var col_vec: [rows_n]T = undefined;
             inline for (0..rows_n) |rr| {
                 col_vec[rr] = self.get(rr, col);
             }
-            const vec = VecStack(rows_n, T).initSlice(&col_vec);
+            const vec = vecstack.VecStack(rows_n, T).initSlice(&col_vec);
             return vec;
         }
 
@@ -146,7 +140,7 @@ pub fn MatStack(
             row: usize,
             col_start: usize,
             comptime vec_len: usize,
-            vec: VecStack(vec_len, T),
+            vec: vecstack.VecStack(vec_len, T),
         ) void {
             inline for (0..vec_len) |cc| {
                 self.set(row, cc + col_start, vec.get(cc));
@@ -158,7 +152,7 @@ pub fn MatStack(
             col: usize,
             row_start: usize,
             comptime vec_len: usize,
-            vec: VecStack(vec_len, T),
+            vec: vecstack.VecStack(vec_len, T),
         ) void {
             inline for (0..vec_len) |rr| {
                 self.set(rr + row_start, col, vec.get(rr));
@@ -244,8 +238,8 @@ pub fn MatStack(
             return mat_out;
         }
 
-        pub fn mulVec(self: *const Self, vec: VecStack(cols_n, T)) VecStack(rows_n, T) {
-            var vec_out: VecStack(rows_n, T) = undefined;
+        pub fn mulVec(self: *const Self, vec: vecstack.VecStack(cols_n, T)) vecstack.VecStack(rows_n, T) {
+            var vec_out: vecstack.VecStack(rows_n, T) = undefined;
             var sum: T = 0;
 
             inline for (0..rows_n) |rr| {
@@ -279,13 +273,13 @@ pub fn MatStack(
 
         pub fn matPrint(self: *const Self) void {
             for (0..rows_n) |ii| {
-                print("[", .{});
+                std.debug.print("[", .{});
                 for (0..cols_n) |jj| {
-                    print("{e:.3},", .{self.mat[ii][jj]});
+                    std.debug.print("{e:.3},", .{self.mat[ii][jj]});
                 }
-                print("]\n", .{});
+                std.debug.print("]\n", .{});
             }
-            print("\n", .{});
+            std.debug.print("\n", .{});
         }
     };
 }
@@ -341,9 +335,9 @@ pub const Mat22Ops = struct {
     pub fn solveChecked(
         comptime T: type,
         mat22: Mat22T(T),
-        rhs: Vec2T(T),
+        rhs: vecstack.Vec2T(T),
         min_abs_det: T,
-    ) MatrixInversionError!Vec2T(T) {
+    ) MatrixInversionError!vecstack.Vec2T(T) {
         const mat_det = det(T, mat22);
         if (!std.math.isFinite(mat_det) or @abs(mat_det) <= min_abs_det) {
             return error.SingularMatrix;
@@ -352,7 +346,7 @@ pub const Mat22Ops = struct {
             mat22.get(0, 1) * rhs.get(1)) / mat_det;
         const y = (mat22.get(0, 0) * rhs.get(1) -
             mat22.get(1, 0) * rhs.get(0)) / mat_det;
-        return Vec2T(T).initSlice(&[_]T{ x, y });
+        return vecstack.Vec2T(T).initSlice(&[_]T{ x, y });
     }
 };
 
@@ -517,8 +511,8 @@ pub const Mat44Ops = struct {
         return inv(T, mat);
     }
 
-    pub fn mulVec3(comptime T: type, mat: Mat44T(T), vec: Vec3T(T)) Vec3T(T) {
-        var vec_out: Vec3T(T) = undefined;
+    pub fn mulVec3(comptime T: type, mat: Mat44T(T), vec: vecstack.Vec3T(T)) vecstack.Vec3T(T) {
+        var vec_out: vecstack.Vec3T(T) = undefined;
         var sum: T = 0;
 
         for (0..3) |ii| {
@@ -538,16 +532,14 @@ pub const Mat44Ops = struct {
 // Tests
 // --------------------------------------------------------------------------------------
 
-const expectEqual = std.testing.expectEqual;
-
 test "Mat22F.getRowVec" {
     const m0 = [_]TestType{ 1, 2, 3, 4 };
     const mat0 = Mat22F.initSlice(&m0);
 
     const v0 = [_]TestType{ 3, 4 };
-    const vec_exp = Vec2F.initSlice(&v0);
+    const vec_exp = vecstack.Vec2F.initSlice(&v0);
 
-    try expectEqual(vec_exp, mat0.getRowVec(1));
+    try std.testing.expectEqual(vec_exp, mat0.getRowVec(1));
 }
 
 test "Mat22F.getColVec" {
@@ -555,9 +547,9 @@ test "Mat22F.getColVec" {
     const mat0 = Mat22F.initSlice(&m0);
 
     const v0 = [_]TestType{ 1, 3 };
-    const vec_exp = Vec2F.initSlice(&v0);
+    const vec_exp = vecstack.Vec2F.initSlice(&v0);
 
-    try expectEqual(vec_exp, mat0.getColVec(0));
+    try std.testing.expectEqual(vec_exp, mat0.getColVec(0));
 }
 
 test "Mat22F.add" {
@@ -570,7 +562,7 @@ test "Mat22F.add" {
     const m2 = [_]TestType{ 6, 8, 10, 12 };
     const mat_exp = Mat22F.initSlice(&m2);
 
-    try expectEqual(mat0.add(mat1), mat_exp);
+    try std.testing.expectEqual(mat0.add(mat1), mat_exp);
 }
 
 test "Mat22F.sub" {
@@ -583,7 +575,7 @@ test "Mat22F.sub" {
     const m2 = [_]TestType{ -4, -4, -4, -4 };
     const mat_exp = Mat22F.initSlice(&m2);
 
-    try expectEqual(mat_exp, mat0.sub(mat1));
+    try std.testing.expectEqual(mat_exp, mat0.sub(mat1));
 }
 
 test "Mat22F.trace" {
@@ -592,7 +584,7 @@ test "Mat22F.trace" {
 
     const trace_exp: TestType = 5;
 
-    try expectEqual(trace_exp, mat0.trace());
+    try std.testing.expectEqual(trace_exp, mat0.trace());
 }
 
 test "Mat22F.transpose" {
@@ -602,7 +594,7 @@ test "Mat22F.transpose" {
     const m1 = [_]TestType{ 1, 3, 2, 4 };
     const mat_exp = Mat22F.initSlice(&m1);
 
-    try expectEqual(mat_exp, mat0.transpose());
+    try std.testing.expectEqual(mat_exp, mat0.transpose());
 }
 
 test "MatStack rectangular transpose and row construction" {
@@ -618,7 +610,7 @@ test "MatStack rectangular transpose and row construction" {
         .{ 3, 6 },
     });
 
-    try expectEqual(expected, mat.transpose());
+    try std.testing.expectEqual(expected, mat.transpose());
 }
 
 test "Mat22F.mulScal" {
@@ -629,7 +621,7 @@ test "Mat22F.mulScal" {
     const m1 = [_]TestType{ 2, 4, 6, 8 };
     const mat_exp = Mat22F.initSlice(&m1);
 
-    try expectEqual(mat_exp, mat0.mulScal(scal));
+    try std.testing.expectEqual(mat_exp, mat0.mulScal(scal));
 }
 
 test "Mat22F.mulVec" {
@@ -637,12 +629,12 @@ test "Mat22F.mulVec" {
     const mat0 = Mat22F.initSlice(&m0);
 
     const v0 = [_]TestType{ 1, 2 };
-    const vec0 = Vec2F.initSlice(&v0);
+    const vec0 = vecstack.Vec2F.initSlice(&v0);
 
     const v1 = [_]TestType{ 5, 11 };
-    const vec_exp = Vec2F.initSlice(&v1);
+    const vec_exp = vecstack.Vec2F.initSlice(&v1);
 
-    try expectEqual(vec_exp, mat0.mulVec(vec0));
+    try std.testing.expectEqual(vec_exp, mat0.mulVec(vec0));
 }
 
 test "Mat22F.mulMat" {
@@ -655,7 +647,7 @@ test "Mat22F.mulMat" {
     const m2 = [_]TestType{ 8, 5, 20, 13 };
     const mat_exp = Mat22F.initSlice(&m2);
 
-    try expectEqual(mat_exp, mat0.mulMat(mat1));
+    try std.testing.expectEqual(mat_exp, mat0.mulMat(mat1));
 }
 
 test "Mat22F.mulMat.identity_and_negative" {
@@ -663,31 +655,31 @@ test "Mat22F.mulMat.identity_and_negative" {
 
     const m0 = [_]TestType{ 2, -1, 3, 4 };
     const mat0 = Mat22F.initSlice(&m0);
-    try expectEqual(mat0, mat0.mulMat(mat_ident));
+    try std.testing.expectEqual(mat0, mat0.mulMat(mat_ident));
 
     const m1 = [_]TestType{ -1, 5, 2, -3 };
     const mat1 = Mat22F.initSlice(&m1);
 
     const m_exp = [_]TestType{ -4, 13, 5, 3 };
     const mat_exp = Mat22F.initSlice(&m_exp);
-    try expectEqual(mat_exp, mat0.mulMat(mat1));
+    try std.testing.expectEqual(mat_exp, mat0.mulMat(mat1));
 }
 
 test "Mat22Ops.det" {
     const mat_ident = Mat22F.initIdentity();
-    try expectEqual(1, Mat22Ops.det(TestType, mat_ident));
+    try std.testing.expectEqual(1, Mat22Ops.det(TestType, mat_ident));
 
     const m_pos = [_]TestType{ 3, 2, 1, 4 };
     const mat_pos = Mat22F.initSlice(&m_pos);
-    try expectEqual(10, Mat22Ops.det(TestType, mat_pos));
+    try std.testing.expectEqual(10, Mat22Ops.det(TestType, mat_pos));
 
     const m_zero = [_]TestType{ 2, 4, 1, 2 };
     const mat_zero = Mat22F.initSlice(&m_zero);
-    try expectEqual(0, Mat22Ops.det(TestType, mat_zero));
+    try std.testing.expectEqual(0, Mat22Ops.det(TestType, mat_zero));
 
     const m_neg = [_]TestType{ 1, 5, 3, 2 };
     const mat_neg = Mat22F.initSlice(&m_neg);
-    try expectEqual(-13, Mat22Ops.det(TestType, mat_neg));
+    try std.testing.expectEqual(-13, Mat22Ops.det(TestType, mat_neg));
 }
 
 test "Mat22Ops.inv" {
@@ -696,14 +688,14 @@ test "Mat22Ops.inv" {
     const mat_pos = Mat22F.initSlice(&m_pos);
     const m_pos_exp = [_]TestType{ 1.0, -1.0, -1.5, 2.0 };
     const mat_pos_exp = Mat22F.initSlice(&m_pos_exp);
-    try expectEqual(mat_pos_exp, Mat22Ops.inv(TestType, mat_pos));
+    try std.testing.expectEqual(mat_pos_exp, Mat22Ops.inv(TestType, mat_pos));
 
     // Inversion with negative determinant: det = -2
     const m_neg = [_]TestType{ 1, 2, 3, 4 };
     const mat_neg = Mat22F.initSlice(&m_neg);
     const m_neg_exp = [_]TestType{ -2.0, 1.0, 1.5, -0.5 };
     const mat_neg_exp = Mat22F.initSlice(&m_neg_exp);
-    try expectEqual(mat_neg_exp, Mat22Ops.inv(TestType, mat_neg));
+    try std.testing.expectEqual(mat_neg_exp, Mat22Ops.inv(TestType, mat_neg));
 }
 
 test "Mat22Ops.invChecked rejects singular and near-singular matrices" {
@@ -711,7 +703,7 @@ test "Mat22Ops.invChecked rejects singular and near-singular matrices" {
         .{ 4, 2 },
         .{ 3, 2 },
     });
-    try expectEqual(
+    try std.testing.expectEqual(
         Mat22Ops.inv(TestType, valid),
         try Mat22Ops.invChecked(TestType, valid, 1.0e-8),
     );
@@ -740,9 +732,9 @@ test "Mat22Ops.solveChecked solves and rejects singular systems" {
         .{ 4, 2 },
         .{ 3, 2 },
     });
-    const rhs = Vec2F.initSlice(&[_]TestType{ 6, 5 });
-    const expected = Vec2F.initSlice(&[_]TestType{ 1, 1 });
-    try expectEqual(
+    const rhs = vecstack.Vec2F.initSlice(&[_]TestType{ 6, 5 });
+    const expected = vecstack.Vec2F.initSlice(&[_]TestType{ 1, 1 });
+    try std.testing.expectEqual(
         expected,
         try Mat22Ops.solveChecked(TestType, mat, rhs, 1.0e-8),
     );
@@ -765,7 +757,7 @@ test "Mat33F.add" {
     const m2 = [_]TestType{ 2, 4, 6, 8, 10, 12, 14, 16, 18 };
     const mat_exp = Mat33F.initSlice(&m2);
 
-    try expectEqual(mat_exp, mat0.add(mat1));
+    try std.testing.expectEqual(mat_exp, mat0.add(mat1));
 }
 
 test "Mat33F.sub" {
@@ -775,7 +767,7 @@ test "Mat33F.sub" {
 
     const mat_exp = Mat33F.initZeros();
 
-    try expectEqual(mat_exp, mat0.sub(mat1));
+    try std.testing.expectEqual(mat_exp, mat0.sub(mat1));
 }
 
 test "Mat33F.getRowVec" {
@@ -783,9 +775,9 @@ test "Mat33F.getRowVec" {
     const mat0 = Mat33F.initSlice(&m0);
 
     const v0 = [_]TestType{ 4, 5, 6 };
-    const vec_exp = Vec3F.initSlice(&v0);
+    const vec_exp = vecstack.Vec3F.initSlice(&v0);
 
-    try expectEqual(vec_exp, mat0.getRowVec(1));
+    try std.testing.expectEqual(vec_exp, mat0.getRowVec(1));
 }
 
 test "Mat33F.getColVec" {
@@ -793,9 +785,9 @@ test "Mat33F.getColVec" {
     const mat0 = Mat33F.initSlice(&m0);
 
     const v0 = [_]TestType{ 2, 5, 8 };
-    const vec_exp = Vec3F.initSlice(&v0);
+    const vec_exp = vecstack.Vec3F.initSlice(&v0);
 
-    try expectEqual(vec_exp, mat0.getColVec(1));
+    try std.testing.expectEqual(vec_exp, mat0.getColVec(1));
 }
 
 test "Mat33F.getSubMat" {
@@ -805,22 +797,22 @@ test "Mat33F.getSubMat" {
     const m1 = [_]TestType{ 5, 6, 8, 9 };
     var mat_exp = Mat22F.initSlice(&m1);
 
-    try expectEqual(mat_exp, mat0.getSubMat(1, 1, 2, 2));
+    try std.testing.expectEqual(mat_exp, mat0.getSubMat(1, 1, 2, 2));
 
     const m2 = [_]TestType{ 2, 3, 5, 6 };
     mat_exp = Mat22F.initSlice(&m2);
 
-    try expectEqual(mat_exp, mat0.getSubMat(0, 1, 2, 2));
+    try std.testing.expectEqual(mat_exp, mat0.getSubMat(0, 1, 2, 2));
 
     const m3 = [_]TestType{ 1, 2, 4, 5 };
     mat_exp = Mat22F.initSlice(&m3);
 
-    try expectEqual(mat_exp, mat0.getSubMat(0, 0, 2, 2));
+    try std.testing.expectEqual(mat_exp, mat0.getSubMat(0, 0, 2, 2));
 
     const m5 = [_]TestType{ 1, 2, 3, 4, 5, 6, 7, 8, 9 };
     const mat_exp33 = Mat33F.initSlice(&m5);
 
-    try expectEqual(mat_exp33, mat0.getSubMat(0, 0, 3, 3));
+    try std.testing.expectEqual(mat_exp33, mat0.getSubMat(0, 0, 3, 3));
 }
 
 test "Mat33F.transpose" {
@@ -830,7 +822,7 @@ test "Mat33F.transpose" {
     const m1 = [_]TestType{ 1, 4, 7, 2, 5, 8, 3, 6, 9 };
     const mat_exp = Mat33F.initSlice(&m1);
 
-    try expectEqual(mat_exp, mat0.transpose());
+    try std.testing.expectEqual(mat_exp, mat0.transpose());
 }
 
 test "Mat33F.mulScal" {
@@ -842,7 +834,7 @@ test "Mat33F.mulScal" {
     const m1 = [_]TestType{ 2, 4, 6, 8, 10, 12, 14, 16, 18 };
     const mat_exp = Mat33F.initSlice(&m1);
 
-    try expectEqual(mat_exp, mat0.mulScal(scal));
+    try std.testing.expectEqual(mat_exp, mat0.mulScal(scal));
 }
 
 test "Mat33F.mulVec" {
@@ -850,12 +842,12 @@ test "Mat33F.mulVec" {
     const mat0 = Mat33F.initSlice(&m0);
 
     const v0 = [_]TestType{ 3, 2, 1 };
-    const vec0 = Vec3F.initSlice(&v0);
+    const vec0 = vecstack.Vec3F.initSlice(&v0);
 
     const v1 = [_]TestType{ 10, 28, 46 };
-    const vec_exp = Vec3F.initSlice(&v1);
+    const vec_exp = vecstack.Vec3F.initSlice(&v1);
 
-    try expectEqual(vec_exp, mat0.mulVec(vec0));
+    try std.testing.expectEqual(vec_exp, mat0.mulVec(vec0));
 }
 
 test "Mat33F.mulMat" {
@@ -868,7 +860,7 @@ test "Mat33F.mulMat" {
     const m2 = [_]TestType{ 8, 10, 12, 23, 25, 27, 38, 40, 42 };
     const mat_exp = Mat33F.initSlice(&m2);
 
-    try expectEqual(mat_exp, mat0.mulMat(mat1));
+    try std.testing.expectEqual(mat_exp, mat0.mulMat(mat1));
 }
 
 test "Mat33F.mulMat.identity_and_negative" {
@@ -880,7 +872,7 @@ test "Mat33F.mulMat.identity_and_negative" {
         -1, 2,  1,
     };
     const mat0 = Mat33F.initSlice(&m0);
-    try expectEqual(mat0, mat0.mulMat(mat_ident));
+    try std.testing.expectEqual(mat0, mat0.mulMat(mat_ident));
 
     const m1 = [_]TestType{
         2,  1, 0,
@@ -895,12 +887,12 @@ test "Mat33F.mulMat.identity_and_negative" {
         0,  5,  2,
     };
     const mat_exp = Mat33F.initSlice(&m_exp);
-    try expectEqual(mat_exp, mat0.mulMat(mat1));
+    try std.testing.expectEqual(mat_exp, mat0.mulMat(mat1));
 }
 
 test "Mat33Ops.det" {
     const mat_ident = Mat33F.initIdentity();
-    try expectEqual(1, Mat33Ops.det(TestType, mat_ident));
+    try std.testing.expectEqual(1, Mat33Ops.det(TestType, mat_ident));
 
     const m0 = [_]TestType{ 1, 2, 3, 4, 5, 6, 7, 8, 9 };
     const mat0 = Mat33F.initSlice(&m0);
@@ -910,8 +902,8 @@ test "Mat33Ops.det" {
     const mat1 = Mat33F.initSlice(&m1);
     const det1_exp: TestType = 20;
 
-    try expectEqual(det0_exp, Mat33Ops.det(TestType, mat0));
-    try expectEqual(det1_exp, Mat33Ops.det(TestType, mat1));
+    try std.testing.expectEqual(det0_exp, Mat33Ops.det(TestType, mat0));
+    try std.testing.expectEqual(det1_exp, Mat33Ops.det(TestType, mat1));
 
     // Zero determinant (dependent rows: row 1 = 2 * row 0)
     const m_zero = [_]TestType{
@@ -920,7 +912,7 @@ test "Mat33Ops.det" {
         5, 1, 0,
     };
     const mat_zero = Mat33F.initSlice(&m_zero);
-    try expectEqual(0, Mat33Ops.det(TestType, mat_zero));
+    try std.testing.expectEqual(0, Mat33Ops.det(TestType, mat_zero));
 
     // Negative determinant: det = -21
     const m_neg = [_]TestType{
@@ -929,7 +921,7 @@ test "Mat33Ops.det" {
         3, 2,  1,
     };
     const mat_neg = Mat33F.initSlice(&m_neg);
-    try expectEqual(-21, Mat33Ops.det(TestType, mat_neg));
+    try std.testing.expectEqual(-21, Mat33Ops.det(TestType, mat_neg));
 
     // Permutation / reflection matrix: det = -1
     const m_perm = [_]TestType{
@@ -938,7 +930,7 @@ test "Mat33Ops.det" {
         0, 0, 1,
     };
     const mat_perm = Mat33F.initSlice(&m_perm);
-    try expectEqual(-1, Mat33Ops.det(TestType, mat_perm));
+    try std.testing.expectEqual(-1, Mat33Ops.det(TestType, mat_perm));
 }
 
 test "Mat33Ops.inv" {
@@ -948,7 +940,7 @@ test "Mat33Ops.inv" {
     const m2 = [_]TestType{ 0.4, -0.1, -0.1, -0.1, 0.4, -0.1, -0.1, -0.1, 0.4 };
     const mat_exp = Mat33F.initSlice(&m2);
 
-    try expectEqual(mat_exp, Mat33Ops.inv(TestType, mat1));
+    try std.testing.expectEqual(mat_exp, Mat33Ops.inv(TestType, mat1));
 
     // Inversion with negative determinant: det = -5
     const m_neg = [_]TestType{
@@ -964,7 +956,7 @@ test "Mat33Ops.inv" {
         0.8,  -0.4, 0.2,
     };
     const mat_neg_exp = Mat33F.initSlice(&m_neg_exp);
-    try expectEqual(mat_neg_exp, Mat33Ops.inv(TestType, mat_neg));
+    try std.testing.expectEqual(mat_neg_exp, Mat33Ops.inv(TestType, mat_neg));
 }
 
 test "Mat33Ops.invChecked rejects singular matrices" {
@@ -981,8 +973,8 @@ test "Mat33Ops.invChecked rejects singular matrices" {
 
 test "Mat44F.insertRowVec" {
     var mat0 = Mat44F.initZeros();
-    const vec0 = Vec2F.initOnes();
-    const vec1 = Vec3F.initOnes();
+    const vec0 = vecstack.Vec2F.initOnes();
+    const vec1 = vecstack.Vec3F.initOnes();
 
     const m1 = [_]TestType{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0 };
     const mat_exp1 = Mat44F.initSlice(&m1);
@@ -994,19 +986,19 @@ test "Mat44F.insertRowVec" {
     const mat_exp3 = Mat44F.initSlice(&m3);
 
     mat0.insertRowVec(2, 1, 2, vec0);
-    try expectEqual(mat_exp1, mat0);
+    try std.testing.expectEqual(mat_exp1, mat0);
 
     mat0.insertRowVec(3, 1, 3, vec1);
-    try expectEqual(mat_exp2, mat0);
+    try std.testing.expectEqual(mat_exp2, mat0);
 
     mat0.insertRowVec(0, 0, 2, vec0);
-    try expectEqual(mat_exp3, mat0);
+    try std.testing.expectEqual(mat_exp3, mat0);
 }
 
 test "Mat44F.insertColVec" {
     var mat0 = Mat44F.initZeros();
-    const vec0 = Vec2F.initOnes();
-    const vec1 = Vec3F.initOnes();
+    const vec0 = vecstack.Vec2F.initOnes();
+    const vec1 = vecstack.Vec3F.initOnes();
 
     const m1 = [_]TestType{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1 };
     const mat_exp1 = Mat44F.initSlice(&m1);
@@ -1018,13 +1010,13 @@ test "Mat44F.insertColVec" {
     const mat_exp3 = Mat44F.initSlice(&m3);
 
     mat0.insertColVec(3, 2, 2, vec0);
-    try expectEqual(mat_exp1, mat0);
+    try std.testing.expectEqual(mat_exp1, mat0);
 
     mat0.insertColVec(0, 0, 3, vec1);
-    try expectEqual(mat_exp2, mat0);
+    try std.testing.expectEqual(mat_exp2, mat0);
 
     mat0.insertColVec(2, 0, 2, vec0);
-    try expectEqual(mat_exp3, mat0);
+    try std.testing.expectEqual(mat_exp3, mat0);
 }
 
 test "Mat44F.insertSubMat" {
@@ -1039,10 +1031,10 @@ test "Mat44F.insertSubMat" {
     const mat_exp2 = Mat44F.initSlice(&m2);
 
     mat0.insertSubMat(2, 2, 2, 2, mat1);
-    try expectEqual(mat_exp1, mat0);
+    try std.testing.expectEqual(mat_exp1, mat0);
 
     mat0.insertSubMat(0, 0, 3, 3, mat2);
-    try expectEqual(mat_exp2, mat0);
+    try std.testing.expectEqual(mat_exp2, mat0);
 }
 
 test "MatStack insertSubMat accepts rectangular matrices" {
@@ -1060,7 +1052,7 @@ test "MatStack insertSubMat accepts rectangular matrices" {
         .{ 4, 5, 6, 0 },
         .{ 0, 0, 0, 0 },
     });
-    try expectEqual(expected, destination);
+    try std.testing.expectEqual(expected, destination);
 }
 
 test "Mat44F.mulMat" {
@@ -1073,7 +1065,7 @@ test "Mat44F.mulMat" {
         0, 2, 0, 1,
     };
     const mat0 = Mat44F.initSlice(&m0);
-    try expectEqual(mat0, mat0.mulMat(mat_ident));
+    try std.testing.expectEqual(mat0, mat0.mulMat(mat_ident));
 
     const m1 = [_]TestType{
         2, 1, 0, 0,
@@ -1090,26 +1082,26 @@ test "Mat44F.mulMat" {
         2, 4, 1, 2,
     };
     const mat_exp = Mat44F.initSlice(&m_exp);
-    try expectEqual(mat_exp, mat0.mulMat(mat1));
+    try std.testing.expectEqual(mat_exp, mat0.mulMat(mat1));
 }
 
 test "Mat44Ops.det" {
     const mat_ident = Mat44F.initIdentity();
-    try expectEqual(1, Mat44Ops.det(TestType, mat_ident));
+    try std.testing.expectEqual(1, Mat44Ops.det(TestType, mat_ident));
 
     const m0 = [_]TestType{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
     const mat0 = Mat44F.initSlice(&m0);
 
     var det_exp: TestType = 0;
 
-    try expectEqual(det_exp, Mat44Ops.det(TestType, mat0));
+    try std.testing.expectEqual(det_exp, Mat44Ops.det(TestType, mat0));
 
     const m1 = [_]TestType{ 1, 2, 1, 2, 3, 1, 1, 3, 3, 1, 2, 3, 2, 1, 2, 1 };
     const mat1 = Mat44F.initSlice(&m1);
 
     det_exp = 6;
 
-    try expectEqual(det_exp, Mat44Ops.det(TestType, mat1));
+    try std.testing.expectEqual(det_exp, Mat44Ops.det(TestType, mat1));
 
     // Zero determinant (dependent rows: row 1 = 2 * row 0)
     const m_zero = [_]TestType{
@@ -1119,7 +1111,7 @@ test "Mat44Ops.det" {
         0, 1, 0, 1,
     };
     const mat_zero = Mat44F.initSlice(&m_zero);
-    try expectEqual(0, Mat44Ops.det(TestType, mat_zero));
+    try std.testing.expectEqual(0, Mat44Ops.det(TestType, mat_zero));
 
     // Negative determinant: det = -2
     const m_neg = [_]TestType{
@@ -1129,7 +1121,7 @@ test "Mat44Ops.det" {
         0, 0, 1, 2,
     };
     const mat_neg = Mat44F.initSlice(&m_neg);
-    try expectEqual(-2, Mat44Ops.det(TestType, mat_neg));
+    try std.testing.expectEqual(-2, Mat44Ops.det(TestType, mat_neg));
 }
 
 test "Mat44Ops.insertMat22" {
@@ -1141,7 +1133,7 @@ test "Mat44Ops.insertMat22" {
 
     Mat44Ops.insertMat22(TestType, &mat0, mat1, 1, 1);
 
-    try expectEqual(mat_exp, mat0);
+    try std.testing.expectEqual(mat_exp, mat0);
 }
 
 test "Mat44Ops.inv" {
@@ -1156,7 +1148,7 @@ test "Mat44Ops.inv" {
     };
     const mat_exp = Mat44F.initSlice(&m1);
 
-    try expectEqual(mat_exp, Mat44Ops.inv(TestType, mat0));
+    try std.testing.expectEqual(mat_exp, Mat44Ops.inv(TestType, mat0));
 }
 
 test "Mat44Ops.inv.negative_det" {
@@ -1175,7 +1167,7 @@ test "Mat44Ops.inv.negative_det" {
         0.0,  0.0,  -1.0, 1.0,
     };
     const mat_exp = Mat44F.initSlice(&m_exp);
-    try expectEqual(mat_exp, Mat44Ops.inv(TestType, mat0));
+    try std.testing.expectEqual(mat_exp, Mat44Ops.inv(TestType, mat0));
 }
 
 test "Mat44Ops.invChecked rejects singular matrices" {

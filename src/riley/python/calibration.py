@@ -20,7 +20,7 @@ import numpy.typing as npt
 from scipy.spatial.transform import Rotation
 
 if TYPE_CHECKING:
-    from riley.cython.riley import Camera
+    from riley.types import Camera
 
 
 MotionRange: TypeAlias = tuple[float, float]
