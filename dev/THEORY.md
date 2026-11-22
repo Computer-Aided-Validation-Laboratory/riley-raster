@@ -146,3 +146,67 @@ const images = try riley.rasterAdvanced(
 - **Strict Input Validation**: Mismatched channel counts throw an immediate validation error unless validation is explicitly set to `.off`.
 - **Bit Depths and Formats**: Controlled independently via `ImageSaveOpts`: formats include `.bmp`, `.tiff`, `.csv`, and `.fimg`; scaling supports `.none`, `.auto`, `.fixed`, and `.frac`.
 - **Compiler Requirements**: Shared C library builds explicitly enforce LLVM backend compilation in Debug mode to prevent floating-point struct ABI corruption present in Zig 0.16's self-hosted x86_64 Debug backend.
+
+---
+
+## 6. Physical Speckle Calibration and Nominal Coverage
+
+Use `C` for nominal coverage, `R` for physical radius, `p` for occupancy,
+`J` for jitter, and `S` for edge softness. See the
+[public contract](../docs/python-api/speckles.rst) for units and the UV domain.
+[`specklegeom.zig`](../src/riley/zig/specklegeom.zig) integrates referenced
+physical/UV face areas, including higher-order nodes:
+
+```text
+Aphys = sum over faces integral |dX/dxi cross dX/deta| dxi deta
+Auv   = sum over faces integral |det(d(u,v)/d(xi,eta))| dxi deta
+m     = integral ln(|X_u|/|X_v|) dAphys / Aphys
+Lu    = sqrt(Aphys/Auv) * exp(m/2)
+Lv    = sqrt(Aphys/Auv) * exp(-m/2); Lu*Lv = Aphys/Auv
+```
+
+`tri3`/`tri3opt` use exact constant-Jacobian one-point integration; `tri6` and
+`quad4/8/9` use fixed 8×8 Gauss quadrature (Duffy mapping for triangles), assuming
+usable FE geometry. All area and metric reductions accumulate in `f64`, including
+f32 builds. The physical-area-weighted log-mean ratio varies continuously with
+the mapping and recovers constant orthogonal planar scales. A UV sliver's ratio
+influence grows logarithmically, weighted by its physical area fraction. Perlin
+uses `cells_per_uv = (Lu / cell_size, Lv / cell_size)` with no coverage solve.
+
+For disks and Gaussians, coverage is defined by the nominal disk support.
+On an infinite square owner grid, each cell independently contains one uniformly
+positioned centre with probability `p`. For normalized radius `r <= 1`, nine
+owners suffice. Let `A_i(x,r)` be the intersection area of owner cell `i` and
+the radius-`r` disk centred at query point `x`:
+
+```text
+F(p,r) = integral over unit query cell [1 - product_i(1 - p * A_i(x,r))] dx
+       = sum from k=1 to 9 of M_k(r) * p^k
+F(p,r) = C (solve for r); q = r / R
+cells_per_uv = (Lu * q, Lv * q)
+radius_mean = r; radius_jitter = r*(J/R); edge_softness = r*(S/R)
+```
+
+The signed coefficients integrate the expanded product; `M_1(r) = pi*r*r`.
+This stratified Bernoulli model approximates the finite-precision hash sampler;
+it is not the Poisson formula `1 - exp(-p*pi*r*r)`. Public jitter requires
+`0 <= J <= R/2`. Full feasibility also requires `C <= F(p,1/(1+J/R+S/R))`;
+validation checks this forward bound before geometry without an inverse solve.
+Lowering inverts nominal coverage once, independently of jitter/softness, and
+checks converted support `r + r*(J/R) + r*(S/R) <= 1` without clamping.
+Nominal cap equality maps to `r = 1`.
+
+[`specklecoverage.zig`](../src/riley/zig/specklecoverage.zig) computes in `f64`
+without allocation or I/O: an integrated analytic polynomial for `r <= 0.5`,
+otherwise a generated table over `0.5 <= r <= 1` with signed `M_2..M_9`
+coefficients. Horner evaluation gives `F(p,r)/p` at nodes;
+monotone PCHIP interpolates those values, not coefficients. At most 64 bisections
+invert the approximation. Builds import constants without regeneration.
+
+Separate oracle tests use vertical-slice circle/rectangle areas and direct
+noncoverage probabilities, with `1e-6` absolute coverage acceptance near geometry
+breaks and the cap. This is empirical evidence, not a global error bound or
+finite-image guarantee. The generator checks node monotonicity in both modes;
+`--check` verifies the committed table's shape and compares coefficients in
+fixed radius-node order without rewriting the table. See
+[Testing](TESTING.md#physical-speckle-verification) for offline and native checks.

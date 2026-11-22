@@ -11,11 +11,13 @@ import warnings
 from dataclasses import dataclass, field
 from enum import IntEnum
 from numbers import Integral
+from operator import index
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from cython.cimports.libc.stdlib import free, malloc
+from cython.cimports.libc.string import memset
 from cython.cimports.riley.cython import riley as cr
 
 
@@ -84,110 +86,86 @@ CameraInput = Camera
 
 
 class SpecklePattern(IntEnum):
-    """Select one procedural pattern for a mesh throughout a render."""
+    """Select disk or Gaussian physical footprints for a mesh."""
 
-    disk = 0
-    gaussian = 1
-    perlin = 2
+    disk = cr.RILEY_SPECKLE_DISK
+    gaussian = cr.RILEY_SPECKLE_GAUSSIAN
 
 
 @dataclass(slots=True)
 class Speckle2DParams:
-    """Configure the built-in two-dimensional procedural speckle shader.
+    """Configure physical disk or Gaussian speckles on the reference mesh.
 
     Parameters
     ----------
-    seed : int, optional
-        Fixed unsigned 32-bit seed in ``[0, 2**32 - 1]``. Defaults to
-        ``0xA511E9B3``; there is no automatic random seeding.
-    cells_per_uv : tuple[float, float], optional
-        Positive finite scales along u and v, in cells per UV unit.
-        Noninteger values are supported. Defaults to ``(192.0, 160.0)``.
+    coverage : float
+        Nominal expected union-area fraction in ``(0, 1)``.
+    radius : float
+        Positive finite nominal radius in reference-mesh coordinate units.
+        For Gaussians this is the three-sigma cutoff radius.
     occupancy : float, optional
-        Probability of placing a disk or Gaussian blob in each cell, finite
-        and in ``(0, 1]`` for user input. This is not the image coverage
-        fraction. Ignored for Perlin. Defaults to ``0.9``.
-    radius_mean : float, optional
-        Positive finite disk radius or Gaussian support radius in cell units.
-        Gaussian support is truncated at three standard deviations. Ignored
-        for Perlin. Defaults to ``0.45``. See Notes for joint support limits.
-    radius_jitter : float, optional
-        Uniform radius variation half-range in cell units, finite and in
-        ``[0, radius_mean]`` for disks and Gaussian blobs. Ignored for Perlin.
-        Defaults to ``0.0``.
+        Placement probability in ``(0, 1]`` (default 1).
+    jitter : float, optional
+        Uniform radius-variation half-range in reference-mesh units, with
+        ``0 <= jitter <= radius / 2`` (default 0).
     edge_softness : float, optional
-        Disk boundary transition half-width in cell units, finite and
-        nonnegative for every pattern. Zero gives hard disk edges; positive
-        values give smooth disk edges. Gaussian and Perlin require zero.
-        Defaults to ``0.0``.
-    perlin_coverage_threshold : float, optional
-        Finite noise threshold for Perlin coverage. Ignored for disks and
-        Gaussian blobs. Defaults to ``0.0``.
-    perlin_coverage_transition_width : float, optional
-        Finite, nonnegative width of the smooth coverage transition centred
-        on the Perlin threshold. Zero selects a hard threshold. Ignored for
-        disks and Gaussian blobs. Defaults to ``0.12``.
-    foreground : float, optional
-        Speckle intensity, finite and in ``[0, 1]`` for every shape, before
-        speckle-shader output scaling. Must differ from ``background``.
-        Defaults to ``0.0``.
-    background : float, optional
-        Uncovered intensity, finite and in ``[0, 1]`` for every shape, before
-        speckle-shader output scaling. Must differ from ``foreground``;
-        use a uniform texture for a constant field. Defaults to ``1.0``.
+        Nonnegative disk boundary-transition half-width in reference-mesh
+        units. Defaults to zero (hard edges); Gaussian speckles require zero.
     pattern : SpecklePattern, optional
-        Runtime choice of ``disk``, ``gaussian``, or ``perlin``. Defaults to
-        ``SpecklePattern.disk``. Each mesh keeps its selected pattern across
-        all frames of a render; different meshes may use different patterns.
+        ``disk`` (default) or ``gaussian``.
+    seed : int, optional
+        Unsigned 32-bit seed (default ``0xA511E9B3``).
+    foreground, background : float, optional
+        Distinct finite intensities in ``[0, 1]``, before output transforms.
+        Defaults to zero and one respectively.
 
     Notes
     -----
-    Procedural coordinates are computed componentwise as
-    ``clip(uv, 0, 1) * cells_per_uv``.
-
-    Disks and Gaussian blobs require
-    ``radius_mean + radius_jitter + edge_softness <= 1.0``. Hard disks cover
-    only points where ``distance**2 < radius**2``; zero-radius draws are empty.
-
-    The Python/C binding uses the native defaults-only build. Hard disks use
-    ``classified-binned``; soft disks and Gaussian blobs use ``cell-binned``
-    (all with nine neighbors). Perlin uses ``gradient-lattice``. Hard disks
-    use exact foreground/background certificates on a fixed 8×4 microcell grid
-    per procedural bin and exact disk fallback for ambiguous samples. These
-    defaults evaluate analytic patterns without texture sampling or coverage
-    quantization; they are not a guarantee of fastest evaluation for every
-    workload. Evaluator and neighbor overrides are not exposed in Python/C.
-    Resources are prepared once per mesh and reused for every frame.
-
-    The Python binding uses f64. On each axis, the padded procedural interval
-    ``[-1, cells_per_uv + 1]`` must remain within
-    ``[-2**45, 2**45]`` to retain sub-cell precision. Native resource generation
-    rejects storage sizes that cannot be represented on the target, without
-    imposing fixed memory budgets. Size failures raise ``RuntimeError`` containing
-    ``SpeckleClassificationTooLarge`` for hard disks,
-    ``SpeckleCellBinsTooLarge`` for soft disks or Gaussian blobs, or
-    ``SpecklePerlinLatticeTooLarge`` for Perlin. Perlin never silently falls
-    back to hashing; representable allocations that cannot be satisfied raise
-    ``RuntimeError`` containing ``OutOfMemory``.
-
-    Construction does not validate these values.
-    Invalid pattern identifiers raise ``ValueError`` during binding conversion.
-    Numerical validation occurs in the native rendering/resource-generation
-    path. With default fast input validation, native parameter-validation
-    failures raise ``RuntimeError`` containing ``InvalidSpeckleShaderParams``.
+    See :ref:`speckle-calibration` and :ref:`speckle-preparation` for calibration,
+    combined support limits, and render-time validation.
     """
 
-    seed: int = 0xA511E9B3
-    cells_per_uv: tuple[float, float] = (192.0, 160.0)
-    occupancy: float = 0.9
-    radius_mean: float = 0.45
-    radius_jitter: float = 0.0
-    edge_softness: float = 0.0
-    perlin_coverage_threshold: float = 0.0
-    perlin_coverage_transition_width: float = 0.12
-    foreground: float = 0.0
-    background: float = 1.0
-    pattern: SpecklePattern = SpecklePattern.disk
+    coverage: float
+    radius: float
+    occupancy: float = field(default=1.0, kw_only=True)
+    jitter: float = field(default=0.0, kw_only=True)
+    edge_softness: float = field(default=0.0, kw_only=True)
+    pattern: SpecklePattern = field(default=SpecklePattern.disk, kw_only=True)
+    seed: int = field(default=cr.RILEY_SPECKLE_DEFAULT_SEED, kw_only=True)
+    foreground: float = field(default=0.0, kw_only=True)
+    background: float = field(default=1.0, kw_only=True)
+
+
+@dataclass(slots=True)
+class Perlin2DParams:
+    """Configure thresholded gradient noise at a physical reference scale.
+
+    Parameters
+    ----------
+    cell_size : float
+        Positive finite nominal lattice spacing in reference-mesh coordinate units.
+    threshold : float, optional
+        Finite threshold in noise units (default 0).
+    transition_width : float, optional
+        Finite nonnegative width in noise units (default ``0.12``).
+        Zero selects a hard threshold.
+    seed : int, optional
+        Unsigned 32-bit seed (default ``0xA511E9B3``).
+    foreground, background : float, optional
+        Distinct finite intensities in ``[0, 1]``, before output transforms.
+        Defaults to zero and one respectively.
+
+    Notes
+    -----
+    See :ref:`speckle-calibration` and :ref:`speckle-preparation`.
+    """
+
+    cell_size: float
+    threshold: float = field(default=0.0, kw_only=True)
+    transition_width: float = field(default=cr.RILEY_PERLIN_DEFAULT_TRANSITION_WIDTH, kw_only=True)
+    seed: int = field(default=cr.RILEY_SPECKLE_DEFAULT_SEED, kw_only=True)
+    foreground: float = field(default=0.0, kw_only=True)
+    background: float = field(default=1.0, kw_only=True)
 
 
 @dataclass(slots=True)
@@ -528,16 +506,18 @@ class FunctionShader:
 
 @dataclass(slots=True)
 class SpeckleShader:
-    """Configure a monochrome procedural speckle field on required nodal UVs.
+    """Configure a monochrome procedural speckle field from nodal UVs.
 
-    ``uvs`` has shape ``(nodes, 2)``. Pattern parameters retain their cell-space
-    units. Output is ``coverage_intensity * output_scale + output_offset``
-    before bit-depth scaling. Automatic scaling matches FunctionShader's Python
-    default; use ``bits=-1, scaling_type=ScaleStrategy.none`` for raw intensities.
+    Pass ``uvs`` with shape ``(nodes, 2)`` and ``params`` as a
+    :class:`Speckle2DParams` or :class:`Perlin2DParams` instance.
+    See :ref:`speckle-uv-domain` for the UV requirements.
+
+    Use ``bits=-1, scaling_type=ScaleStrategy.none`` for raw intensities after
+    the shader transform.
     """
 
     uvs: np.ndarray
-    params: Speckle2DParams = field(default_factory=Speckle2DParams)
+    params: Speckle2DParams | Perlin2DParams
     output_scale: float = 1.0
     output_offset: float = 0.0
     bits: int = 8
@@ -850,22 +830,29 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
 
 
 @cython.cfunc
-def _make_speckle_params(params_in: Any) -> cr.CSpeckle2DParams:
-    params_out: cr.CSpeckle2DParams
-    params_out.pattern = int(SpecklePattern(params_in.pattern))
-    params_out.seed = int(params_in.seed)
-    params_out.cells_per_uv_0 = float(params_in.cells_per_uv[0])
-    params_out.cells_per_uv_1 = float(params_in.cells_per_uv[1])
-    params_out.occupancy = float(params_in.occupancy)
-    params_out.radius_mean = float(params_in.radius_mean)
-    params_out.radius_jitter = float(params_in.radius_jitter)
-    params_out.edge_softness = float(params_in.edge_softness)
-    params_out.perlin_coverage_threshold = float(
-        params_in.perlin_coverage_threshold,
-    )
-    params_out.perlin_coverage_transition_width = float(
-        params_in.perlin_coverage_transition_width,
-    )
+def _make_speckle_params(params_in: Any) -> cr.CSpeckleParams:
+    params_out: cr.CSpeckleParams
+    memset(cython.address(params_out), 0, cython.sizeof(params_out))
+    if isinstance(params_in, Speckle2DParams):
+        params_out.pattern = int(SpecklePattern(params_in.pattern))
+        params_out.coverage = float(params_in.coverage)
+        params_out.radius = float(params_in.radius)
+        params_out.occupancy = float(params_in.occupancy)
+        params_out.jitter = float(params_in.jitter)
+        params_out.edge_softness = float(params_in.edge_softness)
+    elif isinstance(params_in, Perlin2DParams):
+        params_out.pattern = cr.RILEY_SPECKLE_PERLIN
+        params_out.perlin_cell_size = float(params_in.cell_size)
+        params_out.perlin_threshold = float(params_in.threshold)
+        params_out.perlin_transition_width = float(params_in.transition_width)
+    else:
+        raise TypeError("SpeckleShader.params must be Speckle2DParams or Perlin2DParams")
+    if isinstance(params_in.seed, (bool, np.bool_)):
+        raise TypeError("Speckle seed must be an integer, not a boolean")
+    seed = index(params_in.seed)
+    if not 0 <= seed <= 2**32 - 1:
+        raise ValueError("Speckle seed must be in [0, 2**32 - 1]")
+    params_out.seed = seed
     params_out.foreground = float(params_in.foreground)
     params_out.background = float(params_in.background)
     return params_out
@@ -1961,6 +1948,7 @@ __all__ = [
     "FuncShaderParams",
     "SpeckleShader",
     "Speckle2DParams",
+    "Perlin2DParams",
     "SpecklePattern",
     "TextureSample",
     "TextureSampleMode",

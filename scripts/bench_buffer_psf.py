@@ -10,15 +10,16 @@ from __future__ import annotations
 
 import argparse
 import csv
-import datetime as dt
 import itertools
 import pathlib
 import shlex
 import statistics
 import subprocess
 
+from bench_common import native_exe, repo_root, timestamp_string
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+ROOT = repo_root()
 FIELDS = (
     "geometry_ms",
     "tile_overlap_ms",
@@ -95,7 +96,7 @@ def run_case(
     psf: str,
     sub_sample: int,
 ) -> list[dict[str, str]]:
-    exe = ROOT / "zig-out" / "bin" / "bench_buffer_psf_f64_simd"
+    exe = native_exe(ROOT / "zig-out" / "bin" / "bench_buffer_psf_f64_simd")
     case_dir = args.out_dir / name
     cmd = [
         str(exe),
@@ -124,7 +125,7 @@ def run_case(
     ]
     subprocess.run(cmd, cwd=ROOT, check=True)
     csv_path = case_dir / "raw_stats_buffer_psf.csv"
-    with csv_path.open() as f:
+    with csv_path.open(encoding="utf-8") as f:
         reader = csv.DictReader(f)
         return list(reader)
 
@@ -155,8 +156,7 @@ def main() -> None:
     if not args.skip_build:
         build_binary(args.optimize)
 
-    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    args.out_dir = args.out_root / stamp
+    args.out_dir = args.out_root / timestamp_string()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     buffer_modes = ("tile_local", "global_subpx_full", "global_subpx_stripe")
@@ -212,14 +212,14 @@ def main() -> None:
 
     raw_csv = args.out_dir / "raw_stats.csv"
     if all_raw:
-        with raw_csv.open("w", newline="") as f:
+        with raw_csv.open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=list(all_raw[0].keys()))
             writer.writeheader()
             writer.writerows(all_raw)
 
     summary_csv = args.out_dir / "summary.csv"
     if summaries:
-        with summary_csv.open("w", newline="") as f:
+        with summary_csv.open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=list(summaries[0].keys()))
             writer.writeheader()
             writer.writerows(summaries)

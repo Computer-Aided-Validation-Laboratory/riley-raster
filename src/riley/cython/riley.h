@@ -108,20 +108,36 @@ typedef struct c_camera_input {
     uint32_t subpixel_center_map;
 } CCameraInput;
 
-typedef struct c_speckle_2d_params {
+enum {
+    RILEY_SPECKLE_DISK = 0,
+    RILEY_SPECKLE_GAUSSIAN = 1,
+    RILEY_SPECKLE_PERLIN = 2,
+};
+
+#define RILEY_SPECKLE_DEFAULT_SEED 0xA511E9B3u
+#define RILEY_PERLIN_DEFAULT_TRANSITION_WIDTH 0.12
+
+/* Flat tagged parameters. Inactive pattern fields are ignored.
+ * Lengths use reference-mesh units; Gaussian radius is 3 sigma.
+ * Coverage is nominal opaque-footprint union coverage before jitter/softness,
+ * not mean image intensity. Perlin threshold and transition are in noise units.
+ */
+typedef struct c_speckle_params {
+    uint32_t pattern; /* RILEY_SPECKLE_*; fixed across frames. */
     uint32_t seed;
-    uint32_t pattern; /* 0: disk, 1: gaussian, 2: perlin; fixed across frames. */
-    double cells_per_uv_0;
-    double cells_per_uv_1;
+    /* Disk/Gaussian controls. */
+    double coverage;
+    double radius;
     double occupancy;
-    double radius_mean;
-    double radius_jitter;
+    double jitter;
     double edge_softness;
-    double perlin_coverage_threshold;
-    double perlin_coverage_transition_width;
+    /* Perlin controls. */
+    double perlin_cell_size; /* Positive finite lattice spacing. */
+    double perlin_threshold;
+    double perlin_transition_width;
     double foreground;
     double background;
-} CSpeckle2DParams;
+} CSpeckleParams;
 
 typedef struct c_func_shader_params {
     double coord_scale_0;
@@ -224,7 +240,7 @@ typedef struct c_shader_input {
     uint32_t func_shader_coord_mode;
     CFuncShaderParams func_shader_params;
     uint32_t normal_type;
-    CSpeckle2DParams speckle_params;
+    CSpeckleParams speckle_params;
     double speckle_output_scale;
     double speckle_output_offset;
 } CShaderInput;

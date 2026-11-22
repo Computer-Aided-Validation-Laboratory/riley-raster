@@ -10,6 +10,7 @@ import math
 import os
 from pathlib import Path
 import random
+import re
 import shutil
 import statistics
 import struct
@@ -17,12 +18,24 @@ import subprocess
 import sys
 import time
 
+if __package__:
+    from .bench_common import native_exe
+else:
+    from bench_common import native_exe
+
 ROOT = Path(__file__).resolve().parent.parent
 METRICS = ('resource_ns', 'render_ns', 'combined_ns')
 FACTORS = ('threads', 'scene', 'pattern', 'jitter', 'occupancy', 'neighbors', 'softness')
 BUILD_FIELDS = ('precision', 'simd', 'simd_vector_width', 'newton_solver', 'enable_all_evaluators',
                 'speckle_mask_samples_per_cell', 'optimize', 'strip', 'zig_version', 'target_arch', 'cpu_model', 'cpu_features')
 RESOURCE_FIELDS = ('resource_bytes', 'duplicated_disk_records', 'record_capacity')
+COMMON_CONTROLS = ('mode', 'evaluator', 'scene', 'pattern', 'threads', 'width', 'height',
+                   'frames', 'texture', 'texture_filter')
+PERLIN_CONTROLS = ('perlin_threshold', 'perlin_transition')
+# These are runner workload definitions, not defaults read from the executable.
+RAW_RADIUS = .35
+RAW_SOFTNESS = .04
+RAW_CELLS = dict(plate=[320, 192], sphere=[256, 160])
 
 
 def require(ok, message):
@@ -41,97 +54,182 @@ def schedules(repeats):
 
 
 def design(args):
+    """Normalize profile-dependent variant defaults in place and build the frozen design."""
     tuning = args.profile == 'tuning'
+    production = args.profile == 'full-render'
+    args.a = args.a or ('auto' if production else 'cell-binned')
+    args.b = args.b or ('auto' if production else 'list-indexed')
     repeats = args.repeats if args.repeats is not None else (12 if tuning else 16)
     alpha = args.alpha if args.alpha is not None else (.05 if tuning else .10)
-    overrides = (args.scenes, args.patterns, args.jitter, args.occupancy, args.neighbors)
+    texture_only = args.a == args.b == 'texture'
+    if 'texture' in (args.a, args.b):
+        require(args.texture, 'texture mapping requires --texture')
+    if production:
+        require(all(v in ('auto', 'texture') for v in (args.a, args.b)),
+                'full-render requires production default evaluators; use auto or texture')
+    else:
+        require('auto' not in (args.a, args.b), 'raw evaluation requires explicit evaluators or texture')
+    perlin = {key: getattr(args, key) for key in PERLIN_CONTROLS}
+    procedural_controls = (args.jitter, args.occupancy, args.neighbors, args.radius,
+                           args.softness, args.coverage, args.cell_size)
+    if texture_only:
+        require(all(v is None for v in (*procedural_controls, args.seed, args.cells_plate,
+                                       args.cells_sphere, *perlin.values()))
+                and not args.include_full_occupancy_single_neighbor,
+                'texture/texture does not accept procedural controls')
     if args.case_file:
-        require(not any(value is not None for value in (*overrides, args.workers, args.radius, args.softness)),
-                '--case-file cannot be mixed with factor overrides, --radius or --softness')
-    radius = .35 if args.radius is None else args.radius
-    softness = .04 if args.softness is None else args.softness
+        require(all(v is None for v in (args.scenes, args.patterns, args.workers, *procedural_controls,
+                                       *(perlin.values() if production else ()))),
+                '--case-file cannot be mixed with case factor or physical control overrides')
+    overrides = (args.scenes, args.patterns, args.jitter, args.occupancy, args.neighbors)
+    radius = args.radius if production else (RAW_RADIUS if args.radius is None else args.radius)
+    softness = args.softness if production else (RAW_SOFTNESS if args.softness is None else args.softness)
     require(math.isfinite(alpha) and 0 < alpha < 1, 'alpha must be between 0 and 1')
     require(args.permutations > 0, 'permutations must be positive')
     require(math.isfinite(args.timeout_seconds) and args.timeout_seconds > 0, 'timeout must be positive and finite')
-    require(all(x > 0 for x in (args.width, args.height, args.frames, *args.cells_plate, *args.cells_sphere)),
+    cells = dict(plate=args.cells_plate or RAW_CELLS['plate'], sphere=args.cells_sphere or RAW_CELLS['sphere'])
+    require(all(math.isfinite(x) and x > 0 for x in (args.width, args.height, args.frames, *cells["plate"], *cells["sphere"])),
             'dimensions, frames and cells must be positive')
-    require(math.isfinite(radius) and radius > 0, 'radius must be positive and finite')
-    require(math.isfinite(softness) and softness > 0, 'soft-case softness must be positive and finite')
-    require(0 <= args.seed < 2**32, 'seed must be uint32')
-    require(args.perlin_threshold is None or math.isfinite(args.perlin_threshold), 'Perlin threshold must be finite')
-    require(args.perlin_transition is None or (math.isfinite(args.perlin_transition) and args.perlin_transition >= 0),
-            'Perlin transition must be finite and nonnegative')
+    require(args.seed is None or 0 <= args.seed < 2**32, 'seed must be uint32')
+    if not production and not texture_only:
+        require(math.isfinite(radius) and radius > 0, 'radius must be positive and finite')
+        require(math.isfinite(softness) and softness > 0, 'invalid soft-case softness')
+        require(args.perlin_threshold is None or math.isfinite(args.perlin_threshold),
+                'Perlin threshold must be finite')
+        require(args.perlin_transition is None or math.isfinite(args.perlin_transition)
+                and args.perlin_transition >= 0, 'Perlin transition must be finite and nonnegative')
     require(all(x == 'available-cpus' or x.isdecimal() and int(x) > 0 for x in args.workers or ()),
             'workers must be positive integers or available-cpus')
     workers = sorted(set(available_cpus() if x == 'available-cpus' else int(x)
                          for x in (args.workers or ['1', 'available-cpus'])))
-    for values in (args.jitter, args.occupancy):
-        require(all(math.isfinite(x) and 0 <= x <= 1 for x in (values or [])), 'jitter/occupancy must be in [0,1]')
+    if not production and not texture_only:
+        require(all(math.isfinite(x) and 0 <= x <= 1 for x in args.occupancy or []),
+                'occupancy must be in [0,1]')
+        require(all(math.isfinite(x) and x >= 0 for x in args.jitter or []),
+                'raw jitter must be finite and nonnegative')
     components = [(['plate', 'sphere'], ['hard', 'gaussian'], [0, .08], [.7, 1], [1, 4, 9])]
+    if production:
+        require(args.neighbors is None and not args.include_full_occupancy_single_neighbor,
+                'full-render has no neighborhood controls; production defaults only')
+        require(args.cells_plate is None and args.cells_sphere is None,
+                'reference-grid controls require raw evaluation; use --cell-size for Perlin')
+        components = [(['plate', 'sphere'], ['hard', 'gaussian'], [0], [1])]
+    else:
+        require(args.coverage is None and args.cell_size is None,
+                '--coverage and --cell-size require full-render')
     if tuning:
         components = [(['plate'], ['hard'], [0, .08], [.7, 1], [9]),
                       (['sphere'], ['hard'], [.08], [.7], [9]),
                       (['plate'], ['hard'], [.08], [.7], [4]),
                       (['plate'], ['gaussian'], [.08], [.7], [9])]
-    cases = []
-    for component in components:
-        factors = [workers, *(override if override is not None else default
-                              for override, default in zip(overrides, component))]
-        for values in product(*factors):
-            case = dict(zip(FACTORS[:-1], values))
-            if (not tuning and args.occupancy is None and not args.include_full_occupancy_single_neighbor
-                    and case['neighbors'] == 1 and case['occupancy'] == 1):
-                continue
-            if case['pattern'] == 'perlin':
-                case['neighbors'] = None
-            case['softness'] = softness if case['pattern'] == 'soft' else 0.
-            if case not in cases:
-                cases.append(case)
     if args.case_file:
-        cases = load_cases(args.case_file)
-    require('texture' not in (args.a, args.b) or args.texture, 'texture mapping requires --texture')
-    if any(evaluator not in ('texture', 'mock') for evaluator in (args.a, args.b)):
+        cases = load_cases(args.case_file, production=production, texture_only=texture_only)
+    elif texture_only:
+        cases = [dict(threads=threads, scene=scene, pattern=pattern)
+                 for threads, scene, pattern in product(workers, dict.fromkeys(args.scenes or ['plate', 'sphere']),
+                                                        dict.fromkeys(args.patterns or ['hard']))]
+    else:
+        cases = []
+        for component in components:
+            factors = [workers, *(override if override is not None else default
+                                  for override, default in zip(overrides, component))]
+            for values in product(*factors):
+                case = dict(zip(FACTORS, values))
+                if (not tuning and not production and args.occupancy is None and not args.include_full_occupancy_single_neighbor
+                        and case['neighbors'] == 1 and case['occupancy'] == 1):
+                    continue
+                if case['pattern'] == 'perlin' and not production:
+                    case['neighbors'] = None
+                case['softness'] = softness if case['pattern'] == 'soft' else 0.
+                if production:
+                    if case['pattern'] == 'perlin':
+                        case = {k: case[k] for k in ('threads', 'scene', 'pattern')}
+                        case['cell_size'] = args.cell_size
+                        case.update({k: v for k, v in perlin.items() if v is not None})
+                    else:
+                        case.update(coverage=args.coverage, radius=radius)
+                if case not in cases:
+                    cases.append(case)
+        if production:
+            patterns = {case['pattern'] for case in cases}
+            require(patterns - {'perlin'} or all(x is None for x in (
+                    args.coverage, args.radius, args.jitter, args.occupancy, args.softness)),
+                    'physical controls require disk/Gaussian cases')
+            require(not args.softness or 'soft' in patterns, 'positive softness requires soft disk cases')
+            require('perlin' in patterns or all(x is None for x in (args.cell_size, *perlin.values())),
+                    'Perlin controls require Perlin cases')
+            for case in cases:
+                validate_physical_case(case)
+    if not production and any(evaluator not in ('texture', 'mock') for evaluator in (args.a, args.b)):
         require(all(case['pattern'] == 'perlin' or case['occupancy'] > 0 for case in cases),
                 'disk/Gaussian occupancy must be positive for procedural evaluators')
     return dict(profile=args.profile, mode='full-render' if args.profile == 'full-render' else 'evaluation',
                 configurations=cases, repeats=repeats, schedules=schedules(repeats), alpha=alpha,
                 metrics=[{'setup': 'resource_ns', 'render': 'render_ns', 'combined': 'combined_ns'}[x]
-                         for x in dict.fromkeys(args.metrics or (['combined'] if tuning else ['setup', 'render']))],
+                         for x in dict.fromkeys(args.metrics or (['combined'] if tuning or production else ['setup', 'render']))],
                 permutations=args.permutations, permutation_seed=20261005,
                 inference='two-sided blocked sum contrast; exact <=200000 subsets/block, otherwise Monte Carlo plus-one; joint Holm',
                 require_equal_output=args.require_equal_output, skip_output_checks=args.skip_output_checks,
-                config=dict(width=args.width, height=args.height, frames=args.frames, radius=None if args.case_file else radius,
+                config=dict(width=args.width, height=args.height, frames=args.frames,
                             seed=args.seed, texture=None, texture_filter=args.texture_filter,
-                            perlin_threshold=args.perlin_threshold, perlin_transition=args.perlin_transition),
-                cells=dict(plate=args.cells_plate, sphere=args.cells_sphere), variants={})
+                            **({} if production or texture_only else dict(
+                                radius=None if args.case_file else radius, **perlin))),
+                cells={} if production or texture_only else cells, variants={})
 
 
-def load_cases(path):
+def load_cases(path: Path, *, production: bool = False, texture_only: bool = False) -> list[dict]:
     """Explicit non-Cartesian cases; resolve worker aliases once and deduplicate."""
-    raw = json.loads(path.read_text())
+    raw = json.loads(path.read_text(encoding='utf-8'))
     require(isinstance(raw, list) and raw, 'case file must contain a nonempty JSON list')
     cases = []
     for row in raw:
-        require(isinstance(row, dict) and set(row) == set(FACTORS) | {'radius'}, 'invalid case fields')
+        require(isinstance(row, dict), 'invalid case fields')
+        common = {'threads', 'scene', 'pattern'}
+        optional = set()
+        if texture_only:
+            fields = common
+        elif production and row.get('pattern') == 'perlin':
+            fields = common | {'cell_size'}
+            optional = set(PERLIN_CONTROLS)
+        elif production:
+            fields = set(FACTORS) - {'neighbors'} | {'coverage', 'radius'}
+        else:
+            fields = set(FACTORS) | {'radius'}
+        require(fields <= row.keys() <= fields | optional, 'invalid case fields')
         case = dict(row)
         if case['threads'] == 'available-cpus':
             case['threads'] = available_cpus()
         require(type(case['threads']) is int and 0 < case['threads'] < 65536, 'invalid case workers')
         require(case['scene'] in ('plate', 'sphere'), 'invalid case scene')
         require(case['pattern'] in ('hard', 'soft', 'gaussian', 'perlin'), 'invalid case pattern')
-        require(case['neighbors'] is None if case['pattern'] == 'perlin' else
-                type(case['neighbors']) is int and case['neighbors'] in (1, 4, 9), 'invalid case neighbors')
-        for key in ('radius', 'jitter', 'occupancy', 'softness'):
-            require(type(case[key]) in (int, float) and math.isfinite(case[key]), 'invalid case ' + key)
-        require(0 <= case['occupancy'] <= 1 and 0 <= case['jitter'] <= case['radius'], 'invalid case occupancy/jitter')
-        require(case['radius'] > 0 and case['softness'] >= 0, 'invalid case radius/softness')
-        require((case['softness'] > 0) == (case['pattern'] == 'soft'), 'invalid case edge softness')
-        if case['pattern'] != 'perlin':
-            require(case['radius'] + case['jitter'] + case['softness'] <= (.5 if case['neighbors'] == 1 else 1),
-                    'case support exceeds neighborhood')
+        if production and not texture_only:
+            validate_physical_case(case)
+        elif not texture_only:
+            require(case['neighbors'] is None if case['pattern'] == 'perlin' else
+                    type(case['neighbors']) is int and case['neighbors'] in (1, 4, 9), 'invalid case neighbors')
+            for key in ('radius', 'jitter', 'occupancy', 'softness'):
+                require(type(case[key]) in (int, float) and math.isfinite(case[key]), 'invalid case ' + key)
+            require(0 <= case['occupancy'] <= 1 and case['jitter'] >= 0, 'invalid case occupancy/jitter')
+            require(case['radius'] > 0 and case['softness'] >= 0, 'invalid case radius/softness')
+            require((case['softness'] > 0) == (case['pattern'] == 'soft'), 'invalid case edge softness')
+
         if case not in cases:
             cases.append(case)
     return cases
+
+
+def validate_physical_case(case):
+    """Validate public inputs, not the physical solver's derived model."""
+    controls = (('cell_size', *(key for key in PERLIN_CONTROLS if key in case))
+                if case['pattern'] == 'perlin' else ('coverage', 'radius', 'jitter', 'occupancy', 'softness'))
+    for key in controls:
+        require(type(case.get(key)) in (int, float) and math.isfinite(case[key]), 'full-render requires finite ' + key)
+    if case['pattern'] == 'perlin':
+        require(case['cell_size'] > 0 and case.get('perlin_transition', 0) >= 0, 'invalid Perlin controls')
+    else:
+        require(0 < case['coverage'] < 1 and case['radius'] > 0, 'invalid physical coverage/radius')
+        require(0 < case['occupancy'] <= 1 and 0 <= case['jitter'] <= .5 * case['radius'], 'invalid physical occupancy/jitter')
+        require(case['softness'] >= 0 and (case['softness'] > 0) == (case['pattern'] == 'soft'), 'invalid physical softness')
 
 
 def freeze(original, destination):
@@ -141,24 +239,44 @@ def freeze(original, destination):
     return dict(original_path=str(original.resolve()), file=str(destination), sha256=sha)
 
 
+def validate_echo(actual, expected, precision, path=''):
+    if isinstance(expected, dict):
+        require(isinstance(actual, dict), 'invalid native config object: ' + path)
+        require(path != 'physical_params.' or set(actual) == set(expected), 'invalid physical parameter tag')
+        for key, value in expected.items():
+            require(key in actual, 'missing native config field: ' + path + key)
+            validate_echo(actual[key], value, precision, path + key + '.')
+        return
+    if isinstance(expected, list):
+        require(isinstance(actual, list) and len(actual) == len(expected), 'invalid native config array: ' + path)
+        for index, (value, wanted) in enumerate(zip(actual, expected)):
+            validate_echo(value, wanted, precision, path + str(index) + '.')
+        return
+    numeric = type(expected) is float and type(actual) in (int, float)
+    try:
+        if precision == 'f32' and numeric:
+            # std.json.Stringify promotes f32 to f64 before formatting JSON numbers.
+            equal = actual == native_float(expected, precision)
+        else:
+            equal = actual == expected
+    except OverflowError as exc:
+        raise ValueError('native config echo outside f32 range: ' + path.rstrip('.')) from exc
+    require(equal and (numeric or type(actual) is type(expected)), 'native config echo mismatch: ' + path.rstrip('.'))
+
+
 def validate_native(native, config):
     require(isinstance(native, dict), 'BENCH record must be a JSON object')
-    for key, value in config.items():
-        if value is not None:
-            actual = native.get(key)
-            numeric = type(value) in (int, float) and type(actual) in (int, float)
-            # Native decimal echoes represent the selected precision, not Python's f64 request.
-            try:
-                equal = (struct.pack('f', actual) == struct.pack('f', value)
-                         if native.get('precision') == 'f32' and type(value) is float and numeric else actual == value)
-            except OverflowError as exc:
-                raise ValueError(f'native config echo outside f32 range: {key}') from exc
-            require(equal and (numeric or type(actual) is type(value)), f'native config echo mismatch: {key}')
+    validate_echo(native, config, native.get('precision'))
     for metric in METRICS:
         require(type(native.get(metric)) is int and native[metric] >= 0, f'invalid {metric}: integer ns required')
     require(native['combined_ns'] == native['resource_ns'] + native['render_ns'], 'invalid combined timing')
-    require(type(native.get('checksum')) is int and 0 <= native['checksum'] < 2**64, 'invalid checksum')
     evaluation = config['mode'] == 'evaluation'
+    checksum, image_hash = native['checksum'], native['image_hash']
+    if evaluation:
+        require(type(checksum) is int and 0 <= checksum < 2**64 and image_hash is None, 'invalid raw checksum')
+    else:
+        require(checksum is None and isinstance(image_hash, str) and re.fullmatch('[0-9a-f]{64}', image_hash),
+                'invalid full-render image hash')
     require(native.get('evaluation_counters_available') is evaluation, 'invalid counter availability')
     require(type(native.get('shaded_samples')) is int
             and (native['shaded_samples'] > 0 if evaluation else native['shaded_samples'] == 0), 'invalid shaded sample count')
@@ -182,14 +300,23 @@ def catalogue_sampling_routes(catalogue):
     samples = catalogue['sampling_configs']
     routes = {}
     require(isinstance(samples, list) and samples, 'missing native sampling catalogue')
+    for row in samples:
+        require(isinstance(row, dict) and set(row) == set(fields)
+                and isinstance(row['evaluator'], str) and row['evaluator']
+                and (row['pattern'] is None or isinstance(row['pattern'], str))
+                and (row['neighbors'] is None or type(row['neighbors']) is int)
+                and (row['soft_edges'] is None or type(row['soft_edges']) is bool),
+                'invalid native sampling descriptor')
     require(len({tuple(row[k] for k in fields) for row in samples}) == len(samples),
             'duplicate native sampling config')
     for row in catalogue['configs']:
+        require(isinstance(row, dict) and set(row) == {*fields, 'sampling_index'},
+                'invalid native generation descriptor')
         key = tuple(row[k] for k in fields)
         index = row['sampling_index']
         require(type(index) is int and 0 <= index < len(samples), 'invalid native sampling index')
         require(key not in routes, 'duplicate native generation config')
-        routes[key] = dict(sampling_index=index, sampling=row['sampling'])
+        routes[key] = dict(sampling_index=index, sampling=samples[index])
     return routes
 
 
@@ -206,7 +333,8 @@ def validate_sampling_identity(identity, generation, routes):
 
 
 def fingerprint(native):
-    return tuple(native.get(k) for k in ('checksum', 'shaded_samples', 'backface_rejections', 'image_samples'))
+    return tuple(native.get(k) for k in ('image_hash', 'checksum', 'shaded_samples',
+                                        'backface_rejections', 'image_samples'))
 
 
 def permutation(blocks, count=100000, seed=20261005):
@@ -242,7 +370,7 @@ def holm(values):
 
 def report(out, metadata, groups, outputs):
     records = []
-    factors = FACTORS + (('radius',) if 'radius' in metadata['configurations'][0] else ())
+    factors = tuple(dict.fromkeys(k for case in metadata['configurations'] for k in case))
     for i, case in enumerate(metadata['configurations']):
         for metric in METRICS:
             blocks = [tuple([r[metric] for r in groups[i, s, v]] for v in 'AB') for s in (0, 1)]
@@ -257,105 +385,110 @@ def report(out, metadata, groups, outputs):
     primary = [r for r in records if 'p' in r]
     for record, p in zip(primary, holm([r['p'] for r in primary])):
         record.update(holm_p=p, detected=p <= metadata['alpha'])
-    (out / 'comparison.json').write_text(json.dumps(records, indent=2) + '\n')
+    (out / 'comparison.json').write_text(json.dumps(records, indent=2) + '\n', encoding='utf-8')
     n = len(metadata['configurations'])
     lines = ['# Speckle A/B comparison', '',
              f"{metadata['profile']} / {metadata['mode']}: {n} configurations, {2*n} variant groups, "
              f"{metadata['repeats']} runs/variant/case; schedules {' / '.join(metadata['schedules'])}.",
              f"Holm alpha={metadata['alpha']}, {len(primary)} tests. B/A <1 favors B; tests use mean contrasts, tables use medians.",
-             'Setup: procedural generation or texture UV/resource preparation. Decode, fixture loading and checksum reduction excluded. '
-             'Render: static evaluation loop, or real full-render pipeline minus resource time. Combined = setup + render, not wall time; untested metrics descriptive.',
-             f"Exact blocked permutations (ties included) up to 200000 subsets/block; otherwise {metadata['permutations']} seeded draws, (tail+1)/(draws+1). "
-             'Deterministic schedules assume within-block exchangeability; drift/serial dependence may invalidate inference. Tuning exploratory; non-significance is not equivalence.',
-             f"Texture filter: {metadata['config']['texture_filter']} (Catmull–Rom uses lut_lerp; nearest/linear use direct). "
-             'Interpolation LUTs are compile-time constants. Texture uses one frozen asset: procedural factors are requested control labels, not texture synthesis or matching imagery. '
+             'Combined = setup + render, not wall time. Full-render setup includes UV gathering and '
+             'reference calibration; output hashing is untimed. Reported production policy is declared, not observed.',
+             'Blocked permutation tests assume within-block exchangeability. Untested metrics are descriptive; '
+             'non-significance is not equivalence.',
+             f"Texture filter: {metadata['config']['texture_filter']}. Procedural factors do not change the frozen texture. "
              f"Output mismatch cases: {sum(outputs[i, 'A'] != outputs[i, 'B'] for i in range(n))}.", '',
              f"| Case | Factors ({', '.join(factors)}) | Metric | A ns | B ns | B/A | p | Holm p | Detected |",
              '|---|---|---|---:|---:|---:|---:|---:|---|']
     lines.insert(2, 'Native identity: ' + '; '.join(
         f"{v}: SHA256 {spec['sha256']}"
         for v, spec in metadata['variants'].items()) + '. See metadata.json for exact build/workload identities and catalogues.')
-    lines.insert(3, 'Resource metrics are nullable (uncollected is not zero). duplicated_disk_records counts live bin records; '
-                 'record_capacity includes unused allocated slots. Resource storage is inspected only after timed sampling. '
-                 'Byte metrics account for retained backing allocations, not peak preparation storage, process RSS or allocator overhead. '
-                 'Full-render resource/prepared identities are uncollected. Raw native records and full process logs are retained.')
+    lines.insert(3, 'See metadata.json for resource metric definitions; raw native records and process logs are retained.')
     if metadata.get('skip_output_checks', False):
         lines.insert(2, 'Within-repeat and cross-variant output consistency checks disabled; no image consistency guarantee.')
     for r in records:
         ratio = f"{r['ratio']:.6g}" if r['ratio'] is not None else 'n/a'
-        lines.append(f"| {r['case_id']} | {tuple(r['case'][k] for k in factors)} | {r['metric']} | "
+        lines.append(f"| {r['case_id']} | {tuple(r['case'].get(k) for k in factors)} | {r['metric']} | "
                      f"{r['a_median_ns']:g} | {r['b_median_ns']:g} | {ratio} | {r.get('p', 'descriptive')} | "
                      f"{r.get('holm_p', '—')} | {r.get('detected', '—')} |")
-    (out / 'comparison.md').write_text('\n'.join(lines) + '\n')
+    (out / 'comparison.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
     print(f"Report: {out / 'comparison.md'}")
 
 
 def parser():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        epilog='Tuning: 14 cases, 12 runs/variant, combined Holm .05. Full/full-render: 80 cases, '
-        '16 runs/variant, setup+render Holm .10 (counts assume two distinct worker budgets). '
-        'Overrides replace factors in each tuning component; deduplicate their union. Full excludes '
-        'occupancy=1/neighbors=1 unless occupancy is explicit or inclusion flag is set. '
-        'Two sweeps use balanced ABBA prefixes and inverses; no warmups. Native validates catalog compatibility '
-        '(--list-evaluators); each process must emit one BENCH JSON record. Fresh output only; no resume. '
-        'Artifacts: metadata.json, samples.jsonl, commands.jsonl, complete logs, comparison.json/.md and frozen assets. '
-        'Each binary must emit its native sampling catalogue, prepared identities and complete build identity. '
-        'Build configurations and resolved CPU-feature sets must match across variants.')
+    p = argparse.ArgumentParser(description=__doc__,
+        epilog='Use a fresh output directory; no resume or overwrite. '
+        'The runner checks catalogue and build compatibility, '
+        'then collects two balanced sweeps without warmups. Native observations check support and mesh '
+        'feasibility. Frozen inputs, raw observations, process logs and reports are saved in --out.')
     p.add_argument('--out', type=Path, required=True, help='fresh comparison directory')
-    p.add_argument('--profile', choices=('tuning', 'full', 'full-render'), default='tuning', help='full is evaluation-only')
-    p.add_argument('--a', default='cell-binned', help='catalog evaluator or texture')
-    p.add_argument('--b', default='list-indexed', help='catalog evaluator or texture; use classified-binned with --patterns hard --neighbors 9')
-    p.add_argument('--binary', type=Path, default=ROOT / 'zig-out/bin/bench_speckle_evaluators_f64_simd', help='common native binary')
+    p.add_argument('--profile', choices=('tuning', 'full', 'full-render'), default='tuning',
+                   help='full is raw evaluation; full-render uses physical inputs and the production policy '
+                        '(default: %(default)s)')
+    p.add_argument('--a', help='catalog evaluator or texture; default cell-binned in evaluation, auto in full-render')
+    p.add_argument('--b', help='catalog evaluator or texture; default list-indexed in evaluation, auto in full-render; use classified-binned with --patterns hard --neighbors 9')
+    p.add_argument('--binary', type=Path,
+        default=native_exe(ROOT / 'zig-out/bin/bench_speckle_evaluators_f64_simd'),
+        help='common native binary (default: %(default)s)')
     for v in 'ab':
         p.add_argument('--binary-' + v, type=Path, help='override common binary for ' + v.upper())
-    p.add_argument('--case-file', type=Path, help='explicit JSON list: threads, scene, pattern, jitter, occupancy, neighbors, softness, radius; replaces profile cases')
+    p.add_argument('--case-file', type=Path, help='nonempty JSON list with exact keys. Raw (hard|soft|gaussian|perlin): '
+                   'threads, scene, pattern, radius, jitter, occupancy, neighbors, softness; Perlin neighbors is null. '
+                   'Full-render hard|soft|gaussian: threads, scene, pattern, coverage, radius, jitter, occupancy, softness. '
+                   'Full-render perlin: threads, scene, pattern, cell_size; optional perlin_threshold and perlin_transition. '
+                   'Texture/texture (either mode): threads, scene, pattern (scenario label only). '
+                   'scene is plate|sphere; threads is a positive integer or available-cpus')
     p.add_argument('--workers', nargs='+', help='integers or available-cpus; default 1 and affinity CPU count, deduplicated')
     for name, choices in (('scenes', ('plate', 'sphere')), ('patterns', ('hard', 'soft', 'gaussian', 'perlin'))):
         p.add_argument('--' + name, nargs='+', choices=choices, help='replace profile factor')
     p.add_argument('--neighbors', nargs='+', type=int, choices=(1, 4, 9), help='replace profile factor')
-    for name in ('jitter', 'occupancy'):
-        p.add_argument('--' + name, nargs='+', type=float, help='replace profile factor')
+    p.add_argument('--jitter', nargs='+', type=float,
+                   help='replace radius jitter factor: raw cell units or full-render reference-mesh units '
+                        '(default: 0 for full-render disk/Gaussian)')
+    p.add_argument('--occupancy', nargs='+', type=float,
+                   help='replace cell occupancy factor (default: 1 for full-render disk/Gaussian)')
     p.add_argument('--include-full-occupancy-single-neighbor', action='store_true', help='include the normally excluded pair')
     for name, default in (('frames', 16), ('width', 3840), ('height', 2160)):
-        p.add_argument('--' + name, type=int, default=default, help='native workload ' + name)
-    p.add_argument('--cells-plate', nargs=2, type=int, default=[320, 192], help='plate UV cell counts')
-    p.add_argument('--cells-sphere', nargs=2, type=int, default=[256, 160], help='sphere UV cell counts')
-    p.add_argument('--seed', type=lambda x: int(x, 0), default=0xa511e9b3, help='native uint32 seed (decimal or hex)')
-    p.add_argument('--perlin-threshold', type=float, help='override Perlin coverage threshold')
-    p.add_argument('--perlin-transition', type=float, help='override Perlin transition width; 0 selects hard threshold')
-    p.add_argument('--radius', type=float, help='procedural radius; implicit 0.35; conflicts with --case-file')
-    p.add_argument('--softness', type=float, help='soft cases only; implicit 0.04; conflicts with --case-file; hard/Gaussian use 0')
+        p.add_argument('--' + name, type=int, default=default, help='native workload ' + name + ' (default: %(default)s)')
+    p.add_argument('--cells-plate', nargs=2, type=float, help=f'raw evaluation plate UV cell counts (profile default {RAW_CELLS["plate"]})')
+    p.add_argument('--cells-sphere', nargs=2, type=float, help=f'raw evaluation sphere UV cell counts (profile default {RAW_CELLS["sphere"]})')
+    p.add_argument('--seed', type=lambda x: int(x, 0), help='procedural uint32 seed (decimal or hex); default from binary A')
+    p.add_argument('--perlin-threshold', type=float, help='Perlin noise threshold; default from binary A')
+    p.add_argument('--perlin-transition', type=float, help='Perlin transition width; default from binary A; 0 selects hard threshold')
+    p.add_argument('--coverage', type=float, help='required full-render disk/Gaussian nominal coverage')
+    p.add_argument('--radius', type=float, help=f'required physical radius in full-render; raw normalized radius defaults to {RAW_RADIUS}')
+    p.add_argument('--cell-size', type=float, help='required full-render Perlin cell size in reference-mesh units')
+    p.add_argument('--softness', type=float, help=f'soft cases only: required physical half-width in full-render; raw defaults to {RAW_SOFTNESS}')
     p.add_argument('--texture', type=Path, help='BMP asset required for texture mapping; copied before execution')
     p.add_argument('--texture-filter', choices=('nearest', 'linear', 'cubic_catmull_rom'), default='cubic_catmull_rom',
-                   help='texture sampling: Catmull–Rom uses lut_lerp; nearest/linear use direct')
+                   help='texture sampling: Catmull–Rom uses lut_lerp; nearest/linear use direct '
+                        '(default: %(default)s)')
     p.add_argument('--alpha', type=float, help='override profile family-wise alpha')
     p.add_argument('--repeats', type=int, help='override even TOTAL runs per variant >=2; never capped')
     p.add_argument('--metrics', nargs='+', choices=('setup', 'render', 'combined'),
-                   help='jointly tested metrics: setup=resource_ns, render=render_ns (evaluation-only unless --profile full-render), combined=combined_ns')
-    p.add_argument('--permutations', type=int, default=100000, help='Monte Carlo draws for large repeat counts')
+                   help='jointly tested metrics: setup=resource_ns, render=render_ns, combined=combined_ns. '
+                        'Defaults to setup and render for full, combined otherwise')
+    p.add_argument('--permutations', type=int, default=100000,
+                   help='Monte Carlo draws for large repeat counts (default: %(default)s)')
     output_checks = p.add_mutually_exclusive_group()
     output_checks.add_argument('--require-equal-output', action='store_true', help='also require exact cross-variant fingerprints')
     output_checks.add_argument('--skip-output-checks', action='store_true', help='disable within-repeat and cross-variant fingerprint checks; retain native validation')
-    p.add_argument('--timeout-seconds', type=float, default=900, help='per-native-process timeout')
+    p.add_argument('--timeout-seconds', type=float, default=900,
+                   help='per-native-process timeout (default: %(default)s)')
     return p
 
 
-def run_logged(command, out, label, timeout=None):
-    """Preserve complete child output and exact argv, including failures and timeouts."""
+def run_logged(command: list[str], out: Path, label: str, timeout: float | None = None) -> list[bytes]:
+    """Retain the exact streams and argv; return lines for protocol parsing."""
     logs = out / 'logs'
     logs.mkdir(exist_ok=True)
     record = dict(command=command, cwd=str(ROOT), started_ns=time.time_ns(), label=label)
-    stdout, stderr = '', ''
+    stdout, stderr = b'', b''
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, cwd=ROOT)
+        result = subprocess.run(command, capture_output=True, timeout=timeout, cwd=ROOT)
         stdout, stderr = result.stdout, result.stderr
         record['returncode'] = result.returncode
     except subprocess.TimeoutExpired as exc:
-        stdout, stderr = exc.stdout or '', exc.stderr or ''
-        if isinstance(stdout, bytes):
-            stdout = stdout.decode(errors='replace')
-        if isinstance(stderr, bytes):
-            stderr = stderr.decode(errors='replace')
+        stdout, stderr = exc.stdout or b'', exc.stderr or b''
         record['timeout_seconds'] = timeout
         raise ValueError(f'command timed out after {timeout}s; full logs: {logs / label}') from exc
     except OSError as exc:
@@ -363,22 +496,42 @@ def run_logged(command, out, label, timeout=None):
         raise OSError(f'{exc}; full logs: {logs / label}') from exc
     finally:
         record['finished_ns'] = time.time_ns()
-        (logs / (label + '.stdout')).write_text(stdout)
-        (logs / (label + '.stderr')).write_text(stderr)
-        (logs / (label + '.command.json')).write_text(json.dumps(record, indent=2) + '\n')
-        with (out / 'commands.jsonl').open('a') as stream:
+        (logs / (label + '.stdout')).write_bytes(stdout)
+        (logs / (label + '.stderr')).write_bytes(stderr)
+        (logs / (label + '.command.json')).write_text(json.dumps(record, indent=2) + '\n', encoding='utf-8')
+        with (out / 'commands.jsonl').open('a', encoding='utf-8') as stream:
             stream.write(json.dumps(record) + '\n')
     require(result.returncode == 0, f'command failed ({result.returncode}); full logs: {logs / label}')
-    return result
+    return stdout.splitlines() + stderr.splitlines()
+
+
+def shape_controls(config):
+    """Translate runner case tags; evaluator/neighborhood policy remains native-owned."""
+    return dict(pattern='disk' if config['pattern'] in ('hard', 'soft') else config['pattern'],
+                soft_edges=config.get('softness', 0) > 0)
+
+
+def production_config(catalogue, config):
+    controls = shape_controls(config)
+    matches = [row for row in catalogue['production_configs']
+               if all(row[k] is None or row[k] == value for k, value in controls.items())]
+    require(len(matches) == 1, 'requested controls have no unique native production configuration')
+    return dict(matches[0])
 
 
 def generation_config(catalogue, config):
-    require(config['evaluator'] in catalogue['evaluators'], 'evaluator absent from native catalogue')
     if config['evaluator'] == 'texture':
+        require('texture' in catalogue['evaluators'], 'texture absent from native catalogue')
         return None
+    if config.get('mode') == 'full-render':
+        require(config['evaluator'] == 'auto' and 'neighbors' not in config,
+                'full-render requires the automatic production policy')
+        return production_config(catalogue, config)
+    require(config['evaluator'] in catalogue['evaluators'], 'evaluator absent from native catalogue')
     require(catalogue['overrides_enabled'] is True, 'native evaluator overrides disabled')
-    controls = dict(evaluator=config['evaluator'], pattern='disk' if config['pattern'] in ('hard', 'soft')
-                    else config['pattern'], neighbors=config['neighbors'], soft_edges=config['softness'] > 0)
+    shape = shape_controls(config)
+    controls = dict(evaluator=config['evaluator'], pattern=shape['pattern'],
+                    neighbors=config['neighbors'], soft_edges=shape['soft_edges'])
     matches = [row for row in catalogue['configs']
                if all(row[k] is None or row[k] == value for k, value in controls.items())]
     require(len(matches) == 1, 'requested controls have no unique native generation configuration')
@@ -386,9 +539,19 @@ def generation_config(catalogue, config):
 
 
 def case_config(metadata, case, variant):
-    u, w = metadata['cells'][case['scene']]
-    return dict(metadata['config'], **case, mode=metadata['mode'],
-                evaluator=metadata['variants'][variant]['evaluator'], cells_u=u, cells_v=w)
+    evaluator = metadata['variants'][variant]['evaluator']
+    config = {**metadata['config'], **case, 'mode': metadata['mode'], 'evaluator': evaluator}
+    if evaluator == 'texture':
+        return {k: config[k] for k in COMMON_CONTROLS if k in config}
+    raw = metadata['mode'] == 'evaluation'
+    # Pin omitted controls to A's advertised values, even if B differs.
+    defaults = metadata['variants']['A']['catalogue']['defaults']
+    for key in ('seed', *(PERLIN_CONTROLS if raw or case['pattern'] == 'perlin' else ())):
+        if config.get(key) is None:
+            config[key] = defaults[key]
+    if raw:
+        config['cells_u'], config['cells_v'] = metadata['cells'][case['scene']]
+    return config
 
 
 def comparable_build_identity(build):
@@ -418,6 +581,42 @@ def validate_identity(native, config, spec, routes, generation):
                                      sampling_index=None, backing='none'), 'texture has procedural prepared identity')
     else:
         require(identity is None, 'full-render prepared identity was not collected')
+    evaluation = config['mode'] == 'evaluation'
+    require('resolved_generation' in native and native['resolved_generation'] == (generation if evaluation else None),
+            'wrong generation identity')
+    require('generation_policy' in native and native['generation_policy'] == (None if evaluation else generation),
+            'wrong declared generation policy')
+
+
+def native_float(value, precision):
+    """Normalize a requested float exactly as the native CLI's selected precision."""
+    return struct.unpack('f', struct.pack('f', value))[0] if precision == 'f32' else float(value)
+
+
+def expected_native(config):
+    """Build one expected echo in native units; the independent actual comes from grid/mesh inputs."""
+    raw = config['mode'] == 'evaluation'
+    expected = {key: config[key] for key in COMMON_CONTROLS if config.get(key) is not None}
+    expected.update(physical_params=None, resolved_grid=None)
+    if config['evaluator'] == 'texture':
+        return expected
+    pattern = shape_controls(config)['pattern']
+    names = (dict(radius_mean='radius', radius_jitter='jitter', occupancy='occupancy', edge_softness='softness',
+                  perlin_coverage_threshold='perlin_threshold', perlin_coverage_transition_width='perlin_transition') if raw else
+             dict(cell_size='cell_size', threshold='perlin_threshold', transition_width='perlin_transition') if pattern == 'perlin' else
+             dict(coverage='coverage', radius='radius', jitter='jitter', occupancy='occupancy', edge_softness='softness'))
+    params = {native: config[option] if option == 'seed' else float(config[option])
+              for native, option in dict(names, seed='seed').items() if config.get(option) is not None}
+    if raw and 'cells_u' in config:
+        params['cells_per_uv'] = [float(config[key]) for key in ('cells_u', 'cells_v')]
+    if raw:
+        params.update(pattern=pattern, evaluator=config['evaluator'].replace('-', '_'))
+        if 'neighbors' in config:
+            params['neighbor_count'] = {None: None, 1: 'one', 4: 'four', 9: 'nine'}[config['neighbors']]
+        expected['resolved_grid'] = params
+    else:
+        expected['physical_params'] = {pattern: params}
+    return expected
 
 
 class SampleValidator:
@@ -430,7 +629,7 @@ class SampleValidator:
         for i, case in enumerate(metadata['configurations']):
             for variant, spec in metadata['variants'].items():
                 config = case_config(metadata, case, variant)
-                self.cases[i, variant] = (config, generation_config(spec['catalogue'], config))
+                self.cases[i, variant] = (config, generation_config(spec['catalogue'], config), expected_native(config))
         self.outputs, self.positions = {}, set()
         self.groups = defaultdict(list)
 
@@ -444,8 +643,8 @@ class SampleValidator:
         location = (i, sweep, position)
         require(location not in self.positions, 'duplicate sample position')
         native = row['native']
-        config, generation = self.cases[i, variant]
-        validate_native(native, config)
+        config, generation, expected = self.cases[i, variant]
+        validate_native(native, expected)
         validate_identity(native, config, metadata['variants'][variant], self.routes[variant], generation)
         key, value = (i, variant), fingerprint(native)
         if not metadata['skip_output_checks']:
@@ -463,25 +662,29 @@ class SampleValidator:
         return self.groups, self.outputs
 
 
+def native_argv(binary, config):
+    """Encode the variant's active controls, already normalized by case_config."""
+    return [str(binary), *[item for key, value in config.items() if value is not None
+                          for item in ('--' + key.replace('_', '-'), str(value))]]
+
+
 def run_comparison(out, metadata):
     """Supervise both sweeps, validating each flushed observation once; never resume."""
     validator = SampleValidator(metadata)
-    with (out / 'samples.jsonl').open('x') as stream:
+    with (out / 'samples.jsonl').open('x', encoding='utf-8') as stream:
         for sweep in (0, 1):
             for i in range(len(metadata['configurations'])):
                 for position, variant in enumerate(metadata['schedules'][sweep]):
                     spec = metadata['variants'][variant]
                     config = validator.cases[i, variant][0]
-                    command = [spec['file'], *[item for k, value in config.items() if value is not None
-                                              for item in ('--' + k.replace('_', '-'), str(value))]]
+                    command = native_argv(spec['file'], config)
                     label = f'sweep-{sweep}-case-{i}-position-{position}-{variant}'
-                    result = run_logged(command, out, label, metadata['timeout_seconds'])
+                    lines = run_logged(command, out, label, metadata['timeout_seconds'])
                     try:
-                        records = [line[6:] for line in (result.stdout + '\n' + result.stderr).splitlines()
-                                   if line.startswith('BENCH ')]
+                        records = [line[6:] for line in lines if line.startswith(b'BENCH ')]
                         require(len(records) == 1, 'expected exactly one BENCH JSON record')
                         row = dict(case_id=i, sweep=sweep, position=position, variant=variant, command=command,
-                                   binary_sha256=spec['sha256'], native=json.loads(records[0]))
+                                   binary_sha256=spec['sha256'], native=json.loads(records[0].decode('utf-8')))
                         # Preserve even the failing observation; never report a partial comparison.
                         stream.write(json.dumps(row) + '\n')
                         stream.flush()
@@ -512,26 +715,30 @@ def main(argv=None):
         for variant in 'AB':
             original = (getattr(args, 'binary_' + variant.lower()) or args.binary).resolve()
             if original not in frozen:
-                frozen[original] = freeze(original, out / 'binaries' / variant)
+                frozen[original] = freeze(original, native_exe(out / 'binaries' / variant))
             metadata['variants'][variant] = dict(frozen[original], evaluator=getattr(args, variant.lower()))
         if args.texture:
             metadata['texture_asset'] = freeze(args.texture, out / ('texture' + args.texture.suffix))
             metadata['config']['texture'] = metadata['texture_asset']['file']
         metadata_path = out / 'metadata.json'
-        metadata_path.write_text(json.dumps(metadata, indent=2) + '\n')
+        metadata_path.write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
         catalogues = {}
         for variant, spec in metadata['variants'].items():
             if spec['file'] not in catalogues:
-                result = run_logged([spec['file'], '--list-evaluators'], out,
-                                    'catalogue-' + variant, args.timeout_seconds)
-                records = [json.loads(line) for line in (result.stdout + '\n' + result.stderr).splitlines()
-                           if line.startswith('{')]
+                lines = run_logged([spec['file'], '--list-evaluators'], out,
+                                   'catalogue-' + variant, args.timeout_seconds)
+                records = [json.loads(line.decode('utf-8')) for line in lines if line.startswith(b'{')]
                 require(len(records) == 1, 'expected exactly one native evaluator catalogue')
                 catalogues[spec['file']] = records[0]
             spec['catalogue'] = catalogues[spec['file']]
-            catalogue_sampling_routes(spec['catalogue'])
             spec.update(build_identity=spec['catalogue']['build_identity'],
                         workload_modes=spec['catalogue']['workload_modes'])
+            defaults = spec['catalogue']['defaults']
+            require(isinstance(defaults, dict) and type(defaults.get('seed')) is int
+                    and 0 <= defaults['seed'] < 2**32
+                    and all(type(defaults.get(key)) in (int, float) and math.isfinite(defaults[key])
+                            for key in PERLIN_CONTROLS)
+                    and defaults['perlin_transition'] >= 0, 'invalid native procedural defaults')
             require(set(spec['build_identity']) == set(BUILD_FIELDS), 'incomplete/unknown build identity fields')
             features = spec['build_identity']['cpu_features']
             require(isinstance(features, list) and all(isinstance(name, str) and name for name in features)
@@ -542,9 +749,7 @@ def main(argv=None):
                     'benchmarks require ReleaseFast with debug information stripped')
             require(isinstance(spec['workload_modes'], dict) and isinstance(spec['workload_modes'].get(metadata['mode']), str)
                     and spec['workload_modes'][metadata['mode']], 'missing workload identity')
-            for case in metadata['configurations']:
-                generation_config(spec['catalogue'], case_config(metadata, case, variant))
-            metadata_path.write_text(json.dumps(metadata, indent=2) + '\n')
+            metadata_path.write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
         a, b = (metadata['variants'][variant] for variant in 'AB')
         require(comparable_build_identity(a['build_identity']) == comparable_build_identity(b['build_identity']),
                 'A/B build configurations differ')

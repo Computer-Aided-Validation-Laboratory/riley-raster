@@ -106,17 +106,25 @@ cdef extern from "riley.h":
         uint32_t coord_sys
         uint32_t subpixel_center_map
 
-    ctypedef struct CSpeckle2DParams:
-        uint32_t seed
+    enum:
+        RILEY_SPECKLE_DISK
+        RILEY_SPECKLE_GAUSSIAN
+        RILEY_SPECKLE_PERLIN
+
+    const uint32_t RILEY_SPECKLE_DEFAULT_SEED
+    const double RILEY_PERLIN_DEFAULT_TRANSITION_WIDTH
+
+    ctypedef struct CSpeckleParams:
         uint32_t pattern
-        double cells_per_uv_0
-        double cells_per_uv_1
+        uint32_t seed
+        double coverage
+        double radius
         double occupancy
-        double radius_mean
-        double radius_jitter
+        double jitter
         double edge_softness
-        double perlin_coverage_threshold
-        double perlin_coverage_transition_width
+        double perlin_cell_size
+        double perlin_threshold
+        double perlin_transition_width
         double foreground
         double background
 
@@ -221,7 +229,7 @@ cdef extern from "riley.h":
         uint32_t func_shader_coord_mode
         CFuncShaderParams func_shader_params
         uint32_t normal_type
-        CSpeckle2DParams speckle_params
+        CSpeckleParams speckle_params
         double speckle_output_scale
         double speckle_output_offset
 

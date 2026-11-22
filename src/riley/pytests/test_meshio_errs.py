@@ -77,6 +77,19 @@ def test_create_mesh_rejects_invalid_mesh_type_arg() -> None:
         )
 
 
+def test_create_mesh_requires_speckle_uvs() -> None:
+    coords = coords_3d(riley.EElemType.TRI3)
+    connect = np.array([[0, 1, 2]], dtype=np.uintp)
+    convention = ConnectConvention(
+        EElemType.TRI3, EConnectAxis.ROW, 0, ENodeOrder.RILEY,
+    )
+    with pytest.raises(ValueError, match="uvs"):
+        meshio.create_mesh(
+            convention, MeshType.tri3, coords, connect,
+            riley.SpeckleShader(None, riley.Speckle2DParams(0.4, 0.03)),
+        )
+
+
 def test_create_mesh_rejects_invalid_shader_arg() -> None:
     coords = np.eye(3, dtype=np.float64)
     connect = np.array(((0, 1, 2),), dtype=np.int64)

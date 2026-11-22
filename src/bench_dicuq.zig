@@ -42,6 +42,7 @@ const DEFAULT_MAX_RASTER_WORKERS_PER_JOB: u16 = 1;
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
     const base_raster_config = benchdicuq.getBaseRasterConfig();
 
@@ -71,7 +72,7 @@ pub fn main(init: std.process.Init) !void {
 
     // Change .save_strategy here to write to disk!
     const bench_args = try benchargs.parseArgsWithDefaults(
-        init.minimal.args.vector,
+        args,
         default_bench_args,
     );
     if (bench_args.total_threads == 0) {
@@ -181,7 +182,7 @@ pub fn main(init: std.process.Init) !void {
         bench_args.out_dir,
         bench_args.image_out_dir,
         "bench_dicuq.zig",
-        init.minimal.args.vector,
+        args,
         bench_args.subpixel_center_map,
         raster_config,
         render_group_workers,

@@ -6,7 +6,7 @@
 //
 // Authors: James Panayis
 // --------------------------------------------------------------------------------------
-//! Isolated native catalog-evaluator workload. No production render defaults change.
+//! Native catalog-evaluator workload, separate from the production render path.
 //! Geometry, nodal UVs, hulls, tile overlaps and worker storage are prepared once.
 //! Timed evaluation retains traversal, backface/coverage tests, Newton solves,
 //! UV interpolation and normal depth rejection/updates. Tile depth is reset inside
@@ -331,7 +331,7 @@ pub const Evaluation = struct {
     }
 
     /// One invocation is one fresh measurement, with all frames inside the timer.
-    pub fn evaluate(self: *Evaluation, params: speckle.Speckle2DParams, resources: *const speckle.Resources, frames: usize) !void {
+    pub fn evaluate(self: *Evaluation, params: speckle.GridParams, resources: *const speckle.Resources, frames: usize) !void {
         const index = resources.kernel_index orelse return error.MissingPreparedSpeckleKernel;
         inline for (speckle.kernel_configs, 0..) |_, ii| {
             if (index == ii) return self.evaluateKernel(ii, .{ .sample = .linear }, shaderops.SpecklePrepared{ .elem_uvs = self.geometry.uvs, .resources = resources, .params = params, .bits = null }, frames);
@@ -439,7 +439,7 @@ test "speckle benchmark accumulator masks lanes and reduces deterministically" {
 test "speckle benchmark sink UV interpolation matches production grayscale shader" {
     const MatSlice = @import("matslice.zig").MatSlice;
     // Test this benchmark's interpolation/output boundary, not the evaluator accuracy matrix.
-    const params: speckle.Speckle2DParams = .{ .pattern = .gaussian, .cells_per_uv = .{ 3.25, 2.75 } };
+    const params: speckle.GridParams = .{ .pattern = .gaussian, .cells_per_uv = .{ 3.25, 2.75 } };
     const default_config = comptime params.resolve() catch unreachable;
     inline for (speckle.kernel_configs, 0..) |cfg, index| {
         if (comptime std.meta.eql(cfg, default_config)) {

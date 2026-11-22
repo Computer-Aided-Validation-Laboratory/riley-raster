@@ -25,7 +25,7 @@ const rotation = @import("rotation.zig");
 const rastcfg = @import("rasterconfig.zig");
 const sceneops = @import("sceneops.zig");
 const shaderops = @import("shaderops.zig");
-const speckleconfig = @import("speckleconfig.zig");
+const speckleparams = @import("speckleparams.zig");
 const texops = @import("textureops.zig");
 const vec = @import("vecstack.zig");
 
@@ -175,17 +175,23 @@ pub const CCameraInput = extern struct {
     subpixel_center_map: u32,
 };
 
-pub const CSpeckle2DParams = extern struct {
-    seed: u32,
+const CSpecklePattern = enum(u32) {
+    disk = 0,
+    gaussian = 1,
+    perlin = 2,
+};
+
+pub const CSpeckleParams = extern struct {
     pattern: u32,
-    cells_per_uv_0: F,
-    cells_per_uv_1: F,
+    seed: u32,
+    coverage: F,
+    radius: F,
     occupancy: F,
-    radius_mean: F,
-    radius_jitter: F,
+    jitter: F,
     edge_softness: F,
-    perlin_coverage_threshold: F,
-    perlin_coverage_transition_width: F,
+    perlin_cell_size: F,
+    perlin_threshold: F,
+    perlin_transition_width: F,
     foreground: F,
     background: F,
 };
@@ -289,7 +295,7 @@ pub const CShaderInput = extern struct {
     func_shader_coord_mode: u32,
     func_shader_params: CFuncShaderParams,
     normal_type: u32,
-    speckle_params: CSpeckle2DParams,
+    speckle_params: CSpeckleParams,
     speckle_output_scale: F,
     speckle_output_offset: F,
 };
@@ -815,28 +821,30 @@ fn normalTypeFromC(normal_type: u32) !shaderops.NormalType {
     };
 }
 
-fn specklePatternFromC(pattern: u32) !speckleconfig.Pattern {
-    return switch (pattern) {
-        0 => .disk,
-        1 => .gaussian,
-        2 => .perlin,
-        else => error.InvalidSpecklePattern,
-    };
-}
-
-fn speckleParamsFromC(in_params: CSpeckle2DParams) !shaderops.Speckle2DParams {
-    return .{
-        .pattern = try specklePatternFromC(in_params.pattern),
-        .seed = in_params.seed,
-        .cells_per_uv = .{ in_params.cells_per_uv_0, in_params.cells_per_uv_1 },
+fn speckleParamsFromC(in_params: CSpeckleParams) !speckleparams.SpeckleParams {
+    const pattern = std.enums.fromInt(CSpecklePattern, in_params.pattern) orelse
+        return error.InvalidSpecklePattern;
+    const physical = speckleparams.Speckle2DParams{
+        .coverage = in_params.coverage,
+        .radius = in_params.radius,
         .occupancy = in_params.occupancy,
-        .radius_mean = in_params.radius_mean,
-        .radius_jitter = in_params.radius_jitter,
+        .jitter = in_params.jitter,
         .edge_softness = in_params.edge_softness,
-        .perlin_coverage_threshold = in_params.perlin_coverage_threshold,
-        .perlin_coverage_transition_width = in_params.perlin_coverage_transition_width,
+        .seed = in_params.seed,
         .foreground = in_params.foreground,
         .background = in_params.background,
+    };
+    return switch (pattern) {
+        .disk => .{ .disk = physical },
+        .gaussian => .{ .gaussian = physical },
+        .perlin => .{ .perlin = .{
+            .cell_size = in_params.perlin_cell_size,
+            .threshold = in_params.perlin_threshold,
+            .transition_width = in_params.perlin_transition_width,
+            .seed = in_params.seed,
+            .foreground = in_params.foreground,
+            .background = in_params.background,
+        } },
     };
 }
 
@@ -2690,6 +2698,20 @@ test "C speckle mesh conversion owns UV metadata and preserves output controls" 
     input.shader.scaling_max = 2;
     input.shader.speckle_output_scale = -2;
     input.shader.speckle_output_offset = 0.5;
+    input.shader.speckle_params = .{
+        .pattern = 0,
+        .seed = 7,
+        .coverage = 0.5,
+        .radius = 0.05,
+        .occupancy = 1,
+        .jitter = 0,
+        .edge_softness = 0,
+        .perlin_cell_size = 0,
+        .perlin_threshold = 0,
+        .perlin_transition_width = 0,
+        .foreground = 0,
+        .background = 1,
+    };
     // Function-only fields are irrelevant to the dedicated shader.
     input.shader.func_shader_builtin = 9;
     input.shader.func_shader_coord_mode = std.math.maxInt(u32);
@@ -2703,6 +2725,17 @@ test "C speckle mesh conversion owns UV metadata and preserves output controls" 
     try std.testing.expect(shader.bits == null);
     try std.testing.expectEqual([2]F{ -1, 2 }, shader.scaling.fixed);
 
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const mesh_static = try meshpipe.initMeshStatic(arena.allocator(), &built.mesh_input);
+    const grid = mesh_static.shader.speckle.params;
+    // This triangle maps one reference-mesh unit to each UV unit.
+    try std.testing.expectApproxEqAbs(@as(F, 0.05), grid.radius_mean / grid.cells_per_uv[0], 1e-14);
+    try std.testing.expectApproxEqAbs(@as(F, 0.05), grid.radius_mean / grid.cells_per_uv[1], 1e-14);
+    try std.testing.expect(grid.evaluator == null);
+    try std.testing.expect(grid.neighbor_count == null);
+    try std.testing.expect(mesh_static.shader.speckle.resources.data == .classified_binned);
+
     input.shader.uvs.cols_num = 3;
     try std.testing.expectError(error.InvalidUVShape, buildMeshInput(alloc, &input));
     input.shader.uvs.cols_num = 2;
@@ -2712,7 +2745,7 @@ test "C speckle mesh conversion owns UV metadata and preserves output controls" 
     input.shader.uvs.elems = null;
     try std.testing.expectError(error.NullPointer, buildMeshInput(alloc, &input));
     input.shader.uvs.elems = &uvs;
-    input.shader.speckle_params.pattern = 3;
+    input.shader.speckle_params.pattern = std.math.maxInt(u32);
     try std.testing.expectError(error.InvalidSpecklePattern, buildMeshInput(alloc, &input));
     input.shader.speckle_params.pattern = 0;
     input.shader.shader_tag = 3;
@@ -2725,9 +2758,17 @@ test "C shader ABI matches the public header" {
     const c = @cImport({
         @cInclude("riley.h");
     });
+    try std.testing.expectEqual(c.RILEY_SPECKLE_DISK, @intFromEnum(CSpecklePattern.disk));
+    try std.testing.expectEqual(c.RILEY_SPECKLE_GAUSSIAN, @intFromEnum(CSpecklePattern.gaussian));
+    try std.testing.expectEqual(c.RILEY_SPECKLE_PERLIN, @intFromEnum(CSpecklePattern.perlin));
+    const physical: speckleparams.Speckle2DParams = .{ .coverage = 0.5, .radius = 0.05 };
+    const perlin: speckleparams.Perlin2DParams = .{ .cell_size = 0.1 };
+    try std.testing.expectEqual(c.RILEY_SPECKLE_DEFAULT_SEED, physical.seed);
+    try std.testing.expectEqual(c.RILEY_SPECKLE_DEFAULT_SEED, perlin.seed);
+    try std.testing.expectEqual(@as(F, c.RILEY_PERLIN_DEFAULT_TRANSITION_WIDTH), perlin.transition_width);
     comptime {
         for (.{
-            .{ CSpeckle2DParams, c.CSpeckle2DParams },
+            .{ CSpeckleParams, c.CSpeckleParams },
             .{ CFuncShaderParams, c.CFuncShaderParams },
             .{ CShaderInput, c.CShaderInput },
             .{ CMeshInput, c.CMeshInput },
@@ -2758,38 +2799,50 @@ test "C function builtin IDs remain zero through eight and reject nine" {
     try std.testing.expectError(error.InvalidFuncShaderBuiltin, funcShaderBuiltinFromC(std.math.maxInt(u32)));
 }
 
-test "C speckle conversion validates patterns and leaves evaluator policy at defaults" {
-    var input = CSpeckle2DParams{
-        .seed = 7,
+test "C speckle conversion preserves physical and Perlin tags and ignores inactive fields" {
+    var input = CSpeckleParams{
         .pattern = 0,
-        .cells_per_uv_0 = 3.25,
-        .cells_per_uv_1 = 2.75,
+        .seed = 7,
+        .coverage = 0.5,
+        .radius = 0.035,
         .occupancy = 0.7,
-        .radius_mean = 0.35,
-        .radius_jitter = 0.08,
-        .edge_softness = 0.0,
-        .perlin_coverage_threshold = 0.1,
-        .perlin_coverage_transition_width = 0.2,
+        .jitter = 0.008,
+        .edge_softness = 0,
+        .perlin_cell_size = std.math.nan(F),
+        .perlin_threshold = std.math.nan(F),
+        .perlin_transition_width = std.math.nan(F),
         .foreground = 0.17,
         .background = 0.83,
     };
-    const patterns = [_]speckleconfig.Pattern{ .disk, .gaussian, .perlin };
-    for (patterns, 0..) |pattern, index| {
+    for (0..2) |index| {
         input.pattern = @intCast(index);
+        input.edge_softness = if (index == 0) 0.004 else 0;
         const params = try speckleParamsFromC(input);
-        try std.testing.expectEqual(pattern, params.pattern);
-        try std.testing.expectEqual([2]F{ 3.25, 2.75 }, params.cells_per_uv);
-        inline for (.{ "seed", "occupancy", "radius_mean", "radius_jitter", "edge_softness", "perlin_coverage_threshold", "perlin_coverage_transition_width", "foreground", "background" }) |field| {
-            try std.testing.expectEqual(@field(input, field), @field(params, field));
+        try std.testing.expectEqual(index, @intFromEnum(std.meta.activeTag(params)));
+        const physical = switch (params) {
+            .disk, .gaussian => |p| p,
+            .perlin => unreachable,
+        };
+        inline for (.{ "coverage", "radius", "occupancy", "jitter", "edge_softness", "seed", "foreground", "background" }) |field| {
+            try std.testing.expectEqual(@field(input, field), @field(physical, field));
         }
-        try std.testing.expect(params.evaluator == null);
-        try std.testing.expect(params.neighbor_count == null);
     }
-    for ([_]u32{ 3, std.math.maxInt(u32) }) |invalid| {
-        input.pattern = invalid;
-        try std.testing.expectError(
-            error.InvalidSpecklePattern,
-            speckleParamsFromC(input),
-        );
+    input.pattern = @intFromEnum(CSpecklePattern.perlin);
+    input.perlin_cell_size = 0.13;
+    input.perlin_threshold = 0.1;
+    input.perlin_transition_width = 0.2;
+    inline for (.{ "coverage", "radius", "occupancy", "jitter", "edge_softness" }) |field| {
+        @field(input, field) = std.math.nan(F);
+    }
+    const params = try speckleParamsFromC(input);
+    const perlin = switch (params) {
+        .perlin => |p| p,
+        else => return error.TestUnexpectedResult,
+    };
+    try std.testing.expectEqual(input.perlin_cell_size, perlin.cell_size);
+    try std.testing.expectEqual(input.perlin_threshold, perlin.threshold);
+    try std.testing.expectEqual(input.perlin_transition_width, perlin.transition_width);
+    inline for (.{ "seed", "foreground", "background" }) |field| {
+        try std.testing.expectEqual(@field(input, field), @field(perlin, field));
     }
 }

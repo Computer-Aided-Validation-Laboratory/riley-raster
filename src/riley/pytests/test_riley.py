@@ -157,7 +157,7 @@ def _get_zig_run_cmd() -> list[str]:
         elif arch in ("arm64", "aarch64"):
             target_triple = "aarch64-windows-msvc"
         else:
-            target_triple = "i386-windows-msvc"
+            target_triple = "x86-windows-msvc"
         cmd.extend(["-target", target_triple])
     cmd.append(str(PROJECT_ROOT / "src" / "run_all_demos.zig"))
     return cmd
@@ -231,9 +231,10 @@ def _run_command(label: str, cmd: list[str], env: dict[str, str]) -> float:
         cmd,
         check=False,
         cwd=PROJECT_ROOT,
-        env=env,
+        env=dict(env, PYTHONIOENCODING="utf-8"),
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     if res.returncode != 0:
         print(f"FAILED {label} (exit code {res.returncode}):")

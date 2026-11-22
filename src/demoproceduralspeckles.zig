@@ -25,8 +25,8 @@ const demo_spec = pdemo.DemoSpec{
     .command_name = "demo-procedural-speckles",
     .output_default = "./out/demo-procedural-speckles",
     .pixels_num_default = .{ 720, 450 },
+    .length_default = 0.02,
     .dimensions = .hidden,
-    .mask_report_label = "generated mask allocation",
 };
 
 // --------------------------------------------------------------------------------------
@@ -34,11 +34,9 @@ const demo_spec = pdemo.DemoSpec{
 // --------------------------------------------------------------------------------------
 
 pub fn main(init: std.process.Init) !void {
-    var arena = std.heap.ArenaAllocator.init(init.gpa);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    const args = (try pdemo.parseDemoArgs(init.minimal.args.vector, demo_spec)) orelse return;
+    const allocator = init.arena.allocator();
+    const raw_args = try init.minimal.args.toSlice(allocator);
+    const args = (try pdemo.parseDemoArgs(raw_args, demo_spec)) orelse return;
 
     const workers: u16 = 4;
     const config = rastcfg.RasterConfig{
@@ -54,7 +52,7 @@ pub fn main(init: std.process.Init) !void {
         .report = .{ .mode = .off },
     };
     var threaded_io = riley.getThreadedIo(
-        allocator,
+        init.gpa,
         init.minimal,
         workers,
     );
@@ -62,7 +60,7 @@ pub fn main(init: std.process.Init) !void {
     const io = threaded_io.io();
 
     std.debug.print("Procedural speckle prototype\n", .{});
-    try pdemo.printProceduralConfig(args.params, args.pixels_num, demo_spec);
+    pdemo.printProceduralConfig(args.params, args.pixels_num, demo_spec);
     std.debug.print("Loading UV-mapped sphere and preparing three deformation frames...\n", .{});
 
     const sim_data = try meshio.loadSimData(
@@ -109,8 +107,8 @@ pub fn main(init: std.process.Init) !void {
     };
 
     std.debug.print("Rendering reference, stretch, and twist frames...\n", .{});
-    const images = try riley.rasterAdvanced(
-        allocator,
+    _ = try riley.rasterAdvanced(
+        init.gpa,
         io,
         &[_]camera.CameraInput{camera_input},
         &[_]meshpipeline.MeshInput{mesh_input},
@@ -118,11 +116,6 @@ pub fn main(init: std.process.Init) !void {
         args.out_dir,
         .{ .render_groups = .{ .supplied = &render_groups } },
     );
-    if (images) |img_const| {
-        var img = img_const;
-        allocator.free(img.slice);
-        img.deinit(allocator);
-    }
 
     std.debug.print("Demo complete. Images saved under {s}/\n", .{args.out_dir});
 }
@@ -139,19 +132,20 @@ fn makeDemoDisp(
     var disp = try meshio.Field.initAlloc(allocator, 3, node_num, 3);
 
     var center = [3]F{ 0.0, 0.0, 0.0 };
+    var z_min = coords.z(0);
+    var z_max = z_min;
     for (0..node_num) |node_idx| {
+        const z = coords.z(node_idx);
         center[0] += coords.x(node_idx);
         center[1] += coords.y(node_idx);
-        center[2] += coords.z(node_idx);
+        center[2] += z;
+        z_min = @min(z_min, z);
+        z_max = @max(z_max, z);
     }
     const node_num_f: F = @floatFromInt(node_num);
     for (0..3) |axis| center[axis] /= node_num_f;
 
-    var z_extent: F = 0.0;
-    for (0..node_num) |node_idx| {
-        z_extent = @max(z_extent, @abs(coords.z(node_idx) - center[2]));
-    }
-    z_extent = @max(z_extent, 1.0e-12);
+    const z_extent = @max(@abs(z_min - center[2]), @abs(z_max - center[2]), 1.0e-12);
 
     for (0..node_num) |node_idx| {
         const rel_x = coords.x(node_idx) - center[0];

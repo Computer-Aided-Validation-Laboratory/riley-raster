@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +13,7 @@ from riley.cython.riley import (
     MeshType,
     NodalShader,
     RileyShader,
+    SpeckleShader,
     TextureShader,
 )
 from riley.python.meshconst import (
@@ -266,7 +267,7 @@ def _prepare_shader(
     Parameters
     ----------
     shader : RileyShader
-        Input texture, nodal, or function shader.
+        Input texture, nodal, function, or procedural speckle shader.
     nodes_num : int
         Expected original node count `N`.
     source_node_idxs : numpy.ndarray
@@ -283,6 +284,11 @@ def _prepare_shader(
         If shader properties or field array shapes/dtypes are invalid.
     """
     match shader:
+        case SpeckleShader():
+            return replace(
+                shader, uvs=_prepare_uvs(shader.uvs, nodes_num, source_node_idxs),
+            )
+
         case TextureShader():
             texture = np.asarray(shader.texture)
 
@@ -545,7 +551,10 @@ def create_mesh(
         Connectivity table of shape `(E, M)` or `(M, E)` with integer dtype,
         where `E` is elements and `M` is nodes per element.
     shader : RileyShader
-        Configured texture, nodal, or procedural function shader.
+        Configured texture, nodal, function, or procedural speckle shader.
+        Texture and speckle UVs are indexed by the input nodes and subset
+        to the retained render nodes. See :doc:`/python-api/speckles` for
+        calibration of the resulting mesh.
     disp : tuple of numpy.ndarray or None, default=None
         Optional displacement field tuple `(disp_x, disp_y, disp_z)`, where
         each component has shape `(N,)` or `(N, T)` with floating dtype.

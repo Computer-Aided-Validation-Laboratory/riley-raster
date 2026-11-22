@@ -16,7 +16,7 @@ const demo_spec = pdemo.DemoSpec{
     .command_name = "demo-procedural-rabbit",
     .output_default = "out/demo-procedural-rabbit",
     .pixels_num_default = .{ 800, 500 },
-    .mask_report_label = "mask storage",
+    .length_default = 0.005,
 };
 
 // --------------------------------------------------------------------------------------
@@ -24,11 +24,15 @@ const demo_spec = pdemo.DemoSpec{
 // --------------------------------------------------------------------------------------
 
 pub fn main(init: std.process.Init) !void {
-    try pdemo.runStaticTri6Demo(demo_spec, init.gpa, init.minimal, .{
+    try pdemo.runStaticTri6Demo(demo_spec, init, .{
         .coords_path = data_dir ++ "coords.csv",
         .connect_path = data_dir ++ "connectivity.csv",
         .uvs_path = data_dir ++ "uvs.csv",
-        .rotation = Rotation.init(0.0, std.math.pi, 0.0),
+        // The committed atlas reaches V = -0.000792 between nodes. A translation
+        // keeps the quadratic patch in the unit domain without changing its metric.
+        .v_offset = 0.001,
+        // Match the camera view in the texture-mapped rabbit demos.
+        .rotation = Rotation.init(0.0, 0.0, 0.0),
         .fov_scale = 1.01,
         .title = "Procedural rabbit demo",
         .image_label = "Rabbit",

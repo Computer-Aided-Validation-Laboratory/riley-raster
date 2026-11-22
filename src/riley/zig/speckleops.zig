@@ -23,10 +23,13 @@ const speckle_mask_samples_per_cell: F =
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-/// Per-mesh runtime settings, immutable for the lifetime of prepared resources.
+/// Internal cell-space settings, immutable for the lifetime of prepared resources.
+/// User mesh inputs use speckleparams.SpeckleParams instead; native evaluator/reference
+/// tools can import this implementation module directly. Defaults are internal
+/// fixture conveniences, not public physical-pattern defaults.
 /// Except for mock, UVs are clamped to [0, 1], then mapped to cells as uv * cells_per_uv.
-/// UVs must be finite (full input validation scans them); the clamp still keeps nonfinite
-/// UVs in bounds (NaN clamps to 1), so samplers never recheck finiteness.
+/// Friendly mesh preparation checks the interpolated UV domain before applying this clamp.
+/// The raw evaluator also keeps nonfinite UVs in bounds (NaN clamps to 1).
 /// Mock is an experimental ablation: raw 0.5 * (u + v), without speckle resources or mapping.
 /// For non-mock disk/Gaussian shapes, radius_mean + radius_jitter + edge_softness must not
 /// exceed 0.5 for one neighbor, or 1.0 otherwise.
@@ -34,16 +37,17 @@ const speckle_mask_samples_per_cell: F =
 /// Ignored shape-specific fields are not validated; all other floating values must be finite.
 /// On each axis, [-1, cells_per_uv + 1] must fit within
 /// [-2^16, 2^16] for f32 or [-2^45, 2^45] for f64 to retain sub-cell precision.
-pub const Speckle2DParams = struct {
+pub const GridParams = struct {
     pattern: speckleconfig.Pattern = .disk,
     /// Experimental overrides; defaults-only builds reject every explicit value.
     evaluator: ?speckleconfig.Evaluator = null,
     neighbor_count: ?speckleconfig.Neighborhood = null,
     /// Deterministic seed; no automatic random seeding.
-    seed: u32 = 0xa511e9b3,
+    seed: u32 = speckleconfig.default_seed,
     /// Positive cell counts per UV unit along each axis; noninteger values are supported.
-    cells_per_uv: [2]F = .{ 192.0, 160.0 },
+    cells_per_uv: [2]F = .{ 192, 160 },
     /// Active-cell probability in [0, 1], not image coverage; ignored by Perlin/mock.
+    /// Uses a 53-bit uniform variate compared in f64, also in f32 rendering.
     /// User-facing disk/Gaussian requests require a strictly positive value.
     occupancy: F = 0.9,
     /// Positive disk radius or Gaussian three-sigma support, in cell units; ignored by Perlin.
@@ -58,16 +62,30 @@ pub const Speckle2DParams = struct {
     perlin_coverage_threshold: F = 0.0,
     /// Nonnegative Perlin transition width; zero selects a hard threshold.
     /// Ignored by disk/Gaussian shapes.
-    perlin_coverage_transition_width: F = 0.12,
+    perlin_coverage_transition_width: F = speckleconfig.default_perlin_transition_width,
     /// Foreground intensity in [0, 1], before renderer output scaling.
     /// User-facing requests must use a value different from background.
     foreground: F = 0.0,
     /// Background intensity in [0, 1], before renderer output scaling.
     background: F = 1.0,
 
+    pub const ValidationError = speckleconfig.ResolveError || PerlinControlError || ColorError || error{
+        InvalidSpeckleEdgeSoftness,
+        InvalidSpeckleCellsPerUV,
+        InvalidSpeckleOccupancy,
+        InvalidSpeckleRadiusMean,
+        InvalidSpeckleRadiusJitter,
+        InvalidDirectFixedSpeckleRadiusJitter,
+        InvalidSpeckleRadiusRange,
+        InvalidDirectFixedSpeckleRadius,
+        InvalidSpeckleNeighborhoodRadius,
+        SpeckleCellCoordinateOutOfRange,
+        SpeckleColorsMustDiffer,
+    };
+
     /// Resolve a generation configuration and validate numerical constraints before allocating.
-    /// Equal colors and zero occupancy are supported here; validate() adds user-facing policy.
-    pub fn resolve(self: Speckle2DParams) !speckleconfig.Config {
+    /// Equal colors and zero occupancy are supported here; validate() requires contrast/occupancy.
+    pub fn resolve(self: GridParams) ValidationError!speckleconfig.Config {
         if (!std.math.isFinite(self.edge_softness) or self.edge_softness < 0.0) {
             return error.InvalidSpeckleEdgeSoftness;
         }
@@ -82,11 +100,11 @@ pub const Speckle2DParams = struct {
         return config;
     }
 
-    /// Validate user input, including nonzero contrast and positive disk/Gaussian occupancy.
+    /// Check the internal grid contract plus nonzero contrast and positive occupancy.
     /// Low-level preparation uses resolve() and allows constant/empty reference patterns.
-    pub fn validate(self: Speckle2DParams) !void {
+    pub fn validate(self: GridParams) ValidationError!void {
         const config = try self.resolve();
-        if (self.foreground == self.background) return error.SpeckleColorsMustDiffer;
+        try validateColorContrast(self.foreground, self.background);
         if (config.pattern()) |pattern| {
             if (pattern != .perlin and self.occupancy == 0.0) return error.InvalidSpeckleOccupancy;
         }
@@ -94,7 +112,7 @@ pub const Speckle2DParams = struct {
 
     // Per-configuration numeric checks, run by resolve() after its softness check.
     // Prepared generators rely on this single validation and never repeat it.
-    fn validateResolved(self: Speckle2DParams, config: speckleconfig.Config) !void {
+    fn validateResolved(self: GridParams, config: speckleconfig.Config) ValidationError!void {
         const evaluator = std.meta.activeTag(config);
         for (self.cells_per_uv) |cell_count| {
             if (!std.math.isFinite(cell_count) or cell_count <= 0.0) {
@@ -102,14 +120,10 @@ pub const Speckle2DParams = struct {
             }
         }
         if (config.pattern() == .perlin) {
-            if (!std.math.isFinite(self.perlin_coverage_threshold)) {
-                return error.InvalidSpecklePerlinCoverageThreshold;
-            }
-            if (!std.math.isFinite(self.perlin_coverage_transition_width) or
-                self.perlin_coverage_transition_width < 0.0)
-            {
-                return error.InvalidSpecklePerlinCoverageTransitionWidth;
-            }
+            try validatePerlinControls(
+                self.perlin_coverage_threshold,
+                self.perlin_coverage_transition_width,
+            );
         } else if (evaluator != .mock) {
             if (!std.math.isFinite(self.occupancy) or
                 self.occupancy < 0.0 or self.occupancy > 1.0)
@@ -135,16 +149,7 @@ pub const Speckle2DParams = struct {
                     error.InvalidSpeckleNeighborhoodRadius;
             }
         }
-        if (!std.math.isFinite(self.foreground) or
-            self.foreground < 0.0 or self.foreground > 1.0)
-        {
-            return error.InvalidSpeckleForeground;
-        }
-        if (!std.math.isFinite(self.background) or
-            self.background < 0.0 or self.background > 1.0)
-        {
-            return error.InvalidSpeckleBackground;
-        }
+        try validateColors(self.foreground, self.background);
 
         // Preserve at least eight bits of sub-cell precision in procedural coordinates.
         const cell_coord_lim: F = if (F == f32)
@@ -157,20 +162,42 @@ pub const Speckle2DParams = struct {
     }
 };
 
+pub const PerlinControlError = error{
+    InvalidSpecklePerlinThreshold,
+    InvalidSpecklePerlinTransitionWidth,
+};
+
+pub fn validatePerlinControls(threshold: F, transition_width: F) PerlinControlError!void {
+    if (!std.math.isFinite(threshold)) return error.InvalidSpecklePerlinThreshold;
+    if (!std.math.isFinite(transition_width) or transition_width < 0)
+        return error.InvalidSpecklePerlinTransitionWidth;
+}
+
+pub const ColorError = error{ InvalidSpeckleForeground, InvalidSpeckleBackground };
+
+pub fn validateColors(foreground: F, background: F) ColorError!void {
+    if (!(foreground >= 0 and foreground <= 1)) return error.InvalidSpeckleForeground;
+    if (!(background >= 0 and background <= 1)) return error.InvalidSpeckleBackground;
+}
+
+pub fn validateColorContrast(foreground: F, background: F) error{SpeckleColorsMustDiffer}!void {
+    if (foreground == background) return error.SpeckleColorsMustDiffer;
+}
+
 pub const SpeckleDisk2D = struct {
     center: [2]F,
     radius: F,
 };
 
 pub const SpeckleList2D = struct {
-    params: Speckle2DParams,
+    params: GridParams,
     disks: []const SpeckleDisk2D,
 };
 
 /// Row-major cells, each containing a vertical strip of 3/2/1 disk records.
 /// Owns one record allocation, or center-only allocation for fixed radii, without a cell index.
 pub const StripSpeckleList2D = struct {
-    params: Speckle2DParams,
+    params: GridParams,
     disks: []const SpeckleDisk2D = &.{},
     centers: []const [2]F = &.{},
     cell_origin: [2]i64,
@@ -204,7 +231,7 @@ pub const ClassifiedIndexedSpeckle2D = struct {
 };
 
 pub const DirectFixedSpeckle2D = struct {
-    params: Speckle2DParams,
+    params: GridParams,
     /// Packed descriptors in zero-origin row-major cells; zero denotes an inactive cell.
     cells: []const u64,
     cell_dims: [2]usize,
@@ -213,7 +240,7 @@ pub const DirectFixedSpeckle2D = struct {
 
 /// Exact gradient IDs, shared by adjacent cells; preparation requires a representable cache.
 pub const PerlinLattice2D = struct {
-    params: Speckle2DParams,
+    params: GridParams,
     gradients: []const u8,
     dims: [2]usize,
 };
@@ -223,7 +250,7 @@ pub const SpeckleMask2D = struct {
     dims: [2]usize,
     row_stride: usize,
     uv_to_texel: [2]F,
-    params: Speckle2DParams,
+    params: GridParams,
 };
 
 pub const GaussianDiskCoefficients = struct { center: [2]F, outer2: F, sigma2: F };
@@ -241,7 +268,7 @@ pub const CellBinnedRecords = union(enum) {
 /// Records are duplicated into intersected, stencil-eligible cells during setup;
 /// immutable sampling traverses only one contiguous cell list, never neighbours.
 pub const CellBinnedSpeckle2D = struct {
-    params: Speckle2DParams,
+    params: GridParams,
     offsets: []const usize,
     records: CellBinnedRecords,
     dims: [2]usize,
@@ -279,7 +306,7 @@ pub const CellBinnedSpeckle2D = struct {
 /// Fixed radii use nine-slot X/Y planes; only counts[cell] slots are initialized.
 /// Variable radii use CSR X/Y/radius² planes with u32 offsets.
 pub const ClassifiedBinnedSpeckle2D = struct {
-    params: Speckle2DParams,
+    params: GridParams,
     dims: [2]usize,
     cell_dims: [2]usize,
     coordinates: []const F = &.{},
@@ -322,12 +349,22 @@ pub const Resources = struct {
     kernel_index: ?u8 = null,
     data: Backing = .none,
 
+    // Keep the preparation contract stable when experimental evaluators are compiled out.
+    const InitError = GridParams.ValidationError || std.mem.Allocator.Error || error{
+        SpeckleClassificationTooLarge,
+        SpeckleCellBinsTooLarge,
+        SpecklePerlinLatticeTooLarge,
+        SpeckleListTooLarge,
+        DirectFixedSpeckleTooLarge,
+        SpeckleMaskTooLarge,
+    };
+
     /// Prepare only the resolved backing; keep parameters/configuration immutable thereafter.
     // Classification setup is alignment-sensitive; 64-byte alignment avoids a measured regression.
     pub fn init(
         outer_alloc: std.mem.Allocator,
-        params: Speckle2DParams,
-    ) align(64) !Resources {
+        params: GridParams,
+    ) align(64) InitError!Resources {
         const resolved = try params.resolve();
         inline for (generation_configs) |config| {
             if (std.meta.eql(resolved, config)) {
@@ -385,7 +422,7 @@ pub fn Kernel(comptime kernel_index: usize) type {
         pub inline fn sampleScal(
             u: F,
             v: F,
-            params: Speckle2DParams,
+            params: GridParams,
             resources: *const Resources,
         ) F {
             std.debug.assert(resources.kernel_index == @as(?u8, index_tag));
@@ -396,7 +433,7 @@ pub fn Kernel(comptime kernel_index: usize) type {
             u: VecSF,
             v: VecSF,
             active: VecSB,
-            params: Speckle2DParams,
+            params: GridParams,
             resources: *const Resources,
         ) VecSF {
             std.debug.assert(resources.kernel_index == @as(?u8, index_tag));
@@ -407,7 +444,7 @@ pub fn Kernel(comptime kernel_index: usize) type {
 
 /// Convenience dispatch for raw callers/tests. Production uses Kernel(index) instead.
 /// Unprepared calls require valid parameters and use the procedural reference without allocation.
-pub fn sampleScal(u: F, v: F, params: Speckle2DParams, resources: *const Resources) F {
+pub fn sampleScal(u: F, v: F, params: GridParams, resources: *const Resources) F {
     @setEvalBranchQuota(100_000);
     if (resources.kernel_index) |index| {
         inline for (kernel_configs, 0..) |_, ii| {
@@ -431,7 +468,7 @@ pub fn sampleSIMD(
     u: VecSF,
     v: VecSF,
     active: VecSB,
-    params: Speckle2DParams,
+    params: GridParams,
     resources: *const Resources,
 ) VecSF {
     // The opt-in raw dispatcher expands all available kernels, including their SIMD lanes.
@@ -460,7 +497,7 @@ pub fn sampleSIMD(
 /// Resources must be prepared from exactly params and remain immutable while borrowed.
 /// SIMD builds use numerically identical prepared kernels; zero signs may differ.
 /// Performs no allocation, I/O, supersampling, or additional intensity mapping.
-pub fn fillImage(image: matslice.MatSlice(F), params: Speckle2DParams, resources: *const Resources) void {
+pub fn fillImage(image: matslice.MatSlice(F), params: GridParams, resources: *const Resources) void {
     std.debug.assert(image.slice.len == image.rows_num * image.cols_num);
     const index = resources.kernel_index.?;
     const rows: F = @floatFromInt(image.rows_num);
@@ -511,10 +548,25 @@ fn hashSpeckleCell(cell_x: i64, cell_y: i64, seed: u32) u64 {
     return std.hash.Wyhash.hash(seed, &key);
 }
 
-// Split one cell hash into four variates to avoid additional hash evaluations.
+// Keep centre/radius draws stable; occupancy uses a separately mixed 53-bit variate.
 fn randomUnitFromHash(hash: u64, comptime shift: u6) F {
     const bits: u16 = @truncate(hash >> shift);
     return @as(F, @floatFromInt(bits)) / 65_536.0;
+}
+
+// Shared by preparation and the experimental cell-hash kernel. Keep the comparison
+// in f64 even for f32 rendering: 16/24-bit draws materially bias dilute occupancies.
+// SplitMix64's salted avalanche decorrelates occupancy from the unchanged centre/radius
+// bit slices. Full/empty occupancy skips this extra mix, including on the hot hash path.
+inline fn occupied(hash: u64, probability: f64) bool {
+    if (probability == 1) return true;
+    if (probability == 0) return false;
+    var mixed = hash +% 0x9e3779b97f4a7c15;
+    mixed = (mixed ^ (mixed >> 30)) *% 0xbf58476d1ce4e5b9;
+    mixed = (mixed ^ (mixed >> 27)) *% 0x94d049bb133111eb;
+    mixed ^= mixed >> 31;
+    const unit = @as(f64, @floatFromInt(mixed >> 11)) * 0x1.0p-53;
+    return unit < probability;
 }
 
 // First representable p with RN(p*R) >= index; integer indices are exact under
@@ -534,7 +586,7 @@ fn directMicrocellBoundary(comptime T: type, comptime r: u8, index: u64) T {
     }
 }
 
-fn generatePerlinLattice(allocator: std.mem.Allocator, params: Speckle2DParams) !PerlinLattice2D {
+fn generatePerlinLattice(allocator: std.mem.Allocator, params: GridParams) !PerlinLattice2D {
     // Owners 0..floor(C) plus their shared upper corners.
     const corners = [2]u64{
         @as(u64, @intFromFloat(@floor(params.cells_per_uv[0]))) + 2,
@@ -594,7 +646,7 @@ fn perlinIDConstant(comptime T: type, comptime value: u8) T {
     return if (T == u8) value else @splat(value);
 }
 
-fn perlinAnalytic(comptime T: type, x: T, y: T, ids: anytype, params: Speckle2DParams) T {
+fn perlinAnalytic(comptime T: type, x: T, y: T, ids: anytype, params: GridParams) T {
     const one = perlinSplat(T, 1);
     const fx = x * x * x * (x * (x * perlinSplat(T, 6) - perlinSplat(T, 15)) + perlinSplat(T, 10));
     const fy = y * y * y * (y * (y * perlinSplat(T, 6) - perlinSplat(T, 15)) + perlinSplat(T, 10));
@@ -678,11 +730,11 @@ const ClassifiedBinned = struct {
     const Data = ClassifiedBinnedSpeckle2D;
     const Ops = Implementation(.classified_binned);
 
-    fn generate(allocator: std.mem.Allocator, params: Speckle2DParams) !Data {
+    fn generate(allocator: std.mem.Allocator, params: GridParams) !Data {
         return if (params.radius_jitter == 0) generateImpl(true, allocator, params) else generateImpl(false, allocator, params);
     }
 
-    fn generateImpl(comptime fixed: bool, allocator: std.mem.Allocator, params: Speckle2DParams) !Data {
+    fn generateImpl(comptime fixed: bool, allocator: std.mem.Allocator, params: GridParams) !Data {
         const dims: [2]usize = .{
             classifiedAxisDim(Rx, params.cells_per_uv[0]) orelse return error.SpeckleClassificationTooLarge,
             classifiedAxisDim(Ry, params.cells_per_uv[1]) orelse return error.SpeckleClassificationTooLarge,
@@ -924,7 +976,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         /// or their owning static arena. Procedural cell hashing needs no allocation.
         fn generateConfiguredResources(
             outer_alloc: std.mem.Allocator,
-            params: Speckle2DParams,
+            params: GridParams,
         ) !Resources {
             return .{ .data = switch (comptime evaluator) {
                 .cell_hash, .mock => .none,
@@ -950,7 +1002,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         inline fn samplePreparedScal(
             u: F,
             v: F,
-            params: Speckle2DParams,
+            params: GridParams,
             resources: *const Resources,
         ) F {
             return switch (comptime evaluator) {
@@ -971,7 +1023,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             u: VecSF,
             v: VecSF,
             active: VecSB,
-            params: Speckle2DParams,
+            params: GridParams,
             resources: *const Resources,
         ) VecSF {
             return switch (comptime evaluator) {
@@ -1018,7 +1070,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 
         /// Owner cells 0..floor(C) plus padding, or null if dimensions/count cannot fit usize.
         fn speckleProceduralCellBounds(
-            params: Speckle2DParams,
+            params: GridParams,
             comptime padding: i64,
         ) ?SpeckleCellBounds {
             const min = [2]i64{ -padding, -padding };
@@ -1031,7 +1083,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             return .{ .min = min, .max = max, .dims = .{ @intCast(dims[0]), @intCast(dims[1]) }, .count = count };
         }
 
-        fn classifiedDims(params: Speckle2DParams) [2]u64 {
+        fn classifiedDims(params: GridParams) [2]u64 {
             const r = buildconfig.speckle_mask_samples_per_cell;
             return .{ classifiedAxisCount(r, params.cells_per_uv[0]), classifiedAxisCount(r, params.cells_per_uv[1]) };
         }
@@ -1085,7 +1137,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             cell_x: i64,
             cell_y: i64,
             hash: u64,
-            params: Speckle2DParams,
+            params: GridParams,
         ) SpeckleDisk2D {
             const radius_variation = 2.0 * randomUnitFromHash(hash, 48) - 1.0;
             const edge_softness = if (configured_soft_edges) params.edge_softness else 0.0;
@@ -1125,16 +1177,16 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         fn speckleDiskForCell(
             cell_x: i64,
             cell_y: i64,
-            params: Speckle2DParams,
+            params: GridParams,
         ) ?SpeckleDisk2D {
             const hash = hashSpeckleCell(cell_x, cell_y, params.seed);
-            if (randomUnitFromHash(hash, 0) >= params.occupancy) return null;
+            if (!occupied(hash, params.occupancy)) return null;
             return speckleDiskFromHash(cell_x, cell_y, hash, params);
         }
 
         fn generateSpeckleList2D(
             allocator: std.mem.Allocator,
-            params: Speckle2DParams,
+            params: GridParams,
         ) !SpeckleList2D {
             const cell_bounds = speckleProceduralCellBounds(params, 1) orelse
                 return error.SpeckleListTooLarge;
@@ -1169,7 +1221,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             };
         }
 
-        fn generateCellBinnedSpeckle2D(outer_alloc: std.mem.Allocator, params: Speckle2DParams) !CellBinnedSpeckle2D {
+        fn generateCellBinnedSpeckle2D(outer_alloc: std.mem.Allocator, params: GridParams) !CellBinnedSpeckle2D {
             if (params.radius_jitter == 0) return generateCellBinnedRecords(.strided, outer_alloc, params);
             if (speckle_shape == .gaussian) return generateCellBinnedRecords(.gaussian, outer_alloc, params);
             return generateCellBinnedRecords(.disks, outer_alloc, params);
@@ -1185,7 +1237,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             };
         }
 
-        fn generateCellBinnedRecords(comptime layout: CellBinnedLayout, outer_alloc: std.mem.Allocator, params: Speckle2DParams) !CellBinnedSpeckle2D {
+        fn generateCellBinnedRecords(comptime layout: CellBinnedLayout, outer_alloc: std.mem.Allocator, params: GridParams) !CellBinnedSpeckle2D {
             const Record = CellBinnedRecord(layout);
             const bounds = speckleProceduralCellBounds(params, 0) orelse return error.SpeckleCellBinsTooLarge;
             const owners = speckleProceduralCellBounds(params, 1) orelse return error.SpeckleCellBinsTooLarge;
@@ -1231,7 +1283,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         fn assignCellBinnedDisks(
             comptime assign: bool,
             comptime layout: CellBinnedAssignment,
-            params: Speckle2DParams,
+            params: GridParams,
             owners: SpeckleCellBounds,
             bounds: SpeckleCellBounds,
             cursors: switch (layout) {
@@ -1368,12 +1420,12 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             else => unreachable,
         };
 
-        fn generateStripSpeckleList2D(allocator: std.mem.Allocator, params: Speckle2DParams) !StripSpeckleList2D {
+        fn generateStripSpeckleList2D(allocator: std.mem.Allocator, params: GridParams) !StripSpeckleList2D {
             if (params.radius_jitter == 0.0) return generateStripSpeckleRecords(true, allocator, params);
             return generateStripSpeckleRecords(false, allocator, params);
         }
 
-        fn generateStripSpeckleRecords(comptime fixed_radius: bool, allocator: std.mem.Allocator, params: Speckle2DParams) !StripSpeckleList2D {
+        fn generateStripSpeckleRecords(comptime fixed_radius: bool, allocator: std.mem.Allocator, params: GridParams) !StripSpeckleList2D {
             const bounds = speckleProceduralCellBounds(params, 1) orelse return error.SpeckleListTooLarge;
             const Record = if (fixed_radius) [2]F else SpeckleDisk2D;
             const count = gridCount(Record, .{ bounds.count, strip_length }) orelse return error.SpeckleListTooLarge;
@@ -1402,7 +1454,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                         const cell_y = bounds.min[1] + @as(i64, @intCast(yy)) + @as(i64, @intCast(ii)) - (if (speckle_neighbor_count == 9) @as(i64, 1) else 0);
                         records[base + ii] = if (fixed_radius) blk: {
                             const hash = hashSpeckleCell(cell_x, cell_y, params.seed);
-                            break :blk if (randomUnitFromHash(hash, 0) < params.occupancy) .{
+                            break :blk if (occupied(hash, params.occupancy)) .{
                                 speckleCenter(cell_x, @truncate(hash >> 16), center_min, extent, support2).coordinate,
                                 speckleCenter(cell_y, @truncate(hash >> 32), center_min, extent, support2).coordinate,
                             } else .{ std.math.inf(F), 0.0 };
@@ -1547,7 +1599,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 
         fn generateDirectFixedSpeckle2D(
             allocator: std.mem.Allocator,
-            params: Speckle2DParams,
+            params: GridParams,
         ) !DirectFixedSpeckle2D {
             const cell_bounds = speckleProceduralCellBounds(params, 0) orelse return error.DirectFixedSpeckleTooLarge;
             _ = std.math.mul(usize, cell_bounds.count, @sizeOf(u64)) catch
@@ -1562,9 +1614,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     for (0..cell_bounds.dims[0]) |xx| {
                         const cell_x: i64 = @intCast(xx);
                         const hash = hashSpeckleCell(cell_x, cell_y, params.seed);
-                        if (params.occupancy == 1.0 or
-                            randomUnitFromHash(hash, 0) < params.occupancy)
-                        {
+                        if (occupied(hash, params.occupancy)) {
                             cells[yy * cell_bounds.dims[0] + xx] =
                                 directFixedSpeckleDescriptor(cell_x, cell_y, hash, params.radius_mean);
                         }
@@ -1758,7 +1808,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 
         fn generateClassifiedSpeckle2D(
             allocator: std.mem.Allocator,
-            params: Speckle2DParams,
+            params: GridParams,
         ) !ClassifiedIndexedSpeckle2D {
             const microcells = classifiedDims(params);
             const state_count = gridCount(u16, microcells) orelse
@@ -1874,7 +1924,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             };
         }
 
-        inline fn perlinCoverage(noise: F, params: Speckle2DParams) F {
+        inline fn perlinCoverage(noise: F, params: GridParams) F {
             const width = params.perlin_coverage_transition_width;
             if (width == 0.0) {
                 return if (noise >= params.perlin_coverage_threshold) 1.0 else 0.0;
@@ -1883,7 +1933,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             return cubicSmoothStep(transition);
         }
 
-        fn evalPerlinSpeckle2D(uv: [2]F, params: Speckle2DParams) F {
+        fn evalPerlinSpeckle2D(uv: [2]F, params: GridParams) F {
             const proc_x = @max(0.0, @min(1.0, uv[0])) * params.cells_per_uv[0];
             const proc_y = @max(0.0, @min(1.0, uv[1])) * params.cells_per_uv[1];
             const cell_x = @as(i64, @intFromFloat(@floor(proc_x)));
@@ -1923,7 +1973,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             bits: []u8,
             row_stride: usize,
             uv_to_texel: [2]F,
-            params: Speckle2DParams,
+            params: GridParams,
             disk: SpeckleDisk2D,
         ) void {
             const edge_softness = if (configured_soft_edges) params.edge_softness else 0.0;
@@ -1975,7 +2025,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 
         fn generateSpeckleMask2D(
             allocator: std.mem.Allocator,
-            params: Speckle2DParams,
+            params: GridParams,
         ) !SpeckleMask2D {
             const cell_bounds = speckleProceduralCellBounds(params, 1) orelse
                 return error.SpeckleMaskTooLarge;
@@ -2034,9 +2084,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     var cell_x = cell_bounds.min[0];
                     while (cell_x <= cell_bounds.max[0]) : (cell_x += 1) {
                         const hash = hashSpeckleCell(cell_x, cell_y, params.seed);
-                        if (params.occupancy < 1.0 and
-                            randomUnitFromHash(hash, 0) >= params.occupancy)
-                        {
+                        if (!occupied(hash, params.occupancy)) {
                             continue;
                         }
                         rasterizeSpeckleMaskDisk(
@@ -2147,7 +2195,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         inline fn speckleCoverageEndpointValue(
-            params: Speckle2DParams,
+            params: GridParams,
             coverage: F,
         ) F {
             return params.background + coverage * (params.foreground - params.background);
@@ -2175,7 +2223,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         fn evalSpeckle2DImpl(
             u: F,
             v: F,
-            params: Speckle2DParams,
+            params: GridParams,
         ) F {
             if (comptime evaluator == .mock) return 0.5 * (u + v);
             const uv = [2]F{ u, v };
@@ -2222,9 +2270,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
                     const candidate_x = cell_x + offset_x;
                     const candidate_y = cell_y + offset_y;
                     const hash = hashSpeckleCell(candidate_x, candidate_y, params.seed);
-                    if (params.occupancy < 1.0 and
-                        randomUnitFromHash(hash, 0) >= params.occupancy)
-                    {
+                    if (!occupied(hash, params.occupancy)) {
                         continue;
                     }
 
@@ -2689,7 +2735,7 @@ test "exact Perlin gradients preserve all signed expressions scalar and SIMD" {
 }
 
 test "exact Perlin all 4096 corner combinations preserve analytic arithmetic" {
-    var params = Speckle2DParams{ .pattern = .perlin, .foreground = 0.17, .background = 0.83 };
+    var params = GridParams{ .pattern = .perlin, .foreground = 0.17, .background = 0.83 };
     for (0..4096) |code| {
         const ids = [4]u8{ @intCast(code & 7), @intCast((code >> 3) & 7), @intCast((code >> 6) & 7), @intCast((code >> 9) & 7) };
         for ([_][2]F{ .{ 0, 0 }, .{ 0.25, 0.75 }, .{ 0.5, 0.5 }, .{ std.math.nextAfter(F, 1, 0), 0.37 } }) |p| {
@@ -2812,7 +2858,7 @@ test "resource backings clean up partial allocations and repeated deinit resets"
         if (comptime !buildconfig.enable_all_evaluators and std.meta.activeTag(config) != .gradient_lattice) continue;
         const Probe = struct {
             fn run(allocator: std.mem.Allocator, jitter: F, occupancy: F) !void {
-                const params = Speckle2DParams{
+                const params = GridParams{
                     .pattern = config.pattern().?,
                     .evaluator = if (buildconfig.enable_all_evaluators) std.meta.activeTag(config) else null,
                     .neighbor_count = if (buildconfig.enable_all_evaluators) config.neighborhood() else null,
@@ -2931,7 +2977,7 @@ test "direct stamp ranges match exhaustive representable bin overlap" {
     if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
     errdefer printSpeckleTestConfig(.classified_indexed);
     for ([_]F{ 3.25, 0.03125, std.math.nextAfter(F, 0.0, 1.0) }) |cells| {
-        const params = Speckle2DParams{ .cells_per_uv = .{ cells, cells } };
+        const params = GridParams{ .cells_per_uv = .{ cells, cells } };
         const dims = testClassifiedDims(params);
         const axis = Classified.speckleClassificationAxes(dims)[0];
         for (0..axis.dim + 2) |boundary_index| {
@@ -2955,7 +3001,7 @@ test "neighbor masks preserve exact scalar SIMD boundaries" {
     errdefer printSpeckleTestConfig(.classified_indexed);
     for ([_]F{ 0.0, 0.08, 0.35 }) |jitter| {
         for ([_]F{ 0.0, 0.7, 1.0 }) |occupancy| {
-            const params: Speckle2DParams = .{
+            const params: GridParams = .{
                 .evaluator = .classified_indexed,
                 .cells_per_uv = .{ 3.17, 2.31 },
                 .radius_mean = 0.35,
@@ -2998,7 +3044,7 @@ test "aligned lookup keeps procedural owners and stamps one bit across faces and
             for (vector) |value| try testing.expectEqual(@floor(p * speckle_mask_samples_per_cell), value);
         }
     }
-    const params: Speckle2DParams = .{ .cells_per_uv = .{ 2, 2 } };
+    const params: GridParams = .{ .cells_per_uv = .{ 2, 2 } };
     const dims = testClassifiedDims(params);
     const axes = Classified.speckleClassificationAxes(dims);
     const states = try testing.allocator.alloc(u16, dims[0] * dims[1]);
@@ -3069,14 +3115,14 @@ test "direct procedural endpoints include fractional tiny and ceiling scales" {
     try testing.expect(rejected + 1 > limit);
     inline for (.{ 8, 12, 16 }) |r| try expectDirectMicrocell(F, r, accepted_tie);
     for (0..2) |axis| {
-        var params: Speckle2DParams = .{};
+        var params: GridParams = .{};
         params.cells_per_uv[axis] = accepted_tie;
         try params.validateResolved(.classified_indexed);
         params.cells_per_uv[axis] = rejected;
         try testing.expectError(error.SpeckleCellCoordinateOutOfRange, params.validateResolved(.classified_indexed));
     }
     for ([_]F{ std.math.nextAfter(F, 0, 1), std.math.floatMin(F), 0.031, 0.5, 1, 1.17, limit - 1, accepted_tie }) |cells| {
-        const params: Speckle2DParams = .{ .evaluator = .classified_indexed, .cells_per_uv = .{ cells, cells } };
+        const params: GridParams = .{ .evaluator = .classified_indexed, .cells_per_uv = .{ cells, cells } };
         try params.validateResolved(.classified_indexed);
         // Ceiling-scale geometry stays in u64; these probes require no allocation.
         const dims = Classified.classifiedDims(params);
@@ -3140,7 +3186,7 @@ test "procedural speckle shape has bounded support" {
                 try testing.expect(transition > 0.0 and transition < 1.0);
             }
         } else {
-            const params = Speckle2DParams{};
+            const params = GridParams{};
             try testing.expectEqual(@as(F, 0.0), Impl.perlinCoverage(-1.0, params));
             try testing.expectEqual(@as(F, 1.0), Impl.perlinCoverage(1.0, params));
             const transition = Impl.perlinCoverage(params.perlin_coverage_threshold, params);
@@ -3152,7 +3198,7 @@ test "procedural speckle shape has bounded support" {
 test "procedural speckle is bounded seed-sensitive and UV clamped" {
     inline for (analytic_test_configs) |config| {
         errdefer printSpeckleTestConfig(config);
-        const params: Speckle2DParams = .{ .cells_per_uv = .{ 12.0, 10.0 }, .edge_softness = if (config.edges() == .soft) 0.035 else 0 };
+        const params: GridParams = .{ .cells_per_uv = .{ 12.0, 10.0 }, .edge_softness = if (config.edges() == .soft) 0.035 else 0 };
 
         try testing.expectEqual(
             evalSpeckle2D(config, .{ 0.0, 1.0 }, params),
@@ -3185,7 +3231,7 @@ test "procedural speckle SIMD fallback matches scalar evaluation" {
         if (comptime std.meta.activeTag(config) == .mock) continue;
         const Impl = Implementation(config);
         errdefer printSpeckleTestConfig(config);
-        var speckle_params: Speckle2DParams = .{
+        var speckle_params: GridParams = .{
             .cells_per_uv = .{ 11.0, 9.0 },
             .seed = 42,
             .edge_softness = if (Impl.configured_soft_edges) 0.035 else 0.0,
@@ -3224,11 +3270,75 @@ test "procedural speckle SIMD fallback matches scalar evaluation" {
     }
 }
 
+test "speckle occupancy uses independently mixed f64 variates and exact endpoint decisions" {
+    const Case = struct { hash: u64, bits: u64 };
+    // Independently calculated SplitMix64 vectors; bits are the high 53 result bits.
+    const cases = [_]Case{
+        .{ .hash = 0, .bits = 7956156453446585 },
+        .{ .hash = 1, .bits = 5103132997656651 },
+        .{ .hash = 0xffffffffffffffff, .bits = 8051922005355685 },
+        .{ .hash = 0x42cc592e95069169, .bits = 2111374644679023 },
+        .{ .hash = 0xe4214bce0919ce5d, .bits = 4756386813752087 },
+    };
+    for (cases) |case| {
+        const unit = @as(f64, @floatFromInt(case.bits)) / 9007199254740992.0;
+        try testing.expect(!occupied(case.hash, 0));
+        try testing.expect(occupied(case.hash, 1));
+        try testing.expect(!occupied(case.hash, unit));
+        try testing.expect(occupied(case.hash, std.math.nextAfter(f64, unit, 1)));
+        for ([_]f64{ 0, 1e-6, 1e-4, 0.125, 0.5, 0.9, 1 }) |p|
+            try testing.expectEqual(CellBinnedIndependentReference.isOccupied(case.hash, p), occupied(case.hash, p));
+    }
+}
+
+test "dilute speckle occupancy retains 53-bit threshold precision in either renderer precision" {
+    const Case = struct { probability: f64, cut: u64, last_active: u64, first_inactive: u64 };
+    // Inverse-mixer preimages of (ceil(p*2^53)-1)<<11 and ceil(p*2^53)<<11,
+    // computed independently in Python integer arithmetic. Test the actual f32
+    // parameter values as well as f64: a float32 random variate fails these cuts.
+    const cases = [_]Case{
+        .{ .probability = 1e-6, .cut = 9007199255, .last_active = 0x2adf04ac7221cb03, .first_inactive = 0x77613cad73e7286c },
+        .{ .probability = @as(f32, 1e-6), .cut = 9007199232, .last_active = 0xcc77ed8d37b444b8, .first_inactive = 0x4fd343f678375f1c },
+        .{ .probability = 1e-4, .cut = 900719925475, .last_active = 0x48c2f7b8bb723fb7, .first_inactive = 0xe62b503155510930 },
+        .{ .probability = @as(f32, 1e-4), .cut = 900719902720, .last_active = 0xb5d9615607e43d4f, .first_inactive = 0x063c6d142d7ecf3d },
+    };
+    for (cases) |case| {
+        try testing.expect(occupied(case.last_active, case.probability));
+        try testing.expect(!occupied(case.first_inactive, case.probability));
+        try testing.expectEqual(case.cut, @as(u64, @intFromFloat(@ceil(case.probability * 0x1.0p53))));
+        const actual_probability = @as(f64, @floatFromInt(case.cut)) * 0x1.0p-53;
+        try testing.expect(actual_probability >= case.probability);
+        try testing.expect(actual_probability - case.probability < 0x1.0p-53);
+        try testing.expect((actual_probability - case.probability) / case.probability < 1.2e-10);
+    }
+}
+
+test "fully occupied speckles preserve original seeded centre and radius draws" {
+    inline for (analytic_test_configs) |config| {
+        if (comptime config.pattern() == .perlin) continue;
+        const Impl = Implementation(config);
+        const params = GridParams{
+            .seed = 12345,
+            .occupancy = 1,
+            .radius_mean = 0.3,
+            .radius_jitter = 0.05,
+            .neighbor_count = config.neighborhood(),
+            .edge_softness = if (config.edges() == .soft) 0.035 else 0,
+        };
+        for ([_][2]i64{ .{ 0, 0 }, .{ 17, 29 }, .{ -7, -11 } }) |cell| {
+            const disk = Impl.speckleDiskForCell(cell[0], cell[1], params).?;
+            const original = CellBinnedIndependentReference.disk(params, cell[0], cell[1]).?;
+            try testing.expectEqual(original.xy, disk.center);
+            try testing.expectEqual(original.radius, disk.radius);
+        }
+    }
+}
+
 test "procedural speckle occupancy endpoints behave exactly" {
     inline for (analytic_test_configs) |config| {
         if (comptime config.pattern() == .perlin) continue;
         errdefer printSpeckleTestConfig(config);
-        var params: Speckle2DParams = .{ .cells_per_uv = .{ 8.0, 8.0 }, .occupancy = 0.0, .edge_softness = if (config.edges() == .soft) 0.035 else 0 };
+        var params: GridParams = .{ .cells_per_uv = .{ 8.0, 8.0 }, .occupancy = 0.0, .edge_softness = if (config.edges() == .soft) 0.035 else 0 };
         for (0..8) |yy| {
             for (0..8) |xx| {
                 const uv = [2]F{
@@ -3269,7 +3379,7 @@ test "generated speckle list matches hard and soft cell hash evaluation" {
         else
             &.{0.035};
         for (softnesses) |softness| {
-            const params: Speckle2DParams = .{
+            const params: GridParams = .{
                 .pattern = Impl.speckle_shape,
                 .cells_per_uv = .{ 4.25, 3.17 },
                 .occupancy = 0.7,
@@ -3339,7 +3449,7 @@ test "direct fixed generation is contained and exact" {
     const config: speckleconfig.Config = .direct_fixed;
     const Impl = Implementation(config);
     errdefer printSpeckleTestConfig(config);
-    const params: Speckle2DParams = .{
+    const params: GridParams = .{
         .seed = 0x85ebca6b,
         .cells_per_uv = .{ 3.25, 1.75 },
         .occupancy = 0.72,
@@ -3363,7 +3473,7 @@ test "direct fixed generation is contained and exact" {
         const cell_x: i64 = @intCast(xx);
         const cell_y: i64 = @intCast(yy);
         const hash = hashSpeckleCell(cell_x, cell_y, params.seed);
-        const expected_active = randomUnitFromHash(hash, 0) < params.occupancy;
+        const expected_active = CellBinnedIndependentReference.isOccupied(hash, params.occupancy);
         try testing.expectEqual(expected_active, descriptor != 0);
         if (expected_active) {
             try testing.expectEqual(
@@ -3489,7 +3599,7 @@ test "classified evaluators preserve independent states and exact samples" {
 test "speckle classification bounds contain rounded UV lookups" {
     if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
     errdefer printSpeckleTestConfig(.classified_indexed);
-    const cases = [_]Speckle2DParams{
+    const cases = [_]GridParams{
         .{ .cells_per_uv = .{ 192.0, 160.0 } },
         .{ .cells_per_uv = .{ 3.25, 2.5 } },
         .{ .cells_per_uv = .{ 0.03125, 0.0625 } },
@@ -3630,7 +3740,7 @@ test "Perlin u8 mask quantizes analytic lattice coverage and samples nearest tex
     var found_spatial_difference = false;
     for ([_][2]F{ .{ 3.25, 2.5 }, .{ 0.25, 0.75 }, .{ 2, 1 } }) |cells| {
         for ([_]F{ 0.0, 0.12 }) |width| {
-            var params: Speckle2DParams = .{
+            var params: GridParams = .{
                 .pattern = .perlin,
                 .cells_per_uv = cells,
                 .perlin_coverage_threshold = 0.03,
@@ -3748,7 +3858,7 @@ test "direct fixed prepared SIMD handles active and inactive lanes" {
         0,
         0,
     };
-    const params: Speckle2DParams = .{
+    const params: GridParams = .{
         .cells_per_uv = .{ 2.0, 1.0 },
         .occupancy = 0.5,
         .radius_mean = 0.25,
@@ -3774,7 +3884,7 @@ test "direct fixed prepared SIMD handles active and inactive lanes" {
 test "classified indexed prepared SIMD matches scalar for every state" {
     if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
     errdefer printSpeckleTestConfig(.classified_indexed);
-    const params: Speckle2DParams = .{
+    const params: GridParams = .{
         .evaluator = .classified_indexed,
         .seed = 0x85ebca6b,
         .cells_per_uv = .{ 5.25, 4.4 },
@@ -3818,7 +3928,7 @@ test "all certified foreground cells return foreground without candidate records
     if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
     const side: usize = buildconfig.speckle_mask_samples_per_cell + 1;
     const states: [side * side]u16 = @splat(512);
-    const params = Speckle2DParams{ .cells_per_uv = .{ 1, 1 }, .foreground = 0.25, .background = 0.75 };
+    const params = GridParams{ .cells_per_uv = .{ 1, 1 }, .foreground = 0.25, .background = 0.75 };
     // A certified foreground table must never touch these deliberately empty owner records.
     const resources = Resources{
         .kernel_index = kernelIndex(.classified_indexed),
@@ -3843,7 +3953,7 @@ test "1-bit speckle mask SIMD matches scalar and backgrounds inactive lanes" {
         if (comptime std.meta.activeTag(config) != .mask_1bit) continue;
         errdefer printSpeckleTestConfig(config);
         const bits = [_]u8{ 0b10000011, 0b00000001, 0b01010101, 0b00000000 };
-        const params: Speckle2DParams = .{
+        const params: GridParams = .{
             .foreground = 0.75,
             .background = 0.25,
         };
@@ -3875,7 +3985,7 @@ test "u8 speckle mask SIMD matches scalar for active lanes" {
         if (comptime std.meta.activeTag(config) != .mask_u8) continue;
         errdefer printSpeckleTestConfig(config);
         const bits = [_]u8{ 0, 64, 128, 255 };
-        const params: Speckle2DParams = .{
+        const params: GridParams = .{
             .foreground = 0.8,
             .background = 0.2,
         };
@@ -3914,7 +4024,7 @@ test "speckle resources prepare sample open boundaries and release owned allocat
         const Impl = Implementation(config);
         errdefer printSpeckleTestConfig(config);
         const single = Impl.speckle_neighbor_count == 1;
-        const params: Speckle2DParams = .{
+        const params: GridParams = .{
             .seed = 6,
             .cells_per_uv = if (single) .{ 1.0, 1.0 } else .{ 2.0, 1.0 },
             .occupancy = if (Impl.speckle_shape == .perlin) 0.0 else if (single) 1.0 else 0.1,
@@ -3971,7 +4081,7 @@ test "speckle resources prepare sample open boundaries and release owned allocat
 
 test "speckle numeric parameters validate common and shape-specific contracts" {
     const coord_limit: F = if (F == f32) 65_536.0 else 35_184_372_088_832.0;
-    const common = [_]struct { params: Speckle2DParams, err: anyerror }{
+    const common = [_]struct { params: GridParams, err: anyerror }{
         .{ .params = .{ .cells_per_uv = .{ 0.0, 1.0 } }, .err = error.InvalidSpeckleCellsPerUV },
         .{ .params = .{ .cells_per_uv = .{ 1.0, std.math.nan(F) } }, .err = error.InvalidSpeckleCellsPerUV },
         .{ .params = .{ .cells_per_uv = .{ coord_limit, 1.0 } }, .err = error.SpeckleCellCoordinateOutOfRange },
@@ -3984,16 +4094,16 @@ test "speckle numeric parameters validate common and shape-specific contracts" {
     // Numeric field rules depend on pattern and neighborhood, not storage layout.
     for (analytic_test_configs) |config| {
         errdefer std.debug.print("numeric validation pattern={any} neighbors={any} edges={any}\n", .{ config.pattern(), config.neighborhood(), config.edges() });
-        var params = Speckle2DParams{ .pattern = config.pattern().? };
+        var params = GridParams{ .pattern = config.pattern().? };
         try std.testing.expectEqual(@as(F, 0), params.edge_softness);
         try params.validateResolved(config);
         if (config.pattern() == .perlin) {
             params.perlin_coverage_threshold = std.math.nan(F);
-            try std.testing.expectError(error.InvalidSpecklePerlinCoverageThreshold, params.validateResolved(config));
+            try std.testing.expectError(error.InvalidSpecklePerlinThreshold, params.validateResolved(config));
             params.perlin_coverage_threshold = 0;
             for ([_]F{ -0.01, std.math.nan(F), std.math.inf(F) }) |width| {
                 params.perlin_coverage_transition_width = width;
-                try std.testing.expectError(error.InvalidSpecklePerlinCoverageTransitionWidth, params.validateResolved(config));
+                try std.testing.expectError(error.InvalidSpecklePerlinTransitionWidth, params.validateResolved(config));
             }
             params.perlin_coverage_transition_width = 0;
             params.occupancy = -1;
@@ -4001,7 +4111,7 @@ test "speckle numeric parameters validate common and shape-specific contracts" {
             params.radius_jitter = -1;
             try params.validateResolved(config);
         } else {
-            const cases = [_]struct { params: Speckle2DParams, err: anyerror }{
+            const cases = [_]struct { params: GridParams, err: anyerror }{
                 .{ .params = .{ .occupancy = -0.1 }, .err = error.InvalidSpeckleOccupancy },
                 .{ .params = .{ .occupancy = 1.1 }, .err = error.InvalidSpeckleOccupancy },
                 .{ .params = .{ .occupancy = std.math.nan(F) }, .err = error.InvalidSpeckleOccupancy },
@@ -4036,7 +4146,7 @@ test "speckle numeric parameters validate common and shape-specific contracts" {
         }
     }
     if (comptime buildconfig.enable_all_evaluators) {
-        var direct = Speckle2DParams{};
+        var direct = GridParams{};
         direct.radius_jitter = 0.01;
         try std.testing.expectError(error.InvalidDirectFixedSpeckleRadiusJitter, direct.validateResolved(.direct_fixed));
         direct.radius_jitter = 0;
@@ -4048,7 +4158,7 @@ test "speckle numeric parameters validate common and shape-specific contracts" {
 }
 
 test "Perlin accepts negative zero settings and preserves exact uniform foreground samples" {
-    const params = Speckle2DParams{ .pattern = .perlin, .cells_per_uv = .{ 2.17, 1.31 }, .perlin_coverage_threshold = -0.0, .perlin_coverage_transition_width = -0.0 };
+    const params = GridParams{ .pattern = .perlin, .cells_per_uv = .{ 2.17, 1.31 }, .perlin_coverage_threshold = -0.0, .perlin_coverage_transition_width = -0.0 };
     _ = try params.resolve();
     var lattice = try generatePerlinLattice(std.testing.allocator, params);
     defer std.testing.allocator.free(lattice.gradients);
@@ -4080,7 +4190,7 @@ inline fn classificationCoordinate(uv: F, cells: F) F {
     return (@max(0.0, @min(1.0, uv)) * cells) * speckle_mask_samples_per_cell;
 }
 
-fn evalSpeckle2D(comptime config: speckleconfig.Config, uv: [2]F, params: Speckle2DParams) F {
+fn evalSpeckle2D(comptime config: speckleconfig.Config, uv: [2]F, params: GridParams) F {
     const Impl = Implementation(config);
     return Impl.evalSpeckle2DImpl(uv[0], uv[1], params);
 }
@@ -4143,7 +4253,7 @@ fn expectNeighborMaskCandidates(masked: ClassifiedIndexedSpeckle2D) !void {
     }
 }
 
-fn testClassifiedDims(params: Speckle2DParams) [2]usize {
+fn testClassifiedDims(params: GridParams) [2]usize {
     const dims = Classified.classifiedDims(params);
     return .{ @intCast(dims[0]), @intCast(dims[1]) };
 }
@@ -4167,7 +4277,7 @@ fn expectClassifiedSample(resources: *const Resources, uv: [2]F) !void {
     }
 }
 
-fn expectClassifiedExact(params: Speckle2DParams) !bool {
+fn expectClassifiedExact(params: GridParams) !bool {
     var prepared_params = params;
     prepared_params.evaluator = .classified_indexed;
     var resources = try Resources.init(testing.allocator, prepared_params);
@@ -4265,7 +4375,7 @@ fn expectClassifiedExact(params: Speckle2DParams) !bool {
     return has_zero_radius;
 }
 
-fn speckleMaskTestParams(comptime config: speckleconfig.Config) Speckle2DParams {
+fn speckleMaskTestParams(comptime config: speckleconfig.Config) GridParams {
     return .{
         .seed = 0x85ebca6b,
         .cells_per_uv = .{ 3.25, 2.5 },
@@ -4281,7 +4391,7 @@ fn speckleMaskTestParams(comptime config: speckleconfig.Config) Speckle2DParams 
 
 fn expectPreparedSpeckleSIMD(
     comptime config: speckleconfig.Config,
-    params: Speckle2DParams,
+    params: GridParams,
     resources: *const Resources,
     cases: []const SpeckleSIMDCase,
 ) !void {
@@ -4312,7 +4422,7 @@ fn expectPreparedSpeckleSIMD(
 test "user validation requires positive occupancy only for disk and Gaussian" {
     for ([_]speckleconfig.Pattern{ .disk, .gaussian }) |pattern| {
         for ([_]F{ 0.0, -0.0 }) |occupancy| {
-            var params: Speckle2DParams = .{
+            var params: GridParams = .{
                 .pattern = pattern,
                 .occupancy = occupancy,
             };
@@ -4323,12 +4433,12 @@ test "user validation requires positive occupancy only for disk and Gaussian" {
             try params.validate();
         }
     }
-    const equal_colors = Speckle2DParams{ .foreground = 0.23, .background = 0.23 };
+    const equal_colors = GridParams{ .foreground = 0.23, .background = 0.23 };
     _ = try equal_colors.resolve();
     try std.testing.expectError(error.SpeckleColorsMustDiffer, equal_colors.validate());
-    try (Speckle2DParams{ .pattern = .perlin, .occupancy = 0 }).validate();
+    try (GridParams{ .pattern = .perlin, .occupancy = 0 }).validate();
     if (comptime buildconfig.enable_all_evaluators) {
-        try (Speckle2DParams{ .evaluator = .mock, .occupancy = 0 }).validate();
+        try (GridParams{ .evaluator = .mock, .occupancy = 0 }).validate();
     }
 }
 
@@ -4349,7 +4459,7 @@ test "runtime override policy and invalid settings fail before allocation" {
             try std.testing.expectError(error.SpeckleOverridesDisabled, Resources.init(std.testing.failing_allocator, .{ .neighbor_count = neighbors }));
         }
     } else {
-        const cases = [_]struct { params: Speckle2DParams, err: anyerror }{
+        const cases = [_]struct { params: GridParams, err: anyerror }{
             .{ .params = .{ .pattern = .perlin, .neighbor_count = .nine }, .err = error.SpecklePerlinDoesNotUseNeighbors },
             .{ .params = .{ .pattern = .perlin, .evaluator = .list_indexed }, .err = error.PerlinRequiresSupportedEvaluator },
             .{ .params = .{ .pattern = .gaussian, .evaluator = .mask_1bit }, .err = error.Mask1BitRequiresDisk },
@@ -4363,7 +4473,7 @@ test "runtime override policy and invalid settings fail before allocation" {
             .{ .params = .{ .neighbor_count = .one, .radius_jitter = 0.1 }, .err = error.InvalidSpeckleNeighborhoodRadius },
         };
         for (cases) |case| try std.testing.expectError(case.err, Resources.init(std.testing.failing_allocator, case.params));
-        const direct = try (Speckle2DParams{ .evaluator = .direct_fixed }).resolve();
+        const direct = try (GridParams{ .evaluator = .direct_fixed }).resolve();
         try std.testing.expectEqual(speckleconfig.Neighborhood.one, direct.neighborhood().?);
         for ([_]speckleconfig.Evaluator{ .cell_hash, .mock }) |evaluator| {
             var resources = try Resources.init(std.testing.failing_allocator, .{ .evaluator = evaluator });
@@ -4373,15 +4483,15 @@ test "runtime override policy and invalid settings fail before allocation" {
         }
     }
     // Perlin ignores disk-only fields but never silently repairs its own settings.
-    try (Speckle2DParams{ .pattern = .perlin, .occupancy = std.math.nan(F), .radius_mean = -1, .radius_jitter = std.math.inf(F) }).validate();
-    try std.testing.expectError(error.InvalidSpecklePerlinCoverageTransitionWidth, (Speckle2DParams{ .pattern = .perlin, .perlin_coverage_transition_width = -1 }).resolve());
+    try (GridParams{ .pattern = .perlin, .occupancy = std.math.nan(F), .radius_mean = -1, .radius_jitter = std.math.inf(F) }).validate();
+    try std.testing.expectError(error.InvalidSpecklePerlinTransitionWidth, (GridParams{ .pattern = .perlin, .perlin_coverage_transition_width = -1 }).resolve());
 }
 
 test "mock erases ignored settings but retains raw common and softness validation" {
     if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
     for (std.enums.values(speckleconfig.Pattern)) |pattern| {
         for (std.enums.values(speckleconfig.Neighborhood)) |neighbors| {
-            var params: Speckle2DParams = .{
+            var params: GridParams = .{
                 .pattern = pattern,
                 .evaluator = .mock,
                 .neighbor_count = neighbors,
@@ -4457,7 +4567,7 @@ test "classified owner strips clean up every allocation failure" {
 test "positive-occupancy empty owner strips return the background regardless of zero sign" {
     if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
     for ([_]F{ 0.0, 0.08 }) |jitter| {
-        const params: Speckle2DParams = .{ .evaluator = .classified_indexed, .seed = 0, .cells_per_uv = .{ 0.03125, 0.0625 }, .occupancy = 0.001, .radius_mean = 0.35, .radius_jitter = jitter, .foreground = 0.91, .background = -0.0 };
+        const params: GridParams = .{ .evaluator = .classified_indexed, .seed = 0, .cells_per_uv = .{ 0.03125, 0.0625 }, .occupancy = 0.001, .radius_mean = 0.35, .radius_jitter = jitter, .foreground = 0.91, .background = -0.0 };
         var resources = try Resources.init(std.testing.allocator, params);
         defer resources.deinit(std.testing.allocator);
         const strip = resources.data.classified.speckles;
@@ -4483,12 +4593,12 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
         const speckle_shape = comptime config.pattern() orelse .disk;
         const speckle_neighbor_count = comptime @intFromEnum(config.neighborhood() orelse speckleconfig.Neighborhood.nine);
         const soft_edges = comptime config.edges() == .soft;
-        var params: Speckle2DParams = .{
+        var params: GridParams = .{
             .pattern = speckle_shape,
             .cells_per_uv = .{ 3.25, 2.5 },
             .radius_mean = if (evaluator == .mock) 100 else if (speckle_neighbor_count == 1) 0.25 else 0.38,
             .radius_jitter = if (evaluator == .direct_fixed) 0.0 else 0.07,
-            .occupancy = if (evaluator == .mock) 0 else (Speckle2DParams{}).occupancy,
+            .occupancy = if (evaluator == .mock) 0 else (GridParams{}).occupancy,
             .edge_softness = if (soft_edges) 0.035 else 0.0,
             .foreground = 0.17,
             .background = 0.83,
@@ -4609,7 +4719,7 @@ test "representable resource allocations reach the allocator" {
             .mask_u8 => .{ 2200, 2200 },
             .mask_1bit => .{ 4000, 4000 },
         };
-        var params: Speckle2DParams = .{
+        var params: GridParams = .{
             .pattern = config.pattern() orelse .disk,
             .cells_per_uv = cells,
             .edge_softness = if (config.edges() == .soft) 0.035 else 0,
@@ -4637,7 +4747,7 @@ test "unrepresentable resource grids fail before allocation without fallback" {
             .direct_fixed => error.DirectFixedSpeckleTooLarge,
             .mask_1bit, .mask_u8 => error.SpeckleMaskTooLarge,
         };
-        var params: Speckle2DParams = .{
+        var params: GridParams = .{
             .pattern = config.pattern() orelse .disk,
             .cells_per_uv = .{ cells, cells },
             .edge_softness = if (config.edges() == .soft) 0.035 else 0,
@@ -4657,7 +4767,7 @@ test "32 bit preparation rejects byte and record expansion overflow before alloc
     try std.testing.expectError(error.SpeckleCellBinsTooLarge, Resources.init(std.testing.failing_allocator, .{ .cells_per_uv = .{ 40_000, 40_000 }, .edge_softness = 0.04 }));
     if (comptime buildconfig.enable_all_evaluators) {
         // The state count fits u32, but its two-byte elements do not. Owners still fit.
-        const classification: Speckle2DParams = .{
+        const classification: GridParams = .{
             .evaluator = .classified_indexed,
             .cells_per_uv = .{ 65_535.5 / speckle_mask_samples_per_cell, 32_768.5 / speckle_mask_samples_per_cell },
         };
@@ -4670,7 +4780,7 @@ test "32 bit preparation rejects byte and record expansion overflow before alloc
         }) |case| {
             for ([_]F{ 0, 0.08 }) |jitter| {
                 if (case.evaluator == .direct_fixed and jitter != 0) continue;
-                const params: Speckle2DParams = .{
+                const params: GridParams = .{
                     .evaluator = case.evaluator,
                     .cells_per_uv = .{ 40_000, 40_000 },
                     .radius_jitter = jitter,
@@ -4684,7 +4794,7 @@ test "32 bit preparation rejects byte and record expansion overflow before alloc
 
 test "classified bins 32 bit packed headers do not require a flattened microcell array" {
     if (comptime @bitSizeOf(usize) != 32) return error.SkipZigTest;
-    const params: Speckle2DParams = .{
+    const params: GridParams = .{
         .cells_per_uv = .{ 12_000, 12_000 },
         .radius_jitter = 0.08,
         .occupancy = 0,
@@ -4708,7 +4818,7 @@ test "packed mask rejects unrepresentable SIMD indices even when its bytes fit" 
     if (comptime !buildconfig.enable_all_evaluators or F != f64 or @bitSizeOf(usize) != 32)
         return error.SkipZigTest;
     const intervals: u64 = 1 << 31;
-    const params: Speckle2DParams = .{
+    const params: GridParams = .{
         .evaluator = .mask_1bit,
         .cells_per_uv = .{ @as(F, @floatFromInt(intervals)) / speckle_mask_samples_per_cell, 0.5 / speckle_mask_samples_per_cell },
     };
@@ -4728,7 +4838,7 @@ test "strip indexed records and samples match exhaustive lists exactly across oc
         if (comptime evaluator != .list_indexed) continue;
         for ([_]F{ 0.0, 0.7, 1.0 }) |occupancy| {
             for (0..9) |variation| {
-                const params: Speckle2DParams = .{
+                const params: GridParams = .{
                     .pattern = speckle_shape,
                     .evaluator = .list_indexed,
                     .neighbor_count = config.neighborhood(),
@@ -4921,10 +5031,20 @@ test "strip indexed records and samples match exhaustive lists exactly across oc
 const CellBinnedIndependentReference = struct {
     const Disk = struct { xy: [2]F, radius: F };
 
-    fn disk(p: Speckle2DParams, x: i64, y: i64) ?Disk {
+    // Independent reproduction of the occupancy stream, not the production helper.
+    fn isOccupied(hash: u64, probability: f64) bool {
+        var bits = hash +% 0x9e3779b97f4a7c15;
+        bits ^= bits >> 30;
+        bits *%= 0xbf58476d1ce4e5b9;
+        bits ^= bits >> 27;
+        bits *%= 0x94d049bb133111eb;
+        bits ^= bits >> 31;
+        return @as(f64, @floatFromInt(bits / 2048)) / 9007199254740992.0 < probability;
+    }
+
+    fn disk(p: GridParams, x: i64, y: i64) ?Disk {
         const hash = hashSpeckleCell(x, y, p.seed);
-        const occupied: F = @as(F, @floatFromInt(hash & 0xffff)) / 65536;
-        if (occupied >= p.occupancy) return null;
+        if (!isOccupied(hash, p.occupancy)) return null;
         const radius = p.radius_mean + p.radius_jitter * (@as(F, @floatFromInt(hash >> 48)) / 32768 - 1);
         const support = radius + p.edge_softness;
         const n = @intFromEnum(p.neighbor_count orelse .nine);
@@ -4947,7 +5067,7 @@ const CellBinnedIndependentReference = struct {
         return result;
     }
 
-    fn sample(p: Speckle2DParams, u: F, v: F) F {
+    fn sample(p: GridParams, u: F, v: F) F {
         const px = @max(0, @min(1, u)) * p.cells_per_uv[0];
         const py = @max(0, @min(1, v)) * p.cells_per_uv[1];
         const sx: i64 = @intFromFloat(@floor(px));
@@ -5000,7 +5120,7 @@ test "cell binned independent exhaustive field reference" {
         const soft = comptime config.edges() == .soft;
         const limit: F = if (config.neighborhood() == .one) 0.5 else 1;
         for (0..8) |variation| {
-            const p: Speckle2DParams = .{
+            const p: GridParams = .{
                 .evaluator = if (buildconfig.enable_all_evaluators) std.meta.activeTag(config) else null,
                 .pattern = config.pattern().?,
                 .neighbor_count = if (buildconfig.enable_all_evaluators) config.neighborhood() else null,
@@ -5058,7 +5178,7 @@ fn expectGaussianStrided(radius: F, points: []const [2]F, colors: [2]F) !void {
     }
     if (radius == 0.75) try std.testing.expect(coverage < 1);
     const counts = [_]u8{@intCast(points.len)};
-    const params: Speckle2DParams = .{
+    const params: GridParams = .{
         .pattern = .gaussian,
         .radius_mean = radius,
         .cells_per_uv = .{ 0.5, 0.5 },
@@ -5129,7 +5249,7 @@ test "cell binned records preserve exact samples at supports faces colors and SI
                     2 => if (single) 0.45 else 0.95,
                     else => 0.3,
                 };
-                const params: Speckle2DParams = .{
+                const params: GridParams = .{
                     .evaluator = if (buildconfig.enable_all_evaluators) std.meta.activeTag(config) else null,
                     .pattern = config.pattern().?,
                     .neighbor_count = if (buildconfig.enable_all_evaluators) config.neighborhood() else null,
@@ -5269,7 +5389,7 @@ test "cell binned Gaussian nearest reductions preserve underflowed sigma squared
         }
         const Impl = Implementation(config);
         for ([_]F{ @sqrt(smallest), @sqrt(smallest) * 1.5 }) |radius| {
-            const params: Speckle2DParams = .{ .evaluator = if (buildconfig.enable_all_evaluators) std.meta.activeTag(config) else null, .pattern = .gaussian, .neighbor_count = if (buildconfig.enable_all_evaluators) config.neighborhood() else null, .cells_per_uv = .{ 1, 1 }, .occupancy = 1, .radius_mean = radius, .foreground = 0.91, .background = 0.23 };
+            const params: GridParams = .{ .evaluator = if (buildconfig.enable_all_evaluators) std.meta.activeTag(config) else null, .pattern = .gaussian, .neighbor_count = if (buildconfig.enable_all_evaluators) config.neighborhood() else null, .cells_per_uv = .{ 1, 1 }, .occupancy = 1, .radius_mean = radius, .foreground = 0.91, .background = 0.23 };
             var resources = try Resources.init(std.testing.allocator, params);
             defer resources.deinit(std.testing.allocator);
             const disk = Impl.speckleDiskForCell(0, 0, params).?;
@@ -5291,7 +5411,7 @@ test "cell binned wide procedural grids retain rounded face and endpoint members
         }
         const Impl = Implementation(config);
         const soft = comptime config.edges() == .soft;
-        const params: Speckle2DParams = .{
+        const params: GridParams = .{
             .evaluator = if (buildconfig.enable_all_evaluators) std.meta.activeTag(config) else null,
             .pattern = config.pattern().?,
             .neighbor_count = if (buildconfig.enable_all_evaluators) config.neighborhood() else null,
@@ -5319,7 +5439,7 @@ test "cell binned wide procedural grids retain rounded face and endpoint members
 }
 
 test "strip indexed zero radius soft disk coverage and default gate" {
-    const params: Speckle2DParams = .{ .evaluator = .list_indexed, .neighbor_count = .one, .seed = 43498, .cells_per_uv = .{ 1, 1 }, .occupancy = 1, .radius_mean = 0.2, .radius_jitter = 0.2, .edge_softness = 0.05 };
+    const params: GridParams = .{ .evaluator = .list_indexed, .neighbor_count = .one, .seed = 43498, .cells_per_uv = .{ 1, 1 }, .occupancy = 1, .radius_mean = 0.2, .radius_jitter = 0.2, .edge_softness = 0.05 };
     if (comptime !buildconfig.enable_all_evaluators) {
         try std.testing.expectError(error.SpeckleOverridesDisabled, params.resolve());
         return;
@@ -5348,7 +5468,7 @@ test "cell binned canonical layouts and rounded coefficients" {
         if (comptime std.meta.activeTag(config) != .cell_binned) continue;
         checked += 1;
         for ([_]F{ 0, 0.08 }) |jitter| {
-            const p: Speckle2DParams = .{ .evaluator = if (buildconfig.enable_all_evaluators) .cell_binned else null, .pattern = config.pattern().?, .neighbor_count = if (buildconfig.enable_all_evaluators) config.neighborhood() else null, .edge_softness = if (config.edges() == .soft) 0.04 else 0, .cells_per_uv = .{ 3.25, 2.75 }, .radius_mean = 0.3, .radius_jitter = jitter, .occupancy = 0.7 };
+            const p: GridParams = .{ .evaluator = if (buildconfig.enable_all_evaluators) .cell_binned else null, .pattern = config.pattern().?, .neighbor_count = if (buildconfig.enable_all_evaluators) config.neighborhood() else null, .edge_softness = if (config.edges() == .soft) 0.04 else 0, .cells_per_uv = .{ 3.25, 2.75 }, .radius_mean = 0.3, .radius_jitter = jitter, .occupancy = 0.7 };
             var owned = try Resources.init(std.testing.allocator, p);
             defer owned.deinit(std.testing.allocator);
             const binned = owned.data.cell_binned;
@@ -5401,7 +5521,7 @@ test "binned defaults preserve independent analytic samples without overrides" {
     }) |case| {
         for ([_]F{ 0, 0.08 }) |jitter| {
             for ([_]F{ 0, 0.7, 1 }) |occupancy| {
-                const params: Speckle2DParams = .{
+                const params: GridParams = .{
                     .pattern = case.pattern,
                     .edge_softness = case.softness,
                     .radius_mean = case.radius,
@@ -5468,7 +5588,7 @@ test "cell binned paired vectors preserve count tails plateaus colors and borrow
 
 test "speckle image fill matches scalar pixel-center samples for every generation config" {
     inline for (generation_configs) |config| {
-        var params: Speckle2DParams = .{
+        var params: GridParams = .{
             .pattern = config.pattern() orelse .disk,
             .cells_per_uv = .{ 2.17, 1.31 },
             .radius_mean = 0.35,
@@ -5499,7 +5619,7 @@ test "speckle image fill matches scalar pixel-center samples for every generatio
 }
 
 test "speckle image fill gives independent empty and equal color intensities" {
-    const cases = [_]struct { params: Speckle2DParams, expected: F }{
+    const cases = [_]struct { params: GridParams, expected: F }{
         .{ .params = .{ .occupancy = 0, .background = 0.83 }, .expected = 0.83 },
         .{ .params = .{ .occupancy = 0, .edge_softness = 0.035, .background = 0.17 }, .expected = 0.17 },
         .{ .params = .{ .pattern = .gaussian, .occupancy = 0, .background = 0.37 }, .expected = 0.37 },
@@ -5527,7 +5647,7 @@ fn expectSpeckleSlicesEqual(comptime T: type, a: []const T, b: []const T) !void 
     }
 }
 
-fn expectIndependentClassifiedField(resources: *const Resources, p: Speckle2DParams) !void {
+fn expectIndependentClassifiedField(resources: *const Resources, p: GridParams) !void {
     var borrowed = p;
     borrowed.foreground = 0.39;
     borrowed.background = 0.61;
@@ -5577,7 +5697,7 @@ fn independentBinHit(data: ClassifiedBinnedSpeckle2D, cell: usize, px: F, py: F)
     return false;
 }
 
-fn independentClippedOwnerClass(p: Speckle2DParams, x: usize, y: usize) u2 {
+fn independentClippedOwnerClass(p: GridParams, x: usize, y: usize) u2 {
     const lo: [2]F = .{ @as(F, @floatFromInt(x)) / 8, @as(F, @floatFromInt(y)) / 4 };
     const hi: [2]F = .{ @min(std.math.nextAfter(F, @as(F, @floatFromInt(x + 1)) / 8, -std.math.inf(F)), p.cells_per_uv[0]), @min(std.math.nextAfter(F, @as(F, @floatFromInt(y + 1)) / 4, -std.math.inf(F)), p.cells_per_uv[1]) };
     const cx: i64 = @intCast(x / 8);
@@ -5614,7 +5734,7 @@ test "classified bins clipped owner certificates singleton classes and exact fie
     var singleton_cells: usize = 0;
     var regular_cells: usize = 0;
     for (0..28) |variation| {
-        const p: Speckle2DParams = .{
+        const p: GridParams = .{
             .seed = if (variation % 2 == 0) 43498 else 0xa511e9b3,
             .cells_per_uv = switch (variation) {
                 8 => .{ 4, 3 },
@@ -5714,7 +5834,7 @@ test "classified bins fallback counts0 through9 all hit positions groups masks a
                         chosen[lane] = cells_num - 1 - lane % groups;
                         u.* = (@as(F, @floatFromInt(chosen[lane])) + 0.5) / (@as(F, @floatFromInt(cells_num)) - 0.01);
                     }
-                    const p: Speckle2DParams = .{ .cells_per_uv = .{ @as(F, @floatFromInt(cells_num)) - 0.01, 0.99 }, .radius_mean = 0.25, .radius_jitter = if (fixed) 0 else 0.08, .foreground = 0.91, .background = -0.0 };
+                    const p: GridParams = .{ .cells_per_uv = .{ @as(F, @floatFromInt(cells_num)) - 0.01, 0.99 }, .radius_mean = 0.25, .radius_jitter = if (fixed) 0 else 0.08, .foreground = 0.91, .background = -0.0 };
                     @memset(&headers, 0xffff_ffff_0000_0000);
                     const data: ClassifiedBinnedSpeckle2D = .{ .params = p, .dims = .{ cells_num * 8, 4 }, .cell_dims = .{ cells_num, 1 }, .coordinates = coordinates, .slots = slots, .headers = &headers, .counts = &counts, .offsets = if (fixed) &.{} else &offsets };
                     ClassifiedBinned.classifyBins(fixed, &data, &headers);
@@ -5738,7 +5858,7 @@ test "classified bins fallback counts0 through9 all hit positions groups masks a
 }
 
 test "classified bins mixed certified clamped lanes and nonempty zero radii retain numerical background values" {
-    const p: Speckle2DParams = .{ .cells_per_uv = .{ 3.17, 2.31 }, .seed = 43498, .radius_mean = 0.4, .radius_jitter = 0.4, .occupancy = 1, .foreground = 0.91, .background = -0.0 };
+    const p: GridParams = .{ .cells_per_uv = .{ 3.17, 2.31 }, .seed = 43498, .radius_mean = 0.4, .radius_jitter = 0.4, .occupancy = 1, .foreground = 0.91, .background = -0.0 };
     var resources = try Resources.init(std.testing.allocator, p);
     defer resources.deinit(std.testing.allocator);
     const data = resources.data.classified_binned;
@@ -5783,7 +5903,7 @@ test "classified bins mixed certified clamped lanes and nonempty zero radii reta
 
 test "classified bins builders initialize poisoned storage own true params and reset" {
     for ([_]F{ 0, 0.08 }) |jitter| for ([_]F{ 0, 0.7, 1 }) |occupancy| {
-        const p: Speckle2DParams = .{ .cells_per_uv = .{ 3.17, 2.31 }, .radius_mean = 0.6, .radius_jitter = jitter, .occupancy = occupancy };
+        const p: GridParams = .{ .cells_per_uv = .{ 3.17, 2.31 }, .radius_mean = 0.6, .radius_jitter = jitter, .occupancy = occupancy };
         var expected = try Resources.init(std.testing.allocator, p);
         defer expected.deinit(std.testing.allocator);
         var buffer: [32769]u8 = @splat(0xa5);
@@ -5854,7 +5974,7 @@ test "classified bins explicit mixed FG BG AMB packets preserve inactive clamped
             for (0..@as(usize, 1) << @min(S, 8)) |pattern| {
                 var active: [S]bool = undefined;
                 for (&active, 0..) |*value, lane| value.* = pattern & (@as(usize, 1) << @intCast(lane)) != 0;
-                const p: Speckle2DParams = .{ .cells_per_uv = .{ @as(F, @floatFromInt(S)) - 0.01, 0.99 }, .radius_mean = 0.25, .radius_jitter = if (fixed) 0 else 0.08, .foreground = 0.91, .background = -0.0 };
+                const p: GridParams = .{ .cells_per_uv = .{ @as(F, @floatFromInt(S)) - 0.01, 0.99 }, .radius_mean = 0.25, .radius_jitter = if (fixed) 0 else 0.08, .foreground = 0.91, .background = -0.0 };
                 const data: ClassifiedBinnedSpeckle2D = .{ .params = p, .dims = .{ S * 8, 4 }, .cell_dims = .{ S, 1 }, .coordinates = coordinates, .slots = slots, .headers = &headers, .counts = &counts, .offsets = if (fixed) &.{} else &offsets };
                 const resources: Resources = .{ .kernel_index = kernelIndex(try p.resolve()), .data = .{ .classified_binned = data } };
                 const actual: [S]F = sampleSIMD(us, vs, active, p, &resources);
@@ -5937,7 +6057,7 @@ test "classified bins vector classifier all counts0 through9 partial singleton z
             @memset(coordinates[slots..], 0);
             const counts = [_]u8{ @intCast(amount), @intCast(amount) };
             const offsets = [_]u32{ 0, @intCast(amount), @intCast(2 * amount) };
-            const p: Speckle2DParams = .{ .cells_per_uv = .{ 1.17, 0.31 }, .radius_mean = if (zero_radius) std.math.floatMin(F) else 0.25, .radius_jitter = if (fixed) 0 else if (zero_radius) std.math.floatMin(F) else 0.08 };
+            const p: GridParams = .{ .cells_per_uv = .{ 1.17, 0.31 }, .radius_mean = if (zero_radius) std.math.floatMin(F) else 0.25, .radius_jitter = if (fixed) 0 else if (zero_radius) std.math.floatMin(F) else 0.08 };
             for (0..2) |cell| for (0..amount) |j| {
                 const index = (if (fixed) cell * 9 else offsets[cell]) + j;
                 coordinates[index] = @as(F, @floatFromInt(cell)) + @as(F, @floatFromInt(j + 1)) / 32;
@@ -5967,7 +6087,7 @@ test "classified bins vector classifier all counts0 through9 partial singleton z
 test "classified bins unprepared raw inactive dispatch preserve separate contracts" {
     try std.testing.expectEqual(speckleconfig.Config.classified_binned, speckleconfig.canonicalizeSampleConfig(.classified_binned));
     for ([_]F{ 0, 0.08 }) |jitter| for ([_]F{ 0, 0.7, 1 }) |occupancy| {
-        const p: Speckle2DParams = .{ .cells_per_uv = .{ 3.17, 2.31 }, .radius_mean = 0.6, .radius_jitter = jitter, .occupancy = occupancy, .foreground = 0.91, .background = -0.0 };
+        const p: GridParams = .{ .cells_per_uv = .{ 3.17, 2.31 }, .radius_mean = 0.6, .radius_jitter = jitter, .occupancy = occupancy, .foreground = 0.91, .background = -0.0 };
         var resources = try Resources.init(std.testing.allocator, p);
         defer resources.deinit(std.testing.allocator);
         try std.testing.expectEqual(kernelIndex(.classified_binned), resources.kernel_index.?);
@@ -6012,7 +6132,7 @@ test "classified bins resource census exhaustive clipped owner reference all log
         .{ .cells = .{ 13, 10 }, .radius = 0.6, .jitter = 0, .occupancy = 1 },
     };
     for (cases) |c| {
-        const p: Speckle2DParams = .{ .cells_per_uv = c.cells, .radius_mean = c.radius, .radius_jitter = c.jitter, .occupancy = c.occupancy, .seed = 0xa511e9b3 };
+        const p: GridParams = .{ .cells_per_uv = c.cells, .radius_mean = c.radius, .radius_jitter = c.jitter, .occupancy = c.occupancy, .seed = 0xa511e9b3 };
         var resources = try Resources.init(std.testing.allocator, p);
         defer resources.deinit(std.testing.allocator);
         const data = resources.data.classified_binned;
@@ -6051,7 +6171,7 @@ test "classified bins resource census exhaustive clipped owner reference all log
 test "classified bins active owners with no bin records preserve arithmetic backgrounds including signed zero" {
     for ([_]F{ std.math.nextAfter(F, 0, 1), std.math.floatMin(F) }) |radius| {
         for ([_]bool{ false, true }) |variable| {
-            const p: Speckle2DParams = .{ .cells_per_uv = .{ 0.01, 0.01 }, .radius_mean = radius, .radius_jitter = if (variable) radius else 0, .occupancy = 1, .foreground = 0.91, .background = -0.0, .seed = 43498 };
+            const p: GridParams = .{ .cells_per_uv = .{ 0.01, 0.01 }, .radius_mean = radius, .radius_jitter = if (variable) radius else 0, .occupancy = 1, .foreground = 0.91, .background = -0.0, .seed = 43498 };
             var resources = try Resources.init(std.testing.allocator, p);
             defer resources.deinit(std.testing.allocator);
             const data = resources.data.classified_binned;
@@ -6091,7 +6211,7 @@ test "Gaussian packets match independent fields at centers overlaps and underflo
         for (0..6) |variation| {
             const tiny = @sqrt(std.math.floatMin(F) * std.math.floatEps(F)) * 1.5;
             const radius: F = if (variation == 2 or variation == 3) tiny else if (config.neighborhood() == .one) 0.4 else 0.6;
-            const p: Speckle2DParams = .{
+            const p: GridParams = .{
                 .evaluator = if (buildconfig.enable_all_evaluators) tag else null,
                 .pattern = .gaussian,
                 .neighbor_count = if (buildconfig.enable_all_evaluators) config.neighborhood() else null,
@@ -6152,7 +6272,7 @@ test "packet adapters preserve inactive and clamped lane contracts numerically" 
         if (comptime tag != .cell_hash and tag != .list_naive and tag != .list_indexed and tag != .cell_binned) continue;
         for ([_]F{ 0, 0.08 }) |jitter| {
             for ([_]F{ 0, 0.7, 1 }) |occupancy| {
-                const params: Speckle2DParams = .{
+                const params: GridParams = .{
                     .evaluator = if (buildconfig.enable_all_evaluators) tag else null,
                     .pattern = config.pattern().?,
                     .neighbor_count = if (buildconfig.enable_all_evaluators) config.neighborhood() else null,
@@ -6194,7 +6314,7 @@ test "cell binned mixed-count packets never read poisoned unused strided records
         speckleconfig.Config{ .cell_binned = .{ .gaussian = .nine } },
     }) |config| {
         if (comptime !buildconfig.enable_all_evaluators and config.pattern() == .disk and config.edges() == .hard) continue;
-        const p: Speckle2DParams = .{
+        const p: GridParams = .{
             .evaluator = if (buildconfig.enable_all_evaluators) .cell_binned else null,
             .pattern = config.pattern().?,
             .neighbor_count = if (buildconfig.enable_all_evaluators) .nine else null,
@@ -6247,7 +6367,7 @@ test "cell binned mixed-count packets never read poisoned unused strided records
 }
 
 test "classified bins count guards ignore finite infinite and NaN unused fixed records" {
-    const p: Speckle2DParams = .{
+    const p: GridParams = .{
         .cells_per_uv = .{ 9.99, 0.99 },
         .radius_mean = 0.3,
         .foreground = 0.17,

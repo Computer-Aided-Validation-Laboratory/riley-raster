@@ -10,36 +10,33 @@ const std = @import("std");
 
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const camera = @import("../riley/zig/camera.zig");
+const specklefixture = @import("../riley/zig/specklefixture.zig");
 const expected_config = @import("expected_speckle_config.zig");
 const imageio = @import("../riley/zig/imageio.zig");
 const matslice = @import("../riley/zig/matslice.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const meshpipeline = @import("../riley/zig/meshpipeline.zig");
 const riley = @import("../riley/zig/riley.zig");
-const rotation = @import("../riley/zig/rotation.zig");
 const speckleconfig = @import("../riley/zig/speckleconfig.zig");
 const speckleops = @import("../riley/zig/speckleops.zig");
 const ndarray = @import("../riley/zig/ndarray.zig");
 const textureops = @import("../riley/zig/textureops.zig");
+const rotation = @import("../riley/zig/rotation.zig");
 const vecstack = @import("../riley/zig/vecstack.zig");
 
 const F = buildconfig.F;
-const Params = speckleops.Speckle2DParams;
+const GridParams = speckleops.GridParams;
+const Params = riley.SpeckleParams;
 const Pattern = speckleconfig.Pattern;
-const Evaluator = speckleconfig.Evaluator;
-const fixture_params: Params = .{
-    .seed = 12345,
-    .cells_per_uv = .{ 4.0, 3.0 },
-    .occupancy = 0.8,
-    .radius_mean = 0.3,
-};
+
+const fixture_params = specklefixture.physical_params;
 
 test "speckle BMP matches an independently calculated mock gradient" {
     if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const params: Params = .{ .evaluator = .mock };
+    const params: GridParams = .{ .evaluator = .mock };
     var resources = try speckleops.Resources.init(std.testing.allocator, params);
     defer resources.deinit(std.testing.allocator);
     const rows = 7;
@@ -94,7 +91,7 @@ test "constant low-level speckles match a uniform texture across evaluator confi
         for (cases) |case| {
             if (case.occupancy == 0 and config.pattern() == .perlin) continue;
             @memset(texture.array.slice, case.background);
-            var params: Params = .{
+            var params: GridParams = .{
                 .pattern = config.pattern() orelse .disk,
                 .cells_per_uv = .{ 3.25, 2.5 },
                 .occupancy = case.occupancy,
@@ -139,269 +136,178 @@ test "runtime speckle patterns prepare their production resources" {
         .coords = meshio.Coords.init(&coords, 3),
         .connect = meshio.Connect.init(&connect, 1, 3),
         .disp = null,
-        .shader = .{ .speckle = .{ .uvs = uvs } },
+        .shader = .{ .speckle = .{ .uvs = uvs, .params = .{ .disk = fixture_params } } },
     };
     const automatic = [_]struct {
         pattern: Pattern,
         softness: F = 0.0,
-        evaluator: Evaluator,
+        config: speckleconfig.Config,
     }{
-        .{ .pattern = .disk, .evaluator = .classified_binned },
-        .{ .pattern = .disk, .softness = 0.03, .evaluator = .cell_binned },
-        .{ .pattern = .gaussian, .evaluator = .cell_binned },
-        .{ .pattern = .perlin, .evaluator = .gradient_lattice },
+        .{ .pattern = .disk, .config = .classified_binned },
+        .{ .pattern = .disk, .softness = 0.03, .config = .{ .cell_binned = .{ .disk = .{ .neighborhood = .nine, .edges = .soft } } } },
+        .{ .pattern = .gaussian, .config = .{ .cell_binned = .{ .gaussian = .nine } } },
+        .{ .pattern = .perlin, .config = .gradient_lattice },
     };
     for (automatic) |case| {
-        var params = fixture_params;
-        params.pattern = case.pattern;
-        params.edge_softness = case.softness;
-        try expectPreparedResources(std.testing.allocator, &mesh_input, params, case.evaluator, if (case.pattern == .perlin) null else .nine);
+        var physical = fixture_params;
+        physical.edge_softness = case.softness;
+        const params: Params = switch (case.pattern) {
+            .disk => .{ .disk = physical },
+            .gaussian => .{ .gaussian = physical },
+            .perlin => .{ .perlin = .{ .cell_size = 0.25, .seed = fixture_params.seed } },
+        };
+        try expectPreparedResources(std.testing.allocator, &mesh_input, params, case.config);
     }
-
-    if (comptime !buildconfig.enable_all_evaluators) return;
-    for (speckleconfig.generationConfigs(true)) |config| {
-        var params = fixture_params;
-        params.pattern = config.pattern() orelse .disk;
-        params.edge_softness = if (config.edges() == .soft) 0.03 else 0.0;
-        params.evaluator = std.meta.activeTag(config);
-        params.neighbor_count = config.neighborhood();
-        try expectPreparedResources(
-            std.testing.allocator,
-            &mesh_input,
-            params,
-            std.meta.activeTag(config),
-            config.neighborhood(),
-        );
-    }
-    var direct = fixture_params;
-    direct.evaluator = .direct_fixed;
-    try expectPreparedResources(std.testing.allocator, &mesh_input, direct, .direct_fixed, .one);
 }
 
-test "production default speckle renders cover fields deformation buffers and worker counts without overrides" {
-    // This is integration/determinism coverage, not an independent field oracle. The
-    // independent default field oracles live in speckleops; cross-evaluator E2E stays gated.
-    try expectAnalyticRenders(false);
-}
-
-test "analytic speckle renders agree across evaluators buffers and serial or parallel execution" {
-    if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
-    try expectAnalyticRenders(true);
-}
-
-fn expectAnalyticRenders(comptime compare_evaluators: bool) !void {
+test "physical default speckles lower friendly inputs and render deformed fields" {
+    // riley.zig owns buffer/worker comparisons and experimental independent references.
+    // Here the public entry point lowers hard/soft disks, Gaussian and Perlin inputs.
     const Case = struct {
         pattern: Pattern,
-        jitter: F,
-        curved: bool,
-        radius: F = fixture_params.radius_mean,
+        jitter: F = 0,
+        curved: bool = false,
+        coverage: F = fixture_params.coverage,
         occupancy: F = fixture_params.occupancy,
         softness: F = 0,
-        perlin_transition: F = 0.12,
-        neighbors: ?speckleconfig.Neighborhood = null,
     };
-    const cases: []const Case = if (compare_evaluators) &.{
-        .{ .pattern = .disk, .jitter = 0, .curved = false, .softness = 0.06 },
-        .{ .pattern = .disk, .jitter = 0.25, .curved = true, .softness = 0.06 },
-        .{ .pattern = .disk, .jitter = 0, .curved = true },
-        .{ .pattern = .disk, .jitter = 0.25, .curved = false },
-        .{ .pattern = .disk, .jitter = 0, .curved = false, .radius = 0.425, .occupancy = 1 },
-        .{ .pattern = .disk, .jitter = 0, .curved = true, .radius = 0.425, .occupancy = 1 },
-        .{ .pattern = .gaussian, .jitter = 0, .curved = true },
-        .{ .pattern = .gaussian, .jitter = 0.25, .curved = false },
-        .{ .pattern = .perlin, .jitter = 0, .curved = false, .perlin_transition = 0 },
-        .{ .pattern = .perlin, .jitter = 0, .curved = true },
-        // One-neighbor support (radius + jitter + softness) must stay <= 0.5.
-        // Four-neighbor centers use a different generation domain; compare each
-        // against a naive list generated with the same stencil, not the nine default.
-        .{ .pattern = .disk, .neighbors = .one, .jitter = 0.1, .curved = false },
-        .{ .pattern = .disk, .neighbors = .one, .jitter = 0.1, .curved = true },
-        .{ .pattern = .disk, .neighbors = .four, .jitter = 0.25, .radius = 0.425, .curved = false },
-        .{ .pattern = .disk, .neighbors = .four, .jitter = 0.25, .radius = 0.425, .curved = true },
-        .{ .pattern = .disk, .neighbors = .one, .jitter = 0.1, .softness = 0.06, .curved = false },
-        .{ .pattern = .disk, .neighbors = .one, .jitter = 0.1, .softness = 0.06, .curved = true },
-        .{ .pattern = .disk, .neighbors = .four, .jitter = 0.25, .softness = 0.06, .curved = false },
-        .{ .pattern = .disk, .neighbors = .four, .jitter = 0.25, .softness = 0.06, .curved = true },
-        .{ .pattern = .gaussian, .neighbors = .one, .jitter = 0.1, .curved = false },
-        .{ .pattern = .gaussian, .neighbors = .one, .jitter = 0.1, .curved = true },
-        .{ .pattern = .gaussian, .neighbors = .four, .jitter = 0.25, .radius = 0.425, .curved = false },
-        .{ .pattern = .gaussian, .neighbors = .four, .jitter = 0.25, .radius = 0.425, .curved = true },
-    } else &.{
-        .{ .pattern = .disk, .jitter = 0, .curved = true, .radius = 0.425, .occupancy = 1 },
-        .{ .pattern = .disk, .jitter = 0.25, .curved = false, .softness = 0.06 },
-        .{ .pattern = .gaussian, .jitter = 0.25, .curved = true },
-        .{ .pattern = .perlin, .jitter = 0, .curved = false },
+    const cases = [_]Case{
+        .{ .pattern = .disk, .coverage = 0.5, .occupancy = 1 },
+        .{ .pattern = .disk, .curved = true, .coverage = 0.5, .occupancy = 1 },
+        .{ .pattern = .disk, .jitter = 0.02, .softness = 0.015 },
+        .{ .pattern = .gaussian, .curved = true, .jitter = 0.02 },
+        .{ .pattern = .perlin, .curved = true },
     };
-    const camera_input: camera.CameraInput = .{
-        .pixels_num = .{ 32, 24 },
-        .pixels_size = .{ 0.05, 0.05 },
+
+    for (cases, 0..) |case, case_idx| {
+        var physical = fixture_params;
+        physical.coverage = case.coverage;
+        physical.occupancy = case.occupancy;
+        physical.jitter = case.jitter;
+        physical.edge_softness = case.softness;
+        const params: Params = switch (case.pattern) {
+            .disk => .{ .disk = physical },
+            .gaussian => .{ .gaussian = physical },
+            .perlin => .{ .perlin = .{
+                .cell_size = 0.3,
+                .seed = fixture_params.seed,
+            } },
+        };
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const scene = try specklefixture.initScene(&arena, params, case.curved, 1);
+
+        errdefer std.debug.print("physical render case {d}: {s}, curved={}\n", .{
+            case_idx, @tagName(case.pattern), case.curved,
+        });
+        const alloc = arena.allocator();
+        const expected = try renderSpeckleMesh(alloc, scene.camera_input, scene.mesh_input);
+        try specklefixture.expectDeformedImages(expected);
+
+        // A unit change must preserve the soft, jittered disk and the physical Perlin period.
+        if (case.softness > 0 or case.pattern == .perlin) {
+            const scaled = try specklefixture.initScene(&arena, params, case.curved, 8);
+            const actual = try renderSpeckleMesh(alloc, scaled.camera_input, scaled.mesh_input);
+            try specklefixture.expectImagesWithin(expected, actual, 0);
+        }
+    }
+}
+
+test "public physical disk render recovers nominal coverage and reference scale" {
+    const cols = 768;
+    const rows = 512;
+    const pixel_size = 1.0 / 128.0;
+    const radius: F = 1.0 / 64.0;
+    // Front-facing 6 by 4 view inside a larger orthogonal plate: no silhouette or UV
+    // boundary pixels contribute. At z = 0, focal length equals camera distance.
+    const cam_input: camera.CameraInput = .{
+        .pixels_num = .{ cols, rows },
+        .pixels_size = .{ pixel_size, pixel_size },
         .pos_world = vecstack.Vec3F.initSlice(&.{ 0, 0, 2 }),
         .rot_world = rotation.Rotation.init(0, 0, 0),
         .roi_cent_world = vecstack.Vec3F.initZeros(),
         .focal_length = 2,
-        .sub_sample = 2,
+        .sub_sample = 1,
     };
-    var connect = [_]usize{ 0, 1, 2, 3, 4, 5 };
-    var uv_values = [_]F{ 0, 0, 1, 0, 0, 1, 0.5, 0, 0.5, 0.5, 0, 0.5 };
-    const uvs = try ndarray.NDArray(F).init(std.testing.allocator, &uv_values, &.{ 6, 2 });
-    defer uvs.deinit(std.testing.allocator);
-    var disp = try meshio.Field.initAlloc(std.testing.allocator, 2, 6, 3);
-    defer disp.deinit(std.testing.allocator);
+    var coords = [_]F{ -3.25, -2.25, 0, 3.25, -2.25, 0, 3.25, 2.25, 0, -3.25, 2.25, 0 };
+    var connect = [_]usize{ 0, 1, 2, 3 };
+    var uv_values = [_]F{ 0, 0, 1, 0, 1, 1, 0, 1 };
+    const alloc = std.testing.allocator;
+    const uvs = try ndarray.NDArray(F).init(alloc, &uv_values, &.{ 4, 2 });
+    defer uvs.deinit(alloc);
 
-    for (cases, 0..) |case, case_idx| {
-        var coords = [_]F{
-            -0.65, -0.45, 0, 0.65, -0.45, 0, -0.65, 0.45, 0,
-            0,     -0.45, 0, 0,    0,     0, -0.65, 0,    0,
-        };
-        for (0..6) |nn| {
-            // The second frame shears/translates the patch; curved cases also bend in depth.
-            disp.array.set(&.{ 1, nn, 0 }, 0.08 + 0.1 * coords[3 * nn + 1]);
-            disp.array.set(&.{ 1, nn, 1 }, 0.03 * coords[3 * nn]);
-            disp.array.set(&.{ 1, nn, 2 }, if (case.curved and nn >= 3) 0.08 else 0);
+    const cases = [_]struct { occupancy: F, coverage: F, jitter: F = 0, expected: f64, tol: f64 }{
+        .{ .occupancy = 0.3, .coverage = 0.1, .expected = 0.1, .tol = 0.005 },
+        // Independent numerical coverage for uniform J = R/2 at nominal C = 0.5.
+        // Allow more finite-area sampling variation for this denser field.
+        .{ .occupancy = 1, .coverage = 0.5, .jitter = radius / 2, .expected = 0.5254, .tol = 0.01 },
+    };
+    for (cases) |case| {
+        errdefer std.debug.print("disk coverage {d}, occupancy {d}, jitter {d}\n", .{
+            case.coverage, case.occupancy, case.jitter,
+        });
+        var arena = std.heap.ArenaAllocator.init(alloc);
+        defer arena.deinit();
+        const image = try renderSpeckleMesh(arena.allocator(), cam_input, .{
+            .mesh_type = .quad4,
+            .coords = meshio.Coords.init(&coords, 4),
+            .connect = meshio.Connect.init(&connect, 1, 4),
+            .disp = null,
+            .shader = .{ .speckle = .{ .uvs = uvs, .params = .{ .disk = .{
+                .seed = fixture_params.seed,
+                .radius = radius,
+                .occupancy = case.occupancy,
+                .coverage = case.coverage,
+                .jitter = case.jitter,
+            } }, .bits = null } },
+        });
+        try std.testing.expectEqualSlices(usize, &.{ 1, 1, 1, rows, cols }, image.dims);
+        var covered: usize = 0;
+        var row_transitions: usize = 0;
+        var col_transitions: usize = 0;
+        for (image.slice, 0..) |value, index| {
+            if (value == 0) covered += 1 else try std.testing.expectEqual(@as(F, 1), value);
+            if (index % cols != 0 and value != image.slice[index - 1]) row_transitions += 1;
+            if (index >= cols and value != image.slice[index - cols]) col_transitions += 1;
         }
-        if (case.curved) {
-            coords[3 * 3 + 2] = 0.12;
-            coords[3 * 4 + 2] = 0.2;
-            coords[3 * 5 + 2] = 0.1;
-        }
-        var params = fixture_params;
-        params.pattern = case.pattern;
-        params.edge_softness = case.softness;
-        params.perlin_coverage_transition_width = case.perlin_transition;
-        params.radius_jitter = case.jitter;
-        params.radius_mean = case.radius;
-        params.occupancy = case.occupancy;
-        params.neighbor_count = case.neighbors;
-        try params.validate();
-        var mesh: meshpipeline.MeshInput = .{
-            .mesh_type = .tri6,
-            .coords = meshio.Coords.init(&coords, 6),
-            .connect = meshio.Connect.init(&connect, 1, 6),
-            .disp = disp,
-            .shader = .{ .speckle = .{
-                .uvs = uvs,
-                .params = params,
-                .bits = null,
-                .scaling = .none,
-            } },
-        };
-        for ([_]riley.BufferMode{ .tile_local, .global_subpx_full, .global_subpx_stripe }) |buffer_mode| {
-            const config: riley.RasterConfig = .{
-                .save_strategy = .memory,
-                .report = .{ .mode = .off },
-                .background_value = -1,
-                .advanced = .{ .raster = .{
-                    .buffer_mode = buffer_mode,
-                    .tile_size_override = 8,
-                    .global_subpx_tile_size_min = 8,
-                    .global_subpx_tile_size_override = 8,
-                    .global_subpx_stripe_size_min = 8,
-                    .global_subpx_stripe_size_override = 8,
-                } },
-            };
-            errdefer std.debug.print("render equality case {d}: {s}, radius={d}, occupancy={d}, jitter={d}, neighbors={any}, curved={}, buffer={s}\n", .{
-                case_idx, @tagName(case.pattern), case.radius, case.occupancy, case.jitter, case.neighbors, case.curved, @tagName(buffer_mode),
-            });
-            // Only experimental builds compare against production reference evaluators.
-            // Default smoke tests compare the 1-worker omitted-override baseline with 4 workers.
-            mesh.shader.speckle.params.evaluator = if (comptime compare_evaluators)
-                if (case.pattern == .perlin) .cell_hash else .list_naive
-            else
-                null;
-            var expected = (try riley.rasterAdvanced(
-                std.testing.allocator,
-                std.testing.io,
-                &.{camera_input},
-                &.{mesh},
-                config,
-                null,
-                .{ .render_groups = .{ .supplied = &.{.{ .io = std.testing.io, .workers = 1 }} } },
-            )) orelse return error.NoResult;
-            defer {
-                std.testing.allocator.free(expected.slice);
-                expected.deinit(std.testing.allocator);
-            }
-            try std.testing.expectEqualSlices(usize, &.{ 1, 2, 1, 24, 32 }, expected.dims);
-            const frame_pixels = 24 * 32;
-            for (0..2) |ff| {
-                const frame = expected.slice[ff * frame_pixels ..][0..frame_pixels];
-                var covered: usize = 0;
-                var dark: usize = 0;
-                var light: usize = 0;
-                for (frame) |value| {
-                    try std.testing.expect(std.math.isFinite(value));
-                    if (value >= 0) {
-                        covered += 1;
-                        if (value < 0.4) dark += 1;
-                        if (value > 0.6) light += 1;
-                    }
-                }
-                try std.testing.expect(covered > 40 and covered < frame_pixels);
-                try std.testing.expect(dark > 5 and light > 5);
-            }
-            var changed: usize = 0;
-            for (expected.slice[0..frame_pixels], expected.slice[frame_pixels..]) |a, b| {
-                if (a != b) changed += 1;
-            }
-            try std.testing.expect(changed > 20);
-
-            // A null evaluator exercises automatic resolution; reduced stencils still
-            // require their experimental neighborhood override. Only smoke cases omit both.
-            // The gated reference shares generation, not the accelerated sampling structures.
-            // Masks approximate the field and deliberately do not participate in exact equality.
-            const evaluators: []const ?Evaluator = if (!compare_evaluators)
-                &.{null}
-            else if (case.neighbors != null)
-                &.{ null, .list_indexed }
-            else if (case.pattern == .perlin)
-                &.{ null, .gradient_lattice, .cell_hash }
-            else if (case.pattern == .disk and case.softness == 0)
-                &.{ null, .classified_binned, .classified_indexed, .cell_binned, .list_indexed, .list_naive, .cell_hash }
-            else
-                &.{ null, .cell_binned, .list_indexed, .list_naive, .cell_hash };
-            const worker_counts: []const u16 = if (compare_evaluators) &.{ 1, 4 } else &.{4};
-            for (evaluators) |evaluator| {
-                for (worker_counts) |workers| {
-                    mesh.shader.speckle.params.evaluator = evaluator;
-                    var actual = (try riley.rasterAdvanced(
-                        std.testing.allocator,
-                        std.testing.io,
-                        &.{camera_input},
-                        &.{mesh},
-                        config,
-                        null,
-                        .{ .render_groups = .{ .supplied = &.{.{ .io = std.testing.io, .workers = workers }} } },
-                    )) orelse return error.NoResult;
-                    defer {
-                        std.testing.allocator.free(actual.slice);
-                        actual.deinit(std.testing.allocator);
-                    }
-                    try std.testing.expectEqualSlices(usize, expected.dims, actual.dims);
-                    for (expected.slice, actual.slice, 0..) |reference, value, ii| {
-                        // Numeric equality intentionally accepts opposite signs of zero.
-                        if (reference != value) {
-                            std.debug.print("{s}, {d} workers: frame {d}, pixel {d}: expected {d}, found {d}\n", .{
-                                if (evaluator) |selected| @tagName(selected) else "default", workers, ii / frame_pixels, ii % frame_pixels, reference, value,
-                            });
-                            return error.TestExpectedEqual;
-                        }
-                    }
-                }
+        const fraction = @as(f64, @floatFromInt(covered)) / (rows * cols);
+        // Resolution, centre quantization, and correlated finite-area sampling all matter.
+        try std.testing.expectApproxEqAbs(case.expected, fraction, case.tol);
+        if (case.coverage < 0.2) {
+            // Isolated circles have 4/(pi*R) crossings per scanline length per unit
+            // coverage. Overlap and pixel sampling reduce that ratio in this scene.
+            const isolated = 4 * fraction / (std.math.pi * @as(f64, radius));
+            for ([_]usize{ row_transitions, col_transitions }, [_]f64{ rows * (cols - 1), cols * (rows - 1) }) |transitions, pixel_intervals| {
+                const crossings_per_length = @as(f64, @floatFromInt(transitions)) /
+                    (pixel_intervals * pixel_size);
+                try std.testing.expectApproxEqAbs(@as(f64, 0.95), crossings_per_length / isolated, 0.057);
             }
         }
     }
+}
+
+fn renderSpeckleMesh(
+    outer_alloc: std.mem.Allocator,
+    camera_input: camera.CameraInput,
+    mesh_input: meshpipeline.MeshInput,
+) !ndarray.NDArray(F) {
+    return (try riley.rasterAdvanced(
+        outer_alloc,
+        std.testing.io,
+        &.{camera_input},
+        &.{mesh_input},
+        specklefixture.rasterConfig(.tile_local),
+        null,
+        .{ .render_groups = .{ .supplied = &.{.{ .io = std.testing.io, .workers = 1 }} } },
+    )) orelse error.NoResult;
 }
 
 fn expectPreparedResources(
     outer_alloc: std.mem.Allocator,
     base_input: *const meshpipeline.MeshInput,
     params: Params,
-    evaluator: Evaluator,
-    neighbors: ?speckleconfig.Neighborhood,
+    expected: speckleconfig.Config,
 ) !void {
-    const expected = try params.resolve();
-    try std.testing.expectEqual(evaluator, std.meta.activeTag(expected));
-    try std.testing.expectEqual(neighbors, expected.neighborhood());
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     var mesh_input = base_input.*;
@@ -411,21 +317,19 @@ fn expectPreparedResources(
         .speckle => |*shader| &shader.resources,
         else => return error.UnexpectedShaderVariant,
     };
+    const actual = try mesh_static.shader.speckle.params.resolve();
+    try std.testing.expectEqualDeep(expected, actual);
+    try std.testing.expectEqual(expected.neighborhood(), actual.neighborhood());
     try std.testing.expect(resources.kernel_index != null);
     try std.testing.expectEqualDeep(
         speckleconfig.canonicalizeSampleConfig(expected),
         speckleops.kernel_configs[resources.kernel_index.?],
     );
-    const expected_backing: std.meta.Tag(speckleops.Backing) = switch (evaluator) {
+    const expected_backing: std.meta.Tag(speckleops.Backing) = switch (expected) {
         .gradient_lattice => .perlin,
-        .list_naive => .list,
-        .list_indexed => .strip_list,
         .cell_binned => .cell_binned,
-        .classified_indexed => .classified,
         .classified_binned => .classified_binned,
-        .direct_fixed => .direct_fixed,
-        .mask_1bit, .mask_u8 => .mask,
-        .cell_hash, .mock => .none,
+        else => unreachable,
     };
     try std.testing.expectEqual(expected_backing, std.meta.activeTag(resources.data));
 }

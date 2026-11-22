@@ -4,7 +4,9 @@
 
 ## 1. Quickstart Guide
 
-The recommended testing workflow for Riley is:
+Run Python tests and tooling discovery in the project virtual environment (with
+NumPy installed); see [Python development setup](README.md#python-development-and-distribution).
+The recommended testing workflow is:
 
 ```bash
 # Step 1: Run gold-independent unit and configuration coverage
@@ -17,7 +19,7 @@ zig build test-basic
 .venv/bin/pytest src/riley/pytests/
 
 # Tooling unit tests from the repository root (also run in CI)
-python -m unittest discover -s scripts/tests
+.venv/bin/python -m unittest discover -s scripts/tests
 
 # Step 3: Generate reference gold data for the Full suite
 zig build gen-gold-full -Doptimize=ReleaseSafe
@@ -68,8 +70,8 @@ Riley provides gold-backed regression suites and gold-independent unit/configura
 | **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | [`src/test_full_badjac.zig`](../src/test_full_badjac.zig) | Warning-only renders and diffs for invalid one-element frames | Existing basic and full-hull gold |
 | **Python Pytest Suite** | `.venv/bin/pytest src/riley/pytests/` | [`src/riley/pytests/`](../src/riley/pytests) | Python/Cython API, mesh pipeline, Exodus conversion, demo parity | Integrated / `gold/` |
 | **C API Suite** | `zig build test-c-api` | [`src/riley/zig/c-riley.zig`](../src/riley/zig/c-riley.zig) | Public C API under fixed f64/SIMD/default policy | In-memory references |
-| **Procedural Speckles** | Included in `test-basic` and `test-unit`; focused: `zig build test-procedural-speckles` | [`src/test_basic.zig`](../src/test_basic.zig); [`src/testproceduralspeckles.zig`](../src/testproceduralspeckles.zig) | Default integration plus focused gold-independent generation/sampling/preparation checks; focused target also checks 32-bit size handling in Ubuntu CI | Basic gold / in-memory references |
-| **Native Benchmark Tooling** | Included in `test-unit`; focused: `zig build test-speckle-benchmark` | [`src/bench_speckle_evaluators.zig`](../src/bench_speckle_evaluators.zig) | Tests native benchmark tooling and harness correctness without running performance profiles; focused target is a local convenience | In-memory references |
+| **Procedural Speckles** | Included in `test-basic` and `test-unit`; focused: `zig build test-procedural-speckles` | [`src/testproceduralspeckles.zig`](../src/testproceduralspeckles.zig); [`src/tests/testproceduralspeckles.zig`](../src/tests/testproceduralspeckles.zig) | Default integration plus focused gold-independent generation/sampling/preparation checks | In-memory references |
+| **Native Benchmark Tooling** | Included in `test-unit`; focused: `zig build test-speckle-benchmark` | [`src/bench_speckle_evaluators.zig`](../src/bench_speckle_evaluators.zig) | Native benchmark tooling and harness correctness | In-memory references |
 
 ### Regenerating Reference Gold for Core Suites
 
@@ -200,12 +202,18 @@ The **Basic Suite** is the primary regression suite packaged with the repository
 
 ### Native unit and configuration testing
 
-The shared [`src/testunit.zig`](../src/testunit.zig) root is gold-independent and runs core numerical units, relevant camera/frontend coverage, speckle integration/shared CLI checks, and native tooling/harness correctness. `test-basic` imports that root alongside its existing gold-backed comparisons; `test-verif-basic` is the combined verification/basic target. `test-configs` runs the same unit root across f64/f32, SIMD on/off, and default/experimental evaluator policy, requiring no f32 gold references. The focused `test-speckle-benchmark` target remains a local developer convenience; the focused `test-procedural-speckles` target also provides 32-bit coverage in Ubuntu CI. Neither runs performance workloads.
+The shared [`src/testunit.zig`](../src/testunit.zig) root is gold-independent
+and runs core numerical units, camera/frontend coverage, speckle integration and
+shared CLI checks, and native tooling/harness correctness. `test-basic` imports
+that root alongside its gold-backed comparisons; `test-verif-basic` is the
+combined verification/basic target. `test-configs` runs the same unit root
+across f64/f32, SIMD on/off, and default/experimental evaluator policy, requiring
+no f32 gold references. The focused `test-speckle-benchmark` and
+`test-procedural-speckles` targets do not run performance workloads.
 
-Default-build runs must exercise default-compiled behavior: hard disks use
-`classified-binned`, soft disks and Gaussians use `cell-binned`, and Perlin uses
-`gradient-lattice`. Explicit evaluator/neighborhood overrides and experimental-only
-paths belong in runs with `-Denable-all-evaluators=true`, not default-build runs.
+Default-build tests exercise the automatic evaluator policy; see the
+[internal evaluator guide](README.md#internal-evaluator-experiments-and-benchmarking)
+for the policy and experimental overrides.
 
 On x86-64 Linux with 32-bit execution support, run the existing native focused
 suite for both policies (no external C dependencies are needed; Zig supplies musl):
@@ -221,31 +229,79 @@ explicit evaluator expansion and packed-mask signed SIMD-index errors. These
 checks skip on 64-bit targets. This native Zig coverage is independent of Python
 wheel architectures and does not imply 32-bit Windows package validation.
 
+Windows Zig CI installs representative benchmarks and checks their expected
+executable names, including the precision/SIMD suffix and `.exe` extension.
+
 The C interface is tested separately with `zig build test-c-api`, using LLVM/libc and the fixed public f64/SIMD/default configuration.
+
+#### Physical speckle verification
+
+Test the [public contract](../docs/python-api/speckles.rst) separately from
+[coverage approximation accuracy](THEORY.md#6-physical-speckle-calibration-and-nominal-coverage)
+and exact raw-sampler equality:
+
+- `specklecoverage.zig`: analytic branch and branch-switch continuity,
+  monotonicity, inverse round trips, dilute/near-cap cases, invalid/unattainable
+  requests, and frozen independent coverage/inverse references near interpolation
+  and geometry breaks. f32/f64 cases quantize inputs to the f64 coverage model.
+- `specklegeom.zig` / `speckleparams.zig`: geometry and parameter lowering for all
+  surface types, including affine UV range and between-node quadratic overshoot,
+  Perlin cell size, and density errors.
+- Raw `GridParams` tests use cell-space inputs, including empty/equal-color
+  cases; their exact equality checks are not coverage-accuracy tests.
+- `riley.zig`: default builds run the automatic evaluator in all three buffer
+  modes. Worker comparisons are exact within each buffer mode; full and stripe
+  references also match tile-local within a tolerance for SSAA reduction order.
+  Experimental builds add independent `list-naive`/Perlin `cell-hash` references
+  and explicit evaluator/neighborhood comparisons.
+- [`testproceduralspeckles.zig`](../src/tests/testproceduralspeckles.zig) checks
+  deformation and 8× unit rescaling. A planar render checks physical radius,
+  nominal coverage, and the expected half-radius jitter increase.
+- C API / [`test_func_shader_params.py`](../src/riley/pytests/test_func_shader_params.py):
+  nondefault forwarding, type/shape checks (including boolean seed rejection),
+  representative native errors, and render integration. `test_meshio.py` also
+  renders a converted curved surface. Complete numeric-bound matrices belong to
+  native units, not duplicated boundary-layer sweeps.
+
+Focused native coverage check:
+
+```shell
+zig test src/riley/zig/specklecoverage.zig -O ReleaseSafe
+```
+
+Run the table check and independent oracle in the [test venv](#1-quickstart-guide):
+
+```shell
+.venv/bin/python scripts/generate_speckle_coverage.py --check
+.venv/bin/python -m unittest scripts.tests.test_speckle_coverage -v
+```
+
+Omit `--check` only for intentional regeneration with numerical review. Use
+`test-configs` for precision/SIMD integration; do not regenerate image gold merely
+to accept a changed field. After rebuilding bindings, check autodoc signatures
+using the [documentation build](DOCS.md).
 
 #### Native benchmark runner smoke (opt-in)
 
 Tooling discovery normally skips the unmocked native runner smoke. To enable it,
-build the stripped ReleaseFast experimental binary and set
-`RILEY_SPECKLE_BENCH_BINARY` from the repository root:
+activate the project virtual environment, build the stripped ReleaseFast
+experimental binary, and set `RILEY_SPECKLE_BENCH_BINARY` from the repository root:
 
 ```shell
-zig build install-bench-speckle-evaluators -Doptimize=ReleaseFast -Dstrip=true -Denable-all-evaluators=true
-RILEY_SPECKLE_BENCH_BINARY=zig-out/bin/bench_speckle_evaluators_f64_simd python -m unittest scripts.tests.test_bench_speckle.NativeBenchmarkTests
+zig build install-bench-speckle-evaluators -Doptimize=ReleaseFast -Dstrip=true -Denable-all-evaluators=true --prefix zig-out/speckle-experimental
+RILEY_SPECKLE_BENCH_BINARY=zig-out/speckle-experimental/bin/bench_speckle_evaluators_f64_simd \
+  python -m unittest scripts.tests.test_bench_speckle.NativeBenchmarkTests
 ```
 
 The environment assignment above uses POSIX-shell syntax. In PowerShell use
-`$env:RILEY_SPECKLE_BENCH_BINARY = 'zig-out/bin/bench_speckle_evaluators_f64_simd.exe'`,
-then run the same `python -m unittest` command. With other precision/SIMD settings
-or an install prefix, use the corresponding installed binary path.
+`$env:RILEY_SPECKLE_BENCH_BINARY = 'zig-out/speckle-experimental/bin/bench_speckle_evaluators_f64_simd.exe'`,
+then run the same `python -m unittest` command in the active venv. With other
+precision/SIMD settings, use the corresponding installed binary path.
 
-Ubuntu CI enables this smoke explicitly. It checks the real native catalogue,
-runner records, prepared-resource identity, and exact output equality between
-`cell-binned` and `classified-binned` for small plate/sphere cases in both static
-evaluation and production full-render modes. It is a correctness smoke, not a
-performance-regression measurement. The binary needs experimental evaluators
-because the comparison explicitly selects both implementations; production
-Python/C defaults are unchanged.
+Ubuntu CI enables this correctness smoke, not a performance regression. Set
+`RILEY_SPECKLE_BENCH_ARTIFACT_DIR=PATH` to retain logs/results in fresh, printed
+`PATH/bench-smoke-*` directories. See the
+[benchmark contract](README.md#internal-evaluator-experiments-and-benchmarking).
 
 ---
 

@@ -6,10 +6,13 @@
 //
 // Authors: James Panayis
 // --------------------------------------------------------------------------------------
-//! One process is one observation. Decode, fixture loading and checksum reduction
-//! are excluded. Evaluation prepares static geometry once; full-render uses the
-//! production API, including output allocation, frame geometry and assembly.
+//! One process is one observation. Fixture loading and texture decode are excluded.
+//! Evaluation measures resource preparation and the static-geometry loop; its final
+//! reduction is excluded. Full-render times the production memory API, including
+//! UV gathering/calibration, output allocation, frame geometry and assembly.
+//! The full-render image hash is computed after timing.
 const std = @import("std");
+const builtin = @import("builtin");
 const camera = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
 const meshio = @import("riley/zig/meshio.zig");
@@ -25,8 +28,10 @@ const mo = @import("riley/zig/meshpipeline.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
 const texops = @import("riley/zig/textureops.zig");
 const imageio = @import("riley/zig/imageio.zig");
+const physical = @import("riley/zig/speckleparams.zig");
+
 const F = build.F;
-const builtin = @import("builtin");
+const grid_defaults: speckle.GridParams = .{};
 
 // Use resolved feature bits, not the model's defaults: -mcpu can add/remove features.
 // Names follow the target's feature enum order, which is deterministic.
@@ -80,7 +85,7 @@ fn buildIdentity() BuildIdentity {
     };
 }
 
-const workload_modes = .{ .evaluation = bench.workload_mode, .@"full-render" = "production-raster-advanced-memory-v2" };
+const workload_modes = .{ .evaluation = bench.workload_mode, .@"full-render" = "production-raster-advanced-memory-v5" };
 
 const Options = struct {
     mode: enum { evaluation, @"full-render" } = .evaluation,
@@ -89,25 +94,30 @@ const Options = struct {
     threads: u16 = 1,
     plate: bool = true,
     pattern: policy.Pattern = .disk,
-    jitter: F = 0.08,
-    occupancy: F = 0.7,
+    jitter: ?F = null,
+    occupancy: ?F = null,
     neighbors: ?policy.Neighborhood = null,
     frames: usize = 16,
     width: u32 = 3840,
     height: u32 = 2160,
     cells_u: ?F = null,
     cells_v: ?F = null,
-    radius: F = 0.35,
+    radius: ?F = null,
+    coverage: ?F = null,
+    cell_size: ?F = null,
+    soft: bool = false,
     softness: F = 0,
-    perlin_threshold: F = 0,
-    perlin_transition: F = 0.12,
-    seed: u32 = 0xa511e9b3,
+    perlin_threshold: F = grid_defaults.perlin_coverage_threshold,
+    perlin_transition: F = grid_defaults.perlin_coverage_transition_width,
+    seed: u32 = grid_defaults.seed,
     texture: []const u8 = "texture/speckle_mono.bmp",
     texture_filter: texops.TexSamp = .cubic_catmull_rom,
 
     fn parse(args: []const []const u8) !Options {
         var out: Options = .{};
-        var soft = false;
+        var explicit_seed = false;
+        var physical_controls = false;
+        var perlin_controls = false;
         var i: usize = 1;
         while (i < args.len) : (i += 2) {
             if (i + 1 == args.len) return error.MissingFlagValue;
@@ -117,13 +127,13 @@ const Options = struct {
                 out.mode = std.meta.stringToEnum(@TypeOf(out.mode), value) orelse return error.InvalidMode;
             } else if (std.mem.eql(u8, key, "--evaluator")) {
                 out.texture_material = std.mem.eql(u8, value, "texture");
-                out.evaluator = if (out.texture_material) null else policy.parseEvaluator(value) orelse return error.InvalidEvaluator;
+                out.evaluator = if (out.texture_material or std.mem.eql(u8, value, "auto")) null else policy.parseEvaluator(value) orelse return error.InvalidEvaluator;
             } else if (std.mem.eql(u8, key, "--scene")) {
                 out.plate = std.mem.eql(u8, value, "plate");
                 if (!out.plate and !std.mem.eql(u8, value, "sphere")) return error.InvalidScene;
             } else if (std.mem.eql(u8, key, "--pattern")) {
-                soft = std.mem.eql(u8, value, "soft");
-                out.pattern = if (soft or std.mem.eql(u8, value, "hard")) .disk else policy.parsePattern(value) orelse return error.InvalidPattern;
+                out.soft = std.mem.eql(u8, value, "soft");
+                out.pattern = if (out.soft or std.mem.eql(u8, value, "hard")) .disk else policy.parsePattern(value) orelse return error.InvalidPattern;
             } else if (std.mem.eql(u8, key, "--texture")) {
                 out.texture = value;
             } else if (std.mem.eql(u8, key, "--texture-filter")) {
@@ -141,36 +151,102 @@ const Options = struct {
                 const count = try std.fmt.parseInt(u8, value, 10);
                 out.neighbors = std.enums.fromInt(policy.Neighborhood, count) orelse return error.InvalidSpeckleNeighborCount;
             } else if (std.mem.eql(u8, key, "--seed")) {
+                explicit_seed = true;
                 out.seed = try std.fmt.parseInt(u32, value, 0);
             } else if (std.mem.eql(u8, key, "--cells-u")) {
                 out.cells_u = try std.fmt.parseFloat(F, value);
             } else if (std.mem.eql(u8, key, "--cells-v")) {
                 out.cells_v = try std.fmt.parseFloat(F, value);
+            } else if (std.mem.eql(u8, key, "--coverage")) {
+                physical_controls = true;
+                out.coverage = try std.fmt.parseFloat(F, value);
+            } else if (std.mem.eql(u8, key, "--cell-size")) {
+                perlin_controls = true;
+                out.cell_size = try std.fmt.parseFloat(F, value);
             } else if (std.mem.eql(u8, key, "--jitter")) {
+                physical_controls = true;
                 out.jitter = try std.fmt.parseFloat(F, value);
             } else if (std.mem.eql(u8, key, "--occupancy")) {
+                physical_controls = true;
                 out.occupancy = try std.fmt.parseFloat(F, value);
             } else if (std.mem.eql(u8, key, "--radius")) {
+                physical_controls = true;
                 out.radius = try std.fmt.parseFloat(F, value);
             } else if (std.mem.eql(u8, key, "--perlin-threshold")) {
+                perlin_controls = true;
                 out.perlin_threshold = try std.fmt.parseFloat(F, value);
             } else if (std.mem.eql(u8, key, "--perlin-transition")) {
+                perlin_controls = true;
                 out.perlin_transition = try std.fmt.parseFloat(F, value);
             } else if (std.mem.eql(u8, key, "--softness")) {
+                physical_controls = true;
                 out.softness = try std.fmt.parseFloat(F, value);
             } else return error.UnknownBenchmarkFlag;
         }
-        if (soft and out.softness == 0) out.softness = 0.1;
-        if (out.threads == 0 or out.frames == 0 or out.width < 2 or out.height < 2 or out.width > std.math.maxInt(u16) or out.height > std.math.maxInt(u16)) return error.InvalidBenchmarkDimensions;
-        if (!out.texture_material) try out.params().validate();
+        if (out.threads == 0 or out.frames == 0 or out.width < 2 or out.height < 2 or
+            out.width > std.math.maxInt(u16) or out.height > std.math.maxInt(u16))
+            return error.InvalidBenchmarkDimensions;
+        const cell_controls = out.cells_u != null or out.cells_v != null;
+        if (out.texture_material) {
+            if (physical_controls or perlin_controls or cell_controls or out.neighbors != null or explicit_seed)
+                return error.TextureControlsNotApplicable;
+            return out;
+        }
+        if (out.mode == .evaluation) {
+            if (out.coverage != null or out.cell_size != null)
+                return error.PhysicalControlsRequireFullRender;
+            // Match the runner's raw soft-disk default for direct CLI runs.
+            if (out.soft and out.softness == 0) out.softness = 0.04;
+            try out.params().validate();
+        } else {
+            if (out.neighbors != null or out.evaluator != null)
+                return error.FullRenderRequiresProductionDefaults;
+            if (cell_controls) return error.GridControlsRequireEvaluation;
+            if ((out.pattern == .perlin and physical_controls) or
+                (out.pattern != .perlin and perlin_controls)) return error.InactivePatternControls;
+            if (out.soft != (out.softness > 0)) return error.InvalidBenchmarkSoftness;
+        }
         return out;
     }
 
     fn pixels(self: Options) [2]u32 {
         return .{ self.width, self.height };
     }
-    fn params(self: Options) speckle.Speckle2DParams {
-        return .{ .evaluator = self.evaluator, .pattern = self.pattern, .edge_softness = self.softness, .perlin_coverage_threshold = self.perlin_threshold, .perlin_coverage_transition_width = self.perlin_transition, .radius_mean = self.radius, .radius_jitter = self.jitter, .occupancy = self.occupancy, .neighbor_count = self.neighbors, .cells_per_uv = .{ self.cells_u orelse (if (self.plate) @as(F, 320) else 256), self.cells_v orelse (if (self.plate) @as(F, 192) else 160) }, .seed = self.seed };
+    fn params(self: Options) speckle.GridParams {
+        // Fallbacks for direct CLI runs and tests; the A/B runner sends explicit case values.
+        return .{
+            .evaluator = self.evaluator,
+            .pattern = self.pattern,
+            .edge_softness = self.softness,
+            .perlin_coverage_threshold = self.perlin_threshold,
+            .perlin_coverage_transition_width = self.perlin_transition,
+            .radius_mean = self.radius orelse 0.35,
+            .radius_jitter = self.jitter orelse 0.08,
+            .occupancy = self.occupancy orelse 0.7,
+            .neighbor_count = self.neighbors,
+            .cells_per_uv = .{
+                self.cells_u orelse (if (self.plate) @as(F, 320) else 256),
+                self.cells_v orelse (if (self.plate) @as(F, 192) else 160),
+            },
+            .seed = self.seed,
+        };
+    }
+    fn friendlyParams(self: Options) !physical.SpeckleParams {
+        if (self.pattern == .perlin) return .{ .perlin = .{
+            .cell_size = self.cell_size orelse return error.MissingPerlinCellSize,
+            .threshold = self.perlin_threshold,
+            .transition_width = self.perlin_transition,
+            .seed = self.seed,
+        } };
+        const input: physical.Speckle2DParams = .{
+            .coverage = self.coverage orelse return error.MissingPhysicalSpeckleInputs,
+            .radius = self.radius orelse return error.MissingPhysicalSpeckleInputs,
+            .jitter = self.jitter orelse 0,
+            .occupancy = self.occupancy orelse 1,
+            .edge_softness = self.softness,
+            .seed = self.seed,
+        };
+        return if (self.pattern == .disk) .{ .disk = input } else .{ .gaussian = input };
     }
     fn textureConfig(self: Options) texops.TexSampConfig {
         return .{ .sample = self.texture_filter, .mode = if (self.texture_filter == .cubic_catmull_rom) .lut_lerp else .direct };
@@ -179,14 +255,6 @@ const Options = struct {
         return .{ .parallel = .{ .threads = self.threads }, .save_strategy = if (self.mode == .evaluation) .none else .memory, .report = .{ .mode = .off } };
     }
 };
-
-fn recordNeighbors(opts: Options, resolved: policy.Config) ?u8 {
-    const neighbors = if (opts.texture_material or std.meta.activeTag(resolved) == .mock)
-        opts.neighbors orelse policy.default_neighborhood
-    else
-        resolved.neighborhood() orelse return null;
-    return @intFromEnum(neighbors);
-}
 
 const EvaluatorRecord = struct {
     evaluator: []const u8,
@@ -200,15 +268,20 @@ const GenerationRecord = struct {
     neighbors: ?u8,
     soft_edges: ?bool,
     sampling_index: u8,
-    sampling: EvaluatorRecord,
 };
 const EvaluatorCatalogue = struct {
     evaluators: [std.enums.values(policy.Evaluator).len + 1][]const u8,
     overrides_enabled: bool,
     configs: [policy.generationConfigs(build.enable_all_evaluators).len]GenerationRecord,
+    production_configs: [4]EvaluatorRecord,
     sampling_configs: [speckle.kernel_configs.len]EvaluatorRecord,
     build_identity: @TypeOf(buildIdentity()),
     workload_modes: @TypeOf(workload_modes),
+    defaults: struct {
+        seed: u32 = grid_defaults.seed,
+        perlin_threshold: F = grid_defaults.perlin_coverage_threshold,
+        perlin_transition: F = grid_defaults.perlin_coverage_transition_width,
+    },
 };
 
 fn evaluatorRecord(cfg: policy.Config) EvaluatorRecord {
@@ -228,11 +301,15 @@ fn evaluatorCatalogue() EvaluatorCatalogue {
     out.overrides_enabled = build.enable_all_evaluators;
     out.build_identity = buildIdentity();
     out.workload_modes = workload_modes;
+    out.defaults = .{};
+    inline for ([_]policy.Pattern{ .disk, .disk, .gaussian, .perlin }, .{ .hard, .soft, .hard, .hard }, 0..) |pattern, edges, i| {
+        out.production_configs[i] = evaluatorRecord(policy.resolve(build.enable_all_evaluators, pattern, null, null, edges) catch unreachable);
+    }
     for (speckle.kernel_configs, 0..) |config, i| out.sampling_configs[i] = evaluatorRecord(config);
     for (policy.generationConfigs(build.enable_all_evaluators), 0..) |config, i| {
         const generation = evaluatorRecord(config);
         const index = policy.sampleConfigIndex(build.enable_all_evaluators, config);
-        out.configs[i] = .{ .evaluator = generation.evaluator, .pattern = generation.pattern, .neighbors = generation.neighbors, .soft_edges = generation.soft_edges, .sampling_index = index, .sampling = out.sampling_configs[index] };
+        out.configs[i] = .{ .evaluator = generation.evaluator, .pattern = generation.pattern, .neighbors = generation.neighbors, .soft_edges = generation.soft_edges, .sampling_index = index };
     }
 
     return out;
@@ -249,7 +326,7 @@ const PreparedIdentity = struct {
 fn preparedIdentity(resources: *const speckle.Resources) PreparedIdentity {
     var out: PreparedIdentity = .{ .sampling_index = resources.kernel_index, .backing = @tagName(std.meta.activeTag(resources.data)) };
     if (resources.kernel_index) |index| out.sampling_evaluator = policy.evaluatorName(std.meta.activeTag(speckle.kernel_configs[index]));
-    const stored: ?speckle.Speckle2DParams = switch (resources.data) {
+    const stored: ?speckle.GridParams = switch (resources.data) {
         .none => null,
         .classified => |data| data.speckles.params,
         inline .cell_binned, .classified_binned, .direct_fixed, .mask, .perlin, .list, .strip_list => |data| data.params,
@@ -297,28 +374,28 @@ fn listEvaluators(allocator: std.mem.Allocator) !void {
 }
 
 pub fn main(init: std.process.Init) !void {
-    var arena = std.heap.ArenaAllocator.init(init.gpa);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const raw_args = init.minimal.args.vector;
-    const args = try alloc.alloc([]const u8, raw_args.len);
-    for (raw_args, 0..) |arg, n| args[n] = std.mem.span(arg);
+    const alloc = init.arena.allocator();
+    const args = try init.minimal.args.toSlice(alloc);
     if (args.len == 2 and std.mem.eql(u8, args[1], "--list-evaluators")) {
         try listEvaluators(alloc);
         return;
     }
     const opts = try Options.parse(args);
+    const raw = opts.mode == .evaluation;
+    const friendly = if (raw or opts.texture_material) null else try opts.friendlyParams();
+    const params = if (raw and !opts.texture_material) opts.params() else null;
     var threaded_io = riley.getThreadedIo(alloc, init.minimal, opts.threads);
     defer threaded_io.deinit();
     const io = threaded_io.io();
     const scene = try loadScene(alloc, io, opts);
-    const params = opts.params();
+
     const texture = if (opts.texture_material) try imageio.loadImage(u8, 1, alloc, io, opts.texture, .bmp) else null;
     var resource_ns: i96 = 0;
     var render_ns: i96 = 0;
     var combined_ns: i96 = 0;
     var result: bench.Result = .{};
     var image_samples: usize = 0;
+    var image_hash: ?[64]u8 = null;
     var resource_metrics: ResourceMetrics = .{};
     var prepared_identity: ?PreparedIdentity = null;
     if (opts.mode == .evaluation) {
@@ -327,13 +404,13 @@ pub fn main(init: std.process.Init) !void {
         const geometry = try bench.Geometry.prepare(alloc, io, &cam, scene.sim.coords, scene.sim.connect, scene.uvs.array, config, opts.threads);
         var evaluation = try bench.Evaluation.init(alloc, io, &cam, &geometry, config, opts.threads);
         const resource_start = std.Io.Timestamp.now(io, .awake);
-        var resources = if (texture == null) try speckle.Resources.init(init.gpa, params) else speckle.Resources{};
+        var resources = if (texture == null) try speckle.Resources.init(init.gpa, params.?) else speckle.Resources{};
         defer resources.deinit(init.gpa);
         // Production UV gathering; interpolation LUTs are compile-time constants.
         const prepared: ?shaderops.TexPrepared(u8, 1) = if (texture) |tex| .{ .elem_uvs = try mo.prepUVs(alloc, &scene.uvs.array, &scene.sim.connect), .tex = tex, .samp_cfg = opts.textureConfig(), .bits = null } else null;
         resource_ns = resource_start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
         const eval_start = std.Io.Timestamp.now(io, .awake);
-        if (prepared) |shader| try evaluation.evaluateTexture(shader, opts.frames) else try evaluation.evaluate(params, &resources, opts.frames);
+        if (prepared) |shader| try evaluation.evaluateTexture(shader, opts.frames) else try evaluation.evaluate(params.?, &resources, opts.frames);
         render_ns = eval_start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
         // Inspect backing storage only after sampling, without warming one evaluator's counts.
         resource_metrics = resourceMetrics(&resources);
@@ -341,45 +418,56 @@ pub fn main(init: std.process.Init) !void {
         result = evaluation.result();
         prepared_identity = preparedIdentity(&resources); // After both timers and reduction.
     } else {
-        const mesh = try scene.mesh(alloc, opts, texture);
+        const mesh = try scene.mesh(alloc, opts, friendly, texture);
         const cam_input = cameraInput(scene.sim, opts);
         var capture: timing.Capture = .{ .io = io };
-        timing.active = &capture;
-        defer timing.active = null;
-        const start = std.Io.Timestamp.now(io, .awake);
-        const output = (try riley.rasterAdvanced(alloc, io, &.{cam_input}, &.{mesh}, opts.rasterConfig(), null, .{ .render_groups = .{ .supplied = &.{.{ .io = io, .workers = opts.threads }} } })).?;
-        combined_ns = start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
+        const output = blk: {
+            timing.active = &capture;
+            defer timing.active = null;
+            const start = std.Io.Timestamp.now(io, .awake);
+            const output = (try riley.rasterAdvanced(alloc, io, &.{cam_input}, &.{mesh}, opts.rasterConfig(), null, .{ .render_groups = .{ .supplied = &.{.{ .io = io, .workers = opts.threads }} } })).?;
+            combined_ns = start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
+            break :blk output;
+        };
         resource_ns = capture.resource_ns;
         render_ns = combined_ns - resource_ns;
         image_samples = output.slice.len;
-        for (output.slice) |value| {
-            if (!std.math.isFinite(value)) return error.NonFiniteRenderOutput;
-            result.checksum +%= @as(std.meta.Int(.unsigned, @bitSizeOf(F)), @bitCast(value));
-        }
+        image_hash = try hashRenderOutput(output.slice);
     }
-    const resolved = try policy.resolve(build.enable_all_evaluators, if (opts.texture_material) .disk else opts.pattern, if (opts.texture_material) null else opts.evaluator, if (opts.texture_material) null else opts.neighbors, if (!opts.texture_material and opts.softness > 0) .soft else .hard);
+    const resolved = if (params) |grid| try grid.resolve() else null;
+    const generation_policy = if (friendly != null)
+        evaluatorRecord(try policy.resolve(
+            build.enable_all_evaluators,
+            opts.pattern,
+            null,
+            null,
+            if (opts.soft) .soft else .hard,
+        ))
+    else
+        null;
     const record = .{
         .mode = @tagName(opts.mode),
         .workload_mode = switch (opts.mode) {
             inline else => |mode| @field(workload_modes, @tagName(mode)),
         },
-        .evaluator = if (opts.texture_material) "texture" else policy.evaluatorName(std.meta.activeTag(resolved)),
+        .evaluator = if (opts.texture_material) "texture" else if (resolved) |cfg|
+            policy.evaluatorName(std.meta.activeTag(cfg))
+        else
+            "auto",
         .scene = if (opts.plate) "plate" else "sphere",
-        .pattern = if (opts.pattern == .disk) (if (opts.softness > 0) "soft" else "hard") else @tagName(opts.pattern),
+        .pattern = if (opts.pattern == .disk)
+            (if (if (params != null) opts.softness > 0 else opts.soft) "soft" else "hard")
+        else
+            @tagName(opts.pattern),
         .threads = opts.threads,
         .frames = opts.frames,
         .width = opts.width,
         .height = opts.height,
-        .cells_u = params.cells_per_uv[0],
-        .cells_v = params.cells_per_uv[1],
-        .perlin_threshold = opts.perlin_threshold,
-        .perlin_transition = opts.perlin_transition,
-        .radius = opts.radius,
-        .jitter = opts.jitter,
-        .occupancy = opts.occupancy,
-        .neighbors = recordNeighbors(opts, resolved),
-        .softness = opts.softness,
-        .seed = opts.seed,
+        .physical_params = friendly,
+        // Production owns resolution/resources; timing capture does not expose them.
+        .resolved_grid = params,
+        .resolved_generation = if (resolved) |cfg| evaluatorRecord(cfg) else @as(?EvaluatorRecord, null),
+        .generation_policy = generation_policy,
         .texture = opts.texture,
         .texture_filter = @tagName(opts.texture_filter),
         .texture_mode = @tagName(opts.textureConfig().mode),
@@ -390,8 +478,8 @@ pub fn main(init: std.process.Init) !void {
         .resource_ns = resource_ns,
         .render_ns = render_ns,
         .combined_ns = combined_ns,
-
-        .checksum = result.checksum,
+        .checksum = if (raw) @as(?u64, result.checksum) else null,
+        .image_hash = if (image_hash) |*hex| @as(?[]const u8, hex) else null,
         .shaded_samples = result.shaded_samples,
         .backface_rejections = result.backface_rejections,
         .evaluation_counters_available = opts.mode == .evaluation,
@@ -401,6 +489,16 @@ pub fn main(init: std.process.Init) !void {
         .build_identity = buildIdentity(),
     };
     std.debug.print("BENCH {s}\n", .{try std.json.Stringify.valueAlloc(alloc, record, .{})});
+}
+
+fn hashRenderOutput(values: []const F) ![64]u8 {
+    for (values) |value| {
+        if (!std.math.isFinite(value)) return error.NonFiniteRenderOutput;
+    }
+    const Blake3 = std.crypto.hash.Blake3;
+    var digest: [Blake3.digest_length]u8 = undefined;
+    Blake3.hash(std.mem.sliceAsBytes(values), &digest, .{});
+    return std.fmt.bytesToHex(digest, .lower);
 }
 
 fn cameraInput(sim: meshio.SimData, opts: Options) camera.CameraInput {
@@ -416,7 +514,7 @@ test "speckle benchmark catalogue follows the current build policy" {
     for (policy.generationConfigs(build.enable_all_evaluators), catalogue.configs, 0..) |config, row, i| {
         try std.testing.expectEqualStrings(policy.evaluatorName(std.meta.activeTag(config)), row.evaluator);
         const canonical = evaluatorRecord(policy.canonicalizeSampleConfig(config));
-        try std.testing.expectEqualDeep(canonical, row.sampling);
+        try std.testing.expectEqualDeep(canonical, catalogue.sampling_configs[row.sampling_index]);
         reached[row.sampling_index] = true;
         for (catalogue.configs[i + 1 ..]) |other| {
             try std.testing.expect(!std.mem.eql(u8, row.evaluator, other.evaluator) or
@@ -449,8 +547,6 @@ test "speckle benchmark default options prepare production evaluator identities"
         try std.testing.expectEqualStrings(evaluator, identity.generation_evaluator.?);
         try std.testing.expectEqualStrings(evaluator, identity.sampling_evaluator.?);
         try std.testing.expectEqualStrings(if (std.mem.eql(u8, pattern, "hard")) "classified_binned" else if (std.mem.eql(u8, pattern, "perlin")) "perlin" else "cell_binned", identity.backing);
-        const resolved = try opts.params().resolve();
-        try std.testing.expectEqual(recordNeighbors(opts, resolved), if (std.mem.eql(u8, pattern, "perlin")) @as(?u8, null) else 9);
     }
 }
 
@@ -490,19 +586,6 @@ test "speckle benchmark resource metrics distinguish live records from capacity"
     try std.testing.expectEqual(@as(?usize, 16 + 36 * @sizeOf(F) + 2), metrics.resource_bytes);
 }
 
-test "speckle benchmark default neighbor metadata" {
-    const perlin = try policy.resolve(build.enable_all_evaluators, .perlin, null, null, .hard);
-    try std.testing.expectEqual(@as(?u8, null), recordNeighbors(.{ .pattern = .perlin }, perlin));
-    try std.testing.expectEqual(@as(?u8, 9), recordNeighbors(.{ .texture_material = true }, perlin));
-}
-
-test "speckle benchmark neighbor metadata preserves requested mock controls" {
-    if (comptime !build.enable_all_evaluators) return error.SkipZigTest;
-    const mock = try policy.resolve(true, .perlin, .mock, .four, .hard);
-    try std.testing.expectEqual(@as(?u8, 4), recordNeighbors(.{ .evaluator = .mock, .pattern = .perlin, .neighbors = .four }, mock));
-    try std.testing.expectEqual(@as(?u8, 9), recordNeighbors(.{ .evaluator = .mock }, mock));
-}
-
 test "speckle benchmark named options and default gate" {
     const defaults = try Options.parse(&.{"bench"});
     try std.testing.expectEqual([2]u32{ 3840, 2160 }, defaults.pixels());
@@ -515,10 +598,12 @@ test "speckle benchmark named options and default gate" {
     try std.testing.expectError(error.InvalidTextureFilter, Options.parse(&.{ "bench", "--texture-filter", "lanczos3" }));
     try std.testing.expectError(error.InvalidPattern, Options.parse(&.{ "bench", "--pattern", "unknown" }));
     try std.testing.expectError(error.InvalidBenchmarkDimensions, Options.parse(&.{ "bench", "--frames", "0" }));
+    try std.testing.expectError(error.InvalidSpeckleRadiusRange, Options.parse(&.{ "bench", "--radius", "0.05" }));
+    try std.testing.expectError(error.InvalidSpeckleNeighborhoodRadius, Options.parse(&.{ "bench", "--radius", "1.1" }));
     const args = &.{ "bench", "--evaluator", "cell-hash", "--pattern", "soft", "--height", "32" };
     if (comptime build.enable_all_evaluators) {
         const opts = try Options.parse(args);
-        try std.testing.expect(opts.softness > 0);
+        try std.testing.expectEqual(@as(F, 0.04), opts.softness);
         try std.testing.expectEqual(policy.Evaluator.cell_hash, opts.evaluator.?);
     } else try std.testing.expectError(error.SpeckleOverridesDisabled, Options.parse(args));
     inline for (.{ policy.Evaluator.classified_indexed, policy.Evaluator.classified_binned }) |evaluator| {
@@ -527,7 +612,7 @@ test "speckle benchmark named options and default gate" {
         if (comptime build.enable_all_evaluators) {
             const opts = try Options.parse(args_classified);
             try std.testing.expectEqual(evaluator, opts.evaluator.?);
-            try std.testing.expectEqual(@as(F, 0.08), opts.jitter);
+            try std.testing.expectEqual(@as(?F, 0.08), opts.jitter);
             var params = opts.params();
             params.cells_per_uv = .{ 3.17, 2.31 };
             var resources = try speckle.Resources.init(std.testing.allocator, params);
@@ -544,8 +629,11 @@ const Scene = struct {
     sim: meshio.SimData,
     uvs: uvio.UVMap,
 
-    fn mesh(self: Scene, alloc: std.mem.Allocator, opts: Options, texture: ?texops.Tex(u8, 1)) !mo.MeshInput {
-        const shader: shaderops.ShaderInput = if (texture) |tex| .{ .tex_u8 = .{ .uvs = self.uvs.array, .tex = tex, .samp_cfg = opts.textureConfig(), .bits = null } } else .{ .speckle = .{ .uvs = self.uvs.array, .params = opts.params(), .bits = null } };
+    fn mesh(self: Scene, alloc: std.mem.Allocator, opts: Options, params: ?physical.SpeckleParams, texture: ?texops.Tex(u8, 1)) !mo.MeshInput {
+        const shader: shaderops.ShaderInput = if (texture) |tex|
+            .{ .tex_u8 = .{ .uvs = self.uvs.array, .tex = tex, .samp_cfg = opts.textureConfig(), .bits = null } }
+        else
+            .{ .speckle = .{ .uvs = self.uvs.array, .params = params.?, .bits = null } };
         // Zero displacement preserves production per-frame geometry preparation.
         return .{ .mesh_type = .tri6, .coords = self.sim.coords, .connect = self.sim.connect, .disp = try meshio.Field.initAlloc(alloc, opts.frames, self.sim.coords.mat.rows_num, 3), .shader = shader };
     }
@@ -714,16 +802,58 @@ test "speckle benchmark workers depth resets and texture filters" {
     }
 }
 
-test "speckle benchmark production full render memory output" {
+test "speckle benchmark textures accept labels but reject procedural controls in both modes" {
+    const controls = [_][2][]const u8{
+        .{ "--coverage", "0.5" },  .{ "--radius", "0.25" },         .{ "--jitter", "0" },
+        .{ "--occupancy", "1" },   .{ "--softness", "0" },          .{ "--neighbors", "9" },
+        .{ "--cell-size", "0.1" }, .{ "--perlin-transition", "0" }, .{ "--perlin-threshold", "0" },
+        .{ "--seed", "42" },       .{ "--cells-u", "8" },           .{ "--cells-v", "4" },
+    };
+    for ([_][]const u8{ "evaluation", "full-render" }) |mode| {
+        const opts = try Options.parse(&.{
+            "bench", "--mode", mode, "--evaluator", "texture", "--pattern", "soft",
+        });
+        try std.testing.expect(opts.texture_material and opts.soft);
+        try std.testing.expectEqual(@as(F, 0), opts.softness);
+        for (controls) |control| {
+            try std.testing.expectError(error.TextureControlsNotApplicable, Options.parse(&.{
+                "bench", "--mode", mode, "--evaluator", "texture", control[0], control[1],
+            }));
+        }
+    }
+}
+
+test "speckle benchmark full-render fingerprint rejects nonfinite samples" {
+    try std.testing.expectError(error.NonFiniteRenderOutput, hashRenderOutput(&.{std.math.nan(F)}));
+}
+
+test "speckle benchmark full render uses direct physical inputs and memory output" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var opts = smoke;
-    opts.mode = .@"full-render";
-    const scene = try loadScene(alloc, std.testing.io, opts);
     const tex = try imageio.loadImage(u8, 1, alloc, std.testing.io, "texture/speck128_mono_u8.bmp", .bmp);
-    for ([_]?texops.Tex(u8, 1){ null, tex }) |texture| {
-        const mesh = try scene.mesh(alloc, opts, texture);
+    for ([_][]const u8{ "hard", "soft", "gaussian", "perlin", "texture" }) |pattern| {
+        const perlin = std.mem.eql(u8, pattern, "perlin");
+        const texture = std.mem.eql(u8, pattern, "texture");
+        var opts = if (texture)
+            try Options.parse(&.{ "bench", "--mode", "full-render", "--evaluator", "texture" })
+        else if (perlin)
+            try Options.parse(&.{ "bench", "--mode", "full-render", "--pattern", pattern, "--cell-size", "0.25", "--perlin-threshold", "0.1", "--perlin-transition", "0", "--seed", "42" })
+        else
+            try Options.parse(&.{ "bench", "--mode", "full-render", "--pattern", pattern, "--coverage", "0.4", "--radius", "0.3", "--jitter", "0.01", "--occupancy", "0.7", "--softness", if (std.mem.eql(u8, pattern, "soft")) "0.02" else "0", "--seed", "42" });
+        opts.width = 32;
+        opts.height = 24;
+        opts.frames = 2;
+        const scene = try loadScene(alloc, std.testing.io, opts);
+        const params = if (texture) null else try opts.friendlyParams();
+        const mesh = try scene.mesh(alloc, opts, params, if (texture) tex else null);
+        if (!texture) {
+            const body: physical.Speckle2DParams = .{ .coverage = 0.4, .radius = 0.3, .jitter = 0.01, .occupancy = 0.7, .edge_softness = if (std.mem.eql(u8, pattern, "soft")) 0.02 else 0, .seed = 42 };
+            const expected: physical.SpeckleParams = if (perlin)
+                .{ .perlin = .{ .cell_size = 0.25, .threshold = 0.1, .transition_width = 0, .seed = 42 } }
+            else if (std.mem.eql(u8, pattern, "gaussian")) .{ .gaussian = body } else .{ .disk = body };
+            try std.testing.expectEqualDeep(expected, mesh.shader.speckle.params);
+        }
         var capture: timing.Capture = .{ .io = std.testing.io };
         timing.active = &capture;
         defer timing.active = null;
@@ -732,4 +862,16 @@ test "speckle benchmark production full render memory output" {
         try std.testing.expect(capture.resource_ns > 0);
         for (output.slice) |value| try std.testing.expect(std.math.isFinite(value));
     }
+    for ([_][]const u8{ "cell-hash", "classified-binned" }) |evaluator| {
+        try std.testing.expectError(error.FullRenderRequiresProductionDefaults, Options.parse(&.{ "bench", "--mode", "full-render", "--evaluator", evaluator }));
+    }
+    try std.testing.expectError(error.FullRenderRequiresProductionDefaults, Options.parse(&.{ "bench", "--mode", "full-render", "--neighbors", "9" }));
+    const disk = try Options.parse(&.{ "bench", "--mode", "full-render" });
+    try std.testing.expectError(error.MissingPhysicalSpeckleInputs, disk.friendlyParams());
+    const perlin = try Options.parse(&.{ "bench", "--mode", "full-render", "--pattern", "perlin" });
+    try std.testing.expectError(error.MissingPerlinCellSize, perlin.friendlyParams());
+    try std.testing.expectError(error.GridControlsRequireEvaluation, Options.parse(&.{ "bench", "--mode", "full-render", "--cells-u", "8" }));
+    try std.testing.expectError(error.InactivePatternControls, Options.parse(&.{ "bench", "--mode", "full-render", "--pattern", "perlin", "--radius", "1" }));
+    try std.testing.expectError(error.InactivePatternControls, Options.parse(&.{ "bench", "--mode", "full-render", "--cell-size", "0.1" }));
+    try std.testing.expectError(error.PhysicalControlsRequireFullRender, Options.parse(&.{ "bench", "--coverage", "0.5" }));
 }

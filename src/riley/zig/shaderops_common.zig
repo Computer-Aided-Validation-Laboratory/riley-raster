@@ -19,6 +19,7 @@ const imageops = @import("imageops.zig");
 const texops = @import("textureops.zig");
 const meshio = @import("meshio.zig");
 const speckle = @import("speckleops.zig");
+const speckleparams = @import("speckleparams.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -151,7 +152,8 @@ pub const FuncInput = struct {
 
 pub const SpeckleInput = struct {
     uvs: ndarray.NDArray(F),
-    params: speckle.Speckle2DParams = .{},
+    params: speckleparams.SpeckleParams,
+    /// Apply `sample * output_scale + output_offset` before `scaling`.
     output_scale: F = 1.0,
     output_offset: F = 0.0,
     bits: ?u8 = 8,
@@ -307,7 +309,7 @@ pub const FuncStatic = struct {
 pub const SpeckleStatic = struct {
     elem_uvs: ndarray.NDArray(F),
     resources: speckle.Resources,
-    params: speckle.Speckle2DParams,
+    params: speckle.GridParams,
     output_scale: F = 1.0,
     output_offset: F = 0.0,
     bits: ?u8 = 8,
@@ -378,7 +380,7 @@ pub const FuncPrepared = struct {
 pub const SpecklePrepared = struct {
     elem_uvs: ndarray.NDArray(F),
     resources: *const speckle.Resources,
-    params: speckle.Speckle2DParams,
+    params: speckle.GridParams,
     output_scale: F = 1.0,
     output_offset: F = 0.0,
     bits: ?u8 = 8,

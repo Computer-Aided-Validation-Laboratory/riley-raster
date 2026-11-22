@@ -318,7 +318,7 @@ pub fn writeBenchmarkConfig(
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,
     benchmark_name: []const u8,
-    argv: anytype,
+    argv: []const []const u8,
     subpixel_center_map: @import("../riley/zig/camera.zig").SubPixelCenterMap,
     config: rastcfg.RasterConfig,
     render_group_workers: []const u16,
@@ -423,7 +423,7 @@ pub fn writeBenchmarkConfig(
     for (argv, 0..) |arg, aa| {
         try writer.print(
             "argv_{d}={s}\n",
-            .{ aa, argToSlice(arg) },
+            .{ aa, arg },
         );
     }
     try writer.writeAll("argv_end\n");
@@ -1124,17 +1124,6 @@ fn runBenchmarkInternal(
         .metrics = metrics,
         .pipeline_times = pipeline_times,
         .image = image_final,
-    };
-}
-
-fn argToSlice(arg: anytype) []const u8 {
-    return switch (@typeInfo(@TypeOf(arg))) {
-        .pointer => |pointer_info| switch (pointer_info.size) {
-            .slice => arg,
-            else => std.mem.span(arg),
-        },
-        .array => arg[0..],
-        else => @compileError("Unsupported command line argument type."),
     };
 }
 

@@ -64,13 +64,12 @@ This generates the Zig documentation and interactive standard library/API viewer
 
 ### Step 2: Build Python documentation
 
-Ensure your virtual environment is active (or call Sphinx via `.venv/bin/sphinx-build`), then build the HTML documentation:
+In your active virtual environment, build the HTML documentation with the same
+clean, warning-fatal Sphinx command used by CI:
 
-```bash
-sphinx-build -b html docs build/_build/html
+```shell
+python -m sphinx -E -a -W --keep-going -j auto -b html docs build/_build/html
 ```
-
-*(Alternatively, without activating: `.venv/bin/sphinx-build -b html docs build/_build/html`)*
 
 ### Step 3: Merge Zig docs into the Python docs
 

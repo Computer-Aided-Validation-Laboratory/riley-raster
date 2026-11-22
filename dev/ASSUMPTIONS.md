@@ -78,6 +78,13 @@ Unless a task explicitly concerns malformed-input validation, assume:
 
 > **Curved higher-order elements**: Riley supports curved quadratic and higher-order elements. It is not required to handle arbitrary pathological polynomial patches that fold or invert.
 
+### Physical procedural speckles
+
+Follow the [public speckle contract](../docs/python-api/speckles.rst) for UV
+bounds, reference calibration, deformation, and validation. See the
+[coverage model](THEORY.md#6-physical-speckle-calibration-and-nominal-coverage)
+for numerical accuracy.
+
 ---
 
 ## 4. Camera and Distortion Model Assumptions

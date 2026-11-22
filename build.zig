@@ -597,9 +597,7 @@ fn addBenchInstallStep(
             .executable,
         ),
     });
-    return b.addInstallArtifact(executable, .{
-        .dest_sub_path = binary_name,
-    });
+    return b.addInstallArtifact(executable, .{});
 }
 
 fn createBuildOptionsModule(b: *std.Build, build_options: BuildOptions) *std.Build.Module {

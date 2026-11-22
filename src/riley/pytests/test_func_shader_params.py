@@ -6,6 +6,20 @@ import pytest
 import riley
 
 
+PATTERNS = (*riley.SpecklePattern, "perlin")
+
+
+def _params(pattern: riley.SpecklePattern | str) -> riley.Speckle2DParams | riley.Perlin2DParams:
+    colors = dict(seed=7, foreground=0.1, background=0.9)
+    if pattern == "perlin":
+        return riley.Perlin2DParams(
+            cell_size=0.08, threshold=0.1, transition_width=0.2, **colors,
+        )
+    return riley.Speckle2DParams(
+        coverage=0.35, radius=0.04, occupancy=0.75, pattern=pattern, **colors,
+    )
+
+
 @pytest.fixture
 def speckle_mesh() -> riley.Mesh:
     return riley.Mesh(
@@ -15,16 +29,7 @@ def speckle_mesh() -> riley.Mesh:
         disp=None,
         shader=riley.SpeckleShader(
             uvs=np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]),
-            params=riley.Speckle2DParams(
-                seed=7,
-                cells_per_uv=(12.0, 10.0),
-                occupancy=0.75,
-                radius_mean=0.4,
-                perlin_coverage_threshold=0.1,
-                perlin_coverage_transition_width=0.2,
-                foreground=0.1,
-                background=0.9,
-            ),
+            params=_params(riley.SpecklePattern.disk),
             bits=-1,
             scaling_type=riley.ScaleStrategy.none,
         ),
@@ -36,23 +41,38 @@ def test_speckle_shader_public_api() -> None:
 
     assert SpeckleShader is riley.SpeckleShader
     uvs = np.zeros((3, 2))
-    first = riley.SpeckleShader(uvs)
-    second = riley.SpeckleShader(uvs)
-    assert first.params is not second.params
-    assert (first.output_scale, first.output_offset, first.bits, first.scaling_type) == (
+    params = riley.Speckle2DParams(0.4, 0.02)
+    shader = riley.SpeckleShader(uvs, params)
+    assert shader.params is params
+    assert (shader.output_scale, shader.output_offset, shader.bits, shader.scaling_type) == (
         1.0, 0.0, 8, riley.ScaleStrategy.auto,
     )
-    assert not hasattr(riley.FuncShaderBuiltin, "speckle")
-    assert [int(builtin) for builtin in riley.FuncShaderBuiltin] == list(range(9))
-    assert "speckle" not in {field.name for field in fields(riley.FuncShaderParams)}
-    assert not hasattr(riley.Speckle2DParams, "to_func_shader_params")
-    with pytest.raises(TypeError):
-        riley.SpeckleShader()
-    with pytest.raises(TypeError):
-        riley.FuncShaderParams(speckle=riley.Speckle2DParams())
-    for option in ("channels", "normal_type", "builtin", "coord_mode"):
+    assert (params.occupancy, params.jitter, params.edge_softness) == (1.0, 0.0, 0.0)
+    assert [(field.name, field.kw_only) for field in fields(params)] == [
+        ("coverage", False), ("radius", False),
+        *[(name, True) for name in ("occupancy", "jitter", "edge_softness", "pattern",
+                                   "seed", "foreground", "background")],
+    ]
+    assert [pattern.name for pattern in riley.SpecklePattern] == ["disk", "gaussian"]
+
+    for args in ((), (uvs,)):
         with pytest.raises(TypeError):
-            riley.SpeckleShader(uvs, **{option: 0})
+            riley.SpeckleShader(*args)
+    for kwargs in ({}, {"coverage": 0.4}, {"radius": 0.02}):
+        with pytest.raises(TypeError):
+            riley.Speckle2DParams(**kwargs)
+
+    with pytest.raises(TypeError, match="cell_size"):
+        riley.Perlin2DParams()
+    perlin = riley.Perlin2DParams(0.08)
+    assert [(field.name, field.kw_only) for field in fields(perlin)] == [
+        ("cell_size", False),
+        *[(name, True) for name in ("threshold", "transition_width", "seed",
+                                   "foreground", "background")],
+    ]
+    assert riley.SpeckleShader(uvs, perlin).params is perlin
+    assert params.seed == perlin.seed == 0xA511E9B3
+    assert perlin.transition_width == 0.12
 
 
 def _render(
@@ -81,13 +101,13 @@ def _render(
     return image
 
 
-@pytest.mark.parametrize("pattern", list(riley.SpecklePattern))
+@pytest.mark.parametrize("pattern", PATTERNS)
 def test_speckle_params_render_in_memory(
     speckle_mesh: riley.Mesh,
-    pattern: riley.SpecklePattern,
+    pattern: riley.SpecklePattern | str,
 ) -> None:
     shader = speckle_mesh.shader
-    shader.params.pattern = pattern
+    shader.params = _params(pattern)
     image = _render(speckle_mesh)
 
     assert image.shape == (1, 1, 1, 32, 32)
@@ -99,23 +119,15 @@ def test_speckle_params_render_in_memory(
     assert np.ptp(covered) > 0.1
 
     if pattern != riley.SpecklePattern.disk:
-        shader.params.pattern = riley.SpecklePattern.disk
+        shader.params = _params(riley.SpecklePattern.disk)
         disk_image = _render(speckle_mesh)
         assert not np.array_equal(image, disk_image)
-        shader.params.pattern = pattern
-
-    shader.params.seed = 8
-    reseeded = _render(speckle_mesh)
-    assert not np.array_equal(image, reseeded)
-    if pattern == riley.SpecklePattern.perlin:
-        shader.params.occupancy = 0.0
-        np.testing.assert_array_equal(reseeded, _render(speckle_mesh))
 
 
-@pytest.mark.parametrize("pattern", list(riley.SpecklePattern))
-def test_speckle_output_transform(speckle_mesh: riley.Mesh, pattern: riley.SpecklePattern) -> None:
+@pytest.mark.parametrize("pattern", PATTERNS)
+def test_speckle_output_transform(speckle_mesh: riley.Mesh, pattern: riley.SpecklePattern | str) -> None:
     shader = speckle_mesh.shader
-    shader.params.pattern = pattern
+    shader.params = _params(pattern)
     raw = _render(speckle_mesh)
     shader.output_scale = -0.5
     shader.output_offset = 0.8
@@ -136,26 +148,79 @@ def test_speckle_requires_nodal_uvs(speckle_mesh: riley.Mesh, uvs: np.ndarray | 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
 def test_speckle_rejects_nonfinite_output_transform(speckle_mesh: riley.Mesh, field: str, value: float) -> None:
     setattr(speckle_mesh.shader, field, value)
-    with pytest.raises(RuntimeError, match="InvalidSpeckleShaderParams"):
+    with pytest.raises(RuntimeError, match="InvalidSpeckleOutputTransform"):
         _render(speckle_mesh)
 
 
 @pytest.mark.parametrize("channels", [1, 3])
-def test_function_shader_rejects_removed_builtin(speckle_mesh: riley.Mesh, channels: int) -> None:
+def test_function_shader_rejects_invalid_builtin(speckle_mesh: riley.Mesh, channels: int) -> None:
     speckle_mesh.shader = riley.FunctionShader(builtin=9, channels=channels)
     with pytest.raises(RuntimeError, match="InvalidFuncShaderBuiltin"):
         _render(speckle_mesh)
 
 
-def test_soft_disks_render_with_default_evaluator(speckle_mesh: riley.Mesh) -> None:
-    hard = _render(speckle_mesh)
-    shader = speckle_mesh.shader
-    shader.params.edge_softness = 0.08
-    soft = _render(speckle_mesh)
+@pytest.mark.parametrize("pattern", PATTERNS)
+def test_speckle_uv_reparameterization_preserves_physical_field(
+    speckle_mesh: riley.Mesh, pattern: riley.SpecklePattern | str,
+) -> None:
+    params = _params(pattern)
+    speckle_mesh.shader.params = params
+    expected = _render(speckle_mesh, pixels=65)
+    speckle_mesh.shader.uvs = speckle_mesh.shader.uvs * 0.5
+    np.testing.assert_array_equal(_render(speckle_mesh, pixels=65), expected)
 
-    assert np.isfinite(soft).all()
-    assert not np.array_equal(hard, soft)
-    assert np.any((soft > 0.1 + 1e-12) & (soft < 0.9 - 1e-12))
+
+def test_physical_coverage_and_radius_control_opaque_footprints(speckle_mesh: riley.Mesh) -> None:
+    images = []
+    fractions = []
+    for coverage, radius in ((0.25, 0.008), (0.5, 0.008), (0.5, 0.016)):
+        speckle_mesh.shader.params = riley.Speckle2DParams(
+            coverage, radius, seed=7, foreground=0.1, background=0.9,
+        )
+        image = _render(speckle_mesh, pixels=256)
+        covered = image[image > 0]
+        fraction = np.mean(covered < 0.5)
+        assert abs(fraction - coverage) < 0.06
+        images.append(image)
+        fractions.append(fraction)
+    assert fractions[1] > fractions[0] + 0.15
+    assert not np.array_equal(images[1], images[2])
+
+
+def test_gaussian_uses_disk_full_support_not_sigma(speckle_mesh: riley.Mesh) -> None:
+    params = _params(riley.SpecklePattern.disk)
+    params.radius = 0.08
+    speckle_mesh.shader.params = params
+    disk = _render(speckle_mesh, pixels=128)
+    params.pattern = riley.SpecklePattern.gaussian
+    gaussian = _render(speckle_mesh, pixels=128)
+    surface = disk > 0
+    # Equal coverage/radius/seed yields equal complete support; Gaussian values
+    # inside that support form a profile instead of opaque foreground plateaus.
+    np.testing.assert_array_equal(
+        gaussian[surface] < params.background, disk[surface] < params.background,
+    )
+    interior = gaussian[(gaussian > params.foreground) & (gaussian < params.background)]
+    assert np.unique(interior).size > 20
+    # At the full three-sigma cutoff, relative opacity approaches exp(-9/2).
+    opacity = (params.background - interior) / (params.background - params.foreground)
+    assert opacity.min() == pytest.approx(np.exp(-4.5), rel=0.05)
+
+
+def test_perlin_hard_threshold_selects_foreground_or_background(speckle_mesh: riley.Mesh) -> None:
+    params = riley.Perlin2DParams(
+        cell_size=0.08, threshold=-2.0, transition_width=0.0,
+        foreground=0.1, background=0.9,
+    )
+    speckle_mesh.shader.params = params
+    foreground = _render(speckle_mesh)
+    params.threshold = 2.0
+    background = _render(speckle_mesh)
+    surface = foreground > 0
+    assert np.any(surface)
+    np.testing.assert_allclose(foreground[surface], params.foreground, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(background[surface], params.background, rtol=0, atol=1e-12)
+    np.testing.assert_array_equal(background[~surface], 0.0)
 
 
 def test_mixed_speckle_patterns_remain_fixed_across_frames(
@@ -164,15 +229,15 @@ def test_mixed_speckle_patterns_remain_fixed_across_frames(
     template = speckle_mesh.shader
     cases = (
         (riley.SpecklePattern.disk, 0.0, (0.0, 0.0, 0.0)),
-        (riley.SpecklePattern.disk, 0.08, (1.25, 0.0, 0.0)),
+        (riley.SpecklePattern.disk, 0.008, (1.25, 0.0, 0.0)),
         (riley.SpecklePattern.gaussian, 0.0, (0.0, 1.25, 0.0)),
-        (riley.SpecklePattern.perlin, 0.0, (1.25, 1.25, 0.0)),
+        ("perlin", 0.0, (1.25, 1.25, 0.0)),
     )
     meshes: list[riley.Mesh] = []
     for pattern, softness, offset in cases:
-        params = replace(
-            template.params, pattern=pattern, edge_softness=softness,
-        )
+        params = _params(pattern)
+        if isinstance(params, riley.Speckle2DParams):
+            params.edge_softness = softness
         shader = replace(template, params=params)
         meshes.append(
             replace(
@@ -198,13 +263,13 @@ def test_mixed_speckle_patterns_remain_fixed_across_frames(
     np.testing.assert_allclose(mixed, expected, rtol=0.0, atol=1e-12)
 
 
-@pytest.mark.parametrize("pattern", list(riley.SpecklePattern))
+@pytest.mark.parametrize("pattern", PATTERNS)
 def test_speckle_odd_width_buffer_modes_match(
     speckle_mesh: riley.Mesh,
-    pattern: riley.SpecklePattern,
+    pattern: riley.SpecklePattern | str,
 ) -> None:
     shader = speckle_mesh.shader
-    shader.params.pattern = pattern
+    shader.params = _params(pattern)
     images: list[np.ndarray] = []
     for buffer_mode in (
         riley.BufferMode.tile_local,
@@ -235,26 +300,23 @@ def test_speckle_odd_width_buffer_modes_match(
         np.testing.assert_allclose(image, images[0], rtol=0.0, atol=1e-12)
 
 
-@pytest.mark.parametrize("buffer_mode", list(riley.BufferMode))
-@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
-def test_speckle_fast_vs_full_uv_payload_validation(
-    speckle_mesh: riley.Mesh,
-    buffer_mode: riley.BufferMode,
-    value: float,
-) -> None:
+def test_speckle_fast_vs_full_uv_payload_validation(speckle_mesh: riley.Mesh) -> None:
     config = riley.RasterConfig(
-        parallel=2,
         save_strategy=riley.SaveStrategy.memory,
         report=riley.ReportMode.off,
-        buffer_mode=buffer_mode,
         validate_input=riley.ValidateInput.fast,
     )
     expected = _render(speckle_mesh, config=config)
     shader = speckle_mesh.shader
-    # Keep the invalid payload on an unreferenced node: fast validation trusts
-    # array contents, but sampling non-finite UVs is outside the render contract.
+    # Even in fast mode, calibration rejects nonfinite referenced UVs.
+    shader.uvs[0, 0] = np.nan
+    with pytest.raises(RuntimeError, match=r"InvalidSpeckleUvDomain\b"):
+        _render(speckle_mesh, config=config)
+    shader.uvs[0, 0] = 0.0
+
+    # Only full validation scans the unreferenced UV payload.
     speckle_mesh.coords = np.vstack((speckle_mesh.coords, [0.25, 0.25, 0.0]))
-    shader.uvs = np.vstack((shader.uvs, [value, value]))
+    shader.uvs = np.vstack((shader.uvs, [np.nan, np.nan]))
     actual = _render(speckle_mesh, config=config)
     np.testing.assert_array_equal(actual, expected)
 
@@ -266,15 +328,13 @@ def test_speckle_fast_vs_full_uv_payload_validation(
     np.testing.assert_array_equal(_render(speckle_mesh, config=config), expected)
 
 
-@pytest.mark.parametrize("buffer_mode", list(riley.BufferMode))
-@pytest.mark.parametrize("pattern", list(riley.SpecklePattern))
+@pytest.mark.parametrize("pattern", PATTERNS)
 def test_mixed_shader_deformation_matches_static_frame_references(
     speckle_mesh: riley.Mesh,
-    buffer_mode: riley.BufferMode,
-    pattern: riley.SpecklePattern,
+    pattern: riley.SpecklePattern | str,
 ) -> None:
     speckle_shader = speckle_mesh.shader
-    speckle_shader.params.pattern = pattern
+    speckle_shader.params = _params(pattern)
     raw_output = dict(bits=-1, scaling_type=riley.ScaleStrategy.none)
     shaders = (
         speckle_shader,
@@ -310,7 +370,6 @@ def test_mixed_shader_deformation_matches_static_frame_references(
         parallel=2,
         save_strategy=riley.SaveStrategy.memory,
         report=riley.ReportMode.off,
-        buffer_mode=buffer_mode,
         validate_input=riley.ValidateInput.full,
     )
     render_args = dict(pixels=65, pos_world=(1.125, 1.125, 3.0), config=config)
@@ -322,9 +381,14 @@ def test_mixed_shader_deformation_matches_static_frame_references(
     for frame in range(3):
         expected = np.zeros_like(actual[:, frame:frame + 1])
         for mesh in meshes:
-            static_mesh = replace(
-                mesh, coords=mesh.coords + displacements[frame], disp=None,
-            )
+            # Physical calibration belongs to the reference mesh, not each
+            # deformed frame. Keep that reference for the speckle-only oracle.
+            if isinstance(mesh.shader, riley.SpeckleShader):
+                static_mesh = replace(mesh, disp=displacements[frame:frame + 1])
+            else:
+                static_mesh = replace(
+                    mesh, coords=mesh.coords + displacements[frame], disp=None,
+                )
             individual = _render(static_mesh, **render_args)
             assert np.any(individual > 0.0)
             # Meshes remain disjoint under deformation; zero backgrounds add.
@@ -334,126 +398,114 @@ def test_mixed_shader_deformation_matches_static_frame_references(
         )
 
 
-# Each runtime pattern uses the defaults-only native evaluator policy.
-@pytest.mark.parametrize(
-    "params",
-    [
-        pytest.param(
-            riley.Speckle2DParams(cells_per_uv=(0.0, 10.0)), id="cells-u-zero",
-        ),
-        pytest.param(
-            riley.Speckle2DParams(cells_per_uv=(float("nan"), 1.0)), id="cells-u-nan",
-        ),
-        pytest.param(
-            riley.Speckle2DParams(cells_per_uv=(2.0**45, 10.0)),
-            id="cells-exceed-coordinate-limit",
-        ),
-        pytest.param(riley.Speckle2DParams(occupancy=-0.1), id="occupancy-negative"),
-        pytest.param(riley.Speckle2DParams(occupancy=0.0), id="disk-occupancy-zero"),
-        pytest.param(
-            riley.Speckle2DParams(pattern=riley.SpecklePattern.gaussian, occupancy=0.0),
-            id="gaussian-occupancy-zero",
-        ),
-        pytest.param(riley.Speckle2DParams(foreground=0.5, background=0.5), id="equal-colors"),
-        pytest.param(riley.Speckle2DParams(radius_mean=0.0), id="radius-zero"),
-        pytest.param(
-            riley.Speckle2DParams(radius_jitter=0.5), id="jitter-exceeds-radius",
-        ),
-        pytest.param(
-            riley.Speckle2DParams(radius_mean=0.6, radius_jitter=0.5),
-            id="support-exceeds-neighborhood",
-        ),
-        pytest.param(
-            riley.Speckle2DParams(
-                pattern=riley.SpecklePattern.gaussian, edge_softness=0.01,
-            ),
-            id="gaussian-requires-zero-softness",
-        ),
-        pytest.param(
-            riley.Speckle2DParams(
-                pattern=riley.SpecklePattern.perlin, edge_softness=0.01,
-            ),
-            id="perlin-requires-zero-softness",
-        ),
-        pytest.param(
-            riley.Speckle2DParams(
-                pattern=riley.SpecklePattern.perlin,
-                perlin_coverage_threshold=float("nan"),
-            ),
-            id="perlin-threshold-nan",
-        ),
-        pytest.param(
-            riley.Speckle2DParams(
-                pattern=riley.SpecklePattern.perlin,
-                perlin_coverage_transition_width=-0.1,
-            ),
-            id="perlin-transition-negative",
-        ),
-        pytest.param(
-            riley.Speckle2DParams(
-                pattern=riley.SpecklePattern.perlin,
-                perlin_coverage_transition_width=float("inf"),
-            ),
-            id="perlin-transition-infinite",
-        ),
-        pytest.param(riley.Speckle2DParams(foreground=1.1), id="foreground-above-one"),
-        pytest.param(
-            riley.Speckle2DParams(background=float("inf")), id="background-infinite",
-        ),
-    ],
-)
-def test_speckle_render_rejects_invalid_params(
-    speckle_mesh: riley.Mesh,
-    params: riley.Speckle2DParams,
-) -> None:
-    shader = speckle_mesh.shader
-    shader.params = params
-
-    # Default fast validation maps speckle parameter errors to this public error.
-    with pytest.raises(RuntimeError, match="InvalidSpeckleShaderParams"):
+@pytest.mark.parametrize("params", [None, {}, riley.FuncShaderParams()])
+def test_speckle_binding_rejects_wrong_params_type(speckle_mesh: riley.Mesh, params: object) -> None:
+    speckle_mesh.shader.params = params
+    with pytest.raises(TypeError, match="SpeckleShader.params must be Speckle2DParams or Perlin2DParams"):
         _render(speckle_mesh)
 
 
-@pytest.mark.parametrize("pattern,softness,error", [
-    (riley.SpecklePattern.disk, 0.0, "SpeckleClassificationTooLarge"),
-    (riley.SpecklePattern.disk, 0.04, "SpeckleCellBinsTooLarge"),
-    (riley.SpecklePattern.gaussian, 0.0, "SpeckleCellBinsTooLarge"),
-    (riley.SpecklePattern.perlin, 0.0, "SpecklePerlinLatticeTooLarge"),
+@pytest.mark.parametrize("seed,error", [
+    (-1, ValueError), (2**32, ValueError), (1.5, TypeError),
+    (True, TypeError), (np.bool_(True), TypeError),
 ])
-def test_unrepresentable_speckle_storage_returns_a_native_error(
+def test_speckle_binding_rejects_invalid_seed(
+    speckle_mesh: riley.Mesh, seed: int | float | np.bool_, error: type[Exception],
+) -> None:
+    speckle_mesh.shader.params.seed = seed
+    with pytest.raises(error):
+        _render(speckle_mesh)
+
+
+def test_perlin_binding_accepts_numpy_integer_seed(speckle_mesh: riley.Mesh) -> None:
+    speckle_mesh.shader.params = riley.Perlin2DParams(0.08, seed=np.int64(2**32 - 1))
+    expected = _render(speckle_mesh)
+    speckle_mesh.shader.params.seed = int(speckle_mesh.shader.params.seed)
+    np.testing.assert_array_equal(_render(speckle_mesh), expected)
+
+
+@pytest.mark.parametrize("case,error", [
+    ("degenerate_uv", r"InvalidSpeckleUvGeometry\b"),
+    ("degenerate_reference", r"InvalidSpeckleReferenceGeometry\b"),
+    ("uv_out_of_range", r"InvalidSpeckleUvDomain\b"),
+])
+def test_speckle_rejects_invalid_calibration_geometry(
     speckle_mesh: riley.Mesh,
-    pattern: riley.SpecklePattern,
-    softness: float,
+    case: str,
     error: str,
 ) -> None:
-    speckle_mesh.shader.params.pattern = pattern
-    speckle_mesh.shader.params.edge_softness = softness
-    # Numerically valid f64 coordinates, but a grid product larger than usize.
-    speckle_mesh.shader.params.cells_per_uv = (2.0**45 - 1, 2.0**45 - 1)
+    if case == "uv_out_of_range":
+        speckle_mesh.shader.uvs = speckle_mesh.shader.uvs * 2
+    elif case == "degenerate_uv":
+        speckle_mesh.shader.uvs[1] = speckle_mesh.shader.uvs[0]
+    else:
+        speckle_mesh.coords[1] = speckle_mesh.coords[0]
     with pytest.raises(RuntimeError, match=error):
         _render(speckle_mesh)
 
 
-@pytest.mark.parametrize("pattern", list(riley.SpecklePattern))
-@pytest.mark.parametrize("softness", [-0.1, float("nan")])
-def test_every_pattern_rejects_negative_or_nonfinite_softness(
+@pytest.mark.parametrize("pattern,option,value", [
+    (riley.SpecklePattern.disk, "occupancy", 0.9),
+    (riley.SpecklePattern.disk, "jitter", 0.02),
+    (riley.SpecklePattern.disk, "edge_softness", 0.008),
+    (riley.SpecklePattern.disk, "seed", 8),
+    (riley.SpecklePattern.disk, "foreground", 0.2),
+    (riley.SpecklePattern.disk, "background", 0.8),
+    ("perlin", "cell_size", 0.13),
+    ("perlin", "threshold", 0.3),
+    ("perlin", "transition_width", 0.4),
+    ("perlin", "foreground", 0.2),
+    ("perlin", "background", 0.8),
+])
+def test_speckle_binding_forwards_render_controls(
     speckle_mesh: riley.Mesh,
-    pattern: riley.SpecklePattern,
-    softness: float,
+    pattern: riley.SpecklePattern | str,
+    option: str,
+    value: object,
 ) -> None:
     shader = speckle_mesh.shader
-    shader.params.pattern = pattern
-    shader.params.edge_softness = softness
-    with pytest.raises(RuntimeError, match="InvalidSpeckleShaderParams"):
+    shader.params = _params(pattern)
+    original = _render(speckle_mesh, pixels=65)
+    setattr(shader.params, option, value)
+    changed = _render(speckle_mesh, pixels=65)
+    assert not np.array_equal(changed, original)
+    if option == "seed":
+        np.testing.assert_array_equal(_render(speckle_mesh, pixels=65), changed)
+    elif option == "edge_softness":
+        assert np.any((changed > 0.1 + 1e-12) & (changed < 0.9 - 1e-12))
+
+
+@pytest.mark.parametrize("params,error", [
+    (riley.Speckle2DParams(0.5, 0.0), r"InvalidSpeckleRadius\b"),
+    (riley.Speckle2DParams(0.8, 0.04, occupancy=0.1), r"UnattainableSpeckleCoverage\b"),
+    (riley.Speckle2DParams(0.7, 0.04, jitter=0.02, edge_softness=0.04),
+     r"UnsupportedSpeckleSupport\b"),
+    (riley.Perlin2DParams(0.0), r"InvalidSpeckleCellSize\b"),
+    (riley.Perlin2DParams(0.08, threshold=float("nan")), r"InvalidSpecklePerlinThreshold\b"),
+    (riley.Perlin2DParams(0.08, transition_width=-0.1), r"InvalidSpecklePerlinTransitionWidth\b"),
+])
+def test_speckle_render_rejects_invalid_params(
+    speckle_mesh: riley.Mesh,
+    params: riley.Speckle2DParams | riley.Perlin2DParams,
+    error: str,
+) -> None:
+    speckle_mesh.shader.params = params
+    with pytest.raises(RuntimeError, match=error):
         _render(speckle_mesh)
 
 
-@pytest.mark.parametrize("pattern", [-1, 3, 2**32, 0.5])
+def test_unrepresentable_speckle_storage_returns_a_native_error(speckle_mesh: riley.Mesh) -> None:
+    # Valid resolved coordinates, but unrepresentable resource-grid product.
+    speckle_mesh.shader.params.radius = 2.0**-44
+    with pytest.raises(RuntimeError, match=r"SpeckleDensityOutOfRange\b"):
+        _render(speckle_mesh)
+
+
+@pytest.mark.parametrize("pattern", [-1, 2, 3, 2**32, 0.5])
 def test_speckle_binding_rejects_invalid_pattern(
     speckle_mesh: riley.Mesh,
     pattern: int | float,
 ) -> None:
-    shader = speckle_mesh.shader
-    shader.params.pattern = pattern
+    speckle_mesh.shader.params.pattern = pattern
     with pytest.raises(ValueError, match="SpecklePattern"):
         _render(speckle_mesh)

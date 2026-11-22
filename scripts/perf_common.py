@@ -14,6 +14,8 @@ import textwrap
 from dataclasses import asdict, dataclass
 from typing import Final
 
+from bench_common import command_path, native_exe, repo_root, timestamp_string
+
 
 DEFAULT_GOLD_RUNS: Final[int] = 100
 DEFAULT_TEST_RUNS: Final[int] = 25
@@ -178,28 +180,11 @@ REFERENCE_ROOTS: Final[dict[str, pathlib.Path]] = {
 }
 
 
-def repo_root() -> pathlib.Path:
-    return pathlib.Path(__file__).resolve().parent.parent
-
-
-def command_path(path: pathlib.Path) -> str:
-    path_abs = path.resolve()
-    root_abs = repo_root().resolve()
-    try:
-        return str(path_abs.relative_to(root_abs))
-    except ValueError:
-        return str(path_abs)
-
-
 def python_path() -> pathlib.Path:
     venv_python = repo_root() / ".venv" / "bin" / "python"
     if venv_python.exists():
         return venv_python
     return pathlib.Path(sys.executable)
-
-
-def timestamp_string() -> str:
-    return dt.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 def case_or_die(case_name: str) -> PerfCase:
@@ -234,11 +219,11 @@ def expand_profile_names(profile_name: str) -> tuple[str, ...]:
 
 
 def binary_path(case: PerfCase) -> pathlib.Path:
-    path = repo_root() / "bin" / case.binary_name
+    path = native_exe(repo_root() / "bin" / case.binary_name)
     if not path.exists():
         raise SystemExit(
             "Missing benchmark binary "
-            f"{path}. Run scripts/compile_para_simd_benchmarks.py first.",
+            f"{path}. Run `python scripts/compile_para_benchmarks.py --simd-only` first.",
         )
     return path
 

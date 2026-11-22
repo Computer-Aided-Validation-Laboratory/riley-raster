@@ -138,6 +138,8 @@ fn checkMeshShaderArrays(mesh: meshpipe.MeshInput) InputArrayError!void {
             }
         },
         .speckle => |speckle_shader| {
+            // Full validation still diagnoses nonfinite data in unreferenced rows.
+            // Calibration checks the interpolated domain of referenced faces only.
             if (!isFiniteSlice(speckle_shader.uvs.slice)) {
                 return error.NonFiniteUvs;
             }
@@ -191,7 +193,10 @@ test "full speckle array validation scans UVs and connectivity" {
         .coords = meshio.Coords.init(&coords, 3),
         .connect = meshio.Connect.init(&connect, 1, 3),
         .disp = null,
-        .shader = .{ .speckle = .{ .uvs = uvs } },
+        .shader = .{ .speckle = .{
+            .uvs = uvs,
+            .params = .{ .disk = .{ .coverage = 0.5, .radius = 0.1 } },
+        } },
     };
     try checkRenderArrs(&.{mesh});
     for ([_]F{ std.math.nan(F), std.math.inf(F), -std.math.inf(F) }) |invalid| {

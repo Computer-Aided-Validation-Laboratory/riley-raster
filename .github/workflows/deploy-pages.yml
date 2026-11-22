@@ -43,7 +43,7 @@ jobs:
         run: zig build docs
 
       - name: Build Sphinx
-        run: sphinx-build -b html docs build/_build/html
+        run: python -m sphinx -E -a -W --keep-going -j auto -b html docs build/_build/html
 
       - name: Merge docs
         run: |

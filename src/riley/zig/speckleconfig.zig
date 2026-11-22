@@ -28,6 +28,8 @@ pub const Evaluator = enum(u8) {
 pub const Neighborhood = enum(u8) { one = 1, four = 4, nine = 9 };
 pub const MaskResolution = enum(u8) { eight = 8, twelve = 12, sixteen = 16 };
 pub const Edges = enum { hard, soft };
+pub const default_seed: u32 = 0xa511e9b3;
+pub const default_perlin_transition_width: buildconfig.F = 0.12;
 pub const default_pattern: Pattern = .disk;
 pub const default_neighborhood: Neighborhood = .nine;
 pub const default_mask_resolution: MaskResolution = .twelve;

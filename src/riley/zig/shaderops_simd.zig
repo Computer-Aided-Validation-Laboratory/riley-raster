@@ -924,7 +924,7 @@ test "speckle kernels preserve perspective interpolation and staged output arith
     const NoReport = struct {
         pub const mode_tag: @import("rasterconfig.zig").ReportMode = .off;
     };
-    const p: speckle.Speckle2DParams = .{
+    const p: speckle.GridParams = .{
         .pattern = .perlin,
         .cells_per_uv = .{ 3.0, 2.0 },
         .foreground = 0.19,
@@ -1048,14 +1048,14 @@ test "speckle kernels preserve perspective interpolation and staged output arith
 test "specialized speckle routing scaling and masked stores across patterns" {
     // Experimental builds inline all available kernels and their SIMD lane stores.
     @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
-    const defaults = [_]speckle.Speckle2DParams{
+    const defaults = [_]speckle.GridParams{
         .{},
         .{ .edge_softness = 0.04 },
         .{ .pattern = .gaussian },
         .{ .pattern = .perlin },
     };
     const experiments = if (buildconfig.enable_all_evaluators)
-        [_]speckle.Speckle2DParams{
+        [_]speckle.GridParams{
             .{ .evaluator = .cell_hash, .neighbor_count = .four },
             .{ .evaluator = .list_naive, .neighbor_count = .one },
             .{ .evaluator = .direct_fixed },
@@ -1063,7 +1063,7 @@ test "specialized speckle routing scaling and masked stores across patterns" {
             .{ .evaluator = .mask_u8, .edge_softness = 0.04 },
         }
     else
-        [_]speckle.Speckle2DParams{};
+        [_]speckle.GridParams{};
     const cases = defaults ++ experiments;
     const samples = [_]struct { uv: [2]F, active: bool = true }{
         .{ .uv = .{ -0.5, 0.0 } },

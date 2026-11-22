@@ -16,11 +16,11 @@ const demo_spec = pdemo.DemoSpec{
     .command_name = "demo-procedural-sphere200",
     .output_default = "./out/demo-procedural-sphere200",
     .pixels_num_default = .{ 800, 500 },
+    .length_default = 0.02,
     .comparison = .{
         .texture_command = "demo1-sphere",
         .procedural_command = "demo-procedural-sphere200",
     },
-    .mask_report_label = "generated mask allocation",
 };
 
 // --------------------------------------------------------------------------------------
@@ -28,7 +28,7 @@ const demo_spec = pdemo.DemoSpec{
 // --------------------------------------------------------------------------------------
 
 pub fn main(init: std.process.Init) !void {
-    try pdemo.runStaticTri6Demo(demo_spec, init.gpa, init.minimal, .{
+    try pdemo.runStaticTri6Demo(demo_spec, init, .{
         .coords_path = data_dir ++ "coords.csv",
         .connect_path = data_dir ++ "connect.csv",
         .uvs_path = data_dir ++ "uvs.csv",

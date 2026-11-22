@@ -37,24 +37,13 @@ const BenchArgs = struct {
     buffer_mode: rastcfg.BufferMode = .tile_local,
 };
 
-fn argSlice(arg: anytype) []const u8 {
-    return switch (@typeInfo(@TypeOf(arg))) {
-        .pointer => |info| switch (info.size) {
-            .slice => arg,
-            else => std.mem.span(arg),
-        },
-        .array => arg[0..],
-        else => @compileError("unsupported argument representation"),
-    };
-}
-
-fn parseArgs(args: anytype) !BenchArgs {
+fn parseArgs(args: []const []const u8) !BenchArgs {
     var result = BenchArgs{};
     var ii: usize = 1;
     while (ii < args.len) : (ii += 2) {
         if (ii + 1 >= args.len) return error.MissingArgumentValue;
-        const key = argSlice(args[ii]);
-        const value = argSlice(args[ii + 1]);
+        const key = args[ii];
+        const value = args[ii + 1];
         if (std.mem.eql(u8, key, "--out-dir")) {
             result.out_dir = value;
         } else if (std.mem.eql(u8, key, "--elements-per-type")) {
@@ -220,7 +209,8 @@ fn makeMesh(
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
-    const args = try parseArgs(init.minimal.args.vector);
+    const cli_args = try init.minimal.args.toSlice(init.arena.allocator());
+    const args = try parseArgs(cli_args);
     var threaded_io = riley.getThreadedIo(
         outer_alloc,
         init.minimal,

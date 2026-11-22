@@ -31,6 +31,32 @@ jobs:
       - name: Zig Build Riley Library
         run: zig build -Doptimize=ReleaseFast --summary all
 
+      - name: Check Windows benchmark executable names
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $prefix = 'zig-out/windows-bench-smoke'
+          zig build install-bench-dist-psf install-bench-thread-geom -Doptimize=Debug -Dprecision=f64 -Dsimd=on --prefix $prefix
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Both targets use the shared benchmark install naming path.
+          foreach ($name in 'bench_dist_psf_f64_simd.exe', 'bench_thread_geom_f64_simd.exe') {
+            $exe = "$prefix/bin/$name"
+            if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Missing benchmark: $exe" }
+          }
+
+      - name: Windows CLI UTF-8 path smoke
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          zig build demo-procedural-pattern -Doptimize=ReleaseFast -- --pattern disk --coverage 0.5 --radius 0.25 --width 64 --height 64 --output "out/Windows CLI café"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $image = "out/Windows CLI café/disk.bmp"
+          if (-not (Test-Path -LiteralPath $image)) { throw "Missing BMP: $image" }
+          $bytes = [System.IO.File]::ReadAllBytes($image)
+          if ($bytes.Length -lt 54 -or $bytes[0] -ne 0x42 -or $bytes[1] -ne 0x4d) {
+            throw "Invalid BMP header: $image"
+          }
+
       - name: Zig Build documentation
         if: matrix.os == 'ubuntu-latest'
         run: zig build docs

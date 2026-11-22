@@ -18,6 +18,13 @@ SIMD_LABELS = ("scalar", "simd")
 HULL_MODES = ("off", "on_no_fallback")
 
 
+def native_exe(path: pathlib.Path) -> pathlib.Path:
+    """Return the host executable path without duplicating an existing suffix."""
+    if sys.platform == "win32" and path.suffix.lower() != ".exe":
+        return path.with_name(path.name + ".exe")
+    return path
+
+
 def benchmark_tag(benchmark_name: str) -> str:
     return benchmark_name.removeprefix("bench_")
 
@@ -33,8 +40,7 @@ def build_run_root(
     root_dir = out_root or (
         pathlib.Path("out") / f"bench_stats_{benchmark_tag(benchmark_name)}"
     )
-    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    return root_dir / timestamp
+    return root_dir / timestamp_string()
 
 
 def default_image_out_dir(benchmark_name: str) -> pathlib.Path:
@@ -47,9 +53,8 @@ def timestamp_string() -> str:
 
 def command_path(path: pathlib.Path) -> str:
     path_abs = path.resolve()
-    root_abs = repo_root().resolve()
     try:
-        return str(path_abs.relative_to(root_abs))
+        return str(path_abs.relative_to(repo_root()))
     except ValueError:
         return str(path_abs)
 
@@ -84,9 +89,8 @@ def write_command_file(
     output_dir: pathlib.Path,
     command: list[str],
 ) -> None:
-    command_path = output_dir / "command.txt"
-    command_path.write_text(
-        " ".join(shlex.quote(part) for part in command) + "\n",
+    (output_dir / "command.txt").write_text(
+        shlex.join(command) + "\n", encoding="utf-8",
     )
 
 
@@ -131,7 +135,7 @@ def run_case(
 ) -> None:
     output_dir = run_root / case["experiment"] / case["case_name"]
 
-    executable_path = repo_root() / "bin" / str(case["executable"])
+    executable_path = native_exe(repo_root() / "bin" / str(case["executable"]))
     command = [
         str(executable_path),
         "--out-dir",
@@ -188,7 +192,6 @@ def run_benchmark_matrix(benchmark_name: str) -> int:
     )
     args = parser.parse_args()
 
-    timing_timestamp = timestamp_string()
     run_root = build_run_root(benchmark_name, args.out_root)
     cases: list[dict[str, object]] = []
     if args.experiment in ("all", "1"):
@@ -234,7 +237,7 @@ def run_benchmark_matrix(benchmark_name: str) -> int:
         }
     )
     if not args.dry_run:
-        timing_csv = write_timing_csv(benchmark_name, timing_rows, timing_timestamp)
+        timing_csv = write_timing_csv(benchmark_name, timing_rows, run_root.name)
         print(f"[{benchmark_name}] Timing written to {timing_csv}")
         print(f"Results written under {run_root}")
     return 0
