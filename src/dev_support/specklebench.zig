@@ -12,30 +12,30 @@
 //! UV interpolation and normal depth rejection/updates. Tile depth is reset inside
 //! every frame's evaluation. There are no sampled UV, colour or resolved-image buffers.
 const std = @import("std");
-const build = @import("buildconfig.zig");
+const build = @import("../riley/zig/buildconfig.zig");
 const F = build.F;
 const S = build.SimdWidth;
 const VecSF = build.VecSF;
 const VecSB = build.VecSB;
 const VecBits = @Vector(S, std.meta.Int(.unsigned, @bitSizeOf(F)));
 const VecSum = @Vector(S, u64);
-const camera = @import("camera.zig");
-const meshio = @import("meshio.zig");
-const ndarray = @import("ndarray.zig");
-const frontend = @import("rasterfrontend.zig");
-const elemtilebin = @import("elemtilebinning.zig");
-const meshpipe = @import("meshpipeline.zig");
-const HullAdaptive = @import("hulladaptive.zig").HullAdaptive;
-const HullMultiRoot = @import("hullmultiroot.zig").HullMultiRoot;
-const geom = @import("geometrykernels.zig");
-const shaderops = @import("shaderops.zig");
-const speckle = @import("speckleops.zig");
-const policy = @import("scalingpolicy.zig");
-const pce = @import("parachunkexec.zig");
-const report = @import("report.zig");
-const config = @import("rasterconfig.zig");
-const simd = @import("rasterengine_simd.zig");
-const backend = if (build.config.simd == .on) simd else @import("rasterengine_scalar.zig");
+const camera = @import("../riley/zig/camera.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const ndarray = @import("../riley/zig/ndarray.zig");
+const frontend = @import("../riley/zig/rasterfrontend.zig");
+const elemtilebin = @import("../riley/zig/elemtilebinning.zig");
+const meshpipe = @import("../riley/zig/meshpipeline.zig");
+const HullAdaptive = @import("../riley/zig/hulladaptive.zig").HullAdaptive;
+const HullMultiRoot = @import("../riley/zig/hullmultiroot.zig").HullMultiRoot;
+const geom = @import("../riley/zig/geometrykernels.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
+const speckle = @import("../riley/zig/speckleops.zig");
+const policy = @import("../riley/zig/scalingpolicy.zig");
+const pce = @import("../riley/zig/parachunkexec.zig");
+const report = @import("../riley/zig/report.zig");
+const config = @import("../riley/zig/rasterconfig.zig");
+const simd = @import("../riley/zig/rasterengine_simd.zig");
+const backend = if (build.config.simd == .on) simd else @import("../riley/zig/rasterengine_scalar.zig");
 const GK = geom.Tri6Kernel();
 const N = GK.nodes_num;
 const NH = geom.MeshType.tri6.getNumHullPoints();
@@ -133,7 +133,7 @@ const Scratch = struct {
 
 /// The only shader difference is the output sink. UV interpolation uses the
 /// same scalar helper and SIMD multiply/add order as the production UV shader.
-const texops = @import("textureops.zig");
+const texops = @import("../riley/zig/textureops.zig");
 const TextureShader = shaderops.TexPrepared(u8, 1);
 
 fn SinkKernel(comptime kernel_index: ?usize, comptime filter: texops.TexSampConfig) type {
@@ -210,7 +210,7 @@ pub const Geometry = struct {
         frontend.nodesToClipPxLengRangeInPlace(cam, &coords_nodes, 0, coords_nodes.mat.rows_num);
         const elems = connect.getElemsNum();
         var coords = try ndarray.NDArray(F).initFlat(alloc, &.{ elems, 3, N });
-        const uvs = try @import("meshpipeline.zig").prepUVs(alloc, &uvs_nodes, &connect);
+        const uvs = try @import("../riley/zig/meshpipeline.zig").prepUVs(alloc, &uvs_nodes, &connect);
         var raster_hulls = try ndarray.NDArray(F).initFlat(alloc, &.{ elems, 2, NH });
         const bboxes = try alloc.alloc(frontend.ElemBBox, elems);
         const root_classes = try alloc.alloc(frontend.ElemRootClass, elems);
@@ -302,7 +302,7 @@ pub const Geometry = struct {
                 for (frame.frame_workspace.vis_orig_elem_inds, 0..) |original_idx, visible_idx| {
                     slots[original_idx] = prepared.slot_by_visible_elem.get(visible_idx);
                 }
-                remapped.slot_by_visible_elem = @import("vecslice.zig").VecSlice(u32).init(slots);
+                remapped.slot_by_visible_elem = @import("../riley/zig/vecslice.zig").VecSlice(u32).init(slots);
                 multiroot_hulls = remapped;
             }
         }
@@ -437,7 +437,7 @@ test "speckle benchmark accumulator masks lanes and reduces deterministically" {
 }
 
 test "speckle benchmark sink UV interpolation matches production grayscale shader" {
-    const MatSlice = @import("matslice.zig").MatSlice;
+    const MatSlice = @import("../riley/zig/matslice.zig").MatSlice;
     // Test this benchmark's interpolation/output boundary, not the evaluator accuracy matrix.
     const params: speckle.GridParams = .{ .pattern = .gaussian, .cells_per_uv = .{ 3.25, 2.75 } };
     const default_config = comptime params.resolve() catch unreachable;
@@ -457,7 +457,7 @@ test "speckle benchmark sink UV interpolation matches production grayscale shade
             var image = MatSlice(F).init(&storage, 1, S);
             var expected: Accumulator = .{};
             var sink: Accumulator = .{};
-            @import("shaderkernels_scalar.zig").SpeckleKernel(N, index).shade(.clip_px_leng, ctx, interp, &buf, &shader, ctx_report, &image);
+            @import("../riley/zig/shaderkernels_scalar.zig").SpeckleKernel(N, index).shade(.clip_px_leng, ctx, interp, &buf, &shader, ctx_report, &image);
             expected.consumeScal(storage[0]);
             SinkKernel(index, .{ .sample = .linear }).shade(.clip_px_leng, ctx, interp, &buf, &shader, ctx_report, &sink);
             try std.testing.expectEqualDeep(expected.result(), sink.result());
@@ -465,7 +465,7 @@ test "speckle benchmark sink UV interpolation matches production grayscale shade
             inline for (0..N) |nn| v_weights[nn] = @splat(weights[nn]);
             var active: [S]bool = @splat(true);
             active[S - 1] = false;
-            @import("shaderkernels_simd.zig").SpeckleKernel(N, index).shadeSIMD(.clip_px_leng, ctx, ctx_report, active, v_weights, @splat(0.2), @splat(0.3), @splat(@splat(1)), @splat(1), &buf, &shader, &image);
+            @import("../riley/zig/shaderkernels_simd.zig").SpeckleKernel(N, index).shadeSIMD(.clip_px_leng, ctx, ctx_report, active, v_weights, @splat(0.2), @splat(0.3), @splat(@splat(1)), @splat(1), &buf, &shader, &image);
             expected = .{};
             expected.consumeSIMD(storage, active);
             sink = .{};
