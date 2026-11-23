@@ -1,13 +1,12 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const std = @import("std");
-const demo_common = @import("demo_common.zig");
 
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const camera = @import("riley/zig/camera.zig");
@@ -28,7 +27,7 @@ const MeshInput = meshpipe.MeshInput;
 
 const MeshShape = struct {
     shape: []const u8,
-    elem: []const u8,
+
     mesh_type: gk.MeshType,
 };
 
@@ -47,6 +46,7 @@ fn buildRgbField(
 ) !meshio.Field {
     const time_n = temp.getTimeN();
     const node_n = temp.getCoordN();
+    // Pack temperature and in-plane displacement as R, G and B nodal fields.
     var field = try meshio.Field.initAlloc(allocator, time_n, node_n, 3);
     for (0..time_n) |tt| {
         for (0..node_n) |nn| {
@@ -96,10 +96,12 @@ fn loadMesh(
     mesh_index: usize,
     texture: texops.Tex(T, C),
 ) !MeshInput {
+    // The optimised triangle kernel uses the same mesh files as tri3.
+    const asset_tag = @tagName(if (mesh_shape.mesh_type == .tri3opt) .tri3 else mesh_shape.mesh_type);
     const dir = try std.fmt.allocPrint(
         allocator,
         "data/shapes/{s}/{s}/",
-        .{ mesh_shape.shape, mesh_shape.elem },
+        .{ mesh_shape.shape, asset_tag },
     );
 
     const temp_files = &[_][]const u8{
@@ -149,16 +151,19 @@ fn loadMesh(
                 temp
             else
                 try buildRgbField(allocator, temp, disp);
-            break :blk .{ .nodal = .{
-                .field = field,
-                .bits = bits,
-                .scaling = .auto,
-                .scale_over = if (mesh_index == 1)
-                    .over_frames
-                else
-                    .within_frames,
-                .normal_type = normal_type,
-            } };
+            break :blk .{
+                .nodal = .{
+                    .field = field,
+                    .bits = bits,
+                    .scaling = .auto,
+                    // Contrast a fixed scale for the whole sequence with per-frame scaling.
+                    .scale_over = if (mesh_index == 1)
+                        .over_frames
+                    else
+                        .within_frames,
+                    .normal_type = normal_type,
+                },
+            };
         },
         3, 4 => blk: {
             const params = if (mesh_index == 3)
@@ -218,6 +223,7 @@ fn buildScene(
         );
         try groups.append(allocator, sceneops.meshGroupSingle(mesh_index));
     }
+    // Turn the last plate 90 degrees in XY before placing the meshes in a grid.
     const plate = &meshes.items[5];
     for (0..plate.coords.mat.rows_num) |node| {
         const x = plate.coords.mat.get(node, 0);
@@ -349,15 +355,16 @@ fn renderCase(
     options: DemoOptions,
 ) !void {
     // -------------------------------------------------------------------------
-    // 1. Build scene meshes and cameras
+    // 1. Load the texture for this channel count and bit depth
     // -------------------------------------------------------------------------
+    // The RGB16 case expands the RGB8 source to the full 16-bit range (255 * 257).
     const texture: texops.Tex(T, C) = if (T == u16 and C == 3) blk: {
         const tex_u8 = try iio.loadImage(
             u8,
             3,
             local_alloc,
             io,
-            "texture/speck128_rgb_u8.bmp",
+            texture_path,
             .bmp,
         );
         defer tex_u8.deinit(local_alloc);
@@ -383,12 +390,18 @@ fn renderCase(
     };
     defer texture.deinit(local_alloc);
 
+    // -------------------------------------------------------------------------
+    // 2. Load mesh and nodal data, assign shaders and arrange the meshes
+    // -------------------------------------------------------------------------
     const meshes = try buildScene(T, C, bits, local_alloc, io, texture, options);
 
+    // -------------------------------------------------------------------------
+    // 3. Frame the assembled scene from six viewpoints
+    // -------------------------------------------------------------------------
     const cameras = buildCameras(meshes, options);
 
     // -------------------------------------------------------------------------
-    // 2. Configure raster settings and output directory
+    // 4. Set image format and case subdirectory (created by Riley)
     // -------------------------------------------------------------------------
     const out_dir = try std.fs.path.join(
         local_alloc,
@@ -413,7 +426,7 @@ fn renderCase(
     };
 
     // -------------------------------------------------------------------------
-    // 3. Render the multi-mesh multi-camera case
+    // 5. Render the multi-mesh multi-camera case
     // -------------------------------------------------------------------------
     const images = try riley.raster(
         outer_alloc,
@@ -437,18 +450,19 @@ pub fn main(init: std.process.Init) !void {
     const local_alloc = arena.allocator();
     const io = init.io;
 
+    // Use the same mesh layout and optics for all four image formats.
     const out_dir_root = "./out/demo6_featurezoo";
 
     const pixel_size = [2]F{ 5.3e-6, 5.3e-6 };
     const focal_length: F = 50.0e-3;
 
     const mesh_shapes = [_]MeshShape{
-        .{ .shape = "cube_surf", .elem = "quad9", .mesh_type = .quad9 },
-        .{ .shape = "cube_surf", .elem = "tri6", .mesh_type = .tri6 },
-        .{ .shape = "cylinder_surf", .elem = "quad8", .mesh_type = .quad8 },
-        .{ .shape = "cylinder_surf", .elem = "tri6", .mesh_type = .tri6 },
-        .{ .shape = "platewithhole_surf", .elem = "quad4", .mesh_type = .quad4 },
-        .{ .shape = "platewithhole_surf", .elem = "tri3", .mesh_type = .tri3 },
+        .{ .shape = "cube_surf", .mesh_type = .quad9 },
+        .{ .shape = "cube_surf", .mesh_type = .tri6 },
+        .{ .shape = "cylinder_surf", .mesh_type = .quad8 },
+        .{ .shape = "cylinder_surf", .mesh_type = .tri6 },
+        .{ .shape = "platewithhole_surf", .mesh_type = .quad4 },
+        .{ .shape = "platewithhole_surf", .mesh_type = .tri3 },
     };
 
     const mesh_centers = [mesh_shapes.len][3]F{
@@ -467,12 +481,13 @@ pub fn main(init: std.process.Init) !void {
         .mesh_shapes = &mesh_shapes,
         .mesh_centers = &mesh_centers,
     };
-    
+
     // -------------------------------------------------------------------------
-    // Clean output root and render all combinations
+    // Reset this demo directory, then render the mono/RGB x 8/16-bit cases
     // -------------------------------------------------------------------------
-    var output_root = try demo_common.resetOutputDir(io, out_dir_root);
-    defer output_root.close(io);
+    const cwd = std.Io.Dir.cwd();
+    try cwd.deleteTree(io, out_dir_root);
+    try cwd.createDirPath(io, out_dir_root);
 
     try renderCase(
         u8,

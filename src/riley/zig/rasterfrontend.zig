@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const vecstack = @import("vecstack.zig");
@@ -617,7 +617,8 @@ fn isTri3BackfaceRaster(coords_raster: RasterCoords2D(3)) bool {
     return signed_area <= tol.culling.tri3_signed_area;
 }
 
-fn isHighOrdBackface(
+/// Shared nodal-normal culling rule for prepared and traversal-time geometry.
+pub fn isHighOrdBackface(
     comptime N: usize,
     coords_raster: RasterCoords2D(N),
 ) bool {

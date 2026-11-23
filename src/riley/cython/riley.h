@@ -1,3 +1,11 @@
+// --------------------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 #ifndef RILEY_H
 #define RILEY_H
 
@@ -108,6 +116,37 @@ typedef struct c_camera_input {
     uint32_t subpixel_center_map;
 } CCameraInput;
 
+enum {
+    RILEY_SPECKLE_DISK = 0,
+    RILEY_SPECKLE_GAUSSIAN = 1,
+    RILEY_SPECKLE_PERLIN = 2,
+};
+
+#define RILEY_SPECKLE_DEFAULT_SEED 0xA511E9B3u
+#define RILEY_PERLIN_DEFAULT_TRANSITION_WIDTH 0.12
+
+/* Flat tagged parameters. Inactive pattern fields are ignored.
+ * Lengths use reference-mesh units; Gaussian radius is 3 sigma.
+ * Coverage is nominal opaque-footprint union coverage before jitter/softness,
+ * not mean image intensity. Perlin threshold and transition are in noise units.
+ */
+typedef struct c_speckle_params {
+    uint32_t pattern; /* RILEY_SPECKLE_*; fixed across frames. */
+    uint32_t seed;
+    /* Disk/Gaussian controls. */
+    double coverage;
+    double radius;
+    double occupancy;
+    double jitter;
+    double edge_softness;
+    /* Perlin controls. */
+    double perlin_cell_size; /* Positive finite lattice spacing. */
+    double perlin_threshold;
+    double perlin_transition_width;
+    double foreground;
+    double background;
+} CSpeckleParams;
+
 typedef struct c_func_shader_params {
     double coord_scale_0;
     double coord_scale_1;
@@ -186,15 +225,12 @@ typedef struct c_func_shader_params {
     double eggbox_pitch_1;
     double eggbox_phase_0;
     double eggbox_phase_1;
-    double extra_0;
-    double extra_1;
-    double extra_2;
-    double extra_3;
+
 } CFuncShaderParams;
 
 
 typedef struct c_shader_input {
-    uint32_t shader_tag;
+    uint32_t shader_tag; /* 0: tex, 1: tex_rgb, 2: nodal, 3: func, 4: func_rgb, 5: nodal_rgb, 6: speckle */
     CArray2DF64 uvs;
     CArray3DF64 tex;
     CArray3DU8 tex_u8;
@@ -212,6 +248,9 @@ typedef struct c_shader_input {
     uint32_t func_shader_coord_mode;
     CFuncShaderParams func_shader_params;
     uint32_t normal_type;
+    CSpeckleParams speckle_params;
+    double speckle_output_scale;
+    double speckle_output_offset;
 } CShaderInput;
 
 typedef struct c_mesh_input {

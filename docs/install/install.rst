@@ -1,36 +1,32 @@
 Installing riley-raster
-==========================
+=======================
 
-Quick Start: Zig
-==========================
+Quick start: Zig
+----------------
 
-Riley uses Zig 0.16.0. Clone the repository, then build and run the smallest demo:
+Riley uses `Zig 0.16.0 <https://ziglang.org/download/>`_. Clone the
+`repository <https://github.com/Computer-Aided-Validation-Laboratory/riley-raster>`_,
+then build and run the smallest demo from the repository root:
 
-      .. code-block:: bash
+.. code-block:: bash
 
-          zig build demo0-quickstart -Doptimize=ReleaseFast
+   zig build demo0a-quickstart -Doptimize=ReleaseFast
 
-Renders are written to out/. Run the combined test suite with:
+Renders are written to ``out/demo0a_quickstart/``.
 
-      .. code-block:: bash
+Quick start: Python
+-------------------
 
-          zig build test-verif-basic
+With Python 3.11 or newer, install the published package and run the demo:
 
-`Zig API documentation <zig-api/index.html>`_
+.. code-block:: bash
 
-Quick Start: Python
-==========================
+   python -m pip install riley-raster
+   python -m riley demo0a_quickstart
 
-Install the published package:
+Python renders are written to ``out_riley_py/demo0a_quickstart/``.
+For development from a checkout, run ``python -m pip install -e .`` from the
+repository root.
 
-      .. code-block:: bash
-
-          python -m pip install riley-raster
-          python -m riley demo0_quickstart
-
-Python renders are written below out_riley_py/. 
-For development from a checkout, install it in editable mode:
-
-      .. code-block:: bash
-         
-          python -m pip install -e .
+See :doc:`../riley-examples/examples` for more demos or :doc:`../tests/tests`
+for test commands.

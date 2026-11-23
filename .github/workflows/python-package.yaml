@@ -62,3 +62,7 @@ jobs:
       - name: Python run test suite
         run: |
           python -m pytest --pyargs riley.pytests -s
+
+      - name: Run tooling unit tests (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: python -m unittest discover -s scripts/tests

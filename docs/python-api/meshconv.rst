@@ -1,5 +1,5 @@
-meshconv
----------------
+Mesh conversion
+===============
 
 .. automodule:: riley.python.meshconv
    :members:

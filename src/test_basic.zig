@@ -1,21 +1,20 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const testsuites = @import("dev_support/testsuites.zig");
-const demo_common = @import("demo_common.zig");
 
 const oneelem = @import("tests/test_gold_oneelem.zig");
 const twoshapes = @import("tests/test_gold_twoshapes.zig");
 const featurezoo = @import("tests/test_gold_featurezoo.zig");
 
-test "output reset demo helpers" {
-    _ = demo_common;
+test {
+    _ = @import("testunit.zig");
 }
 
 test "basic test suite" {

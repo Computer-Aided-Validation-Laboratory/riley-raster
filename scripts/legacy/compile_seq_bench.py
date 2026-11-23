@@ -4,7 +4,7 @@ from __future__ import annotations
 import pathlib
 import subprocess
 
-from perf_common import repo_root
+from bench_common import repo_root
 
 
 BENCH_NAMES = [

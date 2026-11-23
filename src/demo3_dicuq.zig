@@ -1,14 +1,12 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const std = @import("std");
-const demo_common = @import("demo_common.zig");
-const print = std.debug.print;
 
 const riley = @import("riley/zig/riley.zig");
 const RasterConfig = riley.RasterConfig;
@@ -17,50 +15,15 @@ const uvio = @import("riley/zig/uvio.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
 const MeshInput = meshpipe.MeshInput;
-const gk = @import("riley/zig/geometrykernels.zig");
-const MeshType = gk.MeshType;
 const camera_mod = @import("riley/zig/camera.zig");
 const cameraio = @import("riley/zig/cameraio.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const CameraInput = camera_mod.CameraInput;
-const DistortModel = camera_mod.DistortParams;
-const BrownCon = camera_mod.BrownCon;
-const BrownConExt = camera_mod.BrownConExt;
-const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
 
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
-
-const DistortCase = enum {
-    none,
-    brown_con,
-    brown_con_ext,
-};
-
-fn buildDistort(distort_case: DistortCase) DistortModel {
-    return switch (distort_case) {
-        .none => .none,
-        .brown_con => .{ .brown_con = BrownCon.Params{
-            .k1 = -0.2,
-            .k2 = 0.1,
-            .k3 = 0.0,
-            .p1 = 0.0001,
-            .p2 = -0.0001,
-        } },
-        .brown_con_ext => .{ .brown_con_ext = BrownConExt.Params{
-            .k1 = -0.2,
-            .k2 = 0.1,
-            .k3 = -0.01,
-            .k4 = -0.04,
-            .k5 = 0.18,
-            .k6 = -0.02,
-            .p1 = 0.0001,
-            .p2 = -0.0001,
-        } },
-    };
-}
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
@@ -72,25 +35,11 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
 
     // -------------------------------------------------------------------------
-    // 1. Setup paths, config and parameters
+    // 1. Set input and output paths
     // -------------------------------------------------------------------------
     const data_dir = "data/FE/platehole3d_2mr_7f/";
     const texture_path = "texture/speckle_mono.bmp";
     const out_dir_root = "./out/demo3_dicuq";
-
-    const config = RasterConfig{
-        .render_mode = .offline,
-        .parallel = .{ .threads = 4 },
-        .save_strategy = .disk,
-        .background_value = 128.0,
-        .output = .{
-            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .none },
-            },
-        },
-        .report = .{ .mode = .bench },
-    };
-
 
     // -------------------------------------------------------------------------
     // 2. Load simulation data, frames, and texture shader
@@ -115,6 +64,7 @@ pub fn main(init: std.process.Init) !void {
     );
     const disp_source = sim_data.disp orelse return error.MissingDisplacement;
 
+    // Keep only the first and last simulation frames for the DIC image pair.
     const frame_indices = try sceneops.selectFirstLastFrameIndices(
         local_alloc,
         disp_source.getTimeN(),
@@ -170,8 +120,14 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("Setting up camera...\n", .{});
     const roi_pos = sceneops.boundsCenter(&sim_data.coords);
-    const distort_case: DistortCase = .brown_con;
-    const distort = buildDistort(distort_case);
+    // See demo5_cameramodels.zig for alternative distortion models.
+    const distort: camera_mod.DistortParams = .{ .brown_con = .{
+        .k1 = -0.2,
+        .k2 = 0.1,
+        .k3 = 0.0,
+        .p1 = 0.0001,
+        .p2 = -0.0001,
+    } };
 
     // Camera 0: face on
     const cam0_rot = Rotation.init(
@@ -221,17 +177,34 @@ pub fn main(init: std.process.Init) !void {
     cam1_in.pos_world = cam1_pos;
 
     // -------------------------------------------------------------------------
-    // 4. Configure raster engine and render
+    // 4. Configure disk output and reset this demo's previous results
     // -------------------------------------------------------------------------
-    std.debug.print("Rendering simulation to {s}/...\n", .{out_dir_root});
+    const config = RasterConfig{
+        .render_mode = .offline,
+        .parallel = .{ .threads = 4 },
+        .save_strategy = .disk,
+        .background_value = 128.0,
+        .output = .{
+            .image_save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .none },
+            },
+        },
+        .report = .{ .mode = .bench },
+    };
 
-    var out_dir = try demo_common.resetOutputDir(io, out_dir_root);
+    const cwd = std.Io.Dir.cwd();
+    try cwd.deleteTree(io, out_dir_root);
+    const out_dir = try cwd.createDirPathOpen(io, out_dir_root, .{});
     defer out_dir.close(io);
 
+    // -------------------------------------------------------------------------
+    // 5. Render both frames from both cameras
+    // -------------------------------------------------------------------------
+    std.debug.print("Rendering simulation to {s}/...\n", .{out_dir_root});
     const images = try riley.raster(
         outer_alloc,
         io,
-        &.{cam0_in, cam1_in},
+        &.{ cam0_in, cam1_in },
         &.{mesh_input},
         config,
         out_dir_root,
@@ -243,8 +216,9 @@ pub fn main(init: std.process.Init) !void {
     }
 
     // -------------------------------------------------------------------------
-    // 5. Export stereo calibration and camera position data
+    // 6. Export stereo calibration in OpenGL and OpenCV conventions
     // -------------------------------------------------------------------------
+    // Each export writes a stereo manifest and one CSV per camera.
     var cam0_opengl = cam0_in;
     cam0_opengl.coord_sys = .opengl;
     var cam1_opengl = cam1_in;

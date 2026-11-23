@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import pathlib
+import argparse
+import shutil
 import subprocess
 
-from perf_common import repo_root
+from bench_common import native_exe, repo_root
 
 
 BENCH_NAMES = [
@@ -58,19 +59,28 @@ def compile_mode_parallel(simd_mode: str, suffix: str) -> None:
         )
 
     for bench_name in BENCH_NAMES:
-        src = root / "bin" / f"{bench_name}_f64_{suffix}"
-        dst = root / "bin" / f"{bench_name}_{suffix}"
-        if src.exists():
-            import shutil
-            shutil.copy2(src, dst)
-
+        src = native_exe(root / "bin" / f"{bench_name}_f64_{suffix}")
+        dst = native_exe(root / "bin" / f"{bench_name}_{suffix}")
+        if not src.is_file():
+            raise SystemExit(f"Build succeeded but did not install {src}.")
+        shutil.copy2(src, dst)
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Build the standard f64 benchmark binaries and aliases.",
+    )
+    parser.add_argument(
+        "--simd-only", action="store_true",
+        help="Build only SIMD binaries instead of both scalar and SIMD.",
+    )
+    args = parser.parse_args()
+
     root = repo_root()
     (root / "bin").mkdir(parents=True, exist_ok=True)
 
-    compile_mode_parallel("off", "scalar")
+    if not args.simd_only:
+        compile_mode_parallel("off", "scalar")
     compile_mode_parallel("on", "simd")
 
     print(f"Benchmark executables written to {root / 'bin'}")

@@ -78,6 +78,15 @@ Unless a task explicitly concerns malformed-input validation, assume:
 
 > **Curved higher-order elements**: Riley supports curved quadratic and higher-order elements. It is not required to handle arbitrary pathological polynomial patches that fold or invert.
 
+### Physical procedural speckles
+
+Physical speckles assume usable reference geometry and a usable UV metric on
+referenced faces. They are calibrated once per mesh, not at each point or frame.
+See the [public speckle contract](../docs/python-api/speckles.rst) for UV bounds
+and preparation errors, and the
+[calibration and coverage model](THEORY.md#6-physical-speckle-calibration-and-nominal-coverage)
+for the numerical assumptions.
+
 ---
 
 ## 4. Camera and Distortion Model Assumptions

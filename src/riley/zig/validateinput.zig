@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
@@ -18,6 +18,7 @@ const ndarray = @import("ndarray.zig");
 const rastcfg = @import("rasterconfig.zig");
 const report = @import("report.zig");
 const shaderops = @import("shaderops_common.zig");
+const speckleparams = @import("speckleparams.zig");
 const texops = @import("textureops.zig");
 
 const F = buildconfig.F;
@@ -35,7 +36,7 @@ const MIN_CAMERA_ROI_DIST: F = 1.0e-6;
 // Public Error Set & Summary Types
 // --------------------------------------------------------------------------------------
 
-pub const InputValidationError = error{
+pub const InputValidationError = speckleparams.ValidationError || error{
     NoRenderGroups,
     InvalidRenderGroupWorkers,
     FullStatsRequiresSingleRasterWorker,
@@ -62,6 +63,7 @@ pub const InputValidationError = error{
     InvalidShaderBitDepth,
     InvalidScalingBounds,
     InvalidFuncShaderParams,
+    InvalidSpeckleOutputTransform,
     MissingNodalField,
     MissingUvs,
     InvalidMeshType,
@@ -546,6 +548,17 @@ fn checkShaderMetadata(
             try checkBits(nodal_shader.bits);
             try checkScaling(nodal_shader.scaling);
         },
+        .speckle => |speckle_shader| {
+            try checkTexUvMetadata(speckle_shader.uvs, coords_num);
+            try checkBits(speckle_shader.bits);
+            try checkScaling(speckle_shader.scaling);
+            if (!std.math.isFinite(speckle_shader.output_scale) or
+                !std.math.isFinite(speckle_shader.output_offset))
+            {
+                return error.InvalidSpeckleOutputTransform;
+            }
+            try speckle_shader.params.validate();
+        },
         .func => |func_shader| {
             const require_uvs = func_shader.coord_mode == .uv;
             try checkOptionalUvMetadata(func_shader.uvs, coords_num, require_uvs);
@@ -907,6 +920,93 @@ fn isFiniteVec3(vec_val: anytype) bool {
     return isFiniteSlice(vec_val.asSlice());
 }
 
+test "speckle metadata validates shapes and parameters without scanning UV payloads" {
+    const alloc = std.testing.allocator;
+    var values = [_]F{ std.math.nan(F), 0, 1, 0, 0, 1 };
+    const uvs = try ndarray.NDArray(F).init(alloc, &values, &.{ 3, 2 });
+    defer uvs.deinit(alloc);
+    const valid = shaderops.SpeckleInput{
+        .uvs = uvs,
+        .params = .{ .disk = .{ .coverage = 0.5, .radius = 0.1 } },
+    };
+    try checkShaderMetadata(.{ .speckle = valid }, 3);
+    try std.testing.expectError(error.InvalidUvDimensions, checkShaderMetadata(.{ .speckle = valid }, 4));
+    var malformed = valid;
+    var dims = [_]usize{3};
+    malformed.uvs.dims = &dims;
+    try std.testing.expectError(error.InvalidUvDimensions, checkShaderMetadata(.{ .speckle = malformed }, 3));
+    var wrong_width = [_]usize{ 3, 1 };
+    malformed.uvs.dims = &wrong_width;
+    try std.testing.expectError(error.InvalidUvDimensions, checkShaderMetadata(.{ .speckle = malformed }, 3));
+
+    for ([_]F{ std.math.nan(F), std.math.inf(F), -std.math.inf(F) }) |invalid| {
+        var shader = valid;
+        shader.output_scale = invalid;
+        try std.testing.expectError(error.InvalidSpeckleOutputTransform, checkShaderMetadata(.{ .speckle = shader }, 3));
+        shader = valid;
+        shader.output_offset = invalid;
+        try std.testing.expectError(error.InvalidSpeckleOutputTransform, checkShaderMetadata(.{ .speckle = shader }, 3));
+        shader = valid;
+        shader.params.disk.radius = invalid;
+        try std.testing.expectError(error.InvalidSpeckleRadius, checkShaderMetadata(.{ .speckle = shader }, 3));
+    }
+    for ([_][2]F{ .{ 0, 0 }, .{ -0.0, 0 }, .{ 0.375, 0.375 }, .{ 1, 1 } }) |colors| {
+        var shader = valid;
+        shader.params.disk.foreground = colors[0];
+        shader.params.disk.background = colors[1];
+        try std.testing.expectError(error.SpeckleColorsMustDiffer, checkShaderMetadata(.{ .speckle = shader }, 3));
+    }
+    var shader = valid;
+    shader.params.disk.foreground = 0.375;
+    shader.params.disk.background = std.math.nextAfter(F, 0.375, 1);
+    try checkShaderMetadata(.{ .speckle = shader }, 3);
+    shader = valid;
+    shader.params.disk.radius = 0;
+    try std.testing.expectError(error.InvalidSpeckleRadius, checkShaderMetadata(.{ .speckle = shader }, 3));
+    shader.params = .{ .perlin = .{ .cell_size = 0 } };
+    try std.testing.expectError(error.InvalidSpeckleCellSize, checkShaderMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.params.disk.occupancy = 0;
+    try std.testing.expectError(error.InvalidSpeckleOccupancy, checkShaderMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.params.disk.foreground = 1.1;
+    try std.testing.expectError(error.InvalidSpeckleForeground, checkShaderMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.bits = 7;
+    try std.testing.expectError(error.InvalidShaderBitDepth, checkShaderMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.scaling = .{ .fixed = .{ 1, 0 } };
+    try std.testing.expectError(error.InvalidScalingBounds, checkShaderMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.output_scale = -2;
+    shader.output_offset = -0.5;
+    shader.bits = null;
+    try checkShaderMetadata(.{ .speckle = shader }, 3);
+}
+
+test "fast render validation preserves physical errors before reading geometry" {
+    const meshio = @import("meshio.zig");
+    // Metadata is sound but geometry is unusable. The fast parameter boundary must
+    // reject first, without scanning/calibrating or allocating any resources.
+    var coords = [_]F{std.math.nan(F)} ** 9;
+    var connect = [_]usize{ 30, 40, 50 };
+    var uvs = [_]F{std.math.nan(F)} ** 6;
+    var dims = [_]usize{ 3, 2 };
+    var strides = [_]usize{ 2, 1 };
+    const mesh = meshpipe.MeshInput{
+        .mesh_type = .tri3,
+        .coords = meshio.Coords.init(&coords, 3),
+        .connect = meshio.Connect.init(&connect, 1, 3),
+        .disp = null,
+        .shader = .{ .speckle = .{
+            .uvs = .{ .slice = &uvs, .dims = &dims, .strides = &strides },
+            .params = .{ .disk = .{ .coverage = 0.5, .radius = 0.1, .jitter = 0.05, .edge_softness = 0.1 } },
+        } },
+    };
+    const groups = [_]struct { workers: u32 }{.{ .workers = 1 }};
+    try std.testing.expectError(error.UnsupportedSpeckleSupport, checkRenderInps(&groups, &.{}, &.{mesh}, .{ .validation = .fast }, null, false, null));
+}
+
 test "raster configuration rejects invalid distortion edge spacing" {
     var config = rastcfg.RasterConfig{};
     for ([_]F{ 0.0, -1.0, std.math.nan(F), std.math.inf(F) }) |spacing| {
@@ -917,4 +1017,3 @@ test "raster configuration rejects invalid distortion edge spacing" {
         );
     }
 }
-

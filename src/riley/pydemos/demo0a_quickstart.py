@@ -1,11 +1,11 @@
-# --------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Riley: A High Performance Rasteriser for DIC UQ
 #
-# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 # Licensed under the MIT License (see LICENSE file for details)
 #
-# Authors: scepticalrabbit (Lloyd Fletcher)
-# --------------------------------------------------------------------------
+# Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+# --------------------------------------------------------------------------------------
 from __future__ import annotations
 
 import shutil
@@ -86,7 +86,7 @@ def main() -> None:
     )
     config.save_scaling = riley.ScaleStrategy.none
 
-    out_dir = Path.cwd() / "out_riley_py" / "demo0_quickstart"
+    out_dir = Path.cwd() / "out_riley_py" / "demo0a_quickstart"
     shutil.rmtree(out_dir, ignore_errors=True)
 
     # --------------------------------------------------------------------------

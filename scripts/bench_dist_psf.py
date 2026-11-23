@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import datetime as dt
 from pathlib import Path
 import shlex
 import subprocess
@@ -17,7 +16,13 @@ import time
 
 import numpy as np
 
-from perf_common import command_path, repo_root
+from bench_common import (
+    command_path,
+    native_exe,
+    repo_root,
+    timestamp_string,
+    write_command_file,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -191,12 +196,8 @@ EXPERIMENT3_CASES = build_experiment3_cases()
 
 def binary_path() -> Path:
     """Resolve the benchmark binary executable path."""
-    path = repo_root() / "bin" / "bench_dist_psf_f64_simd"
-    if not path.exists():
-        # Fallback to plain binary name if present
-        alt_path = repo_root() / "bin" / "bench_dist_psf"
-        if alt_path.exists():
-            return alt_path
+    path = native_exe(repo_root() / "bin" / "bench_dist_psf_f64_simd")
+    if not path.is_file():
         raise SystemExit(
             f"Missing benchmark binary at {path}. Run "
             "'zig build install-bench-dist-psf -Doptimize=ReleaseFast --prefix .' first."
@@ -415,9 +416,7 @@ def run_case(
         return 0.0
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "command.txt").write_text(
-        " ".join(shlex.quote(p) for p in cmd) + "\n"
-    )
+    write_command_file(output_dir, cmd)
 
     print(f"Running {case_name} ({runs} runs, {frames} frames)...")
     start_time = time.perf_counter()
@@ -504,7 +503,7 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = timestamp_string()
     run_root: Path = args.out_root / timestamp
 
     active_cases: list[dict[str, object]] = []

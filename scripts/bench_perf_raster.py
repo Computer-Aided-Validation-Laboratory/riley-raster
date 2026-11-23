@@ -3,13 +3,18 @@ from __future__ import annotations
 
 import argparse
 import csv
-import datetime as dt
 import pathlib
 import shlex
 import subprocess
 import time
 
-from perf_common import command_path, repo_root
+from bench_common import (
+    command_path,
+    native_exe,
+    repo_root,
+    timestamp_string,
+    write_command_file,
+)
 
 DEFAULT_OUT_ROOT = pathlib.Path("out") / "bench_stats_perf"
 DEFAULT_IMAGE_OUT_DIR = pathlib.Path("out") / "bench_images_perf"
@@ -151,11 +156,6 @@ EXPERIMENT1_CASES = build_experiment1_cases()
 EXPERIMENT2_CASES = build_experiment2_cases()
 
 
-def build_run_root(out_root: pathlib.Path | None) -> pathlib.Path:
-    root_dir = out_root or DEFAULT_OUT_ROOT
-    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    return root_dir / timestamp
-
 
 def default_image_out_dir() -> pathlib.Path:
     return DEFAULT_IMAGE_OUT_DIR
@@ -172,7 +172,7 @@ def binary_name(precision: str, lanes: int) -> str:
 
 
 def binary_path(precision: str, lanes: int) -> pathlib.Path:
-    path = repo_root() / "bin" / binary_name(precision, lanes)
+    path = native_exe(repo_root() / "bin" / binary_name(precision, lanes))
     if not path.exists():
         raise SystemExit(
             f"Missing binary {path}. Run "
@@ -180,16 +180,6 @@ def binary_path(precision: str, lanes: int) -> pathlib.Path:
         )
     return path
 
-
-def timestamp_string() -> str:
-    return dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-
-
-def write_command_file(output_dir: pathlib.Path, command: list[str]) -> None:
-    command_file = output_dir / "command.txt"
-    command_file.write_text(
-        " ".join(shlex.quote(part) for part in command) + "\n",
-    )
 
 
 def write_experiment_meta(
@@ -212,7 +202,7 @@ def write_experiment_meta(
         f"distortion={case.get('distortion', 'none')}",
         "command=" + " ".join(shlex.quote(part) for part in command),
     ]
-    meta_path.write_text("\n".join(lines) + "\n")
+    meta_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def write_timing_csv(
@@ -315,7 +305,7 @@ def run_case(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out-root", type=pathlib.Path, default=None)
+    parser.add_argument("--out-root", type=pathlib.Path, default=DEFAULT_OUT_ROOT)
     parser.add_argument("--runs", type=int, default=DEFAULT_RUNS)
     parser.add_argument("--pixels-x", type=int, default=DEFAULT_PIXELS_X)
     parser.add_argument("--pixels-y", type=int, default=DEFAULT_PIXELS_Y)
@@ -340,10 +330,10 @@ def main() -> int:
     if not selected_cases:
         raise SystemExit("No experiments selected.")
 
-    run_root = build_run_root(args.out_root)
+    timing_stamp = timestamp_string()
+    run_root = args.out_root / timing_stamp
     image_out_dir = default_image_out_dir()
     timing_rows: list[dict[str, object]] = []
-    timing_stamp = timestamp_string()
 
     if not args.dry_run:
         run_root.mkdir(parents=True, exist_ok=True)

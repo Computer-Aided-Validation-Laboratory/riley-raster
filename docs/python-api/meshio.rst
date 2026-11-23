@@ -1,5 +1,5 @@
-meshio
----------------
+Mesh I/O
+========
 
 .. automodule:: riley.python.meshio
    :members:

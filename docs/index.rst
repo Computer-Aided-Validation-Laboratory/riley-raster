@@ -1,4 +1,4 @@
-.. image:: ./_static/riley_logo.png
+.. image:: ../images/riley_logo.png
    :alt: Riley Logo
    :align: center
    :width: 600px
@@ -19,7 +19,7 @@ riley-raster documentation
    :alt: Open GitHub issues
 
 .. |PR| image:: https://img.shields.io/github/issues-pr/Computer-Aided-Validation-Laboratory/riley-raster
-   :target: https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/issues
+   :target: https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/pulls
    :alt: Open GitHub Pull Requests
 
 .. |license| image:: https://img.shields.io/github/license/Computer-Aided-Validation-Laboratory/riley-raster
@@ -29,51 +29,18 @@ riley-raster documentation
 |pypi| |github| |issues| |PR| |license|
 
 Riley is a high performance Zig software rasteriser for digital image correlation
-uncertainty quantification (DIC UQ). It synthesises deformed speckle images from 
-finite element simulations, with higher order surface elements 
-(tri3, tri6, quad4, quad8, and quad9), camera models and distortion, 
+uncertainty quantification (DIC UQ). It synthesises deformed speckle images from
+finite element simulations, with higher order surface elements
+(tri3, tri6, quad4, quad8, and quad9), camera models and distortion,
 texture/nodal/analytic shaders, and mixed scenes.
 
-Riley's Zig core uses comptime specialisation and SIMD with @Vector to keep its 
-rendering path fast and direct. It also uses hierarchical offline parallelisation 
-allowing scaling over cameras and timesteps to be rendered. Riley is available as 
-a Zig library and executable, a C compatible ABI, and the riley-raster Python package 
-which provides python bindings to the compiled Zig library. 
-
-
-Quick Start: Zig
-==========================
-
-Riley uses Zig 0.16.0. Clone the repository, then build and run the smallest demo:
-
-      .. code-block:: bash
-
-          zig build demo0-quickstart -Doptimize=ReleaseFast
-
-Renders are written to out/. Run the combined test suite with:
-
-      .. code-block:: bash
-
-          zig build test-verif-basic
+Riley's Zig core uses ``comptime`` specialisation and SIMD with ``@Vector`` to
+keep its rendering path fast. It parallelises rendering across cameras and
+timesteps. Riley is available as a Zig library and executable, through a
+C-compatible ABI, and as the ``riley-raster`` Python package, which provides
+bindings to the compiled Zig library.
 
 `Zig API documentation <zig-api/index.html>`_
-
-Quick Start: Python
-==========================
-
-Install the published package:
-
-      .. code-block:: bash
-
-          python -m pip install riley-raster
-          python -m riley demo0_quickstart
-
-Python renders are written below out_riley_py/. 
-For development from a checkout, install it in editable mode:
-
-      .. code-block:: bash
-         
-          python -m pip install -e .
 
 .. toctree::
    :maxdepth: 2
@@ -83,4 +50,3 @@ For development from a checkout, install it in editable mode:
    riley-examples/examples
    python-api
    tests/tests
-

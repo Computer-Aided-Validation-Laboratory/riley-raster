@@ -25,7 +25,7 @@ Please be aware that all riley-raster code is under the [MIT Licencse](https://g
 
 ## AI Usage
 
-Refer to the AI guide included in our [style guides](https://github.com/Computer-Aided-Validation-Laboratory/styleguides/tree/main/guides) for more information on using AI sensibly and effectively. 
+Refer to the AI guide included in our [style guides](https://github.com/Computer-Aided-Validation-Laboratory/styleguides/tree/main/guides) for more information on using AI sensibly and effectively.
 
 The riley-raster project has strict rules for AI usage:
 
@@ -135,15 +135,19 @@ Please test you code before submitting a pull request.
 The recommended testing workflow for Riley is:
 
 ```bash
-# Step 1: Run the core test suites (fast, repository-packaged references)
+# Step 1: Run gold-independent units and the precision/SIMD/evaluator-policy matrix
+zig build test-unit
+zig build test-configs
+
+# Step 2: Run the core test suites (fast, repository-packaged references)
 zig build test-verif
 zig build test-basic
 .venv/bin/pytest src/riley/pytests/
 
-# Step 2: Generate reference gold data for the Full suite
+# Step 3: Generate reference gold data for the Full suite
 zig build gen-gold-full -Doptimize=ReleaseSafe
 
-# Step 3: Run the exhaustive Full test suite
+# Step 4: Run the exhaustive Full test suite
 zig build test-full -Doptimize=ReleaseSafe
 ```
 More details on testing zig code for riley-raster can be found at [Riley Testing Architecture & Test Suites](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/dev/TESTING.md).

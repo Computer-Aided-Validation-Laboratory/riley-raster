@@ -18,7 +18,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # Ubuntu also runs the configuration matrix and experimental evaluator builds.
+    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && 90 || 60 }}
 
     steps:
       - uses: actions/checkout@v4
@@ -31,9 +32,77 @@ jobs:
       - name: Zig Build Riley Library
         run: zig build -Doptimize=ReleaseFast --summary all
 
+      - name: Check Windows benchmark executable names
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $prefix = 'zig-out/windows-bench-smoke'
+          zig build install-bench-dist-psf install-bench-thread-geom -Doptimize=Debug -Dprecision=f64 -Dsimd=on --prefix $prefix
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Both targets use the shared benchmark install naming path.
+          foreach ($name in 'bench_dist_psf_f64_simd.exe', 'bench_thread_geom_f64_simd.exe') {
+            $exe = "$prefix/bin/$name"
+            if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Missing benchmark: $exe" }
+          }
+
+      # Keep full demo compiles on one runner; Debug avoids optimizing every tutorial.
+      - name: Compile all Zig demos (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build demos-check -Doptimize=Debug
+
+      # One non-default build covers both the f32 and scalar paths.
+      - name: Compile all Zig demos with f32 and SIMD off (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build demos-check -Doptimize=Debug -Dprecision=f32 -Dsimd=off
+
+      - name: Windows CLI arguments and UTF-8 path smoke
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          # Debug keeps runtime safety checks enabled without optimizing a smoke render.
+          zig build test-demo-cli demo0b-procedural-quickstart -Doptimize=Debug -- --width 64 --height 64 --output "out/Windows CLI café"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $image = "out/Windows CLI café/disk.bmp"
+          if (-not (Test-Path -LiteralPath $image)) { throw "Missing BMP: $image" }
+          $bytes = [System.IO.File]::ReadAllBytes($image)
+          if ($bytes.Length -lt 54 -or $bytes[0] -ne 0x42 -or $bytes[1] -ne 0x4d) {
+            throw "Invalid BMP header: $image"
+          }
+
       - name: Zig Build documentation
         if: matrix.os == 'ubuntu-latest'
         run: zig build docs
 
       - name: Zig Run Verification and Basic Tests
         run: zig build test-verif-basic -Doptimize=ReleaseSafe
+
+      - name: Zig Run C API Tests
+        run: zig build test-c-api
+
+      - name: Run whole-project configuration tests (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build test-configs
+
+      - name: Run 32-bit Linux default-policy speckle tests (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build test-procedural-speckles -Dtarget=x86-linux-musl -Dstrip=true
+
+      - name: Run 32-bit Linux experimental speckle tests (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build test-procedural-speckles -Dtarget=x86-linux-musl -Dstrip=true -Denable-all-evaluators=true
+
+      - name: Python setup for native runner smoke (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Build experimental native speckle benchmark (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build install-bench-speckle-evaluators -Doptimize=ReleaseFast -Dstrip=true -Denable-all-evaluators=true
+
+      - name: Run native benchmark runner smoke (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          RILEY_SPECKLE_BENCH_BINARY: zig-out/bin/bench_speckle_evaluators_f64_simd
+        run: python -m unittest scripts.tests.test_bench_speckle.NativeBenchmarkTests

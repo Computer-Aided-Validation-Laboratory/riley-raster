@@ -12,16 +12,16 @@ from __future__ import annotations
 
 import argparse
 import csv
-import datetime as dt
-import math
 import itertools
+import math
 import pathlib
-import shlex
 import statistics
 import subprocess
 
+from bench_common import native_exe, repo_root, timestamp_string, write_command_file
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+ROOT = repo_root()
 FIELDS = (
     "geometry_ms",
     "prepare_ms",
@@ -90,7 +90,7 @@ def run_case(
     buffer_mode: str = "tile_local",
     sub_sample: int | None = None,
 ) -> list[dict[str, str]]:
-    exe = ROOT / "zig-out" / "bin" / f"bench_multiroot_f64_{backend}"
+    exe = native_exe(ROOT / "zig-out" / "bin" / f"bench_multiroot_f64_{backend}")
     case_dir = args.out_dir / name
     cmd = [
         str(exe),
@@ -125,10 +125,8 @@ def run_case(
     ]
     print(name, flush=True)
     case_dir.mkdir(parents=True, exist_ok=True)
-    (case_dir / "command.txt").write_text(
-        " ".join(shlex.quote(part) for part in cmd) + "\n"
-    )
-    with (args.out_dir / f"{name}.log").open("w") as log:
+    write_command_file(case_dir, cmd)
+    with (args.out_dir / f"{name}.log").open("w", encoding="utf-8") as log:
         subprocess.run(
             cmd,
             cwd=ROOT,
@@ -136,7 +134,7 @@ def run_case(
             stderr=subprocess.STDOUT,
             check=True,
         )
-    with (case_dir / "raw_stats_multiroot.csv").open(newline="") as file:
+    with (case_dir / "raw_stats_multiroot.csv").open(newline="", encoding="utf-8") as file:
         return [
             {"backend": backend, **row} for row in csv.DictReader(file)
         ]
@@ -179,8 +177,7 @@ def match_flat_shading(args: argparse.Namespace, target: int) -> float:
 
 def main() -> None:
     args = parse_args()
-    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    args.out_dir = args.out_root / timestamp
+    args.out_dir = args.out_root / timestamp_string()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     backends = ("simd",)
     if not args.skip_build:
@@ -228,7 +225,7 @@ def main() -> None:
         )
 
     with (args.out_dir / "raw_stats_multiroot.csv").open(
-        "w", newline=""
+        "w", newline="", encoding="utf-8"
     ) as file:
         writer = csv.DictWriter(file, fieldnames=raw_rows[0].keys())
         writer.writeheader()
@@ -279,7 +276,7 @@ def main() -> None:
         )
 
     summary_path = args.out_dir / "summary_stats_multiroot.csv"
-    with summary_path.open("w", newline="") as file:
+    with summary_path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=summary_rows[0].keys())
         writer.writeheader()
         writer.writerows(summary_rows)
@@ -288,7 +285,7 @@ def main() -> None:
         f"summary_bench_multiroot_median_{timestamp}.csv"
     )
     top_summary.parent.mkdir(parents=True, exist_ok=True)
-    with top_summary.open("w", newline="") as file:
+    with top_summary.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=summary_rows[0].keys())
         writer.writeheader()
         writer.writerows(summary_rows)
@@ -310,7 +307,7 @@ def main() -> None:
             multi_root_edge_mode=multi_edge,
         ))
 
-    with (args.out_dir / "experiment3_raw.csv").open("w", newline="") as file:
+    with (args.out_dir / "experiment3_raw.csv").open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=experiment3_rows[0].keys())
         writer.writeheader()
         writer.writerows(experiment3_rows)
@@ -350,7 +347,7 @@ def main() -> None:
         item["shaded_delta"] = (
             item["shaded_median"] - reference["shaded_median"]
         )
-    with (args.out_dir / "experiment3_summary.csv").open("w", newline="") as file:
+    with (args.out_dir / "experiment3_summary.csv").open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=experiment3_summary[0].keys())
         writer.writeheader()
         writer.writerows(experiment3_summary)
@@ -381,7 +378,7 @@ def main() -> None:
             flat_scale=flat_scale if scene == "one_root" else 1.0,
             buffer_mode=buff_mode,
         ))
-    with (args.out_dir / "buffer_mode_raw.csv").open("w", newline="") as file:
+    with (args.out_dir / "buffer_mode_raw.csv").open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=buffer_mode_rows[0].keys())
         writer.writeheader()
         writer.writerows(buffer_mode_rows)
@@ -410,7 +407,7 @@ def main() -> None:
             item[f"{field}_vs_tile_local"] = (
                 item[f"{field}_median"] / reference[f"{field}_median"]
             )
-    with (args.out_dir / "buffer_mode_summary.csv").open("w", newline="") as file:
+    with (args.out_dir / "buffer_mode_summary.csv").open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=buff_summary[0].keys())
         writer.writeheader()
         writer.writerows(buff_summary)
