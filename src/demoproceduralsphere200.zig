@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2026 James Panayis
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: James Panayis
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 //! Render the TRI6 sphere with the procedural counterpart to demo1-sphere's texture.
 const std = @import("std");

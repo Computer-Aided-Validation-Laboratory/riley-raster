@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2026 James Panayis
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: James Panayis
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 //! One process is one observation. Fixture loading and texture decode are excluded.
 //! Evaluation measures resource preparation and the static-geometry loop; its final

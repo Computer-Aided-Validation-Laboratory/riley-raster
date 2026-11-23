@@ -1,11 +1,11 @@
-# --------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Riley: A High Performance Rasteriser for DIC UQ
 #
-# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 # Licensed under the MIT License (see LICENSE file for details)
 #
-# Authors: scepticalrabbit (Lloyd Fletcher)
-# --------------------------------------------------------------------------
+# Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+# --------------------------------------------------------------------------------------
 from libc.stddef cimport size_t
 from libc.stdint cimport uint8_t, uint16_t, uint32_t
 
