@@ -155,7 +155,11 @@ Use `C` for nominal coverage, `R` for physical radius, `p` for occupancy,
 `J` for jitter, and `S` for edge softness. See the
 [public contract](../docs/python-api/speckles.rst) for units and the UV domain.
 [`specklegeom.zig`](../src/riley/zig/specklegeom.zig) integrates referenced
-physical/UV face areas, including higher-order nodes:
+physical and UV areas of the referenced faces. Before integration, it checks
+nodal UV bounds for affine triangles and bilinear quads. For quadratic elements
+it also bounds the interpolated UV patch with Bernstein control points, bisecting
+uncertain patches up to 16 times along alternating axes. A patch that remains
+uncertified is rejected.
 
 ```text
 Aphys = sum over faces integral |dX/dxi cross dX/deta| dxi deta
@@ -172,6 +176,8 @@ f32 builds. The physical-area-weighted log-mean ratio varies continuously with
 the mapping and recovers constant orthogonal planar scales. A UV sliver's ratio
 influence grows logarithmically, weighted by its physical area fraction. Perlin
 uses `cells_per_uv = (Lu / cell_size, Lv / cell_size)` with no coverage solve.
+The product `Lu*Lv = Aphys/Auv` makes a nominal disk or Gaussian footprint
+of radius `R` correspond to average physical area `pi*R*R`.
 
 For disks and Gaussians, coverage is defined by the nominal disk support.
 On an infinite square owner grid, each cell independently contains one uniformly
@@ -195,6 +201,12 @@ validation checks this forward bound before geometry without an inverse solve.
 Lowering inverts nominal coverage once, independently of jitter/softness, and
 checks converted support `r + r*(J/R) + r*(S/R) <= 1` without clamping.
 Nominal cap equality maps to `r = 1`.
+
+Jitter changes expected union area without changing placement density. For
+example, `p = 1`, `C = 0.5`, and `J = R/2` give about 0.525 expected hard-disk
+coverage. In the dilute limit, uniform radius jitter multiplies expected area
+by `1 + J*J/(3*R*R)`, about 1.083 at `J = R/2`. Overlap generally reduces the
+increase, and the factor is not a bound for individual finite fields.
 
 [`specklecoverage.zig`](../src/riley/zig/specklecoverage.zig) computes in `f64`
 without allocation or I/O: an integrated analytic polynomial for `r <= 0.5`,

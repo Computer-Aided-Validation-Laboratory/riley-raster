@@ -88,36 +88,14 @@ Browse the complete [Zig demo directory](https://github.com/Computer-Aided-Valid
 
 ### Procedural speckles
 
-Attach a UV-based grayscale disk pattern to a mesh:
-
-```python
-shader = riley.SpeckleShader(
-    uvs=uvs,
-    params=riley.Speckle2DParams(coverage=0.5, radius=0.25, seed=42),
-)
-```
-
-Use `SpecklePattern.gaussian` with `Speckle2DParams` for Gaussian blobs, or
-`Perlin2DParams(cell_size=0.25)` for Perlin noise. Both radius and cell size use
-reference-mesh coordinate units, not pixels. See the
-[parameter reference source][speckle-reference] for UV requirements,
-calibration, coverage, and preparation errors, and the
-[documentation build instructions][docs-build] for the rendered API reference.
-
-To render the public speckle shader on a 40 × 40 plane defined in the tutorial, with no external mesh file:
+From the repository root, render speckles on a standalone plane (no mesh file needed):
 
 ```shell
 zig build demo-procedural-pattern -Doptimize=ReleaseFast
 ```
 
 By default this writes a 1024 × 1024 image to `out/procedural_pattern/disk.bmp`.
-See the [developer guide][procedural-guide] for the Zig shader setup and all four
-procedural tutorials (plane, sphere, rabbit, and deformation), including their
-options and outputs.
-
-[speckle-reference]: https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/2d_procedural_speckle_generation/docs/python-api/speckles.rst
-[docs-build]: https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/2d_procedural_speckle_generation/dev/DOCS.md
-[procedural-guide]: https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/2d_procedural_speckle_generation/dev/README.md#procedural-generation
+See the [runnable procedural tutorials](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/2d_procedural_speckle_generation/dev/README.md#runnable-procedural-tutorials) for more examples and command-line options.
 
 ### Rabbits demo
 

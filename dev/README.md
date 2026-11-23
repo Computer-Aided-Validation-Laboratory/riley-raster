@@ -150,16 +150,13 @@ Use the `.gaussian` branch for Gaussian blobs or
 The public root exports `Speckle2DParams`, `Perlin2DParams`, and
 `SpeckleParams`; evaluator and grid controls are internal.
 
-The [parameter reference source](../docs/python-api/speckles.rst) is the shared public
-contract for units, calibration, coverage, defaults, and errors, with a Python
-example. See [documentation build instructions](DOCS.md) for the rendered API,
-and [Theory](THEORY.md#6-physical-speckle-calibration-and-nominal-coverage) for
-the internal calibration and coverage model.
-
 ### Runnable procedural tutorials
 
-Each tutorial shows the complete public-shader render setup. Run these from the
-repository root with Zig 0.16.0:
+Run these from the repository root with Zig 0.16.0. The plane creates its own
+mesh; the other tutorials load meshes and UVs from the checkout. Each shows the
+complete render setup. For a Python example and the public contract (units,
+coverage, defaults, and errors), see the [speckle reference](../docs/python-api/speckles.rst)
+and the [API documentation build instructions](DOCS.md).
 
 ```shell
 zig build demo-procedural-pattern -Doptimize=ReleaseFast
@@ -170,9 +167,9 @@ zig build demo-procedural-speckles -Doptimize=ReleaseFast
 
 Pass tutorial options after `--`. All four default to `disk` and accept
 `--pattern disk|gaussian|perlin`, `--output DIR`, and `-h` or `--help`.
-Only the pattern plane accepts `--width` and `--height`: these change the
-resolution without changing the 40 × 40 plane. Unequal dimensions give
-non-square pixels.
+Only the plane accepts `--width PIXELS` and `--height PIXELS`. These change the
+image size, not the 40 × 40 plane or the pattern's physical scale. Unequal
+dimensions give non-square pixels.
 
 | Tutorial | Image size | Default output |
 | --- | --- | --- |
@@ -181,11 +178,10 @@ non-square pixels.
 | [Rabbit](../src/demoproceduralrabbit.zig) | 800 × 500 | `out/demo-procedural-rabbit/cam0_frame0_field0.bmp` |
 | [Deformation](../src/demoproceduralspeckles.zig) | 720 × 450 | Under `out/demo-procedural-speckles/`: `cam0_frame0_field0.bmp` (reference), `cam0_frame1_field0.bmp` (stretch), `cam0_frame2_field0.bmp` (twist) |
 
-Edit `seed`, `radius`, `coverage`, and `cell_size` in the tutorial source, not on
-the command line. The disk/Gaussian radius and Perlin cell size default to 0.25
-on the plane, 0.005 on the rabbit, and 0.02 on the sphere and deformation mesh,
-all in reference geometry units, not pixels. Nominal disk/Gaussian coverage
-defaults to 0.5.
+The tutorials set the seed and physical pattern parameters in source, not on
+the command line. Their disk/Gaussian radius and Perlin cell size are 0.25 on
+the plane, 0.005 on the rabbit, and 0.02 on the sphere and deformation mesh.
+All four use 0.5 nominal coverage for disk and Gaussian patterns.
 
 ### Internal evaluator experiments and benchmarking
 
@@ -273,7 +269,9 @@ settings. This compares production builds, not selectable public shader evaluato
 
 ### Implementation constraints
 
-Physical resolution lives in [speckleparams.zig](../src/riley/zig/speckleparams.zig),
+See [Theory](THEORY.md#6-physical-speckle-calibration-and-nominal-coverage) for
+reference UV calibration and the nominal coverage model. Physical resolution
+lives in [speckleparams.zig](../src/riley/zig/speckleparams.zig),
 reference calibration in [specklegeom.zig](../src/riley/zig/specklegeom.zig), and
 nominal coverage inversion in [specklecoverage.zig](../src/riley/zig/specklecoverage.zig).
 Generation and sampling use internal `GridParams` in

@@ -233,9 +233,9 @@ Windows Zig CI installs representative benchmarks and checks their expected
 executable names, including the precision/SIMD suffix and `.exe` extension.
 
 `zig build demos-check -Doptimize=Debug` compiles all Zig tutorials without
-running them or writing images. `zig build test-demo-cli -Doptimize=Debug`
-checks the pattern tutorial's `-h` output and unknown-option diagnostic without
-rendering.
+running them. `zig build test-demo-cli -Doptimize=Debug` checks `-h` output and
+unknown-option rejection for all four [procedural tutorials](README.md#runnable-procedural-tutorials)
+without rendering.
 
 The Windows CLI smoke also renders a 64 × 64 disk pattern to a Unicode output
 path and checks the header of `disk.bmp`. The small image keeps the smoke cheap

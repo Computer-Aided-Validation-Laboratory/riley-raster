@@ -1,9 +1,9 @@
 Procedural speckles
 ===================
 
-Attach a :class:`riley.SpeckleShader` to a mesh with one UV pair per node for
-monochrome disk, Gaussian, or Perlin patterns. Both ``uvs`` and ``params`` are
-required.
+Set a mesh's ``shader`` to :class:`riley.SpeckleShader` for monochrome disk,
+Gaussian, or Perlin patterns. Pass the mesh's nodal UVs as an array of shape
+``(nodes, 2)`` and supply pattern parameters:
 
 .. code-block:: python
 
@@ -14,6 +14,10 @@ required.
        params=riley.Speckle2DParams(coverage=0.5, radius=0.25, seed=42),
    )
 
+Disk is the default. For Gaussian spots, set ``pattern=riley.SpecklePattern.gaussian``
+on :class:`riley.Speckle2DParams`. For Perlin noise, pass :class:`riley.Perlin2DParams`
+instead.
+
 .. _speckle-calibration:
 
 Physical calibration and coverage
@@ -21,34 +25,21 @@ Physical calibration and coverage
 
 Disk/Gaussian ``radius`` and Perlin ``cell_size`` use reference-mesh coordinate
 units: 0.25 means 0.25 mm if coordinates are in mm, not pixels or a bounding-box
-fraction. Perlin requires a single positive finite ``cell_size`` and uses the
-same geometry calibration as disks and Gaussians, but does not solve for
-coverage. Its threshold and transition width are in noise units.
+fraction. Perlin uses the same geometry calibration but has no coverage parameter.
+Its threshold and transition width are in noise units.
 
-Calibration integrates referenced physical and UV face areas once per mesh,
-including higher-order geometry present in the rendered reference mesh.
-It uses a physical-area-weighted log-mean axis ratio, normalized so the product
-of axis lengths equals physical area divided by UV area. For disks and Gaussians
-this preserves nominal average footprint area ``pi * R * R``. Uniform orthogonal
-planar maps preserve physical circles and square Perlin cells. Curved/distorted
-maps do not promise equal local sizes, exact per-speckle areas, or geodesic
-circles. At seams or poles, distinct node IDs may share a physical position;
-physical edge collapse alone does not invalidate calibration if the interior
-reference geometry and UV metric are usable. All parts of one ``Mesh`` share
-this global calibration. Mesh conversion happens first: reducing element order
-calibrates against the resulting lower-order geometry, not the discarded curved
-surface. Displacement stretches the frozen reference field; frames and cameras
-do not recalibrate it.
+Calibration is shared by all parts of one ``Mesh`` and uses the reference
+geometry actually rendered, including higher-order geometry unless mesh conversion
+has reduced its order. Uniform orthogonal planar maps preserve physical circles
+and square Perlin cells; curved or distorted maps do not guarantee equal local
+sizes or geodesic circles. Seams and poles may share physical positions across
+nodes if the face interiors and UV metric remain usable. The pattern follows mesh
+deformation without recalibrating for each frame or camera.
 
-Coverage is nominal, not a finite-image guarantee or mean opacity. Jitter and
-softness do not change density, but can change realized coverage and intensity.
-For example, at occupancy 1, nominal coverage 0.5 with jitter ``J = 0.5R`` gives
-about 0.525 hard-disk coverage in the statistical model, not exactly 0.5 for each
-seed. In the dilute expected limit, the relative area factor is
-``1 + J*J/(3*R*R)``, about an 8.3% increase at ``J = R/2``; overlap generally
-reduces this increase. This is not a strict bound for an individual finite field.
-Soft boundaries and Gaussian profiles weight intensity within their supports
-rather than making every covered point opaque.
+Coverage is the nominal expected union-area fraction at the specified radius,
+not a finite-image guarantee or mean opacity. Jitter and softness do not change
+placement density but can change realised coverage and intensity. Soft disk
+edges and Gaussian profiles vary the intensity within their supports.
 
 Patterns use automatic analytic evaluators, not quantized textures. A fixed seed
 is repeatable within a build, not necessarily identical across f32/f64 builds;
@@ -62,8 +53,7 @@ UV domain and memory
 The entire interpolated UV map of every referenced face must lie in the unit
 square, with a ``2e-5`` allowance at each boundary. Preparation checks this once;
 the sampler clamps to the unit square. For quadratic elements, in-range nodal
-UVs are not enough: preparation uses conservative subdivided Bernstein bounds
-and may reject a near-boundary map it cannot certify.
+UVs are not enough: preparation may reject a near-boundary map it cannot certify.
 
 Sampler storage spans the unit square, not just the occupied UV islands. Small
 islands can therefore increase memory without increasing physical pattern density.
@@ -97,9 +87,8 @@ Native errors reach Python as ``RuntimeError``:
   ``SpeckleEdgeSoftnessRequiresDisk`` means use zero softness for Gaussian patterns.
 - ``UnsupportedSpeckleSupport``: reduce jitter, softness, or coverage, or raise
   occupancy up to 1. Combined support must fit the sampler even when each control
-  is individually valid;
-  a request at the limit can round over it after conversion. Preparation does not
-  change density or select a fallback to make it fit.
+  is individually valid, and a request at the limit can round over it after
+  conversion. Preparation does not change density or select a fallback.
 - ``InvalidSpeckleCellSize``: supply a positive finite Perlin cell size.
 - ``SpeckleDensityOutOfRange``: the derived grid exceeds coordinate precision or
   representable storage. Increase radius or cell size, or adjust the UV mapping
@@ -124,8 +113,8 @@ result using the image scaling strategy (``scaling_type`` and ``bits`` in Python
 Python defaults to ``auto`` scaling with 8-bit output, while Zig defaults to
 ``.none`` scaling.
 
-For the Zig shader example and runnable procedural tutorials, see the
-`developer guide <https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/2d_procedural_speckle_generation/dev/README.md#procedural-generation>`_.
+For complete Zig render setups and CLI options, see the
+`runnable procedural tutorials <https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/2d_procedural_speckle_generation/dev/README.md#runnable-procedural-tutorials>`_.
 
 API reference
 -------------
