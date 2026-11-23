@@ -6,6 +6,8 @@
 #
 # Authors: scepticalrabbit (Lloyd Fletcher)
 # --------------------------------------------------------------------------
+"""Save and reload the DIC UQ stereo pair, then render a textured calibration plate."""
+
 from __future__ import annotations
 
 import copy
@@ -16,50 +18,6 @@ from time import perf_counter
 import numpy as np
 
 import riley
-
-
-def create_stereo_cameras(
-    roi_pos: tuple[float, float, float] | np.ndarray,
-    matched_cam0_pos: tuple[float, float, float],
-    matched_cam1_pos: tuple[float, float, float],
-) -> tuple[riley.Camera, riley.Camera]:
-    """Create stereo camera pair matching the DICUQ demo parameters."""
-    pixels_num = (2464, 2056)
-    pixels_size = (3.45e-6, 3.45e-6)
-    focal_length = 50.0e-3
-    stereo_angle_deg = 20.0
-    sub_sample = 4
-
-    # Brown-Conrady distortion
-    distort_model = {
-        "distort_model": 1,
-        "distort_k1": -0.2,
-        "distort_k2": 0.1,
-        "distort_k3": 0.0,
-        "distort_p1": 0.0001,
-        "distort_p2": -0.0001,
-    }
-
-    # Camera 0: face on
-    cam0_rot = (0.0, 0.0, 0.0)
-    camera_0 = riley.Camera(
-        pixels_num=pixels_num,
-        pixels_size=pixels_size,
-        pos_world=matched_cam0_pos,
-        rot_world=cam0_rot,
-        roi_cent_world=tuple(roi_pos),
-        focal_length=focal_length,
-        sub_sample=sub_sample,
-        **distort_model,
-    )
-
-    # Camera 1: stereo angle
-    cam1_rot = (0.0, float(np.deg2rad(stereo_angle_deg)), 0.0)
-    camera_1 = copy.deepcopy(camera_0)
-    camera_1.pos_world = matched_cam1_pos
-    camera_1.rot_world = cam1_rot
-
-    return camera_0, camera_1
 
 
 def main() -> None:
@@ -96,9 +54,28 @@ def main() -> None:
     # --------------------------------------------------------------------------
     # 3. Create, save, and reload stereo camera pair
     # --------------------------------------------------------------------------
-    camera_0, camera_1 = create_stereo_cameras(
-        roi_pos, matched_cam0_pos, matched_cam1_pos
+    # Match the DIC UQ camera pair so the calibration images use the same optics.
+    # Camera 0 faces the plate and uses the Brown-Conrady distortion model.
+    camera_0 = riley.Camera(
+        pixels_num=(2464, 2056),
+        pixels_size=(3.45e-6, 3.45e-6),
+        pos_world=matched_cam0_pos,
+        rot_world=(0.0, 0.0, 0.0),
+        roi_cent_world=tuple(roi_pos),
+        focal_length=50.0e-3,
+        sub_sample=4,
+        distort_model=1,
+        distort_k1=-0.2,
+        distort_k2=0.1,
+        distort_k3=0.0,
+        distort_p1=0.0001,
+        distort_p2=-0.0001,
     )
+
+    # Camera 1 shares the optics but views the target from a 20-degree angle.
+    camera_1 = copy.deepcopy(camera_0)
+    camera_1.pos_world = matched_cam1_pos
+    camera_1.rot_world = (0.0, float(np.deg2rad(20.0)), 0.0)
 
     stereo_file = "stereo_data_opengl.csv"
     riley.save_stereo_pair(str(out_dir), stereo_file, camera_0, camera_1)

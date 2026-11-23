@@ -72,7 +72,7 @@ The python tests include parity analysis between the Zig demo output when the re
 
 ## Examples
 
-Riley provides a series of capability demos in Zig and Python. For example, render the rabbits demo with:
+Riley provides runnable Zig and Python tutorials that show the complete render setup. For example, render the rabbits demo with:
 
 ```shell
 zig build demo2a-rabbits-mono -Doptimize=ReleaseFast
@@ -104,24 +104,16 @@ reference-mesh coordinate units, not pixels. See the
 calibration, coverage, and preparation errors, and the
 [documentation build instructions][docs-build] for the rendered API reference.
 
-For a standalone field image without a camera or mesh file:
+To render the public speckle shader on a 40 × 40 plane defined in the tutorial, with no external mesh file:
 
 ```shell
-zig build demo-procedural-pattern -Doptimize=ReleaseFast -- --seed 42
+zig build demo-procedural-pattern -Doptimize=ReleaseFast
 ```
 
-This writes `out/procedural_pattern/disk.bmp` (override with `--output`),
-sampling a 40 × 40 field at 1024 × 1024 pixels by default.
-`--width`/`--height` change resolution, not physical pattern scale.
-
-To render on a UV-mapped sphere using its reference geometry:
-
-```shell
-zig build demo-procedural-sphere200 -Doptimize=ReleaseFast -- --pattern gaussian --seed 42
-```
-
-See the [developer guide][procedural-guide] for the Zig shader configuration
-and rabbit and deformation demos.
+By default this writes a 1024 × 1024 image to `out/procedural_pattern/disk.bmp`.
+See the [developer guide][procedural-guide] for the Zig shader setup and all four
+procedural tutorials (plane, sphere, rabbit, and deformation), including their
+options and outputs.
 
 [speckle-reference]: https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/2d_procedural_speckle_generation/docs/python-api/speckles.rst
 [docs-build]: https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/2d_procedural_speckle_generation/dev/DOCS.md

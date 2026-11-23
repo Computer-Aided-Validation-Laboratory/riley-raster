@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
-const matslice = @import("matslice.zig");
+
 const speckleconfig = @import("speckleconfig.zig");
 
 const F = buildconfig.F;
@@ -485,45 +485,6 @@ pub fn sampleSIMD(
             const Impl = Implementation(config);
             if (comptime std.meta.activeTag(config) == .mock) return Impl.samplePreparedSIMD(u, v, active, params, resources);
             return Impl.evalSpeckleSIMDImpl(Impl.evalSpeckle2DImpl, u, v, params);
-        }
-    }
-    unreachable;
-}
-
-/// Fill a borrowed row-major image with final speckle intensities at pixel centers.
-/// Row zero is the top row; u increases rightward and v downward over [0, 1]².
-/// Cell counts control aspect independently of image dimensions: equal counts on a
-/// square image preserve round disks; rectangular images need proportional counts.
-/// Resources must be prepared from exactly params and remain immutable while borrowed.
-/// SIMD builds use numerically identical prepared kernels; zero signs may differ.
-/// Performs no allocation, I/O, supersampling, or additional intensity mapping.
-pub fn fillImage(image: matslice.MatSlice(F), params: GridParams, resources: *const Resources) void {
-    std.debug.assert(image.slice.len == image.rows_num * image.cols_num);
-    const index = resources.kernel_index.?;
-    const rows: F = @floatFromInt(image.rows_num);
-    const cols: F = @floatFromInt(image.cols_num);
-    inline for (kernel_configs, 0..) |_, ii| {
-        if (index == ii) {
-            const K = Kernel(ii);
-            for (0..image.rows_num) |rr| {
-                const v = (@as(F, @floatFromInt(rr)) + 0.5) / rows;
-                const row = image.slice[rr * image.cols_num ..][0..image.cols_num];
-                var cc: usize = 0;
-                if (comptime buildconfig.config.simd == .on) {
-                    // Convert integer columns exactly as the scalar tail does.
-                    const lane_cols = std.simd.iota(usize, S);
-                    while (cc + S <= row.len) : (cc += S) {
-                        const col: VecSF = @floatFromInt(@as(@Vector(S, usize), @splat(cc)) + lane_cols);
-                        const u = (col + @as(VecSF, @splat(0.5))) / @as(VecSF, @splat(cols));
-                        row[cc..][0..S].* = K.sampleSIMD(u, @splat(v), @splat(true), params, resources);
-                    }
-                }
-                for (row[cc..], cc..) |*value, col| {
-                    const u = (@as(F, @floatFromInt(col)) + 0.5) / cols;
-                    value.* = K.sampleScal(u, v, params, resources);
-                }
-            }
-            return;
         }
     }
     unreachable;
@@ -5586,7 +5547,7 @@ test "cell binned paired vectors preserve count tails plateaus colors and borrow
     }
 }
 
-test "speckle image fill matches scalar pixel-center samples for every generation config" {
+test "prepared SIMD matches scalar pixel-center samples for every generation config" {
     inline for (generation_configs) |config| {
         var params: GridParams = .{
             .pattern = config.pattern() orelse .disk,
@@ -5602,23 +5563,26 @@ test "speckle image fill matches scalar pixel-center samples for every generatio
         }
         var resources = try Resources.init(std.testing.allocator, params);
         defer resources.deinit(std.testing.allocator);
-        // Widths cover scalar-only rows, whole SIMD lane groups, and scalar tails.
-        for ([_]usize{ 1, S - 1, S, S + 1, 2 * S + 3 }) |cols| {
-            var pixels: [3 * (2 * S + 3)]F = undefined;
-            fillImage(matslice.MatSlice(F).init(pixels[0 .. 3 * cols], 3, cols), params, &resources);
+        for ([_]usize{ S, S + 1, 2 * S + 3 }) |cols| {
             for (0..3) |rr| {
-                for (0..cols) |cc| {
-                    const u = (@as(F, @floatFromInt(cc)) + 0.5) / @as(F, @floatFromInt(cols));
-                    const v = (@as(F, @floatFromInt(rr)) + 0.5) / 3;
-                    const want = sampleScal(u, v, params, &resources);
-                    try std.testing.expectEqual(want, pixels[rr * cols + cc]);
+                const v = (@as(F, @floatFromInt(rr)) + 0.5) / 3;
+                // Sample both ends, including the columns after the last full SIMD group.
+                for ([_]usize{ 0, cols - S }) |start_col| {
+                    var u: [S]F = undefined;
+                    for (&u, start_col..) |*point, cc| {
+                        point.* = (@as(F, @floatFromInt(cc)) + 0.5) / @as(F, @floatFromInt(cols));
+                    }
+                    const values: [S]F = sampleSIMD(u, @splat(v), @splat(true), params, &resources);
+                    for (u, values) |point, value| {
+                        try std.testing.expectEqual(sampleScal(point, v, params, &resources), value);
+                    }
                 }
             }
         }
     }
 }
 
-test "speckle image fill gives independent empty and equal color intensities" {
+test "prepared samplers give independent empty and equal color intensities" {
     const cases = [_]struct { params: GridParams, expected: F }{
         .{ .params = .{ .occupancy = 0, .background = 0.83 }, .expected = 0.83 },
         .{ .params = .{ .occupancy = 0, .edge_softness = 0.035, .background = 0.17 }, .expected = 0.17 },
@@ -5632,9 +5596,13 @@ test "speckle image fill gives independent empty and equal color intensities" {
         params.cells_per_uv = .{ 3.25, 2.5 };
         var resources = try Resources.init(std.testing.allocator, params);
         defer resources.deinit(std.testing.allocator);
-        var pixels: [15]F = undefined;
-        fillImage(matslice.MatSlice(F).init(&pixels, 3, 5), params, &resources);
-        for (pixels) |value| try std.testing.expectEqual(case.expected, value);
+        for ([_]F{ 0.1, 0.5, 0.9 }) |u| {
+            for ([_]F{ 1.0 / 6.0, 0.5, 5.0 / 6.0 }) |v| {
+                try std.testing.expectEqual(case.expected, sampleScal(u, v, params, &resources));
+                const values: [S]F = sampleSIMD(@splat(u), @splat(v), @splat(true), params, &resources);
+                for (values) |value| try std.testing.expectEqual(case.expected, value);
+            }
+        }
     }
 }
 

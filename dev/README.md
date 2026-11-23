@@ -15,7 +15,7 @@ The `dev/` directory provides comprehensive architectural, mathematical, testing
 - [**`dev/THEORY.md`**](THEORY.md): Mathematical foundations and engine design details, including polynomial camera distortion formulation, distortion-aware rasterisation frontend bounds, render thread budgets, and image save mode mechanics.
 - [**`dev/ASSUMPTIONS.md`**](ASSUMPTIONS.md): Supported engineering operating envelope, mesh validity contracts, conservative numerical margins, and reasoning guidelines for review.
 - [**`dev/MESHCONVENTION.md`**](MESHCONVENTION.md): Riley standard mesh representation, surface element definitions (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`), 3D continuum elements, node ordering, and connectivity conventions.
-- [**`dev/FILESTRUCTURE.md`**](FILESTRUCTURE.md): Repository layout, module naming rules (`io`, `ops`, `kernel`), scalar/SIMD file splitting, and internal code organisation.
+- [**`dev/FILESTRUCTURE.md`**](FILESTRUCTURE.md): Zig module naming and scalar/SIMD file splitting, naming for tutorials and development programs, and internal code organisation.
 - [**`dev/ABBREVIATIONS.md`**](ABBREVIATIONS.md): Standardized abbreviations and naming conventions across Zig, C ABI, and Python codebases.
 - [**`dev/DOCS.md`**](DOCS.md): Build and preview the combined Sphinx Python API and Zig API documentation.
 
@@ -86,7 +86,7 @@ zig build install-bench-buffer-psf -Doptimize=ReleaseFast -Dsimd=on
 | **Verification Suite** | `zig build test-verif` | Inverse solver recovery, silhouette area/centroid, depth ordering, and camera distortion oracles (Debug) | `gold/verif/` |
 | **Basic Suite** | `zig build test-basic` | Fast coverage across 1-element, 2-shape FE interaction, and feature zoo cases (Debug) | `gold/basic/` |
 | **Combined Core Suite** | `zig build test-verif-basic` (local Debug); CI uses `-Doptimize=ReleaseSafe` | Verification and gold-backed basic comparisons, including the gold-independent unit root | `gold/verif/`, `gold/basic/` |
-| **Whole-project Unit Suite** | `zig build test-unit` | Gold-independent numerical, camera/frontend, speckle/CLI, and native tool/harness correctness tests | In-memory references |
+| **Whole-project Unit Suite** | `zig build test-unit` | Gold-independent numerical, camera/frontend, procedural-speckle, and native tooling/harness correctness tests | In-memory references |
 | **Configuration Matrix** | `zig build test-configs` | Runs the shared unit root across f64/f32, SIMD on/off, and default/experimental evaluator policy | In-memory references |
 | **Full Suite** | `zig build test-full -Doptimize=ReleaseSafe` | Exhaustive sweeps over shaders, textures, PSF/distortion, SSAA, hulls, tiling, scenes, threads, and outputs in ReleaseSafe | `gold/full_*/` |
 | **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | Warning-only renders of intentionally folded one-element frames, with actual/reference/diff artifacts under `fails/*_full_badjac/` | Existing basic and full-hull gold |
@@ -156,31 +156,36 @@ example. See [documentation build instructions](DOCS.md) for the rendered API,
 and [Theory](THEORY.md#6-physical-speckle-calibration-and-nominal-coverage) for
 the internal calibration and coverage model.
 
-### Runnable procedural demos
+### Runnable procedural tutorials
 
-Run these from the repository root with Zig 0.16.0:
-
-```shell
-zig build demo-procedural-rabbit -Doptimize=ReleaseFast -- --seed 42
-zig build demo-procedural-speckles -Doptimize=ReleaseFast -- --seed 42
-```
-
-Use `--radius` for disks/Gaussians or `--cell-size` for Perlin. Both default to
-0.005 for the rabbit, 0.02 for the sphere and deformation demo
-(`demo-procedural-speckles`), and 0.25 for the standalone 40 × 40 domain.
-Only the standalone demo uses direct domain units; mesh demos use reference-mesh
-units. Disk/Gaussian nominal coverage defaults to 0.5. Use `--output DIR` to
-choose an output directory or `--help` for options. The deformation demo uses
-fixed 720 × 450 images; the others accept `--width`/`--height`.
-See the [root quickstart](../README.md#procedural-speckles)
-for disk and sphere examples. For Perlin, for example:
+Each tutorial shows the complete public-shader render setup. Run these from the
+repository root with Zig 0.16.0:
 
 ```shell
-zig build demo-procedural-pattern -Doptimize=ReleaseFast -- --pattern perlin --cell-size 0.25 --seed 42
+zig build demo-procedural-pattern -Doptimize=ReleaseFast
+zig build demo-procedural-sphere200 -Doptimize=ReleaseFast -- --pattern gaussian
+zig build demo-procedural-rabbit -Doptimize=ReleaseFast -- --pattern perlin
+zig build demo-procedural-speckles -Doptimize=ReleaseFast
 ```
 
-Pattern-specific flags cannot be mixed with controls for inactive patterns.
-Seed is shared; evaluator/neighborhood overrides are not demo CLI controls.
+Pass tutorial options after `--`. All four default to `disk` and accept
+`--pattern disk|gaussian|perlin`, `--output DIR`, and `-h` or `--help`.
+Only the pattern plane accepts `--width` and `--height`: these change the
+resolution without changing the 40 × 40 plane. Unequal dimensions give
+non-square pixels.
+
+| Tutorial | Image size | Default output |
+| --- | --- | --- |
+| [Pattern plane](../src/demoproceduralpattern.zig) | 1024 × 1024 | `out/procedural_pattern/disk.bmp` (`gaussian.bmp` or `perlin.bmp` when selected) |
+| [Sphere](../src/demoproceduralsphere200.zig) | 800 × 500 | `out/demo-procedural-sphere200/cam0_frame0_field0.bmp` |
+| [Rabbit](../src/demoproceduralrabbit.zig) | 800 × 500 | `out/demo-procedural-rabbit/cam0_frame0_field0.bmp` |
+| [Deformation](../src/demoproceduralspeckles.zig) | 720 × 450 | Under `out/demo-procedural-speckles/`: `cam0_frame0_field0.bmp` (reference), `cam0_frame1_field0.bmp` (stretch), `cam0_frame2_field0.bmp` (twist) |
+
+Edit `seed`, `radius`, `coverage`, and `cell_size` in the tutorial source, not on
+the command line. The disk/Gaussian radius and Perlin cell size default to 0.25
+on the plane, 0.005 on the rabbit, and 0.02 on the sphere and deformation mesh,
+all in reference geometry units, not pixels. Nominal disk/Gaussian coverage
+defaults to 0.5.
 
 ### Internal evaluator experiments and benchmarking
 
@@ -274,9 +279,7 @@ reference calibration in [specklegeom.zig](../src/riley/zig/specklegeom.zig), an
 nominal coverage inversion in [specklecoverage.zig](../src/riley/zig/specklecoverage.zig).
 Generation and sampling use internal `GridParams` in
 [speckleops.zig](../src/riley/zig/speckleops.zig).
-`fillImage(image, params, resources)` is a lower-level sampler of an already
-resolved field: pixel centers, row zero at the top, no supersampling or output
-scaling. SIMD and scalar results agree exactly, except that zero signs may differ.
+Scalar and SIMD samplers agree exactly, except that zero signs may differ.
 
 Before render allocations, fast validation checks metadata and `SpeckleParams`;
 full validation also scans UVs and connectivity. Mesh preparation checks the

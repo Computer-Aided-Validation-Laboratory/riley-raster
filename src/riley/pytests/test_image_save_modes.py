@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from PIL import Image
 
 import riley
 
@@ -62,6 +63,39 @@ def render_memory(
     image = riley.raster(mesh, camera, config)
     assert image is not None
     return image
+
+
+def test_multifield_bmps_match_packed_rgb_channels(tmp_path: Path) -> None:
+    mesh, camera = make_scene(3)
+    for mode in (riley.ImageSaveMode.rgb, riley.ImageSaveMode.multifield):
+        config = riley.RasterConfig(
+            parallel=1,
+            save_strategy=riley.SaveStrategy.disk,
+            image_save_mode=mode,
+            save_format=riley.ImageFormat.bmp,
+            save_scaling=riley.ScaleStrategy.fixed,
+            save_scaling_min=0.0,
+            save_scaling_max=1.0,
+            background_value=0.0,
+            report=riley.ReportMode.off,
+        )
+        riley.raster(mesh, camera, config, out_dir=str(tmp_path / mode.name))
+
+    rgb_dir = tmp_path / "rgb"
+    fields_dir = tmp_path / "multifield"
+    names = [f"cam0_frame0_field{channel}.bmp" for channel in range(3)]
+    assert sorted(path.name for path in rgb_dir.glob("*.bmp")) == names[:1]
+    assert sorted(path.name for path in fields_dir.glob("*.bmp")) == names
+
+    with Image.open(rgb_dir / names[0]) as image:
+        assert image.mode == "RGB"
+        rgb = np.asarray(image)
+
+    for channel, name in enumerate(names):
+        with Image.open(fields_dir / name) as image:
+            field = np.asarray(image.convert("L"))
+        assert np.any(field > 0), f"{name} contains only background"
+        np.testing.assert_array_equal(field, rgb[:, :, channel])
 
 
 def test_rgb_to_grey_matches_weighted_source_fields() -> None:

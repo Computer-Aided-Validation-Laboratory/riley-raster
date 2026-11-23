@@ -44,11 +44,22 @@ jobs:
             if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Missing benchmark: $exe" }
           }
 
-      - name: Windows CLI UTF-8 path smoke
+      # Keep full demo compiles on one runner; Debug avoids optimizing every tutorial.
+      - name: Compile all Zig demos (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build demos-check -Doptimize=Debug
+
+      # One non-default build covers both the f32 and scalar paths.
+      - name: Compile all Zig demos with f32 and SIMD off (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build demos-check -Doptimize=Debug -Dprecision=f32 -Dsimd=off
+
+      - name: Windows CLI arguments and UTF-8 path smoke
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          zig build demo-procedural-pattern -Doptimize=ReleaseFast -- --pattern disk --coverage 0.5 --radius 0.25 --width 64 --height 64 --output "out/Windows CLI café"
+          # Debug keeps runtime safety checks enabled without optimizing a smoke render.
+          zig build test-demo-cli demo-procedural-pattern -Doptimize=Debug -- --width 64 --height 64 --output "out/Windows CLI café"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $image = "out/Windows CLI café/disk.bmp"
           if (-not (Test-Path -LiteralPath $image)) { throw "Missing BMP: $image" }

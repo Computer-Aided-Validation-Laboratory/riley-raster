@@ -65,7 +65,7 @@ Riley provides gold-backed regression suites and gold-independent unit/configura
 | :--- | :--- | :--- | :--- | :--- |
 | **Verification Suite** | `zig build test-verif` | [`src/test_verif.zig`](../src/test_verif.zig) | Mathematical validation against analytical Python oracles | `gold/verif/` |
 | **Basic Test Suite** | `zig build test-basic` | [`src/test_basic.zig`](../src/test_basic.zig) | Gold-backed core feature coverage plus the whole-project unit root | `gold/basic/` |
-| **Whole-project Unit Suite** | `zig build test-unit` | Shared gold-independent root [`src/testunit.zig`](../src/testunit.zig) | Gold-independent numerical, camera/frontend, speckle/CLI, and native tool/harness correctness | In-memory references |
+| **Whole-project Unit Suite** | `zig build test-unit` | Shared gold-independent root [`src/testunit.zig`](../src/testunit.zig) | Gold-independent numerical, camera/frontend, procedural-speckle, and native tooling/harness correctness | In-memory references |
 | **Configuration Matrix** | `zig build test-configs` | Shared whole-project unit root | f64/f32 × SIMD on/off × default/experimental evaluator policy, without gold | In-memory references |
 | **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | [`src/test_full_badjac.zig`](../src/test_full_badjac.zig) | Warning-only renders and diffs for invalid one-element frames | Existing basic and full-hull gold |
 | **Python Pytest Suite** | `.venv/bin/pytest src/riley/pytests/` | [`src/riley/pytests/`](../src/riley/pytests) | Python/Cython API, mesh pipeline, Exodus conversion, demo parity | Integrated / `gold/` |
@@ -186,7 +186,7 @@ This runs the Zig input generator followed by `./src/gengold/gengold_verif.py`. 
 - **Generator**: [`src/gen_gold_basic.zig`](../src/gen_gold_basic.zig)
 - **Data Location**: `gold/basic/`
 
-The **Basic Suite** is the primary regression suite packaged with the repository, structured into three sub-suites. It also covers default-policy procedural-speckle integration and shared CLI behavior; the combined `test-verif-basic` target runs this same basic coverage alongside verification.
+The **Basic Suite** is the primary regression suite packaged with the repository, structured into three sub-suites. It also covers default-policy procedural-speckle integration; the combined `test-verif-basic` target runs this same basic coverage alongside verification.
 
 ### A. Single Element Deformation & Edge Curvature (`test_oneelem`)
 - **Driver**: [`src/tests/test_gold_oneelem.zig`](../src/tests/test_gold_oneelem.zig)
@@ -203,8 +203,8 @@ The **Basic Suite** is the primary regression suite packaged with the repository
 ### Native unit and configuration testing
 
 The shared [`src/testunit.zig`](../src/testunit.zig) root is gold-independent
-and runs core numerical units, camera/frontend coverage, speckle integration and
-shared CLI checks, and native tooling/harness correctness. `test-basic` imports
+and runs core numerical units, camera/frontend coverage, speckle integration,
+and native tooling/harness correctness. `test-basic` imports
 that root alongside its gold-backed comparisons; `test-verif-basic` is the
 combined verification/basic target. `test-configs` runs the same unit root
 across f64/f32, SIMD on/off, and default/experimental evaluator policy, requiring
@@ -231,6 +231,15 @@ wheel architectures and does not imply 32-bit Windows package validation.
 
 Windows Zig CI installs representative benchmarks and checks their expected
 executable names, including the precision/SIMD suffix and `.exe` extension.
+
+`zig build demos-check -Doptimize=Debug` compiles all Zig tutorials without
+running them or writing images. `zig build test-demo-cli -Doptimize=Debug`
+checks the pattern tutorial's `-h` output and unknown-option diagnostic without
+rendering.
+
+The Windows CLI smoke also renders a 64 × 64 disk pattern to a Unicode output
+path and checks the header of `disk.bmp`. The small image keeps the smoke cheap
+while Debug keeps compilation quick and runtime safety checks enabled.
 
 The C interface is tested separately with `zig build test-c-api`, using LLVM/libc and the fixed public f64/SIMD/default configuration.
 
@@ -475,8 +484,7 @@ python -m riley demo6_featurezoo
 
 Python demo output is written to `Path.cwd() / "out_riley_py" / "<demo-name>"`.
 
-The Zig demos use the same numbered names and ordering:
-- The rabbit demos (`demo2a`, `demo2b`, `demo2c`) share mesh loading, shader setup, and layout in `src/demo_rabbits_common.zig`; the Python variants share `demo_rabbits_common.py`.
+Parity checks include:
+
 - Rabbit parity checks require greater than 10% foreground coverage in every render, ensuring blank or unrendered frames cannot pass verification.
-- Demos that clear previous output share `src/demo_common.zig` (`demo_common.resetOutputDir`). This removes the named demo output directory and recreates it cleanly.
 - `demo5_cameramodels` renders all 6 distortion families with pixel-box, Gaussian (separable/non-separable), aligned anisotropic Gaussian, and rotated anisotropic Gaussian PSFs across all 3 buffer modes (90 comparison images per run under `<distortion>/<psf>/<buffer-mode>/`). Parity checks require the entire matrix to match.

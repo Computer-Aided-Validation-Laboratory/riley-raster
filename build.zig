@@ -261,17 +261,19 @@ pub fn build(b: *std.Build) void {
         },
         .{
             .step_name = "demo-procedural-speckles",
-            .description = "Run the procedural speckle prototype demo",
+            .description = "Render physical speckles on a deforming mesh",
             .source_path = "src/demoproceduralspeckles.zig",
         },
         .{
             .step_name = "demo-procedural-pattern",
-            .description = "Generate a grayscale procedural pattern image directly",
+            .description = "Render a physical speckle pattern on a plane",
             .source_path = "src/demoproceduralpattern.zig",
         },
     };
 
     const demos_step = b.step("demos", "Run all demo entrypoints");
+    const demos_check = b.step("demos-check", "Compile all demos without running them");
+    const demo_cli_test = b.step("test-demo-cli", "Check the procedural demo CLIs");
     for (demos) |entry| {
         const run_step = b.step(entry.step_name, entry.description);
         const run_artifact = addRunStep(
@@ -284,6 +286,22 @@ pub fn build(b: *std.Build) void {
         );
         run_step.dependOn(&run_artifact.step);
         demos_step.dependOn(&run_artifact.step);
+        const executable = run_artifact.producer.?;
+        executable.getEmittedBin().addStepDependencies(demos_check);
+
+        if (std.mem.startsWith(u8, entry.step_name, "demo-procedural-")) {
+            const help = b.addRunArtifact(executable);
+            help.addArg("-h");
+            help.expectStdOutMatch("Usage:");
+            demo_cli_test.dependOn(&help.step);
+
+            const invalid = b.addRunArtifact(executable);
+            invalid.addArgs(&.{ "--unknown-option", "0" });
+            invalid.expectExitCode(1);
+            invalid.expectStdErrMatch("--unknown-option");
+            invalid.expectStdErrMatch("Usage:");
+            demo_cli_test.dependOn(&invalid.step);
+        }
     }
 
     const generators = [_]RunEntry{

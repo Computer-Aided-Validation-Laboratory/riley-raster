@@ -6,63 +6,107 @@
 //
 // Authors: James Panayis
 // --------------------------------------------------------------------------------------
+//! Render a physical speckle pattern on a flat, front-facing plane.
 const std = @import("std");
 
-const pdemo = @import("dev_support/proceduraldemo.zig");
-const buildconfig = @import("riley/zig/buildconfig.zig");
+const cli = @import("dev_support/proceduralcli.zig");
+const F = @import("riley/zig/buildconfig.zig").F;
+const CameraInput = @import("riley/zig/camera.zig").CameraInput;
 const imageio = @import("riley/zig/imageio.zig");
-const matslice = @import("riley/zig/matslice.zig");
-const speckleops = @import("riley/zig/speckleops.zig");
-const speckleparams = @import("riley/zig/speckleparams.zig");
+const meshio = @import("riley/zig/meshio.zig");
+const MeshInput = @import("riley/zig/meshpipeline.zig").MeshInput;
+const NDArray = @import("riley/zig/ndarray.zig").NDArray;
+const riley = @import("riley/zig/riley.zig");
+const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
-const F = buildconfig.F;
-// Keep the domain fixed so output resolution does not change pattern density.
-const pattern_domain = 40;
-const demo_spec = pdemo.DemoSpec{
-    .command_name = "demo-procedural-pattern",
-    .output_default = "./out/procedural_pattern",
-    .pixels_num_default = .{ 1024, 1024 },
-    .length_units = std.fmt.comptimePrint("domain units ({d} x {d} standalone domain)", .{
-        pattern_domain, pattern_domain,
-    }),
-};
-// Map final [0, 1] intensities directly to 0..255, without contrast stretching.
-const save_opts = imageio.ImageSaveOpts{
-    .format = .bmp,
-    .bits = 8,
-    .scaling = .{ .fixed = .{ 0, 1 } },
-};
+const usage =
+    \\Usage: zig build demo-procedural-pattern -- [--pattern disk|gaussian|perlin]
+    \\       [--output DIR] [--width PIXELS] [--height PIXELS] [-h|--help]
+    \\Defaults: disk, 1024 x 1024 pixels, out/procedural_pattern/<pattern>.bmp
+    \\
+;
 
 pub fn main(init: std.process.Init) !void {
-    const allocator = init.arena.allocator();
-    const raw_args = try init.minimal.args.toSlice(allocator);
-    const args = (try pdemo.parseDemoArgs(raw_args, demo_spec)) orelse return;
-    _ = try imageio.bmpDataSize(args.pixels_num[0], args.pixels_num[1], save_opts.bits.?);
-    std.debug.print("Direct procedural image\n", .{});
-    pdemo.printProceduralConfig(args.params, args.pixels_num, demo_spec);
-
-    const grid = try speckleparams.resolveWithCalibration(args.params, .{
-        pattern_domain, pattern_domain,
-    });
-    const resources = try speckleparams.initResources(allocator, grid);
-
-    const image = try matslice.MatSlice(F).initAlloc(
-        allocator,
-        args.pixels_num[1],
-        args.pixels_num[0],
-    );
-
-    speckleops.fillImage(image, grid, &resources);
-
     const io = init.io;
-    var out_dir = try std.Io.Dir.cwd().createDirPathOpen(io, args.out_dir, .{});
-    defer out_dir.close(io);
-    try imageio.saveMatAsImage(
+    const alloc = init.arena.allocator();
+    const args = try init.minimal.args.toSlice(alloc);
+    var pixels_num: [2]u32 = .{ 1024, 1024 };
+    const options = (try cli.parse(
+        std.meta.Tag(riley.SpeckleParams),
         io,
-        out_dir,
-        @tagName(args.params),
-        &image,
-        save_opts,
-    );
-    std.debug.print("Saved {s}/{s}.bmp\n", .{ args.out_dir, @tagName(args.params) });
+        args,
+        usage,
+        "out/procedural_pattern",
+        &pixels_num,
+    )) orelse return;
+    const pattern = options.pattern;
+    const out_dir = options.out_dir;
+
+    // Check the BMP header and padded pixel-data size limits before allocating render buffers.
+    _ = imageio.bmpDataSize(pixels_num[0], pixels_num[1], 8) catch
+        cli.reject(io, usage, "--width/--height", "dimensions exceed BMP size limits");
+
+    // 1. Set the pattern in physical plane units, independently of image resolution.
+    const seed: u32 = 0xa511e9b3; // Riley's default seed; change it for another realization.
+    // Gaussian coverage counts nominal support, not opacity; its soft profile looks lighter.
+    const spots: riley.Speckle2DParams = .{ .seed = seed, .radius = 0.25, .coverage = 0.5 };
+    const params: riley.SpeckleParams = switch (pattern) {
+        .disk => .{ .disk = spots },
+        .gaussian => .{ .gaussian = spots },
+        .perlin => .{ .perlin = .{ .seed = seed, .cell_size = 0.25 } },
+    };
+
+    // 2. Map the full UV square onto one 40 x 40 quad. V grows down the image.
+    const side: F = 40;
+    const h = side / 2;
+    var coords = [12]F{
+        -h, -h, 0,
+        h,  -h, 0,
+        h,  h,  0,
+        -h, h,  0,
+    };
+    var connect = [_]usize{ 0, 1, 2, 3 };
+    var uv = [8]F{ 0, 1, 1, 1, 1, 0, 0, 0 };
+    const plane = MeshInput{
+        .mesh_type = .quad4,
+        .coords = meshio.Coords.init(&coords, 4),
+        .connect = meshio.Connect.init(&connect, 1, 4),
+        .disp = null,
+        .shader = .{ .speckle = .{
+            .uvs = try NDArray(F).init(alloc, &uv, &.{ 4, 2 }),
+            .params = params,
+            .scaling = .none,
+        } },
+    };
+
+    // 3. Look down -Z. The projected square fills the sensor at any resolution.
+    //    Unequal width and height give non-square physical pixels, so circular
+    //    speckles look elliptical when the BMP is displayed with square pixels.
+    const focal_length: F = 50e-3;
+    const camera = CameraInput{
+        .pixels_num = pixels_num,
+        .pixels_size = .{
+            focal_length / @as(F, @floatFromInt(pixels_num[0])),
+            focal_length / @as(F, @floatFromInt(pixels_num[1])),
+        },
+        .pos_world = .{ .vec = .{ 0, 0, side } },
+        .rot_world = Rotation.init(0, 0, 0),
+        .roi_cent_world = .initZeros(),
+        .focal_length = focal_length,
+        .sub_sample = 1,
+    };
+
+    // 4. Map raw [0, 1] shader values to 8-bit gray without a contrast stretch,
+    //    so intensities can be compared across patterns and resolutions.
+    const config = riley.RasterConfig{
+        .parallel = .{ .threads = 4 },
+        .save_strategy = .disk,
+        .output_name_format = @tagName(pattern),
+        .output = .{ .image_save_opts = &.{
+            .{ .format = .bmp, .bits = 8, .scaling = .{ .fixed = .{ 0, 1 } } },
+        } },
+        .report = .{ .mode = .off },
+    };
+    _ = try riley.raster(init.gpa, io, &.{camera}, &.{plane}, config, out_dir);
+    std.debug.print("Saved {s}/{s}.bmp\n", .{ out_dir, @tagName(pattern) });
 }

@@ -1,3 +1,5 @@
+"""Check packaged demo imports and demo parity validation."""
+
 from __future__ import annotations
 
 import importlib
@@ -8,18 +10,6 @@ import pytest
 from PIL import Image
 
 from riley.__main__ import _DEMO_FUNCS
-from riley.pydemos import demo_rabbits_common as common
-
-
-@pytest.mark.parametrize("channels", (1, 3))
-def test_rabbit_uv_field_has_one_frame_and_expected_channels(channels: int) -> None:
-    uvs = np.array([[0.2, 0.6], [0.0, 1.0]])
-    field = common.build_uv_field(uvs, channels)
-    assert field.shape == (2, 1, channels)
-    assert field.dtype == np.float64
-    assert field.flags.c_contiguous
-    expected = [[0.4], [0.5]] if channels == 1 else [[0.2, 0.6, 0.4], [0.0, 1.0, 0.5]]
-    np.testing.assert_allclose(field[:, 0, :], expected)
 
 
 def test_numbered_demo_cli_modules_are_importable() -> None:

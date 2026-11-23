@@ -16,14 +16,13 @@ const uvio = @import("riley/zig/uvio.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
 const MeshInput = meshpipe.MeshInput;
-const gk = @import("riley/zig/geometrykernels.zig");
-const MeshType = gk.MeshType;
+
 const camera_mod = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const CameraInput = camera_mod.CameraInput;
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
+
 const F = buildconfig.F;
 
 pub fn main(init: std.process.Init) !void {
@@ -103,6 +102,7 @@ pub fn main(init: std.process.Init) !void {
     const rot = Rotation.init(0, 0, 0);
     const fov_scale_factor: F = 1.0;
 
+    // Aim at the bounding-box centre and use the sphere's extent to choose camera distance.
     const roi_pos = sceneops.boundsCenter(&sim_data.coords);
     const cam_pos = cameraops.posFillFrameFromRot(
         &sim_data.coords,
@@ -142,6 +142,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     std.debug.print("Rendering sphere to {s}/...\n", .{out_dir_root});
 
+    // Riley creates the output directory if needed without clearing existing files.
     const images = try riley.raster(
         outer_alloc,
         io,

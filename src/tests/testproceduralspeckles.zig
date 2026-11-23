@@ -43,7 +43,13 @@ test "speckle BMP matches an independently calculated mock gradient" {
     const cols = 13;
     var pixels: [rows * cols]F = undefined;
     const image = matslice.MatSlice(F).init(&pixels, rows, cols);
-    speckleops.fillImage(image, params, &resources);
+    for (0..rows) |rr| {
+        const v = (@as(F, @floatFromInt(rr)) + 0.5) / rows;
+        for (0..cols) |cc| {
+            const u = (@as(F, @floatFromInt(cc)) + 0.5) / cols;
+            pixels[rr * cols + cc] = speckleops.sampleScal(u, v, params, &resources);
+        }
+    }
     try imageio.saveMatAsImage(std.testing.io, tmp.dir, "mock", &image, .{
         .format = .bmp,
         .bits = 8,

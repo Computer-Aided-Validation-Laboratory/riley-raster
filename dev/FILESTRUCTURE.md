@@ -1,18 +1,21 @@
 # Riley Code File Structure
 
-## File organisation
-- All file names should be lower case unless directly exposed as a struct
+## Zig module file organisation
+
+These rules apply to Zig implementation modules. Standalone entry points and
+named test suites follow [Programs and tutorials](#programs-and-tutorials).
+
+- Module file names should be lower case unless directly exposed as a struct
 - Use io as a suffix for files that contain operations for reading and writing to disk e.g. imageio.zig
 - Use ops as a suffix for collections of utility/data operation functions e.g. meshops.zig
 - Use the kernel suffix for files defining structs containing only comptime known constants and inline functions e.g. geometrykernels
 - If a scalar/simd split is required the top level file name becomes a thin wrapper with no implementation details then all implementation and tests is moved into _common.zig, _simd.zig, _scalar.zig files.
-- File names should not have underscores unless using _common, _simd or _scalar
+- Zig module file names should not have underscores except in the suffixes below and `_common`, `_simd`, or `_scalar`.
 
 ## Exceptions
 - ABI-facing files may retain established external naming
-- Generated artefacts and non-Zig files are out of scope
+- Generated artefacts and non-Zig files are out of scope for the Zig module rules
 - Thin wrapper files should contain no implementation logic and no tests
-- Existing file names should only be changed when the rename improves clarity
 - Global subpixel buffer implementation files use `_globbuff` before any
   `_common`, `_scalar`, or `_simd` suffix, to distinguish them from tile-local
   implementations. Function and type names retain Zig casing conventions.
@@ -22,6 +25,26 @@
   binding; both call the shared subpixel core in `rasterengine_common.zig`.
   The scalar and SIMD raster kernels remain in `rasterengine_scalar.zig` and
   `rasterengine_simd.zig`.
+
+## Programs and tutorials
+
+- Reserve `demo` names for runnable, user-facing tutorials in Zig and Python.
+  Each tutorial shows its complete setup, including inputs, camera, shader, and
+  render/output configuration. Repeat setup where it helps readers follow the
+  example; use Riley's APIs directly instead of hiding setup behind shared
+  tutorial wrappers.
+- For new test suite files, use `test_<subject>`; for gold reference generators,
+  use `gen_gold_<suite>`. Use `verif_<subject>` for standalone numerical
+  verification drivers and `bench_<workload>` for performance measurement tools.
+- Keep shared internal tooling under `dev_support` where appropriate. Give
+  standalone internal tools names that describe the operation, such as
+  `run_all_demos.zig`, rather than naming them as tutorials.
+
+Keep established source and program names, including older forms such as
+`demoprocedural*.zig`, `testunit.zig`, and `benchcam.py`. Apply the conventions
+when adding new files; do not rename existing ones just to match the convention.
+Output directories such as `out/procedural_pattern/` are artifact locations, not
+program names, and do not follow these rules.
 
 ## Within file code organisation
 1. Module header block / documentation / description

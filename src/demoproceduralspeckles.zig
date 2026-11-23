@@ -6,130 +6,123 @@
 //
 // Authors: James Panayis
 // --------------------------------------------------------------------------------------
+//! Track one physical speckle pattern through reference, stretch, and twist frames.
 const std = @import("std");
 
-const orch = @import("dev_support/orchestration.zig");
-const pdemo = @import("dev_support/proceduraldemo.zig");
-const camera = @import("riley/zig/camera.zig");
-const iio = @import("riley/zig/imageio.zig");
+const cli = @import("dev_support/proceduralcli.zig");
+const F = @import("riley/zig/buildconfig.zig").F;
+const CameraInput = @import("riley/zig/camera.zig").CameraInput;
+const cameraops = @import("riley/zig/cameraops.zig");
 const meshio = @import("riley/zig/meshio.zig");
-const meshpipeline = @import("riley/zig/meshpipeline.zig");
-const rastcfg = @import("riley/zig/rasterconfig.zig");
+const MeshInput = @import("riley/zig/meshpipeline.zig").MeshInput;
 const riley = @import("riley/zig/riley.zig");
+const Rotation = @import("riley/zig/rotation.zig").Rotation;
+const sceneops = @import("riley/zig/sceneops.zig");
 const uvio = @import("riley/zig/uvio.zig");
-const buildconfig = @import("riley/zig/buildconfig.zig");
 
-const F = buildconfig.F;
-const data_dir = "data/min/tri6_sphere200/";
-const demo_spec = pdemo.DemoSpec{
-    .command_name = "demo-procedural-speckles",
-    .output_default = "./out/demo-procedural-speckles",
-    .pixels_num_default = .{ 720, 450 },
-    .length_default = 0.02,
-    .dimensions = .hidden,
-};
-
-// --------------------------------------------------------------------------------------
-// Public Entry-Point Func
-// --------------------------------------------------------------------------------------
+const usage =
+    \\Usage: zig build demo-procedural-speckles -- [--pattern disk|gaussian|perlin]
+    \\       [--output DIR] [-h|--help]
+    \\Defaults: disk, out/demo-procedural-speckles/ (reference, stretch, twist)
+    \\
+;
 
 pub fn main(init: std.process.Init) !void {
-    const allocator = init.arena.allocator();
-    const raw_args = try init.minimal.args.toSlice(allocator);
-    const args = (try pdemo.parseDemoArgs(raw_args, demo_spec)) orelse return;
+    const io = init.io;
+    const alloc = init.arena.allocator();
+    const args = try init.minimal.args.toSlice(alloc);
+    const options = (try cli.parse(
+        std.meta.Tag(riley.SpeckleParams),
+        io,
+        args,
+        usage,
+        "out/demo-procedural-speckles",
+        null,
+    )) orelse return;
+    const pattern = options.pattern;
+    const out_dir = options.out_dir;
 
-    const workers: u16 = 4;
-    const config = rastcfg.RasterConfig{
-        .parallel = .{ .threads = workers },
-        .save_strategy = .disk,
-        .output = .{
-            .image_save_mode = .grey,
-            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .none },
-            },
-        },
-        .background_value = 255.0,
-        .report = .{ .mode = .off },
-    };
-    var threaded_io = riley.getThreadedIo(
-        init.gpa,
-        init.minimal,
-        workers,
-    );
-    defer threaded_io.deinit();
-    const io = threaded_io.io();
-
-    std.debug.print("Procedural speckle prototype\n", .{});
-    pdemo.printProceduralConfig(args.params, args.pixels_num, demo_spec);
-    std.debug.print("Loading UV-mapped sphere and preparing three deformation frames...\n", .{});
-
+    // 1. Load the quadratic triangle mesh and UV atlas, then generate displacement frames.
+    const data_dir = "data/min/tri6_sphere200/";
     const sim_data = try meshio.loadSimData(
-        allocator,
+        alloc,
         io,
         data_dir ++ "coords.csv",
         data_dir ++ "connect.csv",
-        null,
-        null,
+        null, // No scalar fields.
+        null, // Generate displacements below instead of loading CSVs.
     );
-    const uvs = try uvio.loadUVMap(allocator, io, data_dir ++ "uvs.csv");
-    const disp = try makeDemoDisp(allocator, &sim_data.coords);
-    // One immutable pattern is attached to this mesh for all three deformation frames.
-    const mesh_input = meshpipeline.MeshInput{
+    const uvs = try uvio.loadUVMap(alloc, io, data_dir ++ "uvs.csv");
+    const disp = try makeDemoDisp(alloc, &sim_data.coords);
+
+    // 2. Attach one immutable pattern to the mesh across all three frames.
+    //    Radius and cell size are in reference-mesh units.
+    const seed: u32 = 0xa511e9b3; // Riley's default seed; change it for another realization.
+    const spots: riley.Speckle2DParams = .{ .seed = seed, .radius = 0.02, .coverage = 0.5 };
+    const params: riley.SpeckleParams = switch (pattern) {
+        .disk => .{ .disk = spots },
+        .gaussian => .{ .gaussian = spots },
+        .perlin => .{ .perlin = .{ .seed = seed, .cell_size = 0.02 } },
+    };
+    const mesh_input = MeshInput{
         .mesh_type = .tri6,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = disp,
         .shader = .{ .speckle = .{
             .uvs = uvs.array,
-            .params = args.params,
+            .params = params,
             .scaling = .auto,
         } },
     };
 
-    const camera_prep = try orch.initCameraForCoords(
-        allocator,
-        &sim_data.coords,
-        args.pixels_num,
-        1.28,
-    );
-    const camera_input = camera.CameraInput{
-        .pixels_num = camera_prep.pixels_num,
-        .pixels_size = camera_prep.pixels_size,
-        .pos_world = camera_prep.pos_world,
-        .rot_world = camera_prep.rot_world,
-        .roi_cent_world = camera_prep.roi_cent_world,
-        .focal_length = camera_prep.focal_length,
+    // 3. Frame the mesh with extra room for the deformed frames.
+    const pixels_num: [2]u32 = .{ 720, 450 };
+    const pixels_size: [2]F = .{ 5.3e-6, 5.3e-6 };
+    const focal_length: F = 50.0e-3;
+    const rot = Rotation.init(0, 0, 0);
+    const fov_scale: F = 1.28;
+    const camera_input = CameraInput{
+        .pixels_num = pixels_num,
+        .pixels_size = pixels_size,
+        .pos_world = cameraops.posFillFrameFromRot(
+            &sim_data.coords,
+            pixels_num,
+            pixels_size,
+            focal_length,
+            rot,
+            fov_scale,
+        ),
+        .rot_world = rot,
+        .roi_cent_world = sceneops.boundsCenter(&sim_data.coords),
+        .focal_length = focal_length,
         .sub_sample = 2,
-        .distort = camera_prep.distort.paramsFromModel(),
-    };
-    const render_groups = [_]riley.RenderGroup{
-        .{ .io = io, .workers = workers },
     };
 
-    std.debug.print("Rendering reference, stretch, and twist frames...\n", .{});
-    _ = try riley.rasterAdvanced(
-        init.gpa,
-        io,
-        &[_]camera.CameraInput{camera_input},
-        &[_]meshpipeline.MeshInput{mesh_input},
-        config,
-        args.out_dir,
-        .{ .render_groups = .{ .supplied = &render_groups } },
-    );
-
-    std.debug.print("Demo complete. Images saved under {s}/\n", .{args.out_dir});
+    // 4. Keep the shader's nominal 8-bit range and the white background. Skip
+    //    save-time rescaling so the same intensity has the same gray level in every frame.
+    const config = riley.RasterConfig{
+        .parallel = .{ .threads = 4 },
+        .save_strategy = .disk,
+        .output = .{
+            .image_save_mode = .grey,
+            .image_save_opts = &.{.{ .format = .bmp, .bits = 8, .scaling = .none }},
+        },
+        .background_value = 255.0,
+        .report = .{ .mode = .off },
+    };
+    std.debug.print("Rendering {s}: reference, stretch, twist...\n", .{@tagName(pattern)});
+    _ = try riley.raster(init.gpa, io, &.{camera_input}, &.{mesh_input}, config, out_dir);
+    std.debug.print("Images saved under {s}/\n", .{out_dir});
 }
 
-// --------------------------------------------------------------------------------------
-// Deformation Preparation
-// --------------------------------------------------------------------------------------
-
 fn makeDemoDisp(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     coords: *const meshio.Coords,
 ) !meshio.Field {
     const node_num = coords.mat.rows_num;
-    var disp = try meshio.Field.initAlloc(allocator, 3, node_num, 3);
+    // Field layout is [frame, node, component]. Frame 0 stays zero (reference).
+    var disp = try meshio.Field.initAlloc(outer_alloc, 3, node_num, 3);
 
     var center = [3]F{ 0.0, 0.0, 0.0 };
     var z_min = coords.z(0);

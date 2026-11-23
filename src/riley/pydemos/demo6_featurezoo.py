@@ -16,7 +16,6 @@ from pathlib import Path
 import numpy as np
 
 import riley
-from riley.python import sceneops
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,9 +149,9 @@ def build_scene(channels: int, bits: int, options: DemoOptions) -> list[riley.Me
     mesh_coords[5][:, 1] = plate_x
 
     for index, center in enumerate(options.mesh_centers):
-        sceneops.scene_center_mesh_group_at(
+        riley.scene_center_mesh_group_at(
             mesh_coords,
-            sceneops.scene_create_mesh_group_single(index),
+            riley.scene_create_mesh_group_single(index),
             center,
         )
 

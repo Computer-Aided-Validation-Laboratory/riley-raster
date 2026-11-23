@@ -110,18 +110,6 @@ pub fn resolveForMesh(
     return resolveCalibrated(params, lengths);
 }
 
-/// Internal standalone-field lowering for an already normalized UV domain. Validates
-/// friendly inputs and the supplied reference lengths for every pattern, then returns
-/// the grid. Use initResources to check grid limits and construct the sampler backing.
-pub fn resolveWithCalibration(params: SpeckleParams, length_per_uv: [2]F) !speckle.GridParams {
-    try params.validate();
-    for (length_per_uv) |length| {
-        if (!std.math.isFinite(length) or length <= 0)
-            return error.InvalidSpeckleReferenceGeometry;
-    }
-    return resolveCalibrated(params, length_per_uv);
-}
-
 /// Prepare backing for a lowered friendly grid, mapping internal size/support errors.
 pub fn initResources(outer_alloc: std.mem.Allocator, grid: speckle.GridParams) !speckle.Resources {
     return speckle.Resources.init(outer_alloc, grid) catch |err| return switch (err) {
@@ -199,12 +187,12 @@ test "physical defaults and nominal density ignore jitter and visual softness" {
     const physical = Speckle2DParams{ .coverage = 0.5, .radius = 0.02 };
     try std.testing.expectEqual(@as(F, 1), physical.occupancy);
     try std.testing.expectEqual(@as(F, 0), physical.jitter);
-    const hard = try resolveWithCalibration(.{ .disk = physical }, test_calibration);
-    const gaussian = try resolveWithCalibration(.{ .gaussian = physical }, test_calibration);
+    const hard = resolveCalibrated(.{ .disk = physical }, test_calibration);
+    const gaussian = resolveCalibrated(.{ .gaussian = physical }, test_calibration);
     var varied = physical;
     varied.jitter = 0.003;
     varied.edge_softness = 0.002;
-    const soft = try resolveWithCalibration(.{ .disk = varied }, test_calibration);
+    const soft = resolveCalibrated(.{ .disk = varied }, test_calibration);
     try std.testing.expectEqual(hard.cells_per_uv, soft.cells_per_uv);
     try std.testing.expectEqual(hard.cells_per_uv, gaussian.cells_per_uv);
     try std.testing.expectEqual(hard.radius_mean, soft.radius_mean);
@@ -217,24 +205,15 @@ test "physical defaults and nominal density ignore jitter and visual softness" {
     try std.testing.expectEqual(@as(?config.Evaluator, null), hard.evaluator);
 }
 
-test "physical resolution rejects unattainability, invalid lengths and unsupported jitter and softness" {
+test "physical parameters reject unattainable coverage, unsupported support and excessive density" {
     var physical = Speckle2DParams{ .coverage = 0.99, .radius = 2, .occupancy = 0.1 };
     try std.testing.expectError(error.UnattainableSpeckleCoverage, (SpeckleParams{ .disk = physical }).validate());
     physical.coverage = 0.5;
     physical.occupancy = 1;
     physical.jitter = 1;
     physical.edge_softness = 2;
-    try std.testing.expectError(error.UnsupportedSpeckleSupport, resolveWithCalibration(.{ .disk = physical }, test_calibration));
-    physical.jitter = 0;
-    physical.edge_softness = 0;
-    var calibration = test_calibration;
-    for ([_]F{ 0, -1, std.math.nan(F), std.math.inf(F) }) |length| {
-        calibration[0] = length;
-        try std.testing.expectError(error.InvalidSpeckleReferenceGeometry, resolveWithCalibration(.{ .disk = physical }, calibration));
-    }
-    physical.radius = 1e-20;
-    const params = SpeckleParams{ .disk = physical };
-    const grid = try resolveWithCalibration(params, test_calibration);
+    try std.testing.expectError(error.UnsupportedSpeckleSupport, (SpeckleParams{ .disk = physical }).validate());
+    const grid = resolveCalibrated(.{ .disk = .{ .coverage = 0.5, .radius = 1e-20 } }, test_calibration);
     try std.testing.expectError(error.SpeckleDensityOutOfRange, initResources(std.testing.failing_allocator, grid));
 }
 
@@ -293,18 +272,17 @@ test "Perlin validates physical cell size and noise controls" {
     inline for (cases) |case| for (case.values) |value| {
         var invalid = base;
         @field(invalid, case.field) = value;
-        try std.testing.expectError(case.err, resolveWithCalibration(.{ .perlin = invalid }, test_calibration));
+        try std.testing.expectError(case.err, (SpeckleParams{ .perlin = invalid }).validate());
     };
-    try std.testing.expectError(error.InvalidSpeckleReferenceGeometry, resolveWithCalibration(.{ .perlin = base }, .{ 0, 12 }));
 
-    const dense = try resolveWithCalibration(.{ .perlin = .{ .cell_size = 1e-20 } }, test_calibration);
+    const dense = resolveCalibrated(.{ .perlin = .{ .cell_size = 1e-20 } }, test_calibration);
     try std.testing.expectError(error.SpeckleDensityOutOfRange, initResources(std.testing.failing_allocator, dense));
     if (F == f64) {
         // Both axes fit the coordinate-precision limit, but the lattice count overflows.
-        const oversized = try resolveWithCalibration(.{ .perlin = .{ .cell_size = 1 } }, .{ 0x1p32, 0x1p32 });
+        const oversized = resolveCalibrated(.{ .perlin = .{ .cell_size = 1 } }, .{ 0x1p32, 0x1p32 });
         try std.testing.expectError(error.SpeckleDensityOutOfRange, initResources(std.testing.failing_allocator, oversized));
     }
-    const small = try resolveWithCalibration(.{ .perlin = base }, test_calibration);
+    const small = resolveCalibrated(.{ .perlin = base }, test_calibration);
     try std.testing.expectError(error.OutOfMemory, initResources(std.testing.failing_allocator, small));
 }
 
@@ -312,7 +290,7 @@ test "dilute physical coverage uses continuous occupancy without density compens
     const unit_plane = [2]F{ 1, 1 };
     for ([_]F{ 1e-6, 1e-4 }) |p| {
         const physical = Speckle2DParams{ .coverage = p, .radius = 0.001, .occupancy = p };
-        const grid = try resolveWithCalibration(.{ .disk = physical }, unit_plane);
+        const grid = resolveCalibrated(.{ .disk = physical }, unit_plane);
         try std.testing.expectEqual(p, grid.occupancy);
         try std.testing.expectEqual(grid.radius_mean / physical.radius, grid.cells_per_uv[0]);
         try std.testing.expectEqual(grid.cells_per_uv[0], grid.cells_per_uv[1]);
@@ -349,7 +327,7 @@ test "mesh resolution calibrates reference geometry rather than UV bounding-box 
 
     // An 8x12 reference extent, with physical cells of side 2, has 4x6 cells
     // per full unit UV, including when the reference coordinates use different units.
-    var perlin = Perlin2DParams{
+    const perlin = Perlin2DParams{
         .cell_size = 2000,
         .threshold = 0.1,
         .transition_width = 0.2,
@@ -358,10 +336,7 @@ test "mesh resolution calibrates reference geometry rather than UV bounding-box 
         .background = 0.83,
     };
     const perlin_grid = try resolveForMesh(.{ .perlin = perlin }, .tri3, &coords, &connect, &uvs);
-    perlin.cell_size = 2;
-    const direct = try resolveWithCalibration(.{ .perlin = perlin }, test_calibration);
     try std.testing.expectEqual(config.Pattern.perlin, perlin_grid.pattern);
-    try std.testing.expectEqual(@as([2]F, .{ 4, 6 }), direct.cells_per_uv);
     for ([_]F{ 4, 6 }, perlin_grid.cells_per_uv) |expected, actual|
         try std.testing.expectApproxEqRel(expected, actual, tol);
     try std.testing.expectEqual(perlin.threshold, perlin_grid.perlin_coverage_threshold);
@@ -374,12 +349,16 @@ test "mesh resolution calibrates reference geometry rather than UV bounding-box 
 test "half-radius jitter boundary preserves ratio-first jitter and softness" {
     // At R=0.3, (r*J)/R differs from r*(J/R) in both f32 and f64 for C=0.5.
     const boundary = Speckle2DParams{ .coverage = 0.5, .radius = 0.3, .jitter = 0.15, .edge_softness = 0.15 };
-    const disk = try resolveWithCalibration(.{ .disk = boundary }, test_calibration);
+    const disk_params = SpeckleParams{ .disk = boundary };
+    try disk_params.validate();
+    const disk = resolveCalibrated(disk_params, test_calibration);
     try std.testing.expectEqual(0.5 * disk.radius_mean, disk.radius_jitter);
     try std.testing.expectEqual(0.5 * disk.radius_mean, disk.edge_softness);
     var gaussian = boundary;
     gaussian.edge_softness = 0;
-    const blob = try resolveWithCalibration(.{ .gaussian = gaussian }, test_calibration);
+    const gaussian_params = SpeckleParams{ .gaussian = gaussian };
+    try gaussian_params.validate();
+    const blob = resolveCalibrated(gaussian_params, test_calibration);
     try std.testing.expectEqual(disk.radius_mean, blob.radius_mean);
     try std.testing.expectEqual(disk.radius_jitter, blob.radius_jitter);
     var excessive = gaussian;
@@ -403,7 +382,8 @@ test "physical support boundary checks converted rounding without clamping" {
             .jitter = 0.5 * radius,
             .edge_softness = softness,
         } };
-        const grid = try resolveWithCalibration(params, .{ 1, 1 });
+        try params.validate();
+        const grid = resolveCalibrated(params, .{ 1, 1 });
         if (grid.radius_mean + grid.radius_jitter + grid.edge_softness > 1) {
             rounded_over += 1;
             try std.testing.expectError(error.UnsupportedSpeckleSupport, initResources(std.testing.failing_allocator, grid));
