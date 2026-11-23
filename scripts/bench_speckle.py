@@ -24,7 +24,9 @@ else:
     from bench_common import native_exe
 
 ROOT = Path(__file__).resolve().parent.parent
-METRICS = ('resource_ns', 'render_ns', 'combined_ns')
+METRIC_OPTIONS = {'setup': 'resource_ns', 'render': 'render_ns', 'combined': 'combined_ns'}
+METRICS = tuple(METRIC_OPTIONS.values())
+MODE_METRICS = {'evaluation': METRICS, 'full-render': ('combined_ns',)}
 FACTORS = ('threads', 'scene', 'pattern', 'jitter', 'occupancy', 'neighbors', 'softness')
 BUILD_FIELDS = ('precision', 'simd', 'simd_vector_width', 'newton_solver', 'enable_all_evaluators',
                 'speckle_mask_samples_per_cell', 'optimize', 'strip', 'zig_version', 'target_arch', 'cpu_model', 'cpu_features')
@@ -57,6 +59,8 @@ def design(args):
     """Normalize profile-dependent variant defaults in place and build the frozen design."""
     tuning = args.profile == 'tuning'
     production = args.profile == 'full-render'
+    require(not production or all(metric == 'combined' for metric in args.metrics or ()),
+            'full-render supports only --metrics combined')
     args.a = args.a or ('auto' if production else 'cell-binned')
     args.b = args.b or ('auto' if production else 'list-indexed')
     repeats = args.repeats if args.repeats is not None else (12 if tuning else 16)
@@ -163,9 +167,9 @@ def design(args):
     if not production and any(evaluator not in ('texture', 'mock') for evaluator in (args.a, args.b)):
         require(all(case['pattern'] == 'perlin' or case['occupancy'] > 0 for case in cases),
                 'disk/Gaussian occupancy must be positive for procedural evaluators')
-    return dict(profile=args.profile, mode='full-render' if args.profile == 'full-render' else 'evaluation',
+    return dict(profile=args.profile, mode='full-render' if production else 'evaluation',
                 configurations=cases, repeats=repeats, schedules=schedules(repeats), alpha=alpha,
-                metrics=[{'setup': 'resource_ns', 'render': 'render_ns', 'combined': 'combined_ns'}[x]
+                metrics=[METRIC_OPTIONS[x]
                          for x in dict.fromkeys(args.metrics or (['combined'] if tuning or production else ['setup', 'render']))],
                 permutations=args.permutations, permutation_seed=20261005,
                 inference='two-sided blocked sum contrast; exact <=200000 subsets/block, otherwise Monte Carlo plus-one; joint Holm',
@@ -267,10 +271,15 @@ def validate_echo(actual, expected, precision, path=''):
 def validate_native(native, config):
     require(isinstance(native, dict), 'BENCH record must be a JSON object')
     validate_echo(native, config, native.get('precision'))
-    for metric in METRICS:
+    mode = config['mode']
+    for metric in MODE_METRICS[mode]:
         require(type(native.get(metric)) is int and native[metric] >= 0, f'invalid {metric}: integer ns required')
-    require(native['combined_ns'] == native['resource_ns'] + native['render_ns'], 'invalid combined timing')
-    evaluation = config['mode'] == 'evaluation'
+    evaluation = mode == 'evaluation'
+    if evaluation:
+        require(native['combined_ns'] == native['resource_ns'] + native['render_ns'], 'invalid combined timing')
+    else:
+        require('resource_ns' not in native and 'render_ns' not in native,
+                'full-render must omit resource_ns and render_ns')
     checksum, image_hash = native['checksum'], native['image_hash']
     if evaluation:
         require(type(checksum) is int and 0 <= checksum < 2**64 and image_hash is None, 'invalid raw checksum')
@@ -369,10 +378,11 @@ def holm(values):
 
 
 def report(out, metadata, groups, outputs):
+    mode = metadata['mode']
     records = []
     factors = tuple(dict.fromkeys(k for case in metadata['configurations'] for k in case))
     for i, case in enumerate(metadata['configurations']):
-        for metric in METRICS:
+        for metric in MODE_METRICS[mode]:
             blocks = [tuple([r[metric] for r in groups[i, s, v]] for v in 'AB') for s in (0, 1)]
             a, b = ([x for block in blocks for x in block[k]] for k in (0, 1))
             am, bm = statistics.median(a), statistics.median(b)
@@ -391,8 +401,9 @@ def report(out, metadata, groups, outputs):
              f"{metadata['profile']} / {metadata['mode']}: {n} configurations, {2*n} variant groups, "
              f"{metadata['repeats']} runs/variant/case; schedules {' / '.join(metadata['schedules'])}.",
              f"Holm alpha={metadata['alpha']}, {len(primary)} tests. B/A <1 favors B; tests use mean contrasts, tables use medians.",
-             'Combined = setup + render, not wall time. Full-render setup includes UV gathering and '
-             'reference calibration; output hashing is untimed. Reported production policy is declared, not observed.',
+             ('Combined times the production render operation, including procedural resource preparation. '
+              'Output hashing is untimed. Reported production policy is declared, not observed.'
+              if mode == 'full-render' else 'Combined = setup + evaluation, not wall time.'),
              'Blocked permutation tests assume within-block exchangeability. Untested metrics are descriptive; '
              'non-significance is not equivalence.',
              f"Texture filter: {metadata['config']['texture_filter']}. Procedural factors do not change the frozen texture. "
@@ -464,9 +475,9 @@ def parser():
                         '(default: %(default)s)')
     p.add_argument('--alpha', type=float, help='override profile family-wise alpha')
     p.add_argument('--repeats', type=int, help='override even TOTAL runs per variant >=2; never capped')
-    p.add_argument('--metrics', nargs='+', choices=('setup', 'render', 'combined'),
+    p.add_argument('--metrics', nargs='+', choices=tuple(METRIC_OPTIONS),
                    help='jointly tested metrics: setup=resource_ns, render=render_ns, combined=combined_ns. '
-                        'Defaults to setup and render for full, combined otherwise')
+                        'Defaults to setup and render for full, combined otherwise; full-render only supports combined')
     p.add_argument('--permutations', type=int, default=100000,
                    help='Monte Carlo draws for large repeat counts (default: %(default)s)')
     output_checks = p.add_mutually_exclusive_group()
@@ -622,6 +633,11 @@ def expected_native(config):
 class SampleValidator:
     """Cache per-variant routes/case controls; inspect each new observation exactly once."""
     def __init__(self, metadata):
+        mode = metadata['mode']
+        require(mode in MODE_METRICS, 'invalid benchmark mode')
+        metrics = metadata['metrics']
+        require(isinstance(metrics, list) and metrics and all(metric in MODE_METRICS[mode] for metric in metrics),
+                f'invalid requested timing metrics for {mode}')
         self.metadata = metadata
         self.routes = {variant: catalogue_sampling_routes(spec['catalogue'])
                        for variant, spec in metadata['variants'].items()}

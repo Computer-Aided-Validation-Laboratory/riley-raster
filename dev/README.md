@@ -227,13 +227,12 @@ controls use binary A's defaults for both binaries. Full-render accepts only
 `auto` or `texture`, without neighborhood overrides. Python checks scalar inputs;
 native validation and preparation check feasibility.
 
-Full-render workload `production-raster-advanced-memory-v5` records physical
-inputs and declared evaluator policy, not observed dispatch. It defaults to
-`combined_ns`: `resource_ns` includes UV gathering and reference calibration
-for procedural inputs, and `render_ns` excludes that work. Do not compare
-individual timing buckets against baselines with different boundaries. Output
-equality uses ordered image hashes computed outside the timed render. Use
-`--help` for profile-specific factors and `--case-file` schemas.
+Full-render workload `production-raster-advanced-memory-v6` records physical
+inputs and declared evaluator policy, not observed dispatch. Its only metric,
+`combined_ns`, times the in-memory render including preparation. Ordered image
+hashes for output equality are untimed. Only raw evaluation supports split
+metrics (`--metrics setup render`). See `--help` for profile-specific factors
+and `--case-file` schemas.
 
 `resource_bytes` in native JSON measures retained backing allocations for
 `cell-binned`, `list-indexed`, `classified-indexed`, and `classified-binned`
@@ -460,8 +459,7 @@ If you want to change the study matrix, edit those constants first.
 BMP texture. The texture default matches the production shader:
 `--texture-filter cubic_catmull_rom` with `lut_lerp` weights. `nearest` and
 `linear` remain available and use direct sampling. Interpolation LUTs are
-compile-time constants; setup timing includes texture UV preparation or
-procedural resource generation, not image loading/decoding.
+compile-time constants; texture loading and decoding are untimed.
 
 For a production texture/procedural smoke comparison, use the default binary
 from the [separate-prefix install above](#internal-evaluator-experiments-and-benchmarking):

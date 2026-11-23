@@ -23,7 +23,6 @@ const policy = @import("riley/zig/speckleconfig.zig");
 const speckle = @import("riley/zig/speckleops.zig");
 const bench = @import("dev_support/specklebench.zig");
 const build = @import("riley/zig/buildconfig.zig");
-const timing = @import("riley/zig/benchtiming.zig");
 const mo = @import("riley/zig/meshpipeline.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
 const texops = @import("riley/zig/textureops.zig");
@@ -85,7 +84,7 @@ fn buildIdentity() BuildIdentity {
     };
 }
 
-const workload_modes = .{ .evaluation = bench.workload_mode, .@"full-render" = "production-raster-advanced-memory-v5" };
+const workload_modes = .{ .evaluation = bench.workload_mode, .@"full-render" = "production-raster-advanced-memory-v6" };
 
 const Options = struct {
     mode: enum { evaluation, @"full-render" } = .evaluation,
@@ -390,15 +389,14 @@ pub fn main(init: std.process.Init) !void {
     const scene = try loadScene(alloc, io, opts);
 
     const texture = if (opts.texture_material) try imageio.loadImage(u8, 1, alloc, io, opts.texture, .bmp) else null;
-    var resource_ns: i96 = 0;
-    var render_ns: i96 = 0;
-    var combined_ns: i96 = 0;
+    var resource_ns: i96 = undefined;
+    var render_ns: i96 = undefined;
     var result: bench.Result = .{};
     var image_samples: usize = 0;
     var image_hash: ?[64]u8 = null;
     var resource_metrics: ResourceMetrics = .{};
     var prepared_identity: ?PreparedIdentity = null;
-    if (opts.mode == .evaluation) {
+    const combined_ns = if (raw) blk: {
         const config = opts.rasterConfig();
         const cam = try camera.CameraPrepared.init(alloc, cameraInput(scene.sim, opts));
         const geometry = try bench.Geometry.prepare(alloc, io, &cam, scene.sim.coords, scene.sim.connect, scene.uvs.array, config, opts.threads);
@@ -412,28 +410,22 @@ pub fn main(init: std.process.Init) !void {
         const eval_start = std.Io.Timestamp.now(io, .awake);
         if (prepared) |shader| try evaluation.evaluateTexture(shader, opts.frames) else try evaluation.evaluate(params.?, &resources, opts.frames);
         render_ns = eval_start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
+
         // Inspect backing storage only after sampling, without warming one evaluator's counts.
         resource_metrics = resourceMetrics(&resources);
-        combined_ns = resource_ns + render_ns;
         result = evaluation.result();
         prepared_identity = preparedIdentity(&resources); // After both timers and reduction.
-    } else {
+        break :blk resource_ns + render_ns;
+    } else blk: {
         const mesh = try scene.mesh(alloc, opts, friendly, texture);
         const cam_input = cameraInput(scene.sim, opts);
-        var capture: timing.Capture = .{ .io = io };
-        const output = blk: {
-            timing.active = &capture;
-            defer timing.active = null;
-            const start = std.Io.Timestamp.now(io, .awake);
-            const output = (try riley.rasterAdvanced(alloc, io, &.{cam_input}, &.{mesh}, opts.rasterConfig(), null, .{ .render_groups = .{ .supplied = &.{.{ .io = io, .workers = opts.threads }} } })).?;
-            combined_ns = start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
-            break :blk output;
-        };
-        resource_ns = capture.resource_ns;
-        render_ns = combined_ns - resource_ns;
+        const start = std.Io.Timestamp.now(io, .awake);
+        const output = (try riley.rasterAdvanced(alloc, io, &.{cam_input}, &.{mesh}, opts.rasterConfig(), null, .{ .render_groups = .{ .supplied = &.{.{ .io = io, .workers = opts.threads }} } })).?;
+        const elapsed_ns = start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
         image_samples = output.slice.len;
         image_hash = try hashRenderOutput(output.slice);
-    }
+        break :blk elapsed_ns;
+    };
     const resolved = if (params) |grid| try grid.resolve() else null;
     const generation_policy = if (friendly != null)
         evaluatorRecord(try policy.resolve(
@@ -464,7 +456,7 @@ pub fn main(init: std.process.Init) !void {
         .width = opts.width,
         .height = opts.height,
         .physical_params = friendly,
-        // Production owns resolution/resources; timing capture does not expose them.
+        // Production owns resolution and resource preparation in full-render mode.
         .resolved_grid = params,
         .resolved_generation = if (resolved) |cfg| evaluatorRecord(cfg) else @as(?EvaluatorRecord, null),
         .generation_policy = generation_policy,
@@ -475,20 +467,24 @@ pub fn main(init: std.process.Init) !void {
         .duplicated_disk_records = resource_metrics.duplicated_disk_records,
         .record_capacity = resource_metrics.record_capacity,
         .prepared_identity = prepared_identity,
-        .resource_ns = resource_ns,
-        .render_ns = render_ns,
         .combined_ns = combined_ns,
         .checksum = if (raw) @as(?u64, result.checksum) else null,
         .image_hash = if (image_hash) |*hex| @as(?[]const u8, hex) else null,
         .shaded_samples = result.shaded_samples,
         .backface_rejections = result.backface_rejections,
-        .evaluation_counters_available = opts.mode == .evaluation,
+        .evaluation_counters_available = raw,
         .image_samples = image_samples,
         .precision = @typeName(F),
         .simd = @tagName(build.config.simd),
         .build_identity = buildIdentity(),
     };
-    std.debug.print("BENCH {s}\n", .{try std.json.Stringify.valueAlloc(alloc, record, .{})});
+    const json = try std.json.Stringify.valueAlloc(alloc, record, .{});
+    if (raw) {
+        const fields = json[0 .. json.len - 1]; // Leave the object open for the raw timings.
+        std.debug.print("BENCH {s},\"resource_ns\":{d},\"render_ns\":{d}}}\n", .{ fields, resource_ns, render_ns });
+    } else {
+        std.debug.print("BENCH {s}\n", .{json});
+    }
 }
 
 fn hashRenderOutput(values: []const F) ![64]u8 {
@@ -854,13 +850,9 @@ test "speckle benchmark full render uses direct physical inputs and memory outpu
             else if (std.mem.eql(u8, pattern, "gaussian")) .{ .gaussian = body } else .{ .disk = body };
             try std.testing.expectEqualDeep(expected, mesh.shader.speckle.params);
         }
-        var capture: timing.Capture = .{ .io = std.testing.io };
-        timing.active = &capture;
-        defer timing.active = null;
         const output = (try riley.rasterAdvanced(alloc, std.testing.io, &.{cameraInput(scene.sim, opts)}, &.{mesh}, opts.rasterConfig(), null, .{ .render_groups = .{ .supplied = &.{.{ .io = std.testing.io, .workers = 1 }} } })).?;
         try std.testing.expectEqual(@as(usize, 32 * 24 * 2), output.slice.len);
-        try std.testing.expect(capture.resource_ns > 0);
-        for (output.slice) |value| try std.testing.expect(std.math.isFinite(value));
+        _ = try hashRenderOutput(output.slice);
     }
     for ([_][]const u8{ "cell-hash", "classified-binned" }) |evaluator| {
         try std.testing.expectError(error.FullRenderRequiresProductionDefaults, Options.parse(&.{ "bench", "--mode", "full-render", "--evaluator", evaluator }));

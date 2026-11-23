@@ -324,13 +324,11 @@ pub fn initMeshStatic(
             } };
         },
         .tex_u8 => |tex_in| {
-            const resource_start = @import("benchtiming.zig").start();
             const elem_uvs = try prepUVs(
                 allocator,
                 &tex_in.uvs,
                 &mesh_input.connect,
             );
-            @import("benchtiming.zig").resourceEnd(resource_start);
             shader_static = .{ .tex_u8 = .{
                 .elem_uvs = elem_uvs,
                 .tex = tex_in.tex,
@@ -416,7 +414,6 @@ pub fn initMeshStatic(
             } };
         },
         .speckle => |input| {
-            const resource_start = @import("benchtiming.zig").start();
             const params = try speckleparams.resolveForMesh(
                 input.params,
                 mesh_input.mesh_type,
@@ -427,7 +424,6 @@ pub fn initMeshStatic(
             var resources = try speckleparams.initResources(allocator, params);
             errdefer resources.deinit(allocator);
             const elem_uvs = try prepUVs(allocator, &input.uvs, &mesh_input.connect);
-            @import("benchtiming.zig").resourceEnd(resource_start);
             shader_static = .{ .speckle = .{
                 .elem_uvs = elem_uvs,
                 .resources = resources,

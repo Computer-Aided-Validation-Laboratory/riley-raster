@@ -73,7 +73,8 @@ class BenchmarkTests(unittest.TestCase):
             with self.subTest(options=options), self.assertRaises(ValueError):
                 bench.design(self.args(*options))
         for options, message in ((('--a', 'classified-binned'), 'full-render requires production default evaluators'),
-                                 (('--neighbors', '9'), 'full-render has no neighborhood controls')):
+                                 (('--neighbors', '9'), 'full-render has no neighborhood controls'),
+                                 (('--metrics', 'render'), 'full-render supports only --metrics combined')):
             with self.subTest(options=options), self.assertRaisesRegex(ValueError, message):
                 bench.design(self.args(*production, *options))
         for options in (('--resume',), ('--skip-output-checks', '--require-equal-output')):
@@ -607,7 +608,7 @@ class BenchmarkTests(unittest.TestCase):
                         (row['evaluator'], row['pattern'], row['neighbors'], row['soft_edges']) in
                         (('classified-binned', 'disk', 9, False), ('cell-binned', 'disk', 9, True),
                          ('cell-binned', 'gaussian', 9, None), ('gradient-lattice', 'perlin', None, None))],
-                    workload_modes={'evaluation': 'test-static-v1', 'full-render': 'production-raster-advanced-memory-v5'})
+                    workload_modes={'evaluation': 'test-static-v1', 'full-render': 'production-raster-advanced-memory-v6'})
 
     def native(self, config):
         evaluation = config['mode'] == 'evaluation'
@@ -622,7 +623,9 @@ class BenchmarkTests(unittest.TestCase):
                                 sampling_index=route['sampling_index'], backing='strip_list')
         native = {key: config[key] for key in ('mode', 'evaluator', 'scene', 'pattern', 'threads', 'width', 'height',
                                                'frames', 'texture', 'texture_filter') if key in config}
-        native.update(resource_ns=1, render_ns=2, combined_ns=3, checksum=7 if evaluation else None,
+        if evaluation:
+            native.update(resource_ns=1, render_ns=2)
+        native.update(combined_ns=3, checksum=7 if evaluation else None,
                     image_hash=None if evaluation else 'a' * 64,
                     shaded_samples=10 if evaluation else 0, evaluation_counters_available=evaluation,
                     image_samples=0 if evaluation else config['width'] * config['height'] * config['frames'],
@@ -779,9 +782,10 @@ class BenchmarkTests(unittest.TestCase):
             expected = bench.expected_native(config)
             bench.validate_native(native, expected)
             bad = [('mode', 'unexpected-mode'), ('texture', '/wrong.bmp'), ('texture_filter', 'linear'),
-                   ('physical_params', {}), ('resolved_grid', {}), ('combined_ns', 9), ('render_ns', float('nan')), ('checksum', -1),
+                   ('physical_params', {}), ('resolved_grid', {}), ('checksum', -1),
                    ('evaluation_counters_available', mode != 'evaluation'), ('image_samples', 1),
                    ('shaded_samples', 0 if mode == 'evaluation' else 10), ('image_hash', 'not-a-digest')]
+            bad += [('combined_ns', 9), ('render_ns', float('nan'))] if mode == 'evaluation' else [('resource_ns', None)]
             for key, value in bad:
                 with self.assertRaises(ValueError, msg=key):
                     bench.validate_native({**native, key: value}, expected)
@@ -986,12 +990,13 @@ class NativeBenchmarkTests(unittest.TestCase):
                 ('full-render', ['hard', 'soft', 'gaussian', 'perlin'], 'auto', 'auto',
                  ['--coverage', '.5', '--softness', '.02', '--cell-size', '.25'])):
             out = self.out / profile
+            metric = 'render' if profile == 'full' else 'combined'
             self.assertEqual(bench.main([
                 '--out', str(out), '--binary', str(self.binary), '--profile', profile, '--a', a, '--b', b,
                 '--workers', '1', '--scenes', 'plate', '--patterns', *patterns,
                 '--jitter', '0', '--occupancy', '1', '--radius', '.425',
                 '--width', '32', '--height', '24', '--frames', '2',
-                '--repeats', '2', '--metrics', 'render', '--require-equal-output', *flags]), 0)
+                '--repeats', '2', '--metrics', metric, '--require-equal-output', *flags]), 0)
             metadata = json.loads((out / 'metadata.json').read_text(encoding='utf-8'))
             catalogue = metadata['variants']['B']['catalogue']
             rows = read_samples(out)
@@ -1009,7 +1014,7 @@ class NativeBenchmarkTests(unittest.TestCase):
                     self.assertGreater(native['duplicated_disk_records'], 0)
                     self.assertLessEqual(native['duplicated_disk_records'], native['record_capacity'])
                 if profile == 'full-render':
-                    self.assertEqual(native['workload_mode'], 'production-raster-advanced-memory-v5')
+                    self.assertEqual(native['workload_mode'], 'production-raster-advanced-memory-v6')
                     self.assertIsNone(native['prepared_identity'])
                     self.assertIsNotNone(native['physical_params'])
                     self.assertIsNone(native['resolved_grid'])
@@ -1023,11 +1028,11 @@ class NativeBenchmarkTests(unittest.TestCase):
                 self.assertEqual(identities['B']['sampling_evaluator'], 'classified-binned')
                 self.assertNotEqual(identities['A']['sampling_index'], identities['B']['sampling_index'])
             reports = json.loads((out / 'comparison.json').read_text(encoding='utf-8'))
-            self.assertEqual(len(reports), 3 * len(patterns))
+            self.assertEqual(len(reports), (3 if profile == 'full' else 1) * len(patterns))
             self.assertTrue(all(row['output_equal'] for row in reports))
             primary = [row for row in reports if 'p' in row]
             self.assertEqual(len(primary), len(patterns))
-            self.assertTrue(all(row['metric'] == 'render_ns' for row in primary))
+            self.assertTrue(all(row['metric'] == metric + '_ns' for row in primary))
             claim = 'raw cross-kernel equality' if profile == 'full' else 'production repeatability/protocol only'
             print(f'Native smoke passed: {claim}, {len(rows)} real observations', flush=True)
 
