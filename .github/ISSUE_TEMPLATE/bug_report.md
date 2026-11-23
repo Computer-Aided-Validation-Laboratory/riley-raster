@@ -12,9 +12,9 @@ A clear and concise description of what the bug is.
 
 **To Reproduce**
 Steps to reproduce the behaviour:
-1.
-2.
-3.
+1. 
+2. 
+3. 
 4. ...
 
 **Expected behaviour**

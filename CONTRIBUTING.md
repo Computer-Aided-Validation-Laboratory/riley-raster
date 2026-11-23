@@ -5,7 +5,7 @@ Thank you for wanting to contribute to the development of riley-raster. Before c
 
 ## Reporting Security Concerns
 
-If you see something that you believe may be a security concern in riley-raster, please follow the guidance on our [security page](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/SECURITY.md). Do **not** open a public GitHub issue for security concerns.
+If you see something that you believe may be a security concern in riley-raster, please follow the guidance on our [security page](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/SECURITY.md). Do **not** open a public GitHub issue for security concerns. 
 
 ## Reporting Bugs
 
@@ -35,7 +35,7 @@ The riley-raster project has strict rules for AI usage:
 
 - **No AI-generated media is allowed (art, images, videos, audio, etc.).** Text and code are the only acceptable AI-generated content, per the other rules in this policy.
 
-- **Bad AI drivers will be denounced** People who produce bad contributions that are clearly AI (slop) will be added to our denouncement list. This list will be used to block all future contributions.
+- **Bad AI drivers will be denounced** People who produce bad contributions that are clearly AI (slop) will be added to our denouncement list. This list will be used to block all future contributions. 
 
 These rules apply only to outside contributions to riley-raster. Maintainers are exempt from these rules and may use AI tools at their discretion; they've proven themselves trustworthy to apply good judgment.
 
@@ -61,7 +61,7 @@ _This policy has been adapted from the [Ghostty AI policy](https://github.com/gh
 
 ### Cloning the Repository
 
-You can clone the riley-raster repository at https://github.com/Computer-Aided-Validation-Laboratory/riley-raster.
+You can clone the riley-raster repository at https://github.com/Computer-Aided-Validation-Laboratory/riley-raster. 
 
 Use the following command in the riley-raster directory to install riley-raster Python package for development:
 ```shell
@@ -153,6 +153,6 @@ More details on testing zig code for riley-raster can be found at [Riley Testing
 
 ## Creating a Pull Request
 
-Once you are satisfied with your contribution and have carried out tests, create a [pull request](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/pulls) to merge into dev.
+Once you are satisfied with your contribution and have carried out tests, create a [pull request](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/pulls) to merge into dev. 
 
 The included pull request template will allow you to provide all the details needed for us to review your code. Once it has been reviewed it can be merged into dev where it will eventually be merged into main.
