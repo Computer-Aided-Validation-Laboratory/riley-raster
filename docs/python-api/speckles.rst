@@ -11,11 +11,11 @@ Gaussian, or Perlin patterns. Pass the mesh's nodal UVs as an array of shape
 
    shader = riley.SpeckleShader(
        uvs=uvs,
-       params=riley.Speckle2DParams(coverage=0.5, radius=0.25, seed=42),
+       params=riley.Dot2DParams(coverage=0.5, radius=0.25, seed=42),
    )
 
 Disk is the default. For Gaussian spots, set ``pattern=riley.SpecklePattern.gaussian``
-on :class:`riley.Speckle2DParams`. For Perlin noise, pass :class:`riley.Perlin2DParams`
+on :class:`riley.Dot2DParams`. For Perlin noise, pass :class:`riley.Perlin2DParams`
 instead.
 
 .. _speckle-calibration:
@@ -71,8 +71,8 @@ assumed valid and mesh arrays are not scanned, but preparation still checks the
 UV domain, calibration, and resource limits.
 
 When rendering, Python raises ``TypeError`` if ``params`` is not a
-:class:`riley.Speckle2DParams` or :class:`riley.Perlin2DParams` instance, and
-``ValueError`` if ``Speckle2DParams.pattern`` is not a valid
+:class:`riley.Dot2DParams` or :class:`riley.Perlin2DParams` instance, and
+``ValueError`` if ``Dot2DParams.pattern`` is not a valid
 :class:`riley.SpecklePattern` value. Seeds use Python's integer protocol (including
 NumPy integers, but not Python or NumPy booleans). Invalid seed types raise
 ``TypeError``; integers outside ``[0, 2**32 - 1]`` raise ``ValueError``.
@@ -83,7 +83,7 @@ Native errors reach Python as ``RuntimeError``:
   the maximum attainable at this occupancy; lower coverage or raise occupancy.
 - ``InvalidSpeckleCoverage``, ``InvalidSpeckleRadius``, ``InvalidSpeckleJitter``,
   ``InvalidSpeckleOccupancy``, or ``InvalidSpeckleEdgeSoftness``: correct the named
-  control using the bounds in :class:`riley.Speckle2DParams`.
+  control using the bounds in :class:`riley.Dot2DParams`.
   ``SpeckleEdgeSoftnessRequiresDisk`` means use zero softness for Gaussian patterns.
 - ``UnsupportedSpeckleSupport``: reduce jitter, softness, or coverage, or raise
   occupancy up to 1. Combined support must fit the sampler even when each control
@@ -113,8 +113,10 @@ result using the image scaling strategy (``scaling_type`` and ``bits`` in Python
 Python defaults to ``auto`` scaling with 8-bit output, while Zig defaults to
 ``.none`` scaling.
 
-For complete Zig render setups and CLI options, see the
-`runnable procedural tutorials <https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/dev/README.md#runnable-procedural-tutorials>`_.
+See the `procedural tutorials <https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/dev/PROCEDURAL.md#runnable-procedural-tutorials>`_
+for complete render setups or the
+`calibration and coverage model <https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/dev/THEORY.md#6-physical-speckle-calibration-and-nominal-coverage>`_
+for the mathematics.
 
 API reference
 -------------
@@ -122,7 +124,7 @@ API reference
 .. autoclass:: riley.SpecklePattern
    :members:
 
-.. autoclass:: riley.Speckle2DParams
+.. autoclass:: riley.Dot2DParams
    :members:
 
 .. autoclass:: riley.Perlin2DParams

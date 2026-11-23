@@ -19,6 +19,7 @@ const RunEntry = struct {
     step_name: []const u8,
     description: []const u8,
     source_path: []const u8,
+    test_cli: bool = false,
 };
 
 const TestEntry = struct {
@@ -204,24 +205,26 @@ pub fn build(b: *std.Build) void {
 
     const demos = [_]RunEntry{
         .{
-            .step_name = "demo0-quickstart",
+            .step_name = "demo0a-quickstart",
             .description = "Run the triangle quickstart demo",
-            .source_path = "src/demo0_quickstart.zig",
+            .source_path = "src/demo0a_quickstart.zig",
         },
         .{
-            .step_name = "demo1-sphere",
-            .description = "Run the sphere demo",
-            .source_path = "src/demo1_sphere.zig",
+            .step_name = "demo0b-procedural-quickstart",
+            .description = "Render a physical speckle pattern on a plane",
+            .source_path = "src/demo0b_procedural_quickstart.zig",
+            .test_cli = true,
         },
         .{
-            .step_name = "demo-procedural-sphere200",
-            .description = "Run the procedural sphere200 comparison demo",
-            .source_path = "src/demoproceduralsphere200.zig",
+            .step_name = "demo1a-texture-sphere",
+            .description = "Run the texture-mapped sphere demo",
+            .source_path = "src/demo1a_texture_sphere.zig",
         },
         .{
-            .step_name = "demo-procedural-rabbit",
-            .description = "Run the procedural rabbit demo",
-            .source_path = "src/demoproceduralrabbit.zig",
+            .step_name = "demo1b-procedural-sphere",
+            .description = "Render physical speckles on a deforming sphere",
+            .source_path = "src/demo1b_procedural_sphere.zig",
+            .test_cli = true,
         },
         .{
             .step_name = "demo2a-rabbits-mono",
@@ -237,6 +240,12 @@ pub fn build(b: *std.Build) void {
             .step_name = "demo2c-rabbits-fields",
             .description = "Run the rabbits fields demo",
             .source_path = "src/demo2c_rabbits_fields.zig",
+        },
+        .{
+            .step_name = "demo2d-rabbit-procedural",
+            .description = "Run the procedural rabbit demo",
+            .source_path = "src/demo2d_rabbit_procedural.zig",
+            .test_cli = true,
         },
         .{
             .step_name = "demo3-dicuq",
@@ -258,16 +267,6 @@ pub fn build(b: *std.Build) void {
             .description = "Run the complete feature-zoo demo",
             .source_path = "src/demo6_featurezoo.zig",
         },
-        .{
-            .step_name = "demo-procedural-speckles",
-            .description = "Render physical speckles on a deforming mesh",
-            .source_path = "src/demoproceduralspeckles.zig",
-        },
-        .{
-            .step_name = "demo-procedural-pattern",
-            .description = "Render a physical speckle pattern on a plane",
-            .source_path = "src/demoproceduralpattern.zig",
-        },
     };
 
     const demos_step = b.step("demos", "Run all demo entrypoints");
@@ -288,18 +287,24 @@ pub fn build(b: *std.Build) void {
         const executable = run_artifact.producer.?;
         executable.getEmittedBin().addStepDependencies(demos_check);
 
-        if (std.mem.startsWith(u8, entry.step_name, "demo-procedural-")) {
+        if (entry.test_cli) {
+            const usage = b.fmt("Usage: zig build {s} --", .{entry.step_name});
             const help = b.addRunArtifact(executable);
             help.addArg("-h");
-            help.expectStdOutMatch("Usage:");
+            help.expectStdOutMatch(usage);
             demo_cli_test.dependOn(&help.step);
 
-            const invalid = b.addRunArtifact(executable);
-            invalid.addArgs(&.{ "--unknown-option", "0" });
-            invalid.expectExitCode(1);
-            invalid.expectStdErrMatch("--unknown-option");
-            invalid.expectStdErrMatch("Usage:");
-            demo_cli_test.dependOn(&invalid.step);
+            for ([_][]const []const u8{
+                &.{ "--unknown-option", "0" },
+                &.{"unexpected-positional"},
+            }) |args| {
+                const invalid = b.addRunArtifact(executable);
+                invalid.addArgs(args);
+                invalid.expectExitCode(1);
+                invalid.expectStdErrMatch(args[0]);
+                invalid.expectStdErrMatch(usage);
+                demo_cli_test.dependOn(&invalid.step);
+            }
         }
     }
 

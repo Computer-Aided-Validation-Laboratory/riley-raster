@@ -24,9 +24,8 @@ def main() -> None:
     data_dir = riley.data.sphere200_case_path()
     texture_path = riley.data.speckle_texture_path()
 
-    out_dir = Path.cwd() / "out_riley_py" / "demo1_sphere"
+    out_dir = Path.cwd() / "out_riley_py" / "demo1a_texture_sphere"
     shutil.rmtree(out_dir, ignore_errors=True)
-    out_dir.mkdir(parents=True)
 
     pixels_num = (800, 500)
     pixels_size = (5.3e-6, 5.3e-6)
@@ -98,16 +97,10 @@ def main() -> None:
     # 5. Render sphere scene
     # --------------------------------------------------------------------------
     start_time = perf_counter()
-    image_array = riley.raster(mesh, camera, config, out_dir=str(out_dir))
+    riley.raster(mesh, camera, config, out_dir=str(out_dir))
     elapsed_time = perf_counter() - start_time
     print(f"Riley render time: {elapsed_time:.6f} s")
-
-    if image_array is None:
-        print(f"Rendered disk output to {out_dir}")
-    else:
-        print(
-            f"Rendered image array with shape {image_array.shape} to {out_dir}"
-        )
+    print(f"Rendered disk output to {out_dir}")
 
 
 if __name__ == "__main__":

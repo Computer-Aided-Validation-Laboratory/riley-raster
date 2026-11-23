@@ -17,13 +17,13 @@ import riley
 PATTERNS = (*riley.SpecklePattern, "perlin")
 
 
-def _params(pattern: riley.SpecklePattern | str) -> riley.Speckle2DParams | riley.Perlin2DParams:
+def _params(pattern: riley.SpecklePattern | str) -> riley.Dot2DParams | riley.Perlin2DParams:
     colors = dict(seed=7, foreground=0.1, background=0.9)
     if pattern == "perlin":
         return riley.Perlin2DParams(
             cell_size=0.08, threshold=0.1, transition_width=0.2, **colors,
         )
-    return riley.Speckle2DParams(
+    return riley.Dot2DParams(
         coverage=0.35, radius=0.04, occupancy=0.75, pattern=pattern, **colors,
     )
 
@@ -49,7 +49,7 @@ def test_speckle_shader_public_api() -> None:
 
     assert SpeckleShader is riley.SpeckleShader
     uvs = np.zeros((3, 2))
-    params = riley.Speckle2DParams(0.4, 0.02)
+    params = riley.Dot2DParams(0.4, 0.02)
     shader = riley.SpeckleShader(uvs, params)
     assert shader.params is params
     assert (shader.output_scale, shader.output_offset, shader.bits, shader.scaling_type) == (
@@ -68,7 +68,7 @@ def test_speckle_shader_public_api() -> None:
             riley.SpeckleShader(*args)
     for kwargs in ({}, {"coverage": 0.4}, {"radius": 0.02}):
         with pytest.raises(TypeError):
-            riley.Speckle2DParams(**kwargs)
+            riley.Dot2DParams(**kwargs)
 
     with pytest.raises(TypeError, match="cell_size"):
         riley.Perlin2DParams()
@@ -182,7 +182,7 @@ def test_physical_coverage_and_radius_control_opaque_footprints(speckle_mesh: ri
     images = []
     fractions = []
     for coverage, radius in ((0.25, 0.008), (0.5, 0.008), (0.5, 0.016)):
-        speckle_mesh.shader.params = riley.Speckle2DParams(
+        speckle_mesh.shader.params = riley.Dot2DParams(
             coverage, radius, seed=7, foreground=0.1, background=0.9,
         )
         image = _render(speckle_mesh, pixels=256)
@@ -244,7 +244,7 @@ def test_mixed_speckle_patterns_remain_fixed_across_frames(
     meshes: list[riley.Mesh] = []
     for pattern, softness, offset in cases:
         params = _params(pattern)
-        if isinstance(params, riley.Speckle2DParams):
+        if isinstance(params, riley.Dot2DParams):
             params.edge_softness = softness
         shader = replace(template, params=params)
         meshes.append(
@@ -409,7 +409,7 @@ def test_mixed_shader_deformation_matches_static_frame_references(
 @pytest.mark.parametrize("params", [None, {}, riley.FuncShaderParams()])
 def test_speckle_binding_rejects_wrong_params_type(speckle_mesh: riley.Mesh, params: object) -> None:
     speckle_mesh.shader.params = params
-    with pytest.raises(TypeError, match="SpeckleShader.params must be Speckle2DParams or Perlin2DParams"):
+    with pytest.raises(TypeError, match="SpeckleShader.params must be Dot2DParams or Perlin2DParams"):
         _render(speckle_mesh)
 
 
@@ -484,9 +484,9 @@ def test_speckle_binding_forwards_render_controls(
 
 
 @pytest.mark.parametrize("params,error", [
-    (riley.Speckle2DParams(0.5, 0.0), r"InvalidSpeckleRadius\b"),
-    (riley.Speckle2DParams(0.8, 0.04, occupancy=0.1), r"UnattainableSpeckleCoverage\b"),
-    (riley.Speckle2DParams(0.7, 0.04, jitter=0.02, edge_softness=0.04),
+    (riley.Dot2DParams(0.5, 0.0), r"InvalidSpeckleRadius\b"),
+    (riley.Dot2DParams(0.8, 0.04, occupancy=0.1), r"UnattainableSpeckleCoverage\b"),
+    (riley.Dot2DParams(0.7, 0.04, jitter=0.02, edge_softness=0.04),
      r"UnsupportedSpeckleSupport\b"),
     (riley.Perlin2DParams(0.0), r"InvalidSpeckleCellSize\b"),
     (riley.Perlin2DParams(0.08, threshold=float("nan")), r"InvalidSpecklePerlinThreshold\b"),
@@ -494,7 +494,7 @@ def test_speckle_binding_forwards_render_controls(
 ])
 def test_speckle_render_rejects_invalid_params(
     speckle_mesh: riley.Mesh,
-    params: riley.Speckle2DParams | riley.Perlin2DParams,
+    params: riley.Dot2DParams | riley.Perlin2DParams,
     error: str,
 ) -> None:
     speckle_mesh.shader.params = params

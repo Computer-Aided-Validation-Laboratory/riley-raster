@@ -86,7 +86,7 @@ def test_create_mesh_requires_speckle_uvs() -> None:
     with pytest.raises(ValueError, match="uvs"):
         meshio.create_mesh(
             convention, MeshType.tri3, coords, connect,
-            riley.SpeckleShader(None, riley.Speckle2DParams(0.4, 0.03)),
+            riley.SpeckleShader(None, riley.Dot2DParams(0.4, 0.03)),
         )
 
 

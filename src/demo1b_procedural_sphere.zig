@@ -21,22 +21,25 @@ const sceneops = @import("riley/zig/sceneops.zig");
 const uvio = @import("riley/zig/uvio.zig");
 
 const usage =
-    \\Usage: zig build demo-procedural-speckles -- [--pattern disk|gaussian|perlin]
+    \\Usage: zig build demo1b-procedural-sphere -- [--pattern disk|gaussian|perlin]
     \\       [--output DIR] [-h|--help]
-    \\Defaults: disk, out/demo-procedural-speckles/ (reference, stretch, twist)
+    \\Defaults: disk, out/demo1b_procedural_sphere/ (reference, stretch, twist)
     \\
 ;
 
 pub fn main(init: std.process.Init) !void {
+    try run(init, try init.minimal.args.toSlice(init.arena.allocator()));
+}
+
+pub fn run(init: std.process.Init, args: []const []const u8) !void {
     const io = init.io;
     const alloc = init.arena.allocator();
-    const args = try init.minimal.args.toSlice(alloc);
     const options = (try cli.parse(
         std.meta.Tag(riley.SpeckleParams),
         io,
         args,
         usage,
-        "out/demo-procedural-speckles",
+        "out/demo1b_procedural_sphere",
         null,
     )) orelse return;
     const pattern = options.pattern;
@@ -58,7 +61,7 @@ pub fn main(init: std.process.Init) !void {
     // 2. Attach one immutable pattern to the mesh across all three frames.
     //    Radius and cell size are in reference-mesh units.
     const seed: u32 = 0xa511e9b3; // Riley's default seed; change it for another realization.
-    const spots: riley.Speckle2DParams = .{ .seed = seed, .radius = 0.02, .coverage = 0.5 };
+    const spots: riley.Dot2DParams = .{ .seed = seed, .radius = 0.02, .coverage = 0.5 };
     const params: riley.SpeckleParams = switch (pattern) {
         .disk => .{ .disk = spots },
         .gaussian => .{ .gaussian = spots },

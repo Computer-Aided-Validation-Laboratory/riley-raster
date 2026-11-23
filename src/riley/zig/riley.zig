@@ -48,7 +48,7 @@ const ParallelWorkload = scalingpolicy.ParallelWorkload;
 const FrameReportStorage = report.FrameReportStorage;
 const F = buildconfig.F;
 
-pub const Speckle2DParams = speckleparams.Speckle2DParams;
+pub const Dot2DParams = speckleparams.Dot2DParams;
 pub const Perlin2DParams = speckleparams.Perlin2DParams;
 pub const SpeckleParams = speckleparams.SpeckleParams;
 

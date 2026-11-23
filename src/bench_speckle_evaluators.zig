@@ -237,7 +237,7 @@ const Options = struct {
             .transition_width = self.perlin_transition,
             .seed = self.seed,
         } };
-        const input: physical.Speckle2DParams = .{
+        const input: physical.Dot2DParams = .{
             .coverage = self.coverage orelse return error.MissingPhysicalSpeckleInputs,
             .radius = self.radius orelse return error.MissingPhysicalSpeckleInputs,
             .jitter = self.jitter orelse 0,
@@ -844,7 +844,7 @@ test "speckle benchmark full render uses direct physical inputs and memory outpu
         const params = if (texture) null else try opts.friendlyParams();
         const mesh = try scene.mesh(alloc, opts, params, if (texture) tex else null);
         if (!texture) {
-            const body: physical.Speckle2DParams = .{ .coverage = 0.4, .radius = 0.3, .jitter = 0.01, .occupancy = 0.7, .edge_softness = if (std.mem.eql(u8, pattern, "soft")) 0.02 else 0, .seed = 42 };
+            const body: physical.Dot2DParams = .{ .coverage = 0.4, .radius = 0.3, .jitter = 0.01, .occupancy = 0.7, .edge_softness = if (std.mem.eql(u8, pattern, "soft")) 0.02 else 0, .seed = 42 };
             const expected: physical.SpeckleParams = if (perlin)
                 .{ .perlin = .{ .cell_size = 0.25, .threshold = 0.1, .transition_width = 0, .seed = 42 } }
             else if (std.mem.eql(u8, pattern, "gaussian")) .{ .gaussian = body } else .{ .disk = body };

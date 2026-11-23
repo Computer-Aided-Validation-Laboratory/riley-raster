@@ -20,23 +20,26 @@ const riley = @import("riley/zig/riley.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 const usage =
-    \\Usage: zig build demo-procedural-pattern -- [--pattern disk|gaussian|perlin]
+    \\Usage: zig build demo0b-procedural-quickstart -- [--pattern disk|gaussian|perlin]
     \\       [--output DIR] [--width PIXELS] [--height PIXELS] [-h|--help]
-    \\Defaults: disk, 1024 x 1024 pixels, out/procedural_pattern/<pattern>.bmp
+    \\Defaults: disk, 1024 x 1024 pixels, out/demo0b_procedural_quickstart/<pattern>.bmp
     \\
 ;
 
 pub fn main(init: std.process.Init) !void {
+    try run(init, try init.minimal.args.toSlice(init.arena.allocator()));
+}
+
+pub fn run(init: std.process.Init, args: []const []const u8) !void {
     const io = init.io;
     const alloc = init.arena.allocator();
-    const args = try init.minimal.args.toSlice(alloc);
     var pixels_num: [2]u32 = .{ 1024, 1024 };
     const options = (try cli.parse(
         std.meta.Tag(riley.SpeckleParams),
         io,
         args,
         usage,
-        "out/procedural_pattern",
+        "out/demo0b_procedural_quickstart",
         &pixels_num,
     )) orelse return;
     const pattern = options.pattern;
@@ -49,7 +52,7 @@ pub fn main(init: std.process.Init) !void {
     // 1. Set the pattern in physical plane units, independently of image resolution.
     const seed: u32 = 0xa511e9b3; // Riley's default seed; change it for another realization.
     // Gaussian coverage counts nominal support, not opacity; its soft profile looks lighter.
-    const spots: riley.Speckle2DParams = .{ .seed = seed, .radius = 0.25, .coverage = 0.5 };
+    const spots: riley.Dot2DParams = .{ .seed = seed, .radius = 0.25, .coverage = 0.5 };
     const params: riley.SpeckleParams = switch (pattern) {
         .disk => .{ .disk = spots },
         .gaussian => .{ .gaussian = spots },

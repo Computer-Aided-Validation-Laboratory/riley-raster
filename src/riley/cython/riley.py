@@ -93,7 +93,7 @@ class SpecklePattern(IntEnum):
 
 
 @dataclass(slots=True)
-class Speckle2DParams:
+class Dot2DParams:
     """Configure physical disk or Gaussian speckles on the reference mesh.
 
     Parameters
@@ -509,7 +509,7 @@ class SpeckleShader:
     """Configure a monochrome procedural speckle field from nodal UVs.
 
     Pass ``uvs`` with shape ``(nodes, 2)`` and ``params`` as a
-    :class:`Speckle2DParams` or :class:`Perlin2DParams` instance.
+    :class:`Dot2DParams` or :class:`Perlin2DParams` instance.
     See :ref:`speckle-uv-domain` for the UV requirements.
 
     Use ``bits=-1, scaling_type=ScaleStrategy.none`` for raw intensities after
@@ -517,7 +517,7 @@ class SpeckleShader:
     """
 
     uvs: np.ndarray
-    params: Speckle2DParams | Perlin2DParams
+    params: Dot2DParams | Perlin2DParams
     output_scale: float = 1.0
     output_offset: float = 0.0
     bits: int = 8
@@ -833,7 +833,7 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
 def _make_speckle_params(params_in: Any) -> cr.CSpeckleParams:
     params_out: cr.CSpeckleParams
     memset(cython.address(params_out), 0, cython.sizeof(params_out))
-    if isinstance(params_in, Speckle2DParams):
+    if isinstance(params_in, Dot2DParams):
         params_out.pattern = int(SpecklePattern(params_in.pattern))
         params_out.coverage = float(params_in.coverage)
         params_out.radius = float(params_in.radius)
@@ -846,7 +846,7 @@ def _make_speckle_params(params_in: Any) -> cr.CSpeckleParams:
         params_out.perlin_threshold = float(params_in.threshold)
         params_out.perlin_transition_width = float(params_in.transition_width)
     else:
-        raise TypeError("SpeckleShader.params must be Speckle2DParams or Perlin2DParams")
+        raise TypeError("SpeckleShader.params must be Dot2DParams or Perlin2DParams")
     if isinstance(params_in.seed, (bool, np.bool_)):
         raise TypeError("Speckle seed must be an integer, not a boolean")
     seed = index(params_in.seed)
@@ -1947,7 +1947,7 @@ __all__ = [
     "FuncCoordMode",
     "FuncShaderParams",
     "SpeckleShader",
-    "Speckle2DParams",
+    "Dot2DParams",
     "Perlin2DParams",
     "SpecklePattern",
     "TextureSample",

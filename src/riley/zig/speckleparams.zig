@@ -30,7 +30,7 @@ pub const ValidationError = coverage.Error || speckle.PerlinControlError || spec
 /// Nominal footprints: coverage in (0, 1), radius > 0, occupancy in (0, 1],
 /// jitter in [0, radius/2], and disk edge_softness >= 0, subject to support feasibility.
 /// Units, calibration, and coverage semantics: docs/python-api/speckles.rst.
-pub const Speckle2DParams = struct {
+pub const Dot2DParams = struct {
     coverage: F,
     radius: F,
     occupancy: F = 1,
@@ -53,8 +53,8 @@ pub const Perlin2DParams = struct {
 };
 
 pub const SpeckleParams = union(enum) {
-    disk: Speckle2DParams,
-    gaussian: Speckle2DParams,
+    disk: Dot2DParams,
+    gaussian: Dot2DParams,
     perlin: Perlin2DParams,
 
     /// Cheap input/support checks; does not scan geometry or invert coverage.
@@ -184,7 +184,7 @@ test "friendly validation error contract excludes internal grid controls" {
 }
 
 test "physical defaults and nominal density ignore jitter and visual softness" {
-    const physical = Speckle2DParams{ .coverage = 0.5, .radius = 0.02 };
+    const physical = Dot2DParams{ .coverage = 0.5, .radius = 0.02 };
     try std.testing.expectEqual(@as(F, 1), physical.occupancy);
     try std.testing.expectEqual(@as(F, 0), physical.jitter);
     const hard = resolveCalibrated(.{ .disk = physical }, test_calibration);
@@ -206,7 +206,7 @@ test "physical defaults and nominal density ignore jitter and visual softness" {
 }
 
 test "physical parameters reject unattainable coverage, unsupported support and excessive density" {
-    var physical = Speckle2DParams{ .coverage = 0.99, .radius = 2, .occupancy = 0.1 };
+    var physical = Dot2DParams{ .coverage = 0.99, .radius = 2, .occupancy = 0.1 };
     try std.testing.expectError(error.UnattainableSpeckleCoverage, (SpeckleParams{ .disk = physical }).validate());
     physical.coverage = 0.5;
     physical.occupancy = 1;
@@ -218,7 +218,7 @@ test "physical parameters reject unattainable coverage, unsupported support and 
 }
 
 test "friendly input scalar errors and colors are strict for both physical shapes" {
-    const base = Speckle2DParams{ .coverage = 0.5, .radius = 2 };
+    const base = Dot2DParams{ .coverage = 0.5, .radius = 2 };
     const nan = std.math.nan(F);
     const inf = std.math.inf(F);
     const Case = struct { field: []const u8, values: []const F, err: anyerror };
@@ -246,7 +246,7 @@ test "friendly input scalar errors and colors are strict for both physical shape
 }
 
 test "friendly validation reports colors after pattern controls but before support feasibility" {
-    var physical = Speckle2DParams{
+    var physical = Dot2DParams{
         .coverage = 0.5,
         .radius = 2,
         .jitter = 1,
@@ -289,7 +289,7 @@ test "Perlin validates physical cell size and noise controls" {
 test "dilute physical coverage uses continuous occupancy without density compensation" {
     const unit_plane = [2]F{ 1, 1 };
     for ([_]F{ 1e-6, 1e-4 }) |p| {
-        const physical = Speckle2DParams{ .coverage = p, .radius = 0.001, .occupancy = p };
+        const physical = Dot2DParams{ .coverage = p, .radius = 0.001, .occupancy = p };
         const grid = resolveCalibrated(.{ .disk = physical }, unit_plane);
         try std.testing.expectEqual(p, grid.occupancy);
         try std.testing.expectEqual(grid.radius_mean / physical.radius, grid.cells_per_uv[0]);
@@ -312,7 +312,7 @@ test "mesh resolution calibrates reference geometry rather than UV bounding-box 
     const connect = meshio.Connect.init(&indices, 1, 3);
     const uvs = try NDArray(F).init(std.testing.allocator, &texcoords, &.{ 3, 2 });
     defer uvs.deinit(std.testing.allocator);
-    const physical = Speckle2DParams{ .coverage = 0.5, .radius = 0.1 };
+    const physical = Dot2DParams{ .coverage = 0.5, .radius = 0.1 };
     const grid = try resolveForMesh(.{ .disk = physical }, .tri3, &coords, &connect, &uvs);
     const tol: F = if (F == f32) 2e-6 else 2e-14;
     try std.testing.expectApproxEqRel(physical.radius, grid.radius_mean / grid.cells_per_uv[0] * 8, tol);
@@ -348,7 +348,7 @@ test "mesh resolution calibrates reference geometry rather than UV bounding-box 
 
 test "half-radius jitter boundary preserves ratio-first jitter and softness" {
     // At R=0.3, (r*J)/R differs from r*(J/R) in both f32 and f64 for C=0.5.
-    const boundary = Speckle2DParams{ .coverage = 0.5, .radius = 0.3, .jitter = 0.15, .edge_softness = 0.15 };
+    const boundary = Dot2DParams{ .coverage = 0.5, .radius = 0.3, .jitter = 0.15, .edge_softness = 0.15 };
     const disk_params = SpeckleParams{ .disk = boundary };
     try disk_params.validate();
     const disk = resolveCalibrated(disk_params, test_calibration);

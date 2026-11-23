@@ -18,7 +18,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # Ubuntu also runs the configuration matrix and experimental evaluator builds.
+    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && 90 || 60 }}
 
     steps:
       - uses: actions/checkout@v4
@@ -59,7 +60,7 @@ jobs:
         shell: pwsh
         run: |
           # Debug keeps runtime safety checks enabled without optimizing a smoke render.
-          zig build test-demo-cli demo-procedural-pattern -Doptimize=Debug -- --width 64 --height 64 --output "out/Windows CLI café"
+          zig build test-demo-cli demo0b-procedural-quickstart -Doptimize=Debug -- --width 64 --height 64 --output "out/Windows CLI café"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $image = "out/Windows CLI café/disk.bmp"
           if (-not (Test-Path -LiteralPath $image)) { throw "Missing BMP: $image" }

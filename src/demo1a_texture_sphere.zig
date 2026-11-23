@@ -37,30 +37,22 @@ pub fn main(init: std.process.Init) !void {
     // 1. Setup paths and parameters
     // -------------------------------------------------------------------------
     const data_dir = "data/min/tri6_sphere200/";
-    const out_dir_root = "./out/demo1_sphere";
+    const out_dir_root = "out/demo1a_texture_sphere";
 
     const total_threads: u16 = 4;
 
     // -------------------------------------------------------------------------
     // 2. Load mesh data and texture shader
     // -------------------------------------------------------------------------
-    std.debug.print("Loading sphere simulation data from {s}...\n", .{data_dir});
-    const coord_path = data_dir ++ "coords.csv";
-    const conn_path = data_dir ++ "connect.csv";
     const sim_data = try meshio.loadSimData(
         local_alloc,
         io,
-        coord_path,
-        conn_path,
+        data_dir ++ "coords.csv",
+        data_dir ++ "connect.csv",
         null,
         null,
     );
-
-    std.debug.print("Loading UV map...\n", .{});
-    const uv_path = data_dir ++ "uvs.csv";
-    const uvs = try uvio.loadUVMap(local_alloc, io, uv_path);
-
-    std.debug.print("Loading speckle texture...\n", .{});
+    const uvs = try uvio.loadUVMap(local_alloc, io, data_dir ++ "uvs.csv");
     const texture = try iio.loadImage(
         u8,
         1,
@@ -70,7 +62,6 @@ pub fn main(init: std.process.Init) !void {
         .bmp,
     );
 
-    std.debug.print("Preparing mesh input...\n", .{});
     const mesh_input = MeshInput{
         .mesh_type = .tri6,
         .coords = sim_data.coords,
@@ -91,8 +82,6 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 3. Position and create camera
     // -------------------------------------------------------------------------
-    std.debug.print("Setting up camera...\n", .{});
-
     const pixels_num = [_]u32{ 800, 500 };
     const pixels_size = [_]F{
         5.3e-6,
@@ -142,8 +131,8 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     std.debug.print("Rendering sphere to {s}/...\n", .{out_dir_root});
 
-    // Riley creates the output directory if needed without clearing existing files.
-    const images = try riley.raster(
+    // Disk-only rendering returns null.
+    _ = try riley.raster(
         outer_alloc,
         io,
         &.{camera_input},
@@ -151,11 +140,6 @@ pub fn main(init: std.process.Init) !void {
         config,
         out_dir_root,
     );
-
-    if (images) |img| {
-        outer_alloc.free(img.slice);
-        img.deinit(outer_alloc);
-    }
 
     std.debug.print("Demo complete. Images saved to {s}/\n", .{out_dir_root});
 }

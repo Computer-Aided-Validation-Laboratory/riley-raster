@@ -6,12 +6,16 @@
 #
 # Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 # --------------------------------------------------------------------------------------
+# Explicit allowlist for the packaged CLI; other tutorial modules are not commands.
 __all__ = [
-    "demo0_quickstart",
-    "demo1_sphere",
+    "demo0a_quickstart",
+    "demo0b_procedural_quickstart",
+    "demo1a_texture_sphere",
+    "demo1b_procedural_sphere",
     "demo2a_rabbits_mono",
     "demo2b_rabbits_rgb",
     "demo2c_rabbits_fields",
+    "demo2d_rabbit_procedural",
     "demo3_dicuq",
     "demo3_dicuq_from_exodus",
     "demo4_stereocal",

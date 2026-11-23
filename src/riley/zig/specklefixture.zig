@@ -20,7 +20,7 @@ const vecstack = @import("vecstack.zig");
 
 const F = buildconfig.F;
 const frame_pixels = 24 * 32;
-pub const physical_params: speckleparams.Speckle2DParams = .{
+pub const physical_params: speckleparams.Dot2DParams = .{
     .seed = 12345,
     .coverage = 0.35,
     .radius = 0.09,

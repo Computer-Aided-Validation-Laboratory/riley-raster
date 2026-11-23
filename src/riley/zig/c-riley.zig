@@ -823,7 +823,7 @@ fn normalTypeFromC(normal_type: u32) !shaderops.NormalType {
 fn speckleParamsFromC(in_params: CSpeckleParams) !speckleparams.SpeckleParams {
     const pattern = std.enums.fromInt(CSpecklePattern, in_params.pattern) orelse
         return error.InvalidSpecklePattern;
-    const physical = speckleparams.Speckle2DParams{
+    const physical = speckleparams.Dot2DParams{
         .coverage = in_params.coverage,
         .radius = in_params.radius,
         .occupancy = in_params.occupancy,
@@ -2760,7 +2760,7 @@ test "C shader ABI matches the public header" {
     try std.testing.expectEqual(c.RILEY_SPECKLE_DISK, @intFromEnum(CSpecklePattern.disk));
     try std.testing.expectEqual(c.RILEY_SPECKLE_GAUSSIAN, @intFromEnum(CSpecklePattern.gaussian));
     try std.testing.expectEqual(c.RILEY_SPECKLE_PERLIN, @intFromEnum(CSpecklePattern.perlin));
-    const physical: speckleparams.Speckle2DParams = .{ .coverage = 0.5, .radius = 0.05 };
+    const physical: speckleparams.Dot2DParams = .{ .coverage = 0.5, .radius = 0.05 };
     const perlin: speckleparams.Perlin2DParams = .{ .cell_size = 0.1 };
     try std.testing.expectEqual(c.RILEY_SPECKLE_DEFAULT_SEED, physical.seed);
     try std.testing.expectEqual(c.RILEY_SPECKLE_DEFAULT_SEED, perlin.seed);

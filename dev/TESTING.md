@@ -6,7 +6,11 @@
 
 Run Python tests and tooling discovery in the project virtual environment (with
 NumPy installed); see [Python development setup](README.md#python-development-and-distribution).
-The recommended testing workflow is:
+Run `test-verif` and `test-basic` in Debug (the default), preferably in
+parallel in separate terminals. Verification requires `-Dprecision=f64 -Dsimd=on`
+(the defaults). CI runs `zig build test-verif-basic -Doptimize=ReleaseSafe`.
+Use ReleaseSafe for the full suite and its gold generator. Run
+`zig build --help` for test targets and build options.
 
 ```bash
 # Step 1: Run gold-independent unit and configuration coverage
@@ -212,7 +216,7 @@ no f32 gold references. The focused `test-speckle-benchmark` and
 `test-procedural-speckles` targets do not run performance workloads.
 
 Default-build tests exercise the automatic evaluator policy; see the
-[internal evaluator guide](README.md#internal-evaluator-experiments-and-benchmarking)
+[internal evaluator guide](PROCEDURAL.md#internal-evaluator-experiments-and-benchmarking)
 for the policy and experimental overrides.
 
 On x86-64 Linux with 32-bit execution support, run the existing native focused
@@ -234,7 +238,7 @@ executable names, including the precision/SIMD suffix and `.exe` extension.
 
 `zig build demos-check -Doptimize=Debug` compiles all Zig tutorials without
 running them. `zig build test-demo-cli -Doptimize=Debug` checks `-h` output and
-unknown-option rejection for all four [procedural tutorials](README.md#runnable-procedural-tutorials)
+unknown-option rejection for the [procedural Zig tutorials](PROCEDURAL.md#runnable-procedural-tutorials)
 without rendering.
 
 The Windows CLI smoke also renders a 64 × 64 disk pattern to a Unicode output
@@ -293,11 +297,10 @@ using the [documentation build](DOCS.md).
 #### Native benchmark runner smoke (opt-in)
 
 Tooling discovery normally skips the unmocked native runner smoke. To enable it,
-activate the project virtual environment, build the stripped ReleaseFast
-experimental binary, and set `RILEY_SPECKLE_BENCH_BINARY` from the repository root:
+[build the experimental binary](PROCEDURAL.md#internal-evaluator-experiments-and-benchmarking)
+and run from the repository root with the project virtual environment active:
 
 ```shell
-zig build install-bench-speckle-evaluators -Doptimize=ReleaseFast -Dstrip=true -Denable-all-evaluators=true --prefix zig-out/speckle-experimental
 RILEY_SPECKLE_BENCH_BINARY=zig-out/speckle-experimental/bin/bench_speckle_evaluators_f64_simd \
   python -m unittest scripts.tests.test_bench_speckle.NativeBenchmarkTests
 ```
@@ -310,7 +313,7 @@ precision/SIMD settings, use the corresponding installed binary path.
 Ubuntu CI enables this correctness smoke, not a performance regression. Set
 `RILEY_SPECKLE_BENCH_ARTIFACT_DIR=PATH` to retain logs/results in fresh, printed
 `PATH/bench-smoke-*` directories. See the
-[benchmark contract](README.md#internal-evaluator-experiments-and-benchmarking).
+[benchmark contract](PROCEDURAL.md#internal-evaluator-experiments-and-benchmarking).
 
 ---
 
@@ -467,22 +470,9 @@ To force a fresh Zig render instead of reusing cached demo BMPs:
 RILEY_FORCE_ZIG_RENDER=1 python -m pytest --pyargs riley.pytests.test_riley -s
 ```
 
-Individual packaged Python demos can also be run directly:
-
-```bash
-python -m riley demo0_quickstart
-python -m riley demo1_sphere
-python -m riley demo2a_rabbits_mono
-python -m riley demo2b_rabbits_rgb
-python -m riley demo2c_rabbits_fields
-python -m riley demo3_dicuq
-python -m riley demo3_dicuq_from_exodus
-python -m riley demo4_stereocal
-python -m riley demo5_cameramodels
-python -m riley demo6_featurezoo
-```
-
-Python demo output is written to `Path.cwd() / "out_riley_py" / "<demo-name>"`.
+Parity checks that need Zig and checkout assets skip on a clean wheel install.
+To run a packaged demo instead, see the [examples guide](../docs/riley-examples/examples.rst)
+or list commands with `python -m riley --help`.
 
 Parity checks include:
 

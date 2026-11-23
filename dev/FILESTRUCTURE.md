@@ -41,10 +41,12 @@ named test suites follow [Programs and tutorials](#programs-and-tutorials).
   `run_all_demos.zig`, rather than naming them as tutorials.
 
 Keep established source and program names, including older forms such as
-`demoprocedural*.zig`, `testunit.zig`, and `benchcam.py`. Apply the conventions
-when adding new files; do not rename existing ones just to match the convention.
-Output directories such as `out/procedural_pattern/` are artifact locations, not
-program names, and do not follow these rules.
+`testunit.zig` and `benchcam.py`. Apply the conventions when adding new files;
+do not rename existing ones just to match the convention.
+
+Use underscores in tutorial source names, hyphens in Zig build steps, and the
+source name (without its extension) in the Python CLI. Default output directories
+use that same source name under `out/` (Zig) or `out_riley_py/` (Python).
 
 ## Within file code organisation
 1. Module header block / documentation / description

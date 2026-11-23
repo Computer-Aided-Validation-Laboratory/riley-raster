@@ -86,7 +86,7 @@ def main() -> None:
     )
     config.save_scaling = riley.ScaleStrategy.none
 
-    out_dir = Path.cwd() / "out_riley_py" / "demo0_quickstart"
+    out_dir = Path.cwd() / "out_riley_py" / "demo0a_quickstart"
     shutil.rmtree(out_dir, ignore_errors=True)
 
     # --------------------------------------------------------------------------

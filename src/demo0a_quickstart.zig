@@ -83,7 +83,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 3. Configure the raster engine and output path
     // -------------------------------------------------------------------------
-    const out_dir_root = "./out/demo0_quickstart";
+    const out_dir_root = "out/demo0a_quickstart";
     const config = riley.RasterConfig{
         .save_strategy = .disk,
         .output = .{
@@ -97,8 +97,8 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 4. Render the scene
     // -------------------------------------------------------------------------
-    // Riley creates the output directory if needed without clearing existing files.
-    const images = try riley.raster(
+    // Riley creates the output directory if needed. Disk-only rendering returns null.
+    _ = try riley.raster(
         init.gpa,
         init.io,
         &.{camera_input},
@@ -106,10 +106,4 @@ pub fn main(init: std.process.Init) !void {
         config,
         out_dir_root,
     );
-
-    // Disk-only rendering returns null; .memory and .both return owned images.
-    if (images) |img| {
-        init.gpa.free(img.slice);
-        img.deinit(init.gpa);
-    }
 }
