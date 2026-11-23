@@ -95,7 +95,7 @@ zig build demo-procedural-pattern -Doptimize=ReleaseFast
 ```
 
 By default this writes a 1024 × 1024 image to `out/procedural_pattern/disk.bmp`.
-See the [runnable procedural tutorials](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/2d_procedural_speckle_generation/dev/README.md#runnable-procedural-tutorials) for more examples and command-line options.
+See the [runnable procedural tutorials](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/dev/README.md#runnable-procedural-tutorials) for more examples and command-line options.
 
 ### Rabbits demo
 

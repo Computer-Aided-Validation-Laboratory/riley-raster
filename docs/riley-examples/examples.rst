@@ -20,7 +20,7 @@ or the `Python demo directory <https://github.com/Computer-Aided-Validation-Labo
 Procedural speckles
 -------------------
 
-See the `runnable Zig tutorials <https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/2d_procedural_speckle_generation/dev/README.md#runnable-procedural-tutorials>`_
+See the `runnable Zig tutorials <https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/dev/README.md#runnable-procedural-tutorials>`_
 for complete render setups and command-line options, or the
 :doc:`Python speckle reference <../python-api/speckles>` for an example and
 parameter details.

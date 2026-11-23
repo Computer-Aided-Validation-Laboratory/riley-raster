@@ -114,7 +114,7 @@ Python defaults to ``auto`` scaling with 8-bit output, while Zig defaults to
 ``.none`` scaling.
 
 For complete Zig render setups and CLI options, see the
-`runnable procedural tutorials <https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/2d_procedural_speckle_generation/dev/README.md#runnable-procedural-tutorials>`_.
+`runnable procedural tutorials <https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/dev/README.md#runnable-procedural-tutorials>`_.
 
 API reference
 -------------
