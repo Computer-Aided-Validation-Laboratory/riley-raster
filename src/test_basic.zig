@@ -14,7 +14,7 @@ const twoshapes = @import("tests/test_gold_twoshapes.zig");
 const featurezoo = @import("tests/test_gold_featurezoo.zig");
 
 test {
-    _ = @import("testunit.zig");
+    _ = @import("test_unit.zig");
 }
 
 test "basic test suite" {

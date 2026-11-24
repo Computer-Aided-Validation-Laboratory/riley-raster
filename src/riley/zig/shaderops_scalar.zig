@@ -527,7 +527,7 @@ pub inline fn evalSpecklePreparedScal(
     u: F,
     v: F,
 ) F {
-    return speckle.Kernel(kernel_index).sampleScal(u, v, shader.params, shader.resources) *
+    return speckle.Kernel(kernel_index).sampleScal(u, v, shader.resources) *
         shader.output_scale + shader.output_offset;
 }
 
@@ -869,7 +869,6 @@ test "direct fixed scalar handles active inactive cells and scaling" {
         const shader: comm.SpecklePrepared = .{
             .elem_uvs = undefined,
             .resources = &resources,
-            .params = speckle_params,
             .output_scale = 1.75,
             .output_offset = -0.125,
         };
@@ -913,7 +912,6 @@ test "u8 speckle mask scalar sampling applies coverage and scaling" {
         const shader: comm.SpecklePrepared = .{
             .elem_uvs = undefined,
             .resources = &resources,
-            .params = mask_params,
             .output_scale = 1.75,
             .output_offset = -0.125,
         };

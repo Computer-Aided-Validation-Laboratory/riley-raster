@@ -76,7 +76,7 @@ pub fn run(init: std.process.Init, args: []const []const u8) !void {
         .shader = .{ .speckle = .{ .uvs = uvs.array, .params = params, .scaling = .auto } },
     };
 
-    // 3. Frame the rabbit with a small margin, matching the texture-mapped view.
+    // 3. Frame the rabbit with a small margin.
     const pixels_num: [2]u32 = .{ 800, 500 };
     const pixels_size: [2]F = .{ 5.3e-6, 5.3e-6 };
     const focal_length: F = 50e-3;

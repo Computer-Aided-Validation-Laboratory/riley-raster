@@ -11,7 +11,7 @@ This project follows the Computer Aided Validation Laboratory style guides for P
 ## Development Guides
 The `dev/` directory provides comprehensive architectural, mathematical, testing, and conventions documentation for Riley developers:
 
-- [**`dev/TESTING.md`**](TESTING.md): Complete testing architecture, quickstart commands, descriptions of the 4 test scenes, detailed breakdown of all 8 test suites, gold reference generation, and automated regression diagnostics.
+- [**`dev/TESTING.md`**](TESTING.md): Complete testing architecture, quickstart commands, descriptions of the 4 test scenes, detailed breakdown of the 8 full-suite sub-suites, gold reference generation, and automated regression diagnostics.
 - [**`dev/THEORY.md`**](THEORY.md): Mathematical foundations and engine design details, including polynomial camera distortion formulation, distortion-aware rasterisation frontend bounds, render thread budgets, and image save mode mechanics.
 - [**`dev/ASSUMPTIONS.md`**](ASSUMPTIONS.md): Supported engineering operating envelope, mesh validity contracts, conservative numerical margins, and reasoning guidelines for review.
 - [**`dev/MESHCONVENTION.md`**](MESHCONVENTION.md): Riley standard mesh representation, surface element definitions (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`), 3D continuum elements, node ordering, and connectivity conventions.
@@ -34,7 +34,10 @@ coverage: source installs also require compatible dependencies and a C compiler.
 ## Build and test configuration
 
 See the [testing quickstart](TESTING.md#1-quickstart-guide) for suite commands,
-optimisation modes, and CI policy. `zig build --help` lists targets and options,
+optimisation modes, and CI policy. `zig build test-unit` runs the
+[gold-independent native suite](../src/test_unit.zig).
+Ubuntu CI checks formatting with `zig fmt --check build.zig build.zig.zon src scripts`.
+`zig build --help` lists targets and options,
 including precision, SIMD, Newton solver, vector width, and symbol stripping.
 Plain `zig run` and `zig test` under `src/` use `f64` with SIMD enabled; use
 `zig build` to select other settings.

@@ -100,7 +100,7 @@ pub fn build(b: *std.Build) void {
         .{
             .step_name = "test-unit",
             .description = "Run gold-independent native unit, integration, and tooling tests",
-            .source_path = "src/testunit.zig",
+            .source_path = "src/test_unit.zig",
         },
         .{
             .step_name = "test-speckle-benchmark",
@@ -110,7 +110,7 @@ pub fn build(b: *std.Build) void {
         },
         .{
             .step_name = "test-poly",
-            .description = "Run camera-model unit tests across supported build configurations",
+            .description = "Run camera-model unit tests with the selected build configuration",
             .source_path = "src/test_poly.zig",
         },
         .{
@@ -141,7 +141,7 @@ pub fn build(b: *std.Build) void {
         .{
             .step_name = "test-procedural-speckles",
             .description = "Run procedural speckle integration, CLI, and unit tests",
-            .source_path = "src/testproceduralspeckles.zig",
+            .source_path = "src/test_procedural_speckles.zig",
         },
         .{
             .step_name = "test-c-api",
@@ -171,16 +171,24 @@ pub fn build(b: *std.Build) void {
 
     const configs_step = b.step(
         "test-configs",
-        "Run native tests across precision, SIMD, and evaluator build configurations",
+        "Run native tests across precision, SIMD, evaluator policy, and mask resolution",
     );
 
     for ([_][]const u8{ "f64", "f32" }) |precision| {
-        for ([_][]const u8{ "on", "off" }) |simd| {
+        for ([_]bool{ true, false }) |simd_enabled| {
+            const simd = if (simd_enabled) "on" else "off";
             for ([_]bool{ false, true }) |experimental| {
                 var config_options = options;
                 config_options.precision = precision;
                 config_options.simd = simd;
                 config_options.enable_all_evaluators = experimental;
+                // Exercise non-default resolutions without dropping the default at either precision.
+                config_options.speckle_mask_resolution = speckleconfig.default_mask_resolution;
+                if (experimental) {
+                    const is_f32 = std.mem.eql(u8, precision, "f32");
+                    if (is_f32 and simd_enabled) config_options.speckle_mask_resolution = .sixteen;
+                    if (!is_f32 and !simd_enabled) config_options.speckle_mask_resolution = .eight;
+                }
                 const config_run = addTestRunStep(
                     b,
                     target,
@@ -188,13 +196,14 @@ pub fn build(b: *std.Build) void {
                     config_options.strip,
                     createBuildOptionsModule(b, config_options),
                     .{
-                        .step_name = b.fmt("test-configs-{s}-{s}-{s}", .{
+                        .step_name = b.fmt("test-configs-{s}-{s}-{s}-mask-{d}", .{
                             precision,
                             simd,
                             if (experimental) "experimental" else "default",
+                            @intFromEnum(config_options.speckle_mask_resolution),
                         }),
                         .description = "Run one native build configuration",
-                        .source_path = "src/testunit.zig",
+                        .source_path = "src/test_unit.zig",
                     },
                 );
 

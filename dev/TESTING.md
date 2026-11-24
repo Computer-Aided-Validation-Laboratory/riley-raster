@@ -69,12 +69,12 @@ Riley provides gold-backed regression suites and gold-independent unit/configura
 | :--- | :--- | :--- | :--- | :--- |
 | **Verification Suite** | `zig build test-verif` | [`src/test_verif.zig`](../src/test_verif.zig) | Mathematical validation against analytical Python oracles | `gold/verif/` |
 | **Basic Test Suite** | `zig build test-basic` | [`src/test_basic.zig`](../src/test_basic.zig) | Gold-backed core feature coverage plus the whole-project unit root | `gold/basic/` |
-| **Whole-project Unit Suite** | `zig build test-unit` | Shared gold-independent root [`src/testunit.zig`](../src/testunit.zig) | Gold-independent numerical, camera/frontend, procedural-speckle, and native tooling/harness correctness | In-memory references |
-| **Configuration Matrix** | `zig build test-configs` | Shared whole-project unit root | f64/f32 × SIMD on/off × default/experimental evaluator policy, without gold | In-memory references |
+| **Whole-project Unit Suite** | `zig build test-unit` | Shared gold-independent root [`src/test_unit.zig`](../src/test_unit.zig) | Gold-independent numerical, camera/frontend, procedural-speckle, and native tooling/harness correctness | In-memory references |
+| **Configuration Matrix** | `zig build test-configs` | Shared whole-project unit root | f64/f32 × SIMD on/off × default/experimental evaluator policy, with mask resolutions of 8, 12, and 16 covered across the experimental builds | In-memory references |
 | **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | [`src/test_full_badjac.zig`](../src/test_full_badjac.zig) | Warning-only renders and diffs for invalid one-element frames | Existing basic and full-hull gold |
 | **Python Pytest Suite** | `.venv/bin/pytest src/riley/pytests/` | [`src/riley/pytests/`](../src/riley/pytests) | Python/Cython API, mesh pipeline, Exodus conversion, demo parity | Integrated / `gold/` |
 | **C API Suite** | `zig build test-c-api` | [`src/riley/zig/c-riley.zig`](../src/riley/zig/c-riley.zig) | Public C API under fixed f64/SIMD/default policy | In-memory references |
-| **Procedural Speckles** | Included in `test-basic` and `test-unit`; focused: `zig build test-procedural-speckles` | [`src/testproceduralspeckles.zig`](../src/testproceduralspeckles.zig); [`src/tests/testproceduralspeckles.zig`](../src/tests/testproceduralspeckles.zig) | Default integration plus focused gold-independent generation/sampling/preparation checks | In-memory references |
+| **Procedural Speckles** | Included in `test-basic` and `test-unit`; focused: `zig build test-procedural-speckles` | [`src/test_procedural_speckles.zig`](../src/test_procedural_speckles.zig); [`src/tests/test_procedural_speckles_integration.zig`](../src/tests/test_procedural_speckles_integration.zig) | Default integration plus focused gold-independent generation/sampling/preparation checks | In-memory references |
 | **Native Benchmark Tooling** | Included in `test-unit`; focused: `zig build test-speckle-benchmark` | [`src/bench_speckle_evaluators.zig`](../src/bench_speckle_evaluators.zig) | Native benchmark tooling and harness correctness | In-memory references |
 
 ### Regenerating Reference Gold for Core Suites
@@ -84,8 +84,7 @@ Riley provides gold-backed regression suites and gold-independent unit/configura
 zig build gen-gold-basic
 
 # Regenerate reference data for the Analytic Verification suite
-zig build gen-gold-verif-zig
-python -m gengold.gengold_verif
+zig build gen-gold-verif -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
 ```
 
 ---
@@ -206,13 +205,18 @@ The **Basic Suite** is the primary regression suite packaged with the repository
 
 ### Native unit and configuration testing
 
-The shared [`src/testunit.zig`](../src/testunit.zig) root is gold-independent
+The shared [`src/test_unit.zig`](../src/test_unit.zig) root is gold-independent
 and runs core numerical units, camera/frontend coverage, speckle integration,
 and native tooling/harness correctness. `test-basic` imports
 that root alongside its gold-backed comparisons; `test-verif-basic` is the
 combined verification/basic target. `test-configs` runs the same unit root
 across f64/f32, SIMD on/off, and default/experimental evaluator policy, requiring
-no f32 gold references. The focused `test-speckle-benchmark` and
+no f32 gold references. The eight configurations include experimental mask
+and classified-indexed coverage at 8 samples per cell (f64, SIMD off), 16
+(f32, SIMD on), and the default 12 at both precisions. To choose a single
+resolution, pass `-Dspeckle-mask-samples-per-cell` and
+`-Denable-all-evaluators=true` to `test-procedural-speckles` instead of the
+fixed matrix. The focused `test-speckle-benchmark` and
 `test-procedural-speckles` targets do not run performance workloads.
 
 Default-build tests exercise the automatic evaluator policy; see the
@@ -237,9 +241,9 @@ Windows Zig CI installs representative benchmarks and checks their expected
 executable names, including the precision/SIMD suffix and `.exe` extension.
 
 `zig build demos-check -Doptimize=Debug` compiles all Zig tutorials without
-running them. `zig build test-demo-cli -Doptimize=Debug` checks `-h` output and
-unknown-option rejection for the [procedural Zig tutorials](PROCEDURAL.md#runnable-procedural-tutorials)
-without rendering.
+running them. `zig build test-demo-cli -Doptimize=Debug` checks `-h` output,
+unknown-option rejection, and rejection of positional arguments for the
+[procedural Zig tutorials](PROCEDURAL.md#runnable-procedural-tutorials) without rendering.
 
 The Windows CLI smoke also renders a 64 × 64 disk pattern to a Unicode output
 path and checks the header of `disk.bmp`. The small image keeps the smoke cheap
@@ -267,8 +271,8 @@ and exact raw-sampler equality:
   references also match tile-local within a tolerance for SSAA reduction order.
   Experimental builds add independent `list-naive`/Perlin `cell-hash` references
   and explicit evaluator/neighborhood comparisons.
-- [`testproceduralspeckles.zig`](../src/tests/testproceduralspeckles.zig) checks
-  deformation and 8× unit rescaling. A planar render checks physical radius,
+- [`test_procedural_speckles_integration.zig`](../src/tests/test_procedural_speckles_integration.zig)
+  checks nontrivial two-frame renders and 8× unit rescaling. A planar render checks physical radius,
   nominal coverage, and the expected half-radius jitter increase.
 - C API / [`test_func_shader_params.py`](../src/riley/pytests/test_func_shader_params.py):
   nondefault forwarding, type/shape checks (including boolean seed rejection),
@@ -440,7 +444,8 @@ The **Python Test Suite** provides automated coverage for:
 1. **Mesh Pipeline & Conversions**: Element connectivity verification, quadratic-to-linear order reduction, surface extraction, and polygon triangulation.
 2. **File I/O & Exodus Pipeline**: Multi-block Exodus II `.e` and CSV file reading/writing.
 3. **Texture & UV Tools**: Image loading/saving (BMP, TIFF) and centered planar UV projection.
-4. **End-to-End Demo Parity**: Verification that Python demos produce identical pixel output to the corresponding Zig demo binaries.
+4. **End-to-End Demo Parity**: Verification that Python demos produce identical pixel output to the corresponding Zig demo binaries, including the procedural demos, feature zoo, and camera-model matrix.
+5. **Shader Parameters & Image Saving**: Function-shader parameter forwarding and image-save mode behavior, including asynchronous/disk-save overlap.
 
 ### Running Pytests
 
@@ -477,4 +482,6 @@ or list commands with `python -m riley --help`.
 Parity checks include:
 
 - Rabbit parity checks require greater than 10% foreground coverage in every render, ensuring blank or unrendered frames cannot pass verification.
+- Procedural demo parity checks verify the expected render counts and use `_verify_procedural_pattern` to reject blank or mismatched outputs.
+- Feature-zoo parity checks cover the multi-mesh render matrix.
 - `demo5_cameramodels` renders all 6 distortion families with pixel-box, Gaussian (separable/non-separable), aligned anisotropic Gaussian, and rotated anisotropic Gaussian PSFs across all 3 buffer modes (90 comparison images per run under `<distortion>/<psf>/<buffer-mode>/`). Parity checks require the entire matrix to match.

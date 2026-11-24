@@ -331,6 +331,7 @@ pub const ClassifiedBinnedSpeckle2D = struct {
 
 pub const Backing = union(enum) {
     none,
+    cell_hash: GridParams,
     list: SpeckleList2D,
     strip_list: StripSpeckleList2D,
     cell_binned: CellBinnedSpeckle2D,
@@ -345,7 +346,7 @@ pub const Backing = union(enum) {
 /// frames and workers borrow *const Resources and cannot free the backing.
 /// Arena-backed resources may instead be released with their owning static arena.
 pub const Resources = struct {
-    /// Index into kernel_configs, set even when cell hashing needs no allocation.
+    /// Index into kernel_configs. Null only before preparation or after deinit.
     kernel_index: ?u8 = null,
     data: Backing = .none,
 
@@ -378,7 +379,7 @@ pub const Resources = struct {
 
     pub fn deinit(self: *Resources, allocator: std.mem.Allocator) void {
         switch (self.data) {
-            .none => {},
+            .none, .cell_hash => {},
             .list => |speckles| allocator.free(speckles.disks),
             .strip_list => |speckles| {
                 allocator.free(speckles.centers);
@@ -413,7 +414,7 @@ fn kernelIndex(config: speckleconfig.Config) u8 {
 
 /// The renderer selects this type outside sample loops using Resources.kernel_index.
 /// Pattern, evaluator, neighborhood and hard/soft branches are all compile-time choices.
-/// Parameters must match the prepared configuration; prepared resources must be present.
+/// The prepared backing supplies all sampler parameters.
 pub fn Kernel(comptime kernel_index: usize) type {
     const config = kernel_configs[kernel_index];
     const index_tag: u8 = @intCast(kernel_index);
@@ -422,72 +423,22 @@ pub fn Kernel(comptime kernel_index: usize) type {
         pub inline fn sampleScal(
             u: F,
             v: F,
-            params: GridParams,
             resources: *const Resources,
         ) F {
             std.debug.assert(resources.kernel_index == @as(?u8, index_tag));
-            return Impl.samplePreparedScal(u, v, params, resources);
+            return Impl.samplePreparedScal(u, v, resources);
         }
 
         pub inline fn sampleSIMD(
             u: VecSF,
             v: VecSF,
             active: VecSB,
-            params: GridParams,
             resources: *const Resources,
         ) VecSF {
             std.debug.assert(resources.kernel_index == @as(?u8, index_tag));
-            return Impl.samplePreparedSIMD(u, v, active, params, resources);
+            return Impl.samplePreparedSIMD(u, v, active, resources);
         }
     };
-}
-
-/// Convenience dispatch for raw callers/tests. Production uses Kernel(index) instead.
-/// Unprepared calls require valid parameters and use the procedural reference without allocation.
-pub fn sampleScal(u: F, v: F, params: GridParams, resources: *const Resources) F {
-    @setEvalBranchQuota(100_000);
-    if (resources.kernel_index) |index| {
-        inline for (kernel_configs, 0..) |_, ii| {
-            if (index == ii) return Kernel(ii).sampleScal(u, v, params, resources);
-        }
-        @panic("Invalid speckle kernel index");
-    }
-    const resolved = params.resolve() catch @panic("Speckle sampling requires validated parameters");
-    inline for (generation_configs) |config| {
-        if (std.meta.eql(resolved, config)) {
-            return Implementation(config).evalSpeckle2DImpl(u, v, params);
-        }
-    }
-    unreachable;
-}
-
-/// Prepared Perlin (gradient-lattice or cell-hash) and classified/direct/mask kernels
-/// background inactive lanes. Other prepared kernels and all unprepared calls evaluate
-/// every lane. Callers discard inactive lanes either way.
-pub fn sampleSIMD(
-    u: VecSF,
-    v: VecSF,
-    active: VecSB,
-    params: GridParams,
-    resources: *const Resources,
-) VecSF {
-    // The opt-in raw dispatcher expands all available kernels, including their SIMD lanes.
-    @setEvalBranchQuota(100_000);
-    if (resources.kernel_index) |index| {
-        inline for (kernel_configs, 0..) |_, ii| {
-            if (index == ii) return Kernel(ii).sampleSIMD(u, v, active, params, resources);
-        }
-        @panic("Invalid speckle kernel index");
-    }
-    const resolved = params.resolve() catch @panic("Speckle sampling requires validated parameters");
-    inline for (generation_configs) |config| {
-        if (std.meta.eql(resolved, config)) {
-            const Impl = Implementation(config);
-            if (comptime std.meta.activeTag(config) == .mock) return Impl.samplePreparedSIMD(u, v, active, params, resources);
-            return Impl.evalSpeckleSIMDImpl(Impl.evalSpeckle2DImpl, u, v, params);
-        }
-    }
-    unreachable;
 }
 
 // These helpers do not depend on a generation or sampling configuration.
@@ -940,7 +891,8 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             params: GridParams,
         ) !Resources {
             return .{ .data = switch (comptime evaluator) {
-                .cell_hash, .mock => .none,
+                .cell_hash => .{ .cell_hash = params },
+                .mock => .none,
                 .gradient_lattice => .{ .perlin = try generatePerlinLattice(outer_alloc, params) },
                 .list_naive => .{ .list = try generateSpeckleList2D(outer_alloc, params) },
                 .list_indexed => .{ .strip_list = try generateStripSpeckleList2D(outer_alloc, params) },
@@ -958,18 +910,15 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             } };
         }
 
-        /// Prepared resources are required and supply their own parameters;
-        /// only cell hashing uses params.
         inline fn samplePreparedScal(
             u: F,
             v: F,
-            params: GridParams,
             resources: *const Resources,
         ) F {
             return switch (comptime evaluator) {
                 .gradient_lattice => samplePerlinScal(u, v, resources.data.perlin),
                 .mock => 0.5 * (u + v),
-                .cell_hash => evalSpeckle2DImpl(u, v, params),
+                .cell_hash => evalSpeckle2DImpl(u, v, resources.data.cell_hash),
                 .list_naive => evalSpeckleList2DNaiveImpl(u, v, resources.data.list),
                 .list_indexed => evalStripSpeckleList2DImpl(u, v, resources.data.strip_list),
                 .cell_binned => evalCellBinnedSpeckle2D(u, v, resources.data.cell_binned),
@@ -984,13 +933,13 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             u: VecSF,
             v: VecSF,
             active: VecSB,
-            params: GridParams,
             resources: *const Resources,
         ) VecSF {
             return switch (comptime evaluator) {
                 .gradient_lattice => samplePerlinSIMD(u, v, active, resources.data.perlin),
                 .mock => @as(VecSF, @splat(0.5)) * (u + v),
                 .cell_hash => blk: {
+                    const params = resources.data.cell_hash;
                     const values = evalSpeckleSIMDImpl(evalSpeckle2DImpl, u, v, params);
                     break :blk if (comptime speckle_shape == .perlin)
                         @select(F, active, values, @as(VecSF, @splat(params.background)))
@@ -1449,7 +1398,6 @@ fn Implementation(comptime config: speckleconfig.Config) type {
         }
 
         fn evalFixedStripSpeckleList2DImpl(u: F, v: F, speckles: StripSpeckleList2D) F {
-            // Infinity absence is already rejected by the mask; full and partial fixed storage share this kernel.
             return evalStripSpeckleList2DSpecialized(true, u, v, speckles);
         }
 
@@ -2619,6 +2567,21 @@ fn Implementation(comptime config: speckleconfig.Config) type {
 // Tests
 // --------------------------------------------------------------------------------------
 
+fn sampleTestScal(u: F, v: F, resources: *const Resources) F {
+    return switch (resources.kernel_index.?) {
+        inline 0...kernel_configs.len - 1 => |index| Kernel(index).sampleScal(u, v, resources),
+        else => unreachable,
+    };
+}
+
+fn sampleTestSIMD(u: VecSF, v: VecSF, active: VecSB, resources: *const Resources) VecSF {
+    @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
+    return switch (resources.kernel_index.?) {
+        inline 0...kernel_configs.len - 1 => |index| Kernel(index).sampleSIMD(u, v, active, resources),
+        else => unreachable,
+    };
+}
+
 test "grid sizing checks axes element counts and byte sizes without a fixed budget" {
     const max = std.math.maxInt(usize);
     try std.testing.expectEqual(@as(?usize, 1 << 29), gridCount(u8, .{ 1 << 20, 1 << 9 }));
@@ -2795,8 +2758,8 @@ test "exact Perlin cache owns parameters and preserves endpoint samples" {
         const params = resources.data.perlin.params;
         for ([_][2]F{ .{ 0, 0 }, .{ 1, 1 }, .{ 1, 0.61 }, .{ 0.37, 1 }, .{ std.math.nextAfter(F, 1, 0), 0.37 }, .{ 0.37, std.math.nextAfter(F, 1, 0) } }) |uv| {
             const expected = PerlinReference.evalPerlinSpeckle2D(uv, params);
-            try std.testing.expectEqual(expected, sampleScal(uv[0], uv[1], .{}, &resources));
-            const actual: [S]F = sampleSIMD(@splat(uv[0]), @splat(uv[1]), @splat(true), .{}, &resources);
+            try std.testing.expectEqual(expected, sampleTestScal(uv[0], uv[1], &resources));
+            const actual: [S]F = sampleTestSIMD(@splat(uv[0]), @splat(uv[1]), @splat(true), &resources);
             for (actual) |value| try std.testing.expectEqual(expected, value);
         }
     }
@@ -3058,7 +3021,7 @@ test "unconditional classified loads keep inactive lanes backgrounded" {
             vs[lane] = probes[(batch * 3 + lane) % probes.len];
             active[lane] = (batch + lane) % 3 == 0;
         }
-        const actual: [S]F = Kernel(kernelIndex(.classified_indexed)).sampleSIMD(us, vs, active, params, &resources);
+        const actual: [S]F = Kernel(kernelIndex(.classified_indexed)).sampleSIMD(us, vs, active, &resources);
         for (0..S) |lane| {
             const expected = if (active[lane]) evalSpeckle2D(.classified_indexed, .{ us[lane], vs[lane] }, params) else params.background;
             try testing.expectEqual(expected, actual[lane]);
@@ -3187,7 +3150,7 @@ test "procedural speckle is bounded seed-sensitive and UV clamped" {
     }
 }
 
-test "procedural speckle SIMD fallback matches scalar evaluation" {
+test "procedural speckle SIMD reference matches scalar evaluation" {
     inline for (generation_configs) |config| {
         if (comptime std.meta.activeTag(config) == .mock) continue;
         const Impl = Implementation(config);
@@ -3209,24 +3172,15 @@ test "procedural speckle SIMD fallback matches scalar evaluation" {
             coords_0[lane] = @as(F, @floatFromInt(lane)) / @as(F, @floatFromInt(S));
             coords_1[lane] = 1.0 - coords_0[lane];
         }
-        const values_simd: [S]F = sampleSIMD(
+        const values_simd: [S]F = Impl.evalSpeckleSIMDImpl(
+            Impl.evalSpeckle2DImpl,
             coords_0,
             coords_1,
-            @splat(true),
             speckle_params,
-            &.{},
-        );
-        const inactive: [S]F = sampleSIMD(
-            coords_0,
-            coords_1,
-            @splat(false),
-            speckle_params,
-            &.{},
         );
         for (0..S) |lane| {
             const expected = evalSpeckle2D(config, .{ coords_0[lane], coords_1[lane] }, speckle_params);
             try testing.expectEqual(expected, values_simd[lane]);
-            try testing.expectEqual(expected, inactive[lane]);
         }
     }
 }
@@ -3649,25 +3603,67 @@ test "direct 1-bit speckle mask preserves list-derived bytes and lattice values"
     }
 }
 
-test "speckle mask handles empty patterns and equal colors" {
-    if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
-    inline for (generation_configs) |config| {
-        if (comptime std.meta.activeTag(config) != .mask_1bit and std.meta.activeTag(config) != .mask_u8) continue;
-        const Impl = Implementation(config);
-        errdefer printSpeckleTestConfig(config);
-        for ([_]bool{ false, true }) |equal_colour| {
-            var params = speckleMaskTestParams(config);
-            params.occupancy = if (equal_colour) 1.0 else 0.0;
-            if (equal_colour) params.foreground = params.background;
-            const mask = try Impl.generateSpeckleMask2D(testing.allocator, params);
-            defer deinitTestResources(.{ .data = .{ .mask = mask } });
-            if (Impl.speckle_shape == .perlin or equal_colour) {
-                try testing.expect(mask.bits.len > 0);
-            } else {
-                try testing.expectEqual(@as(usize, 0), mask.bits.len);
-            }
-            if (equal_colour or Impl.speckle_shape != .perlin) {
-                try testing.expectEqual(params.background, Impl.evalSpeckleMask2D(.{ 0.37, 0.61 }, mask));
+test "empty and equal-color speckles return exactly the configured background" {
+    const cases = [_]struct { occupancy: F = 0.9, foreground: F, background: F }{
+        .{ .foreground = 0, .background = 0 },
+        .{ .foreground = 0.17, .background = 0.17 },
+        .{ .foreground = 0.37, .background = 0.37 },
+        .{ .foreground = 0.375, .background = 0.375 },
+        .{ .foreground = 0.83, .background = 0.83 },
+        .{ .occupancy = 1, .foreground = 0.85, .background = 0.85 },
+        .{ .foreground = 1, .background = 1 },
+        .{ .occupancy = 0, .foreground = 1, .background = 0 },
+        .{ .occupancy = 0, .foreground = 0, .background = 0.17 },
+        .{ .occupancy = 0, .foreground = 0, .background = 0.37 },
+        .{ .occupancy = 0, .foreground = 0, .background = 0.375 },
+        .{ .occupancy = 0, .foreground = 0, .background = 0.83 },
+        .{ .occupancy = 0, .foreground = 0.15, .background = 0.85 },
+        .{ .occupancy = 0, .foreground = 0, .background = 1 },
+    };
+    const probes = [_][2]F{
+        .{ -0.25, 1.25 },    .{ 0, 1 },     .{ 0.37, 0.61 },     .{ 1, 0 }, .{ 1.25, -0.25 },
+        .{ 0.1, 1.0 / 6.0 }, .{ 0.5, 0.5 }, .{ 0.9, 5.0 / 6.0 },
+    };
+    // Check automatic selection even when explicit evaluator overrides are enabled.
+    inline for (.{ false, true }) |explicit| {
+        if (comptime explicit and !buildconfig.enable_all_evaluators) continue;
+        const configs = comptime if (explicit) generation_configs else speckleconfig.generationConfigs(false);
+        inline for (configs) |config| {
+            const evaluator = comptime std.meta.activeTag(config);
+            if (comptime evaluator == .mock) continue; // Mock ignores colors.
+            const index = comptime kernelIndex(config);
+            const K = Kernel(index);
+            const is_mask = comptime evaluator == .mask_1bit or evaluator == .mask_u8;
+            const is_perlin = comptime config.pattern() == .perlin;
+            errdefer printSpeckleTestConfig(config);
+            for (cases) |case| {
+                const empty = case.occupancy == 0 and !is_perlin;
+                const constant = empty or case.foreground == case.background;
+                if (!constant and !is_mask) continue;
+                const params = GridParams{
+                    .pattern = config.pattern() orelse .disk,
+                    .evaluator = if (explicit) evaluator else null,
+                    .neighbor_count = if (explicit) config.neighborhood() else null,
+                    .cells_per_uv = .{ 3.25, 2.5 },
+                    .occupancy = case.occupancy,
+                    .edge_softness = if (config.edges() == .soft) 0.035 else 0,
+                    .foreground = case.foreground,
+                    .background = case.background,
+                };
+                var resources = try Resources.init(testing.allocator, params);
+                defer resources.deinit(testing.allocator);
+                try testing.expectEqual(@as(?u8, index), resources.kernel_index);
+                if (is_mask) {
+                    try testing.expect(resources.data == .mask);
+                    try testing.expectEqual(empty, resources.data.mask.bits.len == 0);
+                }
+                // Perlin ignores occupancy, so only its equal-color case is constant.
+                if (!constant) continue;
+                for (probes) |uv| {
+                    try testing.expectEqual(case.background, K.sampleScal(uv[0], uv[1], &resources));
+                    const values: [S]F = K.sampleSIMD(@splat(uv[0]), @splat(uv[1]), @splat(true), &resources);
+                    for (values) |value| try testing.expectEqual(case.background, value);
+                }
             }
         }
     }
@@ -3722,8 +3718,8 @@ test "Perlin u8 mask quantizes analytic lattice coverage and samples nearest tex
             const resources: Resources = .{ .kernel_index = comptime kernelIndex(config), .data = .{ .mask = mask } };
             const K = Kernel(kernelIndex(config));
             const expected = Impl.evalSpeckleMask2D(.{ 0.37, 0.61 }, mask);
-            try testing.expectApproxEqAbs(expected, K.sampleScal(0.37, 0.61, params, &resources), unit_tol);
-            const lanes: [S]F = K.sampleSIMD(@splat(0.37), @splat(0.61), @splat(true), params, &resources);
+            try testing.expectApproxEqAbs(expected, K.sampleScal(0.37, 0.61, &resources), unit_tol);
+            const lanes: [S]F = K.sampleSIMD(@splat(0.37), @splat(0.61), @splat(true), &resources);
             for (lanes) |value| try testing.expectApproxEqAbs(expected, value, unit_tol);
             var found_intermediate = false;
             for (0..mask.dims[1]) |yy| {
@@ -3900,10 +3896,10 @@ test "all certified foreground cells return foreground without candidate records
         } },
     };
     for ([_]F{ -1, 0, 0.5, 1, 2, std.math.nan(F) }) |u| {
-        try std.testing.expectEqual(params.foreground, sampleScal(u, 0.5, params, &resources));
+        try std.testing.expectEqual(params.foreground, sampleTestScal(u, 0.5, &resources));
         var active: [S]bool = undefined;
         for (&active, 0..) |*on, lane| on.* = lane % 2 == 0;
-        const lanes: [S]F = sampleSIMD(@splat(u), @splat(0.5), active, params, &resources);
+        const lanes: [S]F = sampleTestSIMD(@splat(u), @splat(0.5), active, &resources);
         for (lanes, active) |value, on| try std.testing.expectEqual(if (on) params.foreground else params.background, value);
     }
 }
@@ -3995,12 +3991,7 @@ test "speckle resources prepare sample open boundaries and release owned allocat
         };
         var resources = try Impl.generateConfiguredResources(testing.allocator, params);
         defer resources.deinit(testing.allocator);
-        var fallback_params = params;
-        if (comptime Impl.evaluator != .cell_hash) {
-            fallback_params.foreground = 0.95;
-            fallback_params.background = 0.05;
-            fallback_params.occupancy = 0.0;
-        }
+
         const points = [_][2]F{
             .{ 0.5, 0.5 }, .{ 0.0, 0.5 }, .{ 1.0, 0.5 }, .{ 0.5, 0.0 }, .{ 0.5, 1.0 },
         };
@@ -4025,12 +4016,11 @@ test "speckle resources prepare sample open boundaries and release owned allocat
                 .direct_fixed => Impl.evalDirectFixedSpeckle2D(uv, resources.data.direct_fixed),
                 .mask_1bit, .mask_u8 => Impl.evalSpeckleMask2D(uv, resources.data.mask),
             };
-            try testing.expectEqual(expected, Impl.samplePreparedScal(uv[0], uv[1], fallback_params, &resources));
+            try testing.expectEqual(expected, Impl.samplePreparedScal(uv[0], uv[1], &resources));
             const actual: [S]F = Impl.samplePreparedSIMD(
                 @splat(uv[0]),
                 @splat(uv[1]),
                 @splat(true),
-                fallback_params,
                 &resources,
             );
             for (actual) |value| try testing.expectEqual(expected, value);
@@ -4229,8 +4219,8 @@ fn expectClassifiedSample(resources: *const Resources, uv: [2]F) !void {
     const params = strip.params;
     const expected = if (strip.recordCount() == 0) params.background else evalSpeckle2D(.classified_indexed, uv, params);
     const K = Kernel(kernelIndex(.classified_indexed));
-    try testing.expectEqual(expected, K.sampleScal(uv[0], uv[1], params, resources));
-    const values: [S]F = K.sampleSIMD(@splat(uv[0]), @splat(uv[1]), @splat(true), params, resources);
+    try testing.expectEqual(expected, K.sampleScal(uv[0], uv[1], resources));
+    const values: [S]F = K.sampleSIMD(@splat(uv[0]), @splat(uv[1]), @splat(true), resources);
     for (values) |value| try testing.expectEqual(expected, value);
     if (strip.recordCount() != 0) {
         const indexed = Classified.evalStripSpeckleList2DImpl(uv[0], uv[1], strip);
@@ -4327,7 +4317,7 @@ fn expectClassifiedExact(params: GridParams) !bool {
             vs[lane] = if (batch == 0 and lane % 2 == 0) -2 else if (batch == 1 and lane % 2 == 0) 2 else 1.0 - us[lane];
             active[lane] = (batch + lane) % 3 != 0;
         }
-        const actual: [S]F = K.sampleSIMD(us, vs, active, params, &resources);
+        const actual: [S]F = K.sampleSIMD(us, vs, active, &resources);
         for (0..S) |lane| {
             const expected = if (strip.recordCount() != 0 and active[lane]) evalSpeckle2D(.classified_indexed, .{ us[lane], vs[lane] }, params) else params.background;
             try testing.expectEqual(expected, actual[lane]);
@@ -4367,11 +4357,11 @@ fn expectPreparedSpeckleSIMD(
             coord_1[lane] = case.uv[1];
             active[lane] = case.active;
         }
-        const actual: [S]F = Impl.samplePreparedSIMD(coord_0, coord_1, active, params, resources);
+        const actual: [S]F = Impl.samplePreparedSIMD(coord_0, coord_1, active, resources);
         for (0..S) |lane| {
             const case = cases[(batch * S + lane) % cases.len];
             const expected = if (case.active)
-                Impl.samplePreparedScal(case.uv[0], case.uv[1], params, resources)
+                Impl.samplePreparedScal(case.uv[0], case.uv[1], resources)
             else
                 params.background;
             if (case.expected) |value| try testing.expectEqual(value, expected);
@@ -4403,49 +4393,32 @@ test "user validation requires positive occupancy only for disk and Gaussian" {
     }
 }
 
-test "runtime override policy and invalid settings fail before allocation" {
-    for ([_]F{ -0.01, std.math.nan(F), std.math.inf(F), -std.math.inf(F) }) |softness| {
-        for (std.enums.values(speckleconfig.Pattern)) |pattern| {
-            try std.testing.expectError(error.InvalidSpeckleEdgeSoftness, Resources.init(std.testing.failing_allocator, .{ .pattern = pattern, .edge_softness = softness }));
-        }
-    }
-    for ([_]speckleconfig.Pattern{ .gaussian, .perlin }) |pattern| {
-        try std.testing.expectError(error.SpeckleEdgeSoftnessRequiresDisk, Resources.init(std.testing.failing_allocator, .{ .pattern = pattern, .edge_softness = 0.1 }));
-    }
-    if (comptime !buildconfig.enable_all_evaluators) {
-        for (std.enums.values(speckleconfig.Evaluator)) |evaluator| {
-            try std.testing.expectError(error.SpeckleOverridesDisabled, Resources.init(std.testing.failing_allocator, .{ .evaluator = evaluator }));
-        }
-        for (std.enums.values(speckleconfig.Neighborhood)) |neighbors| {
-            try std.testing.expectError(error.SpeckleOverridesDisabled, Resources.init(std.testing.failing_allocator, .{ .neighbor_count = neighbors }));
-        }
-    } else {
-        const cases = [_]struct { params: GridParams, err: anyerror }{
-            .{ .params = .{ .pattern = .perlin, .neighbor_count = .nine }, .err = error.SpecklePerlinDoesNotUseNeighbors },
-            .{ .params = .{ .pattern = .perlin, .evaluator = .list_indexed }, .err = error.PerlinRequiresSupportedEvaluator },
-            .{ .params = .{ .pattern = .gaussian, .evaluator = .mask_1bit }, .err = error.Mask1BitRequiresDisk },
-            .{ .params = .{ .evaluator = .classified_indexed, .neighbor_count = .four }, .err = error.ClassifiedIndexedRequiresDiskAndNineNeighbors },
-            .{ .params = .{ .evaluator = .classified_indexed, .pattern = .gaussian }, .err = error.ClassifiedIndexedRequiresDiskAndNineNeighbors },
-            .{ .params = .{ .evaluator = .classified_indexed, .edge_softness = 0.01 }, .err = error.SpeckleEvaluatorRequiresHardEdges },
-            .{ .params = .{ .evaluator = .classified_indexed, .radius_mean = 0.95, .radius_jitter = 0.08 }, .err = error.InvalidSpeckleNeighborhoodRadius },
-            .{ .params = .{ .evaluator = .direct_fixed, .neighbor_count = .nine }, .err = error.DirectFixedRequiresDiskAndOneNeighbor },
-            .{ .params = .{ .evaluator = .direct_fixed, .radius_jitter = 0.01 }, .err = error.InvalidDirectFixedSpeckleRadiusJitter },
-            .{ .params = .{ .evaluator = .direct_fixed, .radius_mean = 0.6 }, .err = error.InvalidDirectFixedSpeckleRadius },
-            .{ .params = .{ .neighbor_count = .one, .radius_jitter = 0.1 }, .err = error.InvalidSpeckleNeighborhoodRadius },
-        };
-        for (cases) |case| try std.testing.expectError(case.err, Resources.init(std.testing.failing_allocator, case.params));
-        const direct = try (GridParams{ .evaluator = .direct_fixed }).resolve();
-        try std.testing.expectEqual(speckleconfig.Neighborhood.one, direct.neighborhood().?);
-        for ([_]speckleconfig.Evaluator{ .cell_hash, .mock }) |evaluator| {
-            var resources = try Resources.init(std.testing.failing_allocator, .{ .evaluator = evaluator });
-            defer resources.deinit(std.testing.failing_allocator);
-            try std.testing.expect(resources.kernel_index != null);
-            try std.testing.expectEqualDeep(Resources{ .kernel_index = resources.kernel_index }, resources);
-        }
-    }
-    // Perlin ignores disk-only fields but never silently repairs its own settings.
-    try (GridParams{ .pattern = .perlin, .occupancy = std.math.nan(F), .radius_mean = -1, .radius_jitter = std.math.inf(F) }).validate();
-    try std.testing.expectError(error.InvalidSpecklePerlinTransitionWidth, (GridParams{ .pattern = .perlin, .perlin_coverage_transition_width = -1 }).resolve());
+test "resources forward override and numeric validation errors before allocating" {
+    const alloc = std.testing.failing_allocator;
+    try std.testing.expectError(
+        if (buildconfig.enable_all_evaluators)
+            error.ClassifiedIndexedRequiresDiskAndNineNeighbors
+        else
+            error.SpeckleOverridesDisabled,
+        Resources.init(alloc, .{ .evaluator = .classified_indexed, .neighbor_count = .four }),
+    );
+    try std.testing.expectError(
+        error.InvalidSpeckleEdgeSoftness,
+        Resources.init(alloc, .{ .edge_softness = std.math.nan(F) }),
+    );
+}
+
+test "Perlin ignores disk-only numeric controls but validates its own" {
+    try (GridParams{
+        .pattern = .perlin,
+        .occupancy = std.math.nan(F),
+        .radius_mean = -1,
+        .radius_jitter = std.math.inf(F),
+    }).validate();
+    try std.testing.expectError(
+        error.InvalidSpecklePerlinTransitionWidth,
+        (GridParams{ .pattern = .perlin, .perlin_coverage_transition_width = -1 }).resolve(),
+    );
 }
 
 test "mock erases ignored settings but retains raw common and softness validation" {
@@ -4465,8 +4438,8 @@ test "mock erases ignored settings but retains raw common and softness validatio
             try std.testing.expectEqualDeep(speckleconfig.Config{ .mock = {} }, try params.resolve());
             var resources = try Resources.init(std.testing.failing_allocator, params);
             defer resources.deinit(std.testing.failing_allocator);
-            try std.testing.expectEqual(@as(F, 0.75), sampleScal(-0.5, 2, params, &resources));
-            const lanes: [S]F = sampleSIMD(@splat(-0.5), @splat(2), @splat(false), params, &resources);
+            try std.testing.expectEqual(@as(F, 0.75), sampleTestScal(-0.5, 2, &resources));
+            const lanes: [S]F = sampleTestSIMD(@splat(-0.5), @splat(2), @splat(false), &resources);
             for (lanes) |value| try std.testing.expectEqual(@as(F, 0.75), value);
             for ([_]F{ -1, std.math.nan(F), std.math.inf(F) }) |softness| {
                 params.edge_softness = softness;
@@ -4536,9 +4509,9 @@ test "positive-occupancy empty owner strips return the background regardless of 
         try std.testing.expectEqual(@as(usize, 0), strip.disks.len);
         for (resources.data.classified.states) |state| try std.testing.expectEqual(@as(u16, 0), state);
         for ([_]F{ 0.0, 0.5, 1.0, std.math.nan(F) }) |u| {
-            try std.testing.expectEqual(params.background, sampleScal(u, 0.5, params, &resources));
+            try std.testing.expectEqual(params.background, sampleTestScal(u, 0.5, &resources));
             inline for (.{ false, true }) |active| {
-                const lanes: [S]F = sampleSIMD(@splat(u), @splat(0.5), @splat(active), params, &resources);
+                const lanes: [S]F = sampleTestSIMD(@splat(u), @splat(0.5), @splat(active), &resources);
                 for (lanes) |value| try std.testing.expectEqual(params.background, value);
             }
         }
@@ -4569,16 +4542,14 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
             params.neighbor_count = config.neighborhood();
         }
         try std.testing.expectEqual(config, try params.resolve());
-        const raw = Implementation(config).evalSpeckle2DImpl(0.37, 0.61, params);
-        try std.testing.expectEqual(raw, sampleScal(0.37, 0.61, params, &.{}));
-        const raw_simd: [S]F = sampleSIMD(@splat(0.37), @splat(0.61), @splat(false), params, &.{});
-        for (raw_simd) |value| try std.testing.expectEqual(raw, value);
+
         var resources = try Resources.init(std.testing.allocator, params);
         defer resources.deinit(std.testing.allocator);
         const index = comptime kernelIndex(config);
         try std.testing.expectEqual(@as(?u8, index), resources.kernel_index);
         const backing_tag: std.meta.Tag(Backing) = switch (evaluator) {
-            .cell_hash, .mock => .none,
+            .cell_hash => .cell_hash,
+            .mock => .none,
             .list_naive => .list,
             .list_indexed => .strip_list,
             .cell_binned => .cell_binned,
@@ -4589,6 +4560,7 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
             .gradient_lattice => .perlin,
         };
         try std.testing.expectEqual(backing_tag, @as(std.meta.Tag(Backing), resources.data));
+        if (comptime evaluator == .cell_hash) try std.testing.expectEqualDeep(params, resources.data.cell_hash);
         if (comptime evaluator == .cell_hash or evaluator == .mock) {
             var allocation_free = try Resources.init(std.testing.failing_allocator, params);
             allocation_free.deinit(std.testing.failing_allocator);
@@ -4609,10 +4581,10 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
                 .classified_indexed, .classified_binned => evalSpeckle2D(config, uv, params),
                 .mask_1bit, .mask_u8 => Impl.evalSpeckleMask2D(uv, resources.data.mask),
             };
-            try std.testing.expectEqual(reference, Kernel(index).sampleScal(uv[0], uv[1], params, &resources));
-            try std.testing.expectEqual(reference, sampleScal(uv[0], uv[1], params, &resources));
-            const actual: [S]F = Kernel(index).sampleSIMD(@splat(uv[0]), @splat(uv[1]), @splat(true), params, &resources);
-            const dispatched: [S]F = sampleSIMD(@splat(uv[0]), @splat(uv[1]), @splat(true), params, &resources);
+            try std.testing.expectEqual(reference, Kernel(index).sampleScal(uv[0], uv[1], &resources));
+            try std.testing.expectEqual(reference, sampleTestScal(uv[0], uv[1], &resources));
+            const actual: [S]F = Kernel(index).sampleSIMD(@splat(uv[0]), @splat(uv[1]), @splat(true), &resources);
+            const dispatched: [S]F = sampleTestSIMD(@splat(uv[0]), @splat(uv[1]), @splat(true), &resources);
             for (actual, dispatched) |value, generic| {
                 try std.testing.expectEqual(reference, value);
                 try std.testing.expectEqual(value, generic);
@@ -4621,7 +4593,6 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
                 @splat(uv[0]),
                 @splat(uv[1]),
                 @splat(false),
-                params,
                 &resources,
             );
             const inactive_expected = switch (evaluator) {
@@ -4640,8 +4611,8 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
             const junk = [_]F{ nan, inf, -inf };
             for (extremes) |eu| {
                 for (extremes) |ev| {
-                    const expected = Kernel(index).sampleScal(eu[1], ev[1], params, &resources);
-                    try std.testing.expectEqual(expected, Kernel(index).sampleScal(eu[0], ev[0], params, &resources));
+                    const expected = Kernel(index).sampleScal(eu[1], ev[1], &resources);
+                    try std.testing.expectEqual(expected, Kernel(index).sampleScal(eu[0], ev[0], &resources));
                     // Active samples alternate with rotating nonfinite inactive lanes.
                     for (0..2) |parity| {
                         var us: [S]F = undefined;
@@ -4652,7 +4623,7 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
                             us[lane] = if (active[lane]) eu[0] else junk[lane % 3];
                             vs[lane] = if (active[lane]) ev[0] else junk[(lane + 1) % 3];
                         }
-                        const lanes: [S]F = Kernel(index).sampleSIMD(us, vs, active, params, &resources);
+                        const lanes: [S]F = Kernel(index).sampleSIMD(us, vs, active, &resources);
                         for (lanes, active) |value, on| {
                             if (on) try std.testing.expectEqual(expected, value);
                         }
@@ -4891,7 +4862,7 @@ test "strip indexed records and samples match exhaustive lists exactly across oc
                     const u = disk.center[0] / table.params.cells_per_uv[0];
                     const v = disk.center[1] / table.params.cells_per_uv[1];
                     const before: [S]F = Impl.evalSpeckleSIMDImpl(Impl.evalSpeckleList2DNaiveImpl, @splat(u), @splat(v), table);
-                    const after: [S]F = sampleSIMD(@splat(u), @splat(v), @splat(false), params, &indexed);
+                    const after: [S]F = sampleTestSIMD(@splat(u), @splat(v), @splat(false), &indexed);
                     for (before, after) |reference, actual| try std.testing.expectEqual(reference, actual);
                     if (params.radius_jitter == 0.0) {
                         const support = disk.radius + params.edge_softness;
@@ -4901,9 +4872,9 @@ test "strip indexed records and samples match exhaustive lists exactly across oc
                                 for ([_]F{ point, std.math.nextAfter(F, point, -std.math.inf(F)), std.math.nextAfter(F, point, std.math.inf(F)) }) |coordinate| {
                                     const edge_u = if (axis == 0) coordinate else u;
                                     const edge_v = if (axis == 1) coordinate else v;
-                                    const expected = sampleScal(edge_u, edge_v, table.params, &reference_resources);
-                                    try std.testing.expectEqual(expected, sampleScal(edge_u, edge_v, params, &indexed));
-                                    const lanes: [S]F = sampleSIMD(@splat(edge_u), @splat(edge_v), @splat(false), params, &indexed);
+                                    const expected = sampleTestScal(edge_u, edge_v, &reference_resources);
+                                    try std.testing.expectEqual(expected, sampleTestScal(edge_u, edge_v, &indexed));
+                                    const lanes: [S]F = sampleTestSIMD(@splat(edge_u), @splat(edge_v), @splat(false), &indexed);
                                     for (lanes) |actual| try std.testing.expectEqual(expected, actual);
                                 }
                             }
@@ -4919,7 +4890,7 @@ test "strip indexed records and samples match exhaustive lists exactly across oc
                         vs[lane] = @as(F, @floatFromInt(batch / 8)) / 8.0 - shift;
                     }
                     const before: [S]F = Impl.evalSpeckleSIMDImpl(Impl.evalSpeckleList2DNaiveImpl, us, vs, table);
-                    const after: [S]F = sampleSIMD(us, vs, @splat(false), params, &indexed);
+                    const after: [S]F = sampleTestSIMD(us, vs, @splat(false), &indexed);
                     for (before, after) |reference, actual| try std.testing.expectEqual(reference, actual);
                 }
                 for (0..128) |batch| {
@@ -4953,10 +4924,10 @@ test "strip indexed records and samples match exhaustive lists exactly across oc
                         }
                     }
                     const expected: [S]F = Impl.evalSpeckleSIMDImpl(Impl.evalSpeckleList2DNaiveImpl, us, vs, table);
-                    const actual: [S]F = sampleSIMD(us, vs, active, params, &indexed);
+                    const actual: [S]F = sampleTestSIMD(us, vs, active, &indexed);
                     for (us, vs) |u, v| {
                         if (!std.math.isFinite(u) or !std.math.isFinite(v)) continue;
-                        try std.testing.expectEqual(sampleScal(u, v, table.params, &reference_resources), sampleScal(u, v, params, &indexed));
+                        try std.testing.expectEqual(sampleTestScal(u, v, &reference_resources), sampleTestScal(u, v, &indexed));
                     }
                     for (expected, actual) |before, after| {
                         try std.testing.expectEqual(before, after);
@@ -4968,7 +4939,7 @@ test "strip indexed records and samples match exhaustive lists exactly across oc
                         for ([_]F{ boundary, std.math.nextAfter(F, boundary, -std.math.inf(F)), std.math.nextAfter(F, boundary, std.math.inf(F)) }) |coordinate| {
                             const u = if (axis == 0) coordinate else 0.5;
                             const v = if (axis == 1) coordinate else 0.5;
-                            try std.testing.expectEqual(sampleScal(u, v, table.params, &reference_resources), sampleScal(u, v, params, &indexed));
+                            try std.testing.expectEqual(sampleTestScal(u, v, &reference_resources), sampleTestScal(u, v, &indexed));
                         }
                     }
                 }
@@ -4976,9 +4947,9 @@ test "strip indexed records and samples match exhaustive lists exactly across oc
                     for (0..23) |xx| {
                         const u = @as(F, @floatFromInt(xx)) / 20.0 - 0.05;
                         const v = @as(F, @floatFromInt(yy)) / 20.0 - 0.05;
-                        const expected = sampleScal(u, v, table.params, &reference_resources);
-                        try std.testing.expectEqual(expected, sampleScal(u, v, params, &indexed));
-                        const lanes: [S]F = sampleSIMD(@splat(u), @splat(v), @splat(true), params, &indexed);
+                        const expected = sampleTestScal(u, v, &reference_resources);
+                        try std.testing.expectEqual(expected, sampleTestScal(u, v, &indexed));
+                        const lanes: [S]F = sampleTestSIMD(@splat(u), @splat(v), @splat(true), &indexed);
                         for (lanes) |value| try std.testing.expectEqual(expected, value);
                     }
                 }
@@ -5116,8 +5087,8 @@ test "cell binned independent exhaustive field reference" {
                 const expected = CellBinnedIndependentReference.sample(p, uv[0], uv[1]);
                 if (variation == 0 or variation == 5) try std.testing.expectEqual(@as(F, 0), expected);
                 if (variation == 6) try std.testing.expectEqual(p.background, expected);
-                try std.testing.expectEqual(expected, sampleScal(uv[0], uv[1], p, &resources));
-                const lanes: [S]F = sampleSIMD(@splat(uv[0]), @splat(uv[1]), @splat(false), p, &resources);
+                try std.testing.expectEqual(expected, sampleTestScal(uv[0], uv[1], &resources));
+                const lanes: [S]F = sampleTestSIMD(@splat(uv[0]), @splat(uv[1]), @splat(false), &resources);
                 for (lanes) |actual| try std.testing.expectEqual(expected, actual);
             }
         }
@@ -5156,17 +5127,14 @@ fn expectGaussianStrided(radius: F, points: []const [2]F, colors: [2]F) !void {
     const expected = params.background + coverage * (params.foreground - params.background);
     try std.testing.expect(std.math.isFinite(expected));
     try std.testing.expectEqual(expected, Impl.evalCellBinnedSpeckle2D(0, 0, binned));
-    const prepared: [S]F = Impl.samplePreparedSIMD(@splat(0), @splat(0), @splat(false), params, &resources);
+    const prepared: [S]F = Impl.samplePreparedSIMD(@splat(0), @splat(0), @splat(false), &resources);
     for (prepared) |value| try std.testing.expectEqual(expected, value);
-    var borrowed = params;
-    borrowed.foreground = 0.37;
-    borrowed.background = 0.63;
-    borrowed.radius_mean = 0.2;
-    try std.testing.expectEqual(expected, sampleScal(0, 0, borrowed, &resources));
-    const lanes: [S]F = sampleSIMD(@splat(0), @splat(0), @splat(false), borrowed, &resources);
+
+    try std.testing.expectEqual(expected, sampleTestScal(0, 0, &resources));
+    const lanes: [S]F = sampleTestSIMD(@splat(0), @splat(0), @splat(false), &resources);
     for (lanes) |value| try std.testing.expectEqual(expected, value);
-    const invalid: [S]F = sampleSIMD(@splat(std.math.nan(F)), @splat(0), @splat(true), borrowed, &resources);
-    for (invalid) |value| try std.testing.expectEqual(sampleScal(1, 0, borrowed, &resources), value);
+    const invalid: [S]F = sampleTestSIMD(@splat(std.math.nan(F)), @splat(0), @splat(true), &resources);
+    for (invalid) |value| try std.testing.expectEqual(sampleTestScal(1, 0, &resources), value);
 }
 
 test "cell binned overlapping Gaussian adjacent scores and exp plateaus" {
@@ -5261,12 +5229,12 @@ test "cell binned records preserve exact samples at supports faces colors and SI
                             else => 0.5,
                         };
                     }
-                    const actual: [S]F = sampleSIMD(us, vs, active, params, &owned);
+                    const actual: [S]F = sampleTestSIMD(us, vs, active, &owned);
                     for (actual, us, vs) |after, u, v| {
                         // Cell-binned lanes all evaluate; NaN clamps to the upper endpoint.
                         try std.testing.expectEqual(Reference.sample(params, @max(0.0, @min(1.0, u)), @max(0.0, @min(1.0, v))), after);
                         if (std.math.isFinite(u) and std.math.isFinite(v)) {
-                            const value = sampleScal(u, v, params, &owned);
+                            const value = sampleTestScal(u, v, &owned);
                             try std.testing.expectEqual(after, value);
                             // Compare the analytic path even for empty patterns.
                             try std.testing.expectEqual(Impl.evalSpeckle2DImpl(u, v, params), value);
@@ -5286,7 +5254,7 @@ test "cell binned records preserve exact samples at supports faces colors and SI
                                 for ([_]F{ edge, std.math.nextAfter(F, edge, -std.math.inf(F)), std.math.nextAfter(F, edge, std.math.inf(F)) }) |coordinate| {
                                     const u = if (axis == 0) coordinate else disk.xy[0] / params.cells_per_uv[0];
                                     const v = if (axis == 1) coordinate else disk.xy[1] / params.cells_per_uv[1];
-                                    try std.testing.expectEqual(Reference.sample(params, u, v), sampleScal(u, v, params, &owned));
+                                    try std.testing.expectEqual(Reference.sample(params, u, v), sampleTestScal(u, v, &owned));
                                 }
                             }
                         }
@@ -5298,7 +5266,7 @@ test "cell binned records preserve exact samples at supports faces colors and SI
                         for ([_]F{ edge, std.math.nextAfter(F, edge, 0), std.math.nextAfter(F, edge, std.math.inf(F)) }) |coordinate| {
                             const u = if (axis == 0) coordinate else 0.5;
                             const v = if (axis == 1) coordinate else 0.5;
-                            try std.testing.expectEqual(Reference.sample(params, u, v), sampleScal(u, v, params, &owned));
+                            try std.testing.expectEqual(Reference.sample(params, u, v), sampleTestScal(u, v, &owned));
                         }
                     }
                 }
@@ -5356,8 +5324,8 @@ test "cell binned Gaussian nearest reductions preserve underflowed sigma squared
             const disk = Impl.speckleDiskForCell(0, 0, params).?;
             const expected = Impl.evalSpeckle2DImpl(disk.center[0], disk.center[1], params);
             try std.testing.expect(std.math.isFinite(expected));
-            try std.testing.expectEqual(expected, sampleScal(disk.center[0], disk.center[1], params, &resources));
-            const lanes: [S]F = sampleSIMD(@splat(disk.center[0]), @splat(disk.center[1]), @splat(true), params, &resources);
+            try std.testing.expectEqual(expected, sampleTestScal(disk.center[0], disk.center[1], &resources));
+            const lanes: [S]F = sampleTestSIMD(@splat(disk.center[0]), @splat(disk.center[1]), @splat(true), &resources);
             for (lanes) |value| try std.testing.expectEqual(expected, value);
         }
     }
@@ -5390,8 +5358,8 @@ test "cell binned wide procedural grids retain rounded face and endpoint members
             for ([_]F{ face, std.math.nextAfter(F, face, -std.math.inf(F)), std.math.nextAfter(F, face, std.math.inf(F)) }) |u| {
                 for ([_]F{ 0, 0.5, 1 }) |v| {
                     const expected = Impl.evalSpeckle2DImpl(u, v, params);
-                    try std.testing.expectEqual(expected, sampleScal(u, v, params, &resources));
-                    const lanes: [S]F = sampleSIMD(@splat(u), @splat(v), @splat(false), params, &resources);
+                    try std.testing.expectEqual(expected, sampleTestScal(u, v, &resources));
+                    const lanes: [S]F = sampleTestSIMD(@splat(u), @splat(v), @splat(false), &resources);
                     for (lanes) |value| try std.testing.expectEqual(expected, value);
                 }
             }
@@ -5416,10 +5384,10 @@ test "strip indexed zero radius soft disk coverage and default gate" {
     try std.testing.expectEqual(@as(F, 0), disk.radius);
     try std.testing.expectApproxEqAbs(@as(F, 0.1723602294921875), disk.center[0], 0.000001);
     try std.testing.expectApproxEqAbs(@as(F, 0.6010055541992189), disk.center[1], 0.000001);
-    const expected = sampleScal(disk.center[0], disk.center[1], reference_params, &reference);
+    const expected = sampleTestScal(disk.center[0], disk.center[1], &reference);
     try std.testing.expect(expected != params.background);
-    try std.testing.expectEqual(expected, sampleScal(disk.center[0], disk.center[1], params, &strip));
-    const lanes: [S]F = sampleSIMD(@splat(disk.center[0]), @splat(disk.center[1]), @splat(true), params, &strip);
+    try std.testing.expectEqual(expected, sampleTestScal(disk.center[0], disk.center[1], &strip));
+    const lanes: [S]F = sampleTestSIMD(@splat(disk.center[0]), @splat(disk.center[1]), @splat(true), &strip);
     for (lanes) |value| try std.testing.expectEqual(expected, value);
 }
 
@@ -5503,9 +5471,9 @@ test "binned defaults preserve independent analytic samples without overrides" {
                 for ([_]F{ -1, 0, 1.0 / 3.25, 0.5, 1, 2 }) |u| {
                     for ([_]F{ -1, 0, 1.0 / 2.75, 0.5, 1, 2 }) |v| {
                         const expected = CellBinnedIndependentReference.sample(params, u, v);
-                        try std.testing.expectEqual(expected, sampleScal(u, v, params, &resources));
+                        try std.testing.expectEqual(expected, sampleTestScal(u, v, &resources));
                         inline for (.{ false, true }) |active| {
-                            const lanes: [S]F = sampleSIMD(@splat(u), @splat(v), @splat(active), params, &resources);
+                            const lanes: [S]F = sampleTestSIMD(@splat(u), @splat(v), @splat(active), &resources);
                             const masked_expected = if (classified and !active) params.background else expected;
                             for (lanes) |actual| try std.testing.expectEqual(masked_expected, actual);
                         }
@@ -5516,7 +5484,7 @@ test "binned defaults preserve independent analytic samples without overrides" {
     }
 }
 
-test "cell binned paired vectors preserve count tails plateaus colors and borrowed params" {
+test "cell binned paired vectors preserve count tails plateaus and colors" {
     const smallest = std.math.floatMin(F) * std.math.floatEps(F);
     const base: F = 0.015625;
     const ulp = std.math.nextAfter(F, base, std.math.inf(F)) - base;
@@ -5572,35 +5540,11 @@ test "prepared SIMD matches scalar pixel-center samples for every generation con
                     for (&u, start_col..) |*point, cc| {
                         point.* = (@as(F, @floatFromInt(cc)) + 0.5) / @as(F, @floatFromInt(cols));
                     }
-                    const values: [S]F = sampleSIMD(u, @splat(v), @splat(true), params, &resources);
+                    const values: [S]F = sampleTestSIMD(u, @splat(v), @splat(true), &resources);
                     for (u, values) |point, value| {
-                        try std.testing.expectEqual(sampleScal(point, v, params, &resources), value);
+                        try std.testing.expectEqual(sampleTestScal(point, v, &resources), value);
                     }
                 }
-            }
-        }
-    }
-}
-
-test "prepared samplers give independent empty and equal color intensities" {
-    const cases = [_]struct { params: GridParams, expected: F }{
-        .{ .params = .{ .occupancy = 0, .background = 0.83 }, .expected = 0.83 },
-        .{ .params = .{ .occupancy = 0, .edge_softness = 0.035, .background = 0.17 }, .expected = 0.17 },
-        .{ .params = .{ .pattern = .gaussian, .occupancy = 0, .background = 0.37 }, .expected = 0.37 },
-        .{ .params = .{ .foreground = 0.17, .background = 0.17 }, .expected = 0.17 },
-        .{ .params = .{ .pattern = .gaussian, .foreground = 0.83, .background = 0.83 }, .expected = 0.83 },
-        .{ .params = .{ .pattern = .perlin, .foreground = 0.37, .background = 0.37 }, .expected = 0.37 },
-    };
-    for (cases) |case| {
-        var params = case.params;
-        params.cells_per_uv = .{ 3.25, 2.5 };
-        var resources = try Resources.init(std.testing.allocator, params);
-        defer resources.deinit(std.testing.allocator);
-        for ([_]F{ 0.1, 0.5, 0.9 }) |u| {
-            for ([_]F{ 1.0 / 6.0, 0.5, 5.0 / 6.0 }) |v| {
-                try std.testing.expectEqual(case.expected, sampleScal(u, v, params, &resources));
-                const values: [S]F = sampleSIMD(@splat(u), @splat(v), @splat(true), params, &resources);
-                for (values) |value| try std.testing.expectEqual(case.expected, value);
             }
         }
     }
@@ -5616,9 +5560,6 @@ fn expectSpeckleSlicesEqual(comptime T: type, a: []const T, b: []const T) !void 
 }
 
 fn expectIndependentClassifiedField(resources: *const Resources, p: GridParams) !void {
-    var borrowed = p;
-    borrowed.foreground = 0.39;
-    borrowed.background = 0.61;
     for (0..80) |batch| {
         var us: [S]F = undefined;
         var vs: [S]F = undefined;
@@ -5642,9 +5583,9 @@ fn expectIndependentClassifiedField(resources: *const Resources, p: GridParams) 
             };
             active[lane] = (batch + lane) % 3 != 0;
             const expected = CellBinnedIndependentReference.sample(p, @max(0.0, @min(1.0, us[lane])), @max(0.0, @min(1.0, vs[lane])));
-            try std.testing.expectEqual(expected, sampleScal(us[lane], vs[lane], borrowed, resources));
+            try std.testing.expectEqual(expected, sampleTestScal(us[lane], vs[lane], resources));
         }
-        const actual: [S]F = sampleSIMD(us, vs, active, borrowed, resources);
+        const actual: [S]F = sampleTestSIMD(us, vs, active, resources);
         for (0..S) |lane| {
             const expected = if (!active[lane]) p.background else CellBinnedIndependentReference.sample(p, @max(0.0, @min(1.0, us[lane])), @max(0.0, @min(1.0, vs[lane])));
             try std.testing.expectEqual(expected, actual[lane]);
@@ -5760,7 +5701,7 @@ test "classified bins clipped owner certificates singleton classes and exact fie
             }
             var expected: [S]F = undefined;
             for (0..S) |lane| expected[lane] = CellBinnedIndependentReference.sample(p, @max(0.0, @min(1.0, us[lane])), @max(0.0, @min(1.0, vs[lane])));
-            const result: [S]F = sampleSIMD(us, vs, @splat(true), p, &actual);
+            const result: [S]F = sampleTestSIMD(us, vs, @splat(true), &actual);
             try expectSpeckleSlicesEqual(F, &expected, &result);
         }
     }
@@ -5810,7 +5751,7 @@ test "classified bins fallback counts0 through9 all hit positions groups masks a
                     for (0..@as(usize, 1) << @min(S, 8)) |mask| {
                         var active: [S]bool = undefined;
                         for (&active, 0..) |*value, lane| value.* = mask & (@as(usize, 1) << @intCast(lane)) != 0;
-                        const actual: [S]F = sampleSIMD(us, vs, active, p, &resources);
+                        const actual: [S]F = sampleTestSIMD(us, vs, active, &resources);
                         for (0..S) |lane| {
                             const hit = independentBinHit(data, chosen[lane], us[lane] * p.cells_per_uv[0], vs[lane] * p.cells_per_uv[1]);
                             const expected = if (active[lane]) p.background + @as(F, if (hit) 1 else 0) * (p.foreground - p.background) else p.background;
@@ -5837,9 +5778,9 @@ test "classified bins mixed certified clamped lanes and nonempty zero radii reta
         zeros += 1;
         const us: [S]F = @splat(data.coordinates[index] / p.cells_per_uv[0]);
         const vs: [S]F = @splat(data.coordinates[slots + index] / p.cells_per_uv[1]);
-        const actual: [S]F = sampleSIMD(us, vs, @splat(true), p, &resources);
+        const actual: [S]F = sampleTestSIMD(us, vs, @splat(true), &resources);
         var expected: [S]F = undefined;
-        for (0..S) |lane| expected[lane] = sampleScal(us[lane], vs[lane], p, &resources);
+        for (0..S) |lane| expected[lane] = sampleTestScal(us[lane], vs[lane], &resources);
         try expectSpeckleSlicesEqual(F, &expected, &actual);
     }
     try std.testing.expect(zeros != 0);
@@ -5860,11 +5801,11 @@ test "classified bins mixed certified clamped lanes and nonempty zero radii reta
             active[lane] = (batch + lane) % 3 != 0;
             if (!active[lane]) continue;
             const expected = CellBinnedIndependentReference.sample(p, @max(0.0, @min(1.0, us[lane])), @max(0.0, @min(1.0, vs[lane])));
-            try std.testing.expectEqual(expected, sampleScal(us[lane], vs[lane], p, &resources));
+            try std.testing.expectEqual(expected, sampleTestScal(us[lane], vs[lane], &resources));
         }
-        const actual: [S]F = sampleSIMD(us, vs, active, p, &resources);
+        const actual: [S]F = sampleTestSIMD(us, vs, active, &resources);
         var expected: [S]F = undefined;
-        for (0..S) |lane| expected[lane] = if (active[lane]) sampleScal(us[lane], vs[lane], p, &resources) else p.background;
+        for (0..S) |lane| expected[lane] = if (active[lane]) sampleTestScal(us[lane], vs[lane], &resources) else p.background;
         try expectSpeckleSlicesEqual(F, &expected, &actual);
     }
 }
@@ -5945,7 +5886,7 @@ test "classified bins explicit mixed FG BG AMB packets preserve inactive clamped
                 const p: GridParams = .{ .cells_per_uv = .{ @as(F, @floatFromInt(S)) - 0.01, 0.99 }, .radius_mean = 0.25, .radius_jitter = if (fixed) 0 else 0.08, .foreground = 0.91, .background = -0.0 };
                 const data: ClassifiedBinnedSpeckle2D = .{ .params = p, .dims = .{ S * 8, 4 }, .cell_dims = .{ S, 1 }, .coordinates = coordinates, .slots = slots, .headers = &headers, .counts = &counts, .offsets = if (fixed) &.{} else &offsets };
                 const resources: Resources = .{ .kernel_index = kernelIndex(try p.resolve()), .data = .{ .classified_binned = data } };
-                const actual: [S]F = sampleSIMD(us, vs, active, p, &resources);
+                const actual: [S]F = sampleTestSIMD(us, vs, active, &resources);
                 for (0..S) |lane| {
                     var expected = p.background;
                     if (active[lane]) {
@@ -6052,15 +5993,14 @@ test "classified bins vector classifier all counts0 through9 partial singleton z
     try std.testing.expectEqual(@as(usize, 2560), checked);
 }
 
-test "classified bins unprepared raw inactive dispatch preserve separate contracts" {
-    try std.testing.expectEqual(speckleconfig.Config.classified_binned, speckleconfig.canonicalizeSampleConfig(.classified_binned));
+test "classified bins match the independent reference and background inactive lanes" {
+    const K = Kernel(kernelIndex(.classified_binned));
     for ([_]F{ 0, 0.08 }) |jitter| for ([_]F{ 0, 0.7, 1 }) |occupancy| {
         const p: GridParams = .{ .cells_per_uv = .{ 3.17, 2.31 }, .radius_mean = 0.6, .radius_jitter = jitter, .occupancy = occupancy, .foreground = 0.91, .background = -0.0 };
         var resources = try Resources.init(std.testing.allocator, p);
         defer resources.deinit(std.testing.allocator);
         try std.testing.expectEqual(kernelIndex(.classified_binned), resources.kernel_index.?);
         try std.testing.expectEqual(@as(?speckleconfig.Evaluator, null), resources.data.classified_binned.params.evaluator);
-        const empty: Resources = .{};
         for (0..48) |batch| {
             var us: [S]F = undefined;
             var vs: [S]F = undefined;
@@ -6069,18 +6009,13 @@ test "classified bins unprepared raw inactive dispatch preserve separate contrac
                 us[lane] = if (batch == 0) std.math.nan(F) else if (batch == 1) std.math.inf(F) else @as(F, @floatFromInt((batch * 73 + lane * 37) % 257)) / 256;
                 vs[lane] = if (batch == 2) -std.math.inf(F) else @as(F, @floatFromInt((batch * 17 + lane * 53) % 259)) / 256;
                 active[lane] = (batch + lane) % 3 != 0;
-                const expected = CellBinnedIndependentReference.sample(p, @max(0.0, @min(1.0, us[lane])), @max(0.0, @min(1.0, vs[lane])));
-                try std.testing.expectEqual(expected, sampleScal(us[lane], vs[lane], p, &empty));
             }
-            const raw: [S]F = sampleSIMD(us, vs, active, p, &empty);
-            for (0..S) |lane| {
-                // The raw adapter samples every lane; prepared kernels background inactive lanes.
-                const expected = sampleScal(us[lane], vs[lane], p, &empty);
-                try std.testing.expectEqual(expected, raw[lane]);
+            const prepared: [S]F = K.sampleSIMD(us, vs, active, &resources);
+            for (prepared, us, vs, active) |value, u, v, enabled| {
+                const expected = CellBinnedIndependentReference.sample(p, @max(0.0, @min(1.0, u)), @max(0.0, @min(1.0, v)));
+                try std.testing.expectEqual(expected, K.sampleScal(u, v, &resources));
+                try std.testing.expectEqual(if (enabled) expected else p.background, value);
             }
-            const prepared: [S]F = sampleSIMD(us, vs, active, p, &resources);
-            const selected: [S]F = Kernel(kernelIndex(.classified_binned)).sampleSIMD(us, vs, active, p, &resources);
-            try expectSpeckleSlicesEqual(F, &selected, &prepared);
         }
     };
 }
@@ -6146,7 +6081,7 @@ test "classified bins active owners with no bin records preserve arithmetic back
             for (data.counts) |count| try std.testing.expectEqual(@as(u8, 0), count);
             for (data.headers) |word| try std.testing.expectEqual(@as(u64, 0), word);
             const arithmetic = p.background + @as(F, 0) * (p.foreground - p.background);
-            try std.testing.expectEqual(arithmetic, sampleScal(0.5, 0.5, p, &resources));
+            try std.testing.expectEqual(arithmetic, sampleTestScal(0.5, 0.5, &resources));
             var us: [S]F = undefined;
             const vs: [S]F = @splat(0.5);
             var active: [S]bool = undefined;
@@ -6160,9 +6095,9 @@ test "classified bins active owners with no bin records preserve arithmetic back
                 };
                 active[lane] = lane % 3 != 0;
                 const expected = arithmetic;
-                try std.testing.expectEqual(expected, sampleScal(us[lane], vs[lane], p, &resources));
+                try std.testing.expectEqual(expected, sampleTestScal(us[lane], vs[lane], &resources));
             }
-            const actual: [S]F = sampleSIMD(us, vs, active, p, &resources);
+            const actual: [S]F = sampleTestSIMD(us, vs, active, &resources);
             for (actual, 0..) |value, lane| {
                 const expected = if (active[lane]) arithmetic else p.background;
                 try std.testing.expectEqual(expected, value);
@@ -6223,7 +6158,7 @@ test "Gaussian packets match independent fields at centers overlaps and underflo
                     vs[lane] = point[1];
                     active[lane] = lane % 2 == 0;
                 }
-                const values: [S]F = sampleSIMD(us, vs, active, p, &resources);
+                const values: [S]F = sampleTestSIMD(us, vs, active, &resources);
                 for (values, us, vs) |value, u, v| {
                     const expected = CellBinnedIndependentReference.sample(p, u, v);
                     try std.testing.expectEqual(expected, value);
@@ -6264,9 +6199,9 @@ test "packet adapters preserve inactive and clamped lane contracts numerically" 
                         vs[lane] = coords[(batch / coords.len + lane * 3) % coords.len];
                         active[lane] = (batch + lane) % 3 == 0;
                     }
-                    const values: [S]F = Kernel(index).sampleSIMD(us, vs, active, params, &resources);
+                    const values: [S]F = Kernel(index).sampleSIMD(us, vs, active, &resources);
                     for (values, us, vs, active) |value, u, v, enabled| {
-                        const expected = if (config.pattern() != .perlin or enabled) Kernel(index).sampleScal(u, v, params, &resources) else params.background;
+                        const expected = if (config.pattern() != .perlin or enabled) Kernel(index).sampleScal(u, v, &resources) else params.background;
                         try std.testing.expectEqual(expected, value);
                     }
                 }
@@ -6325,9 +6260,9 @@ test "cell binned mixed-count packets never read poisoned unused strided records
                     us[lane] = (@as(F, @floatFromInt(cell)) + 0.5) / p.cells_per_uv[0];
                     active[lane] = lane % 2 == 0;
                 }
-                const values: [S]F = sampleSIMD(us, vs, active, p, &resources);
+                const values: [S]F = sampleTestSIMD(us, vs, active, &resources);
                 for (values, us, vs) |value, u, v| {
-                    try std.testing.expectEqual(sampleScal(u, v, p, &resources), value);
+                    try std.testing.expectEqual(sampleTestScal(u, v, &resources), value);
                 }
             };
         }
@@ -6396,12 +6331,12 @@ test "classified bins count guards ignore finite infinite and NaN unused fixed r
                         const cell = if (coherent) first else (first + lane) % 10;
                         u.* = (@as(F, @floatFromInt(cell)) + 0.5) / p.cells_per_uv[0];
                         const expected = p.background + @as(F, if (hit and cell != 0) 1 else 0) * (p.foreground - p.background);
-                        try std.testing.expectEqual(expected, sampleScal(u.*, vs[lane], p, &resources));
+                        try std.testing.expectEqual(expected, sampleTestScal(u.*, vs[lane], &resources));
                     }
                     for (0..@as(usize, 1) << @min(S, 8)) |mask| {
                         var active: [S]bool = undefined;
                         for (&active, 0..) |*enabled, lane| enabled.* = mask & (@as(usize, 1) << @intCast(lane)) != 0;
-                        const values: [S]F = sampleSIMD(us, vs, active, p, &resources);
+                        const values: [S]F = sampleTestSIMD(us, vs, active, &resources);
                         for (values, active, 0..) |value, enabled, lane| {
                             const cell = if (coherent) first else (first + lane) % 10;
                             const expected = if (enabled) p.background + @as(F, if (hit and cell != 0) 1 else 0) * (p.foreground - p.background) else p.background;

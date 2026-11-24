@@ -184,7 +184,7 @@ test "full speckle array validation scans UVs and connectivity" {
     const alloc = std.testing.allocator;
     var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0 };
     var connect = [_]usize{ 0, 1, 2 };
-    // Finite UVs outside [0,1] remain valid; sampling clamps them.
+    // This pass checks finiteness; mesh preparation checks the interpolated UV domain.
     var values = [_]F{ -0.5, 0, 1.5, 0, 0, 1 };
     const uvs = try ndarray.NDArray(F).init(alloc, &values, &.{ 3, 2 });
     defer uvs.deinit(alloc);

@@ -2727,13 +2727,14 @@ test "C speckle mesh conversion owns UV metadata and preserves output controls" 
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
     const mesh_static = try meshpipe.initMeshStatic(arena.allocator(), &built.mesh_input);
-    const grid = mesh_static.shader.speckle.params;
+    const backing = mesh_static.shader.speckle.resources.data;
+    try std.testing.expect(backing == .classified_binned);
+    const grid = backing.classified_binned.params;
     // This triangle maps one reference-mesh unit to each UV unit.
     try std.testing.expectApproxEqAbs(@as(F, 0.05), grid.radius_mean / grid.cells_per_uv[0], 1e-14);
     try std.testing.expectApproxEqAbs(@as(F, 0.05), grid.radius_mean / grid.cells_per_uv[1], 1e-14);
     try std.testing.expect(grid.evaluator == null);
     try std.testing.expect(grid.neighbor_count == null);
-    try std.testing.expect(mesh_static.shader.speckle.resources.data == .classified_binned);
 
     input.shader.uvs.cols_num = 3;
     try std.testing.expectError(error.InvalidUVShape, buildMeshInput(alloc, &input));

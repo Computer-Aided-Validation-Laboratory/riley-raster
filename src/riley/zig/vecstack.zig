@@ -209,7 +209,7 @@ pub fn insertSortVec3(comptime T: type, slice: []Vec3T(T)) void {
         var jj = ii;
         while (jj > 0 and (slice[jj - 1].x() > value.x() or
             (slice[jj - 1].x() == value.x() and (slice[jj - 1].y() > value.y() or
-            (slice[jj - 1].y() == value.y() and slice[jj - 1].z() > value.z())))))
+                (slice[jj - 1].y() == value.y() and slice[jj - 1].z() > value.z())))))
         {
             slice[jj] = slice[jj - 1];
             jj -= 1;
@@ -460,4 +460,3 @@ test "insertSortVec3" {
     };
     try expectEqualSlices(Vec3F, &expected, &points);
 }
-

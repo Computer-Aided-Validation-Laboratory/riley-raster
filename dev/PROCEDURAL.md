@@ -71,12 +71,17 @@ The runner reads each binary's catalogue; omitted raw Perlin controls use binary
 A's defaults for both binaries. Raw evaluation compares named evaluators or
 `texture`; full-render accepts `auto` or `texture` without neighborhood overrides.
 Python checks scalar inputs; native validation and preparation check feasibility.
+Each run exclusively claims a new or empty output directory; a claimed directory
+cannot be reused, even if the run fails.
 
 Full-render workload `production-raster-advanced-memory-v6` records physical
 inputs and declared evaluator policy, not observed dispatch. Its only metric,
 `combined_ns`, times the in-memory render including preparation. Ordered image
 hashes for output equality are untimed. Only raw evaluation supports split
-metrics (`--metrics setup render`).
+metrics (`--metrics setup render`). Raw texture samples report zero setup time:
+geometry and UV gathering are untimed, as is texture decoding. When both variants
+are textures, `render` is the default; select either `render` or `combined`, not
+both, because they measure the same interval.
 
 `resource_bytes` in native JSON measures retained backing allocations for
 `cell-binned`, `list-indexed`, `classified-indexed`, and `classified-binned`
@@ -123,9 +128,10 @@ reference UV calibration and the nominal coverage model, and
 Before render allocations, fast validation checks metadata and `SpeckleParams`;
 full validation also scans UVs and connectivity. Mesh preparation checks the
 interpolated UV domain and calibrates the referenced faces. Physical resolution
-precedes UV/resource allocation; `SpeckleStatic` owns the resolved `GridParams`,
-gathered UVs, and sampler resources. Per-frame `SpecklePrepared` borrows resources
-through a stable `*const Resources`; frames and workers do not deinitialize them.
+precedes UV/resource allocation; `SpeckleStatic` owns the gathered UVs and
+sampler `Resources`. The selected backing owns the sampling parameters; cell-hash
+stores them inline without allocating. Per-frame `SpecklePrepared` borrows a
+`*const Resources` without copying parameters or taking ownership.
 `Resources.deinit(allocator)` frees and resets the active tagged backing;
 resources do not retain an allocator.
 
@@ -142,8 +148,7 @@ index range on 32-bit targets. Samplers do not revalidate the UV domain.
 
 Prepared Perlin (`gradient-lattice` or `cell-hash`) and classified/direct/mask
 samplers return background for inactive SIMD lanes. Other prepared samplers,
-including cell-binned, and unprepared convenience calls evaluate every lane.
-Callers discard inactive lanes.
+including cell-binned, evaluate every lane; callers discard inactive lanes.
 
 - **`classified-indexed`:** procedural-aligned microcells store nine candidate
   bits and a foreground flag. Certified cells avoid disk tests; other samples

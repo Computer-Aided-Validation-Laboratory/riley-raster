@@ -623,12 +623,11 @@ pub fn rasterTileCore(
                         );
                     },
                     .speckle => |*shader| {
-                        @setEvalBranchQuota(100_000);
+                        @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
                         var shader_buf: shaderops.LocalShaderBuff(N) = .{};
                         shader_buf.loadFuncCoords(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
                         // Resolve the prepared evaluator once per overlap, outside sample loops.
-                        const index = shader.resources.kernel_index orelse
-                            return error.MissingPreparedSpeckleKernel;
+                        const index = shader.resources.kernel_index.?;
                         shaded_px += try switch (index) {
                             inline 0...speckle.kernel_configs.len - 1 => |kernel_index| blk: {
                                 const SK = shadekerns.SpeckleKernel(N, kernel_index);
@@ -650,7 +649,7 @@ pub fn rasterTileCore(
                                     subpx_scratch,
                                 );
                             },
-                            else => error.InvalidPreparedSpeckleKernel,
+                            else => unreachable,
                         };
                     },
                     .func => |*shader| {

@@ -862,7 +862,6 @@ pub inline fn fillSpeckleSIMD(
         u,
         v,
         v_mask_active,
-        shader.params,
         shader.resources,
     );
     const value = sample * @as(VecSF, @splat(shader.output_scale)) +
@@ -882,40 +881,6 @@ pub inline fn fillSpeckleSIMD(
 // Tests
 // --------------------------------------------------------------------------------------
 
-test "ordinary prepared functions retain scalar and SIMD output scaling" {
-    const params = comm.normFuncShaderParams(.linear, .{
-        .output_scale = 1.75,
-        .output_offset = -0.125,
-    });
-    const shader: comm.FuncPrepared = .{
-        .elem_uvs = null,
-        .builtin = .linear,
-        .params = params,
-    };
-    const coord: scal.FuncCoord = .{
-        .coord_0 = 0.25,
-        .coord_1 = 0.5,
-        .normal_x = 0.0,
-        .normal_y = 0.0,
-        .normal_z = 1.0,
-    };
-    const expected = scal.evalFuncShaderBuiltinGreyNorm(.linear, coord, params);
-    const tol: F = if (F == f32) 1e-5 else 1e-12;
-    try std.testing.expectApproxEqAbs(
-        expected,
-        scal.evalFuncShaderBuiltinGreyNorm(shader.builtin, coord, shader.params),
-        tol,
-    );
-    const actual: [S]F = evalFuncShaderGreyNormSIMD(shader.builtin, .{
-        .coord_0 = @splat(coord.coord_0),
-        .coord_1 = @splat(coord.coord_1),
-        .normal_x = @splat(0.0),
-        .normal_y = @splat(0.0),
-        .normal_z = @splat(1.0),
-    }, shader.params);
-    for (actual) |value| try std.testing.expectApproxEqAbs(expected, value, tol);
-}
-
 test "speckle kernels preserve perspective interpolation and staged output arithmetic" {
     @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
     const ScalarKernel = @import("shaderkernels_scalar.zig").SpeckleKernel;
@@ -934,7 +899,6 @@ test "speckle kernels preserve perspective interpolation and staged output arith
     const shader: comm.SpecklePrepared = .{
         .elem_uvs = undefined,
         .resources = &resources,
-        .params = p,
         .output_scale = 1.3,
         .output_offset = -0.39,
         .scale_mul = 0.7,
@@ -1014,7 +978,7 @@ test "speckle kernels preserve perspective interpolation and staged output arith
                                 u *= interp.sub_pixel_z;
                                 v *= interp.sub_pixel_z;
                             }
-                            const sample = speckle.sampleScal(u, v, p, &resources);
+                            const sample = speckle.Kernel(kernel_index).sampleScal(u, v, &resources);
                             const output = sample * shader.output_scale + shader.output_offset;
                             const expected = output * shader.scale_mul + shader.scale_add;
                             var scalar_storage = [_]F{sentinel} ** 3;
@@ -1098,7 +1062,6 @@ test "specialized speckle routing scaling and masked stores across patterns" {
         const shader: comm.SpecklePrepared = .{
             .elem_uvs = undefined,
             .resources = &resources,
-            .params = p,
             .output_scale = 1.75,
             .output_offset = -0.125,
             .scale_mul = 2.0,
@@ -1137,7 +1100,7 @@ test "specialized speckle routing scaling and masked stores across patterns" {
                             &image,
                         );
                         for (0..S) |lane| {
-                            const raw = speckle.sampleScal(u[lane], v[lane], p, &resources);
+                            const raw = speckle.Kernel(kernel_index).sampleScal(u[lane], v[lane], &resources);
                             const expected = (raw * shader.output_scale + shader.output_offset) *
                                 shader.scale_mul + shader.scale_add;
                             const interp: comm.InterpData(3) = .{

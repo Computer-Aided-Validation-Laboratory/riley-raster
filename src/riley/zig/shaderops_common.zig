@@ -308,7 +308,6 @@ pub const FuncStatic = struct {
 pub const SpeckleStatic = struct {
     elem_uvs: ndarray.NDArray(F),
     resources: speckle.Resources,
-    params: speckle.GridParams,
     output_scale: F = 1.0,
     output_offset: F = 0.0,
     bits: ?u8 = 8,
@@ -379,7 +378,6 @@ pub const FuncPrepared = struct {
 pub const SpecklePrepared = struct {
     elem_uvs: ndarray.NDArray(F),
     resources: *const speckle.Resources,
-    params: speckle.GridParams,
     output_scale: F = 1.0,
     output_offset: F = 0.0,
     bits: ?u8 = 8,
@@ -447,7 +445,7 @@ pub inline fn normFuncShaderParams(
     return out;
 }
 
-test "ordinary function builtin tags remain unchanged after speckle extraction" {
+test "function builtin ordinals match C ABI codes" {
     inline for (.{
         FuncShaderBuiltin.constant,
         FuncShaderBuiltin.linear,

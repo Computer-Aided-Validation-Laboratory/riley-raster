@@ -90,9 +90,10 @@ Native errors reach Python as ``RuntimeError``:
   is individually valid, and a request at the limit can round over it after
   conversion. Preparation does not change density or select a fallback.
 - ``InvalidSpeckleCellSize``: supply a positive finite Perlin cell size.
-- ``SpeckleDensityOutOfRange``: the derived grid exceeds coordinate precision or
-  representable storage. Increase radius or cell size, or adjust the UV mapping
-  as described in :ref:`speckle-uv-domain`.
+- ``SpeckleDensityOutOfRange``: the derived grid scale or storage size is not
+  representable. Increase radius or cell size if the grid is too dense; decrease
+  it if the scale underflows. Also check the reference geometry and
+  :ref:`speckle-uv-domain`.
 - ``InvalidSpeckleUvDomain``: the interpolated UV map is outside the allowed domain
   or could not be certified.
 - ``InvalidSpeckleReferenceGeometry`` or ``InvalidSpeckleUvGeometry``: supply usable

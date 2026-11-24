@@ -41,7 +41,7 @@ named test suites follow [Programs and tutorials](#programs-and-tutorials).
   `run_all_demos.zig`, rather than naming them as tutorials.
 
 Keep established source and program names, including older forms such as
-`testunit.zig` and `benchcam.py`. Apply the conventions when adding new files;
+`benchcam.py`. Apply the conventions when adding new files;
 do not rename existing ones just to match the convention.
 
 Use underscores in tutorial source names, hyphens in Zig build steps, and the

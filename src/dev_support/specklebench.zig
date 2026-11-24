@@ -40,7 +40,7 @@ const GK = geom.Tri6Kernel();
 const N = GK.nodes_num;
 const NH = geom.MeshType.tri6.getNumHullPoints();
 
-pub const workload_mode = "static-geometry-depth-accumulator-v2";
+pub const workload_mode = "static-geometry-depth-accumulator";
 
 pub const Result = struct {
     checksum: u64 = 0,
@@ -151,7 +151,7 @@ fn SinkKernel(comptime kernel_index: ?usize, comptime filter: texops.TexSampConf
             if (comptime coord_space != .clip_px_leng) @compileError("Benchmark requires tri6 clip coordinates");
             const u = buf.interpFuncCoord(0, interp.weights);
             const v = buf.interpFuncCoord(1, interp.weights);
-            const value = if (kernel_index) |index| speckle.Kernel(index).sampleScal(u, v, shader.params, shader.resources) else texops.sampScal(1, filter, &shader.tex, u, v)[0];
+            const value = if (kernel_index) |index| speckle.Kernel(index).sampleScal(u, v, shader.resources) else texops.sampScal(1, filter, &shader.tex, u, v)[0];
             sink.consumeScal(value);
         }
 
@@ -176,7 +176,7 @@ fn SinkKernel(comptime kernel_index: ?usize, comptime filter: texops.TexSampConf
                 u += weights[nn] * @as(VecSF, @splat(buf.func_coords[nn]));
                 v += weights[nn] * @as(VecSF, @splat(buf.func_coords[N + nn]));
             }
-            const values = if (kernel_index) |index| speckle.Kernel(index).sampleSIMD(u, v, active, shader.params, shader.resources) else texops.sampWide(1, filter, &shader.tex, u, v)[0];
+            const values = if (kernel_index) |index| speckle.Kernel(index).sampleSIMD(u, v, active, shader.resources) else texops.sampWide(1, filter, &shader.tex, u, v)[0];
             sink.consumeSIMD(values, active);
         }
     };
@@ -331,10 +331,10 @@ pub const Evaluation = struct {
     }
 
     /// One invocation is one fresh measurement, with all frames inside the timer.
-    pub fn evaluate(self: *Evaluation, params: speckle.GridParams, resources: *const speckle.Resources, frames: usize) !void {
+    pub fn evaluate(self: *Evaluation, resources: *const speckle.Resources, frames: usize) !void {
         const index = resources.kernel_index orelse return error.MissingPreparedSpeckleKernel;
         inline for (speckle.kernel_configs, 0..) |_, ii| {
-            if (index == ii) return self.evaluateKernel(ii, .{ .sample = .linear }, shaderops.SpecklePrepared{ .elem_uvs = self.geometry.uvs, .resources = resources, .params = params, .bits = null }, frames);
+            if (index == ii) return self.evaluateKernel(ii, .{ .sample = .linear }, shaderops.SpecklePrepared{ .elem_uvs = self.geometry.uvs, .resources = resources, .bits = null }, frames);
         }
         return error.UnsupportedBenchmarkEvaluator;
     }
@@ -445,7 +445,7 @@ test "speckle benchmark sink UV interpolation matches production grayscale shade
         if (comptime std.meta.eql(cfg, default_config)) {
             var resources = try speckle.Resources.init(std.testing.allocator, params);
             defer resources.deinit(std.testing.allocator);
-            const shader: shaderops.SpecklePrepared = .{ .elem_uvs = undefined, .resources = &resources, .params = params, .bits = null };
+            const shader: shaderops.SpecklePrepared = .{ .elem_uvs = undefined, .resources = &resources, .bits = null };
             var buf: shaderops.LocalShaderBuff(N) = .{};
             buf.func_coords = .{ 0, 1, 0, 0.5, 0.5, 0, 0, 0, 1, 0, 0.5, 0.5, 0, 0, 0, 0, 0, 0 };
             const weights = [N]F{ 0.1, 0.2, 0.3, 0.1, 0.1, 0.2 };

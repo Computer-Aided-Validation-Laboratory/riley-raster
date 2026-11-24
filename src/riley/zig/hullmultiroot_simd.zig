@@ -336,4 +336,3 @@ test "multi-root SIMD child masks match scalar with inactive lanes" {
         try std.testing.expectEqual(expected, masks_fly[lane]);
     }
 }
-

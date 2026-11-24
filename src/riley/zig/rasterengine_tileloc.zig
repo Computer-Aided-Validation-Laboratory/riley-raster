@@ -148,7 +148,7 @@ fn rasterSceneTileLocImpl(
     defer for (worker_states[0..worker_states_initialized]) |*worker_state| {
         worker_state.deinit();
     };
-    
+
     for (worker_states) |*worker_state| {
         worker_state.* = try WorkerState.init(
             arena_alloc,

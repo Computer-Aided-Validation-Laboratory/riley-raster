@@ -32,8 +32,8 @@ To install or sync documentation dependencies in your `.venv` virtual environmen
 # If using uv pip in an active venv:
 uv pip install -e ".[docs]"
 
-# Or using uv sync:
-uv sync --extra docs
+# Or sync the checkout's documentation dependency group:
+uv sync --group docs
 ```
 
 ### Using standard `pip`

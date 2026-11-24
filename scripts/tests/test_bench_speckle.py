@@ -5,6 +5,7 @@ Build install-bench-speckle-evaluators in ReleaseFast with strip=true and
 enable-all-evaluators=true, then set RILEY_SPECKLE_BENCH_BINARY to its executable
 and run: python3 -m unittest scripts.tests.test_bench_speckle.NativeBenchmarkTests
 """
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from copy import deepcopy
 import hashlib
@@ -15,6 +16,7 @@ import math
 import os
 from pathlib import Path
 import tempfile
+from threading import Barrier
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -116,25 +118,56 @@ class BenchmarkTests(unittest.TestCase):
             self.assertEqual(set(launched), {frozen})
             self.assertEqual(frozen.read_bytes(), b'fixture')
 
-    def test_perlin_has_no_neighborhood_override(self):
-        d = bench.design(self.args('--profile', 'full', '--patterns', 'perlin',
-                                   '--workers', '1', '--scenes', 'plate',
-                                   '--jitter', '1.1', '--occupancy', '.7',
-                                   '--perlin-threshold', '.1', '--perlin-transition', '0'))
-        self.assertEqual(len(d['configurations']), 1)
-        self.assertIsNone(d['configurations'][0]['neighbors'])
-        self.assertEqual(d['configurations'][0]['softness'], 0.)
-        self.assertEqual(d['config']['perlin_threshold'], .1)
-        self.assertEqual(d['config']['perlin_transition'], 0.)
-        # Raw Perlin ignores radius jitter; the runner must not impose a unit-cell cap.
-        case = dict(d['configurations'][0], radius=d['config']['radius'])
-        self.assertEqual(case['jitter'], 1.1)
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / 'cases.json'
-            path.write_text(json.dumps([case]), encoding='utf-8')
-            self.assertEqual(bench.load_cases(path), [case])
+    def test_raw_perlin_matrix_deduplicates_inactive_controls(self):
+        inactive = dict(neighbors=None, radius=None, jitter=None, occupancy=None)
+        for profile in ('tuning', 'full'):
+            for overrides in ((), ('--jitter', '0', '1.1', '--occupancy', '.7', '1',
+                                   '--neighbors', '1', '4', '9', '--radius', '.6')):
+                with self.subTest(profile=profile, overrides=overrides):
+                    d = bench.design(self.args('--profile', profile, '--patterns', 'perlin',
+                                               '--workers', '1', '--perlin-threshold', '.1',
+                                               '--perlin-transition', '0', *overrides))
+                    self.assertEqual(d['configurations'], [dict(threads=1, scene=scene,
+                        pattern='perlin', softness=0., **inactive) for scene in ('plate', 'sphere')])
+                    d['variants']['A'] = dict(evaluator='gradient-lattice', catalogue=self.catalogue())
+                    config = bench.case_config(d, d['configurations'][0], 'A')
+                    command = bench.native_argv('native', config)
+                    self.assertTrue({f'--{key}' for key in inactive}.isdisjoint(command[1::2]))
+                    argv = self.decode_command(command)
+                    self.assertEqual((argv['perlin_threshold'], argv['perlin_transition']), (.1, 0.))
         with self.assertRaisesRegex(ValueError, 'raw jitter must be finite and nonnegative'):
             bench.design(self.args('--jitter', '-.1'))
+
+    def test_raw_perlin_bypasses_dot_factor_expansion_in_mixed_designs(self):
+        args = self.args('--profile', 'full', '--workers', '2', '1', '--scenes', 'sphere', 'plate',
+                         '--patterns', 'hard', 'perlin', '--jitter', '0', '.08',
+                         '--occupancy', '.7', '1', '--neighbors', '4', '9')
+        with patch.object(bench, 'product', wraps=product) as expand:
+            cases = bench.design(args)['configurations']
+        dot_factors = ([0., .08], [.7, 1.], [4, 9])
+        self.assertEqual([call.args for call in expand.call_args_list],
+                         [([1, 2], ['sphere', 'plate'], ['hard', 'perlin']), *([dot_factors] * 4)])
+        expected = []
+        for worker, scene in product((1, 2), ('sphere', 'plate')):
+            expected.extend(dict(threads=worker, scene=scene, pattern='hard', jitter=jitter,
+                                 occupancy=occupancy, neighbors=neighbors, softness=0.)
+                            for jitter, occupancy, neighbors in product(*dot_factors))
+            expected.append(dict(threads=worker, scene=scene, pattern='perlin', jitter=None,
+                                 occupancy=None, neighbors=None, radius=None, softness=0.))
+        self.assertEqual(cases, expected)
+
+    def test_raw_perlin_case_file_deduplicates_inactive_controls(self):
+        case = dict(threads=1, scene='plate', pattern='perlin', softness=0.,
+                    neighbors=None, radius=None, jitter=None, occupancy=None)
+        rows = [dict(case, radius=.35, jitter=0., occupancy=.7),
+                dict(case, radius=.6, jitter=1.1, occupancy=1.), case, dict(case, scene='sphere')]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'cases.json'
+            path.write_text(json.dumps(rows), encoding='utf-8')
+            self.assertEqual(bench.load_cases(path), [case, dict(case, scene='sphere')])
+            path.write_text(json.dumps([dict(case, neighbors=9)]), encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, 'invalid case neighbors'):
+                bench.load_cases(path)
 
     @patch.object(bench, 'available_cpus', return_value=14)
     def test_explicit_cases(self, _):
@@ -388,6 +421,49 @@ class BenchmarkTests(unittest.TestCase):
             native.assert_not_called()
             self.assertEqual({p: p.read_bytes() for p in out.rglob('*') if p.is_file()}, before)
 
+    def test_concurrent_runners_claim_output_exclusively(self):
+        for existing in (False, True):
+            with self.subTest(existing=existing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                out = root / 'out'
+                if existing:
+                    out.mkdir()
+                sources = [root / name for name in ('first', 'second')]
+                for source in sources:
+                    source.write_bytes(source.name.encode('ascii'))
+                claim = out / '.comparison-claim'
+                both_saw_empty = Barrier(2, timeout=5)
+                open_path = Path.open
+
+                def open_at_claim(path, mode='r', *args, **kwargs):
+                    if path == claim:
+                        self.assertEqual(mode, 'x')
+                        both_saw_empty.wait()
+                    return open_path(path, mode, *args, **kwargs)
+
+                def run(source):
+                    options = ['--out', str(out), '--binary', str(source), '--workers', '1', '--scenes', 'plate',
+                               '--patterns', 'hard', '--jitter', '0', '--occupancy', '1', '--neighbors', '9', '--repeats', '2']
+                    try:
+                        return bench.main(options)
+                    except SystemExit as exc:
+                        return exc.code
+
+                with patch.object(Path, 'open', open_at_claim), \
+                        patch.object(bench.subprocess, 'run', side_effect=self.transport()) as native, \
+                        patch('sys.stderr', new_callable=io.StringIO) as stderr, ThreadPoolExecutor(2) as pool:
+                    codes = list(pool.map(run, sources))
+                self.assertCountEqual(codes, [0, 1])
+                self.assertIn('use a fresh output directory', stderr.getvalue())
+                self.assertEqual(native.call_count, 5)
+                winner = sources[codes.index(0)]
+                metadata = json.loads((out / 'metadata.json').read_text(encoding='utf-8'))
+                self.assertEqual(metadata['runner_argv'][3], str(winner))
+                for spec in metadata['variants'].values():
+                    self.assertEqual(Path(spec['original_path']), winner)
+                    self.assertEqual(Path(spec['file']).read_bytes(), winner.read_bytes())
+                self.assertEqual(len(read_samples(out)), 4)
+
     def test_catalogue_preflight(self):
         for scenario in ('features-reordered', 'route', 'build', 'features', 'feature-duplicate', 'missing-build',
                          'workload', 'workload-object', 'unsupported', 'missing-sampling-configs', 'invalid-default'):
@@ -420,7 +496,7 @@ class BenchmarkTests(unittest.TestCase):
                         elif scenario == 'workload':
                             catalogue['workload_modes']['evaluation'] = 'different'
                         elif scenario == 'workload-object':
-                            catalogue['workload_modes'] = ['test-static-v1']
+                            catalogue['workload_modes'] = ['static-geometry-depth-accumulator']
                         elif scenario == 'unsupported':
                             catalogue['configs'] = []
                         elif scenario == 'invalid-default':
@@ -608,7 +684,7 @@ class BenchmarkTests(unittest.TestCase):
                         (row['evaluator'], row['pattern'], row['neighbors'], row['soft_edges']) in
                         (('classified-binned', 'disk', 9, False), ('cell-binned', 'disk', 9, True),
                          ('cell-binned', 'gaussian', 9, None), ('gradient-lattice', 'perlin', None, None))],
-                    workload_modes={'evaluation': 'test-static-v1', 'full-render': 'production-raster-advanced-memory-v6'})
+                    workload_modes={'evaluation': 'static-geometry-depth-accumulator', 'full-render': 'production-raster-advanced-memory-v6'})
 
     def native(self, config):
         evaluation = config['mode'] == 'evaluation'
@@ -623,9 +699,12 @@ class BenchmarkTests(unittest.TestCase):
                                 sampling_index=route['sampling_index'], backing='strip_list')
         native = {key: config[key] for key in ('mode', 'evaluator', 'scene', 'pattern', 'threads', 'width', 'height',
                                                'frames', 'texture', 'texture_filter') if key in config}
+        combined_ns = 3
         if evaluation:
-            native.update(resource_ns=1, render_ns=2)
-        native.update(combined_ns=3, checksum=7 if evaluation else None,
+            resource_ns = 0 if config['evaluator'] == 'texture' else 1
+            native.update(resource_ns=resource_ns, render_ns=2)
+            combined_ns = resource_ns + 2
+        native.update(combined_ns=combined_ns, checksum=7 if evaluation else None,
                     image_hash=None if evaluation else 'a' * 64,
                     shaded_samples=10 if evaluation else 0, evaluation_counters_available=evaluation,
                     image_samples=0 if evaluation else config['width'] * config['height'] * config['frames'],
@@ -741,8 +820,131 @@ class BenchmarkTests(unittest.TestCase):
                 flags = ('--profile', profile, '--a', 'texture', '--b', 'texture', '--texture', 'image.bmp')
                 metadata = bench.design(self.args(*flags, '--case-file', str(cases)))
                 self.assertEqual(metadata['configurations'], [row])
+
                 with self.assertRaisesRegex(ValueError, 'does not accept procedural controls'):
                     bench.design(self.args(*flags, '--radius', '.25'))
+
+    def test_raw_texture_pair_metrics_and_frozen_binaries(self):
+        for profile, requested, metrics, failure in (
+                ('tuning', (), {'render_ns'}, None),
+                ('full', (), {'render_ns'}, None),
+                ('full', ('combined',), {'combined_ns'}, None),
+                ('full', ('render',), {'render_ns'}, None),
+                ('full', ('combined', 'render'), None, 'combined and render are identical'),
+                ('full', ('setup',), None, 'setup is not measured'),
+                ('full', ('setup', 'render'), None, 'setup is not measured')):
+            with self.subTest(profile=profile, requested=requested), \
+                    tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                a, b, texture = (root / name for name in ('a', 'b', 'image.bmp'))
+                for source in (a, b, texture):
+                    source.write_bytes(source.name.encode('ascii'))
+                out = root / 'nested' / 'result'
+                if requested == ('setup', 'render'):
+                    out.mkdir(parents=True)  # An existing empty output directory stays empty too.
+                sources = {'A': a, 'B': b}
+
+                catalogued = {}
+
+                def run(command, **kwargs):
+                    binary = Path(command[0])
+                    variant = binary.stem
+                    if command[-1] == '--list-evaluators':
+                        self.assertNotIn(binary, sources.values())
+                        catalogued[variant] = binary.read_bytes()
+                        sources[variant].write_bytes(b'rebuilt after catalogue')
+                        return process_result(stdout=json.dumps(self.catalogue()))
+                    self.assertEqual(binary.parent, out / 'binaries')
+                    self.assertEqual(binary.read_bytes(), catalogued[variant])
+                    return process_result(stdout='BENCH ' + json.dumps(self.native(self.decode_command(command))))
+
+                options = ['--out', str(out), '--profile', profile, '--binary-a', str(a), '--binary-b', str(b),
+                           '--a', 'texture', '--b', 'texture', '--texture', str(texture), '--workers', '1',
+                           '--scenes', 'plate', '--repeats', '2']
+                if requested:
+                    options += ['--metrics', *requested]
+                with patch.object(bench.subprocess, 'run', side_effect=run) as process:
+                    if failure:
+                        with patch('sys.stderr', new_callable=io.StringIO) as stderr, self.assertRaises(SystemExit) as error:
+                            bench.main(options)
+                        self.assertEqual(error.exception.code, 1)
+                        self.assertIn(failure, stderr.getvalue())
+                        if requested == ('setup', 'render'):
+                            self.assertEqual(list(out.iterdir()), [])
+                        else:
+                            self.assertFalse(out.parent.exists())
+                        process.assert_not_called()
+                        continue
+                    self.assertEqual(bench.main(options), 0)
+                self.assertEqual(process.call_count, 6)
+                metadata = json.loads((out / 'metadata.json').read_text(encoding='utf-8'))
+                self.assertEqual(set(metadata['metrics']), metrics)
+                comparison = json.loads((out / 'comparison.json').read_text(encoding='utf-8'))
+                self.assertEqual({record['metric'] for record in comparison if 'p' in record}, metrics)
+                for sample in read_samples(out):
+                    self.assertEqual(sample['binary_sha256'], hashlib.sha256(catalogued[sample['variant']]).hexdigest())
+
+    def test_failed_catalogue_preserves_logs_and_frozen_paths_in_partial_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            a, b, out = (root / name for name in ('a', 'b', 'out'))
+            a.write_bytes(b'original a')
+            b.write_bytes(b'original b')
+
+            def run(command, **kwargs):
+                self.assertEqual(command[1:], ['--list-evaluators'])
+                if Path(command[0]).stem == 'A':
+                    return process_result(stdout=json.dumps(self.catalogue()))
+                result = process_result(stderr='failed to catalogue B')
+                result.returncode = 1
+                return result
+
+            options = ['--out', str(out), '--binary-a', str(a), '--binary-b', str(b),
+                       '--a', 'texture', '--b', 'texture', '--texture', 'unused.bmp']
+            with patch.object(bench.subprocess, 'run', side_effect=run), \
+                    patch('sys.stderr', new_callable=io.StringIO) as stderr, self.assertRaises(SystemExit):
+                bench.main(options)
+            self.assertIn(f'full logs: {out / "logs/catalogue-B"}', stderr.getvalue())
+            self.assertEqual((out / 'logs/catalogue-B.stderr').read_text(encoding='utf-8'), 'failed to catalogue B')
+            self.assertFalse((out / 'samples.jsonl').exists())
+            variants = json.loads((out / 'metadata.json').read_text(encoding='utf-8'))['variants']
+            self.assertIn('catalogue', variants['A'])
+            self.assertNotIn('catalogue', variants['B'])
+            for variant, original in (('A', a), ('B', b)):
+                frozen = bench.native_exe(out / 'binaries' / variant)
+                self.assertEqual(Path(variants[variant]['file']), frozen)
+                self.assertEqual(frozen.read_bytes(), original.read_bytes())
+
+    def test_raw_texture_resource_time_is_checked_in_mixed_comparisons(self):
+        for resource_ns in (0, 1):
+            with self.subTest(resource_ns=resource_ns), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                binary, texture, out = (root / name for name in ('native', 'image.bmp', 'out'))
+                binary.write_bytes(b'native')
+                texture.write_bytes(b'texture')
+
+                def run(command, **kwargs):
+                    if command[-1] == '--list-evaluators':
+                        return process_result(stdout=json.dumps(self.catalogue()))
+                    native = self.native(self.decode_command(command))
+                    if native['evaluator'] == 'texture':
+                        native.update(resource_ns=resource_ns, combined_ns=native['render_ns'] + resource_ns)
+                    return process_result(stdout='BENCH ' + json.dumps(native))
+
+                options = ['--out', str(out), '--binary', str(binary), '--a', 'texture', '--b', 'list-indexed',
+                           '--texture', str(texture), '--workers', '1', '--scenes', 'plate', '--patterns', 'hard',
+                           '--jitter', '0', '--occupancy', '1', '--neighbors', '4', '--metrics', 'render', '--repeats', '2']
+                with patch.object(bench.subprocess, 'run', side_effect=run):
+                    if resource_ns == 0:
+                        self.assertEqual(bench.main(options), 0)
+                        self.assertEqual(len(read_samples(out)), 4)
+                    else:
+                        with patch('sys.stderr', new_callable=io.StringIO) as stderr, self.assertRaises(SystemExit):
+                            bench.main(options)
+                        self.assertIn('requires resource_ns == 0', stderr.getvalue())
+                        row, = read_samples(out)
+                        self.assertEqual(row['native']['resource_ns'], resource_ns)
+                        self.assertFalse((out / 'comparison.json').exists())
 
     def test_physical_canonical_requests_include_all_controls(self):
         common = dict(mode='full-render', evaluator='auto', width=32, height=24, frames=1)
@@ -925,6 +1127,9 @@ class NativeBenchmarkTests(unittest.TestCase):
             native, _ = sample(config, mode + '-texture-' + filtering)
             self.assertIsNone(native['physical_params'])
             self.assertIsNone(native['resolved_grid'])
+            if mode == 'evaluation':
+                self.assertEqual(native['resource_ns'], 0)
+                self.assertEqual(native['combined_ns'], native['render_ns'])
 
         # Requested mock controls must survive the wildcard generation/sampling route.
         config = dict(mode='evaluation', evaluator='mock', pattern='soft', neighbors=4,

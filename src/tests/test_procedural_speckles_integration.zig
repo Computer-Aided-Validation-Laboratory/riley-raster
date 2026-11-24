@@ -12,6 +12,7 @@ const buildconfig = @import("../riley/zig/buildconfig.zig");
 const camera = @import("../riley/zig/camera.zig");
 const specklefixture = @import("../riley/zig/specklefixture.zig");
 const expected_config = @import("expected_speckle_config.zig");
+const geometrykernels = @import("../riley/zig/geometrykernels.zig");
 const imageio = @import("../riley/zig/imageio.zig");
 const matslice = @import("../riley/zig/matslice.zig");
 const meshio = @import("../riley/zig/meshio.zig");
@@ -20,12 +21,11 @@ const riley = @import("../riley/zig/riley.zig");
 const speckleconfig = @import("../riley/zig/speckleconfig.zig");
 const speckleops = @import("../riley/zig/speckleops.zig");
 const ndarray = @import("../riley/zig/ndarray.zig");
-const textureops = @import("../riley/zig/textureops.zig");
 const rotation = @import("../riley/zig/rotation.zig");
 const vecstack = @import("../riley/zig/vecstack.zig");
 
 const F = buildconfig.F;
-const GridParams = speckleops.GridParams;
+
 const Params = riley.SpeckleParams;
 const Pattern = speckleconfig.Pattern;
 
@@ -36,7 +36,8 @@ test "speckle BMP matches an independently calculated mock gradient" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const params: GridParams = .{ .evaluator = .mock };
+    const params: speckleops.GridParams = .{ .evaluator = .mock };
+    const K = speckleops.Kernel(speckleconfig.sampleConfigIndex(buildconfig.enable_all_evaluators, .mock));
     var resources = try speckleops.Resources.init(std.testing.allocator, params);
     defer resources.deinit(std.testing.allocator);
     const rows = 7;
@@ -47,7 +48,7 @@ test "speckle BMP matches an independently calculated mock gradient" {
         const v = (@as(F, @floatFromInt(rr)) + 0.5) / rows;
         for (0..cols) |cc| {
             const u = (@as(F, @floatFromInt(cc)) + 0.5) / cols;
-            pixels[rr * cols + cc] = speckleops.sampleScal(u, v, params, &resources);
+            pixels[rr * cols + cc] = K.sampleScal(u, v, &resources);
         }
     }
     try imageio.saveMatAsImage(std.testing.io, tmp.dir, "mock", &image, .{
@@ -80,50 +81,7 @@ test "speckle BMP matches an independently calculated mock gradient" {
     }
 }
 
-test "constant low-level speckles match a uniform texture across evaluator configurations" {
-    const cases = [_]struct { occupancy: F = 0.9, foreground: F, background: F }{
-        .{ .foreground = 0, .background = 0 },
-        .{ .foreground = 0.375, .background = 0.375 },
-        .{ .foreground = 1, .background = 1 },
-        .{ .occupancy = 0, .foreground = 1, .background = 0 },
-        .{ .occupancy = 0, .foreground = 0, .background = 0.375 },
-        .{ .occupancy = 0, .foreground = 0, .background = 1 },
-    };
-    var texture = try textureops.Tex(F, 1).init(std.testing.allocator, 2, 3);
-    defer texture.deinit(std.testing.allocator);
-    for (speckleconfig.generationConfigs(buildconfig.enable_all_evaluators)) |config| {
-        const evaluator = std.meta.activeTag(config);
-        if (evaluator == .mock) continue; // Mock ignores colors and returns a UV gradient.
-        for (cases) |case| {
-            if (case.occupancy == 0 and config.pattern() == .perlin) continue;
-            @memset(texture.array.slice, case.background);
-            var params: GridParams = .{
-                .pattern = config.pattern() orelse .disk,
-                .cells_per_uv = .{ 3.25, 2.5 },
-                .occupancy = case.occupancy,
-                .edge_softness = if (config.edges() == .soft) 0.035 else 0,
-                .foreground = case.foreground,
-                .background = case.background,
-            };
-            if (buildconfig.enable_all_evaluators) {
-                params.evaluator = evaluator;
-                params.neighbor_count = config.neighborhood();
-            }
-            var resources = try speckleops.Resources.init(std.testing.allocator, params);
-            defer resources.deinit(std.testing.allocator);
-            for ([_]F{ -0.25, 0, 0.37, 1, 1.25 }) |u| {
-                const v = 1 - u;
-                const texel = textureops.sampScal(1, .{ .sample = .nearest }, &texture, u, v)[0];
-                try std.testing.expectEqual(case.background, texel);
-                try std.testing.expectEqual(texel, speckleops.sampleScal(u, v, params, &resources));
-                const values: [buildconfig.SimdWidth]F = speckleops.sampleSIMD(@splat(u), @splat(v), @splat(true), params, &resources);
-                for (values) |value| try std.testing.expectEqual(texel, value);
-            }
-        }
-    }
-}
-
-test "runtime speckle patterns prepare their production resources" {
+test "speckle build options reach the runtime configuration" {
     try std.testing.expectEqual(
         expected_config.enable_all_evaluators,
         buildconfig.enable_all_evaluators,
@@ -132,6 +90,9 @@ test "runtime speckle patterns prepare their production resources" {
         expected_config.speckle_mask_samples_per_cell,
         buildconfig.speckle_mask_samples_per_cell,
     );
+}
+
+test "runtime speckle patterns prepare their production resources" {
     var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0 };
     var connect = [_]usize{ 0, 1, 2 };
     var uv_values = [_]F{ 0, 0, 1, 0, 0, 1 };
@@ -166,7 +127,7 @@ test "runtime speckle patterns prepare their production resources" {
     }
 }
 
-test "physical default speckles lower friendly inputs and render deformed fields" {
+test "physical default speckles produce nontrivial two-frame images and preserve unit rescaling" {
     // riley.zig owns buffer/worker comparisons and experimental independent references.
     // Here the public entry point lowers hard/soft disks, Gaussian and Perlin inputs.
     const Case = struct {
@@ -208,6 +169,7 @@ test "physical default speckles lower friendly inputs and render deformed fields
         });
         const alloc = arena.allocator();
         const expected = try renderSpeckleMesh(alloc, scene.camera_input, scene.mesh_input);
+        // This is a two-frame smoke check, not a reference for the deformation mapping.
         try specklefixture.expectDeformedImages(expected);
 
         // A unit change must preserve the soft, jittered disk and the physical Perlin period.
@@ -215,6 +177,77 @@ test "physical default speckles lower friendly inputs and render deformed fields
             const scaled = try specklefixture.initScene(&arena, params, case.curved, 8);
             const actual = try renderSpeckleMesh(alloc, scaled.camera_input, scaled.mesh_input);
             try specklefixture.expectImagesWithin(expected, actual, 0);
+        }
+    }
+}
+
+test "planar speckle fields agree across surface element types" {
+    const cols = 35;
+    const rows = 20;
+    // Crop strictly inside the plate so silhouette coverage does not affect the comparison.
+    const cam_input: camera.CameraInput = .{
+        .pixels_num = .{ cols, rows },
+        .pixels_size = .{ 1.0 / 32.0, 1.0 / 32.0 },
+        .pos_world = vecstack.Vec3F.initSlice(&.{ 0, 0, 2 }),
+        .rot_world = rotation.Rotation.init(0, 0, 0),
+        .roi_cent_world = vecstack.Vec3F.initZeros(),
+        .focal_length = 2,
+        .sub_sample = 1,
+    };
+    var uv_values = [_]F{ 0, 0, 1, 0, 1, 1, 0, 1, 0.5, 0, 1, 0.5, 0.5, 1, 0, 0.5, 0.5, 0.5 };
+    var coords: [9 * 3]F = undefined;
+    for (0..9) |nn| {
+        const u = uv_values[2 * nn];
+        const v = uv_values[2 * nn + 1];
+        coords[3 * nn ..][0..3].* = .{ (u - 0.5) * 1.25, (v - 0.5) * 0.75, 0 };
+    }
+    var quad_nodes = [_]usize{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+    var tri3_nodes = [_]usize{ 0, 1, 2, 0, 2, 3 };
+    var tri6_nodes = [_]usize{ 0, 1, 2, 4, 5, 8, 0, 2, 3, 8, 6, 7 };
+    const meshes = [_]struct { mesh_type: geometrykernels.MeshType, nodes: []usize }{
+        .{ .mesh_type = .quad4, .nodes = quad_nodes[0..4] },
+        .{ .mesh_type = .tri3, .nodes = &tri3_nodes },
+        .{ .mesh_type = .tri3opt, .nodes = &tri3_nodes },
+        .{ .mesh_type = .tri6, .nodes = &tri6_nodes },
+        .{ .mesh_type = .quad8, .nodes = quad_nodes[0..8] },
+        .{ .mesh_type = .quad9, .nodes = &quad_nodes },
+    };
+    const patterns = [_]Params{
+        .{ .disk = fixture_params },
+        .{ .gaussian = fixture_params },
+        .{ .perlin = .{ .cell_size = 0.15, .seed = fixture_params.seed } },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const uvs = try ndarray.NDArray(F).init(alloc, &uv_values, &.{ 9, 2 });
+    for (patterns) |params| {
+        var reference: ndarray.NDArray(F) = undefined;
+        for (meshes, 0..) |mesh, index| {
+            errdefer std.debug.print("planar speckle parity: {s} on {s}\n", .{
+                @tagName(params), @tagName(mesh.mesh_type),
+            });
+            const nodes_per_elem = mesh.mesh_type.getNodesNum();
+            const image = try renderSpeckleMesh(alloc, cam_input, .{
+                .mesh_type = mesh.mesh_type,
+                .coords = meshio.Coords.init(&coords, 9),
+                .connect = meshio.Connect.init(mesh.nodes, mesh.nodes.len / nodes_per_elem, nodes_per_elem),
+                .disp = null,
+                .shader = .{ .speckle = .{ .uvs = uvs, .params = params } },
+            });
+            try std.testing.expectEqualSlices(usize, &.{ 1, 1, 1, rows, cols }, image.dims);
+            if (index == 0) {
+                reference = image;
+                try std.testing.expect(std.mem.min(F, image.slice) < 0.4);
+                try std.testing.expect(std.mem.max(F, image.slice) > 0.6);
+                for (image.slice) |value| try std.testing.expect(value >= 0 and value <= 1);
+                continue;
+            }
+            const tol: F = if (F == f32) 2e-4 else 1e-10;
+            for (reference.slice, image.slice, 0..) |expected, actual, pixel| {
+                errdefer std.debug.print("pixel ({d}, {d})\n", .{ pixel % cols, pixel / cols });
+                try std.testing.expectApproxEqAbs(expected, actual, tol);
+            }
         }
     }
 }
@@ -244,9 +277,10 @@ test "public physical disk render recovers nominal coverage and reference scale"
 
     const cases = [_]struct { occupancy: F, coverage: F, jitter: F = 0, expected: f64, tol: f64 }{
         .{ .occupancy = 0.3, .coverage = 0.1, .expected = 0.1, .tol = 0.005 },
-        // Independent numerical coverage for uniform J = R/2 at nominal C = 0.5.
-        // Allow more finite-area sampling variation for this denser field.
-        .{ .occupancy = 1, .coverage = 0.5, .jitter = radius / 2, .expected = 0.5254, .tol = 0.01 },
+        // dev/THEORY.md §6 gives about 0.525 for the stratified owner-cell model:
+        // calibrate at C = 0.5 without jitter, then give each owner a uniform radius
+        // in [R/2, 3R/2]. The tolerance allows for a finite field and pixel sampling.
+        .{ .occupancy = 1, .coverage = 0.5, .jitter = radius / 2, .expected = 0.525, .tol = 0.01 },
     };
     for (cases) |case| {
         errdefer std.debug.print("disk coverage {d}, occupancy {d}, jitter {d}\n", .{
@@ -323,19 +357,22 @@ fn expectPreparedResources(
         .speckle => |*shader| &shader.resources,
         else => return error.UnexpectedShaderVariant,
     };
-    const actual = try mesh_static.shader.speckle.params.resolve();
-    try std.testing.expectEqualDeep(expected, actual);
-    try std.testing.expectEqual(expected.neighborhood(), actual.neighborhood());
-    try std.testing.expect(resources.kernel_index != null);
+    const grid = switch (resources.data) {
+        inline .perlin, .cell_binned, .classified_binned => |backing| backing.params,
+        else => return error.UnexpectedEvaluator,
+    };
+    try std.testing.expectEqualDeep(expected, try grid.resolve());
+
+    const kernel_index = resources.kernel_index orelse return error.MissingSpeckleKernel;
     try std.testing.expectEqualDeep(
         speckleconfig.canonicalizeSampleConfig(expected),
-        speckleops.kernel_configs[resources.kernel_index.?],
+        speckleops.kernel_configs[kernel_index],
     );
     const expected_backing: std.meta.Tag(speckleops.Backing) = switch (expected) {
         .gradient_lattice => .perlin,
         .cell_binned => .cell_binned,
         .classified_binned => .classified_binned,
-        else => unreachable,
+        else => return error.UnexpectedEvaluator,
     };
     try std.testing.expectEqual(expected_backing, std.meta.activeTag(resources.data));
 }

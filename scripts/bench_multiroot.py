@@ -18,7 +18,10 @@ import pathlib
 import statistics
 import subprocess
 
-from bench_common import native_exe, repo_root, timestamp_string, write_command_file
+if __package__:
+    from .bench_common import native_exe, repo_root, timestamp_string, write_command_file
+else:
+    from bench_common import native_exe, repo_root, timestamp_string, write_command_file
 
 
 ROOT = repo_root()
@@ -177,7 +180,8 @@ def match_flat_shading(args: argparse.Namespace, target: int) -> float:
 
 def main() -> None:
     args = parse_args()
-    args.out_dir = args.out_root / timestamp_string()
+    timestamp = timestamp_string()
+    args.out_dir = args.out_root / timestamp
     args.out_dir.mkdir(parents=True, exist_ok=True)
     backends = ("simd",)
     if not args.skip_build:

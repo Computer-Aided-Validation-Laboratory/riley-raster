@@ -347,7 +347,7 @@ fn controlNet(
         dst[grid[2][1]] = row2;
         dst[grid[2][2]] = src[2];
     }
-    
+
     return controls;
 }
 pub const BezierLeafPreCalc = struct {

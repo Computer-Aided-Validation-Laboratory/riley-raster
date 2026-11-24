@@ -2067,7 +2067,6 @@ test "analytic speckles agree through private production frame dispatch across e
             // Replace the complete field before frame preparation borrows its stable resources.
             shader.resources.deinit(local_alloc);
             shader.resources = try speckleops.Resources.init(local_alloc, params);
-            shader.params = params;
             try std.testing.expectEqualDeep(
                 speckleconfig.canonicalizeSampleConfig(try params.resolve()),
                 speckleops.kernel_configs[shader.resources.kernel_index.?],

@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------------------
 
 test {
-    _ = @import("tests/testproceduralspeckles.zig");
+    _ = @import("tests/test_procedural_speckles_integration.zig");
     _ = @import("riley/zig/speckleops.zig");
     _ = @import("riley/zig/shaderops_common.zig");
     _ = @import("riley/zig/shaderops_scalar.zig");

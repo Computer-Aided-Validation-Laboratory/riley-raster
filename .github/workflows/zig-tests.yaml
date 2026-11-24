@@ -29,6 +29,10 @@ jobs:
         with:
           version: 0.16.0
 
+      - name: Check Zig formatting (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig fmt --check build.zig build.zig.zon src scripts
+
       - name: Zig Build Riley Library
         run: zig build -Doptimize=ReleaseFast --summary all
 

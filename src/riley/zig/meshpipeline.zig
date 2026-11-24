@@ -33,7 +33,7 @@ const texops = @import("textureops.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 
 const shaderops = @import("shaderops_common.zig");
-const speckleops = @import("speckleops.zig");
+
 const speckleparams = @import("speckleparams.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
@@ -427,7 +427,6 @@ pub fn initMeshStatic(
             shader_static = .{ .speckle = .{
                 .elem_uvs = elem_uvs,
                 .resources = resources,
-                .params = params,
                 .output_scale = input.output_scale,
                 .output_offset = input.output_offset,
                 .bits = input.bits,
@@ -1835,7 +1834,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             return .{ .speckle = .{
                 .elem_uvs = try self.gatherVisElemUVs(outer_alloc, speckle_static.elem_uvs),
                 .resources = &speckle_static.resources,
-                .params = speckle_static.params,
                 .output_scale = speckle_static.output_scale,
                 .output_offset = speckle_static.output_offset,
                 .bits = speckle_static.bits,
@@ -1973,7 +1971,7 @@ test "speckle preparation gathers visible UVs and borrows static resources acros
     const headers = binned.headers.ptr;
     // Borrow identity alone would miss replacing backing inside the same Resources object.
     const storage = .{ coordinates, counts, headers };
-    const frozen_params = static.params;
+    const cells_per_uv = binned.params.cells_per_uv;
 
     var executor = pce.ParaChunkExecutor.init(std.testing.io, 1);
     // Exercise shader preparation independently of projection/culling.
@@ -1996,7 +1994,7 @@ test "speckle preparation gathers visible UVs and borrows static resources acros
             const prepared = mesh_prep.shader.speckle;
             try std.testing.expectEqualSlices(F, &.{ 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1 }, prepared.elem_uvs.slice);
             try std.testing.expectEqual(&static.resources, prepared.resources);
-            try std.testing.expectEqualDeep(frozen_params, prepared.params);
+
             const records = prepared.resources.data.classified_binned;
             try std.testing.expectEqualDeep(storage, .{ records.coordinates.ptr, records.counts.ptr, records.headers.ptr });
             try std.testing.expectEqual(static.output_scale, prepared.output_scale);
@@ -2032,9 +2030,13 @@ test "speckle preparation gathers visible UVs and borrows static resources acros
     const empty_records = empty.resources.data.classified_binned;
     try std.testing.expectEqualDeep(storage, .{ empty_records.coordinates.ptr, empty_records.counts.ptr, empty_records.headers.ptr });
 
-    coords[3] = 2;
-    const other_mesh = try initMeshStatic(alloc, &input);
-    try std.testing.expect(!std.meta.eql(frozen_params.cells_per_uv, other_mesh.shader.speckle.params.cells_per_uv));
+    // Double the physical x extent without changing UVs or the physical speckle settings.
+    var wider_coords = coords;
+    wider_coords[3] = 2;
+    wider_coords[9] = 2;
+    var wider_input = input;
+    wider_input.coords = meshio.Coords.init(&wider_coords, 4);
+    const other_mesh = try initMeshStatic(alloc, &wider_input);
     pipeline.mesh_static = &other_mesh;
     var other_prep: MeshPrepared = undefined;
     try pipeline.prepareShader(alloc, &other_prep);
@@ -2044,18 +2046,24 @@ test "speckle preparation gathers visible UVs and borrows static resources acros
     try std.testing.expect(other_records.coordinates.ptr != coordinates);
     try std.testing.expect(other_records.counts.ptr != counts);
     try std.testing.expect(other_records.headers.ptr != headers);
+    const tol: F = if (F == f32) 2e-6 else 2e-14;
+    try std.testing.expect(cells_per_uv[0] > 0 and cells_per_uv[1] > 0);
+    try std.testing.expectApproxEqRel(2 * cells_per_uv[0], other_records.params.cells_per_uv[0], tol);
+    try std.testing.expectApproxEqRel(cells_per_uv[1], other_records.params.cells_per_uv[1], tol);
     const retained = next.resources.data.classified_binned;
     try std.testing.expectEqualDeep(storage, .{ retained.coordinates.ptr, retained.counts.ptr, retained.headers.ptr });
+    try std.testing.expectEqual(cells_per_uv, retained.params.cells_per_uv);
 }
 
-test "speckle static setup validates converted grids and releases partial allocations" {
-    // Catch resource error handling that would widen mesh preparation to anyerror.
-    comptime {
-        const Result = @typeInfo(@TypeOf(initMeshStatic)).@"fn".return_type.?;
-        const Errors = @typeInfo(Result).error_union.error_set;
-        if (@typeInfo(Errors).error_set == null)
-            @compileError("mesh preparation must retain a finite inferred error set");
-    }
+// Keep mesh preparation's inferred error set finite as resource handling evolves.
+comptime {
+    const Result = @typeInfo(@TypeOf(initMeshStatic)).@"fn".return_type.?;
+    const Errors = @typeInfo(Result).error_union.error_set;
+    if (@typeInfo(Errors).error_set == null)
+        @compileError("mesh preparation must retain a finite inferred error set");
+}
+
+test "speckle static setup rejects unsupported grids and handles allocation failures" {
     const Setup = struct {
         fn run(alloc: std.mem.Allocator, params: speckleparams.SpeckleParams) !void {
             var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0 };

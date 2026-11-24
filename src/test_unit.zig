@@ -12,7 +12,7 @@
 test {
     _ = @import("riley/zig/riley.zig");
     _ = @import("test_poly.zig");
-    _ = @import("testproceduralspeckles.zig");
+    _ = @import("test_procedural_speckles.zig");
     _ = @import("dev_support/tests.zig");
     _ = @import("dev_support/testsuites.zig");
     _ = @import("dev_support/benchargs.zig");

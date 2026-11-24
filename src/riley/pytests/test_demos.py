@@ -84,7 +84,7 @@ def test_procedural_demo_mesh_inputs_are_packaged(
         assert data_dir.joinpath(name).is_file()
 
 
-def test_procedural_cache_requires_exact_output_membership(tmp_path: Path) -> None:
+def test_demo_cache_requires_exact_filename_membership(tmp_path: Path) -> None:
     from riley.pytests.test_riley import _has_expected_demo_renders
 
     demo_dir = tmp_path / "demo1b_procedural_sphere"
@@ -93,12 +93,66 @@ def test_procedural_cache_requires_exact_output_membership(tmp_path: Path) -> No
         (demo_dir / f"cam0_frame{frame}_field0.bmp").touch()
     assert _has_expected_demo_renders(demo_dir)
 
-    # Keep the same file count but replace an expected frame with an extra one.
     (demo_dir / "cam0_frame1_field0.bmp").rename(demo_dir / "unexpected.bmp")
     assert not _has_expected_demo_renders(demo_dir)
 
 
-def test_partial_zig_render_leaves_other_parity_cases_runnable(
+def test_camera_model_cache_rejects_an_incomplete_matrix(tmp_path: Path) -> None:
+    from riley.pytests.test_riley import _has_cameramodel_renders
+
+    distorts = (
+        "none", "brown_conrady", "brown_conrady_ext", "polynomial",
+        "brown_conrady_polynomial", "brown_conrady_ext_polynomial",
+    )
+    psfs = (
+        "pixel_box", "gaussian_separable", "gaussian_nonseparable",
+        "anisotropic_separable", "anisotropic_rotated",
+    )
+    modes = ("tile_local", "global_subpx_full", "global_subpx_stripe")
+    assert not _has_cameramodel_renders(tmp_path)
+    for distort in distorts:
+        for psf in psfs:
+            for mode in modes:
+                path = tmp_path / distort / psf / mode / "cam0_frame0_field0.bmp"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+    assert _has_cameramodel_renders(tmp_path)
+
+    path.unlink()
+    assert not _has_cameramodel_renders(tmp_path)
+
+
+def test_zig_demo_cache_hash_tracks_input_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from riley.pytests import test_riley
+
+    monkeypatch.setattr(test_riley, "PROJECT_ROOT", tmp_path)
+    source = tmp_path / "src" / "demo.zig"
+    asset = tmp_path / "data" / "mesh.csv"
+    texture = tmp_path / "texture" / "speckle.bmp"
+    source.parent.mkdir()
+    asset.parent.mkdir()
+    texture.parent.mkdir()
+    source.write_text("source", encoding="utf-8")
+    asset.write_text("mesh", encoding="utf-8")
+    texture.write_bytes(b"texture")
+    cmd = ["zig", "run", "src/run_all_demos.zig"]
+
+    original = test_riley._compute_zig_demo_sources_sha(cmd)
+    source.write_text("changed source", encoding="utf-8")
+    changed_source = test_riley._compute_zig_demo_sources_sha(cmd)
+    assert changed_source != original
+    asset.write_text("changed mesh", encoding="utf-8")
+    changed_asset = test_riley._compute_zig_demo_sources_sha(cmd)
+    assert changed_asset != changed_source
+    texture.write_bytes(b"changed texture")
+    changed_texture = test_riley._compute_zig_demo_sources_sha(cmd)
+    assert changed_texture != changed_asset
+    assert test_riley._compute_zig_demo_sources_sha([*cmd, "-lc"]) != changed_texture
+
+
+def test_partial_zig_render_leaves_completed_parity_cases_runnable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from riley.pytests import test_riley
@@ -125,67 +179,12 @@ def test_partial_zig_render_leaves_other_parity_cases_runnable(
 
     test_riley.ensure_zig_demo_renders.__wrapped__()
     assert not stamp.exists()
-    with pytest.raises(AssertionError, match=f"missing or unexpected Zig renders in .*{incomplete}"):
+    with pytest.raises(
+        AssertionError,
+        match=f"missing or unexpected Zig renders in .*{incomplete}",
+    ):
         test_riley._run_demo_case(incomplete, incomplete)
     test_riley._run_demo_case(complete, complete)
-
-
-def test_zig_cache_hash_tracks_procedural_sources_and_inputs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from riley.pytests import test_riley
-
-    monkeypatch.setattr(test_riley, "PROJECT_ROOT", tmp_path)
-    zig_cmd = ["zig", "run", "src/run_all_demos.zig"]
-    cached_sha = test_riley._compute_zig_demo_sources_sha(zig_cmd)
-    for name in (
-        "src/demo0b_procedural_quickstart.zig",
-        "src/demo1b_procedural_sphere.zig",
-        "src/demo2d_rabbit_procedural.zig",
-        "data/min/tri6_sphere200/uvs.csv",
-        "data/rabbits/riley_tri6/uvs.csv",
-        "texture/speckle_mono.bmp",
-    ):
-        path = tmp_path / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.touch()
-        added_sha = test_riley._compute_zig_demo_sources_sha(zig_cmd)
-        assert added_sha != cached_sha
-        path.write_text("modified", encoding="utf-8")
-        cached_sha = test_riley._compute_zig_demo_sources_sha(zig_cmd)
-        assert cached_sha != added_sha
-    assert test_riley._compute_zig_demo_sources_sha([*zig_cmd, "-lc"]) != cached_sha
-
-
-def test_cameramodel_cache_rejects_partial_matrices(tmp_path: Path) -> None:
-    from riley.pytests.test_riley import _has_cameramodel_renders
-
-    distorts = (
-        "none",
-        "brown_conrady",
-        "brown_conrady_ext",
-        "polynomial",
-        "brown_conrady_polynomial",
-        "brown_conrady_ext_polynomial",
-    )
-    psfs = (
-        "pixel_box",
-        "gaussian_separable",
-        "gaussian_nonseparable",
-        "anisotropic_separable",
-        "anisotropic_rotated",
-    )
-    modes = ("tile_local", "global_subpx_full", "global_subpx_stripe")
-    assert not _has_cameramodel_renders(tmp_path)
-    for distort in distorts:
-        for psf in psfs:
-            for mode in modes:
-                path = tmp_path / distort / psf / mode / "cam0_frame0_field0.bmp"
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.touch()
-    assert _has_cameramodel_renders(tmp_path)
-    path.unlink()
-    assert not _has_cameramodel_renders(tmp_path)
 
 
 @pytest.mark.parametrize("channels", (1, 3))

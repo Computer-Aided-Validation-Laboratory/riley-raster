@@ -7,8 +7,9 @@
 // Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 //! One process is one observation. Fixture loading and texture decode are excluded.
-//! Evaluation measures resource preparation and the static-geometry loop; its final
-//! reduction is excluded. Full-render times the production memory API, including
+//! Evaluation measures procedural resource preparation and the static-geometry loop;
+//! texture needs no timed setup. The final reduction is excluded.
+//! Full-render times the production memory API, including
 //! UV gathering/calibration, output allocation, frame geometry and assembly.
 //! The full-render image hash is computed after timing.
 const std = @import("std");
@@ -321,12 +322,12 @@ const PreparedIdentity = struct {
     backing: []const u8 = "none",
 };
 
-/// Stored generation controls and actual dispatch are deliberately separate identities.
+/// Stored allocation-backed generation controls and actual dispatch are separate identities.
 fn preparedIdentity(resources: *const speckle.Resources) PreparedIdentity {
-    var out: PreparedIdentity = .{ .sampling_index = resources.kernel_index, .backing = @tagName(std.meta.activeTag(resources.data)) };
+    var out: PreparedIdentity = .{ .sampling_index = resources.kernel_index, .backing = if (resources.data == .cell_hash) "none" else @tagName(std.meta.activeTag(resources.data)) };
     if (resources.kernel_index) |index| out.sampling_evaluator = policy.evaluatorName(std.meta.activeTag(speckle.kernel_configs[index]));
     const stored: ?speckle.GridParams = switch (resources.data) {
-        .none => null,
+        .none, .cell_hash => null,
         .classified => |data| data.speckles.params,
         inline .cell_binned, .classified_binned, .direct_fixed, .mask, .perlin, .list, .strip_list => |data| data.params,
     };
@@ -401,14 +402,21 @@ pub fn main(init: std.process.Init) !void {
         const cam = try camera.CameraPrepared.init(alloc, cameraInput(scene.sim, opts));
         const geometry = try bench.Geometry.prepare(alloc, io, &cam, scene.sim.coords, scene.sim.connect, scene.uvs.array, config, opts.threads);
         var evaluation = try bench.Evaluation.init(alloc, io, &cam, &geometry, config, opts.threads);
-        const resource_start = std.Io.Timestamp.now(io, .awake);
-        var resources = if (texture == null) try speckle.Resources.init(init.gpa, params.?) else speckle.Resources{};
+        var resources: speckle.Resources = .{};
         defer resources.deinit(init.gpa);
-        // Production UV gathering; interpolation LUTs are compile-time constants.
-        const prepared: ?shaderops.TexPrepared(u8, 1) = if (texture) |tex| .{ .elem_uvs = try mo.prepUVs(alloc, &scene.uvs.array, &scene.sim.connect), .tex = tex, .samp_cfg = opts.textureConfig(), .bits = null } else null;
-        resource_ns = resource_start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
+        resource_ns = if (params) |grid| setup: {
+            const start = std.Io.Timestamp.now(io, .awake);
+            resources = try speckle.Resources.init(init.gpa, grid);
+            break :setup start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
+        } else 0;
+        const prepared: ?shaderops.TexPrepared(u8, 1) = if (texture) |tex| .{
+            .elem_uvs = geometry.uvs,
+            .tex = tex,
+            .samp_cfg = opts.textureConfig(),
+            .bits = null,
+        } else null;
         const eval_start = std.Io.Timestamp.now(io, .awake);
-        if (prepared) |shader| try evaluation.evaluateTexture(shader, opts.frames) else try evaluation.evaluate(params.?, &resources, opts.frames);
+        if (prepared) |shader| try evaluation.evaluateTexture(shader, opts.frames) else try evaluation.evaluate(&resources, opts.frames);
         render_ns = eval_start.durationTo(std.Io.Timestamp.now(io, .awake)).nanoseconds;
 
         // Inspect backing storage only after sampling, without warming one evaluator's counts.
@@ -621,6 +629,25 @@ test "speckle benchmark named options and default gate" {
         } else try std.testing.expectError(error.SpeckleOverridesDisabled, Options.parse(args_classified));
     }
 }
+
+test "speckle benchmark rejects controls for incompatible materials and modes" {
+    const cases = [_]struct { expected: anyerror, args: []const []const u8 }{
+        .{
+            .expected = error.TextureControlsNotApplicable,
+            .args = &.{ "bench", "--evaluator", "texture", "--radius", "0.35" },
+        },
+        .{
+            .expected = error.PhysicalControlsRequireFullRender,
+            .args = &.{ "bench", "--pattern", "perlin", "--cell-size", "0.25" },
+        },
+        .{
+            .expected = error.InactivePatternControls,
+            .args = &.{ "bench", "--mode", "full-render", "--pattern", "perlin", "--radius", "0.35" },
+        },
+    };
+    for (cases) |case| try std.testing.expectError(case.expected, Options.parse(case.args));
+}
+
 const Scene = struct {
     sim: meshio.SimData,
     uvs: uvio.UVMap,
@@ -703,15 +730,15 @@ test "speckle benchmark rejects occluded samples but keeps closer depth updates"
     var evaluation = try fixture.evaluation(alloc, 1);
     var resources = try speckle.Resources.init(alloc, smoke.params());
     defer resources.deinit(alloc);
-    try evaluation.evaluate(smoke.params(), &resources, 1);
+    try evaluation.evaluate(&resources, 1);
     const front_only = evaluation.result();
     try std.testing.expect(front_only.shaded_samples > 0);
     tiles[0].overlap_count = 2;
     tiles[0].bins[one_root_bin].count = 2;
-    try evaluation.evaluate(smoke.params(), &resources, 1);
+    try evaluation.evaluate(&resources, 1);
     try std.testing.expectEqualDeep(front_only, evaluation.result()); // Near first rejects far.
     std.mem.swap(@TypeOf(overlaps[0]), &overlaps[0], &overlaps[1]);
-    try evaluation.evaluate(smoke.params(), &resources, 1);
+    try evaluation.evaluate(&resources, 1);
     var both = front_only;
     both.merge(front_only);
     try std.testing.expectEqualDeep(both, evaluation.result()); // Far first shades both.
@@ -783,8 +810,8 @@ test "speckle benchmark workers depth resets and texture filters" {
                     try single.evaluateTexture(shader, frames);
                     try parallel.evaluateTexture(shader, frames);
                 } else {
-                    try single.evaluate(params, &resources, frames);
-                    try parallel.evaluate(params, &resources, frames);
+                    try single.evaluate(&resources, frames);
+                    try parallel.evaluate(&resources, frames);
                 }
                 try std.testing.expect(single.result().shaded_samples > 0);
                 if (!plate) try std.testing.expect(single.result().backface_rejections > 0);

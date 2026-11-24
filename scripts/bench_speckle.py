@@ -34,6 +34,7 @@ RESOURCE_FIELDS = ('resource_bytes', 'duplicated_disk_records', 'record_capacity
 COMMON_CONTROLS = ('mode', 'evaluator', 'scene', 'pattern', 'threads', 'width', 'height',
                    'frames', 'texture', 'texture_filter')
 PERLIN_CONTROLS = ('perlin_threshold', 'perlin_transition')
+
 # These are runner workload definitions, not defaults read from the executable.
 RAW_RADIUS = .35
 RAW_SOFTNESS = .04
@@ -66,6 +67,14 @@ def design(args):
     repeats = args.repeats if args.repeats is not None else (12 if tuning else 16)
     alpha = args.alpha if args.alpha is not None else (.05 if tuning else .10)
     texture_only = args.a == args.b == 'texture'
+    if texture_only and not production:
+        requested = set(args.metrics or ())
+        require('setup' not in requested, '--metrics setup is not measured for raw texture/texture')
+        require(not {'combined', 'render'} <= requested,
+                '--metrics combined and render are identical for raw texture/texture; choose one')
+        default_metrics = ['render']
+    else:
+        default_metrics = ['combined'] if tuning or production else ['setup', 'render']
     if 'texture' in (args.a, args.b):
         require(args.texture, 'texture mapping requires --texture')
     if production:
@@ -134,26 +143,32 @@ def design(args):
                                                         dict.fromkeys(args.patterns or ['hard']))]
     else:
         cases = []
+        raw_perlin_pairs = set()
         for component in components:
-            factors = [workers, *(override if override is not None else default
-                                  for override, default in zip(overrides, component))]
-            for values in product(*factors):
-                case = dict(zip(FACTORS, values))
-                if (not tuning and not production and args.occupancy is None and not args.include_full_occupancy_single_neighbor
-                        and case['neighbors'] == 1 and case['occupancy'] == 1):
+            scenes, patterns, *dot_factors = (override if override is not None else default
+                                               for override, default in zip(overrides, component))
+            for threads, scene, pattern in product(workers, scenes, patterns):
+                if pattern == 'perlin':
+                    if production:
+                        case = dict(threads=threads, scene=scene, pattern=pattern, cell_size=args.cell_size,
+                                    **{k: v for k, v in perlin.items() if v is not None})
+                        if case not in cases:
+                            cases.append(case)
+                    elif (threads, scene) not in raw_perlin_pairs:
+                        raw_perlin_pairs.add((threads, scene))
+                        cases.append(dict(threads=threads, scene=scene, pattern=pattern, jitter=None,
+                                          occupancy=None, neighbors=None, radius=None, softness=0.))
                     continue
-                if case['pattern'] == 'perlin' and not production:
-                    case['neighbors'] = None
-                case['softness'] = softness if case['pattern'] == 'soft' else 0.
-                if production:
-                    if case['pattern'] == 'perlin':
-                        case = {k: case[k] for k in ('threads', 'scene', 'pattern')}
-                        case['cell_size'] = args.cell_size
-                        case.update({k: v for k, v in perlin.items() if v is not None})
-                    else:
+                for values in product(*dot_factors):
+                    case = dict(zip(FACTORS, (threads, scene, pattern, *values)))
+                    if (not tuning and not production and args.occupancy is None and not args.include_full_occupancy_single_neighbor
+                            and case['neighbors'] == 1 and case['occupancy'] == 1):
+                        continue
+                    case['softness'] = softness if pattern == 'soft' else 0.
+                    if production:
                         case.update(coverage=args.coverage, radius=radius)
-                if case not in cases:
-                    cases.append(case)
+                    if case not in cases:
+                        cases.append(case)
         if production:
             patterns = {case['pattern'] for case in cases}
             require(patterns - {'perlin'} or all(x is None for x in (
@@ -169,8 +184,7 @@ def design(args):
                 'disk/Gaussian occupancy must be positive for procedural evaluators')
     return dict(profile=args.profile, mode='full-render' if production else 'evaluation',
                 configurations=cases, repeats=repeats, schedules=schedules(repeats), alpha=alpha,
-                metrics=[METRIC_OPTIONS[x]
-                         for x in dict.fromkeys(args.metrics or (['combined'] if tuning or production else ['setup', 'render']))],
+                metrics=[METRIC_OPTIONS[x] for x in dict.fromkeys(args.metrics or default_metrics)],
                 permutations=args.permutations, permutation_seed=20261005,
                 inference='two-sided blocked sum contrast; exact <=200000 subsets/block, otherwise Monte Carlo plus-one; joint Holm',
                 require_equal_output=args.require_equal_output, skip_output_checks=args.skip_output_checks,
@@ -209,13 +223,20 @@ def load_cases(path: Path, *, production: bool = False, texture_only: bool = Fal
         if production and not texture_only:
             validate_physical_case(case)
         elif not texture_only:
-            require(case['neighbors'] is None if case['pattern'] == 'perlin' else
+            perlin = case['pattern'] == 'perlin'
+            require(case['neighbors'] is None if perlin else
                     type(case['neighbors']) is int and case['neighbors'] in (1, 4, 9), 'invalid case neighbors')
             for key in ('radius', 'jitter', 'occupancy', 'softness'):
-                require(type(case[key]) in (int, float) and math.isfinite(case[key]), 'invalid case ' + key)
-            require(0 <= case['occupancy'] <= 1 and case['jitter'] >= 0, 'invalid case occupancy/jitter')
-            require(case['radius'] > 0 and case['softness'] >= 0, 'invalid case radius/softness')
+                value = case[key]
+                require((perlin and key != 'softness' and value is None)
+                        or (type(value) in (int, float) and math.isfinite(value)), 'invalid case ' + key)
+            radius, jitter, occupancy = (case[key] for key in ('radius', 'jitter', 'occupancy'))
+            require((occupancy is None or 0 <= occupancy <= 1) and (jitter is None or jitter >= 0),
+                    'invalid case occupancy/jitter')
+            require((radius is None or radius > 0) and case['softness'] >= 0, 'invalid case radius/softness')
             require((case['softness'] > 0) == (case['pattern'] == 'soft'), 'invalid case edge softness')
+            if perlin:
+                case.update(jitter=None, occupancy=None, radius=None)
 
         if case not in cases:
             cases.append(case)
@@ -277,6 +298,8 @@ def validate_native(native, config):
     evaluation = mode == 'evaluation'
     if evaluation:
         require(native['combined_ns'] == native['resource_ns'] + native['render_ns'], 'invalid combined timing')
+        if config['evaluator'] == 'texture':
+            require(native['resource_ns'] == 0, 'raw texture requires resource_ns == 0')
     else:
         require('resource_ns' not in native and 'render_ns' not in native,
                 'full-render must omit resource_ns and render_ns')
@@ -443,7 +466,8 @@ def parser():
     for v in 'ab':
         p.add_argument('--binary-' + v, type=Path, help='override common binary for ' + v.upper())
     p.add_argument('--case-file', type=Path, help='nonempty JSON list with exact keys. Raw (hard|soft|gaussian|perlin): '
-                   'threads, scene, pattern, radius, jitter, occupancy, neighbors, softness; Perlin neighbors is null. '
+                   'threads, scene, pattern, radius, jitter, occupancy, neighbors, softness. Raw Perlin neighbors is null; '
+                   'radius, jitter and occupancy may be null and are ignored. '
                    'Full-render hard|soft|gaussian: threads, scene, pattern, coverage, radius, jitter, occupancy, softness. '
                    'Full-render perlin: threads, scene, pattern, cell_size; optional perlin_threshold and perlin_transition. '
                    'Texture/texture (either mode): threads, scene, pattern (scenario label only). '
@@ -477,7 +501,9 @@ def parser():
     p.add_argument('--repeats', type=int, help='override even TOTAL runs per variant >=2; never capped')
     p.add_argument('--metrics', nargs='+', choices=tuple(METRIC_OPTIONS),
                    help='jointly tested metrics: setup=resource_ns, render=render_ns, combined=combined_ns. '
-                        'Defaults to setup and render for full, combined otherwise; full-render only supports combined')
+                        'Defaults to setup and render for full, combined otherwise. Raw texture/texture '
+                        'defaults to render, rejects setup, and accepts only one of render or combined; '
+                        'full-render only supports combined')
     p.add_argument('--permutations', type=int, default=100000,
                    help='Monte Carlo draws for large repeat counts (default: %(default)s)')
     output_checks = p.add_mutually_exclusive_group()
@@ -711,6 +737,62 @@ def run_comparison(out, metadata):
     return validator.finish()
 
 
+def claim_output(out):
+    """Claim a new or empty directory exclusively for this run, even if it fails."""
+    message = 'use a fresh output directory; no resume; results are never overwritten'
+    out.mkdir(parents=True, exist_ok=True)
+    require(not any(out.iterdir()), message)
+    try:
+        # Both runners can see an empty directory; only one can create the claim.
+        with (out / '.comparison-claim').open('x'):
+            pass
+    except FileExistsError as exc:
+        raise ValueError(message) from exc
+
+
+def prepare_binaries(out, args, metadata):
+    """Freeze and catalogue the actual executables and require matching identities."""
+    (out / 'binaries').mkdir()
+    frozen = {}
+    for variant in 'AB':
+        original = (getattr(args, 'binary_' + variant.lower()) or args.binary).resolve()
+        if original not in frozen:
+            frozen[original] = freeze(original, native_exe(out / 'binaries' / variant))
+        metadata['variants'][variant] = dict(frozen[original], evaluator=getattr(args, variant.lower()))
+    catalogues = {}
+    mode = metadata['mode']
+    for variant, spec in metadata['variants'].items():
+        if spec['file'] not in catalogues:
+            lines = run_logged([spec['file'], '--list-evaluators'], out,
+                               'catalogue-' + variant, args.timeout_seconds)
+            records = [json.loads(line.decode('utf-8')) for line in lines if line.startswith(b'{')]
+            require(len(records) == 1, 'expected exactly one native evaluator catalogue')
+            catalogues[spec['file']] = records[0]
+        spec['catalogue'] = catalogues[spec['file']]
+        spec.update(build_identity=spec['catalogue']['build_identity'],
+                    workload_modes=spec['catalogue']['workload_modes'])
+        defaults = spec['catalogue']['defaults']
+        require(isinstance(defaults, dict) and type(defaults.get('seed')) is int
+                and 0 <= defaults['seed'] < 2**32
+                and all(type(defaults.get(key)) in (int, float) and math.isfinite(defaults[key])
+                        for key in PERLIN_CONTROLS)
+                and defaults['perlin_transition'] >= 0, 'invalid native procedural defaults')
+        require(set(spec['build_identity']) == set(BUILD_FIELDS), 'incomplete/unknown build identity fields')
+        features = spec['build_identity']['cpu_features']
+        require(isinstance(features, list) and all(isinstance(name, str) and name for name in features)
+                and len(features) == len(set(features)), 'CPU features must be unique enabled Zig feature names')
+        require(spec['build_identity']['precision'] in ('f32', 'f64') and spec['build_identity']['simd'] in ('on', 'off'),
+                'invalid precision/SIMD identity')
+        require(spec['build_identity']['optimize'] == 'ReleaseFast' and spec['build_identity']['strip'] is True,
+                'benchmarks require ReleaseFast with debug information stripped')
+        require(isinstance(spec['workload_modes'], dict) and isinstance(spec['workload_modes'].get(mode), str)
+                and spec['workload_modes'][mode], 'missing workload identity')
+    a, b = (metadata['variants'][variant] for variant in 'AB')
+    require(comparable_build_identity(a['build_identity']) == comparable_build_identity(b['build_identity']),
+            'A/B build configurations differ')
+    require(a['workload_modes'][mode] == b['workload_modes'][mode], 'A/B workload modes differ')
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
 
@@ -718,7 +800,6 @@ def main(argv=None):
     args = p.parse_args(argv)
     try:
         out = args.out.resolve()
-        require(not out.exists() or not any(out.iterdir()), 'use a fresh output directory; no resume; results are never overwritten')
         metadata = design(args)
         metadata.update(timeout_seconds=args.timeout_seconds, runner_argv=argv,
                         runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -726,51 +807,14 @@ def main(argv=None):
                             resource_bytes='retained backing bytes, excluding allocator overhead; null if uncollected',
                             duplicated_disk_records='live bin records summed from counts; null if uncollected',
                             record_capacity='allocated record slots, including unused slots; null if uncollected'))
-        (out / 'binaries').mkdir(parents=True)
-        frozen = {}
-        for variant in 'AB':
-            original = (getattr(args, 'binary_' + variant.lower()) or args.binary).resolve()
-            if original not in frozen:
-                frozen[original] = freeze(original, native_exe(out / 'binaries' / variant))
-            metadata['variants'][variant] = dict(frozen[original], evaluator=getattr(args, variant.lower()))
-        if args.texture:
-            metadata['texture_asset'] = freeze(args.texture, out / ('texture' + args.texture.suffix))
-            metadata['config']['texture'] = metadata['texture_asset']['file']
-        metadata_path = out / 'metadata.json'
-        metadata_path.write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
-        catalogues = {}
-        for variant, spec in metadata['variants'].items():
-            if spec['file'] not in catalogues:
-                lines = run_logged([spec['file'], '--list-evaluators'], out,
-                                   'catalogue-' + variant, args.timeout_seconds)
-                records = [json.loads(line.decode('utf-8')) for line in lines if line.startswith(b'{')]
-                require(len(records) == 1, 'expected exactly one native evaluator catalogue')
-                catalogues[spec['file']] = records[0]
-            spec['catalogue'] = catalogues[spec['file']]
-            spec.update(build_identity=spec['catalogue']['build_identity'],
-                        workload_modes=spec['catalogue']['workload_modes'])
-            defaults = spec['catalogue']['defaults']
-            require(isinstance(defaults, dict) and type(defaults.get('seed')) is int
-                    and 0 <= defaults['seed'] < 2**32
-                    and all(type(defaults.get(key)) in (int, float) and math.isfinite(defaults[key])
-                            for key in PERLIN_CONTROLS)
-                    and defaults['perlin_transition'] >= 0, 'invalid native procedural defaults')
-            require(set(spec['build_identity']) == set(BUILD_FIELDS), 'incomplete/unknown build identity fields')
-            features = spec['build_identity']['cpu_features']
-            require(isinstance(features, list) and all(isinstance(name, str) and name for name in features)
-                    and len(features) == len(set(features)), 'CPU features must be unique enabled Zig feature names')
-            require(spec['build_identity']['precision'] in ('f32', 'f64') and spec['build_identity']['simd'] in ('on', 'off'),
-                    'invalid precision/SIMD identity')
-            require(spec['build_identity']['optimize'] == 'ReleaseFast' and spec['build_identity']['strip'] is True,
-                    'benchmarks require ReleaseFast with debug information stripped')
-            require(isinstance(spec['workload_modes'], dict) and isinstance(spec['workload_modes'].get(metadata['mode']), str)
-                    and spec['workload_modes'][metadata['mode']], 'missing workload identity')
-            metadata_path.write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
-        a, b = (metadata['variants'][variant] for variant in 'AB')
-        require(comparable_build_identity(a['build_identity']) == comparable_build_identity(b['build_identity']),
-                'A/B build configurations differ')
-        require(a['workload_modes'][metadata['mode']] == b['workload_modes'][metadata['mode']],
-                'A/B workload modes differ')
+        claim_output(out)
+        try:
+            prepare_binaries(out, args, metadata)
+            if args.texture:
+                metadata['texture_asset'] = freeze(args.texture, out / ('texture' + args.texture.suffix))
+                metadata['config']['texture'] = metadata['texture_asset']['file']
+        finally:
+            (out / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
         print(f"{args.profile}: {len(metadata['configurations'])} configurations, "
               f"{len(metadata['configurations']) * metadata['repeats'] * 2} samples; two independent timing blocks", flush=True)
         groups, outputs = run_comparison(out, metadata)
