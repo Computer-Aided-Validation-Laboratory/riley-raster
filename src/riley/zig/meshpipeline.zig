@@ -414,24 +414,13 @@ pub fn initMeshStatic(
             } };
         },
         .speckle => |input| {
-            const params = try speckleparams.resolveForMesh(
-                input.params,
+            shader_static = .{ .speckle = try initSpeckleStatic(
+                allocator,
                 mesh_input.mesh_type,
                 &mesh_input.coords,
                 &mesh_input.connect,
-                &input.uvs,
-            );
-            var resources = try speckleparams.initResources(allocator, params);
-            errdefer resources.deinit(allocator);
-            const elem_uvs = try prepUVs(allocator, &input.uvs, &mesh_input.connect);
-            shader_static = .{ .speckle = .{
-                .elem_uvs = elem_uvs,
-                .resources = resources,
-                .output_scale = input.output_scale,
-                .output_offset = input.output_offset,
-                .bits = input.bits,
-                .scaling = input.scaling,
-            } };
+                input,
+            ) };
         },
         .func, .func_rgb => |func_input| {
             const elem_uvs = if (func_input.uvs) |uvs|
@@ -471,6 +460,33 @@ pub fn initMeshStatic(
         .connect = mesh_input.connect,
         .disp = mesh_input.disp,
         .shader = shader_static,
+    };
+}
+
+fn initSpeckleStatic(
+    outer_alloc: std.mem.Allocator,
+    mesh_type: geomkerns.MeshType,
+    coords_ref: *const meshio.Coords,
+    connect: *const meshio.Connect,
+    input: shaderops.SpeckleInput,
+) !shaderops.SpeckleStatic {
+    const params = try speckleparams.resolveForMesh(
+        input.params,
+        mesh_type,
+        coords_ref,
+        connect,
+        &input.uvs,
+    );
+    var resources = try speckleparams.initResources(outer_alloc, params);
+    errdefer resources.deinit(outer_alloc);
+    const elem_uvs = try prepUVs(outer_alloc, &input.uvs, connect);
+    return .{
+        .elem_uvs = elem_uvs,
+        .resources = resources,
+        .output_scale = input.output_scale,
+        .output_offset = input.output_offset,
+        .bits = input.bits,
+        .scaling = input.scaling,
     };
 }
 
@@ -1562,7 +1578,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
                 },
                 .speckle => |*speckle_static| {
-                    mesh_prep.shader = try self.prepareSpeckleShader(outer_alloc, speckle_static);
+                    mesh_prep.shader = .{ .speckle = try self.prepareSpeckleShader(
+                        outer_alloc,
+                        speckle_static,
+                    ) };
                 },
                 .func => |func_static| {
                     mesh_prep.shader = try prepareFuncShader(
@@ -1823,7 +1842,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
             speckle_static: *const shaderops.SpeckleStatic,
-        ) !shaderops.ShaderPrepared {
+        ) !shaderops.SpecklePrepared {
             // Scale the nominal [0, 1] field range, not sampled or transformed extrema.
             // Shader preparation does not clamp; integer image output clamps on save.
             const factors = imageops.getScaleFactors(
@@ -1831,7 +1850,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 speckle_static.bits,
                 .{ .min = 0.0, .range = 1.0 },
             );
-            return .{ .speckle = .{
+            return .{
                 .elem_uvs = try self.gatherVisElemUVs(outer_alloc, speckle_static.elem_uvs),
                 .resources = &speckle_static.resources,
                 .output_scale = speckle_static.output_scale,
@@ -1840,7 +1859,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .scaling = speckle_static.scaling,
                 .scale_mul = factors.mul,
                 .scale_add = factors.add,
-            } };
+            };
         }
 
         fn prepareFuncShader(
