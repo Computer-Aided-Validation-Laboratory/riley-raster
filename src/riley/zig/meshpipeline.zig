@@ -636,32 +636,6 @@ pub fn prepMeshFrames(
     };
 
     for (static_meshes, 0..) |*mesh_static, ii| {
-        // Only needed for nodal interpolation shading and only if not .none. If .none we
-        // directly render float fields unscaled.
-        var nodal_frame_scaling: ?imageops.ScalingParams = null;
-        const selected = shaderops.selectShader(
-            shadertypes.ShaderMonoStatic,
-            shadertypes.ShaderPipeStatic,
-            &mesh_static.shaders,
-            std.meta.activeTag(camera.render_format),
-        );
-        if (selected) |execution| switch (execution) {
-            .direct => |shader| switch (shader.*) {
-                .nodal => |s| {
-                    if (s.scale_over == .within_frames and
-                        (s.scaling == .auto or s.scaling == .frac))
-                    {
-                        nodal_frame_scaling = imageops.getScalingParamsNDArray(
-                            &s.field.array,
-                            frame_idx,
-                            s.scaling,
-                        );
-                    }
-                },
-                else => {},
-            },
-            .pipe => {},
-        };
 
         // Prepares meshes for each frame including coord transforms to camera space and
         // data reshaping to elem order for a given frame.
@@ -673,7 +647,7 @@ pub fn prepMeshFrames(
             config,
             mesh_static,
             frame_idx,
-            nodal_frame_scaling,
+
             timing,
         );
         res.total_elems_num += frame_meshes[ii].total_elems_num;
@@ -691,7 +665,6 @@ pub fn prepMeshFrame(
     config: rasterconfig.RasterConfig,
     mesh_static: *const meshtypes.MeshStatic,
     frame_idx: usize,
-    scaling_params: ?imageops.ScalingParams,
     timing: *report.GeomTimes,
 ) !meshtypes.MeshFrame {
     return switch (mesh_static.mesh_type) {
@@ -705,13 +678,17 @@ pub fn prepMeshFrame(
                 config.advanced.solver.multiroot.mode,
                 config.advanced.solver.multiroot.edge_fun_mode,
                 config.advanced.distortion.edge_spacing_px,
-                scaling_params,
                 chunk_exec,
                 workers_num,
             );
             return try pipeline.run(outer_alloc, timing);
         },
     };
+}
+
+fn needsFrameScaling(nodal: *const shadertypes.NodalStatic) bool {
+    return nodal.scale_over == .within_frames and
+        (nodal.scaling == .auto or nodal.scaling == .frac);
 }
 
 // Outside of pipeline because these are static - we gather these into an NDarray once
@@ -869,7 +846,6 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
         multiroot_mode: rasterconfig.MultirootSolverMode,
         multiroot_edge_fun_mode: rasterconfig.EdgeFunMode,
         edge_spacing_px: F,
-        scaling_params: ?imageops.ScalingParams,
         chunk_exec: *parachunkexec.ParaChunkExecutor,
         workers_num: usize,
         nodes_num: usize,
@@ -890,7 +866,6 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             multiroot_mode: rasterconfig.MultirootSolverMode,
             multiroot_edge_fun_mode: rasterconfig.EdgeFunMode,
             edge_spacing_px: F,
-            scaling_params: ?imageops.ScalingParams,
             chunk_exec: *parachunkexec.ParaChunkExecutor,
             workers_num: usize,
         ) !FrameMeshPipelineType {
@@ -913,7 +888,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                 .multiroot_mode = multiroot_mode,
                 .multiroot_edge_fun_mode = multiroot_edge_fun_mode,
                 .edge_spacing_px = edge_spacing_px,
-                .scaling_params = scaling_params,
+
                 .chunk_exec = chunk_exec,
                 .workers_num = workers_num,
                 .nodes_num = nodes_num,
@@ -1736,52 +1711,51 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             mesh_prep: *meshtypes.MeshPrepared,
         ) !void {
             const format = self.camera.render_format;
-            switch (format) {
-                .mono => {
-                    const exec = self.mesh_static.shaders.mono orelse return;
-                    mesh_prep.shaders.mono = switch (exec) {
-                        .direct => |s| .{
-                            .direct = try self.prepareShaderMonoFromStatic(
-                                outer_alloc,
-                                s,
-                                self.scaling_params,
-                            ),
+            const role = std.meta.activeTag(format);
+            const selected = shaderops.selectShader(
+                shadertypes.ShaderMonoStatic,
+                shadertypes.ShaderPipeStatic,
+                &self.mesh_static.shaders,
+                role,
+            ) orelse return;
+
+            switch (selected) {
+                .direct => |shader| {
+                    const prepared: shadertypes.ShaderMonoPrepared = switch (shader.*) {
+                        .nodal => |s| .{
+                            .nodal = try self.prepareNodalShaderFromStatic(outer_alloc, s),
                         },
-                        .pipe => |p| .{
-                            .pipe = try self.prepareShaderPipeFromStatic(outer_alloc, p, 1),
+                        .tex_u8 => |s| .{
+                            .tex_u8 = try prepareTexShaderFromStatic(u8, 1, outer_alloc, self, s),
                         },
-                    };
-                },
-                .ir => {
-                    const exec = self.mesh_static.shaders.ir orelse return;
-                    mesh_prep.shaders.ir = switch (exec) {
-                        .direct => |s| .{
-                            .direct = try self.prepareShaderMonoFromStatic(
-                                outer_alloc,
-                                s,
-                                self.scaling_params,
-                            ),
+                        .tex_u16 => |s| .{
+                            .tex_u16 = try prepareTexShaderFromStatic(u16, 1, outer_alloc, self, s),
                         },
-                        .pipe => |p| .{
-                            .pipe = try self.prepareShaderPipeFromStatic(outer_alloc, p, 1),
+                        .tex_f => |s| .{
+                            .tex_f = try prepareTexShaderFromStatic(F, 1, outer_alloc, self, s),
+                        },
+                        .func => |s| .{
+                            .func = try prepareFuncShaderFromStatic(1, outer_alloc, self, s),
                         },
                     };
+                    switch (role) {
+                        .mono => mesh_prep.shaders.mono = .{ .direct = prepared },
+                        .ir => mesh_prep.shaders.ir = .{ .direct = prepared },
+                        .rgb, .multifield => unreachable,
+                    }
                 },
-                .rgb => {
-                    const pipe = self.mesh_static.shaders.rgb orelse return;
-                    mesh_prep.shaders.rgb = try self.prepareShaderPipeFromStatic(
+                .pipe => |pipe| {
+                    const prepared = try self.prepareShaderPipeFromStatic(
                         outer_alloc,
-                        pipe,
-                        3,
-                    );
-                },
-                .multifield => {
-                    const pipe = self.mesh_static.shaders.multifield orelse return;
-                    mesh_prep.shaders.multifield = try self.prepareShaderPipeFromStatic(
-                        outer_alloc,
-                        pipe,
+                        pipe.*,
                         format.channels(),
                     );
+                    switch (role) {
+                        .mono => mesh_prep.shaders.mono = .{ .pipe = prepared },
+                        .ir => mesh_prep.shaders.ir = .{ .pipe = prepared },
+                        .rgb => mesh_prep.shaders.rgb = prepared,
+                        .multifield => mesh_prep.shaders.multifield = prepared,
+                    }
                 },
             }
         }
@@ -1797,24 +1771,10 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                 pipe.stages.len,
             );
 
-            for (pipe.stages, 0..) |stage, si| {
-                stages[si] = switch (stage) {
-                    .shader => |src| blk: {
-                        var prepared_source = try self.preparePipeSourceFromStatic(
-                            outer_alloc,
-                            src.shader,
-                            if (src.shader == .nodal and
-                                src.shader.nodal.scale_over == .within_frames and
-                                (src.shader.nodal.scaling == .auto or
-                                    src.shader.nodal.scaling == .frac))
-                                imageops.getScalingParamsNDArray(
-                                    &src.shader.nodal.field.array,
-                                    self.frame_idx,
-                                    src.shader.nodal.scaling,
-                                )
-                            else
-                                null,
-                        );
+            for (pipe.stages, 0..) |*stage, si| {
+                stages[si] = switch (stage.*) {
+                    .shader => |*src| blk: {
+                        var prepared_source = try self.preparePipeSourceFromStatic(outer_alloc, &src.shader);
                         switch (prepared_source) {
                             .func, .func_rgb, .func_multi => |*shader| shader.hit_geometry = .{},
                             else => {},
@@ -1843,44 +1803,12 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             };
         }
 
-        fn prepareShaderMonoFromStatic(
-            self: *FrameMeshPipelineType,
-            outer_alloc: std.mem.Allocator,
-            shader_static: shadertypes.ShaderMonoStatic,
-            scaling: ?imageops.ScalingParams,
-        ) !shadertypes.ShaderMonoPrepared {
-            const previous_scaling = self.scaling_params;
-            self.scaling_params = scaling;
-            defer self.scaling_params = previous_scaling;
-            return switch (shader_static) {
-                .nodal => |s| .{
-                    .nodal = try self.prepareNodalShaderFromStatic(outer_alloc, s),
-                },
-                .tex_u8 => |s| .{
-                    .tex_u8 = try prepareTexShaderFromStatic(u8, 1, outer_alloc, self, s),
-                },
-                .tex_u16 => |s| .{
-                    .tex_u16 = try prepareTexShaderFromStatic(u16, 1, outer_alloc, self, s),
-                },
-                .tex_f => |s| .{
-                    .tex_f = try prepareTexShaderFromStatic(F, 1, outer_alloc, self, s),
-                },
-                .func => |s| .{
-                    .func = try prepareFuncShaderFromStatic(1, outer_alloc, self, s),
-                },
-            };
-        }
-
         fn preparePipeSourceFromStatic(
             self: *FrameMeshPipelineType,
             outer_alloc: std.mem.Allocator,
-            source_static: shadertypes.PipeSourceStatic,
-            scaling: ?imageops.ScalingParams,
+            source_static: *const shadertypes.PipeSourceStatic,
         ) !shadertypes.PipeSourcePrepared {
-            const previous_scaling = self.scaling_params;
-            self.scaling_params = scaling;
-            defer self.scaling_params = previous_scaling;
-            return switch (source_static) {
+            return switch (source_static.*) {
                 .nodal => |s| .{
                     .nodal = try self.prepareNodalShaderFromStatic(outer_alloc, s),
                 },
@@ -1956,6 +1884,16 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             outer_alloc: std.mem.Allocator,
             nodal_static: shadertypes.NodalStatic,
         ) !shadertypes.NodalPrepared {
+            const frame_scaling = needsFrameScaling(&nodal_static);
+            const factors = if (frame_scaling)
+                imageops.getScaleFactors(nodal_static.scaling, null, imageops.getScalingParamsNDArray(
+                    &nodal_static.field.array,
+                    self.frame_idx,
+                    nodal_static.scaling,
+                ))
+            else
+                imageops.ScaleFactors{ .mul = 1, .add = 0 };
+
             const N = comptime MT.getNodesNum();
             var elem_field = try ndarray.NDArray(F).initFlat(
                 outer_alloc,
@@ -1981,13 +1919,6 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                 self.mesh_workspace.elems_in_image,
                 self.vis_chunk_size,
             );
-
-            const frame_scaling = nodal_static.scale_over == .within_frames and
-                (nodal_static.scaling == .auto or nodal_static.scaling == .frac);
-            const factors = if (frame_scaling)
-                imageops.getScaleFactors(nodal_static.scaling, null, self.scaling_params.?)
-            else
-                imageops.ScaleFactors{ .mul = 1, .add = 0 };
 
             return .{
                 .elem_field = elem_field,
