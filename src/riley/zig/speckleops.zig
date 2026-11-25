@@ -2679,7 +2679,9 @@ test "exact Perlin all 4096 corner combinations preserve analytic arithmetic" {
                     const coverage = PerlinReference.perlinCoverage(noise, params);
                     const expected = params.background + coverage * (params.foreground - params.background);
                     try std.testing.expectEqual(expected, perlinAnalytic(F, p[0], p[1], ids, params));
-                    const vector_ids = [4]@Vector(S, u8){ @splat(ids[0]), @splat(ids[1]), @splat(ids[2]), @splat(ids[3]) };
+                    // Zig 0.16's AArch64 Debug codegen can broadcast ids[0] for every corner in a literal.
+                    var vector_ids: [4]@Vector(S, u8) = undefined;
+                    for (ids, &vector_ids) |id, *corner| corner.* = @splat(id);
                     const actual: [S]F = perlinAnalytic(VecSF, @splat(p[0]), @splat(p[1]), vector_ids, params);
                     for (actual) |value| try std.testing.expectEqual(expected, value);
                 }

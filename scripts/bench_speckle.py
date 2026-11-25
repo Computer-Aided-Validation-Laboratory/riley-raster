@@ -650,10 +650,15 @@ def expected_native(config):
     if config['evaluator'] == 'texture':
         return expected
     pattern = shape_controls(config)['pattern']
-    names = (dict(radius_mean='radius', radius_jitter='jitter', occupancy='occupancy', edge_softness='softness',
-                  perlin_coverage_threshold='perlin_threshold', perlin_coverage_transition_width='perlin_transition') if raw else
-             dict(cell_size='cell_size', threshold='perlin_threshold', transition_width='perlin_transition') if pattern == 'perlin' else
-             dict(coverage='coverage', radius='radius', jitter='jitter', occupancy='occupancy', edge_softness='softness'))
+    if raw:
+        names = dict(radius_mean='radius', radius_jitter='jitter', occupancy='occupancy', edge_softness='softness',
+                     perlin_coverage_threshold='perlin_threshold', perlin_coverage_transition_width='perlin_transition')
+    elif pattern == 'perlin':
+        names = dict(cell_size='cell_size', threshold='perlin_threshold', transition_width='perlin_transition')
+    else:
+        names = dict(coverage='coverage', radius='radius', jitter='jitter', occupancy='occupancy')
+        if pattern == 'disk':
+            names['edge_softness'] = 'softness'
     params = {native: config[option] if option == 'seed' else float(config[option])
               for native, option in dict(names, seed='seed').items() if config.get(option) is not None}
     if raw and 'cells_u' in config:

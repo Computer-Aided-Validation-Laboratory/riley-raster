@@ -764,8 +764,9 @@ class BenchmarkTests(unittest.TestCase):
                 params = dict(cell_size=config['cell_size'], threshold=config['perlin_threshold'],
                               transition_width=config['perlin_transition'], seed=config['seed'])
             else:
-                params = {k: config[k] for k in ('coverage', 'radius', 'jitter', 'occupancy')}
-                params.update(edge_softness=config['softness'], seed=config['seed'])
+                params = {k: config[k] for k in ('coverage', 'radius', 'jitter', 'occupancy', 'seed')}
+                if config['pattern'] in ('hard', 'soft'):
+                    params['edge_softness'] = config['softness']
             native.update(physical_params={generation['pattern']: params}, generation_policy=generation)
         return native
 
@@ -984,8 +985,10 @@ class BenchmarkTests(unittest.TestCase):
         # Handwritten expectations must not use the fake producer or the request normalizer.
         for pattern, tag, softness in (('soft', 'disk', .02), ('gaussian', 'gaussian', 0.)):
             config = dict(common, pattern=pattern, coverage=.4, radius=.3, jitter=.01, occupancy=.7, softness=softness, seed=42)
-            expected = dict(common, pattern=pattern, resolved_grid=None, physical_params={tag:
-                dict(coverage=.4, radius=.3, jitter=.01, occupancy=.7, edge_softness=softness, seed=42)})
+            params = dict(coverage=.4, radius=.3, jitter=.01, occupancy=.7, seed=42)
+            if tag == 'disk':
+                params['edge_softness'] = softness
+            expected = dict(common, pattern=pattern, resolved_grid=None, physical_params={tag: params})
             self.assertEqual(bench.expected_native(config), expected)
         common.update(pattern='perlin')
         config = dict(common, cell_size=.25, perlin_threshold=.1, perlin_transition=.19, seed=43)
