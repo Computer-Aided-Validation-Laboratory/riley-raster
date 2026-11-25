@@ -19,7 +19,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    # Allow extra time for Windows wheel builds and demo parity.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 90 || 45 }}
 
     steps:
       - uses: actions/checkout@v4
