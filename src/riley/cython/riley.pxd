@@ -1,11 +1,11 @@
-# --------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Riley: A High Performance Rasteriser for DIC UQ
 #
-# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 # Licensed under the MIT License (see LICENSE file for details)
 #
-# Authors: scepticalrabbit (Lloyd Fletcher)
-# --------------------------------------------------------------------------
+# Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+# --------------------------------------------------------------------------------------
 from libc.stddef cimport size_t
 from libc.stdint cimport uint8_t, uint16_t, uint32_t
 
@@ -92,6 +92,7 @@ cdef extern from "riley.h":
         double psf_supp_rad
         uint32_t psf_separable
 
+
     ctypedef struct CCameraInput:
         CVec2U32 pixels_num
         CVec2F64 pixels_size
@@ -104,6 +105,29 @@ cdef extern from "riley.h":
         CPSF psf
         uint32_t coord_sys
         uint32_t subpixel_center_map
+
+    enum:
+        RILEY_SPECKLE_DISK
+        RILEY_SPECKLE_GAUSSIAN
+        RILEY_SPECKLE_PERLIN
+
+    const uint32_t RILEY_SPECKLE_DEFAULT_SEED
+    const double RILEY_PERLIN_DEFAULT_TRANSITION_WIDTH
+
+    ctypedef struct CSpeckleParams:
+        uint32_t pattern
+        uint32_t seed
+        double coverage
+        double radius
+        double occupancy
+        double jitter
+        double edge_softness
+        double perlin_cell_size
+        double perlin_threshold
+        double perlin_transition_width
+        double foreground
+        double background
+
 
     ctypedef struct CFuncShaderParams:
         double coord_scale_0
@@ -183,10 +207,7 @@ cdef extern from "riley.h":
         double eggbox_pitch_1
         double eggbox_phase_0
         double eggbox_phase_1
-        double extra_0
-        double extra_1
-        double extra_2
-        double extra_3
+
 
 
     ctypedef struct CShaderInput:
@@ -208,6 +229,9 @@ cdef extern from "riley.h":
         uint32_t func_shader_coord_mode
         CFuncShaderParams func_shader_params
         uint32_t normal_type
+        CSpeckleParams speckle_params
+        double speckle_output_scale
+        double speckle_output_offset
 
     ctypedef struct CMeshInput:
         uint32_t mesh_type

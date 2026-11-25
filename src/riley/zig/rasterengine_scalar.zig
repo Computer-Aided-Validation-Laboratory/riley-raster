@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
@@ -1018,25 +1018,26 @@ fn rasterNewtonMultiImpl(
 
             inline for (0..4) |leaf_idx| {
                 const bit = @as(u8, 1) << @as(u3, @intCast(leaf_idx));
-                if ((child_mask & bit) == 0) continue;
-                had_candidate_child = true;
-                const seed = seeds[leaf_idx];
-                if (solveMultiRootSeedScal(
-                    GeomKern,
-                    report_mode,
-                    ctx_report,
-                    nodes_coords,
-                    ideal_x,
-                    ideal_y,
-                    subpx_dom.x_off,
-                    subpx_dom.y_off,
-                    seed,
-                )) |hit| {
-                    if (hit.inv_z > best_inv_z) {
-                        best_inv_z = hit.inv_z;
-                        best_weights = hit.weights;
-                        best_xi = hit.xi;
-                        best_eta = hit.eta;
+                if ((child_mask & bit) != 0) {
+                    had_candidate_child = true;
+                    const seed = seeds[leaf_idx];
+                    if (solveMultiRootSeedScal(
+                        GeomKern,
+                        report_mode,
+                        ctx_report,
+                        nodes_coords,
+                        ideal_x,
+                        ideal_y,
+                        subpx_dom.x_off,
+                        subpx_dom.y_off,
+                        seed,
+                    )) |hit| {
+                        if (hit.inv_z > best_inv_z) {
+                            best_inv_z = hit.inv_z;
+                            best_weights = hit.weights;
+                            best_xi = hit.xi;
+                            best_eta = hit.eta;
+                        }
                     }
                 }
             }

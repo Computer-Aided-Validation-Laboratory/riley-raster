@@ -1,3 +1,11 @@
+# --------------------------------------------------------------------------------------
+# Riley: A High Performance Rasteriser for DIC UQ
+#
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
+# Licensed under the MIT License (see LICENSE file for details)
+#
+# Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+# --------------------------------------------------------------------------------------
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -29,7 +37,7 @@ class ExodusBlock:
         1-based raw connectivity table of shape `(E, M)` and dtype `np.int64`,
         where `E` is the number of elements and `M` is the number of nodes
         per element.
-    elem_type : EElemType
+    elem_type : ~riley.python.meshconst.EElemType
         Parsed Riley element geometry type.
     """
 

@@ -1,11 +1,11 @@
-# --------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Riley: A High Performance Rasteriser for DIC UQ
 #
-# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 # Licensed under the MIT License (see LICENSE file for details)
 #
-# Authors: scepticalrabbit (Lloyd Fletcher)
-# --------------------------------------------------------------------------
+# Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+# --------------------------------------------------------------------------------------
 import os
 import platform
 from pathlib import Path
@@ -59,6 +59,10 @@ from riley.cython.riley import (
     ScaleOver,
     ScaleStrategy,
     Shader,
+    SpeckleShader,
+    Dot2DParams,
+    Perlin2DParams,
+    SpecklePattern,
     SubPixelCenterMap,
     TextureSample,
     TextureSampleMode,
@@ -229,6 +233,10 @@ __all__ = [
     "SceneGridSpec",
     "SceneMeshGroup",
     "Shader",
+    "SpeckleShader",
+    "Dot2DParams",
+    "Perlin2DParams",
+    "SpecklePattern",
     "SubPixelCenterMap",
     "TextureSample",
     "TextureSampleMode",

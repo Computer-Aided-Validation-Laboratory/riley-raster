@@ -22,10 +22,10 @@ Riley's Zig core uses `comptime` specialisation and SIMD with `@Vector` to keep 
 Riley uses [Zig 0.16.0](https://ziglang.org/download/). Clone the repository, then build and run the smallest demo:
 
 ```shell
-zig build demo0-quickstart -Doptimize=ReleaseFast
+zig build demo0a-quickstart -Doptimize=ReleaseFast
 ```
 
-Renders are written to `out/`. Run the combined test suite with:
+Renders are written to `out/demo0a_quickstart/`. Run the combined test suite with:
 
 ```shell
 zig build test-verif-basic
@@ -37,9 +37,10 @@ Install the published package:
 
 ```shell
 python -m pip install riley-raster
-python -m riley demo0_quickstart
+python -m riley demo0a_quickstart
 ```
-Python renders are written below `out_riley_py/`. For development from a checkout, install it in editable mode:
+
+Python renders are written to `out_riley_py/demo0a_quickstart/`. For development from a checkout, install it in editable mode:
 
 ```shell
 python -m pip install -e .
@@ -68,11 +69,11 @@ or:
 python -m riley test
 ```
 
-The python tests include parity analysis between the Zig demo output when the repository assets and Zig compiler are available; they skip when installed from a clean PyPI package.
+The Python tests compare Python and Zig demo renders when the repository assets and Zig compiler are available. Parity tests are skipped when running from a clean PyPI installation.
 
 ## Examples
 
-Riley provides a series of capability demos in Zig and Python. For example, render the rabbits demo with:
+Riley provides runnable Zig and Python tutorials that show the complete render setup. For example, render the rabbits demo with:
 
 ```shell
 zig build demo2a-rabbits-mono -Doptimize=ReleaseFast
@@ -85,6 +86,16 @@ python -m riley demo2a_rabbits_mono
 ```
 
 Browse the complete [Zig demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src) or [Python demo directory](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/tree/main/src/riley/pydemos). The image links below are absolute GitHub URLs so they render both on GitHub and on PyPI.
+
+### Procedural speckles
+
+Render a speckle pattern on a standalone plane from the repository root:
+
+```shell
+zig build demo0b-procedural-quickstart -Doptimize=ReleaseFast
+```
+
+This writes `out/demo0b_procedural_quickstart/disk.bmp`. See the [procedural tutorials](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/dev/PROCEDURAL.md#runnable-procedural-tutorials) for the Python counterpart, other patterns, and mesh examples.
 
 ### Rabbits demo
 
@@ -114,8 +125,8 @@ The main Zig entry point for the rendering pipeline is the `raster(...)` family 
 Useful top-level locations:
 
 - `src/`: Zig demos, tests, benchmarks and the core Riley source
-- `src/riley/zig/`: core Zig raster pipeling implementation
-- `src/riley/cython/`: Cython->Python bindings for Riley
+- `src/riley/zig/`: core Zig raster pipeline implementation
+- `src/riley/cython/`: Cython bindings for Riley
 - `src/riley/python/`: Python utilities for setup and mesh manipulation
 - `src/riley/pydemos/`: packaged Python demos
 - `src/riley/pytests/`: packaged Python tests
@@ -129,7 +140,7 @@ For a mathematical and architectural overview, see the engrXiv preprint: [Riley:
 ## C Interface
 `Riley` provides a C-compatible API for use from other languages. The Python bindings use this interface through Cython, but it can also be called from C or from any language with a C FFI.
 
-The public C ABI is intentionally fixed to the production Riley build with: precision=`f64`, SIMD=`on`. The extern types and functions live in [`src/riley/zig/c-riley.zig`](./src/riley/zig/c-riley.zig).
+The public C ABI requires precision=`f64`, SIMD=`on`, and `enable-all-evaluators=false`. The extern types and functions live in [`src/riley/zig/c-riley.zig`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/riley/zig/c-riley.zig).
 
 ## Citing Riley
 If you have found `Riley` useful you can cite it using:

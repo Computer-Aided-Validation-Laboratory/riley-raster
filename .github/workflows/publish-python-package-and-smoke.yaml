@@ -155,17 +155,11 @@ jobs:
         if: runner.os == 'Linux'
         working-directory: ${{ runner.temp }}
         run: |
-          for demo in demo0_quickstart demo1_sphere demo2a_rabbits_mono demo2b_rabbits_rgb demo2c_rabbits_fields demo3_dicuq demo3_dicuq_from_exodus demo4_stereocal demo5_cameramodels demo6_featurezoo; do
-            "$RUNNER_TEMP/riley-pypi-smoke/bin/python" -m "riley.pydemos.$demo"
-          done
+          "$RUNNER_TEMP/riley-pypi-smoke/bin/python" -I "$GITHUB_WORKSPACE/scripts/run_pypi_smoke_demos.py" --verify-checkout
       - name: Run demos (Windows)
         if: runner.os == 'Windows'
         working-directory: ${{ runner.temp }}
         shell: pwsh
         run: |
-          $python = "$env:RUNNER_TEMP\riley-pypi-smoke\Scripts\python.exe"
-          $demos = 'demo0_quickstart','demo1_sphere','demo2a_rabbits_mono','demo2b_rabbits_rgb','demo2c_rabbits_fields','demo3_dicuq','demo3_dicuq_from_exodus','demo4_stereocal','demo5_cameramodels','demo6_featurezoo'
-          foreach ($demo in $demos) {
-            & $python -m "riley.pydemos.$demo"
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
+          & "$env:RUNNER_TEMP\riley-pypi-smoke\Scripts\python.exe" -I "$env:GITHUB_WORKSPACE\scripts\run_pypi_smoke_demos.py" --verify-checkout
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

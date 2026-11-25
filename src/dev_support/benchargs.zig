@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const cam = @import("../riley/zig/camera.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
@@ -96,7 +96,7 @@ pub fn defaultBenchArgs(
 }
 
 pub fn parseArgs(
-    args: anytype,
+    args: []const []const u8,
     default_out_dir: []const u8,
     raster_config: rastcfg.RasterConfig,
 ) !BenchArgs {
@@ -110,7 +110,7 @@ pub fn parseArgs(
 }
 
 pub fn parseArgsWithDefaults(
-    args: anytype,
+    args: []const []const u8,
     defaults: BenchArgs,
 ) !BenchArgs {
     var bench_args = defaults;
@@ -122,19 +122,18 @@ pub fn parseArgsWithDefaults(
     var skip_next = false;
     var positional_arg_count: usize = 0;
 
-    for (args[1..], 1..) |raw_arg, ii| {
+    for (args[1..], 1..) |arg, ii| {
         if (skip_next) {
             skip_next = false;
             continue;
         }
 
-        const arg = argToSlice(raw_arg);
         if (std.mem.startsWith(u8, arg, "--")) {
             if (ii + 1 >= args.len) {
                 return error.MissingArgumentValue;
             }
 
-            const value = argToSlice(args[ii + 1]);
+            const value = args[ii + 1];
             skip_next = true;
 
             if (std.mem.eql(u8, arg, "--render-mode")) {
@@ -272,17 +271,6 @@ fn parseSaveStrategy(value: []const u8) !rastcfg.SaveStrategy {
     if (std.mem.eql(u8, value, "both_per_frame_copy")) return .both;
     if (std.mem.eql(u8, value, "both")) return .both;
     return parseEnum(rastcfg.SaveStrategy, value);
-}
-
-fn argToSlice(arg: anytype) []const u8 {
-    return switch (@typeInfo(@TypeOf(arg))) {
-        .pointer => |pointer_info| switch (pointer_info.size) {
-            .slice => arg,
-            else => std.mem.span(arg),
-        },
-        .array => arg[0..],
-        else => @compileError("Unsupported command line argument type."),
-    };
 }
 
 test "parse bench args defaults" {

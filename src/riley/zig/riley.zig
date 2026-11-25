@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const Timestamp = std.Io.Clock.Timestamp;
@@ -23,6 +23,7 @@ const elemtilebin = @import("elemtilebinning.zig");
 const globbuffbins = @import("elemtilebinning_globbuff.zig");
 const meshpipe = @import("meshpipeline.zig");
 const shaderops = @import("shaderops.zig");
+const speckleparams = @import("speckleparams.zig");
 const distbounds = @import("distortbounds.zig");
 
 const iio = @import("imageio.zig");
@@ -46,6 +47,10 @@ const RenderParallelPlan = scalingpolicy.RenderParallelPlan;
 const ParallelWorkload = scalingpolicy.ParallelWorkload;
 const FrameReportStorage = report.FrameReportStorage;
 const F = buildconfig.F;
+
+pub const Dot2DParams = speckleparams.Dot2DParams;
+pub const Perlin2DParams = speckleparams.Perlin2DParams;
+pub const SpeckleParams = speckleparams.SpeckleParams;
 
 pub const RasterConfig = rastcfg.RasterConfig;
 pub const ParallelConfig = rastcfg.ParallelConfig;
@@ -2039,6 +2044,182 @@ fn saveOverlapEnabled(config: RasterConfig) bool {
 // --------------------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------------------
+
+test "analytic speckles agree through private production frame dispatch across evaluators buffers and workers" {
+    const speckleops = @import("speckleops.zig");
+    const speckleconfig = @import("speckleconfig.zig");
+    const specklefixture = @import("specklefixture.zig");
+    const Render = struct {
+        fn render(
+            outer_alloc: std.mem.Allocator,
+            io: std.Io,
+            camera_input: cam.CameraInput,
+            mesh_input: *const meshpipe.MeshInput,
+            params: speckleops.GridParams,
+            config: RasterConfig,
+            workers: u16,
+        ) !ndarray.NDArray(F) {
+            var arena = std.heap.ArenaAllocator.init(outer_alloc);
+            defer arena.deinit();
+            const local_alloc = arena.allocator();
+            var meshes = [_]meshpipe.MeshStatic{try meshpipe.initMeshStatic(local_alloc, mesh_input)};
+            const shader = &meshes[0].shader.speckle;
+            // Replace the complete field before frame preparation borrows its stable resources.
+            shader.resources.deinit(local_alloc);
+            shader.resources = try speckleops.Resources.init(local_alloc, params);
+            shader.params = params;
+            try std.testing.expectEqualDeep(
+                speckleconfig.canonicalizeSampleConfig(try params.resolve()),
+                speckleops.kernel_configs[shader.resources.kernel_index.?],
+            );
+            const camera_prepared = try cam.CameraPrepared.init(outer_alloc, camera_input);
+            defer camera_prepared.deinit(outer_alloc);
+            const dims = try calcAllFramesImageDims(&.{camera_input}, &.{mesh_input.*}, config);
+            var images = try ndarray.NDArray(F).initFlat(outer_alloc, &dims);
+            errdefer {
+                outer_alloc.free(images.slice);
+                images.deinit(outer_alloc);
+            }
+            // This is rasterAdvanced's production path below static preparation, not a public override.
+            try dispatchFrameJobsOffline(
+                outer_alloc,
+                &.{.{ .io = io, .workers = workers }},
+                &.{camera_prepared},
+                config,
+                null,
+                null,
+                dims[1],
+                1,
+                &meshes,
+                &.{null},
+                &images,
+                null,
+            );
+            return images;
+        }
+    };
+    const fixture_params = specklefixture.physical_params;
+    const Case = struct {
+        pattern: speckleconfig.Pattern = .disk,
+        radius: F = 0.3,
+        occupancy: F = fixture_params.occupancy,
+        jitter: F = 0,
+        softness: F = 0,
+        transition: F = speckleconfig.default_perlin_transition_width,
+    };
+    const cases = [_]Case{
+        .{},
+        .{ .jitter = 0.1 },
+        .{ .radius = 0.425, .occupancy = 1 },
+        .{ .softness = 0.06 },
+        .{ .softness = 0.06, .jitter = 0.1 },
+        .{ .pattern = .gaussian },
+        .{ .pattern = .gaussian, .jitter = 0.1 },
+        .{ .pattern = .perlin, .transition = 0 },
+        .{ .pattern = .perlin },
+    };
+
+    for ([_]bool{ false, true }) |curved| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const scene = try specklefixture.initScene(&arena, .{ .disk = fixture_params }, curved, 1);
+        for (cases, 0..) |case, case_idx| for ([_]speckleconfig.Neighborhood{ .nine, .one, .four }) |neighbors| {
+            if (neighbors != .nine and (!buildconfig.enable_all_evaluators or case.pattern == .perlin)) continue;
+            var params: speckleops.GridParams = .{
+                .pattern = case.pattern,
+                .seed = fixture_params.seed,
+                .cells_per_uv = .{ 4, 3 },
+                .radius_mean = case.radius,
+                .radius_jitter = case.jitter,
+                .occupancy = case.occupancy,
+                .edge_softness = case.softness,
+                .perlin_coverage_transition_width = case.transition,
+                .neighbor_count = if (buildconfig.enable_all_evaluators and case.pattern != .perlin) neighbors else null,
+            };
+            const reference_evaluator: ?speckleconfig.Evaluator = if (buildconfig.enable_all_evaluators)
+                (if (case.pattern == .perlin) .cell_hash else .list_naive)
+            else
+                null;
+            const alloc = std.testing.allocator;
+            params.evaluator = reference_evaluator;
+            var tile_reference = try Render.render(
+                alloc,
+                std.testing.io,
+                scene.camera_input,
+                &scene.mesh_input,
+                params,
+                specklefixture.rasterConfig(.tile_local),
+                1,
+            );
+            defer {
+                alloc.free(tile_reference.slice);
+                tile_reference.deinit(alloc);
+            }
+            try specklefixture.expectDeformedImages(tile_reference);
+            for ([_]BufferMode{ .tile_local, .global_subpx_full, .global_subpx_stripe }) |buffer_mode| {
+                const config = specklefixture.rasterConfig(buffer_mode);
+                params.evaluator = reference_evaluator;
+                var expected = if (buffer_mode == .tile_local) tile_reference else try Render.render(
+                    alloc,
+                    std.testing.io,
+                    scene.camera_input,
+                    &scene.mesh_input,
+                    params,
+                    config,
+                    1,
+                );
+                defer if (buffer_mode != .tile_local) {
+                    alloc.free(expected.slice);
+                    expected.deinit(alloc);
+                };
+                if (buffer_mode != .tile_local) {
+                    errdefer std.debug.print("cross-buffer case {d}: neighbors={d}, curved={}, buffer={s}\n", .{
+                        case_idx, @intFromEnum(neighbors), curved, @tagName(buffer_mode),
+                    });
+                    // Buffer modes reduce the same SSAA samples in different orders.
+                    const tolerance = 8 * std.math.floatEps(F);
+                    try specklefixture.expectImagesWithin(tile_reference, expected, tolerance);
+                }
+                const generations = speckleconfig.generationConfigs(buildconfig.enable_all_evaluators);
+                const selections = if (buildconfig.enable_all_evaluators) generations.len + 1 else 1;
+                for (0..selections) |selection| {
+                    params.evaluator = null;
+                    if (selection != 0) {
+                        const generation = generations[selection - 1];
+                        const evaluator = std.meta.activeTag(generation);
+                        if (evaluator == .mock or evaluator == .mask_1bit or evaluator == .mask_u8) continue;
+                        if (generation.pattern() != case.pattern or generation.neighborhood() != params.neighbor_count) continue;
+                        const edges: ?speckleconfig.Edges = if (case.pattern != .disk) null else if (case.softness > 0) .soft else .hard;
+                        if (generation.edges() != edges) continue;
+                        if (evaluator == .direct_fixed and case.jitter != 0) continue;
+                        params.evaluator = evaluator;
+                    }
+                    const actual_config = try params.resolve();
+                    for ([_]u16{ 1, 4 }) |workers| {
+                        if (workers == 1 and params.evaluator == reference_evaluator) continue;
+                        errdefer std.debug.print("speckle dispatch case {d}: {s}, neighbors={d}, curved={}, buffer={s}, workers={d}\n", .{
+                            case_idx, @tagName(std.meta.activeTag(actual_config)), @intFromEnum(neighbors), curved, @tagName(buffer_mode), workers,
+                        });
+                        var actual = try Render.render(
+                            alloc,
+                            std.testing.io,
+                            scene.camera_input,
+                            &scene.mesh_input,
+                            params,
+                            config,
+                            workers,
+                        );
+                        defer {
+                            alloc.free(actual.slice);
+                            actual.deinit(alloc);
+                        }
+                        try specklefixture.expectImagesWithin(expected, actual, 0);
+                    }
+                }
+            }
+        };
+    }
+}
 
 test "render group save I/O prefers the supplied override" {
     var groups = try ManagedRenderGroups.init(std.testing.allocator, null, 1, null);

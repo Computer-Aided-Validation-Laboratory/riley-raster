@@ -1,13 +1,14 @@
-# --------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Riley: A High Performance Rasteriser for DIC UQ
 #
-# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 # Licensed under the MIT License (see LICENSE file for details)
 #
-# Authors: scepticalrabbit (Lloyd Fletcher)
-# --------------------------------------------------------------------------
+# Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+# --------------------------------------------------------------------------------------
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -402,6 +403,58 @@ def test_create_mesh_reduces_order_from_quad8_to_quad4() -> None:
     assert mesh.mesh_type == riley.MeshType.quad4
     assert mesh.coords.shape[0] == 4
     assert mesh.connect.shape == (1, 4)
+
+
+def test_create_mesh_renders_speckles_on_converted_curved_surface() -> None:
+    params = riley.Perlin2DParams(0.15, seed=7, foreground=0.1, background=0.9)
+    coords = coords_3d(riley.EElemType.QUAD9)
+    # Bow the four edges out of plane. Conversion must preserve the midside
+    # nodes but discard the centre, which has a different UV and height.
+    coords[4:8, 2] = 0.25
+    coords[8, 2] = 0.75
+    uvs = (0.5 + 0.25 * coords[:, :2]).astype(np.float32)
+    uvs[8] = (0.4, 0.6)
+    # Put the discarded node first in source storage to exercise remapping.
+    source_order = [8, 0, 1, 2, 3, 4, 5, 6, 7]
+    source_uvs = np.empty((9, 4), dtype=np.float32)[:, ::2]
+    source_uvs[:] = uvs[source_order]
+    shader = riley.SpeckleShader(
+        source_uvs, params, output_scale=0.7, output_offset=0.2,
+        bits=-1, scaling_type=riley.ScaleStrategy.none,
+    )
+    convention = riley.ConnectConvention(
+        riley.EElemType.QUAD9, riley.EConnectAxis.ROW, 0, riley.ENodeOrder.RILEY,
+    )
+    mesh = riley.create_mesh(
+        convention, riley.MeshType.quad8, coords[source_order],
+        np.array([[1, 2, 3, 4, 5, 6, 7, 8, 0]]), shader,
+    )
+    prepared = mesh.shader
+    assert isinstance(prepared, riley.SpeckleShader)
+    assert prepared.params is params
+    assert shader.uvs is source_uvs
+    assert prepared.uvs.dtype == np.float64
+    assert prepared.uvs.flags.c_contiguous
+    assert not np.shares_memory(prepared.uvs, source_uvs)
+
+    # Explicit quad8 surface: do not use the conversion's remapping as the oracle.
+    reference = riley.Mesh(
+        mesh_type=riley.MeshType.quad8, coords=coords[:8],
+        connect=np.arange(8, dtype=np.uintp)[None, :], disp=None,
+        shader=replace(shader, uvs=np.ascontiguousarray(uvs[:8], dtype=np.float64)),
+    )
+    camera = riley.Camera(
+        pixels_num=(64, 64), pixels_size=(0.01, 0.01),
+        pos_world=(0.0, 0.0, 4.0), rot_world=(0.0, 0.0, 0.0),
+        roi_cent_world=(0.0, 0.0, 0.0), focal_length=1.0, sub_sample=1,
+    )
+    config = riley.RasterConfig(
+        parallel=1, save_strategy=riley.SaveStrategy.memory, report=riley.ReportMode.off,
+    )
+    expected = riley.raster(reference, camera, config)
+    assert expected is not None
+    assert np.ptp(expected[expected > 0.0]) > 0.1
+    np.testing.assert_array_equal(riley.raster(mesh, camera, config), expected)
 
 
 def test_quad4_mesh_type_enum_contract() -> None:

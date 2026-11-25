@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 
 const riley = @import("riley/zig/riley.zig");
@@ -24,6 +24,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 1. Create the mesh geometry and shader
     // -------------------------------------------------------------------------
+    // One row of XYZ coordinates per node, with zero-based connectivity.
     var coord_values = [_]F{
         -1.0, -1.0, 0.0,
         1.0,  -1.0, 0.0,
@@ -82,6 +83,7 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 3. Configure the raster engine and output path
     // -------------------------------------------------------------------------
+    const out_dir_root = "out/demo0a_quickstart";
     const config = riley.RasterConfig{
         .save_strategy = .disk,
         .output = .{
@@ -95,17 +97,13 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 4. Render the scene
     // -------------------------------------------------------------------------
-    const images = try riley.raster(
+    // Riley creates the output directory if needed. Disk-only rendering returns null.
+    _ = try riley.raster(
         init.gpa,
         init.io,
         &.{camera_input},
         &.{mesh_input},
         config,
-        "./out/demo0_quickstart",
+        out_dir_root,
     );
-
-    if (images) |img| {
-        init.gpa.free(img.slice);
-        img.deinit(init.gpa);
-    }
 }

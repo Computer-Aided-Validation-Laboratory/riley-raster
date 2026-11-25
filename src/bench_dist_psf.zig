@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 
 const benchstats = @import("dev_support/benchstats.zig");
@@ -217,16 +217,15 @@ fn printUsage() void {
     , .{});
 }
 
-fn parseDistPsfArgs(args: anytype) !BenchDistPsfArgs {
+fn parseDistPsfArgs(args: []const []const u8) !BenchDistPsfArgs {
     var result = BenchDistPsfArgs{};
     var skip_next = false;
 
-    for (args[1..], 1..) |raw_arg, ii| {
+    for (args[1..], 1..) |arg, ii| {
         if (skip_next) {
             skip_next = false;
             continue;
         }
-        const arg = std.mem.sliceTo(raw_arg, 0);
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             printUsage();
             std.process.exit(0);
@@ -235,7 +234,7 @@ fn parseDistPsfArgs(args: anytype) !BenchDistPsfArgs {
             if (ii + 1 >= args.len) {
                 return error.MissingArgumentValue;
             }
-            const val = std.mem.sliceTo(args[ii + 1], 0);
+            const val = args[ii + 1];
             skip_next = true;
 
             if (std.mem.eql(u8, arg, "--out-dir")) {
@@ -390,7 +389,8 @@ fn createPSF(case: PSFCase) cam.PointSpreadFunc {
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
-    const bench_args = try parseDistPsfArgs(init.minimal.args.vector);
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
+    const bench_args = try parseDistPsfArgs(args);
 
     var threaded_io = riley.getThreadedIo(
         outer_alloc,

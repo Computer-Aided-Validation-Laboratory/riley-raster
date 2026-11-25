@@ -1,11 +1,11 @@
-# --------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Riley: A High Performance Rasteriser for DIC UQ
 #
-# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 # Licensed under the MIT License (see LICENSE file for details)
 #
-# Authors: scepticalrabbit (Lloyd Fletcher)
-# --------------------------------------------------------------------------
+# Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+# --------------------------------------------------------------------------------------
 from __future__ import annotations
 
 from pathlib import Path
@@ -74,6 +74,19 @@ def test_create_mesh_rejects_invalid_mesh_type_arg() -> None:
             shader=shader,
             coords=coords,
             connect=connect,
+        )
+
+
+def test_create_mesh_requires_speckle_uvs() -> None:
+    coords = coords_3d(riley.EElemType.TRI3)
+    connect = np.array([[0, 1, 2]], dtype=np.uintp)
+    convention = ConnectConvention(
+        EElemType.TRI3, EConnectAxis.ROW, 0, ENodeOrder.RILEY,
+    )
+    with pytest.raises(ValueError, match="uvs"):
+        meshio.create_mesh(
+            convention, MeshType.tri3, coords, connect,
+            riley.SpeckleShader(None, riley.Dot2DParams(0.4, 0.03)),
         )
 
 

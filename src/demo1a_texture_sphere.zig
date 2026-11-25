@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -16,14 +16,13 @@ const uvio = @import("riley/zig/uvio.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
 const MeshInput = meshpipe.MeshInput;
-const gk = @import("riley/zig/geometrykernels.zig");
-const MeshType = gk.MeshType;
+
 const camera_mod = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
 const sceneops = @import("riley/zig/sceneops.zig");
 const CameraInput = camera_mod.CameraInput;
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
+
 const F = buildconfig.F;
 
 pub fn main(init: std.process.Init) !void {
@@ -38,30 +37,22 @@ pub fn main(init: std.process.Init) !void {
     // 1. Setup paths and parameters
     // -------------------------------------------------------------------------
     const data_dir = "data/min/tri6_sphere200/";
-    const out_dir_root = "./out/demo1_sphere";
+    const out_dir_root = "out/demo1a_texture_sphere";
 
     const total_threads: u16 = 4;
 
     // -------------------------------------------------------------------------
     // 2. Load mesh data and texture shader
     // -------------------------------------------------------------------------
-    std.debug.print("Loading sphere simulation data from {s}...\n", .{data_dir});
-    const coord_path = data_dir ++ "coords.csv";
-    const conn_path = data_dir ++ "connect.csv";
     const sim_data = try meshio.loadSimData(
         local_alloc,
         io,
-        coord_path,
-        conn_path,
+        data_dir ++ "coords.csv",
+        data_dir ++ "connect.csv",
         null,
         null,
     );
-
-    std.debug.print("Loading UV map...\n", .{});
-    const uv_path = data_dir ++ "uvs.csv";
-    const uvs = try uvio.loadUVMap(local_alloc, io, uv_path);
-
-    std.debug.print("Loading speckle texture...\n", .{});
+    const uvs = try uvio.loadUVMap(local_alloc, io, data_dir ++ "uvs.csv");
     const texture = try iio.loadImage(
         u8,
         1,
@@ -71,7 +62,6 @@ pub fn main(init: std.process.Init) !void {
         .bmp,
     );
 
-    std.debug.print("Preparing mesh input...\n", .{});
     const mesh_input = MeshInput{
         .mesh_type = .tri6,
         .coords = sim_data.coords,
@@ -92,8 +82,6 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // 3. Position and create camera
     // -------------------------------------------------------------------------
-    std.debug.print("Setting up camera...\n", .{});
-
     const pixels_num = [_]u32{ 800, 500 };
     const pixels_size = [_]F{
         5.3e-6,
@@ -103,6 +91,7 @@ pub fn main(init: std.process.Init) !void {
     const rot = Rotation.init(0, 0, 0);
     const fov_scale_factor: F = 1.0;
 
+    // Aim at the bounding-box centre and use the sphere's extent to choose camera distance.
     const roi_pos = sceneops.boundsCenter(&sim_data.coords);
     const cam_pos = cameraops.posFillFrameFromRot(
         &sim_data.coords,
@@ -142,7 +131,8 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     std.debug.print("Rendering sphere to {s}/...\n", .{out_dir_root});
 
-    const images = try riley.raster(
+    // Disk-only rendering returns null.
+    _ = try riley.raster(
         outer_alloc,
         io,
         &.{camera_input},
@@ -150,11 +140,6 @@ pub fn main(init: std.process.Init) !void {
         config,
         out_dir_root,
     );
-
-    if (images) |img| {
-        outer_alloc.free(img.slice);
-        img.deinit(outer_alloc);
-    }
 
     std.debug.print("Demo complete. Images saved to {s}/\n", .{out_dir_root});
 }

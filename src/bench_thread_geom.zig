@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const benchargs = @import("dev_support/benchargs.zig");
 const common = @import("dev_support/benchcommon.zig");
@@ -274,31 +274,31 @@ fn runAndRecord(
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
     var base_raster_config = tcfg.getRasterConfig(.bench);
     base_raster_config.output.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
-    var filtered_args: std.ArrayList([*:0]const u8) = .empty;
+    var filtered_args: std.ArrayList([]const u8) = .empty;
     defer filtered_args.deinit(outer_alloc);
-    try filtered_args.append(outer_alloc, init.minimal.args.vector[0]);
+    try filtered_args.append(outer_alloc, args[0]);
 
     var element_filter: ?gk.MeshType = null;
     var size_filter: ?[]const u8 = null;
     var skip_arg = false;
 
-    for (init.minimal.args.vector[1..], 1..) |raw_arg, ii| {
+    for (args[1..], 1..) |arg, ii| {
         if (skip_arg) {
             skip_arg = false;
             continue;
         }
-        const arg = std.mem.span(raw_arg);
         if (std.mem.eql(u8, arg, "--element")) {
-            if (ii + 1 >= init.minimal.args.vector.len) {
+            if (ii + 1 >= args.len) {
                 std.debug.print("Missing value for --element\n", .{});
                 return error.MissingArgumentValue;
             }
-            const val = std.mem.span(init.minimal.args.vector[ii + 1]);
+            const val = args[ii + 1];
             skip_arg = true;
             if (std.mem.eql(u8, val, "tri3")) {
                 element_filter = .tri3;
@@ -315,15 +315,15 @@ pub fn main(init: std.process.Init) !void {
                 return error.UnknownElementFilter;
             }
         } else if (std.mem.eql(u8, arg, "--size")) {
-            if (ii + 1 >= init.minimal.args.vector.len) {
+            if (ii + 1 >= args.len) {
                 std.debug.print("Missing value for --size\n", .{});
                 return error.MissingArgumentValue;
             }
-            const val = std.mem.span(init.minimal.args.vector[ii + 1]);
+            const val = args[ii + 1];
             skip_arg = true;
             size_filter = val;
         } else {
-            try filtered_args.append(outer_alloc, init.minimal.args.vector[ii]);
+            try filtered_args.append(outer_alloc, arg);
         }
     }
 

@@ -1,13 +1,12 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const std = @import("std");
-const demo_common = @import("demo_common.zig");
 
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const riley = @import("riley/zig/riley.zig");
@@ -31,8 +30,10 @@ pub fn main(init: std.process.Init) !void {
     const local_alloc = arena.allocator();
 
     // -------------------------------------------------------------------------
-    // 1. Setup paths and parameters
+    // 1. Set paths and the disk output settings shared by every case
     // -------------------------------------------------------------------------
+    const data_dir = "data/min/tri6_sphere200/";
+    const out_dir_root = "./out/demo5_cameramodels";
 
     const config_base = riley.RasterConfig{
         .save_strategy = .disk,
@@ -45,10 +46,6 @@ pub fn main(init: std.process.Init) !void {
         .report = .{ .mode = .bench },
     };
 
-    const data_dir = "data/min/tri6_sphere200/";
-    const out_dir_root = "./out/demo5_cameramodels";
-
-    
     // -------------------------------------------------------------------------
     // 2. Load mesh data and texture shader
     // -------------------------------------------------------------------------
@@ -56,7 +53,7 @@ pub fn main(init: std.process.Init) !void {
         "Loading sphere simulation data from {s}...\n",
         .{data_dir},
     );
-    
+
     const sim_data = try meshio.loadSimData(
         local_alloc,
         io,
@@ -122,7 +119,7 @@ pub fn main(init: std.process.Init) !void {
     };
 
     // -------------------------------------------------------------------------
-    // 4. Compare every distortion family and PSF path across buffer modes
+    // 4. Define the distortion, pixel response and buffer mode cases
     // -------------------------------------------------------------------------
     const poly = camera.PolyMap{
         .degree = 2,
@@ -210,9 +207,14 @@ pub fn main(init: std.process.Init) !void {
         .global_subpx_stripe,
     };
 
-    var output_root = try demo_common.resetOutputDir(io, out_dir_root);
-    defer output_root.close(io);
+    // -------------------------------------------------------------------------
+    // 5. Reset this demo directory and render the 6 x 5 x 3 comparison matrix
+    // -------------------------------------------------------------------------
+    const cwd = std.Io.Dir.cwd();
+    try cwd.deleteTree(io, out_dir_root);
+    try cwd.createDirPath(io, out_dir_root);
 
+    // Keep the base camera pose and scene fixed; Riley creates each case subdirectory.
     for (distorts, distort_names) |distort, distort_name| {
         for (psfs, psf_names) |psf, psf_name| {
             for (modes) |mode| {
