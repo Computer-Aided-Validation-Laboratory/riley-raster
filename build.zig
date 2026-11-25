@@ -11,8 +11,8 @@ const speckleconfig = @import("src/riley/zig/speckleconfig.zig");
 
 const riley_version = std.SemanticVersion{
     .major = 2026,
-    .minor = 10,
-    .patch = 3,
+    .minor = 11,
+    .patch = 1,
 };
 
 const RunEntry = struct {
