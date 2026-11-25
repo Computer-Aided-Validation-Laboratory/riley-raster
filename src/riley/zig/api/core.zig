@@ -70,6 +70,11 @@ pub const AnisotropicGaussianPSF = @import("../cameramodels.zig").AnisotropicGau
 
 pub const MeshShaderSetInput = @import("../shadertypes.zig").MeshShaderSetInput;
 pub const ShaderMonoInput = @import("../shadertypes.zig").ShaderMonoInput;
+pub const SpeckleInput = @import("../shadertypes.zig").SpeckleInput;
+pub const SpeckleParams = @import("../speckleparams.zig").SpeckleParams;
+pub const Disk2DParams = @import("../speckleparams.zig").Disk2DParams;
+pub const Gaussian2DParams = @import("../speckleparams.zig").Gaussian2DParams;
+pub const Perlin2DParams = @import("../speckleparams.zig").Perlin2DParams;
 pub const ShaderPipeInput = @import("../shadertypes.zig").ShaderPipeInput;
 pub const ShaderPipeStageInput = @import("../shadertypes.zig").ShaderPipeStageInput;
 pub const PipeSourceInput = @import("../shadertypes.zig").PipeSourceInput;

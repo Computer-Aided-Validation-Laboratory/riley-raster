@@ -24,6 +24,8 @@ The `dev/` directory provides comprehensive architectural, mathematical, testing
 
 - [**`dev/TESTING.md`**](./TESTING.md): Testing architecture, quickstart commands, scene descriptions, suite coverage, reference generation and automated regression diagnostics.
 - [**`dev/THEORY.md`**](./THEORY.md): Mathematical foundations and engine design details, including polynomial camera distortion formulation, distortion-aware rasterisation frontend bounds, render thread budgets, and image save mode mechanics.
+- [**`dev/PROCEDURAL.md`**](./PROCEDURAL.md): Zig and Python speckle tutorials, reference-UV calibration, nominal coverage, and evaluator benchmarking.
+- [**`dev/DOCS.md`**](./DOCS.md): Build, validate, and preview the combined Sphinx and Zig documentation.
 - [**`dev/ASSUMPTIONS.md`**](./ASSUMPTIONS.md): Supported engineering operating envelope, mesh validity contracts, conservative numerical margins, and reasoning guidelines for review.
 - [**`dev/MESHCONVENTION.md`**](./MESHCONVENTION.md): Riley standard mesh representation, surface element definitions (`tri3`, `tri6`, `quad4`, `quad8`, `quad9`), 3D continuum elements, node ordering, and connectivity conventions.
 - [**`dev/FILESTRUCTURE.md`**](./FILESTRUCTURE.md): Repository layout, module naming rules (`io`, `ops`, `kernel`), scalar/SIMD file splitting, and internal code organisation.
@@ -73,7 +75,7 @@ Riley strictly separates optimization modes by task type:
 - **Benchmarks and Performance profiling (`bench-*`, `./scripts/bench_*.py`, `./scripts/perf_*.py`)**: Run in **ReleaseFast mode** (`-Doptimize=ReleaseFast`), ensuring maximum compiler vectorization and realistic production throughput.
 
 > [!IMPORTANT]
-> The combined target `zig build test-verif-basic` is intended **primarily for CI pipelines**. For **local development**, prefer running `zig build test-verif` and `zig build test-basic` as separate terminal processes in parallel when resources permit.
+> CI runs the combined target `zig build test-verif-basic -Doptimize=ReleaseSafe`. For **local development**, prefer running `zig build test-verif` and `zig build test-basic` as separate Debug jobs in parallel when resources permit.
 
 ### Quick Commands
 
@@ -81,8 +83,8 @@ Riley strictly separates optimization modes by task type:
 # Local Development: Run verif and basic in parallel across two terminal tabs/jobs (Debug)
 zig build test-verif & zig build test-basic & wait
 
-# CI Combined Verification & Basic Suite (Debug)
-zig build test-verif-basic
+# CI Combined Verification & Basic Suite (ReleaseSafe)
+zig build test-verif-basic -Doptimize=ReleaseSafe
 
 # Analytic Verification Suite (Mathematical & Numerical Validation in Debug)
 zig build test-verif
@@ -90,9 +92,9 @@ zig build test-verif
 # Basic Test Suite (Fast Core Feature Coverage in Debug)
 zig build test-basic
 
-# Full Test Suite (Exhaustive Factorial System & Threading Coverage in ReleaseSafe)
-zig build gen-gold-full -Doptimize=ReleaseSafe  # Generate Full gold (if needed)
-zig build test-full -Doptimize=ReleaseSafe
+# Full Test Suite (only for requested full verification; see reference setup below)
+zig build test-full -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+zig build test-full -Dprecision=f64 -Dsimd=off -Doptimize=ReleaseSafe
 
 # Warning-only diagnostics for invalid-Jacobian element frames
 zig build diag-badjac
@@ -103,7 +105,7 @@ pytest --pyargs riley.pytests -vs
 # Compile all native benchmarks (ReleaseFast, f64, SIMD on)
 python scripts/compile_benchmarks.py
 
-# Minimal execution check for every native benchmark
+# Minimal execution check for shared-harness native benchmarks (excludes speckle)
 python scripts/run_all_bench.py --profile smoke
 ```
 
@@ -113,13 +115,13 @@ python scripts/run_all_bench.py --profile smoke
 | :--- | :--- | :--- | :--- |
 | **Verification Suite** | `zig build test-verif` | Inverse solver recovery, silhouette area/centroid, depth ordering, and camera distortion oracles (Debug) | `gold/verif/` |
 | **Basic Suite** | `zig build test-basic` | Fast coverage across 1-element, 2-shape FE interaction, and feature zoo cases (Debug) | `gold/basic/` |
-| **Combined Core Suite** | `zig build test-verif-basic` | Primarily for CI: runs verif and basic in one Debug test executable | `gold/verif/`, `gold/basic/` |
+| **Combined Core Suite** | `zig build test-verif-basic -Doptimize=ReleaseSafe` | CI runs Verification and Basic in one ReleaseSafe test executable | `gold/verif/`, `gold/basic/` |
 | **Full Suite** | `zig build test-full -Doptimize=ReleaseSafe` | Exhaustive sweeps over shaders, textures, camera I/O, maths SIMD, PSF/distortion, SSAA, hulls, tiling, scenes, threads, and outputs in ReleaseSafe | `gold/full_*/` |
 | **Bad-Jacobian Diagnostics** | `zig build diag-badjac` | Diagnostic utility (`dev_support/diag_badjac.zig`) for warning-only renders of intentionally folded one-element frames under `fails/*_full_badjac/` | Existing basic and full-hull gold |
 | **Python Pytests** | `.venv/bin/pytest src/riley/pytests/` | Python/Cython API, mesh pipeline, Exodus conversion, and demo parity | Integrated / `gold/` |
 
 > [!NOTE]
-> For scene descriptions, suite coverage, reference generation, tolerances, and design contracts, see [**`dev/TESTING.md`**](./TESTING.md).
+> For scene descriptions, suite coverage, tolerances, and design contracts, see [**`dev/TESTING.md`**](./TESTING.md). If local Full references are missing, see [Full suite reference setup](./TESTING.md#6-full-test-suite-test_full).
 
 ## Precision and SIMD Build Matrix
 The `zig build` workflow supports direct control over precision, SIMD mode, Newton solver mode, and SIMD vector width:
@@ -154,9 +156,11 @@ zig build test-basic -Dprecision=f32 -Dsimd=off
 
 ## Benchmarks
 
-All native benchmarks use the same Python compiler and execution harness.
-The benchmark catalogue in `scripts/benchmark_catalog.py` defines their names,
-Zig install targets, binary names, and supported experiment matrices.
+All native benchmarks use the same Python compiler. Speckle evaluators use a
+[dedicated A/B runner](PROCEDURAL.md#internal-evaluator-experiments-and-benchmarking)
+instead of the shared execution harness. The benchmark catalogue in
+`scripts/benchmark_catalog.py` defines benchmark names, Zig install targets,
+binary names, and supported experiment matrices.
 
 | Name | Python entry point | Shared experiment | Specialised study |
 | --- | --- | --- | --- |
@@ -186,25 +190,38 @@ Compilation always uses ReleaseFast. Use `--jobs N` to set concurrent builds
 (default: two). The default is f64 with SIMD on; alternative
 precision/SIMD configurations require explicit options. Binaries install into
 `bin/`, with names such as `bench_geom_f64_simd`, `bench_geom_f64_scalar`, and
-`bench_tiltraster_f64_simd_v4`. Default vector widths omit the `_vN` suffix.
-No shorthand binary copies are produced.
+`bench_tiltraster_f64_simd_v4`. Zig and Python append `_vN` for non-default
+widths even with SIMD off (for example, `bench_geom_f64_scalar_v4`). Omitted
+or precision-default widths have no suffix. The scalar speckle benchmark
+still uses the width for scratch padding and accumulator storage.
+No shorthand binary copies are produced. The Python compiler strips the speckle
+benchmark and enables its experimental evaluators for the tuning profile; it
+does not enable them for other benchmarks.
 
 Every benchmark also has native Zig run and install hooks. Convert underscores
-in catalogue names to hyphens in build targets:
+in catalogue names to hyphens in build targets. Pass runtime arguments after
+`--` to a single named run target. The aggregate `zig build benches` runs every
+benchmark with its defaults and rejects runtime arguments.
 
 ```shell
+zig build bench-multiroot -Doptimize=ReleaseFast -- --width 64 --height 48 --elements-per-type 1 --runs 1 --warmup 0
 zig build install-bench-thread-geom --prefix . -Doptimize=ReleaseFast -Dprecision=f64 -Dsimd=on
 zig build install-bench-bins --prefix . -Doptimize=ReleaseFast -Dprecision=f64 -Dsimd=on
 ```
 
 ### Shared execution harness
 
-Every `bench_<name>.py` supports the same options. Compilation is separate unless
-`--build` is supplied. Smoke profiles use one repeat, small images, and a reduced
-case selection; they check execution, not representative performance. The DIC
-UQ smoke profile uses the bundled `platehole3d_2mr_7f` dataset; its default
-large study requires `data/FE/platehole3d_6mr_63f/`. Override the input using
+Each shared-harness `bench_<name>.py` supports the same options. Compilation is
+separate unless `--build` is supplied. Smoke profiles use one repeat, small
+images, and a reduced case selection; they check execution, not representative
+performance. The DIC UQ smoke profile uses the bundled `platehole3d_2mr_7f`
+dataset; its default large study requires `data/FE/platehole3d_6mr_63f/`.
+Override the input using
 `-- --data-dir PATH/` (including the trailing slash).
+
+`run_all_bench.py --profile smoke` does not run the speckle evaluator benchmark.
+CI checks the separate speckle runner with native tests on Ubuntu and a
+frozen-executable comparison on Windows.
 
 ```shell
 python scripts/bench_geom.py --profile smoke --build

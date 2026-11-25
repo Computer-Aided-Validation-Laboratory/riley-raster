@@ -9,7 +9,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from PIL import Image
 
-from paper_const import PAPER_DIR, repo_root
+from bench_common import repo_root
+from paper_const import PAPER_DIR
 
 
 VERIF_DIR = pathlib.Path("verif/verif_4")

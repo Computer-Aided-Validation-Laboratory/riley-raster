@@ -1,13 +1,14 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const matslice = @import("matslice.zig");
 const shaderfunc = @import("shaderfunc.zig");
+const geometrykernels = @import("geometrykernels.zig");
 const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 
@@ -583,6 +584,40 @@ fn calcNormalLaneVecs(
     return normal_vecs;
 }
 
+inline fn interpFuncCoordsClipSIMD(
+    comptime N: usize,
+    weights: [N]VecSF,
+    buf: *const shadertypes.LocalShaderBuff(N),
+) [2]VecSF {
+    var u: VecSF = @splat(0);
+    var v: VecSF = @splat(0);
+    inline for (0..N) |nn| {
+        const u_node: VecSF = @splat(buf.func_coords[nn]);
+        const v_node: VecSF = @splat(buf.func_coords[N + nn]);
+        u += weights[nn] * u_node;
+        v += weights[nn] * v_node;
+    }
+    return .{ u, v };
+}
+
+inline fn interpFuncCoordsPerspSIMD(
+    comptime N: usize,
+    weights: [N]VecSF,
+    nodes_inv_z: [N]VecSF,
+    subpx_z: VecSF,
+    buf: *const shadertypes.LocalShaderBuff(N),
+) [2]VecSF {
+    var u: VecSF = @splat(0);
+    var v: VecSF = @splat(0);
+    inline for (0..N) |nn| {
+        const u_node: VecSF = @splat(buf.func_coords[nn]);
+        const v_node: VecSF = @splat(buf.func_coords[N + nn]);
+        u += weights[nn] * u_node * nodes_inv_z[nn];
+        v += weights[nn] * v_node * nodes_inv_z[nn];
+    }
+    return .{ u * subpx_z, v * subpx_z };
+}
+
 pub inline fn fillFuncClipSIMD(
     comptime N: usize,
     comptime C: usize,
@@ -610,15 +645,7 @@ pub inline fn fillFuncClipSIMD(
         v_coord_1 = coords[1];
     } else switch (shader.coord_mode) {
         .uv, .world_reference, .world_deformed => {
-            v_coord_0 = @splat(0.0);
-            v_coord_1 = @splat(0.0);
-
-            inline for (0..N) |nn| {
-                const v_fc0 = @as(VecSF, @splat(shader_buf.func_coords[nn]));
-                const v_fc1 = @as(VecSF, @splat(shader_buf.func_coords[N + nn]));
-                v_coord_0 += v_weights[nn] * v_fc0;
-                v_coord_1 += v_weights[nn] * v_fc1;
-            }
+            v_coord_0, v_coord_1 = interpFuncCoordsClipSIMD(N, v_weights, shader_buf);
         },
         .para => {},
     }
@@ -707,20 +734,13 @@ pub inline fn fillFuncPerspSIMD(
         v_coord_1 = coords[1];
     } else switch (shader.coord_mode) {
         .uv, .world_reference, .world_deformed => {
-            v_coord_0 = @splat(0.0);
-            v_coord_1 = @splat(0.0);
-
-            inline for (0..N) |nn| {
-                const v_inv_z = v_nodes_inv_z[nn];
-                const v_fc0 = @as(VecSF, @splat(shader_buf.func_coords[nn]));
-                const v_fc1 = @as(VecSF, @splat(shader_buf.func_coords[N + nn]));
-
-                v_coord_0 += v_weights[nn] * v_fc0 * v_inv_z;
-                v_coord_1 += v_weights[nn] * v_fc1 * v_inv_z;
-            }
-
-            v_coord_0 *= v_subpx_z;
-            v_coord_1 *= v_subpx_z;
+            v_coord_0, v_coord_1 = interpFuncCoordsPerspSIMD(
+                N,
+                v_weights,
+                v_nodes_inv_z,
+                v_subpx_z,
+                shader_buf,
+            );
         },
         .para => {},
     }
@@ -778,4 +798,24 @@ pub inline fn fillFuncPerspSIMD(
         const v_final = v_vals[ch] * v_mul + v_add;
         sink.store(ch, v_mask_active, v_final);
     }
+}
+
+pub inline fn evalSpeckleSIMD(
+    comptime N: usize,
+    comptime coord_space: geometrykernels.CoordSpace,
+    active: VecSB,
+    weights: [N]VecSF,
+    nodes_inv_z: [N]VecSF,
+    subpx_z: VecSF,
+    buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.SpecklePrepared,
+    sample: anytype,
+) VecSF {
+    const u, const v = switch (comptime coord_space) {
+        .clip_px_leng => interpFuncCoordsClipSIMD(N, weights, buf),
+        .raster => interpFuncCoordsPerspSIMD(N, weights, nodes_inv_z, subpx_z, buf),
+    };
+    const value = sample(u, v, active, shader.resources) * @as(VecSF, @splat(shader.output_gain)) +
+        @as(VecSF, @splat(shader.output_offset));
+    return value * @as(VecSF, @splat(shader.scale_mul)) + @as(VecSF, @splat(shader.scale_add));
 }

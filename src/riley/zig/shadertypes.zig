@@ -22,6 +22,8 @@ const texturetypes = @import("texturetypes.zig");
 const fieldtypes = @import("fieldtypes.zig");
 const shaderpipe = @import("shaderpipe.zig");
 const meshhit = @import("meshhit.zig");
+const speckleops = @import("speckleops.zig");
+const speckleparams = @import("speckleparams.zig");
 
 pub const ScaleOver = enum { within_frames, over_frames };
 pub const RenderFormat = union(enum) {
@@ -89,12 +91,23 @@ pub const FuncMultiInput = struct {
     channels: []const FuncChannel,
 };
 
+pub const SpeckleInput = struct {
+    uvs: ndarray.NDArray(F),
+    params: speckleparams.SpeckleParams,
+    /// Apply `sample * output_gain + output_offset` before `scaling`.
+    output_gain: F = 1.0,
+    output_offset: F = 0.0,
+    bits: ?u8 = 8,
+    scaling: imageops.ScaleStrategy = .none,
+};
+
 pub const ShaderMonoInput = union(enum) {
     nodal: NodalInput,
     tex_u8: TexInput(texturetypes.TexDataFix(u8, 1)),
     tex_u16: TexInput(texturetypes.TexDataFix(u16, 1)),
     tex_f: TexInput(texturetypes.TexDataFix(F, 1)),
     func: FuncInput,
+    speckle: SpeckleInput,
 };
 
 pub const PipeSourceInput = union(enum) {
@@ -111,6 +124,7 @@ pub const PipeSourceInput = union(enum) {
     func: FuncInput,
     func_rgb: FuncInput,
     func_multi: FuncMultiInput,
+    speckle: SpeckleInput,
 };
 
 pub const ShaderPipeStageInput = union(enum) {
@@ -187,12 +201,23 @@ pub const FuncStatic = struct {
     channels: []const FuncChannelPrepared = &.{},
 };
 
+/// Arena-owned UVs and sampler resources at a stable address for the render lifetime.
+pub const SpeckleStatic = struct {
+    elem_uvs: ndarray.NDArray(F),
+    resources: speckleops.Resources,
+    output_gain: F = 1.0,
+    output_offset: F = 0.0,
+    bits: ?u8 = 8,
+    scaling: imageops.ScaleStrategy = .none,
+};
+
 pub const ShaderMonoStatic = union(enum) {
     nodal: NodalStatic,
     tex_u8: TexStatic(u8, 1),
     tex_u16: TexStatic(u16, 1),
     tex_f: TexStatic(F, 1),
     func: FuncStatic,
+    speckle: *const SpeckleStatic,
 };
 
 pub const PipeSourceStatic = union(enum) {
@@ -207,6 +232,7 @@ pub const PipeSourceStatic = union(enum) {
     func: FuncStatic,
     func_rgb: FuncStatic,
     func_multi: FuncStatic,
+    speckle: *const SpeckleStatic,
 };
 
 pub const GreyToEmissivityPrepared = struct {
@@ -396,12 +422,25 @@ pub const FuncChannelPrepared = struct {
     scale_add: F,
 };
 
+/// Borrows resources from the persistent SpeckleStatic, which must outlive this frame.
+pub const SpecklePrepared = struct {
+    elem_uvs: ndarray.NDArray(F),
+    resources: *const speckleops.Resources,
+    output_gain: F = 1.0,
+    output_offset: F = 0.0,
+    bits: ?u8 = 8,
+    scaling: imageops.ScaleStrategy = .none,
+    scale_mul: F = 1.0,
+    scale_add: F = 0.0,
+};
+
 pub const ShaderMonoPrepared = union(enum) {
     nodal: NodalPrepared,
     tex_u8: TexPrepared(u8, 1),
     tex_u16: TexPrepared(u16, 1),
     tex_f: TexPrepared(F, 1),
     func: FuncPrepared,
+    speckle: SpecklePrepared,
 };
 
 pub const PipeSourcePrepared = union(enum) {
@@ -416,6 +455,7 @@ pub const PipeSourcePrepared = union(enum) {
     func: FuncPrepared,
     func_rgb: FuncPrepared,
     func_multi: FuncPrepared,
+    speckle: SpecklePrepared,
 };
 
 pub const ShaderPipeStagePrepared = union(enum) {

@@ -1,7 +1,11 @@
 # Riley Code File Structure
 
-## File organisation
-- All file names should be lower case unless directly exposed as a struct
+## Zig module file organisation
+
+These rules apply to Zig implementation modules. Standalone entry points and
+named test suites follow [Programs and tutorials](#programs-and-tutorials).
+
+- Module file names should be lower case unless directly exposed as a struct
 - Use io as a suffix for files that contain operations for reading and writing to disk e.g. imageio.zig
 - Use ops as a suffix for collections of utility/data operation functions e.g. meshops.zig
 - Mesh, camera, and shader input/static/prepared declarations live in
@@ -34,7 +38,9 @@
 - Shader evaluation fill functions live in `shaderfill_scalar.zig` and
   `shaderfill_simd.zig`, exported by the thin `shaderfill.zig` facade.
   Shader selection, conversion, and construction helpers live in `shaderops.zig`.
-- Shader-pipe intermediate addresses are `Register` values. Stage endpoints use
+- Shader-pipe register, operation, and resolver declarations live in
+  `shaderpipe.zig`; raster shading kernels live in `shaderpipekernels.zig`.
+  Shader-pipe intermediate addresses are `Register` values. Stage endpoints use
   `register_source` and `register_dest`; resolver expressions use `ResolverProgramInput`
   and `ResolverOp`. Register state is held by `RegistersWritten` and `RegistersOutput`.
   Stage, register, instruction, and stack capacities come from
@@ -61,11 +67,12 @@
   `cameraprojops*.zig`.
 - Use the kernel suffix for files defining structs containing only comptime known constants and inline functions e.g. geometrykernels
 - If a scalar/simd split is required the top level file name becomes a thin wrapper with no implementation details then all implementation and tests is moved into _common.zig, _simd.zig, _scalar.zig files.
-- File names should not have underscores unless using _common, _simd or _scalar
+- Zig module file names should not have underscores except for `_common`,
+  `_simd`, `_scalar`, and the suffixes listed below.
 
 ## Exceptions
 - ABI-facing files may retain established external naming
-- Generated artefacts and non-Zig files are out of scope
+- Generated artefacts and non-Zig files are out of scope for the Zig module rules
 - Thin wrapper files should contain no implementation logic and no tests
 - Existing file names should only be changed when the rename improves clarity
 - Global subpixel buffer implementation files use `_globbuff` before any
@@ -83,6 +90,31 @@
   binding; both call the shared subpixel core in `rasterengine_common.zig`.
   The scalar and SIMD raster kernels remain in `rasterengine_scalar.zig` and
   `rasterengine_simd.zig`.
+
+## Programs and tutorials
+
+- Reserve `demo` names for runnable, user-facing tutorials in Zig and Python.
+  Show the full setup (inputs, camera, shader, and render/output configuration)
+  through Riley's APIs. Repeat setup when it helps readers follow the example
+  rather than hiding the setup behind shared tutorial wrappers. Keep small,
+  purpose-specific helpers for mechanics such as CLI parsing or safe output
+  directory cleanup; don't abstract away the Riley APIs the demo teaches.
+- Use `test_<subject>` for new named test suites, `gen_gold_<suite>` for gold
+  reference generators, `verif_<subject>` for standalone numerical verification
+  drivers, and `bench_<workload>` for performance measurement tools.
+- Keep shared internal tooling under `dev_support` where appropriate. Name
+  standalone internal tools for their operation (for example, `run_all_demos.zig`),
+  rather than naming them as tutorials.
+
+Keep established names, including older forms such as `benchcam.py`; do not
+rename existing files solely to match these conventions.
+
+Use underscores in tutorial source names, hyphens in Zig build steps, and the
+extensionless source name in the Python CLI. Use that same source name as the
+default output directory under `out/` (Zig) or `out_riley_py/` (Python). For
+example, `demo07_shaderpipe_quickstart` runs via
+`zig build demo07-shaderpipe-quickstart` or
+`python -m riley demo07_shaderpipe_quickstart`.
 
 ## Within file code organisation
 1. Module header block / documentation / description
@@ -110,10 +142,10 @@ For files using the `ops` suffix:
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 ```
 **Marking Code Blocks**

@@ -266,6 +266,15 @@ def test_shader_set_three_cameras_share_mesh_and_select_roles() -> None:
         riley.raster(mesh, rgb_cam, config)
 
 
+def test_shaderpipe_rejects_channels_keyword() -> None:
+    with pytest.raises(TypeError, match="unexpected keyword argument 'channels'"):
+        riley.ShaderPipe(
+            stages=(),
+            resolver=riley.ShaderResolver(riley.ResolverKind.identity),
+            channels=4,
+        )
+
+
 def test_unselected_pipe_does_not_add_frames_or_channels() -> None:
     mesh, camera, config = scene()
     camera.render_format = riley.RenderFormat.mono
@@ -277,7 +286,6 @@ def test_unselected_pipe_does_not_add_frames_or_channels() -> None:
     mesh.shaders = riley.MeshShaderSet(
         mono=mesh.shaders.mono,
         multifield=riley.ShaderPipe(
-            channels=4,
             stages=(riley.ShaderSource(unused_source, registers[0]),),
             resolver=riley.ShaderResolver(
                 riley.ResolverKind.identity, registers=registers,

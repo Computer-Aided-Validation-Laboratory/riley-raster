@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const cfg = @import("buildconfig.zig").config;
 const impl = if (cfg.simd == .on)
@@ -20,3 +20,4 @@ pub const NodalKernel = impl.NodalKernel;
 pub const TexKernel = impl.TexKernel;
 pub const TexMultiKernel = impl.TexMultiKernel;
 pub const FuncKernel = impl.FuncKernel;
+pub const SpeckleKernel = impl.SpeckleKernel;

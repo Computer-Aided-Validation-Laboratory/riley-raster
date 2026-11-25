@@ -17,7 +17,13 @@ These two documentation suites are merged so that the Zig API documentation is a
 
 ## 2. Installing Documentation Dependencies
 
-Documentation dependencies (`sphinx` and `shibuya`) are defined in [pyproject.toml](file:///home/lloydf/riley-raster/pyproject.toml) under both `[project.optional-dependencies]` (`docs`) and `[dependency-groups]` (`docs`).
+Documentation dependencies (`sphinx` and `shibuya`) are defined in [pyproject.toml](../pyproject.toml) under both `[project.optional-dependencies]` (`docs`) and `[dependency-groups]` (`docs`).
+
+Install the checkout in editable mode, not just Sphinx and its dependencies.
+[`docs/conf.py`](../docs/conf.py) puts the checkout's `src/` first on the import
+path, and autodoc needs the Cython extension and Zig shared library there.
+The editable install commands below build both; rerun the install after changing
+native code.
 
 ### Using `uv` (Recommended)
 
@@ -27,7 +33,7 @@ To install or sync documentation dependencies in your `.venv` virtual environmen
 # If using uv pip in an active venv:
 uv pip install -e ".[docs]"
 
-# Or using uv sync:
+# Or sync the docs extra (uv installs the project in editable mode by default):
 uv sync --extra docs
 ```
 
@@ -59,23 +65,30 @@ This generates the Zig documentation and interactive standard library/API viewer
 
 ### Step 2: Build Python documentation
 
-Ensure your virtual environment is active (or call Sphinx via `.venv/bin/sphinx-build`), then build the HTML documentation:
+In your active virtual environment, build the HTML documentation with the same
+clean, warning-fatal Sphinx command used by CI:
 
 ```bash
-sphinx-build -b html docs build/_build/html
+python -m sphinx -E -a -W --keep-going -j auto -b html docs build/_build/html
 ```
-
-*(Alternatively, without activating: `.venv/bin/sphinx-build -b html docs build/_build/html`)*
 
 ### Step 3: Merge Zig docs into the Python docs
 
-Copy the generated Zig documentation into the `zig-api` subdirectory of the Sphinx build output:
+Copy the contents of the generated Zig documentation into the `zig-api`
+subdirectory. Copying the contents (not the directory itself) also works on
+rebuilds, when `zig-api` already exists:
 
 ```bash
-cp -r zig-out/docs build/_build/html/zig-api
+mkdir -p build/_build/html/zig-api
+cp -R zig-out/docs/. build/_build/html/zig-api/
 ```
 
-*(On Windows PowerShell: `Copy-Item -Recurse -Force zig-out/docs build/_build/html/zig-api`)*
+On Windows PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force build/_build/html/zig-api
+Copy-Item -Recurse -Force zig-out/docs/* build/_build/html/zig-api/
+```
 
 ### Step 4: Preview on a local server
 
@@ -91,4 +104,4 @@ Open [http://localhost:8000](http://localhost:8000) in your browser. The Zig API
 
 ## 4. Continuous Deployment (GitHub Pages)
 
-The documentation automatically builds and deploys to GitHub Pages on every push to `main` via the GitHub Actions workflow at [.github/workflows/deploy-pages.yml](file:///home/lloydf/riley-raster/.github/workflows/deploy-pages.yml).
+The documentation automatically builds and deploys to GitHub Pages on every push to `main` via the GitHub Actions workflow at [.github/workflows/deploy-pages.yml](../.github/workflows/deploy-pages.yml).

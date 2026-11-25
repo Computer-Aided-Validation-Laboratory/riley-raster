@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const benchargs = @import("dev_support/benchargs.zig");
 const benchstats = @import("dev_support/benchstats.zig");
@@ -39,6 +39,7 @@ const DEFAULT_ROT = Rotation.init(0, 0, 0);
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
     const base_raster_config = tcfg.getRasterConfig(.bench);
     var default_bench_args = benchargs.defaultBenchArgs(
@@ -50,7 +51,7 @@ pub fn main(init: std.process.Init) !void {
     default_bench_args.sub_sample = DEFAULT_SUB_SAMPLE;
 
     const bench_args = try benchargs.parseArgsWithDefaults(
-        init.minimal.args.vector,
+        args,
         default_bench_args,
     );
     var threaded_io = riley.getThreadedIo(
@@ -149,7 +150,7 @@ pub fn main(init: std.process.Init) !void {
         bench_args.out_dir,
         bench_args.image_out_dir,
         "bench_geom.zig",
-        init.minimal.args.vector,
+        args,
         bench_args.subpixel_center_map,
         bench_raster_config,
         render_group_workers[0..],

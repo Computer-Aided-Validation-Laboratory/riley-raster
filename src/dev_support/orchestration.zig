@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const fieldtypes = @import("../riley/zig/fieldtypes.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
 const shadertypes = @import("../riley/zig/shadertypes.zig");
@@ -538,22 +538,5 @@ pub fn buildMixedRgbMeshInputs(
 }
 
 pub fn openDirEnsured(io: std.Io, dir_path: []const u8) !std.Io.Dir {
-    const cwd = std.Io.Dir.cwd();
-    var parts_iter = std.mem.splitScalar(u8, dir_path, '/');
-    var path_buf: [256]u8 = undefined;
-    var path_len: usize = 0;
-
-    while (parts_iter.next()) |part| {
-        if (path_len > 0) {
-            path_buf[path_len] = '/';
-            path_len += 1;
-        }
-        std.mem.copyForwards(u8, path_buf[path_len..], part);
-        path_len += part.len;
-        cwd.createDir(io, path_buf[0..path_len], .default_dir) catch |err| {
-            if (err != error.PathAlreadyExists) return err;
-        };
-    }
-
-    return try cwd.openDir(io, dir_path, .{});
+    return std.Io.Dir.cwd().createDirPathOpen(io, dir_path, .{});
 }

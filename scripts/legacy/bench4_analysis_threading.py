@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from paper_bench_common import latest_run_dir_with_paths, row_float
+from bench_common import repo_root
 from paper_const import (
     PLOT_LINE_AXIS_FONT_SIZE,
     PLOT_LINE_FIG_SIZE_IN,
@@ -23,7 +24,6 @@ from paper_const import (
     PLOT_LINE_TICK_FONT_SIZE,
     PLOT_LINE_TITLE_FONT_SIZE,
     PLOT_RESOLUTION_DPI,
-    repo_root,
 )
 
 

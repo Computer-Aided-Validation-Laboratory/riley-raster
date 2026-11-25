@@ -1,9 +1,16 @@
+# --------------------------------------------------------------------------------------
+# Riley: A High Performance Rasteriser for DIC UQ
+#
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
+# Licensed under the MIT License (see LICENSE file for details)
+#
+# Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+# --------------------------------------------------------------------------------------
 import subprocess
 import sys
 import shutil
 import platform
 import importlib.util
-import sysconfig
 from pathlib import Path
 from setuptools import setup, Extension
 from setuptools.command.build_py import build_py
@@ -14,6 +21,17 @@ import numpy
 
 DIST_NAME = "riley-raster"
 PROJECT_ROOT = Path(__file__).resolve().parent
+
+# Load the selector without importing riley, whose extension is not built yet.
+zig_toolchain_path = PROJECT_ROOT / "src" / "riley" / "_zig_toolchain.py"
+zig_toolchain_spec = importlib.util.spec_from_file_location(
+    "_riley_build_zig_toolchain", zig_toolchain_path,
+)
+if zig_toolchain_spec is None or zig_toolchain_spec.loader is None:
+    raise RuntimeError(f"Could not load Zig toolchain selector: {zig_toolchain_path}")
+_zig_toolchain = importlib.util.module_from_spec(zig_toolchain_spec)
+zig_toolchain_spec.loader.exec_module(_zig_toolchain)
+
 subprocess.check_call([sys.executable, str(PROJECT_ROOT / "scripts" / "gen_c_abi.py"), "--check"])
 
 # -----------------------------------------------------------------------------
@@ -52,19 +70,6 @@ def lib_link_name(lib_name: str) -> str:
     return f"{PLATFORM_INFO['lib_prefix']}{lib_name}{PLATFORM_INFO['lib_ext']}"
 
 
-def get_windows_target_triple() -> str:
-    """Return the Zig target matching the Python interpreter being built."""
-    platform_tag = sysconfig.get_platform().lower()
-    if platform_tag == "win32":
-        return "x86-windows-msvc"
-    if platform_tag in ("win-amd64", "win_amd64"):
-        return "x86_64-windows-msvc"
-    if platform_tag in ("win-arm64", "win_arm64"):
-        return "aarch64-windows-msvc"
-
-    raise RuntimeError(
-        f"Unsupported Windows Python platform for Zig build: {platform_tag}"
-    )
 
 # -----------------------------------------------------------------------------
 # Generated package data sync
@@ -149,7 +154,7 @@ class MultiBuildExt(build_ext):
         zig_target_args = []
         zig_soname_args = []
         if is_windows:
-            target_triple = get_windows_target_triple()
+            target_triple = _zig_toolchain.get_windows_target_triple()
             zig_target_args = ["-target", target_triple]
         elif is_darwin:
             macos_arch = platform.machine().lower()
@@ -186,8 +191,7 @@ class MultiBuildExt(build_ext):
 
         print(f"Zig build command:\nzig {' '.join(zig_build)}\n")
 
-        zig_bin = shutil.which("zig")
-        zig_runner = [zig_bin] if zig_bin else [sys.executable, "-m", "ziglang"]
+        zig_runner = _zig_toolchain.select_zig_runner()
 
         try:
             subprocess.check_call(

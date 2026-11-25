@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const cameramodels = @import("riley/zig/cameramodels.zig");
 const std = @import("std");
 
@@ -46,6 +46,7 @@ const texture_shader_types = [_]common.ShaderType{
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
     var base_raster_config = tcfg.getRasterConfig(.bench);
     base_raster_config.save_strategy = .memory;
@@ -58,7 +59,7 @@ pub fn main(init: std.process.Init) !void {
     default_bench_args.sub_sample = DEFAULT_SUB_SAMPLE;
 
     const bench_args = try benchargs.parseArgsWithDefaults(
-        init.minimal.args.vector,
+        args,
         default_bench_args,
     );
     var threaded_io = riley.getThreadedIo(
@@ -173,7 +174,7 @@ pub fn main(init: std.process.Init) !void {
         bench_args.out_dir,
         bench_args.image_out_dir,
         "bench_fullraster.zig",
-        init.minimal.args.vector,
+        args,
         bench_args.subpixel_center_map,
         bench_raster_config,
         render_group_workers[0..],

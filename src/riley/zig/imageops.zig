@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
@@ -79,10 +79,22 @@ pub fn getScalingParamsTex(
         .auto, .frac => {
             var px_min: F = std.math.inf(F);
             var px_max: F = -std.math.inf(F);
-            for (tex.array.slice) |val| {
-                const val_f = textureops.texelToFloat(T, val);
-                if (val_f < px_min) px_min = val_f;
-                if (val_f > px_max) px_max = val_f;
+            const array = &tex.array;
+            if (channels == null) {
+                const cols = tex.cols_num;
+                const plane_size = tex.rows_num * cols;
+                if (array.strides[0] == plane_size and array.strides[1] == cols) {
+                    scanTexelBounds(T, array.slice[0 .. array.dims[0] * plane_size], &px_min, &px_max);
+                } else {
+                    for (0..array.dims[0]) |ch| {
+                        for (0..tex.rows_num) |row| {
+                            const start = array.subBase2(ch, row);
+                            scanTexelBounds(T, array.slice[start..][0..cols], &px_min, &px_max);
+                        }
+                    }
+                }
+            } else {
+                scanTexelBounds(T, array.slice, &px_min, &px_max);
             }
             const range = if (@abs(px_max - px_min) < tol.image.auto_scale_range)
                 1.0
@@ -95,6 +107,18 @@ pub fn getScalingParamsTex(
             return .{ .min = range[0], .range = px_rng };
         },
     }
+}
+
+fn scanTexelBounds(comptime T: type, texels: []const T, px_min: *F, px_max: *F) void {
+    var lo = px_min.*;
+    var hi = px_max.*;
+    for (texels) |val| {
+        const val_f = textureops.texelToFloat(T, val);
+        if (val_f < lo) lo = val_f;
+        if (val_f > hi) hi = val_f;
+    }
+    px_min.* = lo;
+    px_max.* = hi;
 }
 
 pub fn getScalingParams(

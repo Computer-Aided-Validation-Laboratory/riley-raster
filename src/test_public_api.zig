@@ -43,6 +43,16 @@ test "public API surface is available through namespaces" {
     _ = ops.resolverIdentity;
 }
 
+test "public speckle variants use pattern-specific parameters" {
+    const std = @import("std");
+    const disk: riley.SpeckleParams = .{ .disk = riley.Disk2DParams{ .coverage = 0.5, .radius = 1, .edge_softness = 0.1 } };
+    const gaussian: riley.SpeckleParams = .{ .gaussian = riley.Gaussian2DParams{ .coverage = 0.5, .radius = 1 } };
+    try disk.validate();
+    try gaussian.validate();
+    try std.testing.expect(!@hasField(riley.Gaussian2DParams, "edge_softness"));
+    try std.testing.expect(!@hasDecl(riley, "Dot2DParams"));
+}
+
 test "public API excludes render implementation details" {
     const std = @import("std");
     try std.testing.expect(!@hasDecl(riley, "MeshStatic"));

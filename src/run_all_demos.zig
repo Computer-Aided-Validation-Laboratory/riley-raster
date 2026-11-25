@@ -1,10 +1,21 @@
+// --------------------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 
 const demo00_quickstart = @import("demo00_quickstart.zig");
+const demo00b_procedural_quickstart = @import("demo00b_procedural_quickstart.zig");
 const demo01_sphere = @import("demo01_sphere.zig");
+const demo01b_procedural_sphere = @import("demo01b_procedural_sphere.zig");
 const demo02a_rabbits_mono = @import("demo02a_rabbits_mono.zig");
 const demo02b_rabbits_rgb = @import("demo02b_rabbits_rgb.zig");
 const demo02c_rabbits_fields = @import("demo02c_rabbits_fields.zig");
+const demo02d_rabbit_procedural = @import("demo02d_rabbit_procedural.zig");
 const demo03_dicuq = @import("demo03_dicuq.zig");
 const demo04_stereocal = @import("demo04_stereocal.zig");
 const demo05_cameramodels = @import("demo05_cameramodels.zig");
@@ -17,10 +28,13 @@ const demo10_sphere_lit = @import("demo10_sphere_lit.zig");
 
 pub fn main(init: std.process.Init) !void {
     try demo00_quickstart.main(init);
+    try demo00b_procedural_quickstart.run(init, &.{});
     try demo01_sphere.main(init);
+    try demo01b_procedural_sphere.run(init, &.{});
     try demo02a_rabbits_mono.main(init);
     try demo02b_rabbits_rgb.main(init);
     try demo02c_rabbits_fields.main(init);
+    try demo02d_rabbit_procedural.run(init, &.{});
     try demo03_dicuq.main(init);
     try demo04_stereocal.main(init);
     try demo05_cameramodels.main(init);

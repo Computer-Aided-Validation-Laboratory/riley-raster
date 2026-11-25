@@ -55,9 +55,12 @@ jobs:
         run: |
           python -m pip install --force-reinstall dist/*.whl
 
-      - name: Sanity check installed package
-        run: |
-          python -c "import riley; print('Installed riley from:', riley.__file__)"
+      - name: Smoke test installed wheel and procedural CLI outputs
+        # The packaged suite below already renders and checks the other demos.
+        run: python -I scripts/smoke_pypi_demos.py --procedural-only
+
+      - name: Test wheel smoke scripts
+        run: python -m pytest scripts/tests/test_smoke_pypi_demos.py
 
       - name: Python run test suite
         run: |

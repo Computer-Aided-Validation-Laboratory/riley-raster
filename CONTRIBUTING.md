@@ -128,23 +128,36 @@ def check_strain_files(strain_files: str | Path) -> list[str]:
 
 ### Testing
 
-Please test you code before submitting a pull request.
-
-The recommended testing workflow for Riley is:
+For routine Zig development, run focused checks and the Verification and Basic
+suites in Debug, f64, with SIMD on:
 
 ```bash
-# Step 1: Run the core test suites (fast, repository-packaged references)
-zig build test-verif
-zig build test-basic
-.venv/bin/pytest src/riley/pytests/
-
-# Step 2: Generate reference gold data for the Full suite
-zig build gen-gold-full -Doptimize=ReleaseSafe
-
-# Step 3: Run the exhaustive Full test suite
-zig build test-full -Doptimize=ReleaseSafe
+zig build test-unit -Dprecision=f64 -Dsimd=on  # Gold-independent; also included in Basic
+zig build test-verif -Dprecision=f64 -Dsimd=on
+zig build test-basic -Dprecision=f64 -Dsimd=on
 ```
-More details on testing zig code for riley-raster can be found at [Riley Testing Architecture & Test Suites](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/dev/TESTING.md).
+
+The CI target `zig build test-configs` runs the gold-independent native suite
+across precision, SIMD, evaluator policy, and mask resolution. It selects its own
+matrix even if precision and SIMD flags are supplied; it is not a routine local
+check. AI agents must not run it unless the user explicitly authorises the
+matrix configurations.
+
+For explicitly requested Zig consolidation or full verification, run the Full
+suite in ReleaseSafe, f64, with SIMD on and off:
+
+```bash
+zig build test-full -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+zig build test-full -Dprecision=f64 -Dsimd=off -Doptimize=ReleaseSafe
+```
+
+Use existing Full references. If they are missing, follow the reference setup in
+[the Full suite guide](dev/TESTING.md#6-full-test-suite-test_full); do not
+regenerate existing gold without explicit approval. For approved C ABI/Python
+integration, also run the relevant tests with
+`.venv/bin/pytest src/riley/pytests/`. AI agents must follow the explicit
+[stage gates](AGENTS.md#1-development-workflow--mandatory-stage-gates); passing
+checks does not authorise advancing to another stage.
 
 
 ## Creating a Pull Request

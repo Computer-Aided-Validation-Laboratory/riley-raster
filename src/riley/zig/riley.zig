@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const cameratypes = @import("cameratypes.zig");
 const meshtypes = @import("meshtypes.zig");
@@ -105,6 +105,8 @@ pub fn rasterAdvanced(
     out_dir_path: ?[]const u8,
     options: RasterAdvancedOptions,
 ) !?ndarray.NDArray(F) {
+    try checkSceneCounts(meshes.len, cam_inps.len);
+
     var managed_groups: ?rendergroups.ManagedRenderGroups = null;
     defer if (managed_groups) |*groups| groups.deinit(outer_alloc);
 
@@ -173,6 +175,8 @@ pub fn rasterAdvancedInto(
     images_arr: ?*ndarray.NDArray(F),
     options: RasterAdvancedOptions,
 ) !void {
+    try checkSceneCounts(meshes.len, cam_inps.len);
+
     var managed_groups: ?rendergroups.ManagedRenderGroups = null;
     defer if (managed_groups) |*groups| groups.deinit(outer_alloc);
 
@@ -239,8 +243,15 @@ pub fn calcAllFramesImageDims(
     meshes: []const meshtypes.MeshInput,
     config: rasterconfig.RasterConfig,
 ) ![5]usize {
-    std.debug.assert(cam_inps.len > 0);
-    std.debug.assert(meshes.len > 0);
+    try checkSceneCounts(meshes.len, cam_inps.len);
+
+    var max_pix_num: [2]u32 = .{ 0, 0 };
+    for (cam_inps) |camera| {
+        const cols, const rows = camera.pixels_num;
+        if (cols == 0 or rows == 0) return error.InvalidCameraPixels;
+        max_pix_num[0] = @max(max_pix_num[0], cols);
+        max_pix_num[1] = @max(max_pix_num[1], rows);
+    }
 
     for (cam_inps) |camera| {
         var compatible = false;
@@ -257,12 +268,6 @@ pub fn calcAllFramesImageDims(
     const num_fields = raw_num_fields;
     _ = config;
 
-    var max_pix_num = cam_inps[0].pixels_num;
-    for (cam_inps[1..]) |cam_inp| {
-        max_pix_num[0] = @max(max_pix_num[0], cam_inp.pixels_num[0]);
-        max_pix_num[1] = @max(max_pix_num[1], cam_inp.pixels_num[1]);
-    }
-
     return .{
         cam_inps.len,
         num_time,
@@ -273,8 +278,13 @@ pub fn calcAllFramesImageDims(
 }
 
 // --------------------------------------------------------------------------------------
-// Private Implementation Functions
+// Internal Implementation Functions
 // --------------------------------------------------------------------------------------
+
+pub fn checkSceneCounts(meshes_len: usize, cameras_len: usize) error{ NoMeshes, NoCameras }!void {
+    if (meshes_len == 0) return error.NoMeshes;
+    if (cameras_len == 0) return error.NoCameras;
+}
 
 fn resolveRenderParallelPlan(
     cam_inps: []const cameratypes.CameraInput,
@@ -2029,6 +2039,163 @@ fn saveOverlapEnabled(config: rasterconfig.RasterConfig) bool {
 // --------------------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------------------
+
+test "experimental speckles render a partial packet through direct and pipe shaders" {
+    if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
+    const speckleops = @import("speckleops.zig");
+    const outer_alloc = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer arena.deinit();
+    const static_alloc = arena.allocator();
+
+    // The crop lies inside the plate. The last 8-pixel tile has just six SSAA columns.
+    const cols = 35;
+    const rows = 20;
+    const pitch: F = 1.0 / 32.0;
+    const width: F = 1.25;
+    const height: F = 0.75;
+    const cams = try initCameraPreparedSlice(static_alloc, &.{.{
+        .pixels_num = .{ cols, rows },
+        .pixels_size = .{ pitch, pitch },
+        .pos_world = vecstack.Vec3F.initSlice(&.{ 0, 0, 2 }),
+        .rot_world = rotation.Rotation.init(0, 0, 0),
+        .roi_cent_world = vecstack.Vec3F.initZeros(),
+        .focal_length = 2,
+        .sub_sample = 2,
+        .background_value = -1,
+    }});
+    const config: rasterconfig.RasterConfig = .{
+        .save_strategy = .memory,
+        .advanced = .{ .raster = .{ .buffer_mode = .tile_local, .tile_size_override = 8 } },
+    };
+    var coords = [_]F{
+        -width / 2, -height / 2, 0,
+        width / 2,  -height / 2, 0,
+        width / 2,  height / 2,  0,
+        -width / 2, height / 2,  0,
+    };
+    var nodes = [_]usize{ 0, 1, 2, 0, 2, 3 };
+    var uv_values = [_]F{ 0, 0, 1, 0, 1, 1, 0, 1 };
+    const direct: shadertypes.ShaderMonoInput = .{ .speckle = .{
+        .uvs = try ndarray.NDArray(F).init(static_alloc, &uv_values, &.{ 4, 2 }),
+        .params = .{ .perlin = .{ .cell_size = 0.25 } },
+        .bits = null,
+    } };
+    var mock_resources = try speckleops.Resources.init(outer_alloc, .{ .evaluator = .mock });
+    defer mock_resources.deinit(outer_alloc);
+    var pixels: [rows * cols]F = undefined;
+    var image = try ndarray.NDArray(F).init(static_alloc, &pixels, &.{ 1, 1, 1, rows, cols });
+
+    for ([_]bool{ false, true }) |piped| {
+        var input_stages: [1]shadertypes.ShaderPipeStageInput = undefined;
+        const mesh = meshtypes.MeshInput{
+            .mesh_type = .tri3,
+            .coords = meshtypes.Coords.init(&coords, 4),
+            .connect = meshtypes.Connect.init(&nodes, 2, 3),
+            .disp = null,
+            .shaders = if (piped)
+                .{ .mono_pipe = shaderops.identityMulti(1, shaderops.monoToPipeSource(direct), &input_stages) }
+            else
+                .{ .mono_direct = direct },
+        };
+        const mesh_static = try createMeshStaticSliceFromInput(static_alloc, &.{mesh}, cams);
+        const shader = &mesh_static[0].shaders.mono.?;
+        try std.testing.expectEqual(piped, shader.* == .pipe);
+        // Keep the normally prepared UVs and pipeline layout, substituting only the sampler.
+        var mock = switch (shader.*) {
+            .direct => |mono| mono.speckle.*,
+            .pipe => |pipe| pipe.stages[0].shader.shader.speckle.*,
+        };
+        mock.resources = mock_resources;
+        var stage: [1]shadertypes.ShaderPipeStageStatic = undefined;
+        switch (shader.*) {
+            .direct => |*mono| mono.speckle = &mock,
+            .pipe => |*pipe| {
+                stage[0] = pipe.stages[0];
+                stage[0].shader.shader.speckle = &mock;
+                pipe.stages = &stage;
+            },
+        }
+        const selections = try initCameraMeshSelections(static_alloc, cams, mesh_static);
+        @memset(&pixels, std.math.nan(F));
+        try dispatchFrameJobsOffline(
+            outer_alloc,
+            &.{.{ .io = std.testing.io, .workers = 1 }},
+            cams,
+            config,
+            null,
+            null,
+            1,
+            1,
+            selections,
+            &image,
+            null,
+        );
+
+        const tol: F = if (F == f32) 2e-5 else 1e-12;
+        for (0..rows) |row| for (0..cols) |col| {
+            // Projection is one-to-one on the plate; averaging an affine field over SSAA gives the pixel centre.
+            const u = 0.5 + (@as(F, @floatFromInt(col)) + 0.5 - @as(F, cols) / 2) * pitch / width;
+            const v = 0.5 - (@as(F, @floatFromInt(row)) + 0.5 - @as(F, rows) / 2) * pitch / height;
+            errdefer std.debug.print("experimental speckle pixel ({d}, {d}), piped={}\n", .{ col, row, piped });
+            try std.testing.expectApproxEqAbs(0.5 * (u + v), pixels[row * cols + col], tol);
+        };
+    }
+}
+
+test "public render and dimension queries reject empty scenes with validation off" {
+    const config = rasterconfig.RasterConfig{ .validation = .off, .save_strategy = .memory };
+    const outer_alloc = std.testing.allocator;
+    const io = std.testing.io;
+    // The nonempty input must not be inspected when the other input is empty.
+    const mesh: meshtypes.MeshInput = undefined;
+    const camera: cameratypes.CameraInput = undefined;
+    const cases = [_]struct {
+        meshes: []const meshtypes.MeshInput,
+        cameras: []const cameratypes.CameraInput,
+        err: anyerror,
+    }{
+        .{ .meshes = &.{mesh}, .cameras = &.{}, .err = error.NoCameras },
+        .{ .meshes = &.{}, .cameras = &.{camera}, .err = error.NoMeshes },
+        .{ .meshes = &.{}, .cameras = &.{}, .err = error.NoMeshes },
+    };
+    for (cases) |case| {
+        const meshes = case.meshes;
+        const cameras = case.cameras;
+        try std.testing.expectError(case.err, calcAllFramesImageDims(cameras, meshes, config));
+        try std.testing.expectError(case.err, raster(outer_alloc, io, cameras, meshes, config, null));
+        try std.testing.expectError(case.err, rasterInto(outer_alloc, io, cameras, meshes, config, null, null));
+    }
+}
+
+test "dimension query rejects zero camera pixels with validation off" {
+    var coords = [_]F{ -0.5, -0.5, 0, 0.5, -0.5, 0, 0, 0.5, 0 };
+    var nodes = [_]usize{ 0, 1, 2 };
+    const meshes = [_]meshtypes.MeshInput{.{
+        .mesh_type = .tri3,
+        .coords = meshtypes.Coords.init(&coords, 3),
+        .connect = meshtypes.Connect.init(&nodes, 1, 3),
+        .disp = null,
+        .shaders = .{ .mono_direct = .{ .func = .{ .builtin = .constant } } },
+    }};
+    const camera = cameratypes.CameraInput{
+        .pixels_num = .{ 8, 6 },
+        .pixels_size = .{ 0.01, 0.01 },
+        .pos_world = vecstack.Vec3F.initSlice(&.{ 0, 0, 1 }),
+        .rot_world = rotation.Rotation.init(0, 0, 0),
+        .roi_cent_world = vecstack.Vec3F.initZeros(),
+        .focal_length = 1,
+        .sub_sample = 1,
+    };
+    var cameras = [_]cameratypes.CameraInput{ camera, camera };
+    const config = rasterconfig.RasterConfig{ .validation = .off, .save_strategy = .memory };
+    for (0..2) |axis| {
+        cameras[1].pixels_num = camera.pixels_num;
+        cameras[1].pixels_num[axis] = 0;
+        try std.testing.expectError(error.InvalidCameraPixels, calcAllFramesImageDims(cameras[1..], &meshes, config));
+        try std.testing.expectError(error.InvalidCameraPixels, calcAllFramesImageDims(&cameras, &meshes, config));
+    }
+}
 
 test "render group save I/O prefers the supplied override" {
     var groups = try rendergroups.ManagedRenderGroups.init(std.testing.allocator, null, 1, null);

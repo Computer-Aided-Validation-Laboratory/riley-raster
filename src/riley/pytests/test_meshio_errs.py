@@ -1,11 +1,11 @@
-# --------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Riley: A High Performance Rasteriser for DIC UQ
 #
-# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 # Licensed under the MIT License (see LICENSE file for details)
 #
-# Authors: scepticalrabbit (Lloyd Fletcher)
-# --------------------------------------------------------------------------
+# Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+# --------------------------------------------------------------------------------------
 from __future__ import annotations
 
 from pathlib import Path
@@ -430,6 +430,27 @@ def test_create_mesh_texture_shader_requires_uvs() -> None:
     shader = TextureShader(texture=texture, uvs=None)
 
     with pytest.raises(ValueError, match="uvs must have shape"):
+        meshio.create_mesh(
+            convention=convention,
+            mesh_type=MeshType.tri3,
+            shaders=riley.MeshShaderSet(mono=shader),
+            coords=coords,
+            connect=connect,
+        )
+
+
+def test_create_mesh_requires_speckle_uvs() -> None:
+    coords = coords_3d(EElemType.TRI3)
+    connect = np.array([[0, 1, 2]], dtype=np.uintp)
+    convention = ConnectConvention(
+        EElemType.TRI3, EConnectAxis.ROW, 0, ENodeOrder.RILEY,
+    )
+    shader = riley.SpeckleShader(
+        uvs=None,  # type: ignore[arg-type]
+        params=riley.Disk2DParams(coverage=0.4, radius=0.03),
+    )
+
+    with pytest.raises(ValueError, match=r"uvs must have shape \(3, 2\)"):
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,

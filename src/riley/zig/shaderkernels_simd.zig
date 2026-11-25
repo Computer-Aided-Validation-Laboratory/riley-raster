@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const matslice = @import("matslice.zig");
 const geometrykernels = @import("geometrykernels.zig");
@@ -22,6 +22,8 @@ const shaderkernels_common = @import("shaderkernels_common.zig");
 const shaderops = @import("shaderops.zig");
 const shaderfill = @import("shaderfill.zig");
 const meshhit = @import("meshhit.zig");
+const shaderfill_simd = @import("shaderfill_simd.zig");
+const speckleops = @import("speckleops.zig");
 const texturetypes = @import("texturetypes.zig");
 
 // --------------------------------------------------------------------------------------
@@ -598,6 +600,43 @@ pub fn FuncKernel(
                 shader,
                 &sink,
             );
+        }
+    };
+}
+
+pub fn SpeckleKernel(comptime N: usize, comptime kernel_index: usize) type {
+    const Scalar = @import("shaderkernels_scalar.zig").SpeckleKernel(N, kernel_index);
+    return struct {
+        pub const LocalBuff = Scalar.LocalBuff;
+        pub const Hit = Scalar.Hit;
+        pub const shade = Scalar.shade;
+
+        pub inline fn shadeSIMD(
+            comptime coord_space: geometrykernels.CoordSpace,
+            ctx: shadertypes.ShadeContext,
+            active: VecSB,
+            weights: [N]VecSF,
+            _: VecSF,
+            _: VecSF,
+            nodes_inv_z: [N]VecSF,
+            subpx_z: VecSF,
+            buf: *const LocalBuff,
+            shader: *const shadertypes.SpecklePrepared,
+            scratch: *matslice.MatSlice(F),
+        ) void {
+            const value = shaderfill_simd.evalSpeckleSIMD(
+                N,
+                coord_space,
+                active,
+                weights,
+                nodes_inv_z,
+                subpx_z,
+                buf,
+                shader,
+                speckleops.Kernel(kernel_index).sampleSIMD,
+            );
+            var sink = shaderfill.ImageSink{ .ctx = ctx, .scratch = scratch };
+            sink.store(0, active, value);
         }
     };
 }

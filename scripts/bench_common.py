@@ -5,6 +5,14 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import pathlib
+import sys
+
+
+def native_exe(path: pathlib.Path) -> pathlib.Path:
+    """Return the host executable path without duplicating an existing suffix."""
+    if sys.platform == "win32" and path.suffix.lower() != ".exe":
+        return path.with_name(path.name + ".exe")
+    return path
 
 
 def benchmark_tag(benchmark_name: str) -> str:

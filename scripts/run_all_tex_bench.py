@@ -5,9 +5,7 @@ import pathlib
 import subprocess
 import sys
 
-
-def repo_root() -> pathlib.Path:
-    return pathlib.Path(__file__).resolve().parent.parent
+from bench_common import repo_root
 
 
 def python_path() -> pathlib.Path:

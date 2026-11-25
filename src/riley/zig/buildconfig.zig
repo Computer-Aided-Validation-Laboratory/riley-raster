@@ -1,24 +1,20 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const root = @import("root");
+const buildoptions = @import("buildoptions.zig");
 
+// Build wrappers publish the complete options value; plain zig run/test use its defaults.
 const build_options = if (@hasDecl(root, "build_options"))
-    root.build_options
+    root.build_options.values
 else
-    struct {
-        pub const precision = "f64";
-        pub const simd = "on";
-        pub const newton_solver = "fast";
-        pub const simd_vec_width: comptime_int = 0;
-        pub const simd_vector_width: comptime_int = 0;
-    };
+    buildoptions.Options{};
 
 pub const comptime_eval_branch_quota: comptime_int = 50000;
 
@@ -61,14 +57,21 @@ comptime {
     }
 }
 
-pub const default_precision = parsePrecision(build_options.precision);
+pub const default_precision = switch (build_options.precision) {
+    .f32 => f32,
+    .f64 => f64,
+};
 pub const F = default_precision;
 pub const Scal = F;
 pub const Scalar = Scal;
 
-pub const default_simd = parseSimd(build_options.simd);
-pub const default_newton_solver_mode =
-    parseNewtonSolverMode(build_options.newton_solver);
+// Zig Build serializes enum values into a generated module with its own enum types.
+pub const default_simd: SimdMode = @field(SimdMode, @tagName(build_options.simd));
+pub const default_newton_solver_mode: NewtonSolverMode =
+    @field(NewtonSolverMode, @tagName(build_options.newton_solver));
+pub const enable_all_evaluators = build_options.enable_all_evaluators;
+pub const speckle_mask_samples_per_cell: comptime_int =
+    @intFromEnum(build_options.speckle_mask_resolution);
 
 pub const config = configForPrecision(F);
 
@@ -80,20 +83,14 @@ pub const NewtonMode = config.newton_solver_mode;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const SimdMode = enum {
-    off,
-    on,
-};
+pub const SimdMode = buildoptions.SimdMode;
 
 pub const SimdTexInterpMode = enum {
     inner,
     over_pixels,
 };
 
-pub const NewtonSolverMode = enum {
-    fast,
-    robust,
-};
+pub const NewtonSolverMode = buildoptions.NewtonSolverMode;
 
 pub const TexSIMDPolicy = struct {
     pub fn resolve(
@@ -119,15 +116,15 @@ pub const TexSIMDPolicy = struct {
 // --------------------------------------------------------------------------------------
 
 pub fn defaultSimdVecWidthForPrecision(comptime precision: type) comptime_int {
-    const opt_width = comptime buildOptionsSimdVecWidth();
-    if (opt_width > 0) {
-        return opt_width;
+    if (build_options.simd_vector_width > 0) {
+        return build_options.simd_vector_width;
     }
-    return switch (precision) {
-        f32 => 16,
-        f64 => 8,
+    const option_precision: buildoptions.Precision = switch (precision) {
+        f32 => .f32,
+        f64 => .f64,
         else => @compileError("Only f32 and f64 precision are supped."),
     };
+    return comptime option_precision.defaultSimdVectorWidth();
 }
 
 pub fn defaultTolForPrecision(comptime precision: type) Tol {
@@ -146,48 +143,6 @@ pub fn configForPrecision(comptime precision: type) BuildConfig {
         .simd_vec_width = defaultSimdVecWidthForPrecision(precision),
         .tol = defaultTolForPrecision(precision),
     };
-}
-
-fn parsePrecision(comptime precision: []const u8) type {
-    if (std.mem.eql(u8, precision, "f32")) {
-        return f32;
-    }
-    if (std.mem.eql(u8, precision, "f64")) {
-        return f64;
-    }
-    @compileError("build_options.precision must be \"f32\" or \"f64\".");
-}
-
-fn buildOptionsSimdVecWidth() comptime_int {
-    if (@hasDecl(build_options, "simd_vec_width")) {
-        return build_options.simd_vec_width;
-    }
-    if (@hasDecl(build_options, "simd_vector_width")) {
-        return build_options.simd_vector_width;
-    }
-    return 0;
-}
-
-fn parseSimd(comptime simd: []const u8) SimdMode {
-    if (std.mem.eql(u8, simd, "on")) {
-        return .on;
-    }
-    if (std.mem.eql(u8, simd, "off")) {
-        return .off;
-    }
-    @compileError("build_options.simd must be \"on\" or \"off\".");
-}
-
-fn parseNewtonSolverMode(comptime newton_solver: []const u8) NewtonSolverMode {
-    if (std.mem.eql(u8, newton_solver, "fast")) {
-        return .fast;
-    }
-    if (std.mem.eql(u8, newton_solver, "robust")) {
-        return .robust;
-    }
-    @compileError(
-        "build_options.newton_solver must be \"fast\" or \"robust\".",
-    );
 }
 
 // --------------------------------------------------------------------------------------

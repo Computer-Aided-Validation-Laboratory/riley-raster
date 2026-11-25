@@ -1,16 +1,18 @@
-# --------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Riley: A High Performance Rasteriser for DIC UQ
 #
-# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 # Licensed under the MIT License (see LICENSE file for details)
 #
-# Authors: scepticalrabbit (Lloyd Fletcher)
-# --------------------------------------------------------------------------
+# Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+# --------------------------------------------------------------------------------------
 import cython
+from numbers import Integral
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+from cython.cimports.libc.limits import INT_MAX, INT_MIN
 from cython.cimports.riley.cython import riley as cr
 from riley.types import (
     EPolyMode,
@@ -49,6 +51,10 @@ from riley.types import (
     FunctionShader,
     FunctionChannel,
     FunctionMultiShader,
+    Disk2DParams,
+    Gaussian2DParams,
+    Perlin2DParams,
+    SpeckleShader,
     RegisterKind,
     ResolverKind,
     ResolverOpKind,
@@ -374,7 +380,7 @@ def _make_func_params(params_in: Any) -> cr.CFuncShaderParams:
 
 @cython.cfunc
 def _make_array_2d_f64(
-    view_in: cython.double[:, ::1],
+    view_in: cython.const[cython.double][:, ::1],
     rows_num: cython.Py_ssize_t,
     cols_num: cython.Py_ssize_t,
 ) -> cr.CArray2DF64:
@@ -655,13 +661,15 @@ def _make_register(register_ref: Register) -> cr.CRegister:
 @cython.cfunc
 def _fill_shader_input(
     shader: Any,
+    nodes_num: cython.Py_ssize_t,
     out_shader: cython.pointer[cr.CShaderInput],
     keepalive: list[Any],
-
 ) -> None:
+    is_speckle = isinstance(shader, SpeckleShader)
     gain = float(getattr(shader, "output_gain", 1.0))
     scaling = int(getattr(shader, "scaling_type", ScaleStrategy.none))
-    if gain == 1.0 and scaling != int(ScaleStrategy.none):
+    # Speckle scaling uses the bit depth in the native shader, independently of gain.
+    if not is_speckle and gain == 1.0 and scaling != int(ScaleStrategy.none):
         bits = getattr(shader, "bits", None)
         if bits is not None:
             gain = float((1 << int(bits)) - 1)
@@ -695,6 +703,63 @@ def _fill_shader_input(
         else:
             tex_f: cython.double[:, :, ::1] = texture
             out_shader.value.texture.data.f = _make_array_3d_f64(tex_f, texture.shape[0], texture.shape[1], texture.shape[2])
+
+    elif is_speckle:
+        params = shader.params
+        pattern: cython.uint
+        if isinstance(params, Disk2DParams):
+            pattern = cr.RILEY_SPECKLE_DISK
+        elif isinstance(params, Gaussian2DParams):
+            pattern = cr.RILEY_SPECKLE_GAUSSIAN
+        elif isinstance(params, Perlin2DParams):
+            pattern = cr.RILEY_SPECKLE_PERLIN
+        else:
+            raise TypeError("speckle params must be Disk2DParams, Gaussian2DParams, or Perlin2DParams")
+
+        # Check integer conversions and buffer metadata here; Zig validates the physical inputs.
+        seed = params.seed
+        if isinstance(seed, (bool, np.bool_)) or not isinstance(seed, Integral):
+            raise TypeError("speckle seed must be a uint32 integer")
+        if not 0 <= seed <= 0xFFFF_FFFF:
+            raise ValueError("speckle seed must be in the uint32 range")
+        bits = shader.bits
+        bits_c: cython.int = cr.RILEY_SPECKLE_BITS_NONE
+        if bits is not None:
+            if isinstance(bits, (bool, np.bool_)) or not isinstance(bits, Integral):
+                raise TypeError("speckle bits must be an integer or None")
+            if not INT_MIN <= bits <= INT_MAX:
+                raise ValueError("speckle bits must fit in a C int")
+            if bits == cr.RILEY_SPECKLE_BITS_NONE:
+                raise ValueError("speckle bits must use None to disable quantisation")
+            bits_c = int(bits)
+
+        speckle_uvs = np.asarray(shader.uvs)
+        if speckle_uvs.shape != (nodes_num, 2):
+            raise ValueError("speckle uvs must have shape (N, 2), with one row per mesh node")
+        if not np.issubdtype(speckle_uvs.dtype, np.floating):
+            raise TypeError("speckle uvs must have a floating-point dtype.")
+        speckle_uvs = np.require(speckle_uvs, dtype=np.float64, requirements=("C", "A"))
+        keepalive.append(speckle_uvs)
+        speckle_uv_view: cython.const[cython.double][:, ::1] = speckle_uvs
+
+        out_shader.shader_tag = cr.RILEY_SHADER_SPECKLE
+        out_shader.value.speckle.uvs = _make_array_2d_f64(speckle_uv_view, nodes_num, 2)
+        out_shader.value.speckle.pattern = pattern
+        out_shader.value.speckle.seed = int(seed)
+        out_shader.value.speckle.bits = bits_c
+        is_perlin = pattern == cr.RILEY_SPECKLE_PERLIN
+        out_shader.value.speckle.coverage = 0.0 if is_perlin else float(params.coverage)
+        out_shader.value.speckle.radius = 0.0 if is_perlin else float(params.radius)
+        out_shader.value.speckle.occupancy = 0.0 if is_perlin else float(params.occupancy)
+        out_shader.value.speckle.jitter = 0.0 if is_perlin else float(params.jitter)
+        out_shader.value.speckle.edge_softness = (
+            float(params.edge_softness) if pattern == cr.RILEY_SPECKLE_DISK else 0.0
+        )
+        out_shader.value.speckle.cell_size = float(params.cell_size) if is_perlin else 0.0
+        out_shader.value.speckle.threshold = float(params.threshold) if is_perlin else 0.0
+        out_shader.value.speckle.transition_width = float(params.transition_width) if is_perlin else 0.0
+        out_shader.value.speckle.foreground = float(params.foreground)
+        out_shader.value.speckle.background = float(params.background)
 
     elif isinstance(shader, NodalShader):
         field = _contig_f64_3d(shader.field, "nodal_field")
@@ -744,15 +809,15 @@ def _fill_shader_input(
             out_shader.value.func.builtin = int(shader.builtin)
             out_shader.value.func.params = _make_func_params(shader.params)
     else:
-        raise TypeError("source must be a texture, nodal, or function shader")
+        raise TypeError("source must be a texture, nodal, function, or speckle shader")
 
 
 @cython.cfunc
 def _fill_pipe_single(
     pipe: ShaderPipe,
+    nodes_num: cython.Py_ssize_t,
     out_pipe: cython.pointer[cr.CPipe],
     keepalive: list[Any],
-
 ) -> None:
     stages_len: cython.size_t = len(pipe.stages)
     if not 1 <= stages_len <= 8:
@@ -775,12 +840,6 @@ def _fill_pipe_single(
         stages[si].black = 0.0
         stages[si].white = 0.0
         if isinstance(stage, ShaderSource):
-            valid_shaders = (TextureShader, NodalShader, FunctionShader, FunctionMultiShader)
-            if not isinstance(stage.shader, valid_shaders):
-                raise TypeError(
-                    "source stage requires a texture, nodal, or function"
-                    " shader"
-                )
             stages[si].tag = 0
             stages[si].register_dest = _make_register(stage.register_dest)
             source = cython.cast(
@@ -790,7 +849,7 @@ def _fill_pipe_single(
             if source == cython.NULL:
                 raise MemoryError()
 
-            _fill_shader_input(stage.shader, source, keepalive)
+            _fill_shader_input(stage.shader, nodes_num, source, keepalive)
             stages[si].shader = source
         elif isinstance(stage, GreyToEmissivity):
             stages[si].tag = 1
@@ -818,8 +877,9 @@ def _fill_pipe_single(
             stages[si].register_dest = _make_register(stage.register_dest)
             stages[si].lookup.first = float(stage.first)
             stages[si].lookup.step = float(stage.step)
-            lookup_np = np.ascontiguousarray(
-                stage.values, dtype=np.float64
+            # The native LUT borrows an aligned buffer without writing to it.
+            lookup_np = np.require(
+                stage.values, dtype=np.float64, requirements=("C", "A"),
             )
             if lookup_np.ndim != 1 or lookup_np.size < 2:
                 raise ValueError(
@@ -827,7 +887,7 @@ def _fill_pipe_single(
                     " values"
                 )
             keepalive.append(lookup_np)
-            stage_lookup_view: cython.double[::1] = lookup_np
+            stage_lookup_view: cython.const[cython.double][::1] = lookup_np
             stages[si].lookup.values = cython.address(stage_lookup_view[0])
             stages[si].lookup.values_len = len(lookup_np)
         elif isinstance(stage, Blend):
@@ -885,13 +945,13 @@ def _fill_pipe_single(
     out_pipe.resolver.lookup.first = float(resolver.lookup_first)
     out_pipe.resolver.lookup.step = float(resolver.lookup_step)
     if resolver.lookup_values is not None:
-        lookup_np = np.ascontiguousarray(
-            resolver.lookup_values, dtype=np.float64
+        lookup_np = np.require(
+            resolver.lookup_values, dtype=np.float64, requirements=("C", "A"),
         )
         if lookup_np.ndim != 1 or lookup_np.size < 2:
             raise ValueError("resolver lookup needs at least two values")
         keepalive.append(lookup_np)
-        lookup_view: cython.double[::1] = lookup_np
+        lookup_view: cython.const[cython.double][::1] = lookup_np
         out_pipe.resolver.lookup.values = cython.address(lookup_view[0])
         out_pipe.resolver.lookup.values_len = len(lookup_np)
 
@@ -1002,19 +1062,17 @@ def _fill_mesh_array(
                 shaders[si].execution_tag = 1
                 _fill_pipe_single(
                     entry,
+                    coords_shape[0],
                     cython.address(shaders[si].value.pipe),
                     keepalive,
-
                 )
-            elif isinstance(
-                entry, (TextureShader, NodalShader, FunctionShader, FunctionMultiShader)
-            ):
+            elif isinstance(entry, RileyShader):
                 shaders[si].execution_tag = 0
                 _fill_shader_input(
                     entry,
+                    coords_shape[0],
                     cython.address(shaders[si].value.direct),
                     keepalive,
-
                 )
             else:
                 raise TypeError(

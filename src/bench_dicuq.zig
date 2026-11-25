@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const rendergroups = @import("riley/zig/rendergroups.zig");
 const std = @import("std");
 
@@ -43,6 +43,7 @@ const DEFAULT_MAX_RASTER_WORKERS_PER_JOB: u16 = 1;
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
     const base_raster_config = benchdicuq.getBaseRasterConfig();
 
@@ -73,7 +74,7 @@ pub fn main(init: std.process.Init) !void {
 
     // Change .save_strategy here to write to disk!
     const bench_args = try benchargs.parseArgsWithDefaults(
-        init.minimal.args.vector,
+        args,
         default_bench_args,
     );
     if (bench_args.total_threads == 0) {
@@ -183,7 +184,7 @@ pub fn main(init: std.process.Init) !void {
         bench_args.out_dir,
         bench_args.image_out_dir,
         "bench_dicuq.zig",
-        init.minimal.args.vector,
+        args,
         bench_args.subpixel_center_map,
         raster_config,
         render_group_workers,

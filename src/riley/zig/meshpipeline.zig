@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const report = @import("report.zig");
 const hullmultiroot = @import("hullmultiroot.zig");
@@ -12,6 +12,8 @@ const shaderfunc = @import("shaderfunc.zig");
 const fieldtypes = @import("fieldtypes.zig");
 const std = @import("std");
 const shaderpipe = @import("shaderpipe.zig");
+const speckleparams = @import("speckleparams.zig");
+const validatearrays = @import("validatearrays.zig");
 
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -257,6 +259,7 @@ pub fn meshInputFromSimDataSlice(
 // Mesh Initialisation: Initial mesh and coordinate preparation
 // -----------------------------------------------------------------------------------------
 
+/// Allocate mesh and shader backing in the render-lifetime static arena.
 pub fn createMeshStaticFromInput(
     allocator: std.mem.Allocator,
     mesh_input: *const meshtypes.MeshInput,
@@ -273,13 +276,13 @@ pub fn createMeshStaticFromInput(
             shaders.mono = .{ .direct = try createShaderMonoStaticFromInput(
                 allocator,
                 shader,
-                &mesh_input.connect,
+                mesh_input,
             ) };
         if (mesh_input.shaders.mono_pipe) |pipe|
             shaders.mono = .{ .pipe = try createShaderPipeStaticFromInput(
                 allocator,
                 pipe,
-                &mesh_input.connect,
+                mesh_input,
             ) };
     }
 
@@ -288,7 +291,7 @@ pub fn createMeshStaticFromInput(
             shaders.rgb = try createShaderPipeStaticFromInput(
                 allocator,
                 pipe,
-                &mesh_input.connect,
+                mesh_input,
             );
     }
 
@@ -297,13 +300,13 @@ pub fn createMeshStaticFromInput(
             shaders.ir = .{ .direct = try createShaderMonoStaticFromInput(
                 allocator,
                 shader,
-                &mesh_input.connect,
+                mesh_input,
             ) };
         if (mesh_input.shaders.ir_pipe) |pipe|
             shaders.ir = .{ .pipe = try createShaderPipeStaticFromInput(
                 allocator,
                 pipe,
-                &mesh_input.connect,
+                mesh_input,
             ) };
     }
 
@@ -312,7 +315,7 @@ pub fn createMeshStaticFromInput(
             shaders.multifield = try createShaderPipeStaticFromInput(
                 allocator,
                 pipe,
-                &mesh_input.connect,
+                mesh_input,
             );
     }
 
@@ -344,7 +347,7 @@ pub fn createMeshStaticFromInput(
 fn createShaderPipeStaticFromInput(
     allocator: std.mem.Allocator,
     pipe: shadertypes.ShaderPipeInput,
-    connect: *const meshtypes.Connect,
+    mesh_input: *const meshtypes.MeshInput,
 ) !shadertypes.ShaderPipeStatic {
     const stages = try allocator.alloc(
         shadertypes.ShaderPipeStageStatic,
@@ -354,7 +357,7 @@ fn createShaderPipeStaticFromInput(
     for (pipe.stages, 0..) |stage, si| {
         stages[si] = switch (stage) {
             .shader => |src| .{ .shader = .{
-                .shader = try createPipeSourceStaticFromInput(allocator, src.shader, connect),
+                .shader = try createPipeSourceStaticFromInput(allocator, src.shader, mesh_input),
                 .register_dest = src.register_dest,
                 .channels = switch (src.shader) {
                     .nodal => |n| @intCast(n.field.getFieldsN()),
@@ -432,9 +435,11 @@ fn createTextureStaticFromInput(
 fn createShaderMonoStaticFromInput(
     allocator: std.mem.Allocator,
     input: shadertypes.ShaderMonoInput,
-    connect: *const meshtypes.Connect,
+    mesh_input: *const meshtypes.MeshInput,
 ) !shadertypes.ShaderMonoStatic {
+    const connect = &mesh_input.connect;
     return switch (input) {
+        .speckle => |speckle| .{ .speckle = try createSpeckleStaticFromInput(allocator, speckle, mesh_input) },
         .nodal => |n| .{ .nodal = createNodalStaticFromInput(n) },
         .tex_u8 => |t| .{ .tex_u8 = try createTextureStaticFromInput(
             u8,
@@ -453,6 +458,30 @@ fn createShaderMonoStaticFromInput(
         .tex_f => |t| .{ .tex_f = try createTextureStaticFromInput(F, 1, allocator, t, connect) },
         .func => |f| .{ .func = try createFuncStaticFromInput(allocator, f, connect) },
     };
+}
+
+fn createSpeckleStaticFromInput(
+    outer_alloc: std.mem.Allocator,
+    input: shadertypes.SpeckleInput,
+    mesh_input: *const meshtypes.MeshInput,
+) !*shadertypes.SpeckleStatic {
+    const params = try speckleparams.resolveForMesh(
+        input.params,
+        mesh_input.mesh_type,
+        &mesh_input.coords,
+        &mesh_input.connect,
+        &input.uvs,
+    );
+    const payload = try outer_alloc.create(shadertypes.SpeckleStatic);
+    errdefer outer_alloc.destroy(payload);
+    payload.resources = try speckleparams.initResources(outer_alloc, params);
+    errdefer payload.resources.deinit(outer_alloc);
+    payload.elem_uvs = try prepUVs(outer_alloc, &input.uvs, &mesh_input.connect);
+    payload.output_gain = input.output_gain;
+    payload.output_offset = input.output_offset;
+    payload.bits = input.bits;
+    payload.scaling = input.scaling;
+    return payload;
 }
 
 fn createFuncStaticFromInput(
@@ -511,9 +540,11 @@ fn createFuncMultiStaticFromInput(
 fn createPipeSourceStaticFromInput(
     allocator: std.mem.Allocator,
     input: shadertypes.PipeSourceInput,
-    connect: *const meshtypes.Connect,
+    mesh_input: *const meshtypes.MeshInput,
 ) !shadertypes.PipeSourceStatic {
+    const connect = &mesh_input.connect;
     return switch (input) {
+        .speckle => |speckle| .{ .speckle = try createSpeckleStaticFromInput(allocator, speckle, mesh_input) },
         .nodal => |n| .{ .nodal = createNodalStaticFromInput(n) },
         .tex_u8 => |t| .{ .tex_u8 = try createTextureStaticFromInput(
             u8,
@@ -585,17 +616,30 @@ fn createTextureMultiStaticFromInput(
     input: shadertypes.TexInput(texturetypes.TexDataDyn(T)),
     connect: *const meshtypes.Connect,
 ) !shadertypes.TexMultiStatic(F) {
+    // Also required when render input validation is off.
+    try validatearrays.checkTexMultiLayout(input.tex);
+
     const elem_uvs = try prepUVs(allocator, &input.uvs, connect);
+    errdefer {
+        allocator.free(elem_uvs.slice);
+        elem_uvs.deinit(allocator);
+    }
     const float_tex: texturetypes.TexDataDyn(F) = if (comptime T == F) input.tex else blk: {
-        const values = try ndarray.NDArray(F).initFlat(allocator, input.tex.array.dims);
-        for (input.tex.array.slice, values.slice) |source, *destination| {
-            destination.* = @floatFromInt(source);
+        const src = &input.tex.array;
+        const channels = src.dims[0];
+        const rows = input.tex.rows_num;
+        const cols = input.tex.cols_num;
+        const dst = try texturetypes.TexDataDyn(F).init(allocator, channels, rows, cols);
+        for (0..channels) |ch| {
+            for (0..rows) |row| {
+                const src_start = src.subBase2(ch, row);
+                const dst_start = dst.array.subBase2(ch, row);
+                for (src.slice[src_start..][0..cols], dst.array.slice[dst_start..][0..cols]) |source, *destination| {
+                    destination.* = @floatFromInt(source);
+                }
+            }
         }
-        break :blk .{
-            .array = values,
-            .rows_num = input.tex.rows_num,
-            .cols_num = input.tex.cols_num,
-        };
+        break :blk dst;
     };
     const factors = imageops.getScaleFactors(input.scaling, null, imageops.getScalingParamsTex(
         F,
@@ -702,7 +746,7 @@ fn prepUVs(
     const nodes_per_elem = connect.getNodesPerElem();
     var elem_uv_arr = try ndarray.NDArray(F).initFlat(
         outer_alloc,
-        &[_]usize{ elems_num, 2, nodes_per_elem },
+        &.{ elems_num, 2, nodes_per_elem },
     );
 
     for (0..elems_num) |ee| {
@@ -1722,6 +1766,9 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             switch (selected) {
                 .direct => |shader| {
                     const prepared: shadertypes.ShaderMonoPrepared = switch (shader.*) {
+                        .speckle => |speckle| .{
+                            .speckle = try self.prepareSpeckleFromStatic(outer_alloc, speckle),
+                        },
                         .nodal => |s| .{
                             .nodal = try self.prepareNodalShaderFromStatic(outer_alloc, s),
                         },
@@ -1809,6 +1856,9 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             source_static: *const shadertypes.PipeSourceStatic,
         ) !shadertypes.PipeSourcePrepared {
             return switch (source_static.*) {
+                .speckle => |speckle| .{
+                    .speckle = try self.prepareSpeckleFromStatic(outer_alloc, speckle),
+                },
                 .nodal => |s| .{
                     .nodal = try self.prepareNodalShaderFromStatic(outer_alloc, s),
                 },
@@ -1964,6 +2014,61 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             }
         }
 
+        fn gatherVisElemUVs(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+            elem_uvs_full: ndarray.NDArray(F),
+        ) !ndarray.NDArray(F) {
+            var elem_uvs = try ndarray.NDArray(F).initFlat(
+                outer_alloc,
+                &[_]usize{
+                    self.mesh_workspace.elems_in_image,
+                    2,
+                    elem_uvs_full.dims[2],
+                },
+            );
+
+            var uv_stage = GatherVisibleUVStage{
+                .elem_uvs_full = elem_uvs_full,
+                .vis_orig_elem_inds = self.mesh_workspace.vis_orig_elem_inds,
+                .elem_uvs = &elem_uvs,
+            };
+
+            parachunkexec.runStaticRange(
+                self.chunk_exec,
+                &uv_stage,
+                runGatherVisibleUV,
+                self.mesh_workspace.elems_in_image,
+                self.vis_chunk_size,
+            );
+            return elem_uvs;
+        }
+
+        fn prepareSpeckleFromStatic(
+            self: *FrameMeshPipelineType,
+            outer_alloc: std.mem.Allocator,
+            speckle: *const shadertypes.SpeckleStatic,
+        ) !shadertypes.SpecklePrepared {
+            const range: imageops.ScalingParams = switch (speckle.scaling) {
+                .fixed => |bounds| .{
+                    .min = bounds[0],
+                    .range = if (bounds[1] > bounds[0]) bounds[1] - bounds[0] else 1,
+                },
+                else => .{ .min = 0, .range = 1 },
+            };
+            const factors = imageops.getScaleFactors(speckle.scaling, speckle.bits, range);
+            return .{
+                .elem_uvs = try self.gatherVisElemUVs(outer_alloc, speckle.elem_uvs),
+                .resources = &speckle.resources,
+                .output_gain = speckle.output_gain,
+                .output_offset = speckle.output_offset,
+                .bits = speckle.bits,
+                .scaling = speckle.scaling,
+                .scale_mul = factors.mul,
+                .scale_add = factors.add,
+            };
+        }
+
         fn prepareTexShaderFromStatic(
             comptime T: type,
             comptime C: ?usize,
@@ -1977,28 +2082,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             shadertypes.TexPrepared(T, channels)
         else
             shadertypes.TexMultiPrepared(T) {
-            var elem_uvs = try ndarray.NDArray(F).initFlat(
-                outer_alloc,
-                &[_]usize{
-                    self.mesh_workspace.elems_in_image,
-                    2,
-                    tex_static.elem_uvs.dims[2],
-                },
-            );
-
-            var uv_stage = GatherVisibleUVStage{
-                .elem_uvs_full = tex_static.elem_uvs,
-                .vis_orig_elem_inds = self.mesh_workspace.vis_orig_elem_inds,
-                .elem_uvs = &elem_uvs,
-            };
-
-            parachunkexec.runStaticRange(
-                self.chunk_exec,
-                &uv_stage,
-                runGatherVisibleUV,
-                self.mesh_workspace.elems_in_image,
-                self.vis_chunk_size,
-            );
+            const elem_uvs = try self.gatherVisElemUVs(outer_alloc, tex_static.elem_uvs);
 
             return .{
                 .elem_uvs = elem_uvs,
@@ -2021,29 +2105,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             const elem_uvs = if (func_static.coord_mode == .uv) blk: {
                 const elem_uvs_full = func_static.elem_uvs orelse
                     return error.MissingUVsForFuncShader;
-                var elem_uvs = try ndarray.NDArray(F).initFlat(
-                    outer_alloc,
-                    &[_]usize{
-                        self.mesh_workspace.elems_in_image,
-                        2,
-                        elem_uvs_full.dims[2],
-                    },
-                );
-
-                var uv_stage = GatherVisibleUVStage{
-                    .elem_uvs_full = elem_uvs_full,
-                    .vis_orig_elem_inds = self.mesh_workspace.vis_orig_elem_inds,
-                    .elem_uvs = &elem_uvs,
-                };
-
-                parachunkexec.runStaticRange(
-                    self.chunk_exec,
-                    &uv_stage,
-                    runGatherVisibleUV,
-                    self.mesh_workspace.elems_in_image,
-                    self.vis_chunk_size,
-                );
-                break :blk elem_uvs;
+                break :blk try self.gatherVisElemUVs(outer_alloc, elem_uvs_full);
             } else null;
 
             if (comptime C == 0) {
@@ -2262,4 +2324,248 @@ test "static texture scaling and UV gather match independent values" {
         &connect,
     );
     try std.testing.expect(function.elem_uvs == null);
+}
+
+test "padded integer multifield textures pack logical texels and clean up on allocation failure" {
+    inline for (.{ u8, u16 }) |T| {
+        const Setup = struct {
+            fn run(alloc: std.mem.Allocator) !void {
+                var connect_mem = [_]usize{ 2, 0, 1 };
+                const connect = meshtypes.Connect.init(&connect_mem, 1, 3);
+                var uv_mem = [_]F{ 0, 0.1, 0.2, 0.3, 0.4, 0.5 };
+                var uv_dims = [_]usize{ 3, 2 };
+                var uv_strides = [_]usize{ 2, 1 };
+                const pad = std.math.maxInt(T);
+                var tex_mem = [_]T{ 2, 4, pad, 3, 6, pad, pad, 5, 8, pad, 9, 10, pad };
+                var tex_dims = [_]usize{ 2, 2, 2 };
+                var tex_strides = [_]usize{ 7, 3, 1 };
+                const prepared = try createTextureMultiStaticFromInput(T, alloc, .{
+                    .uvs = .{ .slice = &uv_mem, .dims = &uv_dims, .strides = &uv_strides },
+                    .tex = .{
+                        .array = .{ .slice = &tex_mem, .dims = &tex_dims, .strides = &tex_strides },
+                        .rows_num = 2,
+                        .cols_num = 2,
+                    },
+                    .scaling = .auto,
+                }, &connect);
+                defer prepared.elem_uvs.deinit(alloc);
+                defer alloc.free(prepared.elem_uvs.slice);
+                defer prepared.tex.deinit(alloc);
+
+                try std.testing.expectEqualSlices(usize, &.{ 2, 2, 2 }, prepared.tex.array.dims);
+                try std.testing.expectEqualSlices(usize, &.{ 4, 2, 1 }, prepared.tex.array.strides);
+                try std.testing.expectEqualSlices(F, &.{ 2, 4, 3, 6, 5, 8, 9, 10 }, prepared.tex.array.slice);
+                try std.testing.expectEqualSlices(F, &.{ 0.4, 0, 0.2, 0.5, 0.1, 0.3 }, prepared.elem_uvs.slice);
+                try std.testing.expectEqual(@as(F, 0.125), prepared.scale_mul);
+                try std.testing.expectEqual(@as(F, -0.25), prepared.scale_add);
+            }
+        };
+        try std.testing.checkAllAllocationFailures(std.testing.allocator, Setup.run, .{});
+    }
+}
+
+test "float multifield auto and frac scaling sample only logical texels" {
+    const textureops = @import("textureops.zig");
+    const alloc = std.testing.allocator;
+    var connect_mem = [_]usize{ 0, 1, 2 };
+    const connect = meshtypes.Connect.init(&connect_mem, 1, 3);
+    var uv_mem = [_]F{ 0, 0, 1, 0, 0, 1 };
+    var uv_dims = [_]usize{ 3, 2 };
+    var uv_strides = [_]usize{ 2, 1 };
+    var tex_dims = [_]usize{ 2, 2, 2 };
+    var dense = [_]F{ 2, 4, 3, 6, 5, 8, 9, 10, 100 };
+    var padded = [_]F{ 2, 4, -100, 3, 6, 100, -100, 5, 8, 100, 9, 10 };
+    var dense_strides = [_]usize{ 4, 2, 1 };
+    var padded_strides = [_]usize{ 7, 3, 1 };
+    const samp_cfg: texturetypes.TexSampConfig = .{ .sample = .nearest };
+    for ([_]ndarray.NDArray(F){
+        .{ .slice = &dense, .dims = &tex_dims, .strides = &dense_strides },
+        .{ .slice = &padded, .dims = &tex_dims, .strides = &padded_strides },
+    }) |array| {
+        for ([_]imageops.ScaleStrategy{ .auto, .{ .frac = .{ 0.25, 0.75 } } }) |scaling| {
+            const prepared = try createTextureMultiStaticFromInput(F, alloc, .{
+                .uvs = .{ .slice = &uv_mem, .dims = &uv_dims, .strides = &uv_strides },
+                .tex = .{ .array = array, .rows_num = 2, .cols_num = 2 },
+                .samp_cfg = samp_cfg,
+                .scaling = scaling,
+            }, &connect);
+            defer prepared.elem_uvs.deinit(alloc);
+            defer alloc.free(prepared.elem_uvs.slice);
+            try std.testing.expectEqual(array.slice.ptr, prepared.tex.array.slice.ptr);
+            const samples = textureops.sampWide(2, samp_cfg, &prepared.tex, @splat(1), @splat(1));
+            const expected: [2]F = if (scaling == .auto) .{ 0.5, 1.0 } else .{ 0.5, 0.75 };
+            for (samples, expected) |sample, want| {
+                try std.testing.expectEqual(want, sample[0] * prepared.scale_mul + prepared.scale_add);
+            }
+        }
+    }
+}
+
+test "malformed multifield texture layouts are rejected before allocation without metadata validation" {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
+    const alloc = failing.allocator();
+    var connect_mem = [_]usize{ 0, 1, 2 };
+    const connect = meshtypes.Connect.init(&connect_mem, 1, 3);
+    var uv_mem = [_]F{ 0, 0, 1, 0, 0, 1 };
+    var uv_dims = [_]usize{ 3, 2 };
+    var uv_strides = [_]usize{ 2, 1 };
+    inline for (.{ u8, u16, F }) |T| {
+        var tex_mem = [_]T{0} ** 12;
+        var tex_dims = [_]usize{ 3, 2, 2 };
+        var short_strides = [_]usize{ 4, 2 };
+        var stride_cases = [_][3]usize{
+            .{ 4, 2, 2 },
+            .{ 5, 2, 1 },
+            .{ std.math.maxInt(usize), 2, 1 },
+            .{ std.math.maxInt(usize) / 2, 2, 1 },
+        };
+        var input: shadertypes.TexInput(texturetypes.TexDataDyn(T)) = .{
+            .uvs = .{ .slice = &uv_mem, .dims = &uv_dims, .strides = &uv_strides },
+            .tex = .{
+                .array = .{ .slice = &tex_mem, .dims = &tex_dims, .strides = &short_strides },
+                .rows_num = 2,
+                .cols_num = 2,
+            },
+        };
+        try std.testing.expectError(error.InvalidTextureDimensions, createTextureMultiStaticFromInput(T, alloc, input, &connect));
+        for (&stride_cases) |*strides| {
+            input.tex.array.strides = strides;
+            try std.testing.expectError(error.InvalidTextureDimensions, createTextureMultiStaticFromInput(T, alloc, input, &connect));
+        }
+        var shared_row_strides = [_]usize{ 4, 0, 1 };
+        input.tex.array.strides = &shared_row_strides;
+        input.tex.array.dims = tex_dims[0..0];
+        try std.testing.expectError(error.InvalidTextureDimensions, createTextureMultiStaticFromInput(T, alloc, input, &connect));
+        input.tex.array.dims = &tex_dims;
+        tex_dims[1] = std.math.maxInt(usize);
+        input.tex.rows_num = tex_dims[1];
+        try std.testing.expectError(error.InvalidTextureDimensions, createTextureMultiStaticFromInput(T, alloc, input, &connect));
+    }
+}
+
+test "speckle direct and pipe frame preparation borrow calibrated resources" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0 };
+    var connect = [_]usize{ 0, 1, 2, 1, 3, 2 };
+    var uv_values = [_]F{ 0, 0, 1, 0, 0, 1, 1, 1 };
+    const input: shadertypes.SpeckleInput = .{
+        .uvs = try ndarray.NDArray(F).init(alloc, &uv_values, &.{ 4, 2 }),
+        .params = .{ .disk = .{ .coverage = 0.5, .radius = 0.15 } },
+        .output_gain = -0.75,
+        .output_offset = 0.875,
+        .bits = 8,
+        .scaling = .{ .frac = .{ 0.25, 0.75 } },
+    };
+    const direct: shadertypes.ShaderMonoInput = .{ .speckle = input };
+    const source = shaderops.monoToPipeSource(direct);
+    try std.testing.expectEqualDeep(direct, try shaderops.pipeSourceToMono(source));
+    var stage_buf: [1]shadertypes.ShaderPipeStageInput = undefined;
+    const mesh = meshtypes.MeshInput{
+        .mesh_type = .tri3,
+        .coords = meshtypes.Coords.init(&coords, 4),
+        .connect = meshtypes.Connect.init(&connect, 2, 3),
+        .disp = null,
+        .shaders = .{
+            .mono_direct = direct,
+            .ir_pipe = shaderops.identityMulti(1, source, &stage_buf),
+        },
+    };
+    const roles = shadertypes.ActiveShaderRoles.initMany(&.{ .mono, .ir });
+    const static = try createMeshStaticFromInput(alloc, &mesh, roles);
+    const mono = static.shaders.mono.?.direct.speckle;
+    const ir = static.shaders.ir.?.pipe.stages[0].shader.shader.speckle;
+    try std.testing.expect(mono != ir);
+    try std.testing.expect(mono.resources.data == .classified_binned);
+    try std.testing.expect(ir.resources.data == .classified_binned);
+    try std.testing.expectEqual(mono.resources.data.classified_binned.params.cells_per_uv, ir.resources.data.classified_binned.params.cells_per_uv);
+
+    var executor = parachunkexec.ParaChunkExecutor.init(std.testing.io, 1);
+    var camera: cameraprojops.CameraPrepared = undefined;
+    var pipeline: FrameMeshPipeline(.tri3) = undefined;
+    // Render setup may copy a MeshStatic before any frame borrows its payload.
+    const mesh_copy = static;
+    pipeline.mesh_static = &mesh_copy;
+    pipeline.camera = &camera;
+    pipeline.hit_geometry = .{};
+    pipeline.chunk_exec = &executor;
+    pipeline.vis_chunk_size = 1;
+    var visible = [_]usize{1};
+    pipeline.mesh_workspace.vis_orig_elem_inds = &visible;
+    for ([_]usize{ 1, 0 }) |count| {
+        pipeline.mesh_workspace.elems_in_image = count;
+        for ([_]shadertypes.RenderFormat{ .mono, .ir }) |format| {
+            camera.render_format = format;
+            var prepared_mesh: meshtypes.MeshPrepared = undefined;
+            prepared_mesh.shaders = .{};
+            try pipeline.prepareShader(alloc, &prepared_mesh);
+            const prepared = switch (format) {
+                .mono => prepared_mesh.shaders.mono.?.direct.speckle,
+                .ir => prepared_mesh.shaders.ir.?.pipe.stages[0].shader.shader.speckle,
+                else => unreachable,
+            };
+            const expected = if (format == .mono) mono else ir;
+            const expected_uvs: []const F = if (count == 0) &.{} else &.{ 1, 1, 0, 0, 1, 1 };
+            try std.testing.expectEqualSlices(F, expected_uvs, prepared.elem_uvs.slice);
+            try std.testing.expectEqual(&expected.resources, prepared.resources);
+            try std.testing.expectEqual(input.output_gain, prepared.output_gain);
+            try std.testing.expectEqual(input.output_offset, prepared.output_offset);
+            try std.testing.expectEqual(@as(F, 127.5), prepared.scale_mul);
+            try std.testing.expectEqual(@as(F, 63.75), prepared.scale_add);
+        }
+    }
+
+    var wider_coords = coords;
+    wider_coords[3] = 2;
+    wider_coords[9] = 2;
+    var wider = mesh;
+    wider.coords = meshtypes.Coords.init(&wider_coords, 4);
+    const wide_static = try createMeshStaticFromInput(alloc, &wider, shadertypes.ActiveShaderRoles.initOne(.mono));
+    const wide = wide_static.shaders.mono.?.direct.speckle;
+    const base_grid = mono.resources.data.classified_binned.params.cells_per_uv;
+    const wide_grid = wide.resources.data.classified_binned.params.cells_per_uv;
+    const tolerance: F = if (F == f32) 2e-6 else 2e-14;
+    try std.testing.expectApproxEqRel(2 * base_grid[0], wide_grid[0], tolerance);
+    try std.testing.expectApproxEqRel(base_grid[1], wide_grid[1], tolerance);
+}
+
+test "speckle static preparation releases backing on allocation failure" {
+    const Setup = struct {
+        fn run(alloc: std.mem.Allocator, physical: speckleparams.SpeckleParams) !void {
+            var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+            var connect = [_]usize{ 0, 1, 2 };
+            var values = [_]F{ 0, 0, 1, 0, 0, 1 };
+            var dims = [_]usize{ 3, 2 };
+            var strides = [_]usize{ 2, 1 };
+            const uvs: ndarray.NDArray(F) = .{ .slice = &values, .dims = &dims, .strides = &strides };
+            const mesh = meshtypes.MeshInput{
+                .mesh_type = .tri3,
+                .coords = meshtypes.Coords.init(&coords, 3),
+                .connect = meshtypes.Connect.init(&connect, 1, 3),
+                .disp = null,
+                .shaders = .{},
+            };
+            const prepared = try createSpeckleStaticFromInput(alloc, .{ .uvs = uvs, .params = physical }, &mesh);
+            defer alloc.destroy(prepared);
+            defer prepared.resources.deinit(alloc);
+            defer alloc.free(prepared.elem_uvs.slice);
+            defer prepared.elem_uvs.deinit(alloc);
+        }
+    };
+    const valid: speckleparams.SpeckleParams = .{ .disk = .{ .coverage = 0.5, .radius = 0.15 } };
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, Setup.run, .{valid});
+    var oversized = valid;
+    oversized.disk.jitter = 0.5 * oversized.disk.radius;
+    oversized.disk.edge_softness = oversized.disk.radius;
+    try std.testing.expectError(error.UnsupportedSpeckleSupport, Setup.run(std.testing.allocator, oversized));
+    var tiny = valid;
+    tiny.disk.radius = 1e-20;
+    try std.testing.expectError(error.SpeckleDensityOutOfRange, Setup.run(std.testing.allocator, tiny));
+    tiny.disk.radius = 1e-10;
+    try std.testing.expectError(error.SpeckleDensityOutOfRange, Setup.run(std.testing.allocator, tiny));
+    try std.testing.expectError(error.SpeckleDensityOutOfRange, Setup.run(std.testing.allocator, .{ .gaussian = .{
+        .coverage = tiny.disk.coverage,
+        .radius = tiny.disk.radius,
+    } }));
 }

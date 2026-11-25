@@ -18,7 +18,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # Allow for the native configuration matrix on Ubuntu and cold smoke builds on Windows.
+    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && 90 || matrix.os == 'windows-latest' && 60 || 30 }}
 
     steps:
       - uses: actions/checkout@v4
@@ -28,8 +29,32 @@ jobs:
         with:
           version: 0.16.0
 
+      - name: Check Zig formatting (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig fmt --check build.zig build.zig.zon src scripts
+
       - name: Zig Build Riley Library
         run: zig build -Doptimize=ReleaseFast --summary all
+
+      - name: Compile all Zig demos (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build demos-check -Doptimize=Debug
+
+      - name: Check aggregate Zig demos reject runtime options (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          for target in demos run-all-demos; do
+            log="$RUNNER_TEMP/$target.log"
+            if zig build "$target" -Doptimize=Debug -Dprecision=f64 -Dsimd=on -- --output "$RUNNER_TEMP/demo-output" >"$log" 2>&1; then
+              echo "Expected $target to reject runtime options"; exit 1
+            fi
+            grep -F "'$target' does not accept arguments" "$log"
+          done
+          test ! -e "$RUNNER_TEMP/demo-output"
+
+      - name: Compile all Zig demos with f32 and SIMD off (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build demos-check -Doptimize=Debug -Dprecision=f32 -Dsimd=off
 
       - name: Zig Build documentation
         if: matrix.os == 'ubuntu-latest'
@@ -37,3 +62,103 @@ jobs:
 
       - name: Zig Run Verification and Basic Tests
         run: zig build test-verif-basic -Doptimize=ReleaseSafe
+
+      - name: Run standalone C ABI tests
+        run: zig build test-c-abi -Doptimize=Debug
+
+      - name: Check native benchmark build arguments (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          mkdir -p out
+          output=$(mktemp -d "$PWD/out/bench-build-args.XXXXXX")
+          trap 'rm -rf "$output"' EXIT
+          opts=(-Doptimize=Debug -Dprecision=f64 -Dsimd=on)
+          zig build bench-multiroot "${opts[@]}" -- --out-dir "$output/new/nested" \
+            --width 64 --height 48 --elements-per-type 1 --runs 1 --warmup 0
+          awk -F, 'NR == 2 { ok = ($9 == 4 && $10 == 64 && $11 == 48) } END { exit !(NR == 2 && ok) }' \
+            "$output/new/nested/raw_stats_multiroot.csv"
+          zig build bench-speckle-evaluators "${opts[@]}" -- --list-evaluators 2>&1 | grep '"evaluators":\['
+          if zig build bench-multiroot "${opts[@]}" -- --unknown-option 0 >"$output/invalid.log" 2>&1; then
+            echo 'bench-multiroot accepted an unknown option'; exit 1
+          fi
+          grep -F 'error: UnknownArgument' "$output/invalid.log"
+          if zig build benches "${opts[@]}" -- --list-evaluators >"$output/aggregate.log" 2>&1; then
+            echo 'benches accepted benchmark arguments'; exit 1
+          fi
+          grep -F "'benches' does not accept arguments" "$output/aggregate.log"
+
+      - name: Check Windows benchmark executables
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          zig build install-bench-speckle-evaluators -Doptimize=ReleaseFast -Dprecision=f64 -Dsimd=on -Dstrip=true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          zig build install-bench-dist-psf install-bench-thread-geom -Doptimize=Debug -Dprecision=f64 -Dsimd=on
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($bench in 'speckle_evaluators', 'dist_psf', 'thread_geom') {
+            $exe = "zig-out/bin/bench_${bench}_f64_simd.exe"
+            if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Missing benchmark: $exe" }
+          }
+
+      - name: Check Windows procedural CLI and UTF-8 output path
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $output = 'out/Windows CLI café'
+          zig build test-demo-cli demo00b-procedural-quickstart -Doptimize=Debug -Dprecision=f64 -Dsimd=on -- --width 64 --height 48 --output $output
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $image = (Resolve-Path -LiteralPath "$output/disk.bmp").Path
+          $bytes = [System.IO.File]::ReadAllBytes($image)
+          if ($bytes.Length -lt 54 -or $bytes[0] -ne 0x42 -or $bytes[1] -ne 0x4d -or
+              [BitConverter]::ToInt32($bytes, 18) -ne 64 -or [Math]::Abs([BitConverter]::ToInt32($bytes, 22)) -ne 48) {
+            throw "Invalid 64 x 48 BMP: $image"
+          }
+
+      - name: Run native configuration tests (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build test-configs
+
+      - name: Run 32-bit Linux default-policy speckle tests (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build test-procedural-speckles -Dtarget=x86-linux-musl -Doptimize=Debug -Dprecision=f64 -Dsimd=on -Dstrip=true
+
+      - name: Run 32-bit Linux experimental speckle tests (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build test-procedural-speckles -Dtarget=x86-linux-musl -Doptimize=Debug -Dprecision=f64 -Dsimd=on -Dstrip=true -Denable-all-evaluators=true
+
+      - name: Python setup for script tests and native benchmark smokes
+        if: matrix.os != 'macos-latest'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Run Python script unit tests (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          python -m pip install numpy Pillow pytest
+          python -m pytest -q scripts/tests -k 'not NativeBenchmarkTests'
+
+      - name: Install benchmark consumer dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        run: python -m pip install numpy
+
+      - name: Check benchmark consumer executable paths (Windows)
+        if: matrix.os == 'windows-latest'
+        run: python -m unittest scripts.tests.test_native_benchmark_consumers
+
+      - name: Run frozen speckle benchmark executable (Windows)
+        if: matrix.os == 'windows-latest'
+        env:
+          RILEY_SPECKLE_BENCH_BINARY: zig-out/bin/bench_speckle_evaluators_f64_simd.exe
+        run: python -m unittest scripts.tests.test_bench_speckle.NativeBenchmarkTests.test_texture_only_native_comparisons_launch_frozen_executable
+
+      - name: Build stripped ReleaseFast speckle benchmark (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: zig build install-bench-speckle-evaluators -Doptimize=ReleaseFast -Dstrip=true -Denable-all-evaluators=true
+
+      - name: Run native speckle benchmark runner smoke (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          RILEY_SPECKLE_BENCH_BINARY: zig-out/bin/bench_speckle_evaluators_f64_simd
+        run: python -m unittest scripts.tests.test_bench_speckle.NativeBenchmarkTests

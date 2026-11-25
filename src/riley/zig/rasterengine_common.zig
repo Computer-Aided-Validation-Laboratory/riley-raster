@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const meshtypes = @import("meshtypes.zig");
 const shadertypes = @import("shadertypes.zig");
@@ -23,6 +23,7 @@ const shaderops = @import("shaderops.zig");
 const geometrykernels = @import("geometrykernels.zig");
 const shaderkernels = @import("shaderkernels.zig");
 const shaderpipekernels = @import("shaderpipekernels.zig");
+const speckleops = @import("speckleops.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -393,7 +394,7 @@ pub fn rasterTileCore(
                         @intCast(s.elem_field.dims[1])
                     else
                         @intCast(s.elem_field.dims[2]),
-                    .tex_u8, .tex_u16, .tex_f, .func => 1,
+                    .tex_u8, .tex_u16, .tex_f, .func, .speckle => 1,
                 },
             };
 
@@ -535,6 +536,31 @@ pub fn rasterTileCore(
                             &local_shader_buf,
                             subpx_scratch,
                         );
+                    },
+                    .speckle => |*shader| {
+                        @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
+                        var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};
+                        local_shader_buf.loadFuncCoords(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
+                        shaded_px += try switch (shader.resources.kernel_index.?) {
+                            inline 0...speckleops.kernel_configs.len - 1 => |kernel_index| RasterBackend.RasterEngine(
+                                GK,
+                                shaderkernels.SpeckleKernel(N, kernel_index),
+                                shadertypes.SpecklePrepared,
+                                root_class,
+                            ).rasterElemInTile(
+                                report_mode,
+                                ctx_rast,
+                                ctx_report,
+                                tile,
+                                ov,
+                                coords,
+                                hull,
+                                shader,
+                                &local_shader_buf,
+                                subpx_scratch,
+                            ),
+                            else => unreachable,
+                        };
                     },
                     .func => |*shader| {
                         var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};

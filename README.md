@@ -52,11 +52,24 @@ Python renders are written below `out_riley_py/`.
 
 ## User Demos
 
-Run the Zig commands from the repository root. Each example lists the Zig command
-followed by its Python equivalent. Zig renders go to `out/`; Python renders go to
+Run the Zig commands from the repository root. Zig renders go to `out/`; Python renders go to
 `out_riley_py/`.
 
 Browse the complete [Zig demos](./src/) or [Python demos](./src/riley/pydemos/).
+
+### Procedural speckles
+
+Render seeded disk spots, Gaussian spots, or Perlin noise from nodal UVs, without
+loading a texture. Pattern sizes are set in reference-mesh units, not pixels.
+
+```shell
+zig build demo00b-procedural-quickstart -Doptimize=ReleaseFast
+python -m riley demo00b_procedural_quickstart
+```
+
+See the [usage guide](./docs/procedural.rst) for Zig and Python shader setup,
+and the [tutorials](./dev/PROCEDURAL.md#runnable-procedural-tutorials) for a
+deforming sphere and a rabbit using a shader pipe.
 
 ### Rabbits demo
 

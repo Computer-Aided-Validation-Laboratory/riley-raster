@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const cameramodels = @import("riley/zig/cameramodels.zig");
 const rendergroups = @import("riley/zig/rendergroups.zig");
 const fieldtypes = @import("riley/zig/fieldtypes.zig");
@@ -404,7 +404,7 @@ fn createPSF(case: PSFCase) cameramodels.PointSpreadFunc {
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
-    const bench_args = try parseDistPsfArgs(init.minimal.args.vector);
+    const bench_args = try parseDistPsfArgs(try init.minimal.args.toSlice(init.arena.allocator()));
 
     var threaded_io = riley.getThreadedIo(
         outer_alloc,

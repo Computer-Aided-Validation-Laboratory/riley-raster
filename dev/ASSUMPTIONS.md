@@ -78,6 +78,17 @@ Unless a task explicitly concerns malformed-input validation, assume:
 
 > **Curved higher-order elements**: Riley supports curved quadratic and higher-order elements. It is not required to handle arbitrary pathological polynomial patches that fold or invert.
 
+### Physical procedural speckles
+
+Referenced faces must have usable reference geometry and a usable UV metric.
+The entire interpolated UV patch, not just its nodes, must stay within the unit
+square up to the supported tolerance. Calibration is shared over the mesh's
+reference faces; it is not a local correction or recomputed for each frame or
+camera. Distorted UV maps can therefore vary spot size and shape locally.
+See the [public speckle guide](../docs/procedural.rst) for inputs and bounds and
+[Theory §6](THEORY.md#6-physical-speckle-calibration-and-nominal-coverage) for
+the calibration and coverage model.
+
 ---
 
 ## 4. Camera and Distortion Model Assumptions

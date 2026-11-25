@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
+from bench_common import repo_root
 from paper_const import (
     PAPER_DIR,
     PLOT_AXIS_FONT_SIZE,
@@ -28,7 +29,6 @@ from paper_const import (
     bulge_out_frame,
     bulge_out_limit_frame,
     bulge_regular_frame,
-    repo_root,
 )
 
 

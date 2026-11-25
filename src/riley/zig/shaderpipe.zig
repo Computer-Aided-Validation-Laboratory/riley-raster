@@ -909,6 +909,10 @@ test "band Planck LUT is positive, temperature ordered, and interpolates" {
     );
 }
 
+// Celsius conversion subtracts an offset rounded at the larger Kelvin scale.
+const temperature_tol_f32 = 1e-5;
+const normalise_tol: F = if (F == f32) std.math.floatEps(f32) else 1e-12;
+
 test "apparent temperature includes reflected ambient and inverts band radiance" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -930,13 +934,14 @@ test "apparent temperature includes reflected ambient and inverts band radiance"
     var output: [1]F = undefined;
     const resolver_prepared = try createResolverPreparedFromInput(arena.allocator(), resolver);
     resolver_prepared.evaluate(&inputs, &.{}, 1, &output);
-    try std.testing.expectApproxEqAbs(@as(F, 32.85), output[0], 1e-10);
+    const tol: F = if (F == f32) temperature_tol_f32 else 1e-10;
+    try std.testing.expectApproxEqAbs(@as(F, 32.85), output[0], tol);
     inputs.parameter[0] = 1;
     resolver_prepared.evaluate(&inputs, &.{}, 1, &output);
-    try std.testing.expectApproxEqAbs(@as(F, 36.85), output[0], 1e-10);
+    try std.testing.expectApproxEqAbs(@as(F, 36.85), output[0], tol);
     inputs.parameter[0] = 0;
     resolver_prepared.evaluate(&inputs, &.{}, 1, &output);
-    try std.testing.expectApproxEqAbs(@as(F, 16.85), output[0], 1e-10);
+    try std.testing.expectApproxEqAbs(@as(F, 16.85), output[0], tol);
     var bad = values;
     bad[2] = bad[1];
     const invalid: ResolverInput = .{ .greybody_band_apparent_c = .{
@@ -992,7 +997,7 @@ test "normalise handles 2D and 3D vectors including zero" {
     outputs.field[2] = 6;
     (NormaliseStage{ .register_source = src, .register_dest = .{ .kind = .channel, .index = 2 }, .components = 3 }).apply(&outputs);
     for ([_]F{ 2.0 / 7.0, -3.0 / 7.0, 6.0 / 7.0 }, 0..) |expected, i| {
-        try std.testing.expectApproxEqAbs(expected, outputs.channel[2 + i], 1e-12);
+        try std.testing.expectApproxEqAbs(expected, outputs.channel[2 + i], normalise_tol);
     }
     outputs.field[0] = 0;
     outputs.field[1] = 0;
@@ -1050,9 +1055,9 @@ test "generic pipe stages match scalar values on SIMD lanes" {
     const ny: [S]F = @bitCast(outputs.channel[4]);
     const nz: [S]F = @bitCast(outputs.channel[5]);
     for (0..S) |lane| {
-        try std.testing.expectApproxEqAbs(if (lane == 0) @as(F, 0) else 2.0 / 7.0, nx[lane], 1e-12);
-        try std.testing.expectApproxEqAbs(if (lane == 0) @as(F, 0) else -3.0 / 7.0, ny[lane], 1e-12);
-        try std.testing.expectApproxEqAbs(if (lane == 0) @as(F, 0) else 6.0 / 7.0, nz[lane], 1e-12);
+        try std.testing.expectApproxEqAbs(if (lane == 0) @as(F, 0) else 2.0 / 7.0, nx[lane], normalise_tol);
+        try std.testing.expectApproxEqAbs(if (lane == 0) @as(F, 0) else -3.0 / 7.0, ny[lane], normalise_tol);
+        try std.testing.expectApproxEqAbs(if (lane == 0) @as(F, 0) else 6.0 / 7.0, nz[lane], normalise_tol);
     }
 }
 
@@ -1073,7 +1078,7 @@ test "prepared resolver preserves lookup interpolation and ambient radiance" {
     values.parameter[0] = 0.5;
     var result: [1]F = undefined;
     prepared.evaluate(&values, &.{}, 1, &result);
-    try std.testing.expectApproxEqAbs(@as(F, 310 - 273.15), result[0], 1e-12);
+    try std.testing.expectApproxEqAbs(@as(F, 310 - 273.15), result[0], if (F == f32) temperature_tol_f32 else 1e-12);
     var vectors: RegistersOutputSIMD = .{};
     const temperatures = [_]F{ 280, 290, 300, 310, 320, 330, 340, 320 };
     const emissivities = [_]F{ 0, 1, 0.25, 0.5, 0.75, 1, 0.5, 0.5 };
@@ -1090,7 +1095,7 @@ test "prepared resolver preserves lookup interpolation and ambient radiance" {
     prepared.evaluate(&vectors, &.{}, 1, &vector_result);
     const lanes: [buildconfig.SimdWidth]F = @bitCast(vector_result[0]);
     for (lanes, 0..) |value, lane| {
-        try std.testing.expectApproxEqAbs(expected_celsius[lane % expected_celsius.len], value, 1e-10);
+        try std.testing.expectApproxEqAbs(expected_celsius[lane % expected_celsius.len], value, if (F == f32) temperature_tol_f32 else 1e-10);
         values.field[0] = temp_lanes[lane];
         values.parameter[0] = emissivity_lanes[lane];
         prepared.evaluate(&values, &.{}, 1, &result);

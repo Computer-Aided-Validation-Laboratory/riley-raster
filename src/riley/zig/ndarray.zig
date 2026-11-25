@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const matslice = @import("matslice.zig");
 const std = @import("std");
@@ -34,6 +34,7 @@ pub fn NDArray(comptime T: type) type {
             std.debug.assert(slice.len >= dim_prod);
 
             const dims_heap = try allocator.dupe(usize, dims);
+            errdefer allocator.free(dims_heap);
             const strides_heap = try allocator.alloc(usize, dims.len);
 
             var ndarray = NDArray(T){
@@ -56,6 +57,7 @@ pub fn NDArray(comptime T: type) type {
             }
 
             const slice = try allocator.alloc(T, dim_prod);
+            errdefer allocator.free(slice);
 
             return try Self.init(allocator, slice, dims);
         }
@@ -364,6 +366,17 @@ pub fn matchArrayDims(
 // --------------------------------------------------------------------------------------
 
 const talloc = std.testing.allocator;
+
+test "initFlat frees partial allocations on failure" {
+    const Probe = struct {
+        fn run(allocator: std.mem.Allocator) !void {
+            const array = try NDArray(F).initFlat(allocator, &.{ 2, 3 });
+            defer allocator.free(array.slice);
+            defer array.deinit(allocator);
+        }
+    };
+    try std.testing.checkAllAllocationFailures(talloc, Probe.run, .{});
+}
 
 test "matchArrayDims" {
     var dims0 = [_]usize{ 3, 3, 2 };

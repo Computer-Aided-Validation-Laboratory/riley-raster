@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from benchmark_runner import run_command
 
+from bench_common import native_exe, repo_root
 from benchmark_catalog import binary_name as catalog_binary_name
 
 import argparse
@@ -19,8 +20,6 @@ import shlex
 import time
 
 import numpy as np
-
-from perf_common import command_path, repo_root
 
 
 # -----------------------------------------------------------------------------
@@ -194,7 +193,7 @@ EXPERIMENT3_CASES = build_experiment3_cases()
 
 def binary_path() -> Path:
     """Resolve the benchmark binary executable path."""
-    path = repo_root() / "bin" / catalog_binary_name("dist_psf")
+    path = native_exe(repo_root() / "bin" / catalog_binary_name("dist_psf"))
     if not path.exists():
         raise SystemExit(
             f"Missing benchmark binary at {path}. Run "
@@ -383,7 +382,7 @@ def run_case(
     bin_path = binary_path()
 
     cmd: list[str] = [
-        command_path(bin_path),
+        str(bin_path),
         "--mesh-subset",
         str(case["mesh_type"]),
         "--mesh-density",

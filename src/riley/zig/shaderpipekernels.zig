@@ -23,6 +23,10 @@ const meshhit = @import("meshhit.zig");
 const shaderpipe = @import("shaderpipe.zig");
 const shaderkernels = @import("shaderkernels.zig");
 const simdops = @import("simdops.zig");
+const shaderfill_scalar = @import("shaderfill_scalar.zig");
+const shaderfill_simd = @import("shaderfill_simd.zig");
+const speckleops = @import("speckleops.zig");
+const speckleconfig = @import("speckleconfig.zig");
 
 pub fn LocalPipeBuff(comptime N: usize) type {
     return struct {
@@ -100,6 +104,9 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                     },
                     .tex_multi_f => |shader| {
                         buf.load(shader.elem_uvs, elem_idx * 2 * N, 2);
+                    },
+                    .speckle => |shader| {
+                        buf.loadFuncCoords(shader.elem_uvs, elem_idx * 2 * N, 2);
                     },
                     .func, .func_rgb, .func_multi => |shader| {
                         if (shader.coord_mode == .uv) {
@@ -380,6 +387,16 @@ fn shadeSource(
     scratch: *matslice.MatSlice(F),
 ) void {
     switch (source.*) {
+        .speckle => |*s| {
+            scratch.slice[ctx.scratch_idx] = shaderfill_scalar.evalSpeckleScal(
+                N,
+                coord_space,
+                interp.getRasterHit(),
+                buf,
+                s,
+                samplePipeSpeckleScal,
+            );
+        },
         .nodal => |*s| {
             shaderkernels.NodalKernel(N).shade(
                 coord_space,
@@ -509,6 +526,20 @@ fn shadeSourceSIMD(
     sink: anytype,
 ) void {
     switch (source.*) {
+        .speckle => |*s| {
+            const value = shaderfill_simd.evalSpeckleSIMD(
+                N,
+                coord_space,
+                mask,
+                weights,
+                inv_z,
+                subpx_z,
+                buf,
+                s,
+                samplePipeSpeckleSIMD,
+            );
+            sink.store(0, mask, value);
+        },
         .nodal => |*s| {
             shaderkernels.NodalKernel(N).shadeSIMDTo(
                 coord_space,
@@ -680,6 +711,24 @@ fn shadeSourceSIMD(
     }
 }
 
+// Keep dispatch on the speckle path without adding state to other pipes. The index is
+// immutable for the stage; SIMD dispatches the entire packet, not individual lanes.
+fn samplePipeSpeckleScal(u: F, v: F, resources: *const speckleops.Resources) F {
+    @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
+    return switch (resources.kernel_index.?) {
+        inline 0...speckleops.kernel_configs.len - 1 => |index| speckleops.Kernel(index).sampleScal(u, v, resources),
+        else => unreachable,
+    };
+}
+
+fn samplePipeSpeckleSIMD(u: VecSF, v: VecSF, active: VecSB, resources: *const speckleops.Resources) VecSF {
+    @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
+    return switch (resources.kernel_index.?) {
+        inline 0...speckleops.kernel_configs.len - 1 => |index| speckleops.Kernel(index).sampleSIMD(u, v, active, resources),
+        else => unreachable,
+    };
+}
+
 // --------------------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------------------
@@ -728,4 +777,185 @@ test "MeshHit shares selected geometry with scalar and SIMD stages" {
     try std.testing.expectApproxEqAbs(raster_hit.coords_ref.?[0], v_hit.coords_ref.?[0][0], test_tol);
     try std.testing.expectApproxEqAbs(raster_hit.coords_def.?[1], v_hit.coords_def.?[1][0], test_tol);
     try std.testing.expectApproxEqAbs(raster_hit.surf_norm.?[2], v_hit.surf_norm.?[2][0], test_tol);
+}
+
+test "speckle pipe dispatch preserves hit geometry and exact unclamped source values" {
+    const N = 3;
+    const cameraprojops = @import("cameraprojops.zig");
+    const cameratypes = @import("cameratypes.zig");
+    const meshpipeline = @import("meshpipeline.zig");
+    const meshtypes = @import("meshtypes.zig");
+    const ndarray = @import("ndarray.zig");
+    const parachunkexec = @import("parachunkexec.zig");
+    const rasterconfig = @import("rasterconfig.zig");
+    const rendergroups = @import("rendergroups.zig");
+    const report = @import("report.zig");
+    const rotation = @import("rotation.zig");
+    const speckleparams = @import("speckleparams.zig");
+    const validatearrays = @import("validatearrays.zig");
+    const validateinput = @import("validateinput.zig");
+    const vecstack = @import("vecstack.zig");
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var uv_data = [_]F{ 0, 0, 1, 0, 0, 1 };
+    const uvs = try ndarray.NDArray(F).init(alloc, &uv_data, &.{ N, 2 });
+    const registers = [_]shaderpipe.Register{
+        .{ .kind = .channel, .index = 0 },
+        .{ .kind = .channel, .index = 1 },
+        .{ .kind = .channel, .index = 2 },
+        .{ .kind = .constant, .index = 0 },
+        .{ .kind = .constant, .index = 1 },
+        .{ .kind = .constant, .index = 2 },
+    };
+    // Both hits stay near the UV origin, outside the hard disks and below the Perlin threshold.
+    const params = [_]speckleparams.SpeckleParams{
+        .{ .disk = .{ .coverage = 0.05, .radius = 8, .background = 0.25 } },
+        .{ .perlin = .{ .cell_size = 64, .threshold = 0.5, .transition_width = 0, .background = 0.75 } },
+    };
+    var stages: [3]shadertypes.ShaderPipeStageInput = undefined;
+    for (stages[0..2], registers[0..2], params) |*stage, dest, param| {
+        stage.* = .{ .shader = .{
+            .shader = .{ .speckle = .{
+                .uvs = uvs,
+                .params = param,
+                .output_gain = 2,
+                .output_offset = 0.5,
+                .bits = null,
+                .scaling = .{ .fixed = .{ -0.25, 0.25 } },
+            } },
+            .register_dest = dest,
+        } };
+    }
+    stages[2] = .{ .shader = .{
+        .shader = .{ .func = .{
+            .coord_mode = .world_reference,
+            .builtin = .linear,
+            .params = .{ .settings = .{ .linear = .{ .coeffs = .{ 0, 2, 0 } } } },
+        } },
+        .register_dest = registers[2],
+    } };
+    // Distinct weights and source values make the result sensitive to destination swaps.
+    const operations = [_]shaderpipe.ResolverOp{
+        .{ .load = registers[0] },
+        .{ .load = registers[1] },
+        .{ .load = registers[4] },
+        .multiply,
+        .add,
+        .{ .load = registers[2] },
+        .{ .load = registers[5] },
+        .multiply,
+        .add,
+        .{ .load = registers[3] },
+        .add,
+        .{ .store = 0 },
+    };
+    var coords = [_]F{ 2, 0, 0, 4, 0, 0, 6, 2, 0 };
+    var connect = [_]usize{ 0, 1, 2 };
+    const mesh: meshtypes.MeshInput = .{
+        .mesh_type = .tri3,
+        .coords = meshtypes.Coords.init(&coords, N),
+        .connect = meshtypes.Connect.init(&connect, 1, N),
+        .disp = null,
+        .shaders = .{ .mono_pipe = .{
+            .stages = &stages,
+            .resolver = .{ .expression = .{ .operations = &operations, .constants = &.{ 0.125, 2, 4 } } },
+        } },
+    };
+    const camera_input: cameratypes.CameraInput = .{
+        .pixels_num = .{ 32, 32 },
+        .pixels_size = .{ 0.25, 0.25 },
+        .pos_world = vecstack.Vec3F.initSlice(&.{ 4, 1, 4 }),
+        .rot_world = rotation.Rotation.init(0, 0, 0),
+        .roi_cent_world = vecstack.Vec3F.initSlice(&.{ 4, 1, 0 }),
+        .focal_length = 4,
+        .sub_sample = 1,
+    };
+    const config: rasterconfig.RasterConfig = .{};
+    const groups = [_]rendergroups.RenderGroup{.{ .io = std.testing.io, .workers = 1 }};
+    _ = try validateinput.checkRenderInps(&groups, &.{camera_input}, &.{mesh}, config, null, false, null);
+    try validatearrays.checkRenderArrs(&.{mesh});
+    const mesh_static = try meshpipeline.createMeshStaticFromInput(alloc, &mesh, .initOne(.mono));
+    const camera = try cameraprojops.CameraPrepared.init(alloc, camera_input);
+    var exec = parachunkexec.ParaChunkExecutor.init(std.testing.io, 1);
+    var timing: report.GeomTimes = .{};
+    const frame = try meshpipeline.prepMeshFrame(alloc, &exec, 1, &camera, config, &mesh_static, 0, &timing);
+    try std.testing.expectEqual(@as(usize, 1), frame.elems_in_image);
+    const pipe = frame.mesh.shaders.mono.?.pipe;
+    try std.testing.expect(pipe.hit_geometry.selection.contains(.coords_ref));
+    const K = PipeKernel(N);
+    var buff: K.LocalBuff = .{};
+    buff.load(&pipe, 0, 0);
+    const ctx: shadertypes.ShadeContext = .{
+        .frame_idx = 0,
+        .elem_idx = 0,
+        .fields_num = 1,
+        .actual_fields = 1,
+        .scratch_idx = 0,
+        .global_subx = 0,
+        .global_suby = 0,
+        .simd_full_vector_store_safe = false,
+    };
+    const Direct = shaderkernels.SpeckleKernel(N, speckleconfig.sampleConfigIndex(
+        buildconfig.enable_all_evaluators,
+        .classified_binned,
+    ));
+    const direct = &pipe.stages[0].shader.shader.speckle;
+    try std.testing.expect(direct.resources.kernel_index != pipe.stages[1].shader.shader.speckle.resources.kernel_index);
+    const weighted_speckles: F = 2.5 + 2 * 4.5;
+    var values: [S]F = @splat(-1);
+    var output = matslice.MatSlice(F).init(&values, 1, S);
+    const hit: K.Hit = .{
+        .weights = .{ 0.5, 0.25, 0.25 },
+        .nodes_inv_z = .{ 1, 1, 1 },
+        .sub_pixel_z = 1,
+        .xi = 0.25,
+        .eta = 0.25,
+    };
+    Direct.shade(.clip_px_leng, ctx, hit.getRasterHit(), &buff.stages[0], direct, &output);
+    try std.testing.expectEqual(@as(F, 2.5), values[0]);
+    K.shade(.clip_px_leng, ctx, hit, &buff, &pipe, &output);
+    try std.testing.expectEqual(weighted_speckles + 4 * (2 * 3.5) + 0.125, values[0]);
+
+    if (comptime buildconfig.config.simd == .on) {
+        @memset(&values, -1);
+        var mask: [S]bool = undefined;
+        for (&mask, 0..) |*lane, index| lane.* = index % 2 == 0;
+        const weights = [N]VecSF{ @splat(0.5), @splat(0.25), @splat(0.25) };
+        const inv_z = [N]VecSF{ @splat(1), @splat(2), @splat(4) };
+        Direct.shadeSIMD(
+            .raster,
+            ctx,
+            mask,
+            weights,
+            @splat(0.25),
+            @splat(0.25),
+            inv_z,
+            @splat(0.5),
+            &buff.stages[0],
+            direct,
+            &output,
+        );
+        for (values, mask) |value, active| {
+            try std.testing.expectEqual(@as(F, if (active) 2.5 else -1), value);
+        }
+        @memset(&values, -1);
+        K.shadeSIMD(
+            .raster,
+            ctx,
+            mask,
+            weights,
+            @splat(0.25),
+            @splat(0.25),
+            inv_z,
+            @splat(0.5),
+            &buff,
+            &pipe,
+            &output,
+        );
+        for (values, mask) |value, active| {
+            try std.testing.expectEqual(if (active) weighted_speckles + 4 * (2 * 4.5) + 0.125 else -1, value);
+        }
+    }
 }

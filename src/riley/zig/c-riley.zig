@@ -1,13 +1,15 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const riley = @import("api.zig");
+const checkSceneCounts = @import("riley.zig").checkSceneCounts;
+const speckleconfig = @import("speckleconfig.zig");
 const maths = riley.maths;
 const ops = riley.ops;
 const dataio = riley.dataio;
@@ -42,6 +44,14 @@ var last_error_buf: [error_buf_len]u8 = [_]u8{0} ** error_buf_len;
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
+
+pub const RILEY_SHADER_SPECKLE: u32 = 8;
+pub const RILEY_SPECKLE_DISK: u32 = 0;
+pub const RILEY_SPECKLE_GAUSSIAN: u32 = 1;
+pub const RILEY_SPECKLE_PERLIN: u32 = 2;
+pub const RILEY_SPECKLE_BITS_NONE: c_int = -1;
+pub const RILEY_SPECKLE_DEFAULT_SEED: u32 = speckleconfig.default_seed;
+pub const RILEY_PERLIN_DEFAULT_TRANSITION_WIDTH: F = speckleconfig.default_perlin_transition_width;
 
 pub const CVec2U32 = extern struct {
     x: u32,
@@ -228,10 +238,28 @@ pub const CFunctionInput = extern struct {
     channels_len: usize,
 };
 
+pub const CSpeckleInput = extern struct {
+    uvs: CArray2DF64,
+    pattern: u32,
+    seed: u32,
+    bits: c_int,
+    coverage: F,
+    radius: F,
+    occupancy: F,
+    jitter: F,
+    edge_softness: F,
+    cell_size: F,
+    threshold: F,
+    transition_width: F,
+    foreground: F,
+    background: F,
+};
+
 pub const CShaderPayload = extern union {
     texture: CTextureInput,
     nodal: CNodalInput,
     func: CFunctionInput,
+    speckle: CSpeckleInput,
 };
 
 pub const CShaderInput = extern struct {
@@ -434,9 +462,8 @@ fn cConstSlice(
     ptr: [*c]const T,
     len: usize,
 ) ![]const T {
-    if (ptr == null and len > 0) {
-        return error.NullPointer;
-    }
+    if (len == 0) return &.{};
+    if (ptr == null) return error.NullPointer;
     return ptr[0..len];
 }
 
@@ -1616,6 +1643,59 @@ fn buildShaderDirectInput(
                 else => return error.InvalidTextureStorage,
             }
         },
+        RILEY_SHADER_SPECKLE => {
+            const speckle = &in_shader.value.speckle;
+            const params: riley.SpeckleParams = switch (speckle.pattern) {
+                RILEY_SPECKLE_DISK => .{ .disk = .{
+                    .coverage = speckle.coverage,
+                    .radius = speckle.radius,
+                    .occupancy = speckle.occupancy,
+                    .jitter = speckle.jitter,
+                    .edge_softness = speckle.edge_softness,
+                    .seed = speckle.seed,
+                    .foreground = speckle.foreground,
+                    .background = speckle.background,
+                } },
+                RILEY_SPECKLE_GAUSSIAN => blk: {
+                    if (speckle.edge_softness != 0) return error.SpeckleEdgeSoftnessRequiresDisk;
+                    break :blk .{ .gaussian = .{
+                        .coverage = speckle.coverage,
+                        .radius = speckle.radius,
+                        .occupancy = speckle.occupancy,
+                        .jitter = speckle.jitter,
+                        .seed = speckle.seed,
+                        .foreground = speckle.foreground,
+                        .background = speckle.background,
+                    } };
+                },
+                RILEY_SPECKLE_PERLIN => .{ .perlin = .{
+                    .cell_size = speckle.cell_size,
+                    .threshold = speckle.threshold,
+                    .transition_width = speckle.transition_width,
+                    .seed = speckle.seed,
+                    .foreground = speckle.foreground,
+                    .background = speckle.background,
+                } },
+                else => return error.InvalidSpecklePattern,
+            };
+            const bits: ?u8 = switch (speckle.bits) {
+                RILEY_SPECKLE_BITS_NONE => null,
+                8, 10, 12, 14, 16 => @intCast(speckle.bits),
+                else => return error.InvalidBits,
+            };
+            if (speckle.uvs.cols_num != 2 or speckle.uvs.rows_num == 0 or
+                speckle.uvs.rows_num > std.math.maxInt(usize) / (2 * @sizeOf(F)))
+                return error.InvalidUVShape;
+
+            return .{ .speckle = .{
+                .uvs = try buildArray2DF64(allocator, &speckle.uvs, 2),
+                .params = params,
+                .output_gain = in_shader.output_gain,
+                .output_offset = in_shader.output_offset,
+                .bits = bits,
+                .scaling = scaling,
+            } };
+        },
         else => return error.InvalidShaderTag,
     }
 }
@@ -1630,6 +1710,7 @@ fn pipeSourceToMono(source: riley.PipeSourceInput) !riley.ShaderMonoInput {
             break :blk .{ .nodal = nodal_shader };
         },
         .func => |func_shader| .{ .func = func_shader },
+        .speckle => |speckle_shader| .{ .speckle = speckle_shader },
         .func_rgb, .func_multi => return error.UnsuppedImageModeFieldCount,
         else => return error.UnsuppedImageModeFieldCount,
     };
@@ -2080,6 +2161,8 @@ fn rasterSceneInternal(
     out_dir_path: ?[*:0]const u8,
     out_image: ?*CImageBuffF64,
 ) !void {
+    try checkSceneCounts(meshes_len, cameras_len);
+
     const mesh_inputs = try buildMeshInputSlice(
         allocator,
         in_meshes,
@@ -2335,6 +2418,10 @@ pub export fn rileyCalcOutputDimsScene(
     out_dims: *CDims5Usize,
 ) c_int {
     clearLastError();
+    checkSceneCounts(meshes_len, cameras_len) catch |err| {
+        setLastError(err);
+        return 1;
+    };
 
     var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
     defer arena.deinit();
@@ -2638,4 +2725,188 @@ pub export fn rileyRaster(
     };
 
     return 0;
+}
+
+test "C render and dimension queries reject empty scenes before decoding descriptors" {
+    const config = std.mem.zeroes(CRasterConfig);
+    const expected_dims = dimsFromArray(.{ 1, 2, 3, 4, 5 });
+    const cases = [_]struct { meshes_len: usize, cameras_len: usize, msg: []const u8 }{
+        .{ .meshes_len = 1, .cameras_len = 0, .msg = "NoCameras" },
+        .{ .meshes_len = 0, .cameras_len = 1, .msg = "NoMeshes" },
+        .{ .meshes_len = 0, .cameras_len = 0, .msg = "NoMeshes" },
+    };
+    for (cases) |case| {
+        var dims = expected_dims;
+        var msg: [error_buf_len]u8 = undefined;
+        try std.testing.expectEqual(1, rileyCalcOutputDimsScene(null, case.meshes_len, null, case.cameras_len, &config, &dims));
+        try std.testing.expectEqualStrings(case.msg, msg[0..rileyGetLastError(&msg, msg.len)]);
+        try std.testing.expectEqualDeep(expected_dims, dims);
+
+        try std.testing.expectEqual(1, rileyRaster(null, case.meshes_len, null, case.cameras_len, &config, null, null));
+        try std.testing.expectEqualStrings(case.msg, msg[0..rileyGetLastError(&msg, msg.len)]);
+    }
+}
+
+test "C dimension query reports invalid pixels without writing output dimensions" {
+    const coords = [_]F{ -0.5, -0.5, 0, 0.5, -0.5, 0, 0, 0.5, 0 };
+    const nodes = [_]usize{ 0, 1, 2 };
+    var shader = std.mem.zeroes(CShaderEntry);
+    shader.value.direct.shader_tag = 3; // Function shader.
+    shader.value.direct.value.func.builtin = @intFromEnum(riley.FuncShaderBuiltin.constant);
+    shader.value.direct.value.func.coord_mode = @intFromEnum(riley.FuncCoordMode.para);
+    var mesh = std.mem.zeroes(CMeshInput);
+    mesh.mesh_type = @intFromEnum(riley.MeshType.tri3);
+    mesh.coords = .{ .elems = &coords, .rows_num = 3, .cols_num = 3 };
+    mesh.connect = .{ .elems = &nodes, .rows_num = 1, .cols_num = 3 };
+    mesh.shaders = &shader;
+    mesh.shaders_len = 1;
+
+    var camera = std.mem.zeroes(CCameraInput);
+    camera.pixels_num = .{ .x = 8, .y = 6 };
+    var cameras = [_]CCameraInput{ camera, camera };
+    cameras[1].pixels_num = .{ .x = 4, .y = 12 };
+    var config = std.mem.zeroes(CRasterConfig);
+    config.validate_input = @intFromEnum(riley.ValidateInput.off);
+    config.save_strategy = @intFromEnum(riley.SaveStrategy.memory);
+    config.oneroot_hull_mode = @intFromEnum(riley.HullMode.on_no_fallback);
+    var dims: CDims5Usize = undefined;
+    try std.testing.expectEqual(0, rileyCalcOutputDimsScene(&mesh, 1, &cameras, cameras.len, &config, &dims));
+    const expected_dims = dimsFromArray(.{ 2, 1, 1, 12, 8 });
+    try std.testing.expectEqualDeep(expected_dims, dims);
+
+    cameras[1].pixels_num.y = 0;
+    try std.testing.expectEqual(1, rileyCalcOutputDimsScene(&mesh, 1, &cameras, cameras.len, &config, &dims));
+    var msg: [error_buf_len]u8 = undefined;
+    try std.testing.expectEqualStrings("InvalidCameraPixels", msg[0..rileyGetLastError(&msg, msg.len)]);
+    try std.testing.expectEqualDeep(expected_dims, dims);
+}
+
+fn testSpeckleDescriptor(uvs: *const [6]F) CShaderInput {
+    return .{
+        .shader_tag = RILEY_SHADER_SPECKLE,
+        .output_gain = 2.5,
+        .output_offset = -0.25,
+        .scaling_tag = 2,
+        .scaling_min = -1,
+        .scaling_max = 3,
+        .value = .{ .speckle = .{
+            .uvs = .{ .elems = uvs, .rows_num = 3, .cols_num = 2 },
+            .pattern = RILEY_SPECKLE_DISK,
+            .seed = 0xBABC_1234,
+            .bits = 12,
+            .coverage = 0.4,
+            .radius = 0.2,
+            .occupancy = 0.9,
+            .jitter = 0.03,
+            .edge_softness = 0.02,
+            .cell_size = 0.17,
+            .threshold = -0.125,
+            .transition_width = 0.09,
+            .foreground = 0.2,
+            .background = 0.85,
+        } },
+    };
+}
+
+test "C speckle descriptor lowers through mono direct and shader pipe" {
+    const uvs = [_]F{ 0, 0, 1, 0, 0, 1 };
+    var shader = testSpeckleDescriptor(&uvs);
+    const channel_register: CRegister = .{ .kind = 0, .index = 0 };
+    var stage = std.mem.zeroes(CPipeStage);
+    stage.shader = &shader;
+    stage.register_dest = channel_register;
+    var pipe = std.mem.zeroes(CPipe);
+    pipe.stages = &stage;
+    pipe.stages_len = 1;
+    pipe.resolver.registers = &channel_register;
+    pipe.resolver.registers_len = 1;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const disk: riley.Disk2DParams = .{
+        .coverage = 0.4,
+        .radius = 0.2,
+        .occupancy = 0.9,
+        .jitter = 0.03,
+        .edge_softness = 0.02,
+        .seed = 0xBABC_1234,
+        .foreground = 0.2,
+        .background = 0.85,
+    };
+    const gaussian: riley.Gaussian2DParams = .{
+        .coverage = 0.4,
+        .radius = 0.2,
+        .occupancy = 0.9,
+        .jitter = 0.03,
+        .seed = 0xBABC_1234,
+        .foreground = 0.2,
+        .background = 0.85,
+    };
+    const patterns = [_]riley.SpeckleParams{
+        .{ .disk = disk },
+        .{ .gaussian = gaussian },
+        .{ .perlin = .{
+            .cell_size = 0.17,
+            .threshold = -0.125,
+            .transition_width = 0.09,
+            .seed = 0xBABC_1234,
+            .foreground = 0.2,
+            .background = 0.85,
+        } },
+    };
+    for (patterns, [3]u32{ RILEY_SPECKLE_DISK, RILEY_SPECKLE_GAUSSIAN, RILEY_SPECKLE_PERLIN }) |params, pattern| {
+        shader.value.speckle.pattern = pattern;
+        shader.value.speckle.edge_softness = if (pattern == RILEY_SPECKLE_GAUSSIAN) 0 else disk.edge_softness;
+        const bits: ?u8 = if (pattern == RILEY_SPECKLE_PERLIN) null else 12;
+        shader.value.speckle.bits = if (bits) |n| n else RILEY_SPECKLE_BITS_NONE;
+        const direct = try pipeSourceToMono(try buildShaderDirectInput(alloc, &shader));
+        const pipe_input = try buildPipeInput(alloc, &pipe);
+        try std.testing.expect(direct == .speckle);
+        try std.testing.expect(pipe_input.stages[0].shader.shader == .speckle);
+        for ([_]riley.SpeckleInput{ direct.speckle, pipe_input.stages[0].shader.shader.speckle }) |speckle| {
+            try std.testing.expectEqualDeep(params, speckle.params);
+            try std.testing.expectEqualSlices(usize, &.{ 3, 2 }, speckle.uvs.dims);
+            try std.testing.expectEqual(@intFromPtr(&uvs), @intFromPtr(speckle.uvs.slice.ptr));
+            try std.testing.expectEqual(bits, speckle.bits);
+            try std.testing.expectEqual(@as(F, 2.5), speckle.output_gain);
+            try std.testing.expectEqual(@as(F, -0.25), speckle.output_offset);
+            try std.testing.expectEqualDeep(riley.ScaleStrategy{ .fixed = .{ -1, 3 } }, speckle.scaling);
+        }
+    }
+}
+
+test "C Gaussian speckle descriptor rejects nonzero edge softness at conversion" {
+    const uvs = [_]F{ 0, 0, 1, 0, 0, 1 };
+    var shader = testSpeckleDescriptor(&uvs);
+    shader.value.speckle.pattern = RILEY_SPECKLE_GAUSSIAN;
+    for ([_]F{ 0.02, -0.02, std.math.nan(F), std.math.inf(F) }) |softness| {
+        shader.value.speckle.edge_softness = softness;
+        try std.testing.expectError(error.SpeckleEdgeSoftnessRequiresDisk, buildShaderDirectInput(std.testing.failing_allocator, &shader));
+    }
+}
+
+test "C speckle descriptor rejects invalid patterns, bit depths, and UV descriptors" {
+    const uvs = [_]F{ 0, 0, 1, 0, 0, 1 };
+    const valid = testSpeckleDescriptor(&uvs);
+    const alloc = std.testing.allocator;
+    var shader = valid;
+    shader.value.speckle.pattern = 3;
+    try std.testing.expectError(error.InvalidSpecklePattern, buildShaderDirectInput(alloc, &shader));
+    for ([_]c_int{ -2, 0, 9, 256 }) |bits| {
+        shader = valid;
+        shader.value.speckle.bits = bits;
+        try std.testing.expectError(error.InvalidBits, buildShaderDirectInput(alloc, &shader));
+    }
+    shader = valid;
+    shader.value.speckle.uvs.cols_num = 3;
+    try std.testing.expectError(error.InvalidUVShape, buildShaderDirectInput(alloc, &shader));
+    shader = valid;
+    for ([_]usize{ 0, std.math.maxInt(usize) }) |rows_num| {
+        shader.value.speckle.uvs.rows_num = rows_num;
+        try std.testing.expectError(error.InvalidUVShape, buildShaderDirectInput(alloc, &shader));
+    }
+    shader = valid;
+    shader.value.speckle.uvs.elems = null;
+    try std.testing.expectError(error.NullPointer, buildShaderDirectInput(alloc, &shader));
 }

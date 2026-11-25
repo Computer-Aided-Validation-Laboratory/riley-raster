@@ -6,12 +6,4 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
-const std = @import("std");
-
-pub const dev_support = struct {
-    pub const diag_badjac = @import("dev_support/diag_badjac.zig");
-};
-
-pub fn main(init: std.process.Init) !void {
-    return dev_support.diag_badjac.main(init);
-}
+pub const main = @import("dev_support/diag_badjac.zig").main;

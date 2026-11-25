@@ -1,5 +1,5 @@
-frameops
----------------
+Frame operations
+================
 
 .. automodule:: riley.python.frameops
    :members:

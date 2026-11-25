@@ -1,7 +1,5 @@
 """Canonical native benchmark targets, installed names and experiment adapters."""
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
 BENCHMARKS = (
     "dicuq",
     "fullraster",
@@ -14,6 +12,8 @@ BENCHMARKS = (
     "multiroot",
     "buffer_psf",
 )
+# This benchmark has its own fresh-process A/B runner, not the CSV harness.
+SPECKLE_BENCHMARK = "speckle_evaluators"
 STUDIES = {
     "dicuq": "study_dicuq.py",
     "dist_psf": "study_dist_psf.py",
@@ -49,7 +49,7 @@ def binary_name(
 ) -> str:
     suffix = "simd" if simd == "on" else "scalar"
     default_lanes = 8 if precision == "f64" else 16
-    width = f"_v{lanes}" if simd == "on" and lanes and lanes != default_lanes else ""
+    width = f"_v{lanes}" if lanes and lanes != default_lanes else ""
     return f"bench_{name}_{precision}_{suffix}{width}"
 
 
@@ -61,6 +61,9 @@ def build_command(
         "--prefix", ".", "-Doptimize=ReleaseFast",
         f"-Dprecision={precision}", f"-Dsimd={simd}",
     ]
+    if name == SPECKLE_BENCHMARK:
+        # The A/B runner requires stripped binaries and its tuning profile uses overrides.
+        command.extend(("-Dstrip=true", "-Denable-all-evaluators=true"))
     if lanes:
         command.append(f"-Dsimd-vector-width={lanes}")
     return command

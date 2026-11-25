@@ -5,10 +5,14 @@ import os
 import shlex
 import subprocess
 import sys
+from bench_common import native_exe, repo_root
 from benchmark_catalog import (
-    BENCHMARKS, STUDIES, EXPERIMENTS, ROOT, binary_name, build_command,
+    BENCHMARKS, STUDIES, EXPERIMENTS, binary_name, build_command,
 )
 from benchmark_runner import run_command
+
+
+ROOT = repo_root()
 
 
 def main(name: str | None = None, argv: list[str] | None = None) -> int:
@@ -83,7 +87,7 @@ def main(name: str | None = None, argv: list[str] | None = None) -> int:
     output = (ROOT / args.out_root / name / stamp).resolve()
     binary = (
         ROOT / args.binary if args.binary
-        else ROOT / "bin" / binary_name(name, args.precision, args.simd, args.lanes)
+        else native_exe(ROOT / "bin" / binary_name(name, args.precision, args.simd, args.lanes))
     )
     runs = args.runs or (1 if args.profile == "smoke" else 5)
     command = [str(binary), "--out-dir", os.path.relpath(output, ROOT), "--runs", str(runs)]

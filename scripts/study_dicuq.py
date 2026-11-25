@@ -15,6 +15,7 @@ from bench_common import build_run_root
 from bench_common import command_path
 from bench_common import default_image_out_dir
 from bench_common import format_duration
+from bench_common import native_exe
 from bench_common import repo_root
 from bench_common import timestamp_string
 from bench_common import write_timing_csv
@@ -516,7 +517,7 @@ def run_case(
     total_cases: int,
 ) -> None:
     output_dir = run_root / str(case["experiment"]) / str(case["case_name"])
-    executable_path = repo_root() / "bin" / catalog_binary_name("dicuq")
+    executable_path = native_exe(repo_root() / "bin" / catalog_binary_name("dicuq"))
     command = [
         str(executable_path),
         "--out-dir",

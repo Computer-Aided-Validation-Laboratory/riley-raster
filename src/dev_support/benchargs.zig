@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
 const cam = @import("../riley/zig/cameraprojops.zig");
@@ -180,7 +180,7 @@ pub fn parseArgsWithDefaults(
                     try parseEnum(cameratypes.SubPixelCenterMap, value);
             } else if (std.mem.eql(u8, arg, "--save-strategy")) {
                 bench_args.save_strategy =
-                    try parseSaveStrategy(value);
+                    try parseEnum(rastcfg.SaveStrategy, value);
             } else if (std.mem.eql(u8, arg, "--disk-save-overlap")) {
                 bench_args.disk_save_overlap = try parseBool(value);
             } else if (std.mem.eql(u8, arg, "--image-out-dir")) {
@@ -278,16 +278,6 @@ fn parseBool(value: []const u8) !bool {
     return error.InvalidBoolValue;
 }
 
-fn parseSaveStrategy(value: []const u8) !rastcfg.SaveStrategy {
-    if (std.mem.eql(u8, value, "memory_direct_write")) return .memory;
-    if (std.mem.eql(u8, value, "memory_per_frame_copy")) return .memory;
-    if (std.mem.eql(u8, value, "memory")) return .memory;
-    if (std.mem.eql(u8, value, "both_direct_write")) return .both;
-    if (std.mem.eql(u8, value, "both_per_frame_copy")) return .both;
-    if (std.mem.eql(u8, value, "both")) return .both;
-    return parseEnum(rastcfg.SaveStrategy, value);
-}
-
 fn argToSlice(arg: anytype) []const u8 {
     return switch (@typeInfo(@TypeOf(arg))) {
         .pointer => |pointer_info| switch (pointer_info.size) {
@@ -342,7 +332,7 @@ test "parse bench args named options" {
         "--subpixel-center-map",
         "per_tile",
         "--save-strategy",
-        "memory",
+        "both",
         "--sample",
         "linear",
         "--sample-mode",
@@ -402,7 +392,7 @@ test "parse bench args named options" {
         bench_args.subpixel_center_map,
     );
     try std.testing.expectEqual(
-        rastcfg.SaveStrategy.memory,
+        rastcfg.SaveStrategy.both,
         bench_args.save_strategy,
     );
     try std.testing.expectEqual(
@@ -429,6 +419,22 @@ test "parse bench args named options" {
     try std.testing.expectEqual([2]u32{ 1024, 768 }, bench_args.pixels_num);
     try std.testing.expectEqual(@as(u8, 4), bench_args.sub_sample);
     try std.testing.expectEqual(@as(usize, 7), bench_args.runs);
+}
+
+test "parse bench args rejects obsolete save strategies" {
+    const obsolete_names = [_][]const u8{
+        "memory_direct_write",
+        "memory_per_frame_copy",
+        "both_direct_write",
+        "both_per_frame_copy",
+    };
+    for (obsolete_names) |name| {
+        const args = [_][]const u8{ "bench_geom", "--save-strategy", name };
+        try std.testing.expectError(
+            error.InvalidEnumValue,
+            parseArgs(args[0..], "out/geom", rastcfg.RasterConfig{}),
+        );
+    }
 }
 
 test "parse bench args legacy thread positional" {

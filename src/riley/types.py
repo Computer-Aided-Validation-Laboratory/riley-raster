@@ -8,6 +8,9 @@ from numbers import Integral
 from typing import Any
 import numpy as np
 
+from riley import _speckle_defaults
+
+
 class EPolyMode(IntEnum):
     coordinate = 0
     displacement = 1
@@ -238,6 +241,7 @@ class ShaderType(IntEnum):
     nodal_rgb = 5
     func_multi = 6
     tex_multi = 7
+    speckle = 8
 
 
 class TextureStorage(IntEnum):
@@ -308,6 +312,7 @@ class FuncShaderBuiltin(IntEnum):
     checker_smooth = 6
     lambertian_normal_z = 7
     eggbox = 8
+
 
 
 class FuncCoordMode(IntEnum):
@@ -434,6 +439,54 @@ class FunctionMultiShader:
     uvs: np.ndarray | None = None
 
 
+@dataclass(slots=True, kw_only=True)
+class _Speckle2DParams:
+    seed: int = _speckle_defaults.RILEY_SPECKLE_DEFAULT_SEED
+    foreground: float = 0.0
+    background: float = 1.0
+
+
+@dataclass(slots=True, kw_only=True)
+class _Dot2DParams(_Speckle2DParams):
+    coverage: float
+    radius: float
+    occupancy: float = 1.0
+    jitter: float = 0.0
+
+
+@dataclass(slots=True, kw_only=True)
+class Disk2DParams(_Dot2DParams):
+    edge_softness: float = 0.0
+
+
+@dataclass(slots=True, kw_only=True)
+class Gaussian2DParams(_Dot2DParams):
+    pass
+
+
+@dataclass(slots=True, kw_only=True)
+class Perlin2DParams(_Speckle2DParams):
+    cell_size: float
+    threshold: float = 0.0
+    transition_width: float = _speckle_defaults.RILEY_PERLIN_DEFAULT_TRANSITION_WIDTH
+
+
+@dataclass(slots=True)
+class SpeckleShader:
+    uvs: np.ndarray
+    params: Disk2DParams | Gaussian2DParams | Perlin2DParams
+    bits: int | None = 8
+    output_gain: float = 1.0
+    output_offset: float = 0.0
+    scaling_type: ScaleStrategy = ScaleStrategy.none
+    scaling_min: float = 0.0
+    scaling_max: float = 0.0
+
+
+RileyShader = TextureShader | NodalShader | FunctionShader | FunctionMultiShader | SpeckleShader
+Shader = RileyShader
+
+
 class RegisterKind(IntEnum):
     channel = 0
     field = 1
@@ -497,7 +550,7 @@ class ShaderResolver:
 
 @dataclass(slots=True)
 class ShaderSource:
-    shader: TextureShader | NodalShader | FunctionShader | FunctionMultiShader
+    shader: RileyShader
     register_dest: Register
 
 
@@ -558,12 +611,7 @@ class ShaderPipe:
         Blend | Normalise, ...
     ]
     resolver: ShaderResolver
-    channels: int = 0
     constants: tuple[float, ...] = ()
-
-
-RileyShader = TextureShader | NodalShader | FunctionShader | FunctionMultiShader
-Shader = RileyShader
 
 
 @dataclass(slots=True)
@@ -583,7 +631,13 @@ class MeshShaderSet:
             source = getattr(self, role)
             if source is None or isinstance(source, ShaderPipe):
                 continue
-            if role == "rgb":
+            if isinstance(source, SpeckleShader):
+                if role == "rgb":
+                    raise ValueError(
+                        "SpeckleShader produces one channel; use an explicit ShaderPipe for RGB."
+                    )
+                count = 1
+            elif role == "rgb":
                 count = 3
             elif isinstance(source, NodalShader):
                 count = 1 if source.field.ndim == 2 else source.field.shape[2]

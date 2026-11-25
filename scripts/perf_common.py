@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from bench_common import command_path, native_exe, repo_root
 from benchmark_catalog import binary_name as catalog_binary_name
 
 import csv
@@ -180,18 +181,6 @@ REFERENCE_ROOTS: Final[dict[str, pathlib.Path]] = {
 }
 
 
-def repo_root() -> pathlib.Path:
-    return pathlib.Path(__file__).resolve().parent.parent
-
-
-def command_path(path: pathlib.Path) -> str:
-    path_abs = path.resolve()
-    root_abs = repo_root().resolve()
-    try:
-        return str(path_abs.relative_to(root_abs))
-    except ValueError:
-        return str(path_abs)
-
 
 def python_path() -> pathlib.Path:
     venv_python = repo_root() / ".venv" / "bin" / "python"
@@ -236,7 +225,7 @@ def expand_profile_names(profile_name: str) -> tuple[str, ...]:
 
 
 def binary_path(case: PerfCase) -> pathlib.Path:
-    path = repo_root() / "bin" / case.binary_name
+    path = native_exe(repo_root() / "bin" / case.binary_name)
     if not path.exists():
         raise SystemExit(
             "Missing benchmark binary "

@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const demo_common = @import("demo_common.zig");
 
@@ -523,8 +523,8 @@ pub fn main(init: std.process.Init) !void {
     // -------------------------------------------------------------------------
     // Clean output root and render all combinations
     // -------------------------------------------------------------------------
-    var output_root = try demo_common.resetOutputDir(io, out_dir_root);
-    defer output_root.close(io);
+    const output_root = try demo_common.resetOutputDir(io, out_dir_root);
+    output_root.close(io);
 
     try renderCase(
         u8,

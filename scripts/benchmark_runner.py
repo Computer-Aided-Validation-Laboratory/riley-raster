@@ -5,7 +5,10 @@ import shlex
 import subprocess
 import time
 
-from benchmark_catalog import ROOT
+from bench_common import repo_root
+
+
+ROOT = repo_root()
 
 
 def run_command(

@@ -10,6 +10,8 @@ import sys
 
 import numpy as np
 
+from bench_common import repo_root
+
 
 FRAME_RE = re.compile(r"cam\d+_frame(\d+)_field\d+_stats\.csv$")
 
@@ -22,10 +24,6 @@ GAUSS_POINTS = np.array(
     dtype=float,
 )
 GAUSS_WEIGHTS = np.array([5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0], dtype=float)
-
-
-def repo_root() -> pathlib.Path:
-    return pathlib.Path(__file__).resolve().parent.parent
 
 
 def parse_args() -> argparse.Namespace:

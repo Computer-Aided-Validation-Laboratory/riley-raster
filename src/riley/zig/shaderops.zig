@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 const shadertypes = @import("shadertypes.zig");
@@ -63,6 +63,7 @@ pub fn monoToPipeSource(mono: shadertypes.ShaderMonoInput) shadertypes.PipeSourc
         .tex_f => |t| .{ .tex_f = t },
         .nodal => |n| .{ .nodal = n },
         .func => |f| .{ .func = f },
+        .speckle => |s| .{ .speckle = s },
     };
 }
 
@@ -73,6 +74,7 @@ pub fn pipeSourceToMono(source: shadertypes.PipeSourceInput) !shadertypes.Shader
         .tex_f => |t| .{ .tex_f = t },
         .nodal => |n| .{ .nodal = n },
         .func => |f| .{ .func = f },
+        .speckle => |s| .{ .speckle = s },
         .func_rgb => error.DirectMonoFuncRequiresMono,
         .func_multi => error.DirectMonoFuncRequiresMono,
         else => error.DirectMonoShaderExpectedMono,

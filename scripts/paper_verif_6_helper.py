@@ -9,6 +9,8 @@ import re
 
 import numpy as np
 
+from bench_common import repo_root
+
 
 FRAME_RE = re.compile(r"cam\d+_frame(\d+)_field\d+_stats\.csv$")
 CASE_RE = re.compile(
@@ -25,10 +27,6 @@ GAUSS_POINTS = np.array(
 GAUSS_WEIGHTS = np.array([5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0], dtype=float)
 DEFAULT_EDGE_SEGMENTS_SENSOR_MULT = 4
 MIN_EDGE_SEGMENTS = 4096
-
-
-def repo_root() -> pathlib.Path:
-    return pathlib.Path(__file__).resolve().parent.parent
 
 
 def parse_args() -> argparse.Namespace:

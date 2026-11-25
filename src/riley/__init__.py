@@ -1,11 +1,11 @@
-# --------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Riley: A High Performance Rasteriser for DIC UQ
 #
-# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 # Licensed under the MIT License (see LICENSE file for details)
 #
-# Authors: scepticalrabbit (Lloyd Fletcher)
-# --------------------------------------------------------------------------
+# Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+# --------------------------------------------------------------------------------------
 import os
 import platform
 from pathlib import Path
@@ -61,6 +61,10 @@ from riley.types import (
     FunctionShader,
     FunctionChannel,
     FunctionMultiShader,
+    Disk2DParams,
+    Gaussian2DParams,
+    Perlin2DParams,
+    SpeckleShader,
     RegisterKind,
     ResolverKind,
     ResolverOpKind,
@@ -197,6 +201,7 @@ __all__ = [
     "EPolyMode",
     "CameraCoordSys",
     "ConnectConvention",
+    "Disk2DParams",
     "ECalTargetMotionSampling",
     "EConnectAxis",
     "EElemType",
@@ -217,6 +222,7 @@ __all__ = [
     "FunctionShader",
     "FunctionChannel",
     "FunctionMultiShader",
+    "Gaussian2DParams",
     "HullMode",
     "ImageFormat",
     "ImageSaveOpts",
@@ -234,6 +240,7 @@ __all__ = [
     "NewtonSeedReuse",
     "NodalShader",
     "NormalType",
+    "Perlin2DParams",
     "PsfType",
     "RasterConfig",
     "RenderFormat",
@@ -249,6 +256,7 @@ __all__ = [
     "SceneGridSpec",
     "SceneMeshGroup",
     "Shader",
+    "SpeckleShader",
     "SubPixelCenterMap",
     "TextureSample",
     "TextureSampleMode",

@@ -1,7 +1,15 @@
+# --------------------------------------------------------------------------------------
+# Riley: A High Performance Rasteriser for DIC UQ
+#
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
+# Licensed under the MIT License (see LICENSE file for details)
+#
+# Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+# --------------------------------------------------------------------------------------
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +26,7 @@ from riley.types import (
     NormalType,
     NodalShader,
     RileyShader,
+    SpeckleShader,
     TextureShader,
 )
 from riley.python.meshconst import (
@@ -325,6 +334,11 @@ def _prepare_shader(
                 scaling_max=shader.scaling_max,
             )
 
+        case SpeckleShader():
+            return replace(
+                shader, uvs=_prepare_uvs(shader.uvs, nodes_num, source_node_idxs),
+            )
+
         case NodalShader():
             values = np.asarray(shader.field)
 
@@ -513,7 +527,6 @@ def _prepare_shader_set(
                     for stage in entry.stages
                 ),
                 resolver=entry.resolver,
-                channels=entry.channels,
                 constants=entry.constants,
             )
         return _prepare_shader(entry, nodes_num, source_node_idxs)

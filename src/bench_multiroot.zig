@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const cameratypes = @import("riley/zig/cameratypes.zig");
 const meshtypes = @import("riley/zig/meshtypes.zig");
@@ -384,7 +384,7 @@ fn makeMesh(
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
-    const args = try parseArgs(init.minimal.args.vector);
+    const args = try parseArgs(try init.minimal.args.toSlice(init.arena.allocator()));
     var threaded_io = riley.getThreadedIo(
         outer_alloc,
         init.minimal,

@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const matslice = @import("matslice.zig");
 const geometrykernels = @import("geometrykernels.zig");
@@ -14,6 +14,8 @@ const F = buildconfig.F;
 const max_channels = buildconfig.config.max_image_channels;
 const shaderkernels_common = @import("shaderkernels_common.zig");
 const meshhit = @import("meshhit.zig");
+const shaderfill_scalar = @import("shaderfill_scalar.zig");
+const speckleops = @import("speckleops.zig");
 
 // --------------------------------------------------------------------------------------
 // Nodal Interp Shader
@@ -144,6 +146,31 @@ pub fn FuncKernel(
                 shader_buf,
                 shader,
                 spx_image_scratch,
+            );
+        }
+    };
+}
+
+pub fn SpeckleKernel(comptime N: usize, comptime kernel_index: usize) type {
+    return struct {
+        pub const LocalBuff = shadertypes.LocalShaderBuff(N);
+        pub const Hit = meshhit.RasterHit(N);
+
+        pub inline fn shade(
+            comptime coord_space: geometrykernels.CoordSpace,
+            ctx: shadertypes.ShadeContext,
+            interp: Hit,
+            buf: *const LocalBuff,
+            shader: *const shadertypes.SpecklePrepared,
+            scratch: *matslice.MatSlice(F),
+        ) void {
+            scratch.slice[ctx.scratch_idx] = shaderfill_scalar.evalSpeckleScal(
+                N,
+                coord_space,
+                interp,
+                buf,
+                shader,
+                speckleops.Kernel(kernel_index).sampleScal,
             );
         }
     };

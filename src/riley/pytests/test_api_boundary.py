@@ -89,6 +89,35 @@ def test_console_and_performance_reporting_are_independent(performance, console,
     assert image[0, 0, 0, 16, 16] == 0.25
 
 
+@pytest.mark.parametrize("validate_input", (riley.ValidateInput.fast, riley.ValidateInput.off))
+@pytest.mark.parametrize("save_strategy", (riley.SaveStrategy.memory, riley.SaveStrategy.none))
+@pytest.mark.parametrize("has_meshes, has_cameras, error", (
+    (True, False, "NoCameras"),
+    (False, True, "NoMeshes"),
+    (False, False, "NoMeshes"),
+))
+def test_empty_scene_fails_at_the_native_boundary(
+    has_meshes, has_cameras, error, save_strategy, validate_input,
+) -> None:
+    mesh, camera, config = scene()
+    config.validate_input = validate_input
+    config.save_strategy = save_strategy
+    with pytest.raises(RuntimeError, match=f"^{error}$"):
+        riley.raster([mesh] if has_meshes else [], [camera] if has_cameras else [], config)
+
+
+@pytest.mark.parametrize("pixels_num", ((0, 32), (32, 0)))
+@pytest.mark.parametrize("validate_input", (riley.ValidateInput.fast, riley.ValidateInput.off))
+@pytest.mark.parametrize("valid_camera_first", (False, True))
+def test_zero_camera_pixels_are_rejected(pixels_num, validate_input, valid_camera_first) -> None:
+    mesh, camera, config = scene()
+    cameras = [scene()[1], camera] if valid_camera_first else [camera]
+    camera.pixels_num = pixels_num
+    config.validate_input = validate_input
+    with pytest.raises(RuntimeError, match="^InvalidCameraPixels$"):
+        riley.raster(mesh, cameras, config)
+
+
 def test_empty_coordinates_fail_at_the_native_boundary() -> None:
     coords = np.empty((0, 3), dtype=np.float64)
     with pytest.raises(RuntimeError, match="InvalidCoordsShape"):

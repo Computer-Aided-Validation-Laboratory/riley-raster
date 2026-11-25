@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 
@@ -21,8 +21,7 @@ const clibtiff = @import("clibtiff.zig");
 const imageops = @import("imageops.zig");
 const csvio = @import("csvio.zig");
 
-const temp_test_root_dir = "temp-tests";
-const temp_test_dir = "temp-tests/imageio";
+const bmp_header_size: u32 = 14 + 40;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -407,6 +406,13 @@ fn saveBMP(
     opts: ImageSaveOpts,
     channels_requested: usize,
 ) !void {
+    const bits = opts.file_bits orelse 8;
+    const is_16bit = (bits == 16);
+    const bpp: u16 = if (is_16bit) 48 else 24;
+    const rows = image_arr.dims[1];
+    const cols = image_arr.dims[2];
+    const data_size = try bmpDataSize(cols, rows, bits);
+
     const file = try out_dir.createFile(io, file_name, .{});
     defer file.close(io);
 
@@ -414,28 +420,18 @@ fn saveBMP(
     var file_writer = file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    const bits = opts.file_bits orelse 8;
-    const is_16bit = (bits == 16);
-    const bpp: u16 = if (is_16bit) 48 else 24;
-
-    const rows = image_arr.dims[1];
-    const cols = image_arr.dims[2];
-
     const width = @as(u32, @intCast(cols));
     const height = @as(u32, @intCast(rows));
     const bytes_per_px: u32 = if (is_16bit) 6 else 3;
     const row_padding = (4 - (width * bytes_per_px) % 4) % 4;
-    const row_size = width * bytes_per_px + row_padding;
-    const data_size = row_size * height;
-    const header_size: u32 = 14 + 40;
-    const file_size = header_size + data_size;
+    const file_size = bmp_header_size + data_size;
 
     // Bitmap File Header (14 bytes)
     try writer.writeAll("BM");
     try writer.writeInt(u32, file_size, .little);
     try writer.writeInt(u16, 0, .little);
     try writer.writeInt(u16, 0, .little);
-    try writer.writeInt(u32, header_size, .little);
+    try writer.writeInt(u32, bmp_header_size, .little);
 
     // DIB Header (BITMAPINFOHEADER - 40 bytes)
     try writer.writeInt(u32, 40, .little);
@@ -484,6 +480,18 @@ fn saveBMP(
         for (0..row_padding) |_| try writer.writeByte(0);
     }
     try writer.flush();
+}
+
+/// Return the padded pixel-data size if the dimensions and file size fit the BMP header.
+pub fn bmpDataSize(cols: usize, rows: usize, bits: u8) error{ImageTooLarge}!u32 {
+    const max_dim: usize = std.math.maxInt(i32);
+    if (cols > max_dim or rows > max_dim) return error.ImageTooLarge;
+    const bytes_per_px: u32 = if (bits == 16) 6 else 3;
+    const row_bytes = std.math.mul(u32, @intCast(cols), bytes_per_px) catch return error.ImageTooLarge;
+    const row_size = (std.math.add(u32, row_bytes, 3) catch return error.ImageTooLarge) & ~@as(u32, 3);
+    const data_size = std.math.mul(u32, row_size, @intCast(rows)) catch return error.ImageTooLarge;
+    _ = std.math.add(u32, bmp_header_size, data_size) catch return error.ImageTooLarge;
+    return data_size;
 }
 
 fn saveTIFF(
@@ -1185,28 +1193,11 @@ fn digitise(value: F, opts: ImageSaveOpts, params: imageops.ScalingParams) u16 {
 
 const frac_tol: F = if (F == f32) 1e-2 else 1e-6;
 
-fn ensureTempTestDir(io: std.Io) !void {
-    const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, temp_test_root_dir, .default_dir) catch |err| {
-        if (err != error.PathAlreadyExists) return err;
-    };
-    cwd.createDir(io, temp_test_dir, .default_dir) catch |err| {
-        if (err != error.PathAlreadyExists) return err;
-    };
-}
-
-fn deleteTempTestDir(io: std.Io) void {
-    const cwd = std.Io.Dir.cwd();
-    cwd.deleteTree(io, temp_test_root_dir) catch {};
-}
-
 test "Verify hand-written TIFF loader" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
-    const cwd = std.Io.Dir.cwd();
-    try ensureTempTestDir(io);
-    defer deleteTempTestDir(io);
-    const out_dir = cwd;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
     const rows_num = 19;
     const cols_num = 23;
     const mat_size = rows_num * cols_num;
@@ -1223,18 +1214,20 @@ test "Verify hand-written TIFF loader" {
 
     try saveMatAsImage(
         io,
-        out_dir,
-        temp_test_dir ++ "/speckle_mono",
+        tmp.dir,
+        "speckle_mono",
         &mat,
         .{ .format = .tiff, .file_bits = 8, .scaling = .none },
     );
 
+    const path = try tmp.dir.realPathFileAlloc(io, "speckle_mono.tiff", allocator);
+    defer allocator.free(path);
     var tex_zig = try loadImage(
         u8,
         1,
         allocator,
         io,
-        temp_test_dir ++ "/speckle_mono.tiff",
+        path,
         .tiff,
     );
     defer tex_zig.deinit(allocator);
@@ -1254,10 +1247,8 @@ test "Verify hand-written TIFF loader" {
 test "Save and Load All Formats 8-bit and 16-bit" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
-    const cwd = std.Io.Dir.cwd();
-    try ensureTempTestDir(io);
-    defer deleteTempTestDir(io);
-    const out_dir = cwd;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
 
     const rows = 4;
     const cols = 4;
@@ -1278,7 +1269,7 @@ test "Save and Load All Formats 8-bit and 16-bit" {
         for (bit_depths) |bits| {
             const base_name = try std.fmt.allocPrint(
                 allocator,
-                temp_test_dir ++ "/test_io_{s}_{d}bit",
+                "test_io_{s}_{d}bit",
                 .{ @tagName(fmt), bits },
             );
             defer allocator.free(base_name);
@@ -1286,7 +1277,7 @@ test "Save and Load All Formats 8-bit and 16-bit" {
             // 1. Save with auto-scaling
             try saveMatAsImage(
                 io,
-                out_dir,
+                tmp.dir,
                 base_name,
                 &mat,
                 .{ .format = fmt, .file_bits = bits, .scaling = .auto },
@@ -1300,11 +1291,13 @@ test "Save and Load All Formats 8-bit and 16-bit" {
                 .bmp => ".bmp",
                 .tiff => ".tiff",
             };
-            const full_path = try std.fmt.bufPrint(
+            const file_name = try std.fmt.bufPrint(
                 ext_buff[0..],
                 "{s}{s}",
                 .{ base_name, ext },
             );
+            const full_path = try tmp.dir.realPathFileAlloc(io, file_name, allocator);
+            defer allocator.free(full_path);
 
             // 2. Load back into u8 or u16
             if (bits == 8) {
@@ -1339,18 +1332,20 @@ test "Save and Load All Formats 8-bit and 16-bit" {
 test "TIFF ADC packing and range scaling" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
-    try ensureTempTestDir(io);
-    defer deleteTempTestDir(io);
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
     const samples = [_]F{ 0, 63.75, 127.5, 191.25, 255, 300 };
     const mat = matslice.MatSlice(F).init(@constCast(&samples), 2, 3);
-    try saveMatAsImage(io, std.Io.Dir.cwd(), temp_test_dir ++ "/dic_grid", &mat, .{
+    try saveMatAsImage(io, tmp.dir, "dic_grid", &mat, .{
         .format = .tiff,
         .file_bits = 16,
         .adc_bits = 12,
         .scaling = .{ .fixed = .{ 0, 255 } },
         .packing = .upper,
     });
-    var dic = try loadImage(u16, 1, allocator, io, temp_test_dir ++ "/dic_grid.tiff", .tiff);
+    const dic_path = try tmp.dir.realPathFileAlloc(io, "dic_grid.tiff", allocator);
+    defer allocator.free(dic_path);
+    var dic = try loadImage(u16, 1, allocator, io, dic_path, .tiff);
     defer dic.deinit(allocator);
     const expected_dic = [_]u16{ 0, 16384, 32768, 49136, 65520, 65520 };
     for (dic.array.slice, expected_dic) |actual, expected| {
@@ -1362,12 +1357,14 @@ test "TIFF ADC packing and range scaling" {
 
     const temperatures = [_]F{ 0, 25, 50, 100, 200, 250 };
     const thermal = matslice.MatSlice(F).init(@constCast(&temperatures), 2, 3);
-    try saveMatAsImage(io, std.Io.Dir.cwd(), temp_test_dir ++ "/ir_linear", &thermal, .{
+    try saveMatAsImage(io, tmp.dir, "ir_linear", &thermal, .{
         .format = .tiff,
         .file_bits = 16,
         .scaling = .{ .fixed = .{ 0, 250 } },
     });
-    var ir = try loadImage(u16, 1, allocator, io, temp_test_dir ++ "/ir_linear.tiff", .tiff);
+    const ir_path = try tmp.dir.realPathFileAlloc(io, "ir_linear.tiff", allocator);
+    defer allocator.free(ir_path);
+    var ir = try loadImage(u16, 1, allocator, io, ir_path, .tiff);
     defer ir.deinit(allocator);
     for (ir.array.slice, temperatures) |code, celsius| {
         const expected_celsius = @as(F, @floatFromInt(code)) * 250 / 65535;
@@ -1378,9 +1375,8 @@ test "TIFF ADC packing and range scaling" {
 test "Scaling Strategy: Fractional" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
-    const cwd = std.Io.Dir.cwd();
-    try ensureTempTestDir(io);
-    defer deleteTempTestDir(io);
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
 
     const rows = 2;
     const cols = 2;
@@ -1399,14 +1395,16 @@ test "Scaling Strategy: Fractional" {
         .file_bits = null,
         .scaling = .{ .frac = .{ 0.4, 0.6 } },
     };
-    try saveMatAsImage(io, cwd, temp_test_dir ++ "/test_frac_float", &mat, opts1);
+    try saveMatAsImage(io, tmp.dir, "test_frac_float", &mat, opts1);
+    const float_path = try tmp.dir.realPathFileAlloc(io, "test_frac_float.csv", allocator);
+    defer allocator.free(float_path);
 
     var loaded1 = try loadImage(
         F,
         1,
         allocator,
         io,
-        temp_test_dir ++ "/test_frac_float.csv",
+        float_path,
         .csv,
     );
     defer loaded1.deinit(allocator);
@@ -1421,14 +1419,16 @@ test "Scaling Strategy: Fractional" {
         .file_bits = 8,
         .scaling = .{ .frac = .{ 0.4, 0.6 } },
     };
-    try saveMatAsImage(io, cwd, temp_test_dir ++ "/test_frac_bits", &mat, opts2);
+    try saveMatAsImage(io, tmp.dir, "test_frac_bits", &mat, opts2);
+    const bits_path = try tmp.dir.realPathFileAlloc(io, "test_frac_bits.csv", allocator);
+    defer allocator.free(bits_path);
 
     var loaded2 = try loadImage(
         F,
         1,
         allocator,
         io,
-        temp_test_dir ++ "/test_frac_bits.csv",
+        bits_path,
         .csv,
     );
     defer loaded2.deinit(allocator);
@@ -1457,7 +1457,8 @@ test "Scaling Strategy: Fractional" {
 test "FIMG Save and Load Roundtrip" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;
-    const cwd = std.Io.Dir.cwd();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
 
     const width: usize = 4;
     const height: usize = 3;
@@ -1479,9 +1480,7 @@ test "FIMG Save and Load Roundtrip" {
         }
     }
 
-    try ensureTempTestDir(io);
-    defer deleteTempTestDir(io);
-    const file_base = temp_test_dir ++ "/test_roundtrip";
+    const file_base = "test_roundtrip";
     const file_full = file_base ++ ".fimg";
 
     var dims = [_]usize{ channels, height, width };
@@ -1496,9 +1495,11 @@ test "FIMG Save and Load Roundtrip" {
         .format = .fimg,
     };
 
-    try saveImage(io, cwd, file_base, &arr, 0, opts, channels);
+    try saveImage(io, tmp.dir, file_base, &arr, 0, opts, channels);
+    const path = try tmp.dir.realPathFileAlloc(io, file_full, allocator);
+    defer allocator.free(path);
 
-    var loaded = try loadImage(F, channels, allocator, io, file_full, .fimg);
+    var loaded = try loadImage(F, channels, allocator, io, path, .fimg);
     defer loaded.deinit(allocator);
 
     try std.testing.expectEqual(loaded.rows_num, height);
@@ -1513,6 +1514,29 @@ test "FIMG Save and Load Roundtrip" {
             }
         }
     }
+}
+
+test "BMP data size includes row padding and rejects header overflow" {
+    try std.testing.expectEqual(@as(u32, 4), try bmpDataSize(1, 1, 8));
+    try std.testing.expectEqual(@as(u32, 8), try bmpDataSize(1, 1, 16));
+    const max_rows = (std.math.maxInt(u32) - bmp_header_size) / 4;
+    try std.testing.expectEqual(max_rows * 4, try bmpDataSize(1, max_rows, 8));
+    try std.testing.expectError(error.ImageTooLarge, bmpDataSize(1, max_rows + 1, 8));
+    try std.testing.expectError(error.ImageTooLarge, bmpDataSize(40_000, 40_000, 8));
+    try std.testing.expectError(error.ImageTooLarge, bmpDataSize(@as(usize, std.math.maxInt(i32)) + 1, 1, 8));
+}
+
+test "oversized BMP does not create an output file" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var dims = [_]usize{ 1, 40_000, 40_000 };
+    const image = ndarray.NDArray(F){ .dims = &dims, .slice = &.{}, .strides = &.{} };
+    try std.testing.expectError(
+        error.ImageTooLarge,
+        saveImage(io, tmp.dir, "oversized", &image, 0, .{ .format = .bmp }, 1),
+    );
+    try std.testing.expectError(error.FileNotFound, tmp.dir.access(io, "oversized.bmp", .{}));
 }
 
 test "output name format expands fields and zero padding" {

@@ -34,8 +34,9 @@ dependencies = [
 dev = [
   "build",
   "twine",
-  "ziglang",
+  "ziglang==0.16.0",
   "cython",
+  "opencv-python-headless",
 ]
 docs = [
   "sphinx>=8.0.0",

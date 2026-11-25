@@ -1,14 +1,15 @@
-# --------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Riley: A High Performance Rasteriser for DIC UQ
 #
-# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 # Licensed under the MIT License (see LICENSE file for details)
 #
-# Authors: scepticalrabbit (Lloyd Fletcher)
-# --------------------------------------------------------------------------
+# Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+# --------------------------------------------------------------------------------------
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import platform
 import shutil
@@ -21,6 +22,13 @@ from time import perf_counter
 import numpy as np
 import pytest
 from PIL import Image
+
+from riley._zig_toolchain import (
+    REQUIRED_ZIG_VERSION,
+    ZigUnavailableError,
+    get_windows_target_triple,
+    select_zig_runner,
+)
 
 PROJECT_ROOT = Path.cwd()
 PYTHON_EXE = Path(sys.executable)
@@ -36,10 +44,24 @@ STANDARD_DEMO_CASES = (
         None,
     ),
     (
+        "procedural_quickstart",
+        [str(PYTHON_EXE), "-m", "riley", "demo00b_procedural_quickstart"],
+        "out/demo00b_procedural_quickstart",
+        "out_riley_py/demo00b_procedural_quickstart",
+        None,
+    ),
+    (
         "sphere",
         [str(PYTHON_EXE), "-m", "riley", "demo01_sphere"],
         "out/demo01_sphere",
         "out_riley_py/demo01_sphere",
+        None,
+    ),
+    (
+        "procedural_sphere",
+        [str(PYTHON_EXE), "-m", "riley", "demo01b_procedural_sphere"],
+        "out/demo01b_procedural_sphere",
+        "out_riley_py/demo01b_procedural_sphere",
         None,
     ),
     (
@@ -61,6 +83,13 @@ STANDARD_DEMO_CASES = (
         [str(PYTHON_EXE), "-m", "riley", "demo02c_rabbits_fields"],
         "out/demo02c_rabbits_fields",
         "out_riley_py/demo02c_rabbits_fields",
+        None,
+    ),
+    (
+        "rabbit_procedural",
+        [str(PYTHON_EXE), "-m", "riley", "demo02d_rabbit_procedural"],
+        "out/demo02d_rabbit_procedural",
+        "out_riley_py/demo02d_rabbit_procedural",
         None,
     ),
     (
@@ -139,6 +168,14 @@ CALIBRATION_DEMO_CASE = (
 ALL_DEMO_CASES = (*STANDARD_DEMO_CASES, EXODUS_DEMO_CASE)
 DEMO_CASES = ALL_DEMO_CASES
 
+_PROCEDURAL_DEMO_RENDERS = {
+    "demo00b_procedural_quickstart": {Path("disk.bmp")},
+    "demo01b_procedural_sphere": {
+        Path(f"cam0_frame{frame}_field0.bmp") for frame in range(3)
+    },
+    "demo02d_rabbit_procedural": {Path("cam0_frame0_field0.bmp")},
+}
+
 
 def test_raster_config_exposes_global_subpixel_sizing() -> None:
     """Python callers can tune both global accumulation tile dimensions."""
@@ -167,29 +204,13 @@ def _repo_assets_available() -> bool:
     return all(path.exists() for path in required_paths)
 
 
-def _has_zig_compiler() -> bool:
-    if shutil.which("zig") or shutil.which("zig.exe"):
-        return True
-    return find_spec("ziglang") is not None
-
-
-def _get_zig_run_cmd() -> list[str]:
-    zig_bin = shutil.which("zig") or shutil.which("zig.exe")
-    base_cmd = [zig_bin] if zig_bin else [str(PYTHON_EXE), "-m", "ziglang"]
-    cmd = list(base_cmd)
-    cmd.extend([
-        "build", "run-all-demos", "-Doptimize=ReleaseFast",
-        "-Dprecision=f64", "-Dsimd=on",
-    ])
+def _get_zig_run_cmd(zig_runner: list[str], *targets: str) -> list[str]:
+    cmd = [
+        *zig_runner, "build", *(targets or ("run-all-demos",)),
+        "-Doptimize=ReleaseFast", "-Dprecision=f64", "-Dsimd=on",
+    ]
     if platform.system().lower() == "windows":
-        arch = platform.machine().lower()
-        if arch in ("amd64", "x86_64"):
-            target_triple = "x86_64-windows-msvc"
-        elif arch in ("arm64", "aarch64"):
-            target_triple = "aarch64-windows-msvc"
-        else:
-            target_triple = "i386-windows-msvc"
-        cmd.append(f"-Dtarget={target_triple}")
+        cmd.append(f"-Dtarget={get_windows_target_triple()}")
     return cmd
 
 
@@ -197,7 +218,7 @@ def _render_paths(dir_path: Path) -> list[Path]:
     return sorted(
         path
         for path in dir_path.rglob("*")
-        if path.suffix.lower() in (".bmp", ".tif", ".tiff")
+        if path.suffix.lower() in (".bmp", ".tif", ".tiff") and path.is_file()
     )
 
 
@@ -239,13 +260,15 @@ def _has_expected_demo_renders(
 ) -> bool:
     if dir_path.name == "demo05_cameramodels":
         return _has_cameramodel_renders(dir_path)
-    if frames_num is None:
-        return _has_renders(dir_path)
-    expected = {
-        Path(f"cam{camera}_frame{frame}_field0.bmp")
-        for camera in range(2)
-        for frame in range(frames_num)
-    }
+    expected = _PROCEDURAL_DEMO_RENDERS.get(dir_path.name)
+    if expected is None:
+        if frames_num is None:
+            return _has_renders(dir_path)
+        expected = {
+            Path(f"cam{camera}_frame{frame}_field0.bmp")
+            for camera in range(2)
+            for frame in range(frames_num)
+        }
     actual = (
         {path.relative_to(dir_path) for path in _render_paths(dir_path)}
         if dir_path.is_dir()
@@ -277,9 +300,14 @@ def _run_command(label: str, cmd: list[str], env: dict[str, str]) -> float:
     return elapsed_time
 
 
-def _compare_renders(path_a: Path, path_b: Path) -> None:
+def _compare_renders(path_a: Path, path_b: Path, *, require_contrast: bool = False) -> None:
     arr_a_raw = np.asarray(Image.open(path_a))
     arr_b_raw = np.asarray(Image.open(path_b))
+    if require_contrast:
+        for path, image in ((path_a, arr_a_raw), (path_b, arr_b_raw)):
+            assert int(image.max()) - int(image.min()) >= 32, (
+                f"procedural render lacks contrast: {path}"
+            )
     if arr_a_raw.shape != arr_b_raw.shape:
         raise AssertionError(
             f"shape mismatch for {path_a.name}: "
@@ -319,6 +347,14 @@ def _compare_render_dirs(dir_a: Path, dir_b: Path) -> None:
     files_b = sorted(
         path_b.relative_to(dir_b) for path_b in _render_paths(dir_b)
     )
+    expected = _PROCEDURAL_DEMO_RENDERS.get(dir_a.name)
+    if expected is not None:
+        for label, directory, files in (("zig", dir_a, files_a), ("python", dir_b, files_b)):
+            actual = set(files)
+            assert actual == expected, (
+                f"unexpected {label} procedural render names in {directory}: "
+                f"missing={sorted(expected - actual)}, extra={sorted(actual - expected)}"
+            )
     if files_a != files_b:
         raise AssertionError(
             f"output file mismatch: zig={files_a}, python={files_b}"
@@ -327,7 +363,7 @@ def _compare_render_dirs(dir_a: Path, dir_b: Path) -> None:
     print(f"Comparing renders in {dir_a} against {dir_b}...")
     start_time = perf_counter()
     for rel_path in files_a:
-        _compare_renders(dir_a / rel_path, dir_b / rel_path)
+        _compare_renders(dir_a / rel_path, dir_b / rel_path, require_contrast=expected is not None)
     elapsed_time = perf_counter() - start_time
     print(f"Compare completed in {elapsed_time:.3f}s.")
 
@@ -376,9 +412,13 @@ def ensure_repo_context() -> None:
         )
 
 
-def _compute_zig_demo_sources_sha() -> str:
-    hasher = hashlib.sha256()
-    paths: list[Path] = []
+def _compute_zig_demo_sources_sha(full_cmd: list[str]) -> str:
+    hasher = hashlib.sha256(f"zig version: {REQUIRED_ZIG_VERSION}\n".encode("utf-8"))
+    hasher.update(json.dumps(full_cmd).encode("utf-8") + b"\n")
+    paths = [
+        path for name in ("build.zig", "build.zig.zon")
+        if (path := PROJECT_ROOT / name).is_file()
+    ]
     src_dir = PROJECT_ROOT / "src"
     if src_dir.is_dir():
         paths.extend(src_dir.rglob("*.zig"))
@@ -394,21 +434,24 @@ def _compute_zig_demo_sources_sha() -> str:
     return hasher.hexdigest()
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def ensure_zig_demo_renders() -> None:
     if not _repo_assets_available():
         return
-    if not _has_zig_compiler():
-        pytest.skip(
-            "Zig compiler is not available to render Zig demos for comparison.",
-            allow_module_level=True,
-        )
+    try:
+        zig_runner = select_zig_runner()
+    except ZigUnavailableError as exc:
+        pytest.skip(f"Cannot render Zig demos for parity: {exc}")
+    _refresh_zig_demo_renders(zig_runner)
 
+
+def _refresh_zig_demo_renders(zig_runner: list[str]) -> None:
     silent_env = dict(os.environ)
     silent_env["RILEY_DEMO_SILENT"] = "1"
 
     stamp_path = PROJECT_ROOT / "out" / ".zig_demos.sha256"
-    current_sha = _compute_zig_demo_sources_sha()
+    full_cmd = _get_zig_run_cmd(zig_runner)
+    current_sha = _compute_zig_demo_sources_sha(full_cmd)
     cached_sha = ""
     if stamp_path.is_file():
         try:
@@ -419,28 +462,51 @@ def ensure_zig_demo_renders() -> None:
 
     force_zig_render = os.environ.get("RILEY_FORCE_ZIG_RENDER", "0") == "1"
 
-    needs_zig_render = (
+    procedural_dirs = tuple(
+        PROJECT_ROOT / "out" / name for name in _PROCEDURAL_DEMO_RENDERS
+    )
+    needs_full_render = (
         force_zig_render
         or hash_mismatch
         or any(
             not _has_expected_demo_renders(PROJECT_ROOT / zig_dir, frames_num)
             for _, _, zig_dir, _, frames_num in DEMO_CASES
+            if Path(zig_dir).name not in _PROCEDURAL_DEMO_RENDERS
         )
     )
-
-    if needs_zig_render:
-        if hash_mismatch and not force_zig_render:
-            print(
-                f"Zig sources or assets changed (cached={cached_sha[:8]}, "
-                f"current={current_sha[:8]}); re-rendering Zig demos."
+    if not needs_full_render:
+        invalid = [
+            path for path in procedural_dirs if not _has_expected_demo_renders(path, None)
+        ]
+        if invalid:
+            for path in invalid:
+                shutil.rmtree(path, ignore_errors=True)
+            targets = [path.name.replace("_", "-") for path in invalid]
+            _run_command(
+                "zig procedural demo render", _get_zig_run_cmd(zig_runner, *targets), silent_env,
             )
-        for _, _, zig_dir, _, _ in DEMO_CASES:
-            shutil.rmtree(PROJECT_ROOT / zig_dir, ignore_errors=True)
-        _run_command("zig demo render", _get_zig_run_cmd(), silent_env)
-        stamp_path.parent.mkdir(parents=True, exist_ok=True)
-        stamp_path.write_text(f"{current_sha}\n", encoding="utf-8")
-    else:
-        print("Reusing cached Zig demo renders.")
+        else:
+            print("Reusing cached Zig demo renders.")
+        return
+
+    if hash_mismatch and not force_zig_render:
+        print(
+            f"Zig demo cache signature changed (cached={cached_sha[:8]}, "
+            f"current={current_sha[:8]}); re-rendering Zig demos."
+        )
+    stamp_path.unlink(missing_ok=True)
+    for _, _, zig_dir, _, _ in DEMO_CASES:
+        shutil.rmtree(PROJECT_ROOT / zig_dir, ignore_errors=True)
+    _run_command("zig demo render", full_cmd, silent_env)
+    invalid = [
+        path.name for path in procedural_dirs if not _has_expected_demo_renders(path, None)
+    ]
+    if invalid:
+        # The affected comparisons will report the missing/extra names.
+        print(f"Not stamping Zig cache: invalid procedural renders for {', '.join(invalid)}.")
+        return
+    stamp_path.parent.mkdir(parents=True, exist_ok=True)
+    stamp_path.write_text(f"{current_sha}\n", encoding="utf-8")
 
 
 def _run_demo_case(
@@ -478,6 +544,7 @@ def _run_demo_case(
         _verify_feature_zoo_coverage(py_dir_path)
 
 
+@pytest.mark.usefixtures("ensure_zig_demo_renders")
 @pytest.mark.parametrize(
     ("case_name", "python_cmd", "zig_dir", "py_dir", "frames_num"),
     STANDARD_DEMO_CASES,
@@ -494,6 +561,7 @@ def test_demo_parity(
     _run_demo_case(case_name, python_cmd, zig_dir, py_dir)
 
 
+@pytest.mark.usefixtures("ensure_zig_demo_renders")
 @pytest.mark.skipif(
     find_spec("netCDF4") is None,
     reason="netCDF4 is required for the exodus Python demo parity test.",

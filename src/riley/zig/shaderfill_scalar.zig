@@ -1,12 +1,13 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const shaderfunc = @import("shaderfunc.zig");
+const geometrykernels = @import("geometrykernels.zig");
 const shadertypes = @import("shadertypes.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -326,4 +327,33 @@ pub inline fn fillFuncPerspScal(
             spx_img_scratch.slice[idx] = vals[ch] * shader.scale_mul + shader.scale_add;
         }
     }
+}
+
+pub inline fn evalSpeckleScal(
+    comptime N: usize,
+    comptime coord_space: geometrykernels.CoordSpace,
+    interp: meshhit.RasterHit(N),
+    buf: *const shadertypes.LocalShaderBuff(N),
+    shader: *const shadertypes.SpecklePrepared,
+    sample: anytype,
+) F {
+    var u: F = 0;
+    var v: F = 0;
+    switch (comptime coord_space) {
+        .clip_px_leng => {
+            u = buf.interpFuncCoord(0, interp.weights);
+            v = buf.interpFuncCoord(1, interp.weights);
+        },
+        .raster => {
+            inline for (0..N) |nn| {
+                const inv_z = interp.nodes_inv_z[nn];
+                u += interp.weights[nn] * buf.func_coords[nn] * inv_z;
+                v += interp.weights[nn] * buf.func_coords[N + nn] * inv_z;
+            }
+            u *= interp.sub_pixel_z;
+            v *= interp.sub_pixel_z;
+        },
+    }
+    const value = sample(u, v, shader.resources) * shader.output_gain + shader.output_offset;
+    return value * shader.scale_mul + shader.scale_add;
 }

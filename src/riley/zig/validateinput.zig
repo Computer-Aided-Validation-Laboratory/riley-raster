@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const shaderfunc = @import("shaderfunc.zig");
 const cameramodels = @import("cameramodels.zig");
@@ -22,7 +22,9 @@ const rasterconfig = @import("rasterconfig.zig");
 const report = @import("report.zig");
 const shaderops = @import("shaderops.zig");
 const shaderpipe = @import("shaderpipe.zig");
+const speckleparams = @import("speckleparams.zig");
 const texturetypes = @import("texturetypes.zig");
+const validatearrays = @import("validatearrays.zig");
 
 const F = buildconfig.F;
 const pipe_cfg = buildconfig.config.shaderpipe;
@@ -41,7 +43,7 @@ const MIN_CAMERA_ROI_DIST: F = 1.0e-6;
 // Public Error Set & Summary Types
 // --------------------------------------------------------------------------------------
 
-pub const InputValidationError = error{
+pub const InputValidationError = speckleparams.ValidationError || error{
     NoRenderGroups,
     InvalidRenderGroupWorkers,
     NoCameras,
@@ -66,6 +68,8 @@ pub const InputValidationError = error{
     InvalidTextureDimensions,
     InvalidTexSampleConfig,
     InvalidShaderOutputMap,
+    InvalidSpeckleOutputTransform,
+    InvalidShaderBitDepth,
     InvalidScalingBounds,
     InvalidFuncShaderParams,
     MissingNodalField,
@@ -403,6 +407,8 @@ fn checkMeshesMetadata(
         if (shaders.ir_pipe) |pipe|
             try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 1);
         if (shaders.multifield_pipe) |pipe| {
+            // Full validation scans all supplied sources, even when no camera uses this pipe.
+            const written = try checkPipeStageMetadata(pipe, mesh.coords.mat.rows_num);
             var checked_channels = [_]bool{false} ** (max_channels + 1);
             for (cam_inps) |camera| {
                 if (camera.render_format != .multifield) continue;
@@ -410,7 +416,7 @@ fn checkMeshesMetadata(
                 if (channels == 0 or channels > max_channels)
                     return error.InvalidRenderFormatChannels;
                 if (checked_channels[channels]) continue;
-                try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, channels);
+                try checkPipeResolverMetadata(pipe, written, channels);
                 checked_channels[channels] = true;
             }
         }
@@ -425,7 +431,7 @@ fn pipeSourceChannels(source: shadertypes.PipeSourceInput) u8 {
         .tex_multi_u8 => |t| @intCast(t.tex.array.dims[0]),
         .tex_multi_u16 => |t| @intCast(t.tex.array.dims[0]),
         .tex_multi_f => |t| @intCast(t.tex.array.dims[0]),
-        .func => 1,
+        .func, .speckle => 1,
         .func_rgb => 3,
         .func_multi => |f| @intCast(f.channels.len),
     };
@@ -601,8 +607,15 @@ fn checkPipeMetadata(
     coords_num: usize,
     channels: u8,
 ) InputValidationError!void {
-    if (channels == 0 or channels > buildconfig.config.max_image_channels or
-        pipe.stages.len == 0 or pipe.stages.len > pipe_cfg.max_stages) return error.InvalidShaderPipe;
+    const written = try checkPipeStageMetadata(pipe, coords_num);
+    try checkPipeResolverMetadata(pipe, written, channels);
+}
+
+fn checkPipeStageMetadata(
+    pipe: shadertypes.ShaderPipeInput,
+    coords_num: usize,
+) InputValidationError!shaderpipe.RegistersWritten {
+    if (pipe.stages.len == 0 or pipe.stages.len > pipe_cfg.max_stages) return error.InvalidShaderPipe;
     var written: shaderpipe.RegistersWritten = .{};
     for (pipe.stages) |stage| switch (stage) {
         .shader => |src| {
@@ -683,9 +696,15 @@ fn checkPipeMetadata(
             }
         },
     };
-    pipe.resolver.validate(written, pipe.constants, channels) catch {
-        return error.InvalidShaderPipe;
-    };
+    return written;
+}
+
+fn checkPipeResolverMetadata(
+    pipe: shadertypes.ShaderPipeInput,
+    written: shaderpipe.RegistersWritten,
+    channels: u8,
+) InputValidationError!void {
+    pipe.resolver.validate(written, pipe.constants, channels) catch return error.InvalidShaderPipe;
 }
 
 fn checkShaderMonoMetadata(
@@ -694,6 +713,7 @@ fn checkShaderMonoMetadata(
 ) InputValidationError!void {
     switch (shader) {
         .tex_u8 => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
+        .speckle => |speckle| try checkSpeckleMetadata(speckle, coords_num),
         .tex_u16 => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
         .tex_f => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
         .nodal => |nodal_shader| {
@@ -710,6 +730,7 @@ fn checkPipeSourceMetadata(
 ) InputValidationError!void {
     switch (source) {
         .tex_u8 => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
+        .speckle => |speckle| try checkSpeckleMetadata(speckle, coords_num),
         .tex_u16 => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
         .tex_f => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
         .tex_rgb_u8 => |tex_shader| try checkTexShaderMetadata(tex_shader, 3, coords_num),
@@ -724,13 +745,28 @@ fn checkPipeSourceMetadata(
     }
 }
 
+fn checkSpeckleMetadata(
+    speckle: shadertypes.SpeckleInput,
+    coords_num: usize,
+) InputValidationError!void {
+    try validatearrays.checkUvLayout(&speckle.uvs, coords_num);
+    if (speckle.bits) |bits| switch (bits) {
+        8, 10, 12, 14, 16 => {},
+        else => return error.InvalidShaderBitDepth,
+    };
+    try checkScaling(speckle.scaling);
+    if (!std.math.isFinite(speckle.output_gain) or
+        !std.math.isFinite(speckle.output_offset)) return error.InvalidSpeckleOutputTransform;
+    try speckle.params.validate();
+}
+
 fn checkTexShaderMetadata(
     tex_shader: anytype,
     expected_channels: usize,
     coords_num: usize,
 ) InputValidationError!void {
     try checkTexMetadata(tex_shader.tex, expected_channels);
-    try checkTexUvMetadata(tex_shader.uvs, coords_num);
+    try validatearrays.checkUvLayout(&tex_shader.uvs, coords_num);
     try checkSampCfg(tex_shader.samp_cfg);
     if (!std.math.isFinite(tex_shader.output_gain) or
         !std.math.isFinite(tex_shader.output_offset)) return error.InvalidShaderOutputMap;
@@ -783,13 +819,8 @@ fn checkFuncMultiShaderMetadata(
 }
 
 fn checkTexMultiMetadata(t: anytype, coords_num: usize) InputValidationError!void {
-    const tex = t.tex;
-    const dims = tex.array.dims;
-    if (dims.len != 3 or dims[0] < 2 or dims[0] > max_channels or
-        dims[1] == 0 or dims[2] == 0 or
-        tex.rows_num != dims[1] or tex.cols_num != dims[2])
-        return error.InvalidTextureDimensions;
-    try checkTexUvMetadata(t.uvs, coords_num);
+    try validatearrays.checkTexMultiLayout(t.tex);
+    try validatearrays.checkUvLayout(&t.uvs, coords_num);
     try checkSampCfg(t.samp_cfg);
     if (!std.math.isFinite(t.output_gain) or
         !std.math.isFinite(t.output_offset)) return error.InvalidShaderOutputMap;
@@ -809,30 +840,13 @@ fn checkTexMetadata(tex: anytype, expected_channels: usize) InputValidationError
     }
 }
 
-fn checkTexUvMetadata(
-    uvs: ndarray.NDArray(F),
-    coords_num: usize,
-) InputValidationError!void {
-    if (uvs.dims.len != 2 or
-        uvs.dims[0] != coords_num or
-        uvs.dims[1] != 2)
-    {
-        return error.InvalidUvDimensions;
-    }
-}
-
 fn checkOptionalUvMetadata(
     uvs_opt: ?ndarray.NDArray(F),
     coords_num: usize,
     required: bool,
 ) InputValidationError!void {
     if (uvs_opt) |uvs| {
-        if (uvs.dims.len != 2 or
-            uvs.dims[0] != coords_num or
-            uvs.dims[1] != 2)
-        {
-            return error.InvalidUvDimensions;
-        }
+        try validatearrays.checkUvLayout(&uvs, coords_num);
     } else if (required) {
         return error.MissingUvs;
     }
@@ -1206,4 +1220,138 @@ test "generic pipe stages validate ordered reads and single writers" {
     try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
     stages[4] = .{ .normalise = .{ .register_source = ch0, .register_dest = .{ .kind = .parameter, .index = 15 }, .components = 2 } };
     try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
+}
+
+test "texture and function validation checks strided UV bounds before scanning logical entries" {
+    const alloc = std.testing.allocator;
+    const tex = try texturetypes.TexDataFix(u8, 1).init(alloc, 2, 2);
+    defer tex.deinit(alloc);
+    const multi = try texturetypes.TexDataDyn(u8).init(alloc, 2, 2, 2);
+    defer multi.deinit(alloc);
+    var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+    var connect = [_]usize{ 0, 1, 2 };
+    var dims = [_]usize{ 3, 2 };
+    var strides = [_]usize{ 2, 7 };
+    const pad = std.math.nan(F);
+    var values = [_]F{ 0, pad, 1, pad, 0, pad, pad, 0, pad, 0, pad, 1 };
+    const valid = ndarray.NDArray(F){ .slice = &values, .dims = &dims, .strides = &strides };
+    var overflow_strides = [_]usize{ 2, std.math.maxInt(usize) };
+    const inputs = [_]ndarray.NDArray(F){
+        .{ .slice = &values, .dims = &dims, .strides = strides[0..1] },
+        .{ .slice = values[0 .. values.len - 1], .dims = &dims, .strides = &strides },
+        .{ .slice = &values, .dims = &dims, .strides = &overflow_strides },
+        valid,
+    };
+    const Source = enum { texture, function, texture_multi, function_multi };
+    for (std.enums.values(Source)) |source| {
+        for (inputs, 0..) |uvs, i| {
+            var mesh = meshtypes.MeshInput{
+                .mesh_type = .tri3,
+                .coords = meshtypes.Coords.init(&coords, 3),
+                .connect = meshtypes.Connect.init(&connect, 1, 3),
+                .disp = null,
+                .shaders = .{},
+            };
+            var stages: [1]shadertypes.ShaderPipeStageInput = undefined;
+            const ch0 = shaderpipe.Register{ .kind = .channel, .index = 0 };
+            switch (source) {
+                .texture => mesh.shaders.mono_direct = .{ .tex_u8 = .{ .uvs = uvs, .tex = tex } },
+                .function => mesh.shaders.mono_direct = .{ .func = .{
+                    .uvs = uvs,
+                    .builtin = .constant,
+                    .coord_mode = .uv,
+                } },
+                .texture_multi, .function_multi => {
+                    stages[0] = .{ .shader = .{
+                        .shader = if (source == .texture_multi)
+                            .{ .tex_multi_u8 = .{ .uvs = uvs, .tex = multi } }
+                        else
+                            .{ .func_multi = .{
+                                .uvs = uvs,
+                                .coord_mode = .uv,
+                                .channels = &.{.{ .builtin = .constant }},
+                            } },
+                        .register_dest = ch0,
+                    } };
+                    mesh.shaders.multifield_pipe = .{ .stages = &stages, .resolver = .{ .identity = &.{ch0} } };
+                },
+            }
+            if (i != inputs.len - 1) {
+                try std.testing.expectError(error.InvalidUvDimensions, checkMeshesMetadata(&.{mesh}, &.{}));
+                continue;
+            }
+            try checkMeshesMetadata(&.{mesh}, &.{});
+            try validatearrays.checkRenderArrs(&.{mesh});
+            values[values.len - 1] = std.math.inf(F);
+            try std.testing.expectError(error.NonFiniteUvs, validatearrays.checkRenderArrs(&.{mesh}));
+            values[values.len - 1] = 1;
+        }
+    }
+}
+
+test "speckle metadata validates shapes and parameters without scanning UV payloads" {
+    const alloc = std.testing.allocator;
+    var values = [_]F{ std.math.nan(F), 0, 1, 0, 0, 1 };
+    const uvs = try ndarray.NDArray(F).init(alloc, &values, &.{ 3, 2 });
+    defer uvs.deinit(alloc);
+    const valid = shadertypes.SpeckleInput{
+        .uvs = uvs,
+        .params = .{ .disk = .{ .coverage = 0.5, .radius = 0.1 } },
+    };
+    try checkShaderMonoMetadata(.{ .speckle = valid }, 3);
+    try checkPipeSourceMetadata(.{ .speckle = valid }, 3);
+    try std.testing.expectEqual(@as(u8, 1), pipeSourceChannels(.{ .speckle = valid }));
+    try std.testing.expectError(error.InvalidUvDimensions, checkShaderMonoMetadata(.{ .speckle = valid }, 4));
+    var malformed = valid;
+    var dims = [_]usize{3};
+    malformed.uvs.dims = &dims;
+    try std.testing.expectError(error.InvalidUvDimensions, checkShaderMonoMetadata(.{ .speckle = malformed }, 3));
+    var wrong_width = [_]usize{ 3, 1 };
+    malformed.uvs.dims = &wrong_width;
+    try std.testing.expectError(error.InvalidUvDimensions, checkShaderMonoMetadata(.{ .speckle = malformed }, 3));
+
+    for ([_]F{ std.math.nan(F), std.math.inf(F), -std.math.inf(F) }) |invalid| {
+        var shader = valid;
+        shader.output_gain = invalid;
+        try std.testing.expectError(error.InvalidSpeckleOutputTransform, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+        shader = valid;
+        shader.output_offset = invalid;
+        try std.testing.expectError(error.InvalidSpeckleOutputTransform, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+        shader = valid;
+        shader.params.disk.radius = invalid;
+        try std.testing.expectError(error.InvalidSpeckleRadius, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    }
+    for ([_][2]F{ .{ 0, 0 }, .{ -0.0, 0 }, .{ 0.375, 0.375 }, .{ 1, 1 } }) |colors| {
+        var shader = valid;
+        shader.params.disk.foreground = colors[0];
+        shader.params.disk.background = colors[1];
+        try std.testing.expectError(error.SpeckleColorsMustDiffer, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    }
+    var shader = valid;
+    shader.params.disk.foreground = 0.375;
+    shader.params.disk.background = std.math.nextAfter(F, 0.375, 1);
+    try checkShaderMonoMetadata(.{ .speckle = shader }, 3);
+    shader = valid;
+    shader.params.disk.radius = 0;
+    try std.testing.expectError(error.InvalidSpeckleRadius, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    shader.params = .{ .perlin = .{ .cell_size = 0 } };
+    try std.testing.expectError(error.InvalidSpeckleCellSize, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.params.disk.occupancy = 0;
+    try std.testing.expectError(error.InvalidSpeckleOccupancy, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.params.disk.foreground = 1.1;
+    try std.testing.expectError(error.InvalidSpeckleForeground, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.bits = 7;
+    try std.testing.expectError(error.InvalidShaderBitDepth, checkPipeSourceMetadata(.{ .speckle = shader }, 3));
+    try std.testing.expectError(error.InvalidShaderBitDepth, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.scaling = .{ .fixed = .{ 1, 0 } };
+    try std.testing.expectError(error.InvalidScalingBounds, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.output_gain = -2;
+    shader.output_offset = -0.5;
+    shader.bits = null;
+    try checkShaderMonoMetadata(.{ .speckle = shader }, 3);
 }

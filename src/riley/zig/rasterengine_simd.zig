@@ -1,10 +1,10 @@
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
-// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
 // Licensed under the MIT License (see LICENSE file for details)
 //
-// Authors: scepticalrabbit (Lloyd Fletcher)
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
@@ -412,6 +412,82 @@ pub fn RasterEngine(
     };
 }
 
+inline fn loadIdealCenterPacket(
+    ideal_x: []const F,
+    ideal_y: []const F,
+    scratch_idx: usize,
+    lanes_num: usize,
+) struct { x: VecSF, y: VecSF } {
+    if (lanes_num == S) return .{
+        .x = simdops.loadVecSF(ideal_x, scratch_idx),
+        .y = simdops.loadVecSF(ideal_y, scratch_idx),
+    };
+
+    // A partial packet can end at unwritten camera scratch. Duplicate a valid
+    // centre for inactive lanes, without loading anything past the valid span.
+    var x: [S]F = @splat(ideal_x[scratch_idx]);
+    var y: [S]F = @splat(ideal_y[scratch_idx]);
+    @memcpy(x[1..lanes_num], ideal_x[scratch_idx + 1 .. scratch_idx + lanes_num]);
+    @memcpy(y[1..lanes_num], ideal_y[scratch_idx + 1 .. scratch_idx + lanes_num]);
+    return .{ .x = x, .y = y };
+}
+
+const Tri3ShadePacket = struct {
+    weights: [3]VecSF,
+    xi: VecSF,
+    eta: VecSF,
+    subpx_z: VecSF,
+};
+
+inline fn interpolateTri3ShadePacket(
+    comptime mode: enum { direct, stepped },
+    is_const_depth: bool,
+    active: VecSB,
+    weights: [3]VecSF,
+    inv_z: VecSF,
+    nodes_inv_z: [3]VecSF,
+) Tri3ShadePacket {
+    var v_weights = weights;
+    var v_inv_z = inv_z;
+    if (!@reduce(.And, active)) {
+        // Shaders can evaluate lookups before masking their output. Copy a real hit
+        // before division so extrapolated weights and inverse depth never reach them.
+        const first = std.simd.firstTrue(active).?;
+        const inv_z_lanes: [S]F = inv_z;
+        const fill_inv_z: VecSF = @splat(inv_z_lanes[first]);
+        v_inv_z = @select(F, active, inv_z, fill_inv_z);
+        inline for (0..3) |nn| {
+            const weight_lanes: [S]F = weights[nn];
+            const fill: VecSF = @splat(weight_lanes[first]);
+            v_weights[nn] = @select(F, active, weights[nn], fill);
+        }
+    }
+
+    const subpx_z = @as(VecSF, @splat(1.0)) / v_inv_z;
+    if (mode == .stepped and is_const_depth) return .{
+        .weights = v_weights,
+        .xi = v_weights[1],
+        .eta = v_weights[2],
+        .subpx_z = subpx_z,
+    };
+
+    const zero: VecSF = @splat(0.0);
+    const xi_num = if (mode == .stepped)
+        @mulAdd(VecSF, v_weights[1], nodes_inv_z[1], zero)
+    else
+        v_weights[1] * nodes_inv_z[1];
+    const eta_num = if (mode == .stepped)
+        @mulAdd(VecSF, v_weights[2], nodes_inv_z[2], zero)
+    else
+        v_weights[2] * nodes_inv_z[2];
+    return .{
+        .weights = v_weights,
+        .xi = xi_num / v_inv_z,
+        .eta = eta_num / v_inv_z,
+        .subpx_z = subpx_z,
+    };
+}
+
 fn rasterDirectSIMDImpl(
     comptime ScratchBuffs: type,
     comptime GeomKern: type,
@@ -463,14 +539,18 @@ fn rasterDirectSIMDImpl(
                 (v_subpx_x_u < v_end_x_u);
 
             const scratch_idx = row_offset + scratch_x_u;
-            const v_ideal_x_pix = simdops.loadVecSF(ideal_x_plane, scratch_idx);
-            const v_ideal_y_pix = simdops.loadVecSF(ideal_y_plane, scratch_idx);
+            const ideal = loadIdealCenterPacket(
+                ideal_x_plane,
+                ideal_y_plane,
+                scratch_idx,
+                @min(S, rast_bounds.end_x_u - scratch_x_u),
+            );
 
             ctx_report.recordSolverCalls(S);
             const res = GeomKern.solveWeightsHyperbSIMD(
                 nodes_coords,
-                v_ideal_x_pix,
-                v_ideal_y_pix,
+                ideal.x,
+                ideal.y,
                 v_inv_area,
             );
             const v_mask_active = v_x_mask & res.v_mask;
@@ -497,9 +577,14 @@ fn rasterDirectSIMDImpl(
 
             simdops.storeVecSF(subpx_scratch.inv_z, scratch_idx, v_new_inv_z);
 
-            const v_subpx_z: VecSF = @as(VecSF, @splat(1.0)) / v_inv_z;
-            const v_xi = res.v_weights[1] * v_nodes_inv_z[1] / v_inv_z;
-            const v_eta = res.v_weights[2] * v_nodes_inv_z[2] / v_inv_z;
+            const shading = interpolateTri3ShadePacket(
+                .direct,
+                false,
+                v_depth_mask,
+                res.v_weights,
+                v_inv_z,
+                v_nodes_inv_z,
+            );
 
             const v_depth_mask_arr: [S]bool = v_depth_mask;
             inline for (0..S) |ll| {
@@ -547,11 +632,11 @@ fn rasterDirectSIMDImpl(
                 GeomKern.coord_space,
                 ctx_shade,
                 v_depth_mask,
-                res.v_weights,
-                v_xi,
-                v_eta,
+                shading.weights,
+                shading.xi,
+                shading.eta,
                 v_nodes_inv_z,
-                v_subpx_z,
+                shading.subpx_z,
                 shader_buf,
                 shader,
                 &subpx_scratch.image,
@@ -640,21 +725,25 @@ fn rasterNewtonMultiSIMDImpl(
             const idx = row + scratch_x;
             const valid = @as(VecSU, @splat(scratch_x)) + v_lane_idx < v_end_x;
 
-            const v_px = simdops.loadVecSF(ideal_x_plane, idx);
-            const v_py = simdops.loadVecSF(ideal_y_plane, idx);
+            const ideal = loadIdealCenterPacket(
+                ideal_x_plane,
+                ideal_y_plane,
+                idx,
+                @min(S, rast_bounds.end_x_u - scratch_x),
+            );
 
             const child_masks = if (edge_fun_mode == .pre_calc)
                 hullmultiroot.HullMultiRoot.childMaskPreCalcSIMD(
                     leaves_pre_calc,
-                    v_px,
-                    v_py,
+                    ideal.x,
+                    ideal.y,
                     valid,
                 )
             else
                 hullmultiroot.HullMultiRoot.childMaskOnTheFlySIMD(
                     leaves_on_the_fly,
-                    v_px,
-                    v_py,
+                    ideal.x,
+                    ideal.y,
                     valid,
                 );
 
@@ -1060,8 +1149,12 @@ fn rasterNewtonSIMDImpl(
                 (v_subpx_x_u < v_bounds_end_x_u);
 
             const scratch_idx = row_offset + scratch_x_u;
-            const v_ideal_x_pix = simdops.loadVecSF(ideal_x_plane, scratch_idx);
-            const v_ideal_y_pix = simdops.loadVecSF(ideal_y_plane, scratch_idx);
+            const ideal = loadIdealCenterPacket(
+                ideal_x_plane,
+                ideal_y_plane,
+                scratch_idx,
+                @min(S, rast_bounds.end_x_u - scratch_x_u),
+            );
 
             var v_mask_active = v_x_mask;
             var xi_arr = [_]F{0.0} ** S;
@@ -1072,8 +1165,8 @@ fn rasterNewtonSIMDImpl(
                 const edge_mode = ctx_rast.config.advanced.solver.oneroot.edge_fun_mode;
                 const v_hull_in = if (seed_mode == .hull) blk: {
                     const v_hull_res: hulladaptive.HullAdaptive.CandidateSeedSIMD = elem_tess.isInSIMD(
-                        v_ideal_x_pix,
-                        v_ideal_y_pix,
+                        ideal.x,
+                        ideal.y,
                         edge_mode,
                     );
                     xi_arr = v_hull_res.v_seed_xi;
@@ -1084,8 +1177,8 @@ fn rasterNewtonSIMDImpl(
                     xi_arr = init_seed.v_xi;
                     eta_arr = init_seed.v_eta;
                     break :blk elem_tess.containsSIMD(
-                        v_ideal_x_pix,
-                        v_ideal_y_pix,
+                        ideal.x,
+                        ideal.y,
                         edge_mode,
                     );
                 };
@@ -1120,8 +1213,8 @@ fn rasterNewtonSIMDImpl(
             if (!@reduce(.Or, v_mask_active)) continue;
 
             const mask_arr: [S]bool = v_mask_active;
-            const x_arr_f: [S]F = v_ideal_x_pix;
-            const y_arr_f: [S]F = v_ideal_y_pix;
+            const x_arr_f: [S]F = ideal.x;
+            const y_arr_f: [S]F = ideal.y;
 
             for (0..S) |ss| {
                 if (!mask_arr[ss]) continue;
@@ -1282,6 +1375,42 @@ fn rasterNewtonSIMDImpl(
     );
 }
 
+const NewtonWinnerPacket = struct {
+    active: VecSB,
+    xi: VecSF,
+    eta: VecSF,
+};
+
+inline fn loadNewtonWinnerPacket(
+    mask: []const bool,
+    xi: []const F,
+    eta: []const F,
+) ?NewtonWinnerPacket {
+    const active: VecSB = if (mask.len == S) mask[0..S].* else blk: {
+        var lanes: [S]bool = @splat(false);
+        @memcpy(lanes[0..mask.len], mask);
+        break :blk lanes;
+    };
+    if (@reduce(.And, active)) return .{
+        .active = active,
+        .xi = simdops.loadVecSF(xi, 0),
+        .eta = simdops.loadVecSF(eta, 0),
+    };
+
+    const first = std.simd.firstTrue(active) orelse return null;
+    // Only winners have written scratch coordinates. Fill inactive lanes from a real
+    // root so shape functions and unmasked shader lookups receive valid inputs.
+    var xi_lanes: [S]F = @splat(xi[first]);
+    var eta_lanes: [S]F = @splat(eta[first]);
+    inline for (0..S) |lane| {
+        if (active[lane]) {
+            xi_lanes[lane] = xi[lane];
+            eta_lanes[lane] = eta[lane];
+        }
+    }
+    return .{ .active = active, .xi = xi_lanes, .eta = eta_lanes };
+}
+
 inline fn shadeNewtonWinnersSIMD(
     comptime ScratchBuffs: type,
     comptime GeomKern: type,
@@ -1302,9 +1431,6 @@ inline fn shadeNewtonWinnersSIMD(
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
-    const v_lane_idx: VecSU = std.simd.iota(usize, S);
-    const v_start_x_u: VecSU = @splat(rast_bounds.start_x_u);
-    const v_bounds_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
 
     var nodes_inv_z: [N]F = undefined;
     var v_nodes_z: [N]VecSF = undefined;
@@ -1321,27 +1447,14 @@ inline fn shadeNewtonWinnersSIMD(
         var scratch_x_u = rast_bounds.start_x_u;
         while (scratch_x_u < rast_bounds.end_x_u) : (scratch_x_u += S) {
             const scratch_idx = row_offset + scratch_x_u;
-            var mask_arr: [S]bool = undefined;
-            @memcpy(
-                &mask_arr,
-                subpx_scratch.mask[scratch_idx .. scratch_idx + S],
-            );
-            const v_mask_full: VecSB = mask_arr;
-
-            const v_scratch_x_u: VecSU = @splat(scratch_x_u);
-            const v_x_mask = (v_scratch_x_u + v_lane_idx >= v_start_x_u) &
-                (v_scratch_x_u + v_lane_idx < v_bounds_end_x_u);
-            const v_mask_active = v_mask_full & v_x_mask;
-            if (!@reduce(.Or, v_mask_active)) continue;
-
-            var xi_arr: [S]F = undefined;
-            var eta_arr: [S]F = undefined;
-            const xi_slice = subpx_scratch.xi[scratch_idx .. scratch_idx + S];
-            const eta_slice = subpx_scratch.eta[scratch_idx .. scratch_idx + S];
-            @memcpy(&xi_arr, xi_slice);
-            @memcpy(&eta_arr, eta_slice);
-            const v_xi: VecSF = xi_arr;
-            const v_eta: VecSF = eta_arr;
+            const lanes_num = @min(S, rast_bounds.end_x_u - scratch_x_u);
+            const winners = loadNewtonWinnerPacket(
+                subpx_scratch.mask[scratch_idx..][0..lanes_num],
+                subpx_scratch.xi[scratch_idx..],
+                subpx_scratch.eta[scratch_idx..],
+            ) orelse continue;
+            const v_xi = winners.xi;
+            const v_eta = winners.eta;
 
             var v_weights: [N]VecSF = undefined;
             var v_dNu: [N]VecSF = undefined;
@@ -1357,7 +1470,7 @@ inline fn shadeNewtonWinnersSIMD(
                 scratch_idx,
             );
             const v_depth_tol: VecSF = @splat(tol.geometry.depth_buff_inv_z_cmp);
-            const v_depth_mask = v_mask_active & (v_inv_z + v_depth_tol >= v_old_inv_z);
+            const v_depth_mask = winners.active & (v_inv_z + v_depth_tol >= v_old_inv_z);
 
             if (!@reduce(.Or, v_depth_mask)) continue;
 
@@ -1630,22 +1743,14 @@ fn rasterSteppedSIMDFixP(
             const v_new_inv_z = @select(F, v_depth_mask, v_inv_z, v_old_inv_z);
             simdops.storeVecSF(subpx_scratch.inv_z, scratch_idx, v_new_inv_z);
 
-            const v_subpx_z = @as(VecSF, @splat(1.0)) / v_inv_z;
-
-            const v_xi_num = @mulAdd(
-                VecSF,
-                v_w1,
-                @as(VecSF, @splat(inv_z_node[1])),
-                @as(VecSF, @splat(0.0)),
+            const shading = interpolateTri3ShadePacket(
+                .stepped,
+                is_const_depth,
+                v_depth_mask,
+                .{ v_w0, v_w1, v_w2 },
+                v_inv_z,
+                v_nodes_inv_z,
             );
-            const v_eta_num = @mulAdd(
-                VecSF,
-                v_w2,
-                @as(VecSF, @splat(inv_z_node[2])),
-                @as(VecSF, @splat(0.0)),
-            );
-            const v_xi = if (is_const_depth) v_w1 else v_xi_num / v_inv_z;
-            const v_eta = if (is_const_depth) v_w2 else v_eta_num / v_inv_z;
 
             const v_depth_mask_arr: [S]bool = v_depth_mask;
             inline for (0..S) |ll| {
@@ -1689,17 +1794,15 @@ fn rasterSteppedSIMDFixP(
                 .simd_full_vector_store_safe = ScratchBuffs.simd_full_vector_store_safe,
             };
 
-            const v_weights = [3]VecSF{ v_w0, v_w1, v_w2 };
-
             ShaderKern.shadeSIMD(
                 GeomKern.coord_space,
                 ctx_shade,
                 v_depth_mask,
-                v_weights,
-                v_xi,
-                v_eta,
+                shading.weights,
+                shading.xi,
+                shading.eta,
                 v_nodes_inv_z,
-                v_subpx_z,
+                shading.subpx_z,
                 shader_buf,
                 shader,
                 &subpx_scratch.image,
@@ -1881,22 +1984,14 @@ fn rasterSteppedSIMDFloat(
             const v_new_inv_z = @select(F, v_depth_mask, v_inv_z, v_old_inv_z);
             simdops.storeVecSF(subpx_scratch.inv_z, scratch_idx, v_new_inv_z);
 
-            const v_subpx_z = @as(VecSF, @splat(1.0)) / v_inv_z;
-
-            const v_xi_num = @mulAdd(
-                VecSF,
-                v_w[1],
-                @as(VecSF, @splat(inv_z_node[1])),
-                @as(VecSF, @splat(0.0)),
+            const shading = interpolateTri3ShadePacket(
+                .stepped,
+                is_const_depth,
+                v_depth_mask,
+                v_w,
+                v_inv_z,
+                v_nodes_inv_z,
             );
-            const v_eta_num = @mulAdd(
-                VecSF,
-                v_w[2],
-                @as(VecSF, @splat(inv_z_node[2])),
-                @as(VecSF, @splat(0.0)),
-            );
-            const v_xi = if (is_const_depth) v_w[1] else v_xi_num / v_inv_z;
-            const v_eta = if (is_const_depth) v_w[2] else v_eta_num / v_inv_z;
 
             const v_depth_mask_arr: [S]bool = v_depth_mask;
             inline for (0..S) |ll| {
@@ -1944,11 +2039,11 @@ fn rasterSteppedSIMDFloat(
                 GeomKern.coord_space,
                 ctx_shade,
                 v_depth_mask,
-                v_w,
-                v_xi,
-                v_eta,
+                shading.weights,
+                shading.xi,
+                shading.eta,
                 v_nodes_inv_z,
-                v_subpx_z,
+                shading.subpx_z,
                 shader_buf,
                 shader,
                 &subpx_scratch.image,
@@ -1957,4 +2052,109 @@ fn rasterSteppedSIMDFloat(
     }
 
     return shaded_px;
+}
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
+test "ideal centre packets do not load past the valid span" {
+    var x: [S + 1]F = undefined;
+    var y: [S + 1]F = undefined;
+    for (&x, &y, 0..) |*xx, *yy, ii| {
+        xx.* = @floatFromInt(ii + 1);
+        yy.* = -xx.*;
+    }
+
+    // End the input slice at the last valid centre, with no readable padding.
+    for (1..S + 1) |lanes_num| {
+        const end = 1 + lanes_num;
+        const packet = loadIdealCenterPacket(x[0..end], y[0..end], 1, lanes_num);
+        inline for (0..S) |lane| {
+            const src = if (lane < lanes_num) 1 + lane else 1;
+            try std.testing.expectEqual(x[src], packet.x[lane]);
+            try std.testing.expectEqual(y[src], packet.y[lane]);
+        }
+    }
+}
+
+test "triangle shading packets interpolate inactive lanes from a depth winner" {
+    if (S < 2) return;
+    const all: VecSB = @splat(true);
+    var valid_weights: [3]VecSF = .{ @splat(0.5), @splat(0.25), @splat(0.25) };
+    // Lane 1 is the first winner, with different weights from later winners.
+    valid_weights[0][1] = 0.25;
+    valid_weights[1][1] = 0.5;
+    const nodes_inv_z: [3]VecSF = .{ @splat(1.0), @splat(0.5), @splat(0.25) };
+    const inv_z = valid_weights[0] * nodes_inv_z[0] + valid_weights[1] * nodes_inv_z[1] +
+        valid_weights[2] * nodes_inv_z[2];
+    var active = all;
+    active[0] = false;
+    var mixed_weights = valid_weights;
+    mixed_weights[0][0] = -1.0;
+    mixed_weights[1][0] = 2.0;
+    mixed_weights[2][0] = 0.0;
+    var mixed_inv_z = inv_z;
+    mixed_inv_z[0] = 0.0;
+
+    inline for (.{ .direct, .stepped }) |mode| {
+        const full = interpolateTri3ShadePacket(mode, false, all, valid_weights, inv_z, nodes_inv_z);
+        const mixed = interpolateTri3ShadePacket(mode, false, active, mixed_weights, mixed_inv_z, nodes_inv_z);
+        inline for (0..S) |lane| {
+            const src = if (lane == 0) 1 else lane;
+            for (0..3) |nn| try std.testing.expectEqual(valid_weights[nn][src], mixed.weights[nn][lane]);
+            try std.testing.expectEqual(full.xi[src], mixed.xi[lane]);
+            try std.testing.expectEqual(full.eta[src], mixed.eta[lane]);
+            try std.testing.expectEqual(full.subpx_z[src], mixed.subpx_z[lane]);
+        }
+        try std.testing.expectEqual(@as(F, 4.0 / 9.0), mixed.xi[0]);
+        try std.testing.expectEqual(@as(F, 1.0 / 9.0), mixed.eta[0]);
+        try std.testing.expectEqual(@as(F, 16.0 / 9.0), mixed.subpx_z[0]);
+    }
+
+    const flat_inv_z: VecSF = @splat(0.5);
+    const flat = interpolateTri3ShadePacket(.stepped, true, active, mixed_weights, flat_inv_z, .{ flat_inv_z, flat_inv_z, flat_inv_z });
+    try std.testing.expectEqual(@as(F, 0.5), flat.xi[0]);
+    try std.testing.expectEqual(@as(F, 0.25), flat.eta[0]);
+    try std.testing.expectEqual(@as(F, 2.0), flat.subpx_z[0]);
+}
+
+test "Newton winner packets exclude poisoned scratch coordinates" {
+    const none: [S]bool = @splat(false);
+    const poison: [S]F = @splat(std.math.nan(F));
+    try std.testing.expect(loadNewtonWinnerPacket(&none, &poison, &poison) == null);
+
+    var xi: [S]F = undefined;
+    var eta: [S]F = undefined;
+    for (0..S) |lane| {
+        xi[lane] = @as(F, @floatFromInt(lane + 1)) / @as(F, @floatFromInt(S));
+        eta[lane] = -xi[lane];
+    }
+    const all: [S]bool = @splat(true);
+    const full = loadNewtonWinnerPacket(&all, &xi, &eta).?;
+    try std.testing.expectEqual(@as(VecSB, all), full.active);
+    try std.testing.expectEqual(@as(VecSF, xi), full.xi);
+    try std.testing.expectEqual(@as(VecSF, eta), full.eta);
+
+    if (S < 2) return;
+    var mask = all;
+    mask[0] = false;
+    xi[0] = std.math.nan(F);
+    eta[0] = std.math.inf(F);
+    const sparse = loadNewtonWinnerPacket(&mask, &xi, &eta).?;
+    try std.testing.expectEqual(@as(VecSB, mask), sparse.active);
+    try std.testing.expectEqual(xi[1], sparse.xi[0]);
+    try std.testing.expectEqual(eta[1], sparse.eta[0]);
+    inline for (1..S) |lane| {
+        try std.testing.expectEqual(xi[lane], sparse.xi[lane]);
+        try std.testing.expectEqual(eta[lane], sparse.eta[lane]);
+    }
+
+    // Tail packets must not read any coordinates outside the logical row.
+    const tail = loadNewtonWinnerPacket(all[0..1], xi[1..2], eta[1..2]).?;
+    inline for (0..S) |lane| {
+        try std.testing.expectEqual(lane == 0, tail.active[lane]);
+        try std.testing.expectEqual(xi[1], tail.xi[lane]);
+        try std.testing.expectEqual(eta[1], tail.eta[lane]);
+    }
 }

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from benchmark_runner import run_command
 
+from bench_common import native_exe, repo_root
 from benchmark_catalog import binary_name as catalog_binary_name, build_command
 
 import argparse
@@ -22,7 +23,7 @@ import statistics
 import subprocess
 
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = repo_root()
 FIELDS = (
     "geometry_ms",
     "tile_overlap_ms",
@@ -94,7 +95,7 @@ def run_case(
     psf: str,
     sub_sample: int,
 ) -> list[dict[str, str]]:
-    exe = ROOT / "bin" / catalog_binary_name("buffer_psf")
+    exe = native_exe(ROOT / "bin" / catalog_binary_name("buffer_psf"))
     case_dir = args.out_dir / name
     cmd = [
         str(exe),

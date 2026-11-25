@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from benchmark_runner import run_command
 
+from bench_common import native_exe, repo_root
 from benchmark_catalog import binary_name as catalog_binary_name, build_command
 
 import argparse
@@ -24,7 +25,7 @@ import statistics
 import subprocess
 
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = repo_root()
 FIELDS = (
     "geometry_ms",
     "prepare_ms",
@@ -97,9 +98,11 @@ def run_case(
     sub_sample: int | None = None,
     shader: str = "checker",
 ) -> list[dict[str, str]]:
-    exe = ROOT / "bin" / catalog_binary_name("multiroot", simd="off" if backend == "scalar" else "on")
     if args.binary is not None:
         exe = args.binary.resolve()
+    else:
+        simd = "off" if backend == "scalar" else "on"
+        exe = native_exe(ROOT / "bin" / catalog_binary_name("multiroot", simd=simd))
     case_dir = args.out_dir / name
     cmd = [
         str(exe),

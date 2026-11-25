@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from benchmark_runner import run_command
 
+from bench_common import command_path, native_exe, repo_root
 from benchmark_catalog import binary_name as catalog_binary_name
 
 import argparse
@@ -10,8 +11,6 @@ import csv
 import datetime as dt
 import pathlib
 import shlex
-
-from perf_common import command_path, repo_root
 
 DEFAULT_OUT_ROOT = pathlib.Path("out") / "bench_stats_perf"
 DEFAULT_IMAGE_OUT_DIR = pathlib.Path("out") / "bench_images_perf"
@@ -213,7 +212,7 @@ def binary_name(precision: str, lanes: int) -> str:
 
 
 def binary_path(precision: str, lanes: int) -> pathlib.Path:
-    path = repo_root() / "bin" / binary_name(precision, lanes)
+    path = native_exe(repo_root() / "bin" / binary_name(precision, lanes))
     if not path.exists():
         raise SystemExit(
             f"Missing binary {path}. Run "

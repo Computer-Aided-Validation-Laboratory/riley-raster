@@ -146,3 +146,26 @@ const images = try riley.rasterAdvanced(
 - **Strict Input Validation**: Mismatched channel counts throw an immediate validation error unless validation is explicitly set to `.off`.
 - **Bit Depths and Formats**: Each `ImageSaveOpts` selects format, optional `file_bits` and `adc_bits`, value scaling (`.none`, `.auto`, `.fixed`, `.frac`), and ADC code packing (`.spread`, `.lower`, `.upper`). Floating CSV/FIMG use `file_bits = null` and `adc_bits = null`.
 - **Compiler Requirements**: Shared C library builds explicitly enforce LLVM backend compilation in Debug mode to prevent floating-point struct ABI corruption present in Zig 0.16's self-hosted x86_64 Debug backend.
+
+---
+
+## 6. Physical Speckle Calibration and Nominal Coverage
+
+The physical controls answer two different questions: the reference-mesh UV
+metric sets the average footprint size, while the coverage model sets the
+spacing of the owner grid for disks and Gaussians at the requested occupancy.
+Perlin uses the metric to set its cell size without a coverage solve. Because
+calibration uses reference geometry, the pattern follows the surface during
+deformation; it does not preserve spot size in deformed space or in pixels.
+
+Nominal coverage is an expected union area for unjittered supports in a
+stratified Bernoulli grid, not opacity, a Poisson estimate, or a promise about a
+finite render. Jitter and softness constrain the feasible support but do not
+retune the nominal placement density.
+
+The [procedural developer guide](PROCEDURAL.md#physical-calibration-and-nominal-coverage)
+is the reference for the UV metric, quadrature, coverage derivation and inversion.
+See the [public inputs](../docs/procedural.rst) for units and parameter limits,
+the [geometry assumptions](ASSUMPTIONS.md#physical-procedural-speckles) for the
+supported domain, and the [gold-independent Zig checks](TESTING.md#gold-independent-zig-checks)
+for the focused numerical and render tests.

@@ -5,19 +5,19 @@ import csv
 import math
 import pathlib
 import re
+import sys
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from bench_common import repo_root
+
 
 FRAMES_NUM = 63
 OUT_DIR = pathlib.Path("verif")
 FIG_DPI = 300.0
-
-
-def repo_root() -> pathlib.Path:
-    return pathlib.Path(__file__).resolve().parent.parent
 
 
 def fe_root() -> pathlib.Path:

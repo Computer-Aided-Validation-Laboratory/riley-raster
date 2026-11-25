@@ -1,4 +1,14 @@
+// --------------------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher) and James Panayis
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
+// --------------------------------------------------------------------------------------
 const std = @import("std");
+const buildoptions = @import("src/riley/zig/buildoptions.zig");
+const speckleconfig = @import("src/riley/zig/speckleconfig.zig");
 
 const riley_version = std.SemanticVersion{
     .major = 2026,
@@ -10,44 +20,53 @@ const RunEntry = struct {
     step_name: []const u8,
     description: []const u8,
     source_path: []const u8,
+    forward_args: bool = false,
 };
 
 const TestEntry = struct {
     step_name: []const u8,
     description: []const u8,
     source_path: []const u8,
+    filters: []const []const u8 = &.{},
 };
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const precision = b.option(
-        []const u8,
-        "precision",
-        "Floating point precision: f64 or f32",
-    ) orelse "f64";
-    const simd = b.option([]const u8, "simd", "SIMD mode: on or off") orelse "on";
-    const newton_solver = b.option(
-        []const u8,
-        "newton-solver",
-        "Newton solver mode: fast or robust",
-    ) orelse "fast";
-    const simd_vector_width = b.option(
-        u32,
-        "simd-vector-width",
-        "SIMD vector width (0 to use default for precision)",
-    ) orelse 0;
-    validatePrecision(precision);
-    validateSimd(simd);
-    validateNewtonSolver(newton_solver);
+    const strip = b.option(bool, "strip", "Omit debug information from built binaries") orelse false;
+    const defaults: buildoptions.Options = .{};
+    const mask_samples = b.option(
+        u8,
+        "speckle-mask-samples-per-cell",
+        "Experimental mask/classified-indexed resolution per cell: 8, 12, or 16",
+    ) orelse @intFromEnum(defaults.speckle_mask_resolution);
+    const options: buildoptions.Options = .{
+        .precision = b.option(
+            buildoptions.Precision,
+            "precision",
+            "Floating point precision: f64 or f32",
+        ) orelse defaults.precision,
+        .simd = b.option(buildoptions.SimdMode, "simd", "SIMD mode: on or off") orelse defaults.simd,
+        .newton_solver = b.option(
+            buildoptions.NewtonSolverMode,
+            "newton-solver",
+            "Newton solver mode: fast or robust",
+        ) orelse defaults.newton_solver,
+        .simd_vector_width = b.option(
+            u32,
+            "simd-vector-width",
+            "SIMD vector width (0 to use default for precision)",
+        ) orelse defaults.simd_vector_width,
+        .enable_all_evaluators = b.option(
+            bool,
+            "enable-all-evaluators",
+            "Enable experimental native evaluator and neighbor overrides",
+        ) orelse defaults.enable_all_evaluators,
+        .speckle_mask_resolution = std.enums.fromInt(speckleconfig.MaskResolution, mask_samples) orelse
+            @panic("Supported -Dspeckle-mask-samples-per-cell values are 8, 12, and 16."),
+    };
 
-    const build_options_module = createBuildOptionsModule(
-        b,
-        precision,
-        simd,
-        newton_solver,
-        simd_vector_width,
-    );
+    const build_options_module = createBuildOptionsModule(b, options);
     const riley_module = b.addModule("riley", .{
         .root_source_file = b.path("src/riley/zig/api.zig"),
         .target = target,
@@ -57,6 +76,7 @@ pub fn build(b: *std.Build) void {
         b,
         target,
         optimize,
+        strip,
         build_options_module,
         riley_module,
     );
@@ -82,6 +102,23 @@ pub fn build(b: *std.Build) void {
     abi_step.dependOn(&b.addRunArtifact(abi_test).step);
 
     const tests = [_]TestEntry{
+        .{
+            .step_name = "test-unit",
+            .description = "Run gold-independent native unit, integration, and tooling tests",
+            .source_path = "src/test_unit.zig",
+        },
+        .{
+            .step_name = "test-procedural-speckles",
+            .description = "Run procedural speckle integration and unit tests",
+            .source_path = "src/test_procedural_speckles.zig",
+        },
+        .{
+            .step_name = "test-speckle-benchmark",
+            .description = "Run focused native speckle benchmark tooling tests",
+            .source_path = "src/bench_speckle_evaluators.zig",
+            .filters = &.{"speckle benchmark"},
+        },
+
         .{
             .step_name = "test-verif-basic",
             .description = "Run the verification and BASIC test suites in one build",
@@ -115,11 +152,51 @@ pub fn build(b: *std.Build) void {
             b,
             target,
             optimize,
+            strip,
             build_options_module,
             riley_module,
             entry,
         );
         test_step.dependOn(&test_run.step);
+    }
+
+    const configs_step = b.step(
+        "test-configs",
+        "Run native tests across precision, SIMD, evaluator policy, and mask resolution",
+    );
+    for ([_]buildoptions.Precision{ .f64, .f32 }) |config_precision| {
+        for ([_]buildoptions.SimdMode{ .on, .off }) |config_simd| {
+            for ([_]bool{ false, true }) |experimental| {
+                var config_options = options;
+                config_options.precision = config_precision;
+                config_options.simd = config_simd;
+                config_options.enable_all_evaluators = experimental;
+                config_options.speckle_mask_resolution = defaults.speckle_mask_resolution;
+                if (experimental) {
+                    if (config_precision == .f32 and config_simd == .on) config_options.speckle_mask_resolution = .sixteen;
+                    if (config_precision == .f64 and config_simd == .off) config_options.speckle_mask_resolution = .eight;
+                }
+                const config_run = addTestRunStep(
+                    b,
+                    target,
+                    optimize,
+                    strip,
+                    createBuildOptionsModule(b, config_options),
+                    riley_module,
+                    .{
+                        .step_name = b.fmt("test-configs-{s}-{s}-{s}-mask-{d}", .{
+                            @tagName(config_precision),
+                            @tagName(config_simd),
+                            if (experimental) "experimental" else "default",
+                            @intFromEnum(config_options.speckle_mask_resolution),
+                        }),
+                        .description = "Run one native build configuration",
+                        .source_path = "src/test_unit.zig",
+                    },
+                );
+                configs_step.dependOn(&config_run.step);
+            }
+        }
     }
 
     const diag_badjac_step = b.step(
@@ -130,11 +207,12 @@ pub fn build(b: *std.Build) void {
         b,
         target,
         optimize,
+        strip,
         build_options_module,
         .{
             .step_name = "diag-badjac",
             .description = "Run warning-only invalid-Jacobian render diagnostics",
-            .source_path = "src/root.zig",
+            .source_path = "src/diag_badjac.zig",
         },
     );
     diag_badjac_step.dependOn(&diag_badjac_run.step);
@@ -186,6 +264,24 @@ pub fn build(b: *std.Build) void {
             .source_path = "src/demo06_featurezoo.zig",
         },
         .{
+            .step_name = "demo00b-procedural-quickstart",
+            .description = "Render a physical speckle pattern on a plane",
+            .source_path = "src/demo00b_procedural_quickstart.zig",
+            .forward_args = true,
+        },
+        .{
+            .step_name = "demo01b-procedural-sphere",
+            .description = "Render physical speckles on a deforming sphere",
+            .source_path = "src/demo01b_procedural_sphere.zig",
+            .forward_args = true,
+        },
+        .{
+            .step_name = "demo02d-rabbit-procedural",
+            .description = "Run the procedural rabbit demo",
+            .source_path = "src/demo02d_rabbit_procedural.zig",
+            .forward_args = true,
+        },
+        .{
             .step_name = "demo07-shaderpipe-quickstart",
             .description = "Run the ShaderSet quickstart demo",
             .source_path = "src/demo07_shaderpipe_quickstart.zig",
@@ -207,36 +303,65 @@ pub fn build(b: *std.Build) void {
         },
     };
 
-    const demos_step = b.step("demos", "Run all demo entrypoints");
+    const demos_step = b.step("demos", "Run all demo entrypoints with default arguments");
+    const has_demo_args = if (b.args) |args| args.len != 0 else false;
+    if (has_demo_args) {
+        const fail = b.addFail("'demos' does not accept arguments; use 'zig build <demo-target> -- <args>'.");
+        demos_step.dependOn(&fail.step);
+    }
+    const demos_check = b.step("demos-check", "Compile all demo entrypoints without running them");
+    const demo_cli_test = b.step("test-demo-cli", "Check help and invalid options for procedural demos");
     for (demos) |entry| {
         const run_step = b.step(entry.step_name, entry.description);
         const run_artifact = addRunStep(
             b,
             target,
             optimize,
+            strip,
             build_options_module,
             entry,
         );
         run_step.dependOn(&run_artifact.step);
-        demos_step.dependOn(&run_artifact.step);
+        if (!has_demo_args) demos_step.dependOn(&run_artifact.step);
+        const executable = run_artifact.producer.?;
+        executable.getEmittedBin().addStepDependencies(demos_check);
+
+        if (entry.forward_args) {
+            const help = b.addRunArtifact(executable);
+            help.addArg("--help");
+            help.expectStdOutMatch("Usage: ");
+            demo_cli_test.dependOn(&help.step);
+
+            const invalid = b.addRunArtifact(executable);
+            invalid.addArgs(&.{ "--unknown-option", "0" });
+            invalid.expectExitCode(1);
+            invalid.expectStdErrMatch("--unknown-option");
+            demo_cli_test.dependOn(&invalid.step);
+        }
     }
 
     const run_all_demos_step = b.step(
         "run-all-demos",
         "Run all demos sequentially through the public API module",
     );
-    const run_all_demos_artifact = addRunStep(
-        b,
-        target,
-        optimize,
-        build_options_module,
-        .{
-            .step_name = "run-all-demos",
-            .description = "Run all demos sequentially through the public API module",
-            .source_path = "src/run_all_demos.zig",
-        },
-    );
-    run_all_demos_step.dependOn(&run_all_demos_artifact.step);
+    if (has_demo_args) {
+        const fail = b.addFail("'run-all-demos' does not accept arguments; use 'zig build <demo-target> -- <args>'.");
+        run_all_demos_step.dependOn(&fail.step);
+    } else {
+        const run_all_demos_artifact = addRunStep(
+            b,
+            target,
+            optimize,
+            strip,
+            build_options_module,
+            .{
+                .step_name = "run-all-demos",
+                .description = "Run all demos sequentially through the public API module",
+                .source_path = "src/run_all_demos.zig",
+            },
+        );
+        run_all_demos_step.dependOn(&run_all_demos_artifact.step);
+    }
 
     const generators = [_]RunEntry{
         .{
@@ -268,6 +393,7 @@ pub fn build(b: *std.Build) void {
             b,
             target,
             optimize,
+            strip,
             build_options_module,
             entry,
         );
@@ -288,6 +414,7 @@ pub fn build(b: *std.Build) void {
         b,
         target,
         optimize,
+        strip,
         build_options_module,
         .{
             .step_name = "gen-gold-verif-zig-internal",
@@ -303,6 +430,11 @@ pub fn build(b: *std.Build) void {
     gen_verif_step.dependOn(&gen_verif_python.step);
 
     const benches = [_]RunEntry{
+        .{
+            .step_name = "bench-speckle-evaluators",
+            .description = "Benchmark procedural speckle evaluators",
+            .source_path = "src/bench_speckle_evaluators.zig",
+        },
         .{
             .step_name = "bench-dicuq",
             .description = "Run the DIC UQ benchmark",
@@ -355,7 +487,12 @@ pub fn build(b: *std.Build) void {
         },
     };
 
-    const bench_runs_step = b.step("benches", "Run all benchmark entrypoints");
+    const bench_runs_step = b.step("benches", "Run all benchmark entrypoints with default arguments");
+    const bench_args = b.args orelse &.{};
+    if (bench_args.len != 0) {
+        const fail = b.addFail("'benches' does not accept arguments; use 'zig build bench-<name> -- <args>'.");
+        bench_runs_step.dependOn(&fail.step);
+    }
     const bench_bins_step = b.step(
         "install-bench-bins",
         "Install benchmark binaries under the selected prefix bin directory",
@@ -366,11 +503,13 @@ pub fn build(b: *std.Build) void {
             b,
             target,
             optimize,
+            strip,
             build_options_module,
             entry,
         );
+        run_artifact.addArgs(bench_args);
         run_step.dependOn(&run_artifact.step);
-        bench_runs_step.dependOn(&run_artifact.step);
+        if (bench_args.len == 0) bench_runs_step.dependOn(&run_artifact.step);
 
         const install_step = b.step(
             b.fmt("install-{s}", .{entry.step_name}),
@@ -380,11 +519,10 @@ pub fn build(b: *std.Build) void {
             b,
             target,
             optimize,
+            strip,
             build_options_module,
             entry,
-            precision,
-            simd,
-            simd_vector_width,
+            options,
         );
         install_step.dependOn(&install_artifact.step);
         bench_bins_step.dependOn(&install_artifact.step);
@@ -419,6 +557,7 @@ fn addRileySharedLibrary(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    strip: bool,
     build_options_module: *std.Build.Module,
     riley_module: *std.Build.Module,
 ) *std.Build.Step.Compile {
@@ -433,6 +572,7 @@ fn addRileySharedLibrary(
             b,
             target,
             optimize,
+            strip,
             build_options_module,
             riley_module,
             "src/riley/zig/c-riley.zig",
@@ -448,6 +588,7 @@ fn addTestRunStep(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    strip: bool,
     build_options_module: *std.Build.Module,
     riley_module: *std.Build.Module,
     entry: TestEntry,
@@ -456,10 +597,12 @@ fn addTestRunStep(
         .root_source_file = b.path(entry.source_path),
         .target = target,
         .optimize = optimize,
+        .strip = strip,
         .link_libc = true,
     });
     test_module.addImport("build_options", build_options_module);
     test_module.addImport("riley", riley_module);
+
     const default_runner_path = b.graph.zig_lib_directory.join(
         b.allocator,
         &.{ "compiler", "test_runner.zig" },
@@ -468,10 +611,13 @@ fn addTestRunStep(
         .root_source_file = .{ .cwd_relative = default_runner_path },
         .target = target,
         .optimize = optimize,
+        .strip = strip,
     }));
     const tests = b.addTest(.{
         .name = entry.step_name,
         .root_module = test_module,
+        .filters = entry.filters,
+
         .test_runner = .{
             .path = b.path("src/dev_support/testrunner.zig"),
             .mode = .simple,
@@ -492,6 +638,7 @@ fn addRunStep(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    strip: bool,
     build_options_module: *std.Build.Module,
     entry: RunEntry,
 ) *std.Build.Step.Run {
@@ -502,6 +649,7 @@ fn addRunStep(
             b,
             target,
             optimize,
+            strip,
             build_options_module,
             null,
             entry.source_path,
@@ -509,26 +657,27 @@ fn addRunStep(
             .executable,
         ),
     });
-    return b.addRunArtifact(executable);
+    const run_artifact = b.addRunArtifact(executable);
+    if (entry.forward_args) {
+        if (b.args) |args| run_artifact.addArgs(args);
+    }
+    return run_artifact;
 }
 
 fn addBenchInstallStep(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    strip: bool,
     build_options_module: *std.Build.Module,
     entry: RunEntry,
-    precision: []const u8,
-    simd: []const u8,
-    simd_vector_width: u32,
+    options: buildoptions.Options,
 ) *std.Build.Step.InstallArtifact {
     const basename = std.fs.path.basename(entry.source_path);
     const binary_name = benchmarkBinaryName(
         b,
         basename[0 .. basename.len - ".zig".len],
-        precision,
-        simd,
-        simd_vector_width,
+        options,
     );
     const executable = b.addExecutable(.{
         .name = binary_name,
@@ -536,6 +685,7 @@ fn addBenchInstallStep(
             b,
             target,
             optimize,
+            strip,
             build_options_module,
             null,
             entry.source_path,
@@ -543,23 +693,15 @@ fn addBenchInstallStep(
             .executable,
         ),
     });
-    return b.addInstallArtifact(executable, .{
-        .dest_sub_path = binary_name,
-    });
+    return b.addInstallArtifact(executable, .{});
 }
 
 fn createBuildOptionsModule(
     b: *std.Build,
-    precision: []const u8,
-    simd: []const u8,
-    newton_solver: []const u8,
-    simd_vector_width: u32,
+    values: buildoptions.Options,
 ) *std.Build.Module {
     const options = b.addOptions();
-    options.addOption([]const u8, "precision", precision);
-    options.addOption([]const u8, "simd", simd);
-    options.addOption([]const u8, "newton_solver", newton_solver);
-    options.addOption(u32, "simd_vector_width", simd_vector_width);
+    options.addOption(buildoptions.Options, "values", values);
     return options.createModule();
 }
 
@@ -567,6 +709,7 @@ fn createRootModule(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    strip: bool,
     build_options_module: *std.Build.Module,
     riley_module: ?*std.Build.Module,
     source_path: []const u8,
@@ -583,6 +726,7 @@ fn createRootModule(
         b,
         target,
         optimize,
+        strip,
         build_options_module,
         riley_module,
         source_path,
@@ -592,6 +736,7 @@ fn createRootModule(
         .root_source_file = wrapper_source,
         .target = target,
         .optimize = optimize,
+        .strip = strip,
         .link_libc = link_libc,
         .imports = imports,
     });
@@ -630,6 +775,7 @@ fn buildWrapperImports(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    strip: bool,
     build_options_module: *std.Build.Module,
     riley_module: ?*std.Build.Module,
     source_path: []const u8,
@@ -645,6 +791,7 @@ fn buildWrapperImports(
         .root_source_file = b.path(source_path),
         .target = target,
         .optimize = optimize,
+        .strip = strip,
         .link_libc = link_libc,
     });
     if (riley_module) |module| entry_source.addImport("riley", module);
@@ -655,44 +802,16 @@ fn buildWrapperImports(
     return imports.items;
 }
 
-fn validatePrecision(precision: []const u8) void {
-    if (std.mem.eql(u8, precision, "f32") or
-        std.mem.eql(u8, precision, "f64"))
-    {
-        return;
-    }
-    @panic("Supported -Dprecision values are f32 and f64.");
-}
-
-fn validateSimd(simd: []const u8) void {
-    if (std.mem.eql(u8, simd, "on") or
-        std.mem.eql(u8, simd, "off"))
-    {
-        return;
-    }
-    @panic("Supported -Dsimd values are on and off.");
-}
-
-fn validateNewtonSolver(newton_solver: []const u8) void {
-    if (std.mem.eql(u8, newton_solver, "fast") or
-        std.mem.eql(u8, newton_solver, "robust"))
-    {
-        return;
-    }
-    @panic("Supported -Dnewton-solver values are fast and robust.");
-}
-
 fn benchmarkBinaryName(
     b: *std.Build,
     base_name: []const u8,
-    precision: []const u8,
-    simd: []const u8,
-    simd_vector_width: u32,
+    options: buildoptions.Options,
 ) []const u8 {
-    const simd_tag = if (std.mem.eql(u8, simd, "on")) "simd" else "scalar";
-    const default_width: u32 = if (std.mem.eql(u8, precision, "f32")) 16 else 8;
+    const precision = @tagName(options.precision);
+    const simd_tag = if (options.simd == .on) "simd" else "scalar";
+    const default_width = options.precision.defaultSimdVectorWidth();
 
-    if (simd_vector_width == 0 or simd_vector_width == default_width) {
+    if (options.simd_vector_width == 0 or options.simd_vector_width == default_width) {
         return b.fmt(
             "{s}_{s}_{s}",
             .{ base_name, precision, simd_tag },
@@ -704,7 +823,7 @@ fn benchmarkBinaryName(
                 base_name,
                 precision,
                 simd_tag,
-                simd_vector_width,
+                options.simd_vector_width,
             },
         );
     }

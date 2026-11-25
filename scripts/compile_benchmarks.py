@@ -3,7 +3,12 @@
 import argparse
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
-from benchmark_catalog import BENCHMARKS, ROOT, build_command
+from bench_common import repo_root
+from benchmark_catalog import BENCHMARKS, SPECKLE_BENCHMARK, build_command
+
+
+ROOT = repo_root()
+COMPILE_BENCHMARKS = (*BENCHMARKS, SPECKLE_BENCHMARK)
 
 
 def main():
@@ -15,13 +20,13 @@ def main():
     parser.add_argument("--jobs", type=int, default=2, help="Concurrent benchmark builds (default: 2)")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    names = args.benchmarks or BENCHMARKS
+    names = args.benchmarks or COMPILE_BENCHMARKS
     if args.lanes is not None and args.lanes < 1:
         parser.error("--lanes must be positive")
     if args.jobs < 1:
         parser.error("--jobs must be positive")
     for name in names:
-        if name not in BENCHMARKS:
+        if name not in COMPILE_BENCHMARKS:
             parser.error(f"Unknown benchmark: {name}")
     def compile_one(name):
         command = build_command(name, args.precision, args.simd, args.lanes)

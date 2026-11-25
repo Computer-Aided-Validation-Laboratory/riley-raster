@@ -3,6 +3,22 @@ const abi = @import("riley/zig/c-riley.zig");
 
 extern fn rileyTestAbiLayout(index: usize) usize;
 
+test "C speckle constants match the Zig ABI" {
+    const c = @cImport(@cInclude("riley.h"));
+    inline for (.{
+        "RILEY_SHADER_SPECKLE",
+        "RILEY_SPECKLE_DISK",
+        "RILEY_SPECKLE_GAUSSIAN",
+        "RILEY_SPECKLE_PERLIN",
+        "RILEY_SPECKLE_BITS_NONE",
+        "RILEY_SPECKLE_DEFAULT_SEED",
+        "RILEY_PERLIN_DEFAULT_TRANSITION_WIDTH",
+    }) |name| {
+        const expected = @field(abi, name);
+        try std.testing.expectEqual(expected, @as(@TypeOf(expected), @field(c, name)));
+    }
+}
+
 test "C compiler and Zig agree on every ABI descriptor layout" {
     var index: usize = 0;
     inline for (comptime std.meta.declarations(abi)) |decl| {
