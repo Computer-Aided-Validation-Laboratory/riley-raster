@@ -14,6 +14,11 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+if __package__:
+    from .bench_common import repo_root
+else:
+    from bench_common import repo_root
+
 DEFAULT_CROP_SIZE: int = 128
 COLOR_MODES: tuple[str, ...] = ("mono", "rgb")
 FORMATS: tuple[str, ...] = ("bmp", "tiff", "png")
@@ -22,10 +27,6 @@ DEFAULT_SOURCE_DIR = Path("texture")
 DEFAULT_OUTPUT_DIR = Path("texture")
 MONO_SOURCE_FILENAME = "speckle_mono.bmp"
 RGB_SOURCE_FILENAME = "speckle_rgb.bmp"
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
 
 
 def _crop_texture(image_array: np.ndarray, crop_size: int) -> np.ndarray:
@@ -84,7 +85,7 @@ def generate_test_textures(
     crop_size: int = DEFAULT_CROP_SIZE,
     formats: tuple[str, ...] = FORMATS,
 ) -> list[Path]:
-    repo = _repo_root()
+    repo = repo_root()
     if source_dir is None:
         source_dir = repo / DEFAULT_SOURCE_DIR
     else:

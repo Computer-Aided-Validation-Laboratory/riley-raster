@@ -10,7 +10,7 @@
 const std = @import("std");
 const F = @import("buildconfig.zig").F;
 const MeshType = @import("geometrykernels.zig").MeshType;
-const meshio = @import("meshio.zig");
+const meshtypes = @import("meshtypes.zig");
 const NDArray = @import("ndarray.zig").NDArray;
 const geom = @import("specklegeom.zig");
 const coverage = @import("specklecoverage.zig");
@@ -23,19 +23,30 @@ pub const ValidationError = coverage.Error || speckle.PerlinControlError || spec
     InvalidSpeckleRadius,
     InvalidSpeckleJitter,
     InvalidSpeckleEdgeSoftness,
-    SpeckleEdgeSoftnessRequiresDisk,
     UnsupportedSpeckleSupport,
 };
 
 /// Nominal footprints: coverage in (0, 1), radius > 0, occupancy in (0, 1],
-/// jitter in [0, radius/2], and disk edge_softness >= 0, subject to support feasibility.
-/// Units, calibration, and coverage semantics: docs/python-api/speckles.rst.
-pub const Dot2DParams = struct {
+/// jitter in [0, radius/2], and edge_softness >= 0, subject to support feasibility.
+/// Units, calibration, and coverage semantics: dev/PROCEDURAL.md.
+pub const Disk2DParams = struct {
     coverage: F,
     radius: F,
     occupancy: F = 1,
     jitter: F = 0,
     edge_softness: F = 0,
+    seed: u32 = config.default_seed,
+    foreground: F = 0,
+    background: F = 1,
+};
+
+/// Truncated Gaussian spots with nominal coverage and the same radius, occupancy,
+/// and jitter conventions as disks. The Gaussian profile has no edge-softness control.
+pub const Gaussian2DParams = struct {
+    coverage: F,
+    radius: F,
+    occupancy: F = 1,
+    jitter: F = 0,
     seed: u32 = config.default_seed,
     foreground: F = 0,
     background: F = 1,
@@ -53,8 +64,8 @@ pub const Perlin2DParams = struct {
 };
 
 pub const SpeckleParams = union(enum) {
-    disk: Dot2DParams,
-    gaussian: Dot2DParams,
+    disk: Disk2DParams,
+    gaussian: Gaussian2DParams,
     perlin: Perlin2DParams,
 
     /// Cheap input/support checks; does not scan geometry or invert coverage.
@@ -74,10 +85,8 @@ pub const SpeckleParams = union(enum) {
                     if (!std.math.isFinite(params.jitter) or params.jitter < 0)
                         return error.InvalidSpeckleJitter;
                     if (params.jitter > 0.5 * params.radius) return error.InvalidSpeckleJitter;
-                    if (!std.math.isFinite(params.edge_softness) or params.edge_softness < 0)
+                    if (pattern == .disk and (!std.math.isFinite(params.edge_softness) or params.edge_softness < 0))
                         return error.InvalidSpeckleEdgeSoftness;
-                    if (pattern == .gaussian and params.edge_softness != 0)
-                        return error.SpeckleEdgeSoftnessRequiresDisk;
                 }
                 try speckle.validateColors(params.foreground, params.background);
                 try speckle.validateColorContrast(params.foreground, params.background);
@@ -85,8 +94,8 @@ pub const SpeckleParams = union(enum) {
                 if (pattern != .perlin) {
                     // Feasibility only: actual density remains the nominal C,p inverse,
                     // independent of jitter/softness. The nominal cap was already checked.
-                    const limit = 1 / (1 + @as(f64, params.jitter) / params.radius +
-                        @as(f64, params.edge_softness) / params.radius);
+                    const softness_ratio = if (pattern == .disk) @as(f64, params.edge_softness) / params.radius else 0;
+                    const limit = 1 / (1 + @as(f64, params.jitter) / params.radius + softness_ratio);
                     if (limit < 1 and params.coverage > coverage.coverage(params.occupancy, limit))
                         return error.UnsupportedSpeckleSupport;
                 }
@@ -102,8 +111,8 @@ pub const SpeckleParams = union(enum) {
 pub fn resolveForMesh(
     params: SpeckleParams,
     mesh_type: MeshType,
-    coords: *const meshio.Coords,
-    connect: *const meshio.Connect,
+    coords: *const meshtypes.Coords,
+    connect: *const meshtypes.Connect,
     uvs: *const NDArray(F),
 ) !speckle.GridParams {
     const lengths = try geom.calibrateReferenceUv(mesh_type, coords, connect, uvs);
@@ -128,9 +137,8 @@ pub fn initResources(outer_alloc: std.mem.Allocator, grid: speckle.GridParams) !
 }
 
 fn resolveCalibrated(params: SpeckleParams, length_per_uv: [2]F) speckle.GridParams {
-    const physical = switch (params) {
-        .disk, .gaussian => |p| p,
-        .perlin => |p| return .{
+    return switch (params) {
+        .perlin => |p| .{
             .pattern = .perlin,
             .cells_per_uv = .{ length_per_uv[0] / p.cell_size, length_per_uv[1] / p.cell_size },
             .perlin_coverage_threshold = p.threshold,
@@ -139,26 +147,25 @@ fn resolveCalibrated(params: SpeckleParams, length_per_uv: [2]F) speckle.GridPar
             .foreground = p.foreground,
             .background = p.background,
         },
-    };
-    // Only this lowering step inverts; jitter and softness never affect nominal density.
-    const radius: F = @floatCast(coverage.radiusForValidatedCoverage(
-        physical.coverage,
-        physical.occupancy,
-    ));
-    const inverse_length = radius / physical.radius;
-    return .{
-        .pattern = if (params == .disk) .disk else .gaussian,
-        .cells_per_uv = .{
-            length_per_uv[0] * inverse_length,
-            length_per_uv[1] * inverse_length,
+        inline .disk, .gaussian => |p, pattern| blk: {
+            // Only this lowering step inverts; jitter and softness never affect nominal density.
+            const radius: F = @floatCast(coverage.radiusForValidatedCoverage(p.coverage, p.occupancy));
+            const inverse_length = radius / p.radius;
+            break :blk .{
+                .pattern = if (pattern == .disk) .disk else .gaussian,
+                .cells_per_uv = .{
+                    length_per_uv[0] * inverse_length,
+                    length_per_uv[1] * inverse_length,
+                },
+                .radius_mean = radius,
+                .radius_jitter = radius * (p.jitter / p.radius),
+                .edge_softness = if (pattern == .disk) radius * (p.edge_softness / p.radius) else 0,
+                .occupancy = p.occupancy,
+                .seed = p.seed,
+                .foreground = p.foreground,
+                .background = p.background,
+            };
         },
-        .radius_mean = radius,
-        .radius_jitter = radius * (physical.jitter / physical.radius),
-        .edge_softness = radius * (physical.edge_softness / physical.radius),
-        .occupancy = physical.occupancy,
-        .seed = physical.seed,
-        .foreground = physical.foreground,
-        .background = physical.background,
     };
 }
 
@@ -172,7 +179,6 @@ test "friendly validation error contract excludes internal grid controls" {
         InvalidSpeckleRadius,
         InvalidSpeckleJitter,
         InvalidSpeckleEdgeSoftness,
-        SpeckleEdgeSoftnessRequiresDisk,
         UnsupportedSpeckleSupport,
         InvalidSpeckleCellSize,
         InvalidSpecklePerlinThreshold,
@@ -184,11 +190,12 @@ test "friendly validation error contract excludes internal grid controls" {
 }
 
 test "physical defaults and nominal density ignore jitter and visual softness" {
-    const physical = Dot2DParams{ .coverage = 0.5, .radius = 0.02 };
+    const physical = Disk2DParams{ .coverage = 0.5, .radius = 0.02 };
     try std.testing.expectEqual(@as(F, 1), physical.occupancy);
     try std.testing.expectEqual(@as(F, 0), physical.jitter);
     const hard = resolveCalibrated(.{ .disk = physical }, test_calibration);
-    const gaussian = resolveCalibrated(.{ .gaussian = physical }, test_calibration);
+    const gaussian = resolveCalibrated(.{ .gaussian = .{ .coverage = physical.coverage, .radius = physical.radius } }, test_calibration);
+    try std.testing.expectEqual(@as(F, 0), gaussian.edge_softness);
     var varied = physical;
     varied.jitter = 0.003;
     varied.edge_softness = 0.002;
@@ -206,7 +213,7 @@ test "physical defaults and nominal density ignore jitter and visual softness" {
 }
 
 test "physical parameters reject unattainable coverage, unsupported support and excessive density" {
-    var physical = Dot2DParams{ .coverage = 0.99, .radius = 2, .occupancy = 0.1 };
+    var physical = Disk2DParams{ .coverage = 0.99, .radius = 2, .occupancy = 0.1 };
     try std.testing.expectError(error.UnattainableSpeckleCoverage, (SpeckleParams{ .disk = physical }).validate());
     physical.coverage = 0.5;
     physical.occupancy = 1;
@@ -218,7 +225,9 @@ test "physical parameters reject unattainable coverage, unsupported support and 
 }
 
 test "friendly input scalar errors and colors are strict for both physical shapes" {
-    const base = Dot2DParams{ .coverage = 0.5, .radius = 2 };
+    const disk_base: Disk2DParams = .{ .coverage = 0.5, .radius = 2 };
+    const gaussian_base: Gaussian2DParams = .{ .coverage = 0.5, .radius = 2 };
+    try std.testing.expect(!@hasField(Gaussian2DParams, "edge_softness"));
     const nan = std.math.nan(F);
     const inf = std.math.inf(F);
     const Case = struct { field: []const u8, values: []const F, err: anyerror };
@@ -227,26 +236,30 @@ test "friendly input scalar errors and colors are strict for both physical shape
         .{ .field = "radius", .values = &.{ 0, -1, nan, inf }, .err = error.InvalidSpeckleRadius },
         .{ .field = "occupancy", .values = &.{ 0, 1.1, nan }, .err = error.InvalidSpeckleOccupancy },
         .{ .field = "jitter", .values = &.{ -1, nan, inf }, .err = error.InvalidSpeckleJitter },
-        .{ .field = "edge_softness", .values = &.{ -1, nan, inf }, .err = error.InvalidSpeckleEdgeSoftness },
+
         .{ .field = "foreground", .values = &.{ -1, 2, nan, inf, -inf }, .err = error.InvalidSpeckleForeground },
         .{ .field = "background", .values = &.{ -1, 2, nan, inf, -inf }, .err = error.InvalidSpeckleBackground },
         .{ .field = "foreground", .values = &.{1}, .err = error.SpeckleColorsMustDiffer },
     };
     inline for (cases) |case| {
         for (case.values) |value| {
-            var physical = base;
-            @field(physical, case.field) = value;
-            try std.testing.expectError(case.err, (SpeckleParams{ .disk = physical }).validate());
-            try std.testing.expectError(case.err, (SpeckleParams{ .gaussian = physical }).validate());
+            var disk = disk_base;
+            var gaussian = gaussian_base;
+            @field(disk, case.field) = value;
+            @field(gaussian, case.field) = value;
+            try std.testing.expectError(case.err, (SpeckleParams{ .disk = disk }).validate());
+            try std.testing.expectError(case.err, (SpeckleParams{ .gaussian = gaussian }).validate());
         }
     }
-    var physical = base;
-    physical.edge_softness = 0.1;
-    try std.testing.expectError(error.SpeckleEdgeSoftnessRequiresDisk, (SpeckleParams{ .gaussian = physical }).validate());
+    for ([_]F{ -1, nan, inf }) |softness| {
+        var disk = disk_base;
+        disk.edge_softness = softness;
+        try std.testing.expectError(error.InvalidSpeckleEdgeSoftness, (SpeckleParams{ .disk = disk }).validate());
+    }
 }
 
 test "friendly validation reports colors after pattern controls but before support feasibility" {
-    var physical = Dot2DParams{
+    var physical = Disk2DParams{
         .coverage = 0.5,
         .radius = 2,
         .jitter = 1,
@@ -254,7 +267,9 @@ test "friendly validation reports colors after pattern controls but before suppo
         .foreground = 1,
     };
     try std.testing.expectError(error.SpeckleColorsMustDiffer, (SpeckleParams{ .disk = physical }).validate());
-    try std.testing.expectError(error.SpeckleEdgeSoftnessRequiresDisk, (SpeckleParams{ .gaussian = physical }).validate());
+    physical.edge_softness = -1;
+    try std.testing.expectError(error.InvalidSpeckleEdgeSoftness, (SpeckleParams{ .disk = physical }).validate());
+    physical.edge_softness = 2;
     physical.background = -1;
     try std.testing.expectError(error.InvalidSpeckleBackground, (SpeckleParams{ .disk = physical }).validate());
 }
@@ -289,7 +304,7 @@ test "Perlin validates physical cell size and noise controls" {
 test "dilute physical coverage uses continuous occupancy without density compensation" {
     const unit_plane = [2]F{ 1, 1 };
     for ([_]F{ 1e-6, 1e-4 }) |p| {
-        const physical = Dot2DParams{ .coverage = p, .radius = 0.001, .occupancy = p };
+        const physical = Disk2DParams{ .coverage = p, .radius = 0.001, .occupancy = p };
         const grid = resolveCalibrated(.{ .disk = physical }, unit_plane);
         try std.testing.expectEqual(p, grid.occupancy);
         try std.testing.expectEqual(grid.radius_mean / physical.radius, grid.cells_per_uv[0]);
@@ -308,11 +323,11 @@ test "mesh resolution calibrates reference geometry rather than UV bounding-box 
     var positions = [_]F{ 0, 0, 0, 4, 0, 0, 0, 3, 0 };
     var texcoords = [_]F{ 0.2, 0.1, 0.7, 0.1, 0.2, 0.35 };
     var indices = [_]usize{ 0, 1, 2 };
-    const coords = meshio.Coords.init(&positions, 3);
-    const connect = meshio.Connect.init(&indices, 1, 3);
+    const coords = meshtypes.Coords.init(&positions, 3);
+    const connect = meshtypes.Connect.init(&indices, 1, 3);
     const uvs = try NDArray(F).init(std.testing.allocator, &texcoords, &.{ 3, 2 });
     defer uvs.deinit(std.testing.allocator);
-    const physical = Dot2DParams{ .coverage = 0.5, .radius = 0.1 };
+    const physical = Disk2DParams{ .coverage = 0.5, .radius = 0.1 };
     const grid = try resolveForMesh(.{ .disk = physical }, .tri3, &coords, &connect, &uvs);
     const tol: F = if (F == f32) 2e-6 else 2e-14;
     try std.testing.expectApproxEqRel(physical.radius, grid.radius_mean / grid.cells_per_uv[0] * 8, tol);
@@ -348,23 +363,28 @@ test "mesh resolution calibrates reference geometry rather than UV bounding-box 
 
 test "half-radius jitter boundary preserves ratio-first jitter and softness" {
     // At R=0.3, (r*J)/R differs from r*(J/R) in both f32 and f64 for C=0.5.
-    const boundary = Dot2DParams{ .coverage = 0.5, .radius = 0.3, .jitter = 0.15, .edge_softness = 0.15 };
+    const boundary = Disk2DParams{ .coverage = 0.5, .radius = 0.3, .jitter = 0.15, .edge_softness = 0.15 };
     const disk_params = SpeckleParams{ .disk = boundary };
     try disk_params.validate();
     const disk = resolveCalibrated(disk_params, test_calibration);
     try std.testing.expectEqual(0.5 * disk.radius_mean, disk.radius_jitter);
     try std.testing.expectEqual(0.5 * disk.radius_mean, disk.edge_softness);
-    var gaussian = boundary;
-    gaussian.edge_softness = 0;
-    const gaussian_params = SpeckleParams{ .gaussian = gaussian };
+    const gaussian_params = SpeckleParams{ .gaussian = .{
+        .coverage = boundary.coverage,
+        .radius = boundary.radius,
+        .jitter = boundary.jitter,
+    } };
     try gaussian_params.validate();
     const blob = resolveCalibrated(gaussian_params, test_calibration);
     try std.testing.expectEqual(disk.radius_mean, blob.radius_mean);
     try std.testing.expectEqual(disk.radius_jitter, blob.radius_jitter);
-    var excessive = gaussian;
-    excessive.jitter = std.math.nextAfter(F, boundary.jitter, std.math.inf(F));
-    try std.testing.expectError(error.InvalidSpeckleJitter, (SpeckleParams{ .disk = excessive }).validate());
-    try std.testing.expectError(error.InvalidSpeckleJitter, (SpeckleParams{ .gaussian = excessive }).validate());
+    const excessive_jitter = std.math.nextAfter(F, boundary.jitter, std.math.inf(F));
+    var invalid_disk = disk_params;
+    var invalid_gaussian = gaussian_params;
+    invalid_disk.disk.jitter = excessive_jitter;
+    invalid_gaussian.gaussian.jitter = excessive_jitter;
+    try std.testing.expectError(error.InvalidSpeckleJitter, invalid_disk.validate());
+    try std.testing.expectError(error.InvalidSpeckleJitter, invalid_gaussian.validate());
 }
 
 test "physical support boundary checks converted rounding without clamping" {

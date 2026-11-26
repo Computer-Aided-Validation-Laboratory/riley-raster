@@ -264,7 +264,7 @@ def test_create_mesh_builds_and_renders_for_all_supported_surface_types(
         mesh_type,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(mono=shader),
     )
     assert mesh.mesh_type == mesh_type
 
@@ -322,7 +322,7 @@ def test_create_mesh_converts_volume_hex8_to_quad4() -> None:
         riley.MeshType.quad4,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(mono=shader),
     )
     assert mesh.mesh_type == riley.MeshType.quad4
     assert mesh.coords.shape[0] == 8
@@ -345,7 +345,7 @@ def test_create_mesh_converts_volume_tet4_to_tri3() -> None:
         riley.MeshType.tri3,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(mono=shader),
     )
     assert mesh.mesh_type == riley.MeshType.tri3
     assert mesh.coords.shape[0] == 4
@@ -371,7 +371,7 @@ def test_create_mesh_maps_displacements_from_source_volume_to_surface() -> None:
         riley.MeshType.quad4,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(mono=shader),
         disp=(disp_x, disp_y, disp_z),
     )
 
@@ -398,7 +398,7 @@ def test_create_mesh_reduces_order_from_quad8_to_quad4() -> None:
         riley.MeshType.quad4,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(mono=shader),
     )
     assert mesh.mesh_type == riley.MeshType.quad4
     assert mesh.coords.shape[0] == 4
@@ -406,10 +406,11 @@ def test_create_mesh_reduces_order_from_quad8_to_quad4() -> None:
 
 
 def test_create_mesh_renders_speckles_on_converted_curved_surface() -> None:
-    params = riley.Perlin2DParams(0.15, seed=7, foreground=0.1, background=0.9)
+    params = riley.Disk2DParams(
+        coverage=0.35, radius=0.08, seed=7, foreground=0.1, background=0.9,
+    )
     coords = coords_3d(riley.EElemType.QUAD9)
-    # Bow the four edges out of plane. Conversion must preserve the midside
-    # nodes but discard the centre, which has a different UV and height.
+    # Bow the edges and give the discarded centre a distinct height and UV.
     coords[4:8, 2] = 0.25
     coords[8, 2] = 0.75
     uvs = (0.5 + 0.25 * coords[:, :2]).astype(np.float32)
@@ -419,17 +420,18 @@ def test_create_mesh_renders_speckles_on_converted_curved_surface() -> None:
     source_uvs = np.empty((9, 4), dtype=np.float32)[:, ::2]
     source_uvs[:] = uvs[source_order]
     shader = riley.SpeckleShader(
-        source_uvs, params, output_scale=0.7, output_offset=0.2,
-        bits=-1, scaling_type=riley.ScaleStrategy.none,
+        uvs=source_uvs, params=params, output_gain=0.7, output_offset=0.2,
+        bits=None, scaling_type=riley.ScaleStrategy.none,
     )
     convention = riley.ConnectConvention(
         riley.EElemType.QUAD9, riley.EConnectAxis.ROW, 0, riley.ENodeOrder.RILEY,
     )
     mesh = riley.create_mesh(
         convention, riley.MeshType.quad8, coords[source_order],
-        np.array([[1, 2, 3, 4, 5, 6, 7, 8, 0]]), shader,
+        np.array([[1, 2, 3, 4, 5, 6, 7, 8, 0]], dtype=np.uintp),
+        riley.MeshShaderSet(mono=shader),
     )
-    prepared = mesh.shader
+    prepared = mesh.shaders.mono
     assert isinstance(prepared, riley.SpeckleShader)
     assert prepared.params is params
     assert shader.uvs is source_uvs
@@ -437,11 +439,13 @@ def test_create_mesh_renders_speckles_on_converted_curved_surface() -> None:
     assert prepared.uvs.flags.c_contiguous
     assert not np.shares_memory(prepared.uvs, source_uvs)
 
-    # Explicit quad8 surface: do not use the conversion's remapping as the oracle.
+    # Build the reference without using meshio's conversion or node map.
     reference = riley.Mesh(
         mesh_type=riley.MeshType.quad8, coords=coords[:8],
         connect=np.arange(8, dtype=np.uintp)[None, :], disp=None,
-        shader=replace(shader, uvs=np.ascontiguousarray(uvs[:8], dtype=np.float64)),
+        shaders=riley.MeshShaderSet(mono=replace(
+            shader, uvs=np.ascontiguousarray(uvs[:8], dtype=np.float64),
+        )),
     )
     camera = riley.Camera(
         pixels_num=(64, 64), pixels_size=(0.01, 0.01),
@@ -449,11 +453,13 @@ def test_create_mesh_renders_speckles_on_converted_curved_surface() -> None:
         roi_cent_world=(0.0, 0.0, 0.0), focal_length=1.0, sub_sample=1,
     )
     config = riley.RasterConfig(
-        parallel=1, save_strategy=riley.SaveStrategy.memory, report=riley.ReportMode.off,
+        parallel=1, save_strategy=riley.SaveStrategy.memory, report_perf=riley.ReportMode.off,
     )
     expected = riley.raster(reference, camera, config)
     assert expected is not None
-    assert np.ptp(expected[expected > 0.0]) > 0.1
+    covered = expected[expected > 0.0]
+    assert covered.size > 0
+    assert np.ptp(covered) > 0.1
     np.testing.assert_array_equal(riley.raster(mesh, camera, config), expected)
 
 
@@ -482,7 +488,7 @@ def test_create_mesh_triangulates_quad8_to_tri3() -> None:
         riley.MeshType.tri3,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(mono=shader),
     )
     assert mesh.mesh_type == riley.MeshType.tri3
     assert mesh.coords.shape[0] == 8
@@ -505,7 +511,7 @@ def test_create_mesh_triangulates_quad4_to_tri3() -> None:
         riley.MeshType.tri3,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(mono=shader),
     )
     assert mesh.mesh_type == riley.MeshType.tri3
     assert mesh.coords.shape[0] == 4
@@ -528,11 +534,41 @@ def test_create_mesh_triangulates_tri6_to_tri3() -> None:
         riley.MeshType.tri3,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(mono=shader),
     )
     assert mesh.mesh_type == riley.MeshType.tri3
     assert mesh.coords.shape[0] == 6
     assert mesh.connect.shape == (4, 3)
+
+
+@pytest.mark.parametrize("shader_kind", ("nodal", "function"))
+def test_create_mesh_preserves_shader_output_transform(shader_kind: str) -> None:
+    coords = coords_3d(riley.EElemType.TRI3)
+    connect = np.arange(coords.shape[0], dtype=np.uintp).reshape((1, -1))
+    convention = riley.ConnectConvention(
+        riley.EElemType.TRI3,
+        riley.EConnectAxis.ROW,
+        0,
+        riley.ENodeOrder.RILEY,
+    )
+    shader = (
+        riley.NodalShader(np.arange(coords.shape[0], dtype=np.float64)[:, None])
+        if shader_kind == "nodal"
+        else function_shader()
+    )
+    shader.output_gain = 2.5
+    shader.output_offset = -0.75
+
+    mesh = riley.create_mesh(
+        convention,
+        riley.MeshType.tri3,
+        coords,
+        connect,
+        riley.MeshShaderSet(mono=shader),
+    )
+
+    assert mesh.shaders.mono.output_gain == shader.output_gain
+    assert mesh.shaders.mono.output_offset == shader.output_offset
 
 
 def test_create_mesh_supports_temporal_fields() -> None:
@@ -561,12 +597,12 @@ def test_create_mesh_supports_temporal_fields() -> None:
         riley.MeshType.tri3,
         coords,
         connect,
-        shader,
+        riley.MeshShaderSet(mono=shader),
         disp=(disp_x, disp_y, disp_z),
     )
     assert mesh.disp is not None
     assert mesh.disp.shape == (3, 3, 3)
-    assert mesh.shader.field.shape == (3, 3, 1)
+    assert mesh.shaders.mono.field.shape == (3, 3, 1)
 
 
 def test_create_mesh_from_prepared_creates_mesh() -> None:
@@ -588,7 +624,7 @@ def test_create_mesh_from_prepared_creates_mesh() -> None:
 
     mesh = riley.create_mesh_from_prepared(
         conversion,
-        shader,
+        riley.MeshShaderSet(mono=shader),
     )
     assert mesh.mesh_type == riley.MeshType.tri3
     assert mesh.coords.shape == (3, 3)

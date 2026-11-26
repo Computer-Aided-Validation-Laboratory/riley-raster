@@ -8,30 +8,39 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 
-const demo0a_quickstart = @import("demo0a_quickstart.zig");
-const demo0b_procedural_quickstart = @import("demo0b_procedural_quickstart.zig");
-const demo1a_texture_sphere = @import("demo1a_texture_sphere.zig");
-const demo1b_procedural_sphere = @import("demo1b_procedural_sphere.zig");
-const demo2a_rabbits_mono = @import("demo2a_rabbits_mono.zig");
-const demo2b_rabbits_rgb = @import("demo2b_rabbits_rgb.zig");
-const demo2c_rabbits_fields = @import("demo2c_rabbits_fields.zig");
-const demo2d_rabbit_procedural = @import("demo2d_rabbit_procedural.zig");
-const demo3_dicuq = @import("demo3_dicuq.zig");
-const demo4_stereocal = @import("demo4_stereocal.zig");
-const demo5_cameramodels = @import("demo5_cameramodels.zig");
-const demo6_featurezoo = @import("demo6_featurezoo.zig");
+const demo00_quickstart = @import("demo00_quickstart.zig");
+const demo00b_procedural_quickstart = @import("demo00b_procedural_quickstart.zig");
+const demo01_sphere = @import("demo01_sphere.zig");
+const demo01b_procedural_sphere = @import("demo01b_procedural_sphere.zig");
+const demo02a_rabbits_mono = @import("demo02a_rabbits_mono.zig");
+const demo02b_rabbits_rgb = @import("demo02b_rabbits_rgb.zig");
+const demo02c_rabbits_fields = @import("demo02c_rabbits_fields.zig");
+const demo02d_rabbit_procedural = @import("demo02d_rabbit_procedural.zig");
+const demo03_dicuq = @import("demo03_dicuq.zig");
+const demo04_stereocal = @import("demo04_stereocal.zig");
+const demo05_cameramodels = @import("demo05_cameramodels.zig");
+const demo06_featurezoo = @import("demo06_featurezoo.zig");
+const demo07_shaderpipe_quickstart = @import("demo07_shaderpipe_quickstart.zig");
+
+const demo08_shaderpipe_gallery = @import("demo08_shaderpipe_gallery.zig");
+const demo09_diciruq = @import("demo09_diciruq.zig");
+const demo10_sphere_lit = @import("demo10_sphere_lit.zig");
 
 pub fn main(init: std.process.Init) !void {
-    try demo0a_quickstart.main(init);
-    try demo0b_procedural_quickstart.run(init, &.{});
-    try demo1a_texture_sphere.main(init);
-    try demo1b_procedural_sphere.run(init, &.{});
-    try demo2a_rabbits_mono.main(init);
-    try demo2b_rabbits_rgb.main(init);
-    try demo2c_rabbits_fields.main(init);
-    try demo2d_rabbit_procedural.run(init, &.{});
-    try demo3_dicuq.main(init);
-    try demo4_stereocal.main(init);
-    try demo5_cameramodels.main(init);
-    try demo6_featurezoo.main(init);
+    try demo00_quickstart.main(init);
+    try demo00b_procedural_quickstart.run(init, &.{});
+    try demo01_sphere.main(init);
+    try demo01b_procedural_sphere.run(init, &.{});
+    try demo02a_rabbits_mono.main(init);
+    try demo02b_rabbits_rgb.main(init);
+    try demo02c_rabbits_fields.main(init);
+    try demo02d_rabbit_procedural.run(init, &.{});
+    try demo03_dicuq.main(init);
+    try demo04_stereocal.main(init);
+    try demo05_cameramodels.main(init);
+    try demo06_featurezoo.main(init);
+    try demo07_shaderpipe_quickstart.main(init);
+    try demo08_shaderpipe_gallery.main(init);
+    try demo09_diciruq.main(init);
+    try demo10_sphere_lit.main(init);
 }

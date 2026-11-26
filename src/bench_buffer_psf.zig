@@ -6,9 +6,12 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
+const cameramodels = @import("riley/zig/cameramodels.zig");
+const cameratypes = @import("riley/zig/cameratypes.zig");
+const meshtypes = @import("riley/zig/meshtypes.zig");
 const std = @import("std");
 const riley = @import("riley/zig/riley.zig");
-const cam = @import("riley/zig/camera.zig");
+const cam = @import("riley/zig/cameraprojops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const meshpipe = @import("riley/zig/meshpipeline.zig");
@@ -37,13 +40,24 @@ const BenchArgs = struct {
     buffer_mode: rastcfg.BufferMode = .tile_local,
 };
 
-fn parseArgs(args: []const []const u8) !BenchArgs {
+fn argSlice(arg: anytype) []const u8 {
+    return switch (@typeInfo(@TypeOf(arg))) {
+        .pointer => |info| switch (info.size) {
+            .slice => arg,
+            else => std.mem.span(arg),
+        },
+        .array => arg[0..],
+        else => @compileError("unsupported argument representation"),
+    };
+}
+
+fn parseArgs(args: anytype) !BenchArgs {
     var result = BenchArgs{};
     var ii: usize = 1;
     while (ii < args.len) : (ii += 2) {
         if (ii + 1 >= args.len) return error.MissingArgumentValue;
-        const key = args[ii];
-        const value = args[ii + 1];
+        const key = argSlice(args[ii]);
+        const value = argSlice(args[ii + 1]);
         if (std.mem.eql(u8, key, "--out-dir")) {
             result.out_dir = value;
         } else if (std.mem.eql(u8, key, "--elements-per-type")) {
@@ -152,7 +166,7 @@ fn makeMesh(
     mesh_type: gk.MeshType,
     group_idx: usize,
     args: BenchArgs,
-) !meshpipe.MeshInput {
+) !meshtypes.MeshInput {
     const coord_values = try outer_alloc.alloc(
         F,
         args.elements_per_type * N * 3,
@@ -185,17 +199,17 @@ fn makeMesh(
     }
     return .{
         .mesh_type = mesh_type,
-        .coords = meshio.Coords.init(
+        .coords = meshtypes.Coords.init(
             coord_values,
             args.elements_per_type * N,
         ),
-        .connect = meshio.Connect.init(
+        .connect = meshtypes.Connect.init(
             connect_values,
             args.elements_per_type,
             N,
         ),
         .disp = null,
-        .shader = .{ .func = .{
+        .shaders = .{ .mono_direct = .{ .func = .{
             .coord_mode = .world_reference,
             .builtin = .checker,
             .params = .{
@@ -203,14 +217,13 @@ fn makeMesh(
                 .settings = .{ .checker = .{} },
             },
             .scaling = .auto,
-        } },
+        } } },
     };
 }
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
-    const cli_args = try init.minimal.args.toSlice(init.arena.allocator());
-    const args = try parseArgs(cli_args);
+    const args = try parseArgs(try init.minimal.args.toSlice(init.arena.allocator()));
     var threaded_io = riley.getThreadedIo(
         outer_alloc,
         init.minimal,
@@ -222,14 +235,14 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const local_alloc = arena.allocator();
 
-    const meshes = [_]meshpipe.MeshInput{
+    const meshes = [_]meshtypes.MeshInput{
         try makeMesh(4, local_alloc, .quad4, 0, args),
         try makeMesh(6, local_alloc, .tri6, 1, args),
         try makeMesh(8, local_alloc, .quad8, 2, args),
         try makeMesh(9, local_alloc, .quad9, 3, args),
     };
 
-    const psf: cam.PointSpreadFunc = switch (args.psf) {
+    const psf: cameramodels.PointSpreadFunc = switch (args.psf) {
         .none => .{ .pixel_box = .{} },
         .gaussian_1_0 => .{ .gaussian = .{
             .sigma_px = 1.0,
@@ -243,7 +256,7 @@ pub fn main(init: std.process.Init) !void {
         } },
     };
 
-    const camera = cam.CameraInput{
+    const camera = cameratypes.CameraInput{
         .pixels_num = .{ args.width, args.height },
         .pixels_size = .{ 1, 1 },
         .pos_world = .{ .vec = .{ 0, 0, 0 } },
@@ -257,7 +270,7 @@ pub fn main(init: std.process.Init) !void {
     const config = rastcfg.RasterConfig{
         .parallel = .{ .threads = args.threads },
         .save_strategy = .none,
-        .report = .{ .mode = .bench },
+        .report_perf = .bench,
         .advanced = .{
             .raster = .{ .buffer_mode = args.buffer_mode },
         },

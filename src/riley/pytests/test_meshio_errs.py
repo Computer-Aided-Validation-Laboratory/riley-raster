@@ -15,7 +15,7 @@ import pytest
 
 import riley
 from riley.pytests.common import coords_3d, function_shader, save_csv
-from riley.cython.riley import (
+from riley.types import (
     FunctionShader,
     FuncShaderBuiltin,
     MeshType,
@@ -51,7 +51,7 @@ def test_create_mesh_rejects_invalid_convention_arg() -> None:
         meshio.create_mesh(
             convention="not_a_convention",  # type: ignore[arg-type]
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -71,22 +71,9 @@ def test_create_mesh_rejects_invalid_mesh_type_arg() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type="tri3",  # type: ignore[arg-type]
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
-        )
-
-
-def test_create_mesh_requires_speckle_uvs() -> None:
-    coords = coords_3d(riley.EElemType.TRI3)
-    connect = np.array([[0, 1, 2]], dtype=np.uintp)
-    convention = ConnectConvention(
-        EElemType.TRI3, EConnectAxis.ROW, 0, ENodeOrder.RILEY,
-    )
-    with pytest.raises(ValueError, match="uvs"):
-        meshio.create_mesh(
-            convention, MeshType.tri3, coords, connect,
-            riley.SpeckleShader(None, riley.Dot2DParams(0.4, 0.03)),
         )
 
 
@@ -98,12 +85,14 @@ def test_create_mesh_rejects_invalid_shader_arg() -> None:
     )
 
     with pytest.raises(
-        TypeError, match="shader must be a Riley supported shader"
+        TypeError, match="shader must be a Riley shader object"
     ):
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader="flat_shader",  # type: ignore[arg-type]
+            shaders=riley.MeshShaderSet(
+                mono="flat_shader",  # type: ignore[arg-type]
+            ),
             coords=coords,
             connect=connect,
         )
@@ -121,7 +110,7 @@ def test_create_mesh_rejects_incompatible_element_family() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri6,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -139,7 +128,7 @@ def test_create_mesh_rejects_elevating_element_order() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri6,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -158,7 +147,7 @@ def test_create_mesh_disp_rejects_non_tuple_or_wrong_length() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
             disp=[
@@ -173,7 +162,7 @@ def test_create_mesh_disp_rejects_non_tuple_or_wrong_length() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
             disp=(np.zeros((3, 1)), np.zeros((3, 1))),  # type: ignore[arg-type]
@@ -198,7 +187,7 @@ def test_create_mesh_disp_rejects_wrong_shape_component() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
             disp=disp,
@@ -224,7 +213,7 @@ def test_create_mesh_disp_rejects_non_float_component() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
             disp=disp,
@@ -252,7 +241,7 @@ def test_create_mesh_disp_rejects_non_finite_component() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
             disp=disp,
@@ -278,7 +267,7 @@ def test_create_mesh_disp_rejects_mismatched_component_shapes() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
             disp=disp,
@@ -301,7 +290,7 @@ def test_create_mesh_uvs_rejects_wrong_shape() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -323,7 +312,7 @@ def test_create_mesh_uvs_rejects_non_float_dtype() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -344,7 +333,7 @@ def test_create_mesh_uvs_rejects_non_finite_values() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -362,7 +351,7 @@ def test_create_mesh_nodal_shader_rejects_wrong_node_count() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -374,16 +363,16 @@ def test_create_mesh_nodal_shader_rejects_invalid_field_count() -> None:
     convention = ConnectConvention(
         EElemType.TRI3, EConnectAxis.ROW, 0, ENodeOrder.RILEY,
     )
-    # 2 fields instead of 1 or 3
-    shader = NodalShader(np.ones((3, 1, 2), dtype=np.float64))
+    shader = NodalShader(np.ones((3, 1, 9), dtype=np.float64))
 
     with pytest.raises(
-        ValueError, match="nodal field must contain one or three fields"
+        ValueError,
+        match="nodal field must contain between one and eight fields",
     ):
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -403,7 +392,7 @@ def test_create_mesh_nodal_shader_rejects_non_float_dtype() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -425,7 +414,7 @@ def test_create_mesh_nodal_shader_rejects_non_finite_values() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -444,7 +433,28 @@ def test_create_mesh_texture_shader_requires_uvs() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
+            coords=coords,
+            connect=connect,
+        )
+
+
+def test_create_mesh_requires_speckle_uvs() -> None:
+    coords = coords_3d(EElemType.TRI3)
+    connect = np.array([[0, 1, 2]], dtype=np.uintp)
+    convention = ConnectConvention(
+        EElemType.TRI3, EConnectAxis.ROW, 0, ENodeOrder.RILEY,
+    )
+    shader = riley.SpeckleShader(
+        uvs=None,  # type: ignore[arg-type]
+        params=riley.Disk2DParams(coverage=0.4, radius=0.03),
+    )
+
+    with pytest.raises(ValueError, match=r"uvs must have shape \(3, 2\)"):
+        meshio.create_mesh(
+            convention=convention,
+            mesh_type=MeshType.tri3,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -456,19 +466,19 @@ def test_create_mesh_texture_shader_rejects_invalid_channels() -> None:
     convention = ConnectConvention(
         EElemType.TRI3, EConnectAxis.ROW, 0, ENodeOrder.RILEY,
     )
-    # 4 channels instead of 1 or 3
-    texture = np.zeros((4, 10, 10), dtype=np.uint8)
+    # Nine channels exceeds the supported input range.
+    texture = np.zeros((9, 10, 10), dtype=np.uint8)
     uvs = np.zeros((3, 2), dtype=np.float64)
     shader = TextureShader(texture=texture, uvs=uvs)
 
     with pytest.raises(
         ValueError,
-        match="texture must be a supported dtype with 1 or 3 channels",
+        match="texture must be a supported dtype with one to eight channels",
     ):
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -486,12 +496,12 @@ def test_create_mesh_texture_shader_rejects_invalid_dtype() -> None:
 
     with pytest.raises(
         ValueError,
-        match="texture must be a supported dtype with 1 or 3 channels",
+        match="texture must be a supported dtype with one to eight channels",
     ):
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -513,7 +523,7 @@ def test_create_mesh_texture_shader_rejects_non_finite_floats() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -536,7 +546,7 @@ def test_create_mesh_function_shader_rejects_invalid_channels() -> None:
         meshio.create_mesh(
             convention=convention,
             mesh_type=MeshType.tri3,
-            shader=shader,
+            shaders=riley.MeshShaderSet(mono=shader),
             coords=coords,
             connect=connect,
         )
@@ -618,5 +628,8 @@ def test_create_mesh_rejects_unsupported_topology_transitions(
             riley.ConnectConvention(
                 source, riley.EConnectAxis.ROW, 0, riley.ENodeOrder.RILEY
             ),
-            target, coords, connect, shader=function_shader(),
+            target,
+            coords,
+            connect,
+            shaders=riley.MeshShaderSet(mono=function_shader()),
         )

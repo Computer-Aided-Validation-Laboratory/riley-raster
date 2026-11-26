@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "riley-raster"
-version = "2026.11.1"
+version = "2026.11.2"
 description = "A Zig software rasteriser for DIC UQ."
 authors = [
   { name = "scepticalrabbit (Lloyd Fletcher)", email = "thescepticalrabbit@gmail.com" },
@@ -43,8 +43,6 @@ docs = [
   "shibuya>=2024.0.0",
 ]
 
-# Keep these in sync with the pip-installable extras above: groups support
-# checkout development via uv sync --group dev / --group docs.
 [dependency-groups]
 dev = [
   "build",
@@ -74,13 +72,10 @@ riley = [
 
 [tool.pytest.ini_options]
 testpaths = ["src/riley/pytests"]
-pythonpath = ["."]
 filterwarnings = [
   "ignore:.*Setting the shape on a NumPy array.*:DeprecationWarning",
 ]
 
 [tool.cibuildwheel.windows]
-# Published wheels are AMD64-only. Source builds still select the target for
-# their Python interpreter, including win32; see setup.py.
 archs = ["AMD64"]
 repair-wheel-command = "delvewheel repair -w {dest_dir} --add-path src\\riley\\cython -v {wheel}"

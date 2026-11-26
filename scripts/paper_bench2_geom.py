@@ -14,7 +14,7 @@ from paper_bench_common import load_run_case_rows_from_dir
 from paper_bench_common import latest_stats_dir_with_candidates
 from paper_bench_common import write_tabs_tex
 from paper_bench_common import row_float
-from paper_const import repo_root
+from bench_common import repo_root
 from paper_const import TABLE_MAD_DECIMAL_PLACES
 from paper_const import TABLE_MEDIAN_DECIMAL_PLACES
 

@@ -6,22 +6,29 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
+const shaderfunc = @import("shaderfunc.zig");
+const cameramodels = @import("cameramodels.zig");
+const cameratypes = @import("cameratypes.zig");
+const meshtypes = @import("meshtypes.zig");
+const shadertypes = @import("shadertypes.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
-const cam = @import("camera.zig");
-const geomkerns = @import("geometrykernels.zig");
+const cameraprojops = @import("cameraprojops.zig");
 const imageops = @import("imageops.zig");
 const imageio = @import("imageio.zig");
-const matslice = @import("matslice.zig");
-const meshpipe = @import("meshpipeline.zig");
+const meshpipeline = @import("meshpipeline.zig");
 const ndarray = @import("ndarray.zig");
-const rastcfg = @import("rasterconfig.zig");
+const rasterconfig = @import("rasterconfig.zig");
 const report = @import("report.zig");
-const shaderops = @import("shaderops_common.zig");
+const shaderops = @import("shaderops.zig");
+const shaderpipe = @import("shaderpipe.zig");
 const speckleparams = @import("speckleparams.zig");
-const texops = @import("textureops.zig");
+const texturetypes = @import("texturetypes.zig");
+const validatearrays = @import("validatearrays.zig");
 
 const F = buildconfig.F;
+const pipe_cfg = buildconfig.config.shaderpipe;
+const max_channels = buildconfig.config.max_image_channels;
 
 // --------------------------------------------------------------------------------------
 // File Constants & Tolerances
@@ -39,7 +46,6 @@ const MIN_CAMERA_ROI_DIST: F = 1.0e-6;
 pub const InputValidationError = speckleparams.ValidationError || error{
     NoRenderGroups,
     InvalidRenderGroupWorkers,
-    FullStatsRequiresSingleRasterWorker,
     NoCameras,
     InvalidCameraPixels,
     InvalidCameraPixelSize,
@@ -49,6 +55,7 @@ pub const InputValidationError = speckleparams.ValidationError || error{
     InvalidCameraRotation,
     InvalidCameraDistort,
     InvalidCameraPsf,
+    InvalidRenderFormatChannels,
     DistortNotSuppedWithTri3Opt,
     NoMeshes,
     ZeroCoordinateCount,
@@ -60,10 +67,11 @@ pub const InputValidationError = speckleparams.ValidationError || error{
     InvalidUvDimensions,
     InvalidTextureDimensions,
     InvalidTexSampleConfig,
+    InvalidShaderOutputMap,
+    InvalidSpeckleOutputTransform,
     InvalidShaderBitDepth,
     InvalidScalingBounds,
     InvalidFuncShaderParams,
-    InvalidSpeckleOutputTransform,
     MissingNodalField,
     MissingUvs,
     InvalidMeshType,
@@ -91,7 +99,6 @@ pub const InputValidationError = speckleparams.ValidationError || error{
     InvalidSaveFrameBuffCount,
     InvalidImageSaveOpts,
     InvalidOutputNameFormat,
-    InvalidFullStatsFormats,
     InvalidBenchCaptureBuff,
     InvalidRasterHaloPxOverride,
     UnsuppedImageModeFieldCount,
@@ -99,6 +106,9 @@ pub const InputValidationError = speckleparams.ValidationError || error{
     InvalidValidateInputMode,
     NoMeshFrames,
     NoOutputFields,
+    InvalidShaderPipe,
+    DuplicateShaderFormat,
+    NoCompatibleShader,
 };
 
 pub const ValidSummary = struct {
@@ -118,9 +128,9 @@ pub const RenderSummary = ValidSummary;
 /// without scanning large array payloads. Returns a summary of scene dimensions.
 pub fn checkRenderInps(
     render_groups: anytype,
-    cam_inps: []const cam.CameraInput,
-    meshes: []const meshpipe.MeshInput,
-    config: rastcfg.RasterConfig,
+    cam_inps: []const cameratypes.CameraInput,
+    meshes: []const meshtypes.MeshInput,
+    config: rasterconfig.RasterConfig,
     imgs_arr: ?*ndarray.NDArray(F),
     require_out_buff: bool,
     bench_capt: ?[]report.FrameBenchCapture,
@@ -130,27 +140,39 @@ pub fn checkRenderInps(
     try imageio.validateOutputNameFormat(config.output_name_format);
     try checkMeshesMetadata(meshes, cam_inps);
     try checkCameras(cam_inps, config);
+    try checkPipeCompatibility(cam_inps, meshes);
 
-    const num_time = meshpipe.countFrames(meshes);
+    const num_time = meshpipeline.countFrames(meshes, cam_inps);
     if (num_time == 0) {
         return error.NoMeshFrames;
     }
+    if (config.save_strategy == .disk or config.save_strategy == .both) {
+        if (cam_inps.len > 1 and
+            std.mem.indexOf(u8, config.output_name_format, "{camera") == null)
+            return error.InvalidOutputNameFormat;
+        if (num_time > 1 and
+            std.mem.indexOf(u8, config.output_name_format, "{frame") == null)
+            return error.InvalidOutputNameFormat;
+        for (cam_inps) |camera_input| {
+            if (camera_input.render_format == .multifield and
+                camera_input.render_format.multifield > 1 and
+                std.mem.indexOf(u8, config.output_name_format, "{field") == null)
+                return error.InvalidOutputNameFormat;
+        }
+    }
 
-    const raw_num_fields = meshpipe.countOutputFields(meshes);
+    const raw_num_fields = meshpipeline.countOutputFields(meshes, cam_inps);
     if (raw_num_fields == 0) {
         return error.NoOutputFields;
     }
 
     if (bench_capt) |capt| {
-        if (capt.len != cam_inps.len * num_time) {
+        if (config.report_perf != .bench or capt.len != cam_inps.len * num_time) {
             return error.InvalidBenchCaptureBuff;
         }
     }
 
-    const out_num_fields = try calcOutFieldsForImgSaveMode(
-        config.output.image_save_mode,
-        raw_num_fields,
-    );
+    const out_num_fields = raw_num_fields;
     const img_dims = calcAllFramesImgDims(
         cam_inps,
         num_time,
@@ -171,18 +193,45 @@ pub fn checkRenderInps(
     };
 }
 
+fn checkPipeCompatibility(
+    cameras: []const cameratypes.CameraInput,
+    meshes: []const meshtypes.MeshInput,
+) InputValidationError!void {
+    for (cameras) |camera| {
+        var compatible = false;
+        for (meshes) |mesh| {
+            const selected = shaderops.selectShader(
+                shadertypes.ShaderMonoInput,
+                shadertypes.ShaderPipeInput,
+                &mesh.shaders,
+                std.meta.activeTag(camera.render_format),
+            ) orelse continue;
+            compatible = true;
+            const expected = camera.render_format.channels();
+            switch (selected) {
+                .direct => if (expected != 1) return error.UnsuppedImageModeFieldCount,
+                .pipe => {},
+            }
+        }
+        if (!compatible) {
+            return error.NoCompatibleShader;
+        }
+    }
+}
+
 /// Computes metadata needed for allocations in `.off` mode without executing validation.
 pub fn summariseRenderInpsAssumeValid(
-    cam_inps: []const cam.CameraInput,
-    meshes: []const meshpipe.MeshInput,
-    config: rastcfg.RasterConfig,
+    cam_inps: []const cameratypes.CameraInput,
+    meshes: []const meshtypes.MeshInput,
+    config: rasterconfig.RasterConfig,
 ) ValidSummary {
-    const num_time = if (meshes.len > 0) meshpipe.countFrames(meshes) else 1;
-    const raw_num_fields = if (meshes.len > 0) meshpipe.countOutputFields(meshes) else 1;
-    const out_num_fields = calcOutFieldsForImgSaveMode(
-        config.output.image_save_mode,
-        raw_num_fields,
-    ) catch raw_num_fields;
+    const num_time = if (meshes.len > 0) meshpipeline.countFrames(meshes, cam_inps) else 1;
+    const raw_num_fields = if (meshes.len > 0)
+        meshpipeline.countOutputFields(meshes, cam_inps)
+    else
+        1;
+    const out_num_fields = raw_num_fields;
+    _ = config;
     const img_dims = if (cam_inps.len > 0)
         calcAllFramesImgDims(cam_inps, num_time, out_num_fields)
     else
@@ -202,8 +251,9 @@ pub fn summariseRenderInpsAssumeValid(
 
 fn checkTopLevelAndRenderGroups(
     render_groups: anytype,
-    config: rastcfg.RasterConfig,
+    config: rasterconfig.RasterConfig,
 ) InputValidationError!void {
+    _ = config;
     if (render_groups.len == 0) {
         return error.NoRenderGroups;
     }
@@ -211,13 +261,10 @@ fn checkTopLevelAndRenderGroups(
         if (render_group.workers == 0) {
             return error.InvalidRenderGroupWorkers;
         }
-        if (config.report.mode == .full_stats and render_group.workers > 1) {
-            return error.FullStatsRequiresSingleRasterWorker;
-        }
     }
 }
 
-fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
+fn checkRasterConfig(config: rasterconfig.RasterConfig) InputValidationError!void {
     if (!std.math.isFinite(config.advanced.distortion.edge_spacing_px) or
         config.advanced.distortion.edge_spacing_px <= 0.0)
     {
@@ -279,21 +326,8 @@ fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
             return error.InvalidGlobalSubpxStripeSizeOverride;
         }
     }
-    if (!std.math.isFinite(config.background_value)) {
-        return error.InvalidBackgroundValue;
-    }
     if (config.output.save_frame_buff_count == 0) {
         return error.InvalidSaveFrameBuffCount;
-    }
-    if ((config.save_strategy == .disk or config.save_strategy == .both) and
-        config.output.image_save_opts.len == 0)
-    {
-        return error.InvalidImageSaveOpts;
-    }
-    if (config.report.mode == .full_stats and
-        config.report.full_stats_opts.formats.len == 0)
-    {
-        return error.InvalidFullStatsFormats;
     }
 }
 
@@ -302,8 +336,8 @@ fn checkRasterConfig(config: rastcfg.RasterConfig) InputValidationError!void {
 // --------------------------------------------------------------------------------------
 
 fn checkMeshesMetadata(
-    meshes: []const meshpipe.MeshInput,
-    cam_inps: []const cam.CameraInput,
+    meshes: []const meshtypes.MeshInput,
+    cam_inps: []const cameratypes.CameraInput,
 ) InputValidationError!void {
     if (meshes.len == 0) {
         return error.NoMeshes;
@@ -346,14 +380,61 @@ fn checkMeshesMetadata(
 
         if (mesh.mesh_type == .tri3opt) {
             for (cam_inps) |cam_inp| {
-                if (!cam.isNoDistort(cam_inp.distort)) {
+                if (!cameraprojops.isNoDistort(cam_inp.distort)) {
                     return error.DistortNotSuppedWithTri3Opt;
                 }
             }
         }
 
-        try checkShaderMetadata(mesh.shader, mesh.coords.mat.rows_num);
+        const shaders = mesh.shaders;
+        if (shaders.mono_direct == null and shaders.mono_pipe == null and
+            shaders.ir_direct == null and shaders.ir_pipe == null and
+            shaders.rgb_pipe == null and shaders.multifield_pipe == null)
+        {
+            return error.InvalidShaderPipe;
+        }
+        if ((shaders.mono_direct != null and shaders.mono_pipe != null) or
+            (shaders.ir_direct != null and shaders.ir_pipe != null))
+            return error.DuplicateShaderFormat;
+        if (shaders.mono_direct) |shader|
+            try checkShaderMonoMetadata(shader, mesh.coords.mat.rows_num);
+        if (shaders.mono_pipe) |pipe|
+            try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 1);
+        if (shaders.rgb_pipe) |pipe|
+            try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 3);
+        if (shaders.ir_direct) |shader|
+            try checkShaderMonoMetadata(shader, mesh.coords.mat.rows_num);
+        if (shaders.ir_pipe) |pipe|
+            try checkPipeMetadata(pipe, mesh.coords.mat.rows_num, 1);
+        if (shaders.multifield_pipe) |pipe| {
+            // Full validation scans all supplied sources, even when no camera uses this pipe.
+            const written = try checkPipeStageMetadata(pipe, mesh.coords.mat.rows_num);
+            var checked_channels = [_]bool{false} ** (max_channels + 1);
+            for (cam_inps) |camera| {
+                if (camera.render_format != .multifield) continue;
+                const channels = camera.render_format.multifield;
+                if (channels == 0 or channels > max_channels)
+                    return error.InvalidRenderFormatChannels;
+                if (checked_channels[channels]) continue;
+                try checkPipeResolverMetadata(pipe, written, channels);
+                checked_channels[channels] = true;
+            }
+        }
     }
+}
+
+fn pipeSourceChannels(source: shadertypes.PipeSourceInput) u8 {
+    return switch (source) {
+        .nodal => |s| s.field.getFieldsN(),
+        .tex_u8, .tex_u16, .tex_f => 1,
+        .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
+        .tex_multi_u8 => |t| @intCast(t.tex.array.dims[0]),
+        .tex_multi_u16 => |t| @intCast(t.tex.array.dims[0]),
+        .tex_multi_f => |t| @intCast(t.tex.array.dims[0]),
+        .func, .speckle => 1,
+        .func_rgb => 3,
+        .func_multi => |f| @intCast(f.channels.len),
+    };
 }
 
 // --------------------------------------------------------------------------------------
@@ -361,19 +442,49 @@ fn checkMeshesMetadata(
 // --------------------------------------------------------------------------------------
 
 fn checkCameras(
-    cam_inps: []const cam.CameraInput,
-    config: rastcfg.RasterConfig,
+    cam_inps: []const cameratypes.CameraInput,
+    config: rasterconfig.RasterConfig,
 ) InputValidationError!void {
     if (cam_inps.len == 0) {
         return error.NoCameras;
     }
     for (cam_inps) |cam_inp| {
         try checkCamInp(cam_inp);
+        if ((config.save_strategy == .disk or config.save_strategy == .both) and
+            cam_inp.output_files.len == 0) return error.InvalidImageSaveOpts;
+        for (cam_inp.output_files, 0..) |opts, ii| {
+            try checkScaling(opts.scaling);
+            if (cam_inp.render_format == .rgb and opts.format == .tiff)
+                return error.InvalidImageSaveOpts;
+            switch (opts.format) {
+                .bmp, .ppm, .tiff => if (opts.file_bits != 8 and opts.file_bits != 16)
+                    return error.InvalidImageSaveOpts,
+                .fimg => if (opts.file_bits != null) return error.InvalidImageSaveOpts,
+                .csv => if (opts.file_bits != null and opts.file_bits != 8 and opts.file_bits != 16)
+                    return error.InvalidImageSaveOpts,
+            }
+            if (opts.file_bits) |file_bits| {
+                const adc_bits = opts.adc_bits orelse file_bits;
+                if (adc_bits == 0 or adc_bits > file_bits)
+                    return error.InvalidImageSaveOpts;
+            } else if (opts.adc_bits != null or opts.packing != .spread) {
+                return error.InvalidImageSaveOpts;
+            }
+            for (cam_inp.output_files[0..ii]) |previous| {
+                if (previous.format == opts.format) return error.InvalidImageSaveOpts;
+            }
+        }
         try checkGlobalSubpxAlignment(config, cam_inp.sub_sample);
     }
 }
 
-fn checkCamInp(cam_inp: cam.CameraInput) InputValidationError!void {
+fn checkCamInp(cam_inp: cameratypes.CameraInput) InputValidationError!void {
+    if (cam_inp.render_format == .multifield and
+        (cam_inp.render_format.multifield == 0 or
+            cam_inp.render_format.multifield > max_channels))
+    {
+        return error.InvalidRenderFormatChannels;
+    }
     if (cam_inp.pixels_num[0] == 0 or cam_inp.pixels_num[1] == 0) {
         return error.InvalidCameraPixels;
     }
@@ -390,6 +501,9 @@ fn checkCamInp(cam_inp: cam.CameraInput) InputValidationError!void {
     }
     if (cam_inp.sub_sample == 0) {
         return error.InvalidCameraSubSample;
+    }
+    if (!std.math.isFinite(cam_inp.background_value)) {
+        return error.InvalidBackgroundValue;
     }
     if (!isFiniteVec3(cam_inp.pos_world) or
         !isFiniteVec3(cam_inp.roi_cent_world))
@@ -464,7 +578,7 @@ fn isValidRotationMatrix(mat: anytype) bool {
 }
 
 fn checkGlobalSubpxAlignment(
-    config: rastcfg.RasterConfig,
+    config: rasterconfig.RasterConfig,
     sub_samp: u32,
 ) InputValidationError!void {
     if (config.advanced.raster.buffer_mode == .tile_local) return;
@@ -488,92 +602,229 @@ fn checkGlobalSubpxAlignment(
 // Shader & Texture Metadata Checks
 // --------------------------------------------------------------------------------------
 
-fn checkShaderMetadata(
-    shader: shaderops.ShaderInput,
+fn checkPipeMetadata(
+    pipe: shadertypes.ShaderPipeInput,
+    coords_num: usize,
+    channels: u8,
+) InputValidationError!void {
+    const written = try checkPipeStageMetadata(pipe, coords_num);
+    try checkPipeResolverMetadata(pipe, written, channels);
+}
+
+fn checkPipeStageMetadata(
+    pipe: shadertypes.ShaderPipeInput,
+    coords_num: usize,
+) InputValidationError!shaderpipe.RegistersWritten {
+    if (pipe.stages.len == 0 or pipe.stages.len > pipe_cfg.max_stages) return error.InvalidShaderPipe;
+    var written: shaderpipe.RegistersWritten = .{};
+    for (pipe.stages) |stage| switch (stage) {
+        .shader => |src| {
+            try checkPipeSourceMetadata(src.shader, coords_num);
+            const count = pipeSourceChannels(src.shader);
+            for (0..count) |offset| {
+                var dest = src.register_dest;
+                const index = @as(usize, dest.index) + offset;
+                if (index >= pipe_cfg.max_registers) return error.InvalidShaderPipe;
+                dest.index = @intCast(index);
+                written.recordWrite(dest) catch return error.InvalidShaderPipe;
+            }
+        },
+        .grey_to_emissivity => |m| {
+            if (!written.isWritten(m.register_source) or m.register_source.kind != .channel or
+                m.register_dest.kind != .parameter or
+                !std.math.isFinite(m.emissivity_at_black) or
+                !std.math.isFinite(m.emissivity_at_white) or
+                !std.math.isFinite(m.greylevel_at_black) or
+                !std.math.isFinite(m.greylevel_at_white) or
+                m.greylevel_at_white <= m.greylevel_at_black or
+                m.emissivity_at_black < 0 or m.emissivity_at_black > 1 or
+                m.emissivity_at_white < 0 or m.emissivity_at_white > 1)
+            {
+                return error.InvalidShaderPipe;
+            }
+            written.recordWrite(m.register_dest) catch return error.InvalidShaderPipe;
+        },
+        .clamp => |c| {
+            if (!written.isWritten(c.register_source) or !std.math.isFinite(c.lower) or
+                !std.math.isFinite(c.upper) or c.lower > c.upper)
+            {
+                return error.InvalidShaderPipe;
+            }
+            written.recordWrite(c.register_dest) catch return error.InvalidShaderPipe;
+        },
+        .affine_map => |m| {
+            if (!written.isWritten(m.register_source) or !std.math.isFinite(m.gain) or
+                !std.math.isFinite(m.offset)) return error.InvalidShaderPipe;
+            written.recordWrite(m.register_dest) catch return error.InvalidShaderPipe;
+        },
+        .lut_map => |m| {
+            if (!written.isWritten(m.register_source)) return error.InvalidShaderPipe;
+            m.lookup.validate() catch return error.InvalidShaderPipe;
+            written.recordWrite(m.register_dest) catch return error.InvalidShaderPipe;
+        },
+        .blend => |m| {
+            if (!written.isWritten(m.a) or !written.isWritten(m.b)) return error.InvalidShaderPipe;
+            switch (m.alpha) {
+                .fixed => |alpha| if (!std.math.isFinite(alpha)) {
+                    return error.InvalidShaderPipe;
+                },
+                .register => |register_ref| if (!written.isWritten(register_ref)) {
+                    return error.InvalidShaderPipe;
+                },
+            }
+            written.recordWrite(m.register_dest) catch return error.InvalidShaderPipe;
+        },
+        .normalise => |m| {
+            if (m.components != 2 and m.components != 3) return error.InvalidShaderPipe;
+            if (m.register_source.kind == .constant or m.register_dest.kind == .constant) {
+                return error.InvalidShaderPipe;
+            }
+            for (0..m.components) |offset| {
+                const src_idx = @as(usize, m.register_source.index) + offset;
+                const dst_idx = @as(usize, m.register_dest.index) + offset;
+                if (src_idx >= pipe_cfg.max_registers or dst_idx >= pipe_cfg.max_registers) {
+                    return error.InvalidShaderPipe;
+                }
+                var src = m.register_source;
+                src.index = @intCast(src_idx);
+                if (!written.isWritten(src)) return error.InvalidShaderPipe;
+            }
+            for (0..m.components) |offset| {
+                var dest = m.register_dest;
+                dest.index += @intCast(offset);
+                written.recordWrite(dest) catch return error.InvalidShaderPipe;
+            }
+        },
+    };
+    return written;
+}
+
+fn checkPipeResolverMetadata(
+    pipe: shadertypes.ShaderPipeInput,
+    written: shaderpipe.RegistersWritten,
+    channels: u8,
+) InputValidationError!void {
+    pipe.resolver.validate(written, pipe.constants, channels) catch return error.InvalidShaderPipe;
+}
+
+fn checkShaderMonoMetadata(
+    shader: shadertypes.ShaderMonoInput,
     coords_num: usize,
 ) InputValidationError!void {
     switch (shader) {
-        .tex_u8 => |tex_shader| {
-            try checkTexMetadata(tex_shader.tex, 1);
-            try checkTexUvMetadata(tex_shader.uvs, coords_num);
-            try checkSampCfg(tex_shader.samp_cfg);
-            try checkBits(tex_shader.bits);
-            try checkScaling(tex_shader.scaling);
-        },
-        .tex_u16 => |tex_shader| {
-            try checkTexMetadata(tex_shader.tex, 1);
-            try checkTexUvMetadata(tex_shader.uvs, coords_num);
-            try checkSampCfg(tex_shader.samp_cfg);
-            try checkBits(tex_shader.bits);
-            try checkScaling(tex_shader.scaling);
-        },
-        .tex_f => |tex_shader| {
-            try checkTexMetadata(tex_shader.tex, 1);
-            try checkTexUvMetadata(tex_shader.uvs, coords_num);
-            try checkSampCfg(tex_shader.samp_cfg);
-            try checkBits(tex_shader.bits);
-            try checkScaling(tex_shader.scaling);
-        },
-        .tex_rgb_u8 => |tex_shader| {
-            try checkTexMetadata(tex_shader.tex, 3);
-            try checkTexUvMetadata(tex_shader.uvs, coords_num);
-            try checkSampCfg(tex_shader.samp_cfg);
-            try checkBits(tex_shader.bits);
-            try checkScaling(tex_shader.scaling);
-        },
-        .tex_rgb_u16 => |tex_shader| {
-            try checkTexMetadata(tex_shader.tex, 3);
-            try checkTexUvMetadata(tex_shader.uvs, coords_num);
-            try checkSampCfg(tex_shader.samp_cfg);
-            try checkBits(tex_shader.bits);
-            try checkScaling(tex_shader.scaling);
-        },
-        .tex_rgb_f => |tex_shader| {
-            try checkTexMetadata(tex_shader.tex, 3);
-            try checkTexUvMetadata(tex_shader.uvs, coords_num);
-            try checkSampCfg(tex_shader.samp_cfg);
-            try checkBits(tex_shader.bits);
-            try checkScaling(tex_shader.scaling);
-        },
+        .tex_u8 => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
+        .speckle => |speckle| try checkSpeckleMetadata(speckle, coords_num),
+        .tex_u16 => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
+        .tex_f => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
         .nodal => |nodal_shader| {
-            const field_dims = nodal_shader.field.array.dims;
-            if (field_dims.len != 3 or
-                field_dims[0] == 0 or
-                field_dims[1] != coords_num or
-                field_dims[2] == 0 or
-                field_dims[2] > buildconfig.config.max_nodal_fields)
-            {
-                return error.InvalidNodalFieldDimensions;
-            }
-            try checkBits(nodal_shader.bits);
-            try checkScaling(nodal_shader.scaling);
+            try checkNodalShaderMetadata(nodal_shader, coords_num);
+            if (nodal_shader.field.getFieldsN() != 1) return error.UnsuppedImageModeFieldCount;
         },
-        .speckle => |speckle_shader| {
-            try checkTexUvMetadata(speckle_shader.uvs, coords_num);
-            try checkBits(speckle_shader.bits);
-            try checkScaling(speckle_shader.scaling);
-            if (!std.math.isFinite(speckle_shader.output_scale) or
-                !std.math.isFinite(speckle_shader.output_offset))
-            {
-                return error.InvalidSpeckleOutputTransform;
-            }
-            try speckle_shader.params.validate();
-        },
-        .func => |func_shader| {
-            const require_uvs = func_shader.coord_mode == .uv;
-            try checkOptionalUvMetadata(func_shader.uvs, coords_num, require_uvs);
-            try checkBits(func_shader.bits);
-            try checkScaling(func_shader.scaling);
-            try checkFuncParams(func_shader.builtin, func_shader.params);
-        },
-        .func_rgb => |func_shader| {
-            const require_uvs = func_shader.coord_mode == .uv;
-            try checkOptionalUvMetadata(func_shader.uvs, coords_num, require_uvs);
-            try checkBits(func_shader.bits);
-            try checkScaling(func_shader.scaling);
-            try checkFuncParams(func_shader.builtin, func_shader.params);
-        },
+        .func => |func_shader| try checkFuncShaderMetadata(func_shader, coords_num),
     }
+}
+
+fn checkPipeSourceMetadata(
+    source: shadertypes.PipeSourceInput,
+    coords_num: usize,
+) InputValidationError!void {
+    switch (source) {
+        .tex_u8 => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
+        .speckle => |speckle| try checkSpeckleMetadata(speckle, coords_num),
+        .tex_u16 => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
+        .tex_f => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
+        .tex_rgb_u8 => |tex_shader| try checkTexShaderMetadata(tex_shader, 3, coords_num),
+        .tex_rgb_u16 => |tex_shader| try checkTexShaderMetadata(tex_shader, 3, coords_num),
+        .tex_rgb_f => |tex_shader| try checkTexShaderMetadata(tex_shader, 3, coords_num),
+        .tex_multi_u8 => |t| try checkTexMultiMetadata(t, coords_num),
+        .tex_multi_u16 => |t| try checkTexMultiMetadata(t, coords_num),
+        .tex_multi_f => |t| try checkTexMultiMetadata(t, coords_num),
+        .nodal => |nodal_shader| try checkNodalShaderMetadata(nodal_shader, coords_num),
+        .func, .func_rgb => |func_shader| try checkFuncShaderMetadata(func_shader, coords_num),
+        .func_multi => |multi| try checkFuncMultiShaderMetadata(multi, coords_num),
+    }
+}
+
+fn checkSpeckleMetadata(
+    speckle: shadertypes.SpeckleInput,
+    coords_num: usize,
+) InputValidationError!void {
+    try validatearrays.checkUvLayout(&speckle.uvs, coords_num);
+    if (speckle.bits) |bits| switch (bits) {
+        8, 10, 12, 14, 16 => {},
+        else => return error.InvalidShaderBitDepth,
+    };
+    try checkScaling(speckle.scaling);
+    if (!std.math.isFinite(speckle.output_gain) or
+        !std.math.isFinite(speckle.output_offset)) return error.InvalidSpeckleOutputTransform;
+    try speckle.params.validate();
+}
+
+fn checkTexShaderMetadata(
+    tex_shader: anytype,
+    expected_channels: usize,
+    coords_num: usize,
+) InputValidationError!void {
+    try checkTexMetadata(tex_shader.tex, expected_channels);
+    try validatearrays.checkUvLayout(&tex_shader.uvs, coords_num);
+    try checkSampCfg(tex_shader.samp_cfg);
+    if (!std.math.isFinite(tex_shader.output_gain) or
+        !std.math.isFinite(tex_shader.output_offset)) return error.InvalidShaderOutputMap;
+    try checkScaling(tex_shader.scaling);
+}
+
+fn checkNodalShaderMetadata(
+    nodal_shader: shadertypes.NodalInput,
+    coords_num: usize,
+) InputValidationError!void {
+    const field_dims = nodal_shader.field.array.dims;
+    if (field_dims.len != 3 or
+        field_dims[0] == 0 or
+        field_dims[1] != coords_num or
+        field_dims[2] == 0 or
+        field_dims[2] > buildconfig.config.max_nodal_fields)
+    {
+        return error.InvalidNodalFieldDimensions;
+    }
+    if (!std.math.isFinite(nodal_shader.output_gain) or
+        !std.math.isFinite(nodal_shader.output_offset)) return error.InvalidShaderOutputMap;
+    try checkScaling(nodal_shader.scaling);
+}
+
+fn checkFuncShaderMetadata(
+    func_shader: anytype,
+    coords_num: usize,
+) InputValidationError!void {
+    const require_uvs = func_shader.coord_mode == .uv;
+    try checkOptionalUvMetadata(func_shader.uvs, coords_num, require_uvs);
+    if (!std.math.isFinite(func_shader.output_gain) or
+        !std.math.isFinite(func_shader.output_offset)) return error.InvalidShaderOutputMap;
+    try checkScaling(func_shader.scaling);
+    try checkFuncParams(func_shader.builtin, func_shader.params);
+}
+
+fn checkFuncMultiShaderMetadata(
+    multi: shadertypes.FuncMultiInput,
+    coords_num: usize,
+) InputValidationError!void {
+    if (multi.channels.len == 0 or multi.channels.len > max_channels)
+        return error.UnsuppedImageModeFieldCount;
+    try checkOptionalUvMetadata(multi.uvs, coords_num, multi.coord_mode == .uv);
+    for (multi.channels) |ch| {
+        if (!std.math.isFinite(ch.output_gain) or
+            !std.math.isFinite(ch.output_offset)) return error.InvalidShaderOutputMap;
+        try checkScaling(ch.scaling);
+        try checkFuncParams(ch.builtin, ch.params);
+    }
+}
+
+fn checkTexMultiMetadata(t: anytype, coords_num: usize) InputValidationError!void {
+    try validatearrays.checkTexMultiLayout(t.tex);
+    try validatearrays.checkUvLayout(&t.uvs, coords_num);
+    try checkSampCfg(t.samp_cfg);
+    if (!std.math.isFinite(t.output_gain) or
+        !std.math.isFinite(t.output_offset)) return error.InvalidShaderOutputMap;
+    try checkScaling(t.scaling);
 }
 
 fn checkTexMetadata(tex: anytype, expected_channels: usize) InputValidationError!void {
@@ -589,48 +840,21 @@ fn checkTexMetadata(tex: anytype, expected_channels: usize) InputValidationError
     }
 }
 
-fn checkTexUvMetadata(
-    uvs: ndarray.NDArray(F),
-    coords_num: usize,
-) InputValidationError!void {
-    if (uvs.dims.len != 2 or
-        uvs.dims[0] != coords_num or
-        uvs.dims[1] != 2)
-    {
-        return error.InvalidUvDimensions;
-    }
-}
-
 fn checkOptionalUvMetadata(
     uvs_opt: ?ndarray.NDArray(F),
     coords_num: usize,
     required: bool,
 ) InputValidationError!void {
     if (uvs_opt) |uvs| {
-        if (uvs.dims.len != 2 or
-            uvs.dims[0] != coords_num or
-            uvs.dims[1] != 2)
-        {
-            return error.InvalidUvDimensions;
-        }
+        try validatearrays.checkUvLayout(&uvs, coords_num);
     } else if (required) {
         return error.MissingUvs;
     }
 }
 
-fn checkSampCfg(samp_cfg: texops.TexSampConfig) InputValidationError!void {
+fn checkSampCfg(samp_cfg: texturetypes.TexSampConfig) InputValidationError!void {
     if (!samp_cfg.isValid()) {
         return error.InvalidTexSampleConfig;
-    }
-}
-
-fn checkBits(bits_opt: ?u8) InputValidationError!void {
-    if (bits_opt) |bits| {
-        if (bits != 8 and bits != 10 and bits != 12 and
-            bits != 14 and bits != 16)
-        {
-            return error.InvalidShaderBitDepth;
-        }
     }
 }
 
@@ -655,15 +879,13 @@ fn checkScaling(scaling: imageops.ScaleStrategy) InputValidationError!void {
 }
 
 fn checkFuncParams(
-    builtin: shaderops.FuncShaderBuiltin,
-    params: shaderops.FuncShaderParams,
+    builtin: shaderfunc.FuncShaderBuiltin,
+    params: shaderfunc.FuncShaderParams,
 ) InputValidationError!void {
     if (!isFiniteSlice(&params.coord_scale) or
         params.coord_scale[0] == 0.0 or
         params.coord_scale[1] == 0.0 or
-        !isFiniteSlice(&params.coord_offset) or
-        !std.math.isFinite(params.output_scale) or
-        !std.math.isFinite(params.output_offset))
+        !isFiniteSlice(&params.coord_offset))
     {
         return error.InvalidFuncShaderParams;
     }
@@ -732,33 +954,8 @@ fn checkFuncParams(
 // Output & Save Checks
 // --------------------------------------------------------------------------------------
 
-pub fn calcOutFieldsForImgSaveMode(
-    img_save_mode: rastcfg.ImageSaveMode,
-    raw_num_fields: u8,
-) InputValidationError!u8 {
-    return switch (img_save_mode) {
-        .multifield => raw_num_fields,
-        .grey => switch (raw_num_fields) {
-            1 => 1,
-            else => error.UnsuppedImageModeFieldCount,
-        },
-        .rgb => switch (raw_num_fields) {
-            3 => 3,
-            else => error.UnsuppedImageModeFieldCount,
-        },
-        .rgb_to_grey => switch (raw_num_fields) {
-            3 => 1,
-            else => error.UnsuppedImageModeFieldCount,
-        },
-        .grey_to_rgb => switch (raw_num_fields) {
-            1 => 3,
-            else => error.UnsuppedImageModeFieldCount,
-        },
-    };
-}
-
 fn calcAllFramesImgDims(
-    cam_inps: []const cam.CameraInput,
+    cam_inps: []const cameratypes.CameraInput,
     num_time: usize,
     out_num_fields: u8,
 ) [5]usize {
@@ -780,7 +977,7 @@ fn calcAllFramesImgDims(
 }
 
 fn validOutBuffErr(
-    config: rastcfg.RasterConfig,
+    config: rasterconfig.RasterConfig,
     imgs_arr: ?*ndarray.NDArray(F),
     require_out_buff: bool,
     exp_dims: [5]usize,
@@ -814,12 +1011,12 @@ fn validAllFramesBuff(
 // Low-Level Distortion & PSF Validators
 // --------------------------------------------------------------------------------------
 
-fn isValidPolyMap(map: cam.PolyMap) bool {
+fn isValidPolyMap(map: cameramodels.PolyMap) bool {
     map.validate() catch return false;
     return true;
 }
 
-fn isValidDistort(distort: cam.DistortParams) bool {
+fn isValidDistort(distort: cameramodels.DistortParams) bool {
     return switch (distort) {
         .none => true,
         .brown_con => |bc| isFiniteSlice(&[_]F{
@@ -872,7 +1069,7 @@ fn isValidDistort(distort: cam.DistortParams) bool {
     };
 }
 
-fn isValidPsf(psf: cam.PointSpreadFunc) bool {
+fn isValidPsf(psf: cameramodels.PointSpreadFunc) bool {
     return switch (psf) {
         .pixel_box => |box| std.math.isFinite(box.supp_rad_px) and
             box.supp_rad_px >= 0.0,
@@ -920,95 +1117,8 @@ fn isFiniteVec3(vec_val: anytype) bool {
     return isFiniteSlice(vec_val.asSlice());
 }
 
-test "speckle metadata validates shapes and parameters without scanning UV payloads" {
-    const alloc = std.testing.allocator;
-    var values = [_]F{ std.math.nan(F), 0, 1, 0, 0, 1 };
-    const uvs = try ndarray.NDArray(F).init(alloc, &values, &.{ 3, 2 });
-    defer uvs.deinit(alloc);
-    const valid = shaderops.SpeckleInput{
-        .uvs = uvs,
-        .params = .{ .disk = .{ .coverage = 0.5, .radius = 0.1 } },
-    };
-    try checkShaderMetadata(.{ .speckle = valid }, 3);
-    try std.testing.expectError(error.InvalidUvDimensions, checkShaderMetadata(.{ .speckle = valid }, 4));
-    var malformed = valid;
-    var dims = [_]usize{3};
-    malformed.uvs.dims = &dims;
-    try std.testing.expectError(error.InvalidUvDimensions, checkShaderMetadata(.{ .speckle = malformed }, 3));
-    var wrong_width = [_]usize{ 3, 1 };
-    malformed.uvs.dims = &wrong_width;
-    try std.testing.expectError(error.InvalidUvDimensions, checkShaderMetadata(.{ .speckle = malformed }, 3));
-
-    for ([_]F{ std.math.nan(F), std.math.inf(F), -std.math.inf(F) }) |invalid| {
-        var shader = valid;
-        shader.output_scale = invalid;
-        try std.testing.expectError(error.InvalidSpeckleOutputTransform, checkShaderMetadata(.{ .speckle = shader }, 3));
-        shader = valid;
-        shader.output_offset = invalid;
-        try std.testing.expectError(error.InvalidSpeckleOutputTransform, checkShaderMetadata(.{ .speckle = shader }, 3));
-        shader = valid;
-        shader.params.disk.radius = invalid;
-        try std.testing.expectError(error.InvalidSpeckleRadius, checkShaderMetadata(.{ .speckle = shader }, 3));
-    }
-    for ([_][2]F{ .{ 0, 0 }, .{ -0.0, 0 }, .{ 0.375, 0.375 }, .{ 1, 1 } }) |colors| {
-        var shader = valid;
-        shader.params.disk.foreground = colors[0];
-        shader.params.disk.background = colors[1];
-        try std.testing.expectError(error.SpeckleColorsMustDiffer, checkShaderMetadata(.{ .speckle = shader }, 3));
-    }
-    var shader = valid;
-    shader.params.disk.foreground = 0.375;
-    shader.params.disk.background = std.math.nextAfter(F, 0.375, 1);
-    try checkShaderMetadata(.{ .speckle = shader }, 3);
-    shader = valid;
-    shader.params.disk.radius = 0;
-    try std.testing.expectError(error.InvalidSpeckleRadius, checkShaderMetadata(.{ .speckle = shader }, 3));
-    shader.params = .{ .perlin = .{ .cell_size = 0 } };
-    try std.testing.expectError(error.InvalidSpeckleCellSize, checkShaderMetadata(.{ .speckle = shader }, 3));
-    shader = valid;
-    shader.params.disk.occupancy = 0;
-    try std.testing.expectError(error.InvalidSpeckleOccupancy, checkShaderMetadata(.{ .speckle = shader }, 3));
-    shader = valid;
-    shader.params.disk.foreground = 1.1;
-    try std.testing.expectError(error.InvalidSpeckleForeground, checkShaderMetadata(.{ .speckle = shader }, 3));
-    shader = valid;
-    shader.bits = 7;
-    try std.testing.expectError(error.InvalidShaderBitDepth, checkShaderMetadata(.{ .speckle = shader }, 3));
-    shader = valid;
-    shader.scaling = .{ .fixed = .{ 1, 0 } };
-    try std.testing.expectError(error.InvalidScalingBounds, checkShaderMetadata(.{ .speckle = shader }, 3));
-    shader = valid;
-    shader.output_scale = -2;
-    shader.output_offset = -0.5;
-    shader.bits = null;
-    try checkShaderMetadata(.{ .speckle = shader }, 3);
-}
-
-test "fast render validation preserves physical errors before reading geometry" {
-    const meshio = @import("meshio.zig");
-    // Metadata is sound but geometry is unusable. The fast parameter boundary must
-    // reject first, without scanning/calibrating or allocating any resources.
-    var coords = [_]F{std.math.nan(F)} ** 9;
-    var connect = [_]usize{ 30, 40, 50 };
-    var uvs = [_]F{std.math.nan(F)} ** 6;
-    var dims = [_]usize{ 3, 2 };
-    var strides = [_]usize{ 2, 1 };
-    const mesh = meshpipe.MeshInput{
-        .mesh_type = .tri3,
-        .coords = meshio.Coords.init(&coords, 3),
-        .connect = meshio.Connect.init(&connect, 1, 3),
-        .disp = null,
-        .shader = .{ .speckle = .{
-            .uvs = .{ .slice = &uvs, .dims = &dims, .strides = &strides },
-            .params = .{ .disk = .{ .coverage = 0.5, .radius = 0.1, .jitter = 0.05, .edge_softness = 0.1 } },
-        } },
-    };
-    const groups = [_]struct { workers: u32 }{.{ .workers = 1 }};
-    try std.testing.expectError(error.UnsupportedSpeckleSupport, checkRenderInps(&groups, &.{}, &.{mesh}, .{ .validation = .fast }, null, false, null));
-}
-
 test "raster configuration rejects invalid distortion edge spacing" {
-    var config = rastcfg.RasterConfig{};
+    var config = rasterconfig.RasterConfig{};
     for ([_]F{ 0.0, -1.0, std.math.nan(F), std.math.inf(F) }) |spacing| {
         config.advanced.distortion.edge_spacing_px = spacing;
         try std.testing.expectError(
@@ -1016,4 +1126,232 @@ test "raster configuration rejects invalid distortion edge spacing" {
             checkRasterConfig(config),
         );
     }
+}
+
+test "pipe metadata validates every distinct requested multifield channel count" {
+    var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+    var connect = [_]usize{ 0, 1, 2 };
+    const ch0 = shaderpipe.Register{ .kind = .channel, .index = 0 };
+    const stages = [_]shadertypes.ShaderPipeStageInput{
+        .{ .shader = .{
+            .shader = .{ .func = .{ .builtin = .constant } },
+            .register_dest = ch0,
+        } },
+    };
+    const meshes = [_]meshtypes.MeshInput{.{
+        .mesh_type = .tri3,
+        .coords = meshtypes.Coords.init(&coords, 3),
+        .connect = meshtypes.Connect.init(&connect, 1, 3),
+        .disp = null,
+        .shaders = .{ .multifield_pipe = .{
+            .stages = &stages,
+            .resolver = .{ .identity = &.{ch0} },
+        } },
+    }};
+    var cameras = [_]cameratypes.CameraInput{.{
+        .pixels_num = .{ 16, 16 },
+        .pixels_size = .{ 1, 1 },
+        .pos_world = .initSlice(&.{ 0, 0, 1 }),
+        .rot_world = .init(0, 0, 0),
+        .roi_cent_world = .initSlice(&.{ 0, 0, 0 }),
+        .focal_length = 1,
+        .sub_sample = 1,
+    }} ** 3;
+    for (&cameras) |*camera| camera.render_format = .{ .multifield = 1 };
+    try checkMeshesMetadata(&meshes, &cameras);
+    try checkPipeCompatibility(&cameras, &meshes);
+
+    cameras[2].render_format = .{ .multifield = 2 };
+    try std.testing.expectError(error.InvalidShaderPipe, checkMeshesMetadata(&meshes, &cameras));
+    cameras[2].render_format = .{ .multifield = 0 };
+    try std.testing.expectError(error.InvalidRenderFormatChannels, checkMeshesMetadata(&meshes, &cameras));
+    cameras[2].render_format = .{ .multifield = max_channels + 1 };
+    try std.testing.expectError(error.InvalidRenderFormatChannels, checkMeshesMetadata(&meshes, &cameras));
+}
+
+test "generic pipe stages validate ordered reads and single writers" {
+    const ch0 = shaderpipe.Register{ .kind = .channel, .index = 0 };
+    const ch1 = shaderpipe.Register{ .kind = .channel, .index = 1 };
+    const ch2 = shaderpipe.Register{ .kind = .channel, .index = 2 };
+    const f0 = shaderpipe.Register{ .kind = .field, .index = 0 };
+    const f1 = shaderpipe.Register{ .kind = .field, .index = 1 };
+    const f2 = shaderpipe.Register{ .kind = .field, .index = 2 };
+    const p0 = shaderpipe.Register{ .kind = .parameter, .index = 0 };
+    const table = [_]F{ 0, 1, 2 };
+    const original = [_]shadertypes.ShaderPipeStageInput{
+        .{
+            .shader = .{
+                .shader = .{ .func_rgb = .{ .builtin = .constant } },
+                .register_dest = ch0,
+            },
+        },
+        .{ .affine_map = .{ .register_source = ch0, .register_dest = f0, .gain = 2, .offset = 1 } },
+        .{ .lut_map = .{ .register_source = f0, .register_dest = f1, .lookup = .{ .first = 0, .step = 1, .values = &table } } },
+        .{ .blend = .{ .a = ch1, .b = f1, .register_dest = f2, .alpha = .{ .register = f0 } } },
+        .{ .normalise = .{ .register_source = ch0, .register_dest = p0, .components = 3 } },
+    };
+    const result = [_]shaderpipe.Register{ch0};
+    var stages = original;
+    const pipe = shadertypes.ShaderPipeInput{
+        .stages = &stages,
+        .resolver = .{ .identity = &result },
+    };
+    try checkPipeMetadata(pipe, 3, 1);
+
+    stages[1] = .{ .affine_map = .{ .register_source = f1, .register_dest = f0, .gain = 1, .offset = 0 } };
+    try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
+    stages[1] = .{ .affine_map = .{ .register_source = ch0, .register_dest = f0, .gain = std.math.nan(F), .offset = 0 } };
+    try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
+    stages[1] = original[1];
+
+    stages[2] = .{ .lut_map = .{ .register_source = f0, .register_dest = f1, .lookup = .{ .first = 0, .step = 0, .values = &table } } };
+    try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
+    stages[2] = original[2];
+
+    stages[3] = .{ .blend = .{ .a = ch1, .b = f1, .register_dest = f2, .alpha = .{ .register = .{ .kind = .parameter, .index = 9 } } } };
+    try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
+    stages[3] = .{ .blend = .{ .a = ch1, .b = f1, .register_dest = f2, .alpha = .{ .fixed = std.math.inf(F) } } };
+    try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
+    stages[3] = original[3];
+
+    stages[4] = .{ .normalise = .{ .register_source = ch0, .register_dest = p0, .components = 4 } };
+    try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
+    stages[4] = .{ .normalise = .{ .register_source = ch0, .register_dest = ch2, .components = 3 } };
+    try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
+    stages[4] = .{ .normalise = .{ .register_source = ch0, .register_dest = .{ .kind = .parameter, .index = 15 }, .components = 2 } };
+    try std.testing.expectError(error.InvalidShaderPipe, checkPipeMetadata(pipe, 3, 1));
+}
+
+test "texture and function validation checks strided UV bounds before scanning logical entries" {
+    const alloc = std.testing.allocator;
+    const tex = try texturetypes.TexDataFix(u8, 1).init(alloc, 2, 2);
+    defer tex.deinit(alloc);
+    const multi = try texturetypes.TexDataDyn(u8).init(alloc, 2, 2, 2);
+    defer multi.deinit(alloc);
+    var coords = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+    var connect = [_]usize{ 0, 1, 2 };
+    var dims = [_]usize{ 3, 2 };
+    var strides = [_]usize{ 2, 7 };
+    const pad = std.math.nan(F);
+    var values = [_]F{ 0, pad, 1, pad, 0, pad, pad, 0, pad, 0, pad, 1 };
+    const valid = ndarray.NDArray(F){ .slice = &values, .dims = &dims, .strides = &strides };
+    var overflow_strides = [_]usize{ 2, std.math.maxInt(usize) };
+    const inputs = [_]ndarray.NDArray(F){
+        .{ .slice = &values, .dims = &dims, .strides = strides[0..1] },
+        .{ .slice = values[0 .. values.len - 1], .dims = &dims, .strides = &strides },
+        .{ .slice = &values, .dims = &dims, .strides = &overflow_strides },
+        valid,
+    };
+    const Source = enum { texture, function, texture_multi, function_multi };
+    for (std.enums.values(Source)) |source| {
+        for (inputs, 0..) |uvs, i| {
+            var mesh = meshtypes.MeshInput{
+                .mesh_type = .tri3,
+                .coords = meshtypes.Coords.init(&coords, 3),
+                .connect = meshtypes.Connect.init(&connect, 1, 3),
+                .disp = null,
+                .shaders = .{},
+            };
+            var stages: [1]shadertypes.ShaderPipeStageInput = undefined;
+            const ch0 = shaderpipe.Register{ .kind = .channel, .index = 0 };
+            switch (source) {
+                .texture => mesh.shaders.mono_direct = .{ .tex_u8 = .{ .uvs = uvs, .tex = tex } },
+                .function => mesh.shaders.mono_direct = .{ .func = .{
+                    .uvs = uvs,
+                    .builtin = .constant,
+                    .coord_mode = .uv,
+                } },
+                .texture_multi, .function_multi => {
+                    stages[0] = .{ .shader = .{
+                        .shader = if (source == .texture_multi)
+                            .{ .tex_multi_u8 = .{ .uvs = uvs, .tex = multi } }
+                        else
+                            .{ .func_multi = .{
+                                .uvs = uvs,
+                                .coord_mode = .uv,
+                                .channels = &.{.{ .builtin = .constant }},
+                            } },
+                        .register_dest = ch0,
+                    } };
+                    mesh.shaders.multifield_pipe = .{ .stages = &stages, .resolver = .{ .identity = &.{ch0} } };
+                },
+            }
+            if (i != inputs.len - 1) {
+                try std.testing.expectError(error.InvalidUvDimensions, checkMeshesMetadata(&.{mesh}, &.{}));
+                continue;
+            }
+            try checkMeshesMetadata(&.{mesh}, &.{});
+            try validatearrays.checkRenderArrs(&.{mesh});
+            values[values.len - 1] = std.math.inf(F);
+            try std.testing.expectError(error.NonFiniteUvs, validatearrays.checkRenderArrs(&.{mesh}));
+            values[values.len - 1] = 1;
+        }
+    }
+}
+
+test "speckle metadata validates shapes and parameters without scanning UV payloads" {
+    const alloc = std.testing.allocator;
+    var values = [_]F{ std.math.nan(F), 0, 1, 0, 0, 1 };
+    const uvs = try ndarray.NDArray(F).init(alloc, &values, &.{ 3, 2 });
+    defer uvs.deinit(alloc);
+    const valid = shadertypes.SpeckleInput{
+        .uvs = uvs,
+        .params = .{ .disk = .{ .coverage = 0.5, .radius = 0.1 } },
+    };
+    try checkShaderMonoMetadata(.{ .speckle = valid }, 3);
+    try checkPipeSourceMetadata(.{ .speckle = valid }, 3);
+    try std.testing.expectEqual(@as(u8, 1), pipeSourceChannels(.{ .speckle = valid }));
+    try std.testing.expectError(error.InvalidUvDimensions, checkShaderMonoMetadata(.{ .speckle = valid }, 4));
+    var malformed = valid;
+    var dims = [_]usize{3};
+    malformed.uvs.dims = &dims;
+    try std.testing.expectError(error.InvalidUvDimensions, checkShaderMonoMetadata(.{ .speckle = malformed }, 3));
+    var wrong_width = [_]usize{ 3, 1 };
+    malformed.uvs.dims = &wrong_width;
+    try std.testing.expectError(error.InvalidUvDimensions, checkShaderMonoMetadata(.{ .speckle = malformed }, 3));
+
+    for ([_]F{ std.math.nan(F), std.math.inf(F), -std.math.inf(F) }) |invalid| {
+        var shader = valid;
+        shader.output_gain = invalid;
+        try std.testing.expectError(error.InvalidSpeckleOutputTransform, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+        shader = valid;
+        shader.output_offset = invalid;
+        try std.testing.expectError(error.InvalidSpeckleOutputTransform, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+        shader = valid;
+        shader.params.disk.radius = invalid;
+        try std.testing.expectError(error.InvalidSpeckleRadius, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    }
+    for ([_][2]F{ .{ 0, 0 }, .{ -0.0, 0 }, .{ 0.375, 0.375 }, .{ 1, 1 } }) |colors| {
+        var shader = valid;
+        shader.params.disk.foreground = colors[0];
+        shader.params.disk.background = colors[1];
+        try std.testing.expectError(error.SpeckleColorsMustDiffer, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    }
+    var shader = valid;
+    shader.params.disk.foreground = 0.375;
+    shader.params.disk.background = std.math.nextAfter(F, 0.375, 1);
+    try checkShaderMonoMetadata(.{ .speckle = shader }, 3);
+    shader = valid;
+    shader.params.disk.radius = 0;
+    try std.testing.expectError(error.InvalidSpeckleRadius, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    shader.params = .{ .perlin = .{ .cell_size = 0 } };
+    try std.testing.expectError(error.InvalidSpeckleCellSize, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.params.disk.occupancy = 0;
+    try std.testing.expectError(error.InvalidSpeckleOccupancy, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.params.disk.foreground = 1.1;
+    try std.testing.expectError(error.InvalidSpeckleForeground, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.bits = 7;
+    try std.testing.expectError(error.InvalidShaderBitDepth, checkPipeSourceMetadata(.{ .speckle = shader }, 3));
+    try std.testing.expectError(error.InvalidShaderBitDepth, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.scaling = .{ .fixed = .{ 1, 0 } };
+    try std.testing.expectError(error.InvalidScalingBounds, checkShaderMonoMetadata(.{ .speckle = shader }, 3));
+    shader = valid;
+    shader.output_gain = -2;
+    shader.output_offset = -0.5;
+    shader.bits = null;
+    try checkShaderMonoMetadata(.{ .speckle = shader }, 3);
 }

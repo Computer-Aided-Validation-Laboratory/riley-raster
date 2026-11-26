@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
+const rendergroups = @import("riley/zig/rendergroups.zig");
 const std = @import("std");
 
 const benchargs = @import("dev_support/benchargs.zig");
@@ -51,6 +52,7 @@ pub fn main(init: std.process.Init) !void {
         base_raster_config,
     );
     default_bench_args.image_out_dir = DEFAULT_IMAGE_OUT_DIR;
+    default_bench_args.data_dir = DEFAULT_DATA_DIR;
     default_bench_args.render_mode = DEFAULT_RENDER_MODE;
     default_bench_args.save_strategy = DEFAULT_SAVE_STRATEGY;
     default_bench_args.runs = DEFAULT_RUNS;
@@ -113,7 +115,7 @@ pub fn main(init: std.process.Init) !void {
         outer_alloc.free(managed_ios);
     }
     const render_groups = try outer_alloc.alloc(
-        riley.RenderGroup,
+        rendergroups.RenderGroup,
         bench_args.render_group_count,
     );
     defer outer_alloc.free(render_groups);
@@ -149,7 +151,7 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const aa = arena.allocator();
     const dicuq_defaults = benchdicuq.DicuqDefaults{
-        .data_dir = DEFAULT_DATA_DIR,
+        .data_dir = bench_args.data_dir,
         .pixels_num = bench_args.pixels_num,
         .sub_sample = bench_args.sub_sample,
         .focal_leng = DEFAULT_FOCAL_LENG,

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from bench_common import command_path, native_exe, repo_root
+from benchmark_catalog import binary_name as catalog_binary_name
+
 import csv
 import datetime as dt
 import json
@@ -13,8 +16,6 @@ import sys
 import textwrap
 from dataclasses import asdict, dataclass
 from typing import Final
-
-from bench_common import command_path, native_exe, repo_root, timestamp_string
 
 
 DEFAULT_GOLD_RUNS: Final[int] = 100
@@ -94,22 +95,22 @@ PERF_CASES: Final[dict[str, PerfCase]] = {
     "fullraster": PerfCase(
         name="fullraster",
         benchmark_name="bench_fullraster",
-        binary_name="bench_fullraster_simd",
+        binary_name=catalog_binary_name("fullraster"),
     ),
     "geom": PerfCase(
         name="geom",
         benchmark_name="bench_geom",
-        binary_name="bench_geom_simd",
+        binary_name=catalog_binary_name("geom"),
     ),
     "sphere2000": PerfCase(
         name="sphere2000",
         benchmark_name="bench_sphere2000",
-        binary_name="bench_sphere2000_simd",
+        binary_name=catalog_binary_name("sphere2000"),
     ),
     "sphere2000zoom": PerfCase(
         name="sphere2000zoom",
         benchmark_name="bench_sphere2000zoom",
-        binary_name="bench_sphere2000zoom_simd",
+        binary_name=catalog_binary_name("sphere2000zoom"),
     ),
 }
 
@@ -180,11 +181,16 @@ REFERENCE_ROOTS: Final[dict[str, pathlib.Path]] = {
 }
 
 
+
 def python_path() -> pathlib.Path:
     venv_python = repo_root() / ".venv" / "bin" / "python"
     if venv_python.exists():
         return venv_python
     return pathlib.Path(sys.executable)
+
+
+def timestamp_string() -> str:
+    return dt.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 def case_or_die(case_name: str) -> PerfCase:
@@ -223,7 +229,7 @@ def binary_path(case: PerfCase) -> pathlib.Path:
     if not path.exists():
         raise SystemExit(
             "Missing benchmark binary "
-            f"{path}. Run `python scripts/compile_para_benchmarks.py --simd-only` first.",
+            f"{path}. Run scripts/compile_benchmarks.py first.",
         )
     return path
 

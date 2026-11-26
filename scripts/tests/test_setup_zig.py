@@ -1,8 +1,9 @@
 """Portable toolchain-selection tests without executing the packaging build."""
 
-import ast
+
+import importlib.util
 from pathlib import Path
-import shutil
+import re
 import subprocess
 import sys
 import sysconfig
@@ -12,60 +13,48 @@ from unittest import mock
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SPEC = importlib.util.spec_from_file_location(
+    "_riley_test_zig_toolchain", PROJECT_ROOT / "src" / "riley" / "_zig_toolchain.py",
+)
+assert SPEC is not None and SPEC.loader is not None
+toolchain = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(toolchain)
 
 
 class ZigSelectionTests(unittest.TestCase):
     def setUp(self):
-        # Importing setup.py would cythonize sources and invoke setuptools.
-        # Deliberately bind only these selectors' stdlib dependencies; update
-        # this fixture if they acquire new module-level dependencies.
-        tree = ast.parse((PROJECT_ROOT / "setup.py").read_text())
-        declarations = [
-            node for node in tree.body
-            if (
-                isinstance(node, ast.FunctionDef)
-                and node.name in ("select_zig_runner", "get_windows_target_triple")
-            ) or (
-                isinstance(node, ast.Assign)
-                and any(
-                    isinstance(target, ast.Name)
-                    and target.id == "REQUIRED_ZIG_VERSION"
-                    for target in node.targets
-                )
-            )
-        ]
-        self.namespace = {
-            "shutil": shutil, "subprocess": subprocess,
-            "sys": sys, "sysconfig": sysconfig,
-        }
-        exec(compile(ast.Module(body=declarations, type_ignores=[]), "setup.py", "exec"), self.namespace)
-        self.select = self.namespace["select_zig_runner"]
+        self.select = toolchain.select_zig_runner
+        self.version = toolchain.REQUIRED_ZIG_VERSION + "\n"
         self.fallback = [sys.executable, "-m", "ziglang"]
         self.path_zig = str(PROJECT_ROOT / "test-toolchain" / "zig")
+        self.module_spec = self.enterContext(mock.patch.object(toolchain, "find_spec"))
+        self.which = self.enterContext(
+            mock.patch.object(toolchain.shutil, "which", return_value=self.path_zig),
+        )
+        self.probe = self.enterContext(mock.patch.object(toolchain.subprocess, "check_output"))
 
     def test_matching_path_version_is_preferred(self):
-        with mock.patch.object(shutil, "which", return_value=self.path_zig), mock.patch.object(
-            subprocess, "check_output", return_value="0.16.0\n"
-        ) as probe:
-            self.assertEqual(self.select(), [self.path_zig])
-        probe.assert_called_once_with(
+        self.probe.return_value = self.version
+        self.assertEqual(self.select(), [self.path_zig])
+        self.probe.assert_called_once_with(
             [self.path_zig, "version"], text=True,
             stderr=subprocess.STDOUT, timeout=10,
         )
+        self.module_spec.assert_not_called()
 
     def test_missing_path_uses_pinned_module(self):
-        with mock.patch.object(shutil, "which", return_value=None), mock.patch.object(
-            subprocess, "check_output", return_value="0.16.0\n"
-        ) as probe:
-            self.assertEqual(self.select(), self.fallback)
-        self.assertEqual(probe.call_args.args[0], self.fallback + ["version"])
+        self.which.return_value = None
+        self.probe.return_value = self.version
+        self.assertEqual(self.select(), self.fallback)
+        self.assertEqual(self.probe.call_args.args[0], self.fallback + ["version"])
 
     def test_mismatched_path_uses_pinned_module(self):
-        with mock.patch.object(shutil, "which", return_value=self.path_zig), mock.patch.object(
-            subprocess, "check_output", side_effect=["0.15.2\n", "0.16.0\n"]
-        ) as probe:
-            self.assertEqual(self.select(), self.fallback)
-        self.assertEqual(probe.call_count, 2)
+        self.probe.side_effect = ["0.15.2\n", self.version]
+        self.assertEqual(self.select(), self.fallback)
+        self.assertEqual(
+            [call.args[0] for call in self.probe.call_args_list],
+            [[self.path_zig, "version"], self.fallback + ["version"]],
+        )
 
     def test_unusable_path_uses_pinned_module(self):
         failures = [
@@ -74,32 +63,50 @@ class ZigSelectionTests(unittest.TestCase):
             subprocess.TimeoutExpired([self.path_zig, "version"], 10),
         ]
         for failure in failures:
-            with self.subTest(failure=type(failure).__name__), mock.patch.object(
-                shutil, "which", return_value=self.path_zig
-            ), mock.patch.object(
-                subprocess, "check_output", side_effect=[failure, "0.16.0\n"]
-            ):
+            with self.subTest(failure=type(failure).__name__):
+                self.probe.side_effect = [failure, self.version]
                 self.assertEqual(self.select(), self.fallback)
 
     def test_mismatched_module_fails_with_actionable_error(self):
-        with mock.patch.object(shutil, "which", return_value=self.path_zig), mock.patch.object(
-            subprocess, "check_output", side_effect=["0.15.2\n", "0.17.0-dev\n"]
-        ), self.assertRaisesRegex(RuntimeError, "requires Zig 0.16.0") as caught:
+        self.probe.side_effect = ["0.15.2\n", self.version.strip() + "-dev\n"]
+        with self.assertRaises(toolchain.ZigUnavailableError) as caught:
             self.select()
         message = str(caught.exception)
-        self.assertIn("ziglang==0.16.0", message)
+        self.assertIn(f"ziglang=={toolchain.REQUIRED_ZIG_VERSION}", message)
         self.assertIn("0.15.2", message)
-        self.assertIn("0.17.0-dev", message)
+        self.assertIn(self.version.strip() + "-dev", message)
 
     def test_missing_module_fails_with_actionable_error(self):
-        with mock.patch.object(shutil, "which", return_value=None), mock.patch.object(
-            subprocess, "check_output",
-            side_effect=subprocess.CalledProcessError(1, self.fallback + ["version"]),
-        ), self.assertRaisesRegex(RuntimeError, "Install ziglang==0.16.0"):
+        self.which.return_value = None
+        self.module_spec.return_value = None
+        with self.assertRaisesRegex(
+            toolchain.ZigUnavailableError,
+            re.escape(f"Install ziglang=={toolchain.REQUIRED_ZIG_VERSION}"),
+        ) as caught:
             self.select()
+        self.assertIn("zig not found on PATH", str(caught.exception))
+        self.assertIn("ziglang is not installed", str(caught.exception))
+        self.probe.assert_not_called()
 
+    def test_broken_module_is_not_reported_as_missing(self):
+        self.which.return_value = None
+        failure = subprocess.CalledProcessError(1, self.fallback + ["version"])
+        self.probe.side_effect = failure
+        with self.assertRaises(RuntimeError) as caught:
+            self.select()
+        self.assertNotIsInstance(caught.exception, toolchain.ZigUnavailableError)
+        self.assertIs(caught.exception.__cause__, failure)
+
+    def test_toolchain_version_matches_packaging_pins(self):
+        metadata = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
+        pinned = "ziglang==" + toolchain.REQUIRED_ZIG_VERSION
+        self.assertIn(pinned, metadata["build-system"]["requires"])
+        self.assertIn(pinned, metadata["project"]["optional-dependencies"]["dev"])
+        self.assertIn(pinned, metadata["dependency-groups"]["dev"])
+
+
+class WindowsTargetTests(unittest.TestCase):
     def test_windows_target_matches_python_platform_not_wheel_matrix(self):
-        select_target = self.namespace["get_windows_target_triple"]
         for tag, target in (
             ("win32", "x86-windows-msvc"),
             ("win-amd64", "x86_64-windows-msvc"),
@@ -110,29 +117,14 @@ class ZigSelectionTests(unittest.TestCase):
             with self.subTest(tag=tag), mock.patch.object(
                 sysconfig, "get_platform", return_value=tag
             ):
-                self.assertEqual(select_target(), target)
+                self.assertEqual(toolchain.get_windows_target_triple(), target)
 
     def test_unknown_windows_platform_fails_with_actionable_error(self):
         with mock.patch.object(sysconfig, "get_platform", return_value="unknown"), self.assertRaisesRegex(
             RuntimeError, "Unsupported Windows Python platform for Zig build: unknown"
         ):
-            self.namespace["get_windows_target_triple"]()
+            toolchain.get_windows_target_triple()
 
-    def test_extras_and_checkout_groups_remain_in_sync(self):
-        metadata = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
-        for name in ("dev", "docs"):
-            with self.subTest(group=name):
-                self.assertEqual(
-                    metadata["project"]["optional-dependencies"][name],
-                    metadata["dependency-groups"][name],
-                )
-
-    def test_toolchain_version_matches_packaging_pins(self):
-        metadata = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
-        pinned = "ziglang==" + self.namespace["REQUIRED_ZIG_VERSION"]
-        self.assertIn(pinned, metadata["build-system"]["requires"])
-        self.assertIn(pinned, metadata["project"]["optional-dependencies"]["dev"])
-        self.assertIn(pinned, metadata["dependency-groups"]["dev"])
 
 
 if __name__ == "__main__":

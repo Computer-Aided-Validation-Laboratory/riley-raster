@@ -12,7 +12,8 @@ const F = buildconfig.F;
 const tol = buildconfig.config.tol;
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
-const texops = @import("textureops.zig");
+const textureops = @import("textureops.zig");
+const texturetypes = @import("texturetypes.zig");
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -69,8 +70,8 @@ pub fn getScaleFactors(
 
 pub fn getScalingParamsTex(
     comptime T: type,
-    comptime channels: usize,
-    tex: *const texops.Tex(T, channels),
+    comptime channels: ?usize,
+    tex: *const (if (channels) |count| texturetypes.TexDataFix(T, count) else texturetypes.TexDataDyn(T)),
     strategy: ScaleStrategy,
 ) ScalingParams {
     switch (strategy) {
@@ -78,10 +79,22 @@ pub fn getScalingParamsTex(
         .auto, .frac => {
             var px_min: F = std.math.inf(F);
             var px_max: F = -std.math.inf(F);
-            for (tex.array.slice) |val| {
-                const val_f = texops.texelToFloat(T, val);
-                if (val_f < px_min) px_min = val_f;
-                if (val_f > px_max) px_max = val_f;
+            const array = &tex.array;
+            if (channels == null) {
+                const cols = tex.cols_num;
+                const plane_size = tex.rows_num * cols;
+                if (array.strides[0] == plane_size and array.strides[1] == cols) {
+                    scanTexelBounds(T, array.slice[0 .. array.dims[0] * plane_size], &px_min, &px_max);
+                } else {
+                    for (0..array.dims[0]) |ch| {
+                        for (0..tex.rows_num) |row| {
+                            const start = array.subBase2(ch, row);
+                            scanTexelBounds(T, array.slice[start..][0..cols], &px_min, &px_max);
+                        }
+                    }
+                }
+            } else {
+                scanTexelBounds(T, array.slice, &px_min, &px_max);
             }
             const range = if (@abs(px_max - px_min) < tol.image.auto_scale_range)
                 1.0
@@ -94,6 +107,18 @@ pub fn getScalingParamsTex(
             return .{ .min = range[0], .range = px_rng };
         },
     }
+}
+
+fn scanTexelBounds(comptime T: type, texels: []const T, px_min: *F, px_max: *F) void {
+    var lo = px_min.*;
+    var hi = px_max.*;
+    for (texels) |val| {
+        const val_f = textureops.texelToFloat(T, val);
+        if (val_f < lo) lo = val_f;
+        if (val_f > hi) hi = val_f;
+    }
+    px_min.* = lo;
+    px_max.* = hi;
 }
 
 pub fn getScalingParams(

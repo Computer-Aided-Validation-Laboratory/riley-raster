@@ -6,12 +6,16 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
+const cameratypes = @import("../riley/zig/cameratypes.zig");
 const std = @import("std");
-const cam = @import("../riley/zig/camera.zig");
+const cam = @import("../riley/zig/cameraprojops.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 
 pub const BenchArgs = struct {
+    smoke: bool = false,
+    data_dir: []const u8 = "data/tilt",
+    data_suffix: []const u8 = "fullraster",
     out_dir: []const u8,
     image_out_dir: []const u8,
     render_mode: rastcfg.RenderMode,
@@ -23,11 +27,11 @@ pub const BenchArgs = struct {
     geom_scheduling_mode: rastcfg.GeometrySchedulingMode,
     max_raster_workers_per_job: u16,
     hull_mode: rastcfg.HullMode,
-    subpixel_center_map: cam.SubPixelCenterMap,
+    subpixel_center_map: cameratypes.SubPixelCenterMap,
     save_strategy: rastcfg.SaveStrategy,
     disk_save_overlap: bool,
-    sample: ?texops.TexSample,
-    sample_mode: ?texops.TexSampleMode,
+    sample: ?textypes.TexSamp,
+    sample_mode: ?textypes.TexSampMode,
     texture_storage: TextureStorage,
     shader_subset: ShaderSubset,
     mesh_subset: MeshSubset,
@@ -49,8 +53,12 @@ pub const TextureStorage = enum {
 };
 
 pub const ShaderSubset = enum {
+    static_preparation,
     all,
     texture,
+    shaderpipe_baseline,
+    shaderpipe_compare,
+    shaderpipe_multisource,
 };
 
 pub const MeshSubset = enum {
@@ -96,7 +104,7 @@ pub fn defaultBenchArgs(
 }
 
 pub fn parseArgs(
-    args: []const []const u8,
+    args: anytype,
     default_out_dir: []const u8,
     raster_config: rastcfg.RasterConfig,
 ) !BenchArgs {
@@ -110,7 +118,7 @@ pub fn parseArgs(
 }
 
 pub fn parseArgsWithDefaults(
-    args: []const []const u8,
+    args: anytype,
     defaults: BenchArgs,
 ) !BenchArgs {
     var bench_args = defaults;
@@ -122,21 +130,26 @@ pub fn parseArgsWithDefaults(
     var skip_next = false;
     var positional_arg_count: usize = 0;
 
-    for (args[1..], 1..) |arg, ii| {
+    for (args[1..], 1..) |raw_arg, ii| {
         if (skip_next) {
             skip_next = false;
             continue;
         }
 
+        const arg = argToSlice(raw_arg);
         if (std.mem.startsWith(u8, arg, "--")) {
             if (ii + 1 >= args.len) {
                 return error.MissingArgumentValue;
             }
 
-            const value = args[ii + 1];
+            const value = argToSlice(args[ii + 1]);
             skip_next = true;
 
-            if (std.mem.eql(u8, arg, "--render-mode")) {
+            if (std.mem.eql(u8, arg, "--data-dir")) {
+                bench_args.data_dir = value;
+            } else if (std.mem.eql(u8, arg, "--data-suffix")) {
+                bench_args.data_suffix = value;
+            } else if (std.mem.eql(u8, arg, "--render-mode")) {
                 bench_args.render_mode =
                     try parseEnum(rastcfg.RenderMode, value);
             } else if (std.mem.eql(u8, arg, "--render-group-count")) {
@@ -164,20 +177,20 @@ pub fn parseArgsWithDefaults(
                     try parseEnum(rastcfg.HullMode, value);
             } else if (std.mem.eql(u8, arg, "--subpixel-center-map")) {
                 bench_args.subpixel_center_map =
-                    try parseEnum(cam.SubPixelCenterMap, value);
+                    try parseEnum(cameratypes.SubPixelCenterMap, value);
             } else if (std.mem.eql(u8, arg, "--save-strategy")) {
                 bench_args.save_strategy =
-                    try parseSaveStrategy(value);
+                    try parseEnum(rastcfg.SaveStrategy, value);
             } else if (std.mem.eql(u8, arg, "--disk-save-overlap")) {
                 bench_args.disk_save_overlap = try parseBool(value);
             } else if (std.mem.eql(u8, arg, "--image-out-dir")) {
                 bench_args.image_out_dir = value;
             } else if (std.mem.eql(u8, arg, "--sample")) {
                 bench_args.sample =
-                    try parseEnum(texops.TexSample, value);
+                    try parseEnum(textypes.TexSamp, value);
             } else if (std.mem.eql(u8, arg, "--sample-mode")) {
                 bench_args.sample_mode =
-                    try parseEnum(texops.TexSampleMode, value);
+                    try parseEnum(textypes.TexSampMode, value);
             } else if (std.mem.eql(u8, arg, "--texture-storage")) {
                 bench_args.texture_storage =
                     try parseEnum(TextureStorage, value);
@@ -195,6 +208,8 @@ pub fn parseArgsWithDefaults(
                 bench_args.pixels_num[1] = try parseInt(u32, value);
             } else if (std.mem.eql(u8, arg, "--sub-sample")) {
                 bench_args.sub_sample = try parseInt(u32, value);
+            } else if (std.mem.eql(u8, arg, "--smoke")) {
+                bench_args.smoke = try parseBool(value);
             } else if (std.mem.eql(u8, arg, "--runs")) {
                 bench_args.runs = try parseInt(usize, value);
             } else if (std.mem.eql(u8, arg, "--distort")) {
@@ -263,14 +278,15 @@ fn parseBool(value: []const u8) !bool {
     return error.InvalidBoolValue;
 }
 
-fn parseSaveStrategy(value: []const u8) !rastcfg.SaveStrategy {
-    if (std.mem.eql(u8, value, "memory_direct_write")) return .memory;
-    if (std.mem.eql(u8, value, "memory_per_frame_copy")) return .memory;
-    if (std.mem.eql(u8, value, "memory")) return .memory;
-    if (std.mem.eql(u8, value, "both_direct_write")) return .both;
-    if (std.mem.eql(u8, value, "both_per_frame_copy")) return .both;
-    if (std.mem.eql(u8, value, "both")) return .both;
-    return parseEnum(rastcfg.SaveStrategy, value);
+fn argToSlice(arg: anytype) []const u8 {
+    return switch (@typeInfo(@TypeOf(arg))) {
+        .pointer => |pointer_info| switch (pointer_info.size) {
+            .slice => arg,
+            else => std.mem.span(arg),
+        },
+        .array => arg[0..],
+        else => @compileError("Unsupported command line argument type."),
+    };
 }
 
 test "parse bench args defaults" {
@@ -316,7 +332,7 @@ test "parse bench args named options" {
         "--subpixel-center-map",
         "per_tile",
         "--save-strategy",
-        "memory",
+        "both",
         "--sample",
         "linear",
         "--sample-mode",
@@ -372,19 +388,19 @@ test "parse bench args named options" {
         bench_args.hull_mode,
     );
     try std.testing.expectEqual(
-        cam.SubPixelCenterMap.per_tile,
+        cameratypes.SubPixelCenterMap.per_tile,
         bench_args.subpixel_center_map,
     );
     try std.testing.expectEqual(
-        rastcfg.SaveStrategy.memory,
+        rastcfg.SaveStrategy.both,
         bench_args.save_strategy,
     );
     try std.testing.expectEqual(
-        texops.TexSample.linear,
+        textypes.TexSamp.linear,
         bench_args.sample.?,
     );
     try std.testing.expectEqual(
-        texops.TexSampleMode.direct,
+        textypes.TexSampMode.direct,
         bench_args.sample_mode.?,
     );
     try std.testing.expectEqual(
@@ -403,6 +419,22 @@ test "parse bench args named options" {
     try std.testing.expectEqual([2]u32{ 1024, 768 }, bench_args.pixels_num);
     try std.testing.expectEqual(@as(u8, 4), bench_args.sub_sample);
     try std.testing.expectEqual(@as(usize, 7), bench_args.runs);
+}
+
+test "parse bench args rejects obsolete save strategies" {
+    const obsolete_names = [_][]const u8{
+        "memory_direct_write",
+        "memory_per_frame_copy",
+        "both_direct_write",
+        "both_per_frame_copy",
+    };
+    for (obsolete_names) |name| {
+        const args = [_][]const u8{ "bench_geom", "--save-strategy", name };
+        try std.testing.expectError(
+            error.InvalidEnumValue,
+            parseArgs(args[0..], "out/geom", rastcfg.RasterConfig{}),
+        );
+    }
 }
 
 test "parse bench args legacy thread positional" {

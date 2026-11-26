@@ -10,6 +10,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from PIL import Image
+from bench_common import repo_root
 from paper_const import (
     PAPER_DIR,
     SHEAR_REGULAR,
@@ -19,7 +20,6 @@ from paper_const import (
     bulge_out_frame,
     bulge_out_limit_frame,
     bulge_regular_frame,
-    repo_root,
 )
 
 VERIF_DIR = pathlib.Path("verif/verif_2")

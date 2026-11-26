@@ -6,13 +6,11 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
+const matslice = @import("matslice.zig");
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const print = std.debug.print;
-const assert = std.debug.assert;
 
-const MatSlice = @import("matslice.zig").MatSlice;
 const sliceops = @import("sliceops.zig");
 
 // --------------------------------------------------------------------------------------
@@ -33,7 +31,7 @@ pub fn NDArray(comptime T: type) type {
                 dim_prod *= dims[dd];
             }
 
-            assert(slice.len >= dim_prod);
+            std.debug.assert(slice.len >= dim_prod);
 
             const dims_heap = try allocator.dupe(usize, dims);
             errdefer allocator.free(dims_heap);
@@ -80,21 +78,21 @@ pub fn NDArray(comptime T: type) type {
         }
 
         pub fn getFlat(self: *const Self, flat_idx: usize) T {
-            assert(flat_idx < self.slice.len);
+            std.debug.assert(flat_idx < self.slice.len);
             return self.slice[flat_idx];
         }
 
         pub fn setFlat(self: *Self, flat_idx: usize, in_val: T) void {
-            assert(flat_idx < self.slice.len);
+            std.debug.assert(flat_idx < self.slice.len);
             self.slice[flat_idx] = in_val;
         }
 
         pub fn getFlatIdx(self: *const Self, indices: []const usize) usize {
-            assert(indices.len == self.dims.len);
+            std.debug.assert(indices.len == self.dims.len);
 
             var flat: usize = 0;
             for (indices, 0..) |idx, dim| {
-                assert(idx < self.dims[dim]);
+                std.debug.assert(idx < self.dims[dim]);
 
                 flat += idx * self.strides[dim];
             }
@@ -103,15 +101,15 @@ pub fn NDArray(comptime T: type) type {
         }
 
         pub fn planeBase(self: *const Self, idx0: usize) usize {
-            assert(self.dims.len >= 1);
-            assert(idx0 < self.dims[0]);
+            std.debug.assert(self.dims.len >= 1);
+            std.debug.assert(idx0 < self.dims[0]);
             return idx0 * self.strides[0];
         }
 
         pub fn subBase2(self: *const Self, idx0: usize, idx1: usize) usize {
-            assert(self.dims.len >= 2);
-            assert(idx0 < self.dims[0]);
-            assert(idx1 < self.dims[1]);
+            std.debug.assert(self.dims.len >= 2);
+            std.debug.assert(idx0 < self.dims[0]);
+            std.debug.assert(idx1 < self.dims[1]);
             return idx0 * self.strides[0] + idx1 * self.strides[1];
         }
 
@@ -120,7 +118,7 @@ pub fn NDArray(comptime T: type) type {
             idx0: usize,
             idx1: usize,
         ) usize {
-            assert(self.dims.len == 2);
+            std.debug.assert(self.dims.len == 2);
             return self.subBase2(idx0, idx1);
         }
 
@@ -130,8 +128,8 @@ pub fn NDArray(comptime T: type) type {
             idx1: usize,
             idx2: usize,
         ) usize {
-            assert(self.dims.len == 3);
-            assert(idx2 < self.dims[2]);
+            std.debug.assert(self.dims.len == 3);
+            std.debug.assert(idx2 < self.dims[2]);
             return self.subBase2(idx0, idx1) + idx2;
         }
 
@@ -142,11 +140,11 @@ pub fn NDArray(comptime T: type) type {
             idx2: usize,
             idx3: usize,
         ) usize {
-            assert(self.dims.len == 4);
-            assert(idx0 < self.dims[0]);
-            assert(idx1 < self.dims[1]);
-            assert(idx2 < self.dims[2]);
-            assert(idx3 < self.dims[3]);
+            std.debug.assert(self.dims.len == 4);
+            std.debug.assert(idx0 < self.dims[0]);
+            std.debug.assert(idx1 < self.dims[1]);
+            std.debug.assert(idx2 < self.dims[2]);
+            std.debug.assert(idx3 < self.dims[3]);
             return idx0 * self.strides[0] +
                 idx1 * self.strides[1] +
                 idx2 * self.strides[2] +
@@ -154,7 +152,7 @@ pub fn NDArray(comptime T: type) type {
         }
 
         pub fn calcFlatStride(self: *const Self, dim_idx: usize) usize {
-            assert(dim_idx < self.dims.len);
+            std.debug.assert(dim_idx < self.dims.len);
 
             var stride: usize = 1;
 
@@ -171,7 +169,7 @@ pub fn NDArray(comptime T: type) type {
         }
 
         pub fn addInPlace(self: *const Self, to_add: *const Self) void {
-            assert(matchArrayDims(T, self, to_add));
+            std.debug.assert(matchArrayDims(T, self, to_add));
 
             for (0..self.slice.len) |ii| {
                 self.slice[ii] += to_add.slice[ii];
@@ -179,7 +177,7 @@ pub fn NDArray(comptime T: type) type {
         }
 
         pub fn subInPlace(self: *const Self, to_sub: *const Self) void {
-            assert(matchArrayDims(T, self, to_sub));
+            std.debug.assert(matchArrayDims(T, self, to_sub));
 
             for (0..self.slice.len) |ii| {
                 self.slice[ii] -= to_sub.slice[ii];
@@ -187,7 +185,7 @@ pub fn NDArray(comptime T: type) type {
         }
 
         pub fn mulInPlace(self: *const Self, to_mul: *const Self) void {
-            assert(matchArrayDims(T, self, to_mul));
+            std.debug.assert(matchArrayDims(T, self, to_mul));
 
             for (0..self.slice.len) |ii| {
                 self.slice[ii] *= to_mul.slice[ii];
@@ -195,7 +193,7 @@ pub fn NDArray(comptime T: type) type {
         }
 
         pub fn divInPlace(self: *const Self, to_div: *const Self) void {
-            assert(matchArrayDims(T, self, to_div));
+            std.debug.assert(matchArrayDims(T, self, to_div));
 
             for (0..self.slice.len) |ii| {
                 self.slice[ii] /= to_div.slice[ii];
@@ -213,8 +211,8 @@ pub fn NDArray(comptime T: type) type {
             fixed_idx: []const usize,
             fixed_dim: usize,
         ) []T {
-            assert(fixed_idx.len == self.dims.len);
-            assert((fixed_dim + 1) < self.dims.len);
+            std.debug.assert(fixed_idx.len == self.dims.len);
+            std.debug.assert((fixed_dim + 1) < self.dims.len);
 
             const start = self.getFlatIdx(fixed_idx);
             const stride = self.strides[fixed_dim];
@@ -231,11 +229,11 @@ pub fn NDArray(comptime T: type) type {
             allocator: std.mem.Allocator,
             fixed_prefix: []const usize,
         ) !Self {
-            assert(fixed_prefix.len < self.dims.len);
+            std.debug.assert(fixed_prefix.len < self.dims.len);
 
             var start: usize = 0;
             for (fixed_prefix, 0..) |idx, dim| {
-                assert(idx < self.dims[dim]);
+                std.debug.assert(idx < self.dims[dim]);
                 start += idx * self.strides[dim];
             }
 
@@ -277,8 +275,8 @@ pub fn NDArrayOps(comptime T: type) type {
             arr1: *const NDArray(T),
             arr_out: *NDArray(T),
         ) void {
-            assert(matchArrayDims(T, arr0, arr1));
-            assert(matchArrayDims(T, arr0, arr_out));
+            std.debug.assert(matchArrayDims(T, arr0, arr1));
+            std.debug.assert(matchArrayDims(T, arr0, arr_out));
 
             sliceops.add(T, arr0.slice, arr1.slice, arr_out.slice);
         }
@@ -288,8 +286,8 @@ pub fn NDArrayOps(comptime T: type) type {
             arr1: *const NDArray(T),
             arr_out: *NDArray(T),
         ) void {
-            assert(matchArrayDims(T, arr0, arr1));
-            assert(matchArrayDims(T, arr0, arr_out));
+            std.debug.assert(matchArrayDims(T, arr0, arr1));
+            std.debug.assert(matchArrayDims(T, arr0, arr_out));
 
             sliceops.sub(T, arr0.slice, arr1.slice, arr_out.slice);
         }
@@ -299,8 +297,8 @@ pub fn NDArrayOps(comptime T: type) type {
             arr1: *const NDArray(T),
             arr_out: *NDArray(T),
         ) void {
-            assert(matchArrayDims(T, arr0, arr1));
-            assert(matchArrayDims(T, arr0, arr_out));
+            std.debug.assert(matchArrayDims(T, arr0, arr1));
+            std.debug.assert(matchArrayDims(T, arr0, arr_out));
 
             sliceops.mul(T, arr0.slice, arr1.slice, arr_out.slice);
         }
@@ -310,8 +308,8 @@ pub fn NDArrayOps(comptime T: type) type {
             arr1: *const NDArray(T),
             arr_out: *NDArray(T),
         ) void {
-            assert(matchArrayDims(T, arr0, arr1));
-            assert(matchArrayDims(T, arr0, arr_out));
+            std.debug.assert(matchArrayDims(T, arr0, arr1));
+            std.debug.assert(matchArrayDims(T, arr0, arr_out));
 
             sliceops.div(T, arr0.slice, arr1.slice, arr_out.slice);
         }
@@ -322,13 +320,13 @@ pub fn NDArrayOps(comptime T: type) type {
             fixed_idxs: []const usize,
             row_ext: usize,
             col_ext: usize,
-            mat: *MatSlice(T),
+            mat: *matslice.MatSlice(T),
         ) !void {
-            assert(fixed_idxs.len == arr.dims.len);
-            assert(row_ext <= arr.dims.len);
-            assert(col_ext <= arr.dims.len);
+            std.debug.assert(fixed_idxs.len == arr.dims.len);
+            std.debug.assert(row_ext <= arr.dims.len);
+            std.debug.assert(col_ext <= arr.dims.len);
             const num_elems: usize = arr.dims[row_ext] * arr.dims[col_ext];
-            assert(num_elems == mat.slice.len);
+            std.debug.assert(num_elems == mat.slice.len);
 
             var get_dims_slice: []usize = try allocator.dupe(usize, fixed_idxs);
             defer allocator.free(get_dims_slice);
@@ -367,12 +365,18 @@ pub fn matchArrayDims(
 // Tests
 // --------------------------------------------------------------------------------------
 
-const testing = std.testing;
-const expect = std.testing.expect;
-const expectEqual = std.testing.expectEqual;
-const expectApproxEqAbs = testing.expectApproxEqAbs;
-const expectEqualSlices = testing.expectEqualSlices;
-const talloc = testing.allocator;
+const talloc = std.testing.allocator;
+
+test "initFlat frees partial allocations on failure" {
+    const Probe = struct {
+        fn run(allocator: std.mem.Allocator) !void {
+            const array = try NDArray(F).initFlat(allocator, &.{ 2, 3 });
+            defer allocator.free(array.slice);
+            defer array.deinit(allocator);
+        }
+    };
+    try std.testing.checkAllAllocationFailures(talloc, Probe.run, .{});
+}
 
 test "matchArrayDims" {
     var dims0 = [_]usize{ 3, 3, 2 };
@@ -387,7 +391,7 @@ test "matchArrayDims" {
     var arr1 = try NDArray(F).init(talloc, slice1, dims1[0..]);
     defer arr1.deinit(talloc);
 
-    try expect(matchArrayDims(F, &arr0, &arr1));
+    try std.testing.expect(matchArrayDims(F, &arr0, &arr1));
 }
 
 test "getFlatIdx" {
@@ -401,7 +405,7 @@ test "getFlatIdx" {
     const exp_idx0: usize = 16;
     const flat_idx0 = arr0.getFlatIdx(idxs0[0..]);
 
-    try expectEqual(flat_idx0, exp_idx0);
+    try std.testing.expectEqual(flat_idx0, exp_idx0);
 }
 
 test "calcFlatStride" {
@@ -413,7 +417,7 @@ test "calcFlatStride" {
     const check0 = [_]usize{ 9, 3, 1 };
 
     for (0..3) |aa| {
-        try expectEqual(arr0.strides[aa], check0[aa]);
+        try std.testing.expectEqual(arr0.strides[aa], check0[aa]);
     }
 }
 
@@ -436,8 +440,8 @@ test "getSlice" {
     var fixed_idxs = [_]usize{ 1, 0, 0 };
     const ext_slice0 = arr0.getSlice(fixed_idxs[0..], 0);
 
-    try expectEqual(ext_slice0.len, 4);
-    try expectEqual(ext_slice0[0], 7);
+    try std.testing.expectEqual(ext_slice0.len, 4);
+    try std.testing.expectEqual(ext_slice0[0], 7);
 }
 
 test "fixedPrefixView" {
@@ -452,11 +456,11 @@ test "fixedPrefixView" {
     var view = try arr0.fixedPrefixView(talloc, fixed[0..]);
     defer view.deinit(talloc);
 
-    try expectEqual(@as(usize, 2), view.dims.len);
-    try expectEqual(@as(usize, 2), view.dims[0]);
-    try expectEqual(@as(usize, 2), view.dims[1]);
-    try expectEqual(arr0.get(&[_]usize{ 1, 2, 0, 0 }), view.get(&[_]usize{ 0, 0 }));
-    try expectEqual(arr0.get(&[_]usize{ 1, 2, 1, 1 }), view.get(&[_]usize{ 1, 1 }));
+    try std.testing.expectEqual(@as(usize, 2), view.dims.len);
+    try std.testing.expectEqual(@as(usize, 2), view.dims[0]);
+    try std.testing.expectEqual(@as(usize, 2), view.dims[1]);
+    try std.testing.expectEqual(arr0.get(&[_]usize{ 1, 2, 0, 0 }), view.get(&[_]usize{ 0, 0 }));
+    try std.testing.expectEqual(arr0.get(&[_]usize{ 1, 2, 1, 1 }), view.get(&[_]usize{ 1, 1 }));
 }
 
 test "offset helpers" {
@@ -477,8 +481,8 @@ test "offset helpers" {
     const off3 = arr3.offset3(1, 2, 3);
     const off4 = arr0.offset4(1, 2, 3, 4);
 
-    try expectEqual(@as(usize, 60), base0);
-    try expectEqual(@as(usize, 100), base1);
-    try expectEqual(@as(usize, 23), off3);
-    try expectEqual(@as(usize, 119), off4);
+    try std.testing.expectEqual(@as(usize, 60), base0);
+    try std.testing.expectEqual(@as(usize, 100), base1);
+    try std.testing.expectEqual(@as(usize, 23), off3);
+    try std.testing.expectEqual(@as(usize, 119), off4);
 }

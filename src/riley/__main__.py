@@ -10,54 +10,69 @@ from __future__ import annotations
 
 import argparse
 import importlib
-import sys
 
-from riley.pydemos import __all__ as DEMO_NAMES
-
-_DEMOS_WITH_OPTIONS = {
-    "demo0b_procedural_quickstart",
-    "demo1b_procedural_sphere",
-    "demo2d_rabbit_procedural",
+_DEMO_FUNCS = {
+    "demo00_quickstart": "riley.pydemos.demo00_quickstart",
+    "demo00b_procedural_quickstart": "riley.pydemos.demo00b_procedural_quickstart",
+    "demo01_sphere": "riley.pydemos.demo01_sphere",
+    "demo01b_procedural_sphere": "riley.pydemos.demo01b_procedural_sphere",
+    "demo02a_rabbits_mono": "riley.pydemos.demo02a_rabbits_mono",
+    "demo02b_rabbits_rgb": "riley.pydemos.demo02b_rabbits_rgb",
+    "demo02c_rabbits_fields": "riley.pydemos.demo02c_rabbits_fields",
+    "demo02d_rabbit_procedural": "riley.pydemos.demo02d_rabbit_procedural",
+    "demo03_dicuq": "riley.pydemos.demo03_dicuq",
+    "demo03_dicuq_from_exodus": "riley.pydemos.demo03_dicuq_from_exodus",
+    "demo04_stereocal": "riley.pydemos.demo04_stereocal",
+    "demo05_cameramodels": "riley.pydemos.demo05_cameramodels",
+    "demo06_featurezoo": "riley.pydemos.demo06_featurezoo",
+    "demo07_shaderpipe_quickstart": "riley.pydemos.demo07_shaderpipe_quickstart",
+    "demo08_shaderpipe_gallery": "riley.pydemos.demo08_shaderpipe_gallery",
+    "demo09_diciruq": "riley.pydemos.demo09_diciruq",
+    "demo10_sphere_lit": "riley.pydemos.demo10_sphere_lit",
+}
+_PROCEDURAL_DEMOS = {
+    "demo00b_procedural_quickstart",
+    "demo01b_procedural_sphere",
+    "demo02d_rabbit_procedural",
 }
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        prog="python -m riley",
-        epilog=f"Available demos: {', '.join(DEMO_NAMES)}.",
-    )
+    parser = argparse.ArgumentParser(prog="python -m riley")
     parser.add_argument(
         "command",
-        choices=[*DEMO_NAMES, "test"],
-        metavar="command",
+        nargs="?",
         help="Demo name to run, or 'test' to run the packaged pytest suite.",
     )
-    parser.add_argument("options", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
+    parser.add_argument("command_args", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.command is None:
+        parser.error(
+            "expected a command such as 'demo00_quickstart' or 'test'. "
+            f"Available demos: {', '.join(sorted(_DEMO_FUNCS))}.",
+        )
 
     if args.command == "test":
         import pytest
 
-        pytest_args = ["-s", "--pyargs", "riley.pytests", *args.options]
+        pytest_args = ["-s", "--pyargs", "riley.pytests", *args.command_args]
         raise SystemExit(pytest.main(pytest_args))
 
-    if args.command not in _DEMOS_WITH_OPTIONS:
-        # Argparse may consume a trailing `--` before filling the remainder.
-        options = sys.argv[sys.argv.index(args.command, 1) + 1:]
-        if options in (["-h"], ["--help"]):
-            argparse.ArgumentParser(
-                prog=f"{parser.prog} {args.command}",
-                description="This demo takes no arguments.",
-            ).print_help()
-            parser.exit()
-        if options:
-            parser.error(f"{args.command} does not accept arguments: {' '.join(options)}")
+    if args.command not in _DEMO_FUNCS:
+        parser.error(
+            f"unknown command '{args.command}'. Available demos: "
+            f"{', '.join(sorted(_DEMO_FUNCS))}, test.",
+        )
 
-    demo_module = importlib.import_module(f"riley.pydemos.{args.command}")
-    if args.command in _DEMOS_WITH_OPTIONS:
-        demo_module.main(args.options)
+    if args.command not in _PROCEDURAL_DEMOS:
+        demo_parser = argparse.ArgumentParser(
+            prog=f"{parser.prog} {args.command}", allow_abbrev=False,
+        )
+        demo_parser.parse_args(args.command_args)
+        importlib.import_module(_DEMO_FUNCS[args.command]).main()
     else:
-        demo_module.main()
+        importlib.import_module(_DEMO_FUNCS[args.command]).main(args.command_args)
 
 
 if __name__ == "__main__":

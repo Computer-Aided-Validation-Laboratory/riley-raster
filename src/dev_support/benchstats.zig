@@ -11,7 +11,7 @@ const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 const common = @import("benchcommon.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
-const texops = @import("../riley/zig/textureops.zig");
+const textypes = @import("../riley/zig/texturetypes.zig");
 
 pub const CaseSamples = struct {
     total_elems_vals: []F,
@@ -141,7 +141,7 @@ pub const CaseSamples = struct {
         case_name: []const u8,
         mesh_type: gk.MeshType,
         shader_type: common.ShaderType,
-        samp_cfg: ?texops.TextureSampleConfig,
+        samp_cfg: ?textypes.TexSampConfig,
         tex_func_case: ?common.TexFuncCase,
     ) !common.BenchStats {
         return .{
@@ -296,7 +296,7 @@ pub const BenchStatsCollector = struct {
         case_name: []const u8,
         mesh_type: gk.MeshType,
         shader_type: common.ShaderType,
-        samp_cfg: ?texops.TextureSampleConfig,
+        samp_cfg: ?textypes.TexSampConfig,
         tex_func_case: ?common.TexFuncCase,
         result: common.BenchResult,
     ) !void {
@@ -319,7 +319,7 @@ pub const BenchStatsCollector = struct {
         case_name: []const u8,
         mesh_type: gk.MeshType,
         shader_type: common.ShaderType,
-        samp_cfg: ?texops.TextureSampleConfig,
+        samp_cfg: ?textypes.TexSampConfig,
         tex_func_case: ?common.TexFuncCase,
         case_samples: *const CaseSamples,
     ) !void {

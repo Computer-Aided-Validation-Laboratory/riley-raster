@@ -11,7 +11,7 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
 const shapefun = @import("shapefun.zig");
-const common = @import("newton_common.zig");
+const newton_common = @import("newton_common.zig");
 
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
@@ -33,7 +33,7 @@ pub fn solveFastSIMD(
     v_xi_seed: VecSF,
     v_eta_seed: VecSF,
     v_node_vals: *[N]VecSF,
-) common.NewtonResFastSIMD {
+) newton_common.NewtonResFastSIMD {
     const v_strict_resid_norm_tol: VecSF = @splat(tol.newton.norm_resid);
     const v_relaxed_resid_norm_tol: VecSF = @splat(tol.newton.stagnation_norm_resid);
     const v_abs_det_tol: VecSF = @splat(tol.newton.rel_det);
@@ -214,7 +214,7 @@ pub fn solveRobustSIMD(
     v_xi_seed: VecSF,
     v_eta_seed: VecSF,
     v_node_vals: *[N]VecSF,
-) common.NewtonResRobustSIMD {
+) newton_common.NewtonResRobustSIMD {
     const v_strict_resid_norm_tol: VecSF = @splat(tol.newton.norm_resid);
     const v_relaxed_resid_norm_tol: VecSF =
         @splat(tol.newton.stagnation_norm_resid);
@@ -449,13 +449,13 @@ pub fn solveRobustSIMD(
     const v_final_conv = v_conv & v_is_in;
     const v_pre_dom_conv = v_conv;
     const v_status_fail_iter_lim: VecSU8 =
-        @splat(@intFromEnum(common.NewtonStatus.fail_iter_lim));
+        @splat(@intFromEnum(newton_common.NewtonStatus.fail_iter_lim));
     const v_status_fail_near_singular: VecSU8 =
-        @splat(@intFromEnum(common.NewtonStatus.fail_near_singular));
+        @splat(@intFromEnum(newton_common.NewtonStatus.fail_near_singular));
     const v_status_conv_resid: VecSU8 =
-        @splat(@intFromEnum(common.NewtonStatus.conv_resid));
+        @splat(@intFromEnum(newton_common.NewtonStatus.conv_resid));
     const v_status_fail_dom: VecSU8 =
-        @splat(@intFromEnum(common.NewtonStatus.fail_dom));
+        @splat(@intFromEnum(newton_common.NewtonStatus.fail_dom));
     var v_status: VecSU8 =
         v_status_fail_iter_lim;
     v_status = @select(

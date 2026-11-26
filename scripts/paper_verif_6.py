@@ -11,7 +11,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from PIL import Image
 
-from paper_const import SHEAR_SHEAR, bulge_in_frame, repo_root
+from bench_common import repo_root
+from paper_const import SHEAR_SHEAR, bulge_in_frame
 
 
 VERIF_DIR = pathlib.Path("verif/verif_6")

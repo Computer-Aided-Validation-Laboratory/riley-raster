@@ -6,7 +6,8 @@ import pathlib
 import statistics
 from collections import Counter
 
-from paper_const import PAPER_DIR, repo_root
+from bench_common import repo_root
+from paper_const import PAPER_DIR
 from paper_const import TABLE_MAD_DECIMAL_PLACES
 from paper_const import TABLE_MEDIAN_DECIMAL_PLACES
 

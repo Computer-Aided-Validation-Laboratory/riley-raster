@@ -1,39 +1,56 @@
 # Riley Testing Architecture & Test Suites
 
+> [!IMPORTANT]
+> **AI AGENTS — REQUIRED TEST CONFIGURATION: `f64` WITH SIMD ON.**
+> Run tests only with `-Dprecision=f64 -Dsimd=on` unless the user explicitly
+> instructs you to run another combination. Do not run `f32`, scalar
+> (`-Dsimd=off`), or precision/SIMD matrix sweeps on your own initiative,
+> including for cross-cutting refactors or extra confidence. A general request
+> to implement, test, verify, or complete a plan does not authorize extra
+> precision/SIMD combinations. The alternative examples below document supported
+> configurations; they are not instructions for agents to run them.
+> Keep verif/basic in Debug and full in ReleaseSafe. This rule avoids unnecessary
+> compilation, runtime, and token costs.
+
+For AI-agent verification, use these commands for the suites relevant to the task:
+
+```bash
+zig build test-verif -Dprecision=f64 -Dsimd=on
+zig build test-basic -Dprecision=f64 -Dsimd=on
+zig build test-full -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+```
+
 ---
+
+## Render reference data commit policy
+
+For render test gold, commit only the smallest floating-point comparison data needed by the
+Verification and Basic suites under `gold/verif/` and `gold/basic/`. Select
+representative cases and frames; review numerical values and the corresponding
+test before adding or changing a reference. Do not commit digitised gold images
+(`.bmp` or other integer image formats), even when they are generated for
+visual inspection. Do not commit any Full suite gold. Full suite references,
+including shader-pipe references, are generated and kept locally for testing.
+Generated previews and failure diagnostics are local artifacts as well.
+The benchmark statistics in `gold/perf_stats_ref/` follow their separate
+performance reference policy.
+
+Never regenerate existing gold as a side effect of testing. A gold change
+requires a targeted generator run and review of its numerical diff.
 
 ## 1. Quickstart Guide
 
-Run Python tests and tooling discovery in the project virtual environment (with
-NumPy installed); see [Python development setup](README.md#python-development-and-distribution).
-Run `test-verif` and `test-basic` in Debug (the default), preferably in
-parallel in separate terminals. Verification requires `-Dprecision=f64 -Dsimd=on`
-(the defaults). CI runs `zig build test-verif-basic -Doptimize=ReleaseSafe`.
-Use ReleaseSafe for the full suite and its gold generator. Run
-`zig build --help` for test targets and build options.
+For routine Zig development, run focused checks and the repository-packaged
+Verification and Basic suites in Debug, f64, with SIMD on:
 
 ```bash
-# Step 1: Run gold-independent unit and configuration coverage
-zig build test-unit
-zig build test-configs
-
-# Step 2: Run the core test suites (fast, repository-packaged references)
-zig build test-verif
-zig build test-basic
-.venv/bin/pytest src/riley/pytests/
-
-# Tooling unit tests from the repository root (also run in CI)
-.venv/bin/python -m unittest discover -s scripts/tests
-
-# Step 3: Generate reference gold data for the Full suite
-zig build gen-gold-full -Doptimize=ReleaseSafe
-
-# Step 4: Run the exhaustive Full test suite
-zig build test-full -Doptimize=ReleaseSafe
+zig build test-verif -Dprecision=f64 -Dsimd=on
+zig build test-basic -Dprecision=f64 -Dsimd=on
 ```
 
-Run tooling discovery without Python's `-I` flag: isolated mode removes the
-repository root from the import path, so tests cannot import `scripts`.
+See [Full suite reference setup](#6-full-test-suite-test_full) for explicitly
+requested full verification. For approved C ABI/Python integration, run the
+relevant tests with `.venv/bin/pytest src/riley/pytests/`.
 
 The basic and full gold suites continue after image-comparison failures:
 each failed camera/frame/field writes actual, reference, and (when dimensions
@@ -44,12 +61,30 @@ test run. Rendering, setup, or artifact-write errors still abort the current
 sub-suite, but the next sub-suite runs.
 The focused verification suite likewise continues through its remaining
 verification cases and reports failure at the end.
+
+Shader-pipe coverage is registered in `src/tests/test_basic_shaderpipe.zig` and
+`src/tests/test_full_shaderpipe.zig`; the public Cython boundary has focused
+coverage in `src/riley/pytests/test_shaderpipe.py`. The basic suite renders
+retained channels,
+grey-to-emissivity mapping, IR band radiance, RGB/multichannel camera selection,
+and a four-namespace resolver expression. The full suite renders Scene 0 with
+texture plus Lambertian modulation across five element types and compares
+tile-local, full global, and stripe buffers. Its references live only under
+`gold/basic/shaderpipe_*` and `gold/full_shaderpipe/`. Only the selected Basic
+FIMG comparison frames are committed; Full references and BMP previews remain
+local. To regenerate Basic references during development, run
+`zig build gen-gold-basic`; ordinary tests never write gold.
+The standard `gen-gold-full` command generates the Full shader-pipe
+references locally, without touching the committed Basic references.
+Inspect both BMP previews and floating-point FIMG values before accepting
+new references. Existing gold directories must not be regenerated for a
+shader-pipe change.
 The generated one-element bulge/tangent fixtures include deformation frames
 whose in-plane Jacobian becomes zero or changes sign. Normal basic and full
-comparisons cover only valid frames. Run `zig build test-full-badjac` to render
-the excluded frames as warning-only diagnostics. It writes actual, reference,
-and difference BMP/CSV files under `fails/*_full_badjac/`; changes in these
-out-of-domain renders do not fail the test command.
+comparisons cover only valid frames. Run `zig build diag-badjac` to render
+the excluded frames as warning-only diagnostics (rehomed under `dev_support/diag_badjac.zig`).
+It writes actual, reference, and difference BMP/CSV files under `fails/*_full_badjac/`;
+changes in these out-of-domain renders do not fail the test command.
 After reviewing and approving distortion failures, run
 `zig build gen-gold-failed-distortion -Doptimize=ReleaseSafe` to regenerate
 only the distinct distortion/PSF and SSAA/pixel-map gold cases represented
@@ -63,19 +98,31 @@ not select or modify unrelated full-suite cases.
 
 ## 2. Core Repository Packaged Test Suites
 
-Riley provides gold-backed regression suites and gold-independent unit/configuration suites for routine development, CI pipelines, and release verification:
+Riley provides three core repository-packaged test suites intended for routine development, CI pipelines, and release verification:
 
 | Suite Name | Execution Command | Source / Test Driver | Primary Role | Reference Data |
 | :--- | :--- | :--- | :--- | :--- |
 | **Verification Suite** | `zig build test-verif` | [`src/test_verif.zig`](../src/test_verif.zig) | Mathematical validation against analytical Python oracles | `gold/verif/` |
-| **Basic Test Suite** | `zig build test-basic` | [`src/test_basic.zig`](../src/test_basic.zig) | Gold-backed core feature coverage plus the whole-project unit root | `gold/basic/` |
-| **Whole-project Unit Suite** | `zig build test-unit` | Shared gold-independent root [`src/testunit.zig`](../src/testunit.zig) | Gold-independent numerical, camera/frontend, procedural-speckle, and native tooling/harness correctness | In-memory references |
-| **Configuration Matrix** | `zig build test-configs` | Shared whole-project unit root | f64/f32 × SIMD on/off × default/experimental evaluator policy, without gold | In-memory references |
-| **Bad-Jacobian Diagnostics** | `zig build test-full-badjac` | [`src/test_full_badjac.zig`](../src/test_full_badjac.zig) | Warning-only renders and diffs for invalid one-element frames | Existing basic and full-hull gold |
+| **Basic Test Suite** | `zig build test-basic` | [`src/test_basic.zig`](../src/test_basic.zig) | Fast, comprehensive coverage of core rasteriser features | `gold/basic/` |
+| **Combined CI Suite** | `zig build test-verif-basic` | [`src/test_verif_basic.zig`](../src/test_verif_basic.zig) | CI fast-path running verif and basic in one build | `gold/verif/`, `gold/basic/` |
+| **Full Test Suite** | `zig build test-full -Doptimize=ReleaseSafe` | [`src/test_full.zig`](../src/test_full.zig) | Factorial coverage of shaders, camera I/O, maths SIMD, PSFs, tiling, threads | `gold/full_*/` |
 | **Python Pytest Suite** | `.venv/bin/pytest src/riley/pytests/` | [`src/riley/pytests/`](../src/riley/pytests) | Python/Cython API, mesh pipeline, Exodus conversion, demo parity | Integrated / `gold/` |
-| **C API Suite** | `zig build test-c-api` | [`src/riley/zig/c-riley.zig`](../src/riley/zig/c-riley.zig) | Public C API under fixed f64/SIMD/default policy | In-memory references |
-| **Procedural Speckles** | Included in `test-basic` and `test-unit`; focused: `zig build test-procedural-speckles` | [`src/testproceduralspeckles.zig`](../src/testproceduralspeckles.zig); [`src/tests/testproceduralspeckles.zig`](../src/tests/testproceduralspeckles.zig) | Default integration plus focused gold-independent generation/sampling/preparation checks | In-memory references |
-| **Native Benchmark Tooling** | Included in `test-unit`; focused: `zig build test-speckle-benchmark` | [`src/bench_speckle_evaluators.zig`](../src/bench_speckle_evaluators.zig) | Native benchmark tooling and harness correctness | In-memory references |
+
+### Gold-independent Zig checks
+
+`zig build test-unit` runs native units and in-memory integration tests. The Basic
+suite includes the same root. For focused speckle work, use
+`zig build test-procedural-speckles` for numerical and render checks,
+`zig build test-speckle-benchmark` for native benchmark tooling, or
+`zig build test-demo-cli` for argument handling. Add
+`-Denable-all-evaluators=true` to exercise experimental samplers. CI additionally
+runs `test-configs` across precision, SIMD, evaluator policy, and mask resolution.
+
+### Diagnostic Tools
+
+| Diagnostic Name | Execution Command | Source Location | Primary Role | Output Artifacts |
+| :--- | :--- | :--- | :--- | :--- |
+| **Bad-Jacobian Diagnostics** | `zig build diag-badjac` | [`src/dev_support/diag_badjac.zig`](../src/dev_support/diag_badjac.zig) | Warning-only diagnostic renders for intentionally invalid/folded frames | `fails/*_full_badjac/` |
 
 ### Regenerating Reference Gold for Core Suites
 
@@ -83,10 +130,12 @@ Riley provides gold-backed regression suites and gold-independent unit/configura
 # Regenerate reference data for the Basic test suite
 zig build gen-gold-basic
 
-# Regenerate reference data for the Analytic Verification suite
-zig build gen-gold-verif-zig
-python -m gengold.gengold_verif
+# Regenerate reference data for the Analytic Verification suite (requires .venv)
+zig build gen-gold-verif -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
 ```
+
+See [verification gold setup](#regenerating-verification-comparison-data) for
+Python dependencies or to run the two generators separately.
 
 ---
 
@@ -161,7 +210,7 @@ The **Verification Suite** checks independent analytic and numerical contracts r
 
 ### Execution and Precision Configuration
 
-The suite is fixed to the production `f64` configuration with SIMD enabled. Locally, run without optimization flags for fast Debug feedback; CI verifies the combined core target in ReleaseSafe.
+The suite is intentionally fixed to the production `f64` configuration with SIMD enabled (run in Debug mode without optimization flags):
 
 ```bash
 zig build test-verif -Dprecision=f64 -Dsimd=on
@@ -171,13 +220,25 @@ The test command is Zig-only. It reads compact comparison data from `./gold/veri
 
 ### Regenerating Verification Comparison Data
 
-Regenerate verification comparison data using the repository virtual environment:
+Run from the repository root. The combined target uses `.venv/bin/python`;
+install the Python `dev` extra in that environment for the OpenCV oracle.
 
 ```bash
 zig build gen-gold-verif -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
 ```
 
-This runs the Zig input generator followed by `./src/gengold/gengold_verif.py`. The Python stage independently integrates the projected linear and quadratic element boundaries and writes compact analytic results beneath `./gold/verif/`.
+This runs the Zig input generator followed by `src/gengold/gengold_verif.py`.
+The Python stage independently integrates the projected linear and quadratic
+element boundaries, generates OpenCV/NumPy distortion oracles, and writes
+compact analytic results beneath `gold/verif/`.
+
+If your development environment uses a different Python path, run the two
+steps explicitly with that environment active:
+
+```bash
+zig build gen-gold-verif-zig -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+python src/gengold/gengold_verif.py
+```
 
 > [!WARNING]
 > Changes to verification comparison data should be reviewed together with the generator and numerical diff. Do not regenerate comparison data as part of `test-verif`.
@@ -190,130 +251,19 @@ This runs the Zig input generator followed by `./src/gengold/gengold_verif.py`. 
 - **Generator**: [`src/gen_gold_basic.zig`](../src/gen_gold_basic.zig)
 - **Data Location**: `gold/basic/`
 
-The **Basic Suite** is the primary regression suite packaged with the repository, structured into three sub-suites. It also covers default-policy procedural-speckle integration; the combined `test-verif-basic` target runs this same basic coverage alongside verification.
+The **Basic Suite** is the primary regression suite packaged with the repository, structured into three sub-suites:
 
 ### A. Single Element Deformation & Edge Curvature (`test_oneelem`)
-- **Driver**: [`src/tests/test_gold_oneelem.zig`](../src/tests/test_gold_oneelem.zig)
+- **Driver**: [`src/tests/test_basic_oneelem.zig`](../src/tests/test_basic_oneelem.zig)
 - **Coverage**: 10-frame continuous deformations (rotation, shear, stretch) and midside node bulging across `tri3`, `tri6`, `quad4`, `quad8`, and `quad9`, plus extreme inverted curvature edge cases.
 
 ### B. Multi-Mesh Occlusion & Shader Matrix (`test_twoshapes`)
-- **Driver**: [`src/tests/test_gold_twoshapes.zig`](../src/tests/test_gold_twoshapes.zig)
+- **Driver**: [`src/tests/test_basic_twoshapes.zig`](../src/tests/test_basic_twoshapes.zig)
 - **Coverage**: Multi-body occlusion between a sphere and a cube across 5 element types $\times$ 13 curated mono and RGB shaders.
 
 ### C. Complete Feature Zoo (`test_featurezoo`)
-- **Driver**: [`src/tests/test_gold_featurezoo.zig`](../src/tests/test_gold_featurezoo.zig)
+- **Driver**: [`src/tests/test_basic_featurezoo.zig`](../src/tests/test_basic_featurezoo.zig)
 - **Coverage**: 2 rows $\times$ 3 columns of FE simulation meshes rendered under 6 distinct camera/distortion/PSF configurations across 8 parallel thread and buffer architectures (`tile_local`, `global_subpx_full`, `global_subpx_stripe`, multi-group `in_order` and `offline`).
-
-### Native unit and configuration testing
-
-The shared [`src/testunit.zig`](../src/testunit.zig) root is gold-independent
-and runs core numerical units, camera/frontend coverage, speckle integration,
-and native tooling/harness correctness. `test-basic` imports
-that root alongside its gold-backed comparisons; `test-verif-basic` is the
-combined verification/basic target. `test-configs` runs the same unit root
-across f64/f32, SIMD on/off, and default/experimental evaluator policy, requiring
-no f32 gold references. The focused `test-speckle-benchmark` and
-`test-procedural-speckles` targets do not run performance workloads.
-
-Default-build tests exercise the automatic evaluator policy; see the
-[internal evaluator guide](PROCEDURAL.md#internal-evaluator-experiments-and-benchmarking)
-for the policy and experimental overrides.
-
-On x86-64 Linux with 32-bit execution support, run the existing native focused
-suite for both policies (no external C dependencies are needed; Zig supplies musl):
-
-```shell
-zig build test-procedural-speckles -Dtarget=x86-linux-musl -Dstrip=true
-zig build test-procedural-speckles -Dtarget=x86-linux-musl -Dstrip=true -Denable-all-evaluators=true
-```
-
-Ubuntu CI runs both commands. The default run exercises classified/bin size and
-packed-header checks with 32-bit `usize`; the experimental run also exercises
-explicit evaluator expansion and packed-mask signed SIMD-index errors. These
-checks skip on 64-bit targets. This native Zig coverage is independent of Python
-wheel architectures and does not imply 32-bit Windows package validation.
-
-Windows Zig CI installs representative benchmarks and checks their expected
-executable names, including the precision/SIMD suffix and `.exe` extension.
-
-`zig build demos-check -Doptimize=Debug` compiles all Zig tutorials without
-running them. `zig build test-demo-cli -Doptimize=Debug` checks `-h` output and
-unknown-option rejection for the [procedural Zig tutorials](PROCEDURAL.md#runnable-procedural-tutorials)
-without rendering.
-
-The Windows CLI smoke also renders a 64 × 64 disk pattern to a Unicode output
-path and checks the header of `disk.bmp`. The small image keeps the smoke cheap
-while Debug keeps compilation quick and runtime safety checks enabled.
-
-The C interface is tested separately with `zig build test-c-api`, using LLVM/libc and the fixed public f64/SIMD/default configuration.
-
-#### Physical speckle verification
-
-Test the [public contract](../docs/python-api/speckles.rst) separately from
-[coverage approximation accuracy](THEORY.md#6-physical-speckle-calibration-and-nominal-coverage)
-and exact raw-sampler equality:
-
-- `specklecoverage.zig`: analytic branch and branch-switch continuity,
-  monotonicity, inverse round trips, dilute/near-cap cases, invalid/unattainable
-  requests, and frozen independent coverage/inverse references near interpolation
-  and geometry breaks. f32/f64 cases quantize inputs to the f64 coverage model.
-- `specklegeom.zig` / `speckleparams.zig`: geometry and parameter lowering for all
-  surface types, including affine UV range and between-node quadratic overshoot,
-  Perlin cell size, and density errors.
-- Raw `GridParams` tests use cell-space inputs, including empty/equal-color
-  cases; their exact equality checks are not coverage-accuracy tests.
-- `riley.zig`: default builds run the automatic evaluator in all three buffer
-  modes. Worker comparisons are exact within each buffer mode; full and stripe
-  references also match tile-local within a tolerance for SSAA reduction order.
-  Experimental builds add independent `list-naive`/Perlin `cell-hash` references
-  and explicit evaluator/neighborhood comparisons.
-- [`testproceduralspeckles.zig`](../src/tests/testproceduralspeckles.zig) checks
-  deformation and 8× unit rescaling. A planar render checks physical radius,
-  nominal coverage, and the expected half-radius jitter increase.
-- C API / [`test_func_shader_params.py`](../src/riley/pytests/test_func_shader_params.py):
-  nondefault forwarding, type/shape checks (including boolean seed rejection),
-  representative native errors, and render integration. `test_meshio.py` also
-  renders a converted curved surface. Complete numeric-bound matrices belong to
-  native units, not duplicated boundary-layer sweeps.
-
-Focused native coverage check:
-
-```shell
-zig test src/riley/zig/specklecoverage.zig -O ReleaseSafe
-```
-
-Run the table check and independent oracle in the [test venv](#1-quickstart-guide):
-
-```shell
-.venv/bin/python scripts/generate_speckle_coverage.py --check
-.venv/bin/python -m unittest scripts.tests.test_speckle_coverage -v
-```
-
-Omit `--check` only for intentional regeneration with numerical review. Use
-`test-configs` for precision/SIMD integration; do not regenerate image gold merely
-to accept a changed field. After rebuilding bindings, check autodoc signatures
-using the [documentation build](DOCS.md).
-
-#### Native benchmark runner smoke (opt-in)
-
-Tooling discovery normally skips the unmocked native runner smoke. To enable it,
-[build the experimental binary](PROCEDURAL.md#internal-evaluator-experiments-and-benchmarking)
-and run from the repository root with the project virtual environment active:
-
-```shell
-RILEY_SPECKLE_BENCH_BINARY=zig-out/speckle-experimental/bin/bench_speckle_evaluators_f64_simd \
-  python -m unittest scripts.tests.test_bench_speckle.NativeBenchmarkTests
-```
-
-The environment assignment above uses POSIX-shell syntax. In PowerShell use
-`$env:RILEY_SPECKLE_BENCH_BINARY = 'zig-out/speckle-experimental/bin/bench_speckle_evaluators_f64_simd.exe'`,
-then run the same `python -m unittest` command in the active venv. With other
-precision/SIMD settings, use the corresponding installed binary path.
-
-Ubuntu CI enables this correctness smoke, not a performance regression. Set
-`RILEY_SPECKLE_BENCH_ARTIFACT_DIR=PATH` to retain logs/results in fresh, printed
-`PATH/bench-smoke-*` directories. See the
-[benchmark contract](PROCEDURAL.md#internal-evaluator-experiments-and-benchmarking).
 
 ---
 
@@ -321,25 +271,31 @@ Ubuntu CI enables this correctness smoke, not a performance regression. Set
 
 - **Driver**: [`src/test_full.zig`](../src/test_full.zig)
 - **Generator**: [`src/gen_gold_full.zig`](../src/gen_gold_full.zig)
-- **Data Location**: `gold/full_*/` (uncommitted, generated locally)
+- **Data Location**: `gold/full_*/` (generated locally; never committed)
 
-The **Full Test Suite** is an exhaustive factorial regression suite replacing legacy benchmark and monolithic test runs. Gold reference images are generated locally on-demand and verified across 8 specialized sub-suites:
+The **Full Test Suite** is an exhaustive factorial regression suite. If the
+local Full references are missing, generate them with the canonical f64/SIMD
+configuration:
 
 ```bash
-# Generate reference gold for all 8 sub-suites
-zig build gen-gold-full -Doptimize=ReleaseSafe
+zig build gen-gold-full -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+```
 
-# Run all 8 sub-suites against generated gold
-zig build test-full -Doptimize=ReleaseSafe
+Use the same reference data for both Full runs. Do not regenerate it when
+switching SIMD off:
+
+```bash
+zig build test-full -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+zig build test-full -Dprecision=f64 -Dsimd=off -Doptimize=ReleaseSafe
 ```
 
 ### Sub-Suite 1: Full Shader Suite (`test_full_shader`)
 - **Driver**: [`src/tests/test_full_shader.zig`](../src/tests/test_full_shader.zig)
 - **Scene**: Scene 0 (Sphere + Cylinder, 5 element types: `tri3`, `tri6`, `quad4`, `quad8`, `quad9`)
 - **Coverage** (1,260 cases + 252 `tri3opt` parity checks):
-  - **Nodal Shaders**: Mono & RGB scalar/vector fields, scaling strategies (`none`, `auto` within frames, `auto` over frames), normal lighting types (`none`, interpolated `.avg`, analytic `.exact`).
-  - **Texture Shaders**: Mono & RGB texture sampling across `u8`, `u16`, and `f64` precisions with normal lighting options.
-  - **Procedural Function Shaders**: 9 built-in functions (`constant`, `linear`, `quadratic`, `sinusoidal`, `sinusoidal_approx`, `checker`, `checker_smooth`, `lambertian_normal_z`, `eggbox`) evaluated across 4 coordinate spaces (`parametric`, `uv`, `world_reference`, `world_deformed`) with normal lighting options.
+  - **Nodal Shaders**: Mono & RGB scalar/vector fields and scaling strategies (`none`, `auto` within frames, `auto` over frames). Normal mode is configured on the mesh.
+  - **Texture Shaders**: Mono & RGB texture sampling across `u8`, `u16`, and `f64` precisions. Normal mode is configured on the mesh.
+  - **Procedural Function Shaders**: 9 built-in functions (`constant`, `linear`, `quadratic`, `sinusoidal`, `sinusoidal_approx`, `checker`, `checker_smooth`, `lambertian_normal_z`, `eggbox`) evaluated across 4 coordinate spaces (`parametric`, `uv`, `world_reference`, `world_deformed`). Lambertian lighting uses the mesh normal mode.
   - **`tri3opt` Parity**: Verifies that the fixed-point subpixel snapped fast triangle pipeline matches standard `tri3` floating-point reference renders within tight tolerances.
 
 ### Sub-Suite 2: Full Texture Sampling Suite (`test_full_texture`)
@@ -418,7 +374,7 @@ change the production Newton solver tolerances.
   - **Output Modes (3)**: `.grey` (1 channel luminance/monochrome), `.rgb` (3 channel RGB), `.multifield` (raw pass-through).
   - **File Formats (4)**: `.fimg` (raw floating point), `.csv` (comma-delimited numerical matrices), `.bmp` (8-bit and 16-bit bitmaps), `.tiff` (8-bit and 16-bit tagged images).
   - **Dynamic Range Scaling**: `.none`, `.auto`, explicit fixed ranges (`.fixed = .{ 0.0, 255.0 }`), and fractional percentile boundaries (`.frac = .{ 0.05, 0.95 }`).
-  - **Diagnostic Reporting Modes**: `.off`, `.bench` (timing breakdown metrics), `.full_stats` (per-stage hardware and pipeline statistics).
+  - **Reporting Controls**: `report_perf = .off` or `.bench` (timing and counter capture), independently of `report_console = false` or `true` (routine console output). The suite checks capture validation when timing is off.
   - **Output Verification**: Asserts bit-level equivalence between memory buffer captures, reference gold data, and reloaded on-disk export images.
 
 ### Automated Failure Diagnostics
@@ -436,7 +392,7 @@ When any case in the Full Test Suite encounters a regression or discrepancy exce
 - **Driver**: `.venv/bin/pytest src/riley/pytests/`
 - **Location**: [`src/riley/pytests/`](../src/riley/pytests)
 
-The **Python Test Suite** provides automated coverage for:
+The **Python Test Suite** provides 640+ automated test cases covering:
 1. **Mesh Pipeline & Conversions**: Element connectivity verification, quadratic-to-linear order reduction, surface extraction, and polygon triangulation.
 2. **File I/O & Exodus Pipeline**: Multi-block Exodus II `.e` and CSV file reading/writing.
 3. **Texture & UV Tools**: Image loading/saving (BMP, TIFF) and centered planar UV projection.
@@ -456,6 +412,17 @@ or via the CLI wrapper:
 python -m riley test
 ```
 
+### Procedural speckle checks
+
+```bash
+python -m pytest --pyargs riley.pytests.test_speckles -s
+```
+
+These in-memory tests exercise direct and shader-pipe rendering for disk,
+Gaussian, and Perlin patterns, output transforms, and error reporting through
+Cython. The demo parity suite below separately compares saved BMPs for the
+procedural plane, sphere, and rabbit against their Zig counterparts.
+
 ### Python-to-Zig Demo Parity Checks
 
 To compare Python bindings against Zig demo outputs specifically:
@@ -470,11 +437,53 @@ To force a fresh Zig render instead of reusing cached demo BMPs:
 RILEY_FORCE_ZIG_RENDER=1 python -m pytest --pyargs riley.pytests.test_riley -s
 ```
 
-Parity checks that need Zig and checkout assets skip on a clean wheel install.
-To run a packaged demo instead, see the [examples guide](../docs/riley-examples/examples.rst)
-or list commands with `python -m riley --help`.
+Individual packaged Python demos can also be run directly:
 
-Parity checks include:
+```bash
+python -m riley demo00_quickstart
+python -m riley demo00b_procedural_quickstart
+python -m riley demo01_sphere
+python -m riley demo01b_procedural_sphere
+python -m riley demo02a_rabbits_mono
+python -m riley demo02b_rabbits_rgb
+python -m riley demo02c_rabbits_fields
+python -m riley demo02d_rabbit_procedural
+python -m riley demo03_dicuq
+python -m riley demo03_dicuq_from_exodus
+python -m riley demo04_stereocal
+python -m riley demo05_cameramodels
+python -m riley demo06_featurezoo
+python -m riley demo07_shaderpipe_quickstart
+python -m riley demo08_shaderpipe_gallery
+python -m riley demo09_diciruq
+python -m riley demo10_sphere_lit
+```
 
+Python demo output is written to `Path.cwd() / "out_riley_py" / "<demo-name>"`.
+
+Both Zig and Python demos use two-digit numbering (`demo00`, `demo00b`,
+`demo01`, …, `demo10`) in source filenames, CLI/build commands, and output
+directories. `zig build run-all-demos` includes the three
+[procedural speckle demos](./PROCEDURAL.md#runnable-procedural-tutorials).
+
+The Zig demos use the same numbered names and ordering:
+- The rabbit scene demos (`demo02a`, `demo02b`, `demo02c`) share mesh loading, shader setup, and layout in `src/demo_rabbits_common.zig`; the Python variants share `demo_rabbits_common.py`.
 - Rabbit parity checks require greater than 10% foreground coverage in every render, ensuring blank or unrendered frames cannot pass verification.
-- `demo5_cameramodels` renders all 6 distortion families with pixel-box, Gaussian (separable/non-separable), aligned anisotropic Gaussian, and rotated anisotropic Gaussian PSFs across all 3 buffer modes (90 comparison images per run under `<distortion>/<psf>/<buffer-mode>/`). Parity checks require the entire matrix to match.
+- Demos that clear previous output share `src/demo_common.zig` (`demo_common.resetOutputDir`). This removes the named demo output directory and recreates it cleanly.
+- `demo05_cameramodels` renders all 6 distortion families with pixel-box, Gaussian (separable/non-separable), aligned anisotropic Gaussian, and rotated anisotropic Gaussian PSFs across all 3 buffer modes (90 comparison images per run under `<distortion>/<psf>/<buffer-mode>/`). Parity checks require the entire matrix to match.
+
+`demo08_shaderpipe_gallery` has six compositions: modulation, RGB identity,
+mono expression blending, emissivity visualisation, RGB expressions, and a
+four-field expression. Each expression output ends with its own `store` operation.
+The RGB expression writes one colour image; the four-field expression writes
+separate TIFFs for the horizontal/vertical gradients, their product, and their
+squared difference. Both Zig and Python demos use the same programs, and demo
+parity checks require all four field images and the RGB image.
+
+## Public API and C ABI checks
+
+Run `zig build test-public-api` and `zig build test-c-abi` in Debug after changing
+the public facade or language boundary. `python scripts/gen_c_abi.py --check`
+checks generated declarations; `test-c-abi` compares every descriptor size,
+alignment, and field offset with a C compiler reference. See the [render data
+flow](README.md#api-and-render-data-flow) for the native input and lifetime model.

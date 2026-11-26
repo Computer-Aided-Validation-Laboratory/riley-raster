@@ -7,7 +7,7 @@ from pathlib import Path
 import analysis_bench4_threading as analysis
 
 from paper_bench_common import PAPER_DIR, write_tabs_tex
-from paper_const import repo_root
+from bench_common import repo_root
 
 
 OUT_DIR = repo_root() / "verif"
