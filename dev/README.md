@@ -101,13 +101,9 @@ zig build diag-badjac
 
 # Python Integration Suite
 pytest --pyargs riley.pytests -vs
-
-# Compile all native benchmarks (ReleaseFast, f64, SIMD on)
-python scripts/compile_benchmarks.py
-
-# Minimal execution check for shared-harness native benchmarks (excludes speckle)
-python scripts/run_all_bench.py --profile smoke
 ```
+
+For benchmark build and smoke commands, see [Benchmarks](#benchmarks).
 
 ### Core Suites Summary
 
@@ -156,11 +152,25 @@ zig build test-basic -Dprecision=f32 -Dsimd=off
 
 ## Benchmarks
 
-All native benchmarks use the same Python compiler. Speckle evaluators use a
-[dedicated A/B runner](PROCEDURAL.md#internal-evaluator-experiments-and-benchmarking)
-instead of the shared execution harness. The benchmark catalogue in
-`scripts/benchmark_catalog.py` defines benchmark names, Zig install targets,
-binary names, and supported experiment matrices.
+To build and smoke-test the shared-harness benchmarks in one command:
+
+```shell
+python scripts/run_all_bench.py --profile smoke --build
+```
+
+Omit `--build` to use binaries already installed in `bin/`. Smoke profiles
+check execution, not representative performance: they default to one repeat,
+small images, and a reduced case selection.
+
+This batch does not run the speckle evaluator benchmark. Speckle uses a
+[dedicated A/B runner](PROCEDURAL.md#internal-evaluator-experiments-and-benchmarking),
+which CI checks with native tests on Ubuntu and a texture-only comparison using
+a frozen executable on Windows.
+
+### Shared-harness benchmarks
+
+The catalogue in `scripts/benchmark_catalog.py` defines benchmark names, Zig
+install targets, binary names, and experiment matrices.
 
 | Name | Python entry point | Shared experiment | Specialised study |
 | --- | --- | --- | --- |
@@ -176,6 +186,9 @@ binary names, and supported experiment matrices.
 | `buffer_psf` | `scripts/bench_buffer_psf.py` | `buffers` | Buffer/PSF/density/SSAA experiments |
 
 ### Compilation and naming
+
+The Python compiler can build any native benchmark, including speckle. With no
+names supplied, it builds all of them.
 
 ```shell
 # All benchmarks, or selected benchmarks
@@ -194,14 +207,13 @@ precision/SIMD configurations require explicit options. Binaries install into
 widths even with SIMD off (for example, `bench_geom_f64_scalar_v4`). Omitted
 or precision-default widths have no suffix. The scalar speckle benchmark
 still uses the width for scratch padding and accumulator storage.
-No shorthand binary copies are produced. The Python compiler strips the speckle
-benchmark and enables its experimental evaluators for the tuning profile; it
-does not enable them for other benchmarks.
+No shorthand binary copies are produced. The Python compiler always strips the
+speckle benchmark and enables its experimental evaluators. Direct Zig builds
+don't add those options automatically.
 
 Every benchmark also has native Zig run and install hooks. Convert underscores
 in catalogue names to hyphens in build targets. Pass runtime arguments after
-`--` to a single named run target. The aggregate `zig build benches` runs every
-benchmark with its defaults and rejects runtime arguments.
+`--` to a single named run target.
 
 ```shell
 zig build bench-multiroot -Doptimize=ReleaseFast -- --width 64 --height 48 --elements-per-type 1 --runs 1 --warmup 0
@@ -211,21 +223,13 @@ zig build install-bench-bins --prefix . -Doptimize=ReleaseFast -Dprecision=f64 -
 
 ### Shared execution harness
 
-Each shared-harness `bench_<name>.py` supports the same options. Compilation is
-separate unless `--build` is supplied. Smoke profiles use one repeat, small
-images, and a reduced case selection; they check execution, not representative
-performance. The DIC UQ smoke profile uses the bundled `platehole3d_2mr_7f`
-dataset; its default large study requires `data/FE/platehole3d_6mr_63f/`.
-Override the input using
+Each shared-harness `bench_<name>.py` supports the same options. The DIC UQ
+smoke profile uses the bundled `platehole3d_2mr_7f` dataset; its default large
+study requires `data/FE/platehole3d_6mr_63f/`. Override the input with
 `-- --data-dir PATH/` (including the trailing slash).
-
-`run_all_bench.py --profile smoke` does not run the speckle evaluator benchmark.
-CI checks the separate speckle runner with native tests on Ubuntu and a
-frozen-executable comparison on Windows.
 
 ```shell
 python scripts/bench_geom.py --profile smoke --build
-python scripts/run_all_bench.py --profile smoke
 python scripts/bench_geom.py --runs 5
 python scripts/bench_geom.py --experiment hulls --runs 5
 python scripts/bench_buffer_psf.py --experiment buffers --profile smoke
@@ -237,7 +241,8 @@ Shared options include `--profile`, `--runs`, `--precision`, `--simd`, `--lanes`
 Pass driver-specific arguments after `--`. Defaults use one thread and memory
 output. Each invocation writes its native CSVs, exact command, configuration
 metadata, execution status/duration, stdout, and stderr under `out/benchmarks/<name>/<timestamp>/`.
-A failed build or benchmark exits unsuccessfully; inspect that run's stderr.
+For build failures, inspect the terminal output. For benchmark failures, inspect
+`stderr.txt` in the run directory. Dry runs only print commands.
 Specialised CSV schemas and counters remain native to each benchmark. Threaded
 geometry reports the mean over `--runs` repeats for each scheduling configuration;
 its smoke profile uses one frame and one mesh copy.
@@ -245,7 +250,7 @@ its smoke profile uses one frame and one mesh copy.
 Check the Python harness contract without compiling or rendering:
 
 ```shell
-python -m unittest discover -s scripts/tests -v
+python -m pytest -q scripts/tests -k 'not NativeBenchmarkTests'
 ```
 
 ### Specialised experiments
@@ -309,11 +314,11 @@ references live in `gold/perf_stats_ref/` and are compared separately by
 
 ```shell
 python scripts/compile_benchmarks.py fullraster geom sphere2000 sphere2000zoom
-python scripts/gen_gold_perf_all.py
 python scripts/test_perf_all.py
 ```
 
-Generate references deliberately; do not regenerate them during ordinary checks.
+Generate references deliberately with `python scripts/gen_gold_perf_all.py`;
+do not regenerate them during ordinary checks.
 The individual `test_perf_<name>.py` scripts support profiles such as `1thread`
 and `4thread`. Paper studies retain their separate `paper_bench*.py` workflow;
 `scripts/legacy/` contains archived scripts outside the supported native harness.
@@ -337,7 +342,7 @@ and `4thread`. Paper studies retain their separate `paper_bench*.py` workflow;
   `imageio.CLoadTIFF` helper dynamically loads libtiff; demos use the native path.
 - The public C ABI uses f64 with SIMD enabled; native Zig configuration options
   do not extend the supported C/Python ABI configurations.
-- The shared C library explicitly uses LLVM even in Debug. This was introduced to avoid incorrect floating-point struct argument passing at the C boundary in Zig 0.16's self-hosted Debug backend. Native demos and tests use the default backend.
+- The shared C library and ABI tests use Zig's default backend for the selected target and optimization mode.
 - For detailed camera model mathematics, thread budgeting, distortion-aware hulls, and image save mode mechanics, see [**`dev/THEORY.md`**](./THEORY.md).
 - Some older benchmark helper scripts remain in `./scripts/` for historical studies. Prefer the current commands above unless you specifically need an archived workflow.
 

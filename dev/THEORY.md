@@ -146,7 +146,6 @@ const images = try riley.rasterAdvanced(
 - **Strict Input Validation**: Mismatched channel counts throw an immediate validation error unless validation is explicitly set to `.off`.
 - **Bit Depths and Formats**: Each `ImageSaveOpts` selects format, optional `file_bits` and `adc_bits`, value scaling (`.none`, `.auto`, `.fixed`, `.frac`), and ADC code packing (`.spread`, `.lower`, `.upper`). Floating CSV/FIMG use `file_bits = null` and `adc_bits = null`.
 
-
 ---
 
 ## 6. Physical Speckle Calibration and Nominal Coverage
