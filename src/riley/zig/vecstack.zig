@@ -29,7 +29,7 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
         const Self: type = @This();
 
         pub fn initFill(fill_val: T) Self {
-            return .{ .vec = [_]T{fill_val} ** elem_n };
+            return .{ .vec = @as([elem_n]T, @splat(fill_val)) };
         }
 
         pub fn initOnes() Self {

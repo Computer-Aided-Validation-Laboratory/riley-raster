@@ -17,4 +17,4 @@ else
 
 pub const enable_all_evaluators = requested.enable_all_evaluators;
 pub const speckle_mask_samples_per_cell: comptime_int =
-    @intFromEnum(requested.speckle_mask_resolution);
+    @backingInt(requested.speckle_mask_resolution);

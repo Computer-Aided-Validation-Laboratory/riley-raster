@@ -38,7 +38,7 @@ pub fn MatStack(
         const Self: type = @This();
 
         pub fn initFill(fill_val: T) Self {
-            return .{ .mat = [_][cols_n]T{[_]T{fill_val} ** cols_n} ** rows_n };
+            return .{ .mat = @as([rows_n][cols_n]T, @splat(@as([cols_n]T, @splat(fill_val)))) };
         }
 
         pub fn initZeros() Self {

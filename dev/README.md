@@ -337,7 +337,7 @@ and `4thread`. Paper studies retain their separate `paper_bench*.py` workflow;
   `imageio.CLoadTIFF` helper dynamically loads libtiff; demos use the native path.
 - The public C ABI uses f64 with SIMD enabled; native Zig configuration options
   do not extend the supported C/Python ABI configurations.
-- The shared C library explicitly uses LLVM even in Debug: Zig 0.16's self-hosted Debug backend mispasses floating-point struct arguments at the C boundary in camera helpers. Native demo/test backend selection is unchanged.
+- The shared C library explicitly uses LLVM even in Debug. This was introduced to avoid incorrect floating-point struct argument passing at the C boundary in Zig 0.16's self-hosted Debug backend. Native demos and tests use the default backend.
 - For detailed camera model mathematics, thread budgeting, distortion-aware hulls, and image save mode mechanics, see [**`dev/THEORY.md`**](./THEORY.md).
 - Some older benchmark helper scripts remain in `./scripts/` for historical studies. Prefer the current commands above unless you specifically need an archived workflow.
 

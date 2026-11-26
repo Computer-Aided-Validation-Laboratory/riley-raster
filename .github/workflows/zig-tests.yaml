@@ -27,7 +27,7 @@ jobs:
       - name: Zig Setup
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.16.0
+          version: 0.17.1
 
       - name: Check Zig formatting (Ubuntu)
         if: matrix.os == 'ubuntu-latest'

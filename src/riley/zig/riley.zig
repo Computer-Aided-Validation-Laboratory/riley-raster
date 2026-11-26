@@ -1341,7 +1341,7 @@ fn createMeshStaticSliceFromInput(
 ) ![]meshtypes.MeshStatic {
     const mesh_static = try allocator.alloc(meshtypes.MeshStatic, meshes.len);
 
-    var active_roles = shadertypes.ActiveShaderRoles.initEmpty();
+    var active_roles = shadertypes.ActiveShaderRoles.empty;
     for (cameras) |camera| {
         active_roles.insert(std.meta.activeTag(camera.render_format));
     }

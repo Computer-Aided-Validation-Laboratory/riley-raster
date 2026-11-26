@@ -182,11 +182,11 @@ const TestType = F;
 test "slice.add" {
     const vec_len: usize = 10;
 
-    var vec0 = [_]F{1.0} ** vec_len;
-    var vec1 = [_]F{1.0} ** vec_len;
-    var vec_exp = [_]F{2.0} ** vec_len;
+    var vec0: [vec_len]F = @splat(1.0);
+    var vec1: [vec_len]F = @splat(1.0);
+    var vec_exp: [vec_len]F = @splat(2.0);
 
-    var vec_op = [_]F{0.0} ** vec_len;
+    var vec_op: [vec_len]F = @splat(0.0);
 
     try add(TestType, vec0[0..], vec1[0..], vec_op[0..]);
 
@@ -196,11 +196,11 @@ test "slice.add" {
 test "slice.sub" {
     const vec_len: usize = 10;
 
-    var vec0 = [_]F{1.0} ** vec_len;
-    var vec1 = [_]F{1.0} ** vec_len;
-    var vec_exp = [_]F{0.0} ** vec_len;
+    var vec0: [vec_len]F = @splat(1.0);
+    var vec1: [vec_len]F = @splat(1.0);
+    var vec_exp: [vec_len]F = @splat(0.0);
 
-    var vec_op = [_]F{-1.0} ** vec_len;
+    var vec_op: [vec_len]F = @splat(-1.0);
 
     try sub(TestType, vec0[0..], vec1[0..], vec_op[0..]);
 
@@ -210,11 +210,11 @@ test "slice.sub" {
 test "slice.mul" {
     const vec_len: usize = 10;
 
-    var vec0 = [_]F{1.0} ** vec_len;
-    var vec1 = [_]F{1.0} ** vec_len;
-    var vec_exp = [_]F{1.0} ** vec_len;
+    var vec0: [vec_len]F = @splat(1.0);
+    var vec1: [vec_len]F = @splat(1.0);
+    var vec_exp: [vec_len]F = @splat(1.0);
 
-    var vec_op = [_]F{0.0} ** vec_len;
+    var vec_op: [vec_len]F = @splat(0.0);
 
     try mul(TestType, vec0[0..], vec1[0..], vec_op[0..]);
 
@@ -224,11 +224,11 @@ test "slice.mul" {
 test "slice.div" {
     const vec_len: usize = 10;
 
-    var vec0 = [_]F{1.0} ** vec_len;
-    var vec1 = [_]F{1.0} ** vec_len;
-    var vec_exp = [_]F{1.0} ** vec_len;
+    var vec0: [vec_len]F = @splat(1.0);
+    var vec1: [vec_len]F = @splat(1.0);
+    var vec_exp: [vec_len]F = @splat(1.0);
 
-    var vec_op = [_]F{0.0} ** vec_len;
+    var vec_op: [vec_len]F = @splat(0.0);
 
     try div(TestType, vec0[0..], vec1[0..], vec_op[0..]);
 
@@ -238,11 +238,11 @@ test "slice.div" {
 test "slice.mulScal" {
     const vec_len: usize = 10;
 
-    var vec0 = [_]F{1.0} ** vec_len;
-    var vec_exp = [_]F{2.0} ** vec_len;
+    var vec0: [vec_len]F = @splat(1.0);
+    var vec_exp: [vec_len]F = @splat(2.0);
     const scal: TestType = 2.0;
 
-    var vec_op = [_]F{0.0} ** vec_len;
+    var vec_op: [vec_len]F = @splat(0.0);
 
     try mulScal(TestType, vec0[0..], scal, vec_op[0..]);
 
@@ -250,21 +250,21 @@ test "slice.mulScal" {
 }
 
 test "slice.apply" {
-    const arr_ones = [_]TestType{1} ** 7;
-    const arr_zeros = [_]TestType{0} ** 7;
+    const arr_ones: [7]TestType = @splat(1);
+    const arr_zeros: [7]TestType = @splat(0);
 
-    var arr_out = [_]TestType{-1} ** 7;
+    var arr_out: [7]TestType = @splat(-1);
 
     apply(TestType, &arr_out, &arr_ones, std.math.sqrt);
 
     try std.testing.expectEqual(arr_ones, arr_out);
 
-    arr_out = [_]TestType{-1} ** 7;
+    arr_out = @as([7]TestType, @splat(-1));
     apply(TestType, &arr_out, &arr_zeros, std.math.atan);
 
     try std.testing.expectEqual(arr_zeros, arr_out);
 
-    arr_out = [_]TestType{-1} ** 7;
+    arr_out = @as([7]TestType, @splat(-1));
     apply(TestType, &arr_out, &arr_zeros, exp);
 
     try std.testing.expectEqual(arr_ones, arr_out);

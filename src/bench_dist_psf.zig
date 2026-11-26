@@ -83,7 +83,7 @@ pub const MeshSubset = enum {
     quad9,
 };
 
-const poly_zero_coeffs = [_]F{0} ** 6;
+const poly_zero_coeffs: [6]F = @splat(0);
 
 // Degree 1: 3 terms -> 6 coeffs
 const poly_deg1_pincushion_coeffs = [_]F{

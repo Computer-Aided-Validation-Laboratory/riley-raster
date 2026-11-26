@@ -583,7 +583,7 @@ fn isFiniteSIMD(values: VecSF) VecSB {
 
 test "polynomial scalar and SIMD forward agree for every order" {
     const degrees = [_]u8{ 1, 2, 3, 4, 5, 6, 7 };
-    var coeffs = [_]F{0} ** 72;
+    var coeffs: [72]F = @splat(0);
     for (&coeffs, 0..) |*coeff, ii| coeff.* = @as(F, @floatFromInt(ii % 7)) * 0.001;
     for (degrees) |degree| {
         const poly = try cameramodels_common.PolyMap.init(

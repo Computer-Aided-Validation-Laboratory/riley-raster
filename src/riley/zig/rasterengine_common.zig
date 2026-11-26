@@ -321,7 +321,7 @@ pub fn rasterTileCore(
         const geom_tag = comptime elemtilebinning.binMeshType(bin_tag);
         const root_class = comptime elemtilebinning.binRootClass(bin_tag);
 
-        const range = tile.bins[@intFromEnum(bin_tag)];
+        const range = tile.bins[@backingInt(bin_tag)];
         const overlaps = overlaps_all[range.start .. range.start + range.count];
 
         for (overlaps) |ov| {

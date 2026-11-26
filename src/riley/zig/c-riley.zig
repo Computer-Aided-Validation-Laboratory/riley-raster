@@ -39,7 +39,7 @@ const default_image_save_opts = [_]dataio.ImageSaveOpts{
     },
 };
 
-var last_error_buf: [error_buf_len]u8 = [_]u8{0} ** error_buf_len;
+var last_error_buf: [error_buf_len]u8 = @splat(0);
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -480,30 +480,30 @@ fn cMutSlice(
 
 fn meshTypeFromC(mesh_type: u32) !riley.MeshType {
     return switch (mesh_type) {
-        @intFromEnum(riley.MeshType.tri3) => .tri3,
-        @intFromEnum(riley.MeshType.tri3opt) => .tri3opt,
-        @intFromEnum(riley.MeshType.tri6) => .tri6,
-        @intFromEnum(riley.MeshType.quad4) => .quad4,
-        @intFromEnum(riley.MeshType.quad8) => .quad8,
-        @intFromEnum(riley.MeshType.quad9) => .quad9,
+        @backingInt(riley.MeshType.tri3) => .tri3,
+        @backingInt(riley.MeshType.tri3opt) => .tri3opt,
+        @backingInt(riley.MeshType.tri6) => .tri6,
+        @backingInt(riley.MeshType.quad4) => .quad4,
+        @backingInt(riley.MeshType.quad8) => .quad8,
+        @backingInt(riley.MeshType.quad9) => .quad9,
         else => error.InvalidMeshType,
     };
 }
 
 fn renderModeFromC(render_mode: u32) !riley.RenderMode {
     return switch (render_mode) {
-        @intFromEnum(riley.RenderMode.in_order) => .in_order,
-        @intFromEnum(riley.RenderMode.offline) => .offline,
+        @backingInt(riley.RenderMode.in_order) => .in_order,
+        @backingInt(riley.RenderMode.offline) => .offline,
         else => error.InvalidRenderMode,
     };
 }
 
 fn saveStrategyFromC(save_strategy: u32) !riley.SaveStrategy {
     return switch (save_strategy) {
-        @intFromEnum(riley.SaveStrategy.disk) => .disk,
-        @intFromEnum(riley.SaveStrategy.memory) => .memory,
-        @intFromEnum(riley.SaveStrategy.both) => .both,
-        @intFromEnum(riley.SaveStrategy.none) => .none,
+        @backingInt(riley.SaveStrategy.disk) => .disk,
+        @backingInt(riley.SaveStrategy.memory) => .memory,
+        @backingInt(riley.SaveStrategy.both) => .both,
+        @backingInt(riley.SaveStrategy.none) => .none,
         else => error.InvalidSaveStrategy,
     };
 }
@@ -518,25 +518,25 @@ fn reportModeFromC(report_mode: u32) !riley.ReportMode {
 
 fn bufferModeFromC(buffer_mode: u32) !riley.BufferMode {
     return switch (buffer_mode) {
-        @intFromEnum(riley.BufferMode.tile_local) => .tile_local,
-        @intFromEnum(riley.BufferMode.global_subpx_full) => .global_subpx_full,
-        @intFromEnum(riley.BufferMode.global_subpx_stripe) => .global_subpx_stripe,
+        @backingInt(riley.BufferMode.tile_local) => .tile_local,
+        @backingInt(riley.BufferMode.global_subpx_full) => .global_subpx_full,
+        @backingInt(riley.BufferMode.global_subpx_stripe) => .global_subpx_stripe,
         else => error.InvalidBufferMode,
     };
 }
 
 fn subpxCenterMapFromC(subpx_map: u32) !riley.SubPixelCenterMap {
     return switch (subpx_map) {
-        @intFromEnum(riley.SubPixelCenterMap.full_in_mem) => .full_in_mem,
-        @intFromEnum(riley.SubPixelCenterMap.per_tile) => .per_tile,
+        @backingInt(riley.SubPixelCenterMap.full_in_mem) => .full_in_mem,
+        @backingInt(riley.SubPixelCenterMap.per_tile) => .per_tile,
         else => error.InvalidSubPixelCenterMap,
     };
 }
 
 fn hullModeFromC(hull_mode: u32) !riley.HullMode {
     return switch (hull_mode) {
-        @intFromEnum(riley.HullMode.on_no_fallback) => .on_no_fallback,
-        @intFromEnum(riley.HullMode.on_convex_fallback) => .on_convex_fallback,
+        @backingInt(riley.HullMode.on_no_fallback) => .on_no_fallback,
+        @backingInt(riley.HullMode.on_convex_fallback) => .on_convex_fallback,
         else => error.InvalidHullMode,
     };
 }
@@ -545,8 +545,8 @@ fn newtonSeedModeFromC(
     seed_mode: u32,
 ) !riley.NewtonSeedMode {
     return switch (seed_mode) {
-        @intFromEnum(riley.NewtonSeedMode.centroid) => .centroid,
-        @intFromEnum(riley.NewtonSeedMode.hull) => .hull,
+        @backingInt(riley.NewtonSeedMode.centroid) => .centroid,
+        @backingInt(riley.NewtonSeedMode.hull) => .hull,
         else => error.InvalidNewtonSeedMode,
     };
 }
@@ -555,8 +555,8 @@ fn newtonSeedReuseFromC(
     seed_reuse: u32,
 ) !riley.NewtonSeedReuse {
     return switch (seed_reuse) {
-        @intFromEnum(riley.NewtonSeedReuse.off) => .off,
-        @intFromEnum(riley.NewtonSeedReuse.last_conv) => .last_conv,
+        @backingInt(riley.NewtonSeedReuse.off) => .off,
+        @backingInt(riley.NewtonSeedReuse.last_conv) => .last_conv,
         else => error.InvalidNewtonSeedReuse,
     };
 }
@@ -565,8 +565,8 @@ fn multirootModeFromC(
     mode: u32,
 ) !riley.MultirootSolverMode {
     return switch (mode) {
-        @intFromEnum(riley.MultirootSolverMode.fast) => .fast,
-        @intFromEnum(riley.MultirootSolverMode.robust) => .robust,
+        @backingInt(riley.MultirootSolverMode.fast) => .fast,
+        @backingInt(riley.MultirootSolverMode.robust) => .robust,
         else => error.InvalidMultirootSolverMode,
     };
 }
@@ -575,8 +575,8 @@ fn edgeFunModeFromC(
     mode: u32,
 ) !riley.EdgeFunMode {
     return switch (mode) {
-        @intFromEnum(riley.EdgeFunMode.on_the_fly) => .on_the_fly,
-        @intFromEnum(riley.EdgeFunMode.pre_calc) => .pre_calc,
+        @backingInt(riley.EdgeFunMode.on_the_fly) => .on_the_fly,
+        @backingInt(riley.EdgeFunMode.pre_calc) => .pre_calc,
         else => error.InvalidEdgeFunMode,
     };
 }
@@ -585,17 +585,17 @@ fn validateInputFromC(
     validate_input: u32,
 ) !riley.ValidateInput {
     return switch (validate_input) {
-        @intFromEnum(riley.ValidateInput.off) => .off,
-        @intFromEnum(riley.ValidateInput.fast) => .fast,
-        @intFromEnum(riley.ValidateInput.full) => .full,
+        @backingInt(riley.ValidateInput.off) => .off,
+        @backingInt(riley.ValidateInput.fast) => .fast,
+        @backingInt(riley.ValidateInput.full) => .full,
         else => error.InvalidValidateInputMode,
     };
 }
 
 fn coordSysFromC(coord_sys: u32) !riley.CameraCoordSys {
     return switch (coord_sys) {
-        @intFromEnum(riley.CameraCoordSys.opengl) => .opengl,
-        @intFromEnum(riley.CameraCoordSys.opencv) => .opencv,
+        @backingInt(riley.CameraCoordSys.opengl) => .opengl,
+        @backingInt(riley.CameraCoordSys.opencv) => .opencv,
         else => error.InvalidCoordSys,
     };
 }
@@ -721,14 +721,14 @@ fn distortFromC(in_camera: *const CDistort) !riley.DistortParams {
 fn texSampleFromC(sample: u32) !riley.TexSamp {
     const mitchell = riley.TexSamp.cubic_mitchell_netravali;
     return switch (sample) {
-        @intFromEnum(riley.TexSamp.nearest) => .nearest,
-        @intFromEnum(riley.TexSamp.linear) => .linear,
-        @intFromEnum(riley.TexSamp.cubic_catmull_rom) => .cubic_catmull_rom,
-        @intFromEnum(mitchell) => .cubic_mitchell_netravali,
-        @intFromEnum(riley.TexSamp.lanczos3) => .lanczos3,
-        @intFromEnum(riley.TexSamp.cubic_bspline) => .cubic_bspline,
-        @intFromEnum(riley.TexSamp.quintic_bspline) => .quintic_bspline,
-        @intFromEnum(riley.TexSamp.lanczos2) => .lanczos2,
+        @backingInt(riley.TexSamp.nearest) => .nearest,
+        @backingInt(riley.TexSamp.linear) => .linear,
+        @backingInt(riley.TexSamp.cubic_catmull_rom) => .cubic_catmull_rom,
+        @backingInt(mitchell) => .cubic_mitchell_netravali,
+        @backingInt(riley.TexSamp.lanczos3) => .lanczos3,
+        @backingInt(riley.TexSamp.cubic_bspline) => .cubic_bspline,
+        @backingInt(riley.TexSamp.quintic_bspline) => .quintic_bspline,
+        @backingInt(riley.TexSamp.lanczos2) => .lanczos2,
         else => error.InvalidTexSample,
     };
 }
@@ -737,17 +737,17 @@ fn texSampleModeFromC(
     sample_mode: u32,
 ) !riley.TexSampMode {
     return switch (sample_mode) {
-        @intFromEnum(riley.TexSampMode.direct) => .direct,
-        @intFromEnum(riley.TexSampMode.lut) => .lut,
-        @intFromEnum(riley.TexSampMode.lut_lerp) => .lut_lerp,
+        @backingInt(riley.TexSampMode.direct) => .direct,
+        @backingInt(riley.TexSampMode.lut) => .lut,
+        @backingInt(riley.TexSampMode.lut_lerp) => .lut_lerp,
         else => error.InvalidTexSampleMode,
     };
 }
 
 fn scaleOverFromC(scale_over: u32) !riley.ScaleOver {
     return switch (scale_over) {
-        @intFromEnum(riley.ScaleOver.within_frames) => .within_frames,
-        @intFromEnum(riley.ScaleOver.over_frames) => .over_frames,
+        @backingInt(riley.ScaleOver.within_frames) => .within_frames,
+        @backingInt(riley.ScaleOver.over_frames) => .over_frames,
         else => error.InvalidScaleOver,
     };
 }
@@ -758,15 +758,15 @@ fn funcShaderBuiltinFromC(
     const lambertian = riley.FuncShaderBuiltin.lambertian_normal_z;
     const eggbox = riley.FuncShaderBuiltin.eggbox;
     return switch (func_shader_builtin) {
-        @intFromEnum(riley.FuncShaderBuiltin.constant) => .constant,
-        @intFromEnum(riley.FuncShaderBuiltin.linear) => .linear,
-        @intFromEnum(riley.FuncShaderBuiltin.quadratic) => .quadratic,
-        @intFromEnum(riley.FuncShaderBuiltin.sinusoidal) => .sinusoidal,
-        @intFromEnum(riley.FuncShaderBuiltin.sinusoidal_approx) => .sinusoidal_approx,
-        @intFromEnum(riley.FuncShaderBuiltin.checker) => .checker,
-        @intFromEnum(riley.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
-        @intFromEnum(lambertian) => .lambertian_normal_z,
-        @intFromEnum(eggbox) => .eggbox,
+        @backingInt(riley.FuncShaderBuiltin.constant) => .constant,
+        @backingInt(riley.FuncShaderBuiltin.linear) => .linear,
+        @backingInt(riley.FuncShaderBuiltin.quadratic) => .quadratic,
+        @backingInt(riley.FuncShaderBuiltin.sinusoidal) => .sinusoidal,
+        @backingInt(riley.FuncShaderBuiltin.sinusoidal_approx) => .sinusoidal_approx,
+        @backingInt(riley.FuncShaderBuiltin.checker) => .checker,
+        @backingInt(riley.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
+        @backingInt(lambertian) => .lambertian_normal_z,
+        @backingInt(eggbox) => .eggbox,
         else => error.InvalidFuncShaderBuiltin,
     };
 }
@@ -775,19 +775,19 @@ fn funcCoordModeFromC(
     coord_mode: u32,
 ) !riley.FuncCoordMode {
     return switch (coord_mode) {
-        @intFromEnum(riley.FuncCoordMode.uv) => .uv,
-        @intFromEnum(riley.FuncCoordMode.para) => .para,
-        @intFromEnum(riley.FuncCoordMode.world_reference) => .world_reference,
-        @intFromEnum(riley.FuncCoordMode.world_deformed) => .world_deformed,
+        @backingInt(riley.FuncCoordMode.uv) => .uv,
+        @backingInt(riley.FuncCoordMode.para) => .para,
+        @backingInt(riley.FuncCoordMode.world_reference) => .world_reference,
+        @backingInt(riley.FuncCoordMode.world_deformed) => .world_deformed,
         else => error.InvalidFuncCoordMode,
     };
 }
 
 fn normalTypeFromC(normal_type: u32) !riley.NormalType {
     return switch (normal_type) {
-        @intFromEnum(riley.NormalType.none) => .none,
-        @intFromEnum(riley.NormalType.exact) => .exact,
-        @intFromEnum(riley.NormalType.avg) => .avg,
+        @backingInt(riley.NormalType.none) => .none,
+        @backingInt(riley.NormalType.exact) => .exact,
+        @backingInt(riley.NormalType.avg) => .avg,
         else => error.InvalidNormalType,
     };
 }
@@ -2049,8 +2049,8 @@ fn cameraInputToC(in_camera: riley.CameraInput) CCameraInput {
             .psf_supp_rad = 0.0,
             .psf_separable = 1,
         },
-        .coord_sys = @intFromEnum(in_camera.coord_sys),
-        .subpixel_center_map = @intFromEnum(in_camera.subpixel_center_map),
+        .coord_sys = @backingInt(in_camera.coord_sys),
+        .subpixel_center_map = @backingInt(in_camera.subpixel_center_map),
     };
 
     switch (in_camera.distort) {
@@ -2083,7 +2083,7 @@ fn cameraInputToC(in_camera: riley.CameraInput) CCameraInput {
         .poly => |poly| {
             out_camera.distort.distort_model = 3;
             out_camera.distort.distort_poly_degree = poly.degree;
-            out_camera.distort.distort_poly_mode = @intFromEnum(poly.mode);
+            out_camera.distort.distort_poly_mode = @backingInt(poly.mode);
             out_camera.distort.distort_poly_coeffs = poly.coeffs.ptr;
             out_camera.distort.distort_poly_coeffs_len = poly.coeffs.len;
         },
@@ -2095,7 +2095,7 @@ fn cameraInputToC(in_camera: riley.CameraInput) CCameraInput {
             out_camera.distort.distort_p1 = chain.brown_con.p1;
             out_camera.distort.distort_p2 = chain.brown_con.p2;
             out_camera.distort.distort_poly_degree = chain.poly.degree;
-            out_camera.distort.distort_poly_mode = @intFromEnum(chain.poly.mode);
+            out_camera.distort.distort_poly_mode = @backingInt(chain.poly.mode);
             out_camera.distort.distort_poly_coeffs = chain.poly.coeffs.ptr;
             out_camera.distort.distort_poly_coeffs_len = chain.poly.coeffs.len;
         },
@@ -2116,7 +2116,7 @@ fn cameraInputToC(in_camera: riley.CameraInput) CCameraInput {
             out_camera.distort.distort_tau_x = chain.brown_con_ext.tau_x;
             out_camera.distort.distort_tau_y = chain.brown_con_ext.tau_y;
             out_camera.distort.distort_poly_degree = chain.poly.degree;
-            out_camera.distort.distort_poly_mode = @intFromEnum(chain.poly.mode);
+            out_camera.distort.distort_poly_mode = @backingInt(chain.poly.mode);
             out_camera.distort.distort_poly_coeffs = chain.poly.coeffs.ptr;
             out_camera.distort.distort_poly_coeffs_len = chain.poly.coeffs.len;
         },
@@ -2752,10 +2752,10 @@ test "C dimension query reports invalid pixels without writing output dimensions
     const nodes = [_]usize{ 0, 1, 2 };
     var shader = std.mem.zeroes(CShaderEntry);
     shader.value.direct.shader_tag = 3; // Function shader.
-    shader.value.direct.value.func.builtin = @intFromEnum(riley.FuncShaderBuiltin.constant);
-    shader.value.direct.value.func.coord_mode = @intFromEnum(riley.FuncCoordMode.para);
+    shader.value.direct.value.func.builtin = @backingInt(riley.FuncShaderBuiltin.constant);
+    shader.value.direct.value.func.coord_mode = @backingInt(riley.FuncCoordMode.para);
     var mesh = std.mem.zeroes(CMeshInput);
-    mesh.mesh_type = @intFromEnum(riley.MeshType.tri3);
+    mesh.mesh_type = @backingInt(riley.MeshType.tri3);
     mesh.coords = .{ .elems = &coords, .rows_num = 3, .cols_num = 3 };
     mesh.connect = .{ .elems = &nodes, .rows_num = 1, .cols_num = 3 };
     mesh.shaders = &shader;
@@ -2766,9 +2766,9 @@ test "C dimension query reports invalid pixels without writing output dimensions
     var cameras = [_]CCameraInput{ camera, camera };
     cameras[1].pixels_num = .{ .x = 4, .y = 12 };
     var config = std.mem.zeroes(CRasterConfig);
-    config.validate_input = @intFromEnum(riley.ValidateInput.off);
-    config.save_strategy = @intFromEnum(riley.SaveStrategy.memory);
-    config.oneroot_hull_mode = @intFromEnum(riley.HullMode.on_no_fallback);
+    config.validate_input = @backingInt(riley.ValidateInput.off);
+    config.save_strategy = @backingInt(riley.SaveStrategy.memory);
+    config.oneroot_hull_mode = @backingInt(riley.HullMode.on_no_fallback);
     var dims: CDims5Usize = undefined;
     try std.testing.expectEqual(0, rileyCalcOutputDimsScene(&mesh, 1, &cameras, cameras.len, &config, &dims));
     const expected_dims = dimsFromArray(.{ 2, 1, 1, 12, 8 });

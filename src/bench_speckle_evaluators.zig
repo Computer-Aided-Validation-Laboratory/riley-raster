@@ -300,7 +300,7 @@ fn evaluatorRecord(cfg: policy.Config) EvaluatorRecord {
     return .{
         .evaluator = policy.evaluatorName(std.meta.activeTag(cfg)),
         .pattern = if (cfg.pattern()) |pattern| @tagName(pattern) else null,
-        .neighbors = if (cfg.neighborhood()) |neighbors| @intFromEnum(neighbors) else null,
+        .neighbors = if (cfg.neighborhood()) |neighbors| @backingInt(neighbors) else null,
         .soft_edges = if (cfg.edges()) |edges| edges == .soft else null,
     };
 }
@@ -732,7 +732,7 @@ test "speckle benchmark rejects occluded samples but keeps closer depth updates"
     tiles[0].overlap_start = 0;
     tiles[0].overlap_count = 1;
     tiles[0].bins = @splat(.{});
-    const one_root_bin = @intFromEnum(@import("riley/zig/elemtilebinning.zig").ElemBin.tri6_one_root);
+    const one_root_bin = @backingInt(@import("riley/zig/elemtilebinning.zig").ElemBin.tri6_one_root);
     tiles[0].bins[one_root_bin] = .{ .start = 0, .count = 1 };
     var overlaps = [_]@import("riley/zig/elemtilebinning.zig").OverlapBBox{ overlap, overlap };
     overlaps[0].elem_idx = 0;
@@ -765,7 +765,7 @@ test "speckle benchmark root bins preserve production facing and multi-root slot
     const fixture = try TestFixture.init(arena.allocator(), opts, 8);
     for (fixture.geometry.tiling.active_tiles) |tile| {
         inline for (.{ bins.ElemBin.tri6_one_root, bins.ElemBin.tri6_multi_root }) |bin| {
-            const range = tile.bins[@intFromEnum(bin)];
+            const range = tile.bins[@backingInt(bin)];
             for (fixture.geometry.tiling.overlaps[range.start .. range.start + range.count]) |overlap| {
                 const nodes = try frontend.loadElemVec3Slices(6, F, &fixture.geometry.coords, overlap.elem_idx);
                 var projected: frontend.RasterCoords2D(6) = undefined;

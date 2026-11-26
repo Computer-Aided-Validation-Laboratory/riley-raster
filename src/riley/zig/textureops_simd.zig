@@ -145,7 +145,7 @@ pub inline fn sampLanes(
     v_v: VecSF,
 ) [C]VecSF {
     @setEvalBranchQuota(eval_branch_quota);
-    var samp_res_arr: [C][S]F = [_][S]F{[_]F{0.0} ** S} ** C;
+    var samp_res_arr: [C][S]F = @splat(@as([S]F, @splat(0.0)));
     const mask_arr: [S]bool = v_mask_active;
     const u_arr: [S]F = v_u;
     const v_arr: [S]F = v_v;
@@ -182,7 +182,7 @@ pub inline fn sampLanesTri3(
     v_v: VecSF,
 ) [C]VecSF {
     @setEvalBranchQuota(eval_branch_quota);
-    var samp_res_arr: [C][S]F = [_][S]F{[_]F{0.0} ** S} ** C;
+    var samp_res_arr: [C][S]F = @splat(@as([S]F, @splat(0.0)));
     const mask_arr: [S]bool = v_mask_active;
     const u_arr: [S]F = v_u;
     const v_arr: [S]F = v_v;
@@ -464,7 +464,7 @@ inline fn sampConvoWide(
     v_samp_coeff_sum: VecSF,
 ) [C]VecSF {
     @setEvalBranchQuota(eval_branch_quota);
-    var samp_res: [C]VecSF = [_]VecSF{@splat(0.0)} ** C;
+    var samp_res: [C]VecSF = @splat(@splat(0.0));
     var v_tap_samp_coeff_planes: [TAP * TAP]VecSF = undefined;
 
     inline for (0..TAP) |jj| {
@@ -866,7 +866,7 @@ inline fn sampConvoOneLane(
     const tex_cols = @as(isize, @intCast(tex.cols_num));
     const tex_rows = @as(isize, @intCast(tex.rows_num));
 
-    var samp_res: [C]F = [_]F{0.0} ** C;
+    var samp_res: [C]F = @splat(0.0);
 
     if (tex_start_x >= 0 and tex_start_x + @as(isize, @intCast(TAP)) <= tex_cols and
         tex_start_y >= 0 and tex_start_y + @as(isize, @intCast(TAP)) <= tex_rows)

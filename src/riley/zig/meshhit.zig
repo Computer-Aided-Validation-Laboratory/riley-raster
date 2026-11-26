@@ -19,7 +19,7 @@ pub const MeshHitSelection = std.EnumSet(MeshHitField);
 
 // Culled element-node geometry shared by every shader selected for a mesh frame.
 pub const MeshHitGeomPrepared = struct {
-    selection: MeshHitSelection = MeshHitSelection.initEmpty(),
+    selection: MeshHitSelection = MeshHitSelection.empty,
     coords_ref: ?ndarray.NDArray(F) = null,
     coords_def: ?ndarray.NDArray(F) = null,
     surf_norm: ?ndarray.MappedNDArray(F) = null,

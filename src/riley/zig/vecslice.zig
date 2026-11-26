@@ -134,13 +134,13 @@ pub fn VecSlice(comptime T: type) type {
 test "VecSlice.addInPlace" {
     const vec_len: usize = 10;
 
-    var v0 = [_]F{0.0} ** vec_len;
+    var v0: [vec_len]F = @splat(0.0);
     const vec0 = VecSlice(TestType).init(v0[0..]);
 
-    var v1 = [_]F{0.0} ** vec_len;
+    var v1: [vec_len]F = @splat(0.0);
     const vec1 = VecSlice(TestType).init(v1[0..]);
 
-    var ve = [_]F{0.0} ** vec_len;
+    var ve: [vec_len]F = @splat(0.0);
     const vec_exp = VecSlice(TestType).init(ve[0..]);
 
     vec0.fill(1.0);
@@ -155,13 +155,13 @@ test "VecSlice.addInPlace" {
 test "VecSlice.subInPlace" {
     const vec_len: usize = 10;
 
-    var v0 = [_]F{0.0} ** vec_len;
+    var v0: [vec_len]F = @splat(0.0);
     const vec0 = VecSlice(TestType).init(v0[0..]);
 
-    var v1 = [_]F{0.0} ** vec_len;
+    var v1: [vec_len]F = @splat(0.0);
     const vec1 = VecSlice(TestType).init(v1[0..]);
 
-    var ve = [_]F{0.0} ** vec_len;
+    var ve: [vec_len]F = @splat(0.0);
     const vec_exp = VecSlice(TestType).init(ve[0..]);
 
     vec0.fill(1.0);
@@ -176,13 +176,13 @@ test "VecSlice.subInPlace" {
 test "VecSlice.mulInPlace" {
     const vec_len: usize = 10;
 
-    var v0 = [_]F{0.0} ** vec_len;
+    var v0: [vec_len]F = @splat(0.0);
     const vec0 = VecSlice(TestType).init(v0[0..]);
 
-    var v1 = [_]F{0.0} ** vec_len;
+    var v1: [vec_len]F = @splat(0.0);
     const vec1 = VecSlice(TestType).init(v1[0..]);
 
-    var ve = [_]F{0.0} ** vec_len;
+    var ve: [vec_len]F = @splat(0.0);
     const vec_exp = VecSlice(TestType).init(ve[0..]);
 
     vec0.fill(1.0);
@@ -197,13 +197,13 @@ test "VecSlice.mulInPlace" {
 test "VecSlice.divInPlace" {
     const vec_len: usize = 10;
 
-    var v0 = [_]F{0.0} ** vec_len;
+    var v0: [vec_len]F = @splat(0.0);
     const vec0 = VecSlice(TestType).init(v0[0..]);
 
-    var v1 = [_]F{0.0} ** vec_len;
+    var v1: [vec_len]F = @splat(0.0);
     const vec1 = VecSlice(TestType).init(v1[0..]);
 
-    var ve = [_]F{0.0} ** vec_len;
+    var ve: [vec_len]F = @splat(0.0);
     const vec_exp = VecSlice(TestType).init(ve[0..]);
 
     vec0.fill(1.0);
@@ -218,10 +218,10 @@ test "VecSlice.divInPlace" {
 test "VecSlice.mulScalInPlace" {
     const vec_len: usize = 10;
 
-    var v0 = [_]F{0.0} ** vec_len;
+    var v0: [vec_len]F = @splat(0.0);
     const vec0 = VecSlice(TestType).init(v0[0..]);
 
-    var ve = [_]F{0.0} ** vec_len;
+    var ve: [vec_len]F = @splat(0.0);
     const vec_exp = VecSlice(TestType).init(ve[0..]);
 
     vec0.fill(1.0);
@@ -235,7 +235,7 @@ test "VecSlice.mulScalInPlace" {
 }
 
 test "VecSlice.max" {
-    var v0 = [_]F{0.0} ** 10;
+    var v0: [10]F = @splat(0.0);
     const vec0 = VecSlice(TestType).init(v0[0..]);
 
     const exp_idx: usize = 4;
@@ -253,7 +253,7 @@ test "VecSlice.max" {
 }
 
 test "VecSlice.min" {
-    var v0 = [_]F{0.0} ** 10;
+    var v0: [10]F = @splat(0.0);
     const vec0 = VecSlice(TestType).init(v0[0..]);
 
     const exp_idx: usize = 7;
@@ -271,7 +271,7 @@ test "VecSlice.min" {
 }
 
 test "VecSlice.sum" {
-    var v0 = [_]F{0.0} ** 12;
+    var v0: [12]F = @splat(0.0);
     const vec0 = VecSlice(TestType).init(v0[0..]);
 
     vec0.fill(1.0);
@@ -283,7 +283,7 @@ test "VecSlice.sum" {
 }
 
 test "VecSlice.mean" {
-    var v0 = [_]F{0.0} ** 10;
+    var v0: [10]F = @splat(0.0);
     const vec0 = VecSlice(TestType).init(v0[0..]);
 
     vec0.fill(1.0);
@@ -298,13 +298,13 @@ test "VecSlice.mean" {
 test "VecSlice.apply" {
     const vec_len: usize = 7;
 
-    var v0 = [_]F{0.0} ** vec_len;
+    var v0: [vec_len]F = @splat(0.0);
     var vec0 = VecSlice(TestType).init(v0[0..]);
 
-    var ve1 = [_]F{1.0} ** vec_len;
+    var ve1: [vec_len]F = @splat(1.0);
     const vec_exp_ones = VecSlice(TestType).init(ve1[0..]);
 
-    var ve0 = [_]F{0.0} ** vec_len;
+    var ve0: [vec_len]F = @splat(0.0);
     const vec_exp_zeros = VecSlice(TestType).init(ve0[0..]);
 
     vec0.fill(1.0);
@@ -315,7 +315,7 @@ test "VecSlice.apply" {
 
     try std.testing.expectEqualSlices(TestType, vec_exp_ones.slice, vec0.slice);
 
-    var v1 = [_]F{0.0} ** vec_len;
+    var v1: [vec_len]F = @splat(0.0);
     var vec1 = VecSlice(TestType).init(v1[0..]);
 
     vec1.fill(0.0);
