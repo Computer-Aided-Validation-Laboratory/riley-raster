@@ -267,6 +267,7 @@ fn chunkSize(
     workers_num: usize,
     chunks_per_worker: usize,
 ) usize {
+    // Even an empty domain needs a positive chunk size.
     if (dom_len == 0) {
         return 1;
     }
