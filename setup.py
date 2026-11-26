@@ -174,6 +174,8 @@ class MultiBuildExt(build_ext):
             ]
         else:
             zig_soname_args = [f"-fsoname={lib_link_name('c_riley')}"]
+            if system == "linux" and platform.machine().lower() == "x86_64":
+                zig_target_args = ["-mcpu=x86_64_v4"]
 
         zig_build = [
             "build-lib",
