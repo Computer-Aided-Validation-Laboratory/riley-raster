@@ -364,9 +364,9 @@ test "MatSlice.getSlice" {
         mat0.set(2, cc, 9);
     }
 
-    const exp0 = [_]TestType{0} ** 4;
-    const exp1 = [_]TestType{7} ** 4;
-    const exp2 = [_]TestType{9} ** 4;
+    const exp0: [4]TestType = @splat(0);
+    const exp1: [4]TestType = @splat(7);
+    const exp2: [4]TestType = @splat(9);
 
     const slice0 = mat0.getSlice(0);
     const slice1 = mat0.getSlice(1);
@@ -615,7 +615,7 @@ test "MatSliceOps.mulVec" {
     var v1 = [_]TestType{ 10, 28, 46 };
     const vec_exp = vecslice.VecSlice(TestType).init(&v1);
 
-    var v_out = [_]TestType{0} ** 3;
+    var v_out: [3]TestType = @splat(0);
     var vec_out = vecslice.VecSlice(TestType).init(&v_out);
 
     MatSliceOps(TestType).mulVec(&mat0, &vec0, &vec_out);
@@ -630,7 +630,7 @@ test "MatSliceOps.mulMat" {
     var m1 = [_]TestType{ 3, 1, 1, 1, 3, 1, 1, 1, 3 };
     const mat1 = MatSlice(TestType).init(&m1, 3, 3);
 
-    var m2 = [_]TestType{0} ** 9;
+    var m2: [9]TestType = @splat(0);
     var mat_out = MatSlice(TestType).init(&m2, 3, 3);
 
     var m3 = [_]TestType{ 8, 10, 12, 23, 25, 27, 38, 40, 42 };

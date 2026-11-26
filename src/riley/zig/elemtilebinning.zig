@@ -31,7 +31,7 @@ pub const ElemBin = enum(u8) {
     quad9_multi_root,
 };
 
-pub const bin_count = std.meta.fields(ElemBin).len;
+pub const bin_count = @typeInfo(ElemBin).@"enum".field_names.len;
 
 pub const ElemBinRange = struct {
     start: usize = 0,
@@ -155,7 +155,7 @@ pub const ActiveTile = struct {
     overlap_count: usize,
 
     bins: [bin_count]ElemBinRange =
-        [_]ElemBinRange{.{}} ** bin_count,
+        @as([bin_count]ElemBinRange, @splat(.{})),
 
     core_px: TileBounds,
     scratch_px: TileBounds,
@@ -259,7 +259,7 @@ pub fn binElemsInSceneTileLoc(
     var active_idx: usize = 0;
     for (0..tiles_num) |ii| {
         var count: usize = 0;
-        var ranges = [_]ElemBinRange{.{}} ** bin_count;
+        var ranges: [bin_count]ElemBinRange = @splat(.{});
         for (0..bin_count) |bb| {
             const bin_count_here =
                 tile_elem_counts[ii * bin_count + bb].load(.monotonic);
@@ -369,7 +369,7 @@ fn runTilingCount(
 
     for (range_start..range_end) |ee| {
         const elem_bbox = tiling.elem_bbox_slice[ee];
-        const bin_idx = @intFromEnum(binForElem(
+        const bin_idx = @backingInt(binForElem(
             tiling.mesh_type,
             tiling.root_classes,
             elem_bbox.elem_idx,
@@ -424,7 +424,7 @@ fn runTilingFill(
 
     for (range_start..range_end) |ee| {
         const elem_bbox = tiling.elem_bbox_slice[ee];
-        const bin_idx = @intFromEnum(binForElem(
+        const bin_idx = @backingInt(binForElem(
             tiling.mesh_type,
             tiling.root_classes,
             elem_bbox.elem_idx,

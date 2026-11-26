@@ -57,7 +57,7 @@ pub fn binElemsInSceneGlobBuff(
         const r_classes = root_classes_by_mesh[mesh_idx];
 
         for (elem_bboxes[0..count], 0..) |elem_bbox, ee| {
-            const bin_idx = @intFromEnum(elemtilebinning.binForElem(
+            const bin_idx = @backingInt(elemtilebinning.binForElem(
                 m_type,
                 r_classes,
                 elem_bbox.elem_idx,
@@ -181,7 +181,7 @@ pub fn binElemsInSceneGlobBuff(
             const tile_idx = yy * tiles_x + xx;
 
             var tile_count: usize = 0;
-            var ranges = [_]elemtilebinning.ElemBinRange{.{}} ** elemtilebinning.bin_count;
+            var ranges: [elemtilebinning.bin_count]elemtilebinning.ElemBinRange = @splat(.{});
             for (0..elemtilebinning.bin_count) |bb| {
                 const b_count = tile_elem_counts[
                     tile_idx * elemtilebinning.bin_count + bb
@@ -227,7 +227,7 @@ pub fn binElemsInSceneGlobBuff(
         const r_classes = root_classes_by_mesh[mesh_idx];
 
         for (elem_bboxes[0..count], 0..) |elem_bbox, ee| {
-            const bin_idx = @intFromEnum(elemtilebinning.binForElem(
+            const bin_idx = @backingInt(elemtilebinning.binForElem(
                 m_type,
                 r_classes,
                 elem_bbox.elem_idx,

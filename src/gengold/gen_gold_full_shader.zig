@@ -125,7 +125,7 @@ pub fn generateAllFullShaderCases(
         .world_reference,
         .world_deformed,
     };
-    const dtypes = [_]@typeInfo(FullTexCase).@"struct".fields[1].type{
+    const dtypes = [_]@FieldType(FullTexCase, "dtype"){
         .u8,
         .u16,
         .f64,

@@ -17,7 +17,7 @@ const F = build.F;
 const S = build.SimdWidth;
 const VecSF = build.VecSF;
 const VecSB = build.VecSB;
-const VecBits = @Vector(S, std.meta.Int(.unsigned, @bitSizeOf(F)));
+const VecBits = @Vector(S, @Int(.unsigned, @bitSizeOf(F)));
 const VecSum = @Vector(S, u64);
 const cameraprojops = @import("../riley/zig/cameraprojops.zig");
 const meshtypes = @import("../riley/zig/meshtypes.zig");
@@ -65,7 +65,7 @@ pub const Accumulator = struct {
     counts: VecSum = @splat(0),
 
     pub inline fn consumeScal(self: *Accumulator, value: F) void {
-        self.sums[0] +%= @as(std.meta.Int(.unsigned, @bitSizeOf(F)), @bitCast(value));
+        self.sums[0] +%= @as(@Int(.unsigned, @bitSizeOf(F)), @bitCast(value));
         self.counts[0] += 1;
     }
 
@@ -380,7 +380,7 @@ pub const Evaluation = struct {
                     try eval.cam.fillTileIdealCentersPerTile(tile.scratch_px.x_min, tile.scratch_px.x_max, tile.scratch_px.y_min, tile.scratch_px.y_max, geometry.tile_size, worker.scratch.ideal_pix_cent);
                     inline for (.{ elemtilebin.ElemBin.tri6_one_root, elemtilebin.ElemBin.tri6_multi_root }) |bin| {
                         const root_class = comptime elemtilebin.binRootClass(bin);
-                        const range = tile.bins[@intFromEnum(bin)];
+                        const range = tile.bins[@backingInt(bin)];
                         const overlaps = geometry.tiling.overlaps[range.start .. range.start + range.count];
                         for (overlaps) |overlap| {
                             const nodes = try frontend.loadElemVec3Slices(N, F, &geometry.coords, overlap.elem_idx);

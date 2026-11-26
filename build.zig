@@ -39,7 +39,7 @@ pub fn build(b: *std.Build) void {
         u8,
         "speckle-mask-samples-per-cell",
         "Experimental mask/classified-indexed resolution per cell: 8, 12, or 16",
-    ) orelse @intFromEnum(defaults.speckle_mask_resolution);
+    ) orelse @backingInt(defaults.speckle_mask_resolution);
     const options: buildoptions.Options = .{
         .precision = b.option(
             buildoptions.Precision,
@@ -92,6 +92,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
+    const c_header = b.addTranslateC(.{
+        .root_source_file = b.path("src/riley/cython/riley.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    abi_module.addImport("riley_c", c_header.createModule());
     abi_module.addIncludePath(b.path("src/riley/cython"));
     abi_module.addCSourceFile(.{
         .file = b.path("src/tests/c_abi_layout.c"),
@@ -188,7 +194,7 @@ pub fn build(b: *std.Build) void {
                             @tagName(config_precision),
                             @tagName(config_simd),
                             if (experimental) "experimental" else "default",
-                            @intFromEnum(config_options.speckle_mask_resolution),
+                            @backingInt(config_options.speckle_mask_resolution),
                         }),
                         .description = "Run one native build configuration",
                         .source_path = "src/test_unit.zig",
@@ -303,12 +309,9 @@ pub fn build(b: *std.Build) void {
         },
     };
 
+    const args_guard = addArgsGuard(b);
     const demos_step = b.step("demos", "Run all demo entrypoints with default arguments");
-    const has_demo_args = if (b.args) |args| args.len != 0 else false;
-    if (has_demo_args) {
-        const fail = b.addFail("'demos' does not accept arguments; use 'zig build <demo-target> -- <args>'.");
-        demos_step.dependOn(&fail.step);
-    }
+    const demos_args_check = addAggregateArgsCheck(b, args_guard, "demos", "<demo-target>");
     const demos_check = b.step("demos-check", "Compile all demo entrypoints without running them");
     const demo_cli_test = b.step("test-demo-cli", "Check help and invalid options for procedural demos");
     for (demos) |entry| {
@@ -322,8 +325,10 @@ pub fn build(b: *std.Build) void {
             entry,
         );
         run_step.dependOn(&run_artifact.step);
-        if (!has_demo_args) demos_step.dependOn(&run_artifact.step);
         const executable = run_artifact.producer.?;
+        const aggregate_run = b.addRunArtifact(executable);
+        aggregate_run.step.dependOn(demos_args_check);
+        demos_step.dependOn(&aggregate_run.step);
         executable.getEmittedBin().addStepDependencies(demos_check);
 
         if (entry.forward_args) {
@@ -344,24 +349,20 @@ pub fn build(b: *std.Build) void {
         "run-all-demos",
         "Run all demos sequentially through the public API module",
     );
-    if (has_demo_args) {
-        const fail = b.addFail("'run-all-demos' does not accept arguments; use 'zig build <demo-target> -- <args>'.");
-        run_all_demos_step.dependOn(&fail.step);
-    } else {
-        const run_all_demos_artifact = addRunStep(
-            b,
-            target,
-            optimize,
-            strip,
-            build_options_module,
-            .{
-                .step_name = "run-all-demos",
-                .description = "Run all demos sequentially through the public API module",
-                .source_path = "src/run_all_demos.zig",
-            },
-        );
-        run_all_demos_step.dependOn(&run_all_demos_artifact.step);
-    }
+    const run_all_demos_artifact = addRunStep(
+        b,
+        target,
+        optimize,
+        strip,
+        build_options_module,
+        .{
+            .step_name = "run-all-demos",
+            .description = "Run all demos sequentially through the public API module",
+            .source_path = "src/run_all_demos.zig",
+        },
+    );
+    run_all_demos_artifact.step.dependOn(addAggregateArgsCheck(b, args_guard, "run-all-demos", "<demo-target>"));
+    run_all_demos_step.dependOn(&run_all_demos_artifact.step);
 
     const generators = [_]RunEntry{
         .{
@@ -488,11 +489,7 @@ pub fn build(b: *std.Build) void {
     };
 
     const bench_runs_step = b.step("benches", "Run all benchmark entrypoints with default arguments");
-    const bench_args = b.args orelse &.{};
-    if (bench_args.len != 0) {
-        const fail = b.addFail("'benches' does not accept arguments; use 'zig build bench-<name> -- <args>'.");
-        bench_runs_step.dependOn(&fail.step);
-    }
+    const benches_args_check = addAggregateArgsCheck(b, args_guard, "benches", "bench-<name>");
     const bench_bins_step = b.step(
         "install-bench-bins",
         "Install benchmark binaries under the selected prefix bin directory",
@@ -507,9 +504,12 @@ pub fn build(b: *std.Build) void {
             build_options_module,
             entry,
         );
-        run_artifact.addArgs(bench_args);
+        run_artifact.addPassthruArgs();
         run_step.dependOn(&run_artifact.step);
-        if (bench_args.len == 0) bench_runs_step.dependOn(&run_artifact.step);
+
+        const aggregate_run = b.addRunArtifact(run_artifact.producer.?);
+        aggregate_run.step.dependOn(benches_args_check);
+        bench_runs_step.dependOn(&aggregate_run.step);
 
         const install_step = b.step(
             b.fmt("install-{s}", .{entry.step_name}),
@@ -603,12 +603,8 @@ fn addTestRunStep(
     test_module.addImport("build_options", build_options_module);
     test_module.addImport("riley", riley_module);
 
-    const default_runner_path = b.graph.zig_lib_directory.join(
-        b.allocator,
-        &.{ "compiler", "test_runner.zig" },
-    ) catch @panic("OOM locating the Zig test runner.");
     test_module.addImport("default_test_runner", b.createModule(.{
-        .root_source_file = .{ .cwd_relative = default_runner_path },
+        .root_source_file = std.Build.LazyPath.zig_lib.path(b, "compiler/test_runner.zig"),
         .target = target,
         .optimize = optimize,
         .strip = strip,
@@ -658,10 +654,39 @@ fn addRunStep(
         ),
     });
     const run_artifact = b.addRunArtifact(executable);
-    if (entry.forward_args) {
-        if (b.args) |args| run_artifact.addArgs(args);
-    }
+    if (entry.forward_args) run_artifact.addPassthruArgs();
     return run_artifact;
+}
+
+fn addArgsGuard(b: *std.Build) *std.Build.Step.Compile {
+    // Passthrough arguments are only available when executing the build graph.
+    const source = b.addWriteFiles().add("reject_build_args.zig",
+        \\const std = @import("std");
+        \\pub fn main(init: std.process.Init) !void {
+        \\    const args = try init.minimal.args.toSlice(init.arena.allocator());
+        \\    if (args.len > 2) std.process.fatal("{s}", .{args[1]});
+        \\}
+    );
+    return b.addExecutable(.{
+        .name = "reject-build-args",
+        .root_module = b.createModule(.{
+            .root_source_file = source,
+            .target = b.graph.host,
+        }),
+    });
+}
+
+fn addAggregateArgsCheck(
+    b: *std.Build,
+    guard: *std.Build.Step.Compile,
+    aggregate_name: []const u8,
+    named_target: []const u8,
+) *std.Build.Step {
+    const run = b.addRunArtifact(guard);
+    run.setName(b.fmt("check arguments for {s}", .{aggregate_name}));
+    run.addArg(b.fmt("'{s}' does not accept arguments; use 'zig build {s} -- <args>'.", .{ aggregate_name, named_target }));
+    run.addPassthruArgs();
+    return &run.step;
 }
 
 fn addBenchInstallStep(

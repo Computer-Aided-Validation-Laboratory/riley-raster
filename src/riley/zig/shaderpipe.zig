@@ -179,7 +179,7 @@ pub const RegistersOutputScalar = RegistersOutput(F);
 pub const RegistersOutputSIMD = RegistersOutput(buildconfig.VecSF);
 
 pub const RegistersWritten = struct {
-    const Mask = std.meta.Int(.unsigned, pipe_cfg.max_registers);
+    const Mask = @Int(.unsigned, pipe_cfg.max_registers);
     channel: Mask = 0,
     field: Mask = 0,
     parameter: Mask = 0,
@@ -1287,19 +1287,19 @@ test "expression validation rejects malformed stacks operands and stores" {
         };
         try std.testing.expectError(case.expected, program.validate(.{}, case.channels));
     }
-    const too_deep = [_]ResolverOp{load} ** (pipe_cfg.max_stack + 1) ++
-        [_]ResolverOp{.add} ** pipe_cfg.max_stack ++ [_]ResolverOp{.{ .store = 0 }};
+    const too_deep = @as([(pipe_cfg.max_stack + 1)]ResolverOp, @splat(load)) ++
+        @as([pipe_cfg.max_stack]ResolverOp, @splat(.add)) ++ [_]ResolverOp{.{ .store = 0 }};
     try std.testing.expectError(error.InvalidProgram, (ResolverProgramInput{
         .operations = &too_deep,
         .constants = &.{1},
     }).validate(.{}, 1));
-    const too_long = [_]ResolverOp{load} ++ [_]ResolverOp{.clamp01} ** (pipe_cfg.max_ops - 1) ++
+    const too_long = [_]ResolverOp{load} ++ @as([(pipe_cfg.max_ops - 1)]ResolverOp, @splat(.clamp01)) ++
         [_]ResolverOp{.{ .store = 0 }};
     try std.testing.expectError(error.InvalidProgram, (ResolverProgramInput{
         .operations = &too_long,
         .constants = &.{1},
     }).validate(.{}, 1));
-    const too_many_constants = [_]F{1} ** (pipe_cfg.max_registers + 1);
+    const too_many_constants: [(pipe_cfg.max_registers + 1)]F = @splat(1);
     try std.testing.expectError(error.InvalidProgram, (ResolverProgramInput{
         .operations = &.{ load, .{ .store = 0 } },
         .constants = &too_many_constants,
@@ -1311,8 +1311,8 @@ test "expression validation rejects malformed stacks operands and stores" {
         }).validate(.{}, 1));
     }
     // Exactly the supported stack depth remains usable, including reduction and store.
-    const operations = [_]ResolverOp{load} ** pipe_cfg.max_stack ++
-        [_]ResolverOp{.add} ** (pipe_cfg.max_stack - 1) ++ [_]ResolverOp{.{ .store = 0 }};
+    const operations = @as([pipe_cfg.max_stack]ResolverOp, @splat(load)) ++
+        @as([(pipe_cfg.max_stack - 1)]ResolverOp, @splat(.add)) ++ [_]ResolverOp{.{ .store = 0 }};
     const program: ResolverInput = .{
         .expression = .{
             .operations = &operations,

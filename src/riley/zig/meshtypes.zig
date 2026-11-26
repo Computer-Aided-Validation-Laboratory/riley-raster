@@ -135,7 +135,7 @@ pub const MeshInput = struct {
 pub const MeshStatic = struct {
     referenced_nodes_num: usize = 0,
     hit_selections: std.EnumArray(shadertypes.RenderRole, meshhit.MeshHitSelection) =
-        .initFill(meshhit.MeshHitSelection.initEmpty()),
+        .initFill(meshhit.MeshHitSelection.empty),
     scene_mesh_idx: usize = 0,
     mesh_type: geometrykernels.MeshType,
     normal_type: normals.NormalType = .exact,

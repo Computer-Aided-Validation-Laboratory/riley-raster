@@ -10,7 +10,7 @@ These two documentation suites are merged so that the Zig API documentation is a
 
 ## 1. Prerequisites
 
-- **Zig 0.16.0**: Available on your system `PATH`.
+- **Zig 0.17.1**: Available on your system `PATH`.
 - **Python >= 3.11**: Installed in a virtual environment (e.g., `.venv`).
 
 ---

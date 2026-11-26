@@ -49,7 +49,7 @@ class ZigSelectionTests(unittest.TestCase):
         self.assertEqual(self.probe.call_args.args[0], self.fallback + ["version"])
 
     def test_mismatched_path_uses_pinned_module(self):
-        self.probe.side_effect = ["0.15.2\n", self.version]
+        self.probe.side_effect = ["0.16.0\n", self.version]
         self.assertEqual(self.select(), self.fallback)
         self.assertEqual(
             [call.args[0] for call in self.probe.call_args_list],
@@ -68,12 +68,12 @@ class ZigSelectionTests(unittest.TestCase):
                 self.assertEqual(self.select(), self.fallback)
 
     def test_mismatched_module_fails_with_actionable_error(self):
-        self.probe.side_effect = ["0.15.2\n", self.version.strip() + "-dev\n"]
+        self.probe.side_effect = ["0.16.0\n", self.version.strip() + "-dev\n"]
         with self.assertRaises(toolchain.ZigUnavailableError) as caught:
             self.select()
         message = str(caught.exception)
         self.assertIn(f"ziglang=={toolchain.REQUIRED_ZIG_VERSION}", message)
-        self.assertIn("0.15.2", message)
+        self.assertIn("0.16.0", message)
         self.assertIn(self.version.strip() + "-dev", message)
 
     def test_missing_module_fails_with_actionable_error(self):

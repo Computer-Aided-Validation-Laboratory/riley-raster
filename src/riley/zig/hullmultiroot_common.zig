@@ -268,9 +268,9 @@ fn fromPoints(points_in: []const vecstack.Vec2F) Points {
 fn rectHull(bounds: distortbounds.DistortBounds) Points {
     return .{
         .x = [_]F{ bounds.x_min, bounds.x_min, bounds.x_max, bounds.x_max } ++
-            [_]F{0} ** 5,
+            @as([5]F, @splat(0)),
         .y = [_]F{ bounds.y_min, bounds.y_max, bounds.y_max, bounds.y_min } ++
-            [_]F{0} ** 5,
+            @as([5]F, @splat(0)),
         .count = 4,
     };
 }

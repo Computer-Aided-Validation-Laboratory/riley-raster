@@ -281,13 +281,13 @@ pub fn Tri3Kernel() type {
                     @as(
                         VecSU8,
                         @splat(
-                            @intFromEnum(newton.NewtonStatus.conv_resid),
+                            @backingInt(newton.NewtonStatus.conv_resid),
                         ),
                     ),
                     @as(
                         VecSU8,
                         @splat(
-                            @intFromEnum(newton.NewtonStatus.fail_dom),
+                            @backingInt(newton.NewtonStatus.fail_dom),
                         ),
                     ),
                 ),
@@ -539,13 +539,13 @@ pub fn Tri6Kernel() type {
                 .v_mask = res.v_conv,
                 .v_status = blk: {
                     const v_status_fail_iter_lim: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_iter_lim));
+                        @splat(@backingInt(newton.NewtonStatus.fail_iter_lim));
                     const v_status_fail_near_singular: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_near_singular));
+                        @splat(@backingInt(newton.NewtonStatus.fail_near_singular));
                     const v_status_conv_resid: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.conv_resid));
+                        @splat(@backingInt(newton.NewtonStatus.conv_resid));
                     const v_status_fail_dom: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_dom));
+                        @splat(@backingInt(newton.NewtonStatus.fail_dom));
                     const v_fail_dom = res.v_pre_dom_conv & !res.v_conv;
                     var v_status = v_status_fail_iter_lim;
                     v_status = @select(
@@ -746,13 +746,13 @@ pub fn Quad4Kernel() type {
                 .v_mask = res.v_conv,
                 .v_status = blk: {
                     const v_status_fail_iter_lim: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_iter_lim));
+                        @splat(@backingInt(newton.NewtonStatus.fail_iter_lim));
                     const v_status_fail_near_singular: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_near_singular));
+                        @splat(@backingInt(newton.NewtonStatus.fail_near_singular));
                     const v_status_conv_resid: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.conv_resid));
+                        @splat(@backingInt(newton.NewtonStatus.conv_resid));
                     const v_status_fail_dom: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_dom));
+                        @splat(@backingInt(newton.NewtonStatus.fail_dom));
                     const v_fail_dom = res.v_pre_dom_conv & !res.v_conv;
                     var v_status = v_status_fail_iter_lim;
                     v_status = @select(
@@ -952,13 +952,13 @@ pub fn Quad89Kernel(comptime N: usize) type {
                 .v_mask = res.v_conv,
                 .v_status = blk: {
                     const v_status_fail_iter_lim: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_iter_lim));
+                        @splat(@backingInt(newton.NewtonStatus.fail_iter_lim));
                     const v_status_fail_near_singular: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_near_singular));
+                        @splat(@backingInt(newton.NewtonStatus.fail_near_singular));
                     const v_status_conv_resid: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.conv_resid));
+                        @splat(@backingInt(newton.NewtonStatus.conv_resid));
                     const v_status_fail_dom: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_dom));
+                        @splat(@backingInt(newton.NewtonStatus.fail_dom));
                     const v_fail_dom = res.v_pre_dom_conv & !res.v_conv;
                     var v_status = v_status_fail_iter_lim;
                     v_status = @select(

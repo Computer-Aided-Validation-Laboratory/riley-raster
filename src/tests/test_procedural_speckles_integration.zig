@@ -175,7 +175,7 @@ test "direct and pipe speckles validate strided UVs without scanning padding" {
     const expected = try renderSpeckleMesh(alloc, scene.camera_input, scene.mesh_input, .tile_local, 1);
 
     // Padded component planes: the last usable V is exactly at the end of the view.
-    var padded = [_]F{std.math.nan(F)} ** 23;
+    var padded: [23]F = @splat(std.math.nan(F));
     var strides = [_]usize{ 2, 12 };
     var strided: ndarray.NDArray(F) = .{ .slice = &padded, .dims = uvs.dims, .strides = &strides };
     for (0..uvs.dims[0]) |node| {

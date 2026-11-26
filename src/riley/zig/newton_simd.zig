@@ -449,13 +449,13 @@ pub fn solveRobustSIMD(
     const v_final_conv = v_conv & v_is_in;
     const v_pre_dom_conv = v_conv;
     const v_status_fail_iter_lim: VecSU8 =
-        @splat(@intFromEnum(newton_common.NewtonStatus.fail_iter_lim));
+        @splat(@backingInt(newton_common.NewtonStatus.fail_iter_lim));
     const v_status_fail_near_singular: VecSU8 =
-        @splat(@intFromEnum(newton_common.NewtonStatus.fail_near_singular));
+        @splat(@backingInt(newton_common.NewtonStatus.fail_near_singular));
     const v_status_conv_resid: VecSU8 =
-        @splat(@intFromEnum(newton_common.NewtonStatus.conv_resid));
+        @splat(@backingInt(newton_common.NewtonStatus.conv_resid));
     const v_status_fail_dom: VecSU8 =
-        @splat(@intFromEnum(newton_common.NewtonStatus.fail_dom));
+        @splat(@backingInt(newton_common.NewtonStatus.fail_dom));
     var v_status: VecSU8 =
         v_status_fail_iter_lim;
     v_status = @select(

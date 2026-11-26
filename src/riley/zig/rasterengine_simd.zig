@@ -704,12 +704,12 @@ fn rasterNewtonMultiSIMDImpl(
     }
 
     var chunk = SubpxSimdChunk{
-        .scratch_x_u = [_]usize{0} ** S,
-        .scratch_y_u = [_]usize{0} ** S,
-        .px_f = [_]F{0} ** S,
-        .py_f = [_]F{0} ** S,
-        .seed_xi = [_]F{0} ** S,
-        .seed_eta = [_]F{0} ** S,
+        .scratch_x_u = @as([S]usize, @splat(0)),
+        .scratch_y_u = @as([S]usize, @splat(0)),
+        .px_f = @as([S]F, @splat(0)),
+        .py_f = @as([S]F, @splat(0)),
+        .seed_xi = @as([S]F, @splat(0)),
+        .seed_eta = @as([S]F, @splat(0)),
         .count = 0,
     };
     var candidates_count: usize = 0;
@@ -1157,8 +1157,8 @@ fn rasterNewtonSIMDImpl(
             );
 
             var v_mask_active = v_x_mask;
-            var xi_arr = [_]F{0.0} ** S;
-            var eta_arr = [_]F{0.0} ** S;
+            var xi_arr: [S]F = @splat(0.0);
+            var eta_arr: [S]F = @splat(0.0);
 
             if (maybe_hull_adaptive != null) {
                 const seed_mode = ctx_rast.config.advanced.solver.oneroot.newton_seed_mode;
@@ -1247,12 +1247,12 @@ fn rasterNewtonSIMDImpl(
                 const lane_idx = subpx_tess_pass_count % S;
                 if (lane_idx == 0) {
                     subpx_scratch.simd_chunks[chunk_idx] = .{
-                        .scratch_x_u = [_]usize{0} ** S,
-                        .scratch_y_u = [_]usize{0} ** S,
-                        .px_f = [_]F{0.0} ** S,
-                        .py_f = [_]F{0.0} ** S,
-                        .seed_xi = [_]F{0.0} ** S,
-                        .seed_eta = [_]F{0.0} ** S,
+                        .scratch_x_u = @as([S]usize, @splat(0)),
+                        .scratch_y_u = @as([S]usize, @splat(0)),
+                        .px_f = @as([S]F, @splat(0.0)),
+                        .py_f = @as([S]F, @splat(0.0)),
+                        .seed_xi = @as([S]F, @splat(0.0)),
+                        .seed_eta = @as([S]F, @splat(0.0)),
                         .count = 0,
                     };
                 }

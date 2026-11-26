@@ -310,8 +310,8 @@ test "enum boundary conversions and pattern/evaluator spellings" {
         const resolution = std.enums.fromInt(MaskResolution, value);
         try std.testing.expectEqual(raw == 1 or raw == 4 or raw == 9, neighbors != null);
         try std.testing.expectEqual(raw == 8 or raw == 12 or raw == 16, resolution != null);
-        if (neighbors) |n| try std.testing.expectEqual(value, @intFromEnum(n));
-        if (resolution) |r| try std.testing.expectEqual(value, @intFromEnum(r));
+        if (neighbors) |n| try std.testing.expectEqual(value, @backingInt(n));
+        if (resolution) |r| try std.testing.expectEqual(value, @backingInt(r));
     }
     try std.testing.expectEqual(Neighborhood.nine, default_neighborhood);
     try std.testing.expectEqual(MaskResolution.twelve, default_mask_resolution);

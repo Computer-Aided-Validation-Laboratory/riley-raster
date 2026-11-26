@@ -884,7 +884,7 @@ test "polynomial camera CSV round trips each order and chained model" {
     defer tmp.cleanup();
     for ([_]u8{ 1, 2, 3, 4, 5, 6, 7 }) |degree| {
         for ([_]cameramodels.PolyMode{ .coordinate, .displacement }) |mode| {
-            var coeffs = [_]F{0} ** 72;
+            var coeffs: [72]F = @splat(0);
             for (coeffs[0 .. 2 * cameramodels.polyTermCount(degree)], 0..) |*value, ii|
                 value.* = @as(F, @floatFromInt(ii + 1)) * 1e-15;
             const poly = try cameramodels.PolyMap.init(

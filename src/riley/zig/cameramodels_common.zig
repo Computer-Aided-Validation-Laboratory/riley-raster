@@ -290,7 +290,7 @@ fn generatePolyPowers() [polyTermCount(POLY_MAX_DEGREE)]PolyPowers {
 }
 
 pub const poly_powers = generatePolyPowers();
-const identity_poly_coeffs = [_]F{0} ** 6;
+const identity_poly_coeffs: [6]F = @splat(0);
 
 pub const PolyMap = struct {
     pub const Params = @This();
@@ -1070,7 +1070,7 @@ test "polynomial table ordering and checked construction" {
     );
     try std.testing.expectError(
         error.InvalidPolyCoeffCount,
-        PolyMap.init(1, .coordinate, &([_]F{0} ** 8)),
+        PolyMap.init(1, .coordinate, &(@as([8]F, @splat(0)))),
     );
     for ([_]F{ std.math.nan(F), std.math.inf(F), -std.math.inf(F) }) |invalid| {
         try std.testing.expectError(
@@ -1122,7 +1122,7 @@ test "degree seven polynomial matches BC and polynomial BCExt subset" {
     const inv_allowed: F = if (F == f32) 3e-5 else 1e-9;
     for (cases) |case| {
         const p = case.brown;
-        var coeffs = [_]F{0} ** 72;
+        var coeffs: [72]F = @splat(0);
         // Independent, explicit binomial expansion in the documented term order.
         coeffs[2 * 3] = 3 * p.p2 + p.s1;
         coeffs[2 * 3 + 1] = p.p1 + p.s3;

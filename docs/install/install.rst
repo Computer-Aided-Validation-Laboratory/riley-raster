@@ -15,10 +15,14 @@ packaged quickstart from a writable directory:
 The demo writes to ``out_riley_py/demo00_quickstart/``. The package is imported
 as ``riley``; see the :doc:`Python API <../python-api>` for the reference.
 
+On macOS, building the Python package from source requires macOS 13 or newer
+for the pinned ``ziglang`` build dependency. This does not change the target
+of prebuilt Riley wheels.
+
 Zig
 ---
 
-Install `Zig 0.16.0 <https://ziglang.org/download/>`_ and clone the
+Install `Zig 0.17.1 <https://ziglang.org/download/>`_ and clone the
 `Riley repository <https://github.com/Computer-Aided-Validation-Laboratory/riley-raster>`_.
 From the repository root, run:
 
