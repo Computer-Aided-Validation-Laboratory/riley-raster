@@ -8,7 +8,7 @@ import statistics
 from paper_bench_common import combined_case_dir_name
 from paper_bench_common import load_stable_row_map
 from paper_bench_common import latest_run_dir_with_paths
-from paper_const import repo_root
+from bench_common import repo_root
 
 
 SAVE_STRATEGY = "memory"

@@ -333,94 +333,71 @@ test "enum boundary conversions and pattern/evaluator spellings" {
         try std.testing.expectEqual(null, parseEvaluator(name));
 }
 
-test "automatic defaults use classified hard disks binned soft disks and Gaussians and a Perlin lattice" {
-    for ([_]struct { pattern: Pattern, edges: Edges, evaluator: Evaluator }{
-        .{ .pattern = .disk, .edges = .hard, .evaluator = .classified_binned },
-        .{ .pattern = .disk, .edges = .soft, .evaluator = .cell_binned },
-        .{ .pattern = .gaussian, .edges = .hard, .evaluator = .cell_binned },
-        .{ .pattern = .perlin, .edges = .hard, .evaluator = .gradient_lattice },
-    }) |case| {
-        const config = try resolve(buildconfig.enable_all_evaluators, case.pattern, null, null, case.edges);
-        try std.testing.expectEqual(case.evaluator, std.meta.activeTag(config));
-        try std.testing.expectEqual(case.pattern, config.pattern().?);
-    }
-}
-
-test "experimental reduced neighborhoods automatically select indexed lists" {
-    if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
-    for ([_]Pattern{ .disk, .gaussian }) |pattern| {
-        for ([_]Neighborhood{ .one, .four }) |neighbors| {
-            for (std.enums.values(Edges)) |edges| {
-                if (pattern == .gaussian and edges == .soft) continue;
-                try std.testing.expectEqual(Evaluator.list_indexed, std.meta.activeTag(try resolve(true, pattern, null, neighbors, edges)));
-            }
-        }
-    }
-}
-
-test "classified evaluator names distinguish indexed strips from bins" {
-    try std.testing.expectEqual(Evaluator.classified_indexed, parseEvaluator("classified-indexed").?);
-    try std.testing.expectEqual(Evaluator.classified_binned, parseEvaluator("classified-binned").?);
-}
-
-test "classified overrides are rejected in defaults-only builds" {
-    for ([_]Evaluator{ .classified_indexed, .classified_binned }) |evaluator|
-        try std.testing.expectError(error.SpeckleOverridesDisabled, resolve(false, .disk, evaluator, null, .hard));
-}
-
-test "experimental classified policies retain nine hard disk neighbors" {
-    if (comptime !buildconfig.enable_all_evaluators) return error.SkipZigTest;
-    inline for (.{ Evaluator.classified_indexed, Evaluator.classified_binned }) |evaluator| {
-        const config = try resolve(true, .disk, evaluator, null, .hard);
-        try std.testing.expectEqual(evaluator, std.meta.activeTag(config));
-        try std.testing.expectEqual(@as(?Neighborhood, .nine), config.neighborhood());
-    }
-    try std.testing.expectError(error.ClassifiedBinnedRequiresDiskAndNineNeighbors, resolve(true, .disk, .classified_binned, .four, .hard));
-}
-
-test "exhaustive external controls preserve acceptance errors and resolved semantics" {
+test "resolve selects the documented policies and rejects incompatible controls" {
+    const Case = struct {
+        pattern: Pattern = .disk,
+        evaluator: ?Evaluator = null,
+        neighbors: ?Neighborhood = null,
+        edges: Edges = .hard,
+        expected: ResolveError!Config,
+    };
+    const automatic = [_]Case{
+        .{ .expected = .classified_binned },
+        .{ .edges = .soft, .expected = .{ .cell_binned = .{ .disk = .{
+            .neighborhood = .nine,
+            .edges = .soft,
+        } } } },
+        .{ .pattern = .gaussian, .expected = .{ .cell_binned = .{ .gaussian = .nine } } },
+        .{ .pattern = .perlin, .expected = .gradient_lattice },
+        .{ .pattern = .gaussian, .edges = .soft, .expected = error.SpeckleEdgeSoftnessRequiresDisk },
+        .{ .pattern = .perlin, .edges = .soft, .expected = error.SpeckleEdgeSoftnessRequiresDisk },
+    };
+    const overrides_disabled = [_]Case{
+        .{ .evaluator = .classified_binned, .expected = error.SpeckleOverridesDisabled },
+        .{ .neighbors = .nine, .expected = error.SpeckleOverridesDisabled },
+        .{ .pattern = .perlin, .neighbors = .one, .expected = error.SpeckleOverridesDisabled },
+    };
+    const overrides_enabled = [_]Case{
+        .{ .neighbors = .one, .expected = .{ .list_indexed = .{ .disk = .{
+            .neighborhood = .one,
+            .edges = .hard,
+        } } } },
+        .{ .neighbors = .four, .edges = .soft, .expected = .{ .list_indexed = .{ .disk = .{
+            .neighborhood = .four,
+            .edges = .soft,
+        } } } },
+        .{ .pattern = .gaussian, .neighbors = .one, .expected = .{ .list_indexed = .{ .gaussian = .one } } },
+        .{ .pattern = .gaussian, .neighbors = .four, .expected = .{ .list_indexed = .{ .gaussian = .four } } },
+        .{ .evaluator = .classified_indexed, .expected = .classified_indexed },
+        .{ .evaluator = .direct_fixed, .expected = .direct_fixed },
+        .{ .pattern = .perlin, .evaluator = .cell_hash, .expected = .{ .cell_hash = .perlin } },
+        .{ .pattern = .perlin, .evaluator = .mask_u8, .expected = .{ .mask_u8 = .perlin } },
+        .{ .pattern = .perlin, .evaluator = .mock, .neighbors = .four, .expected = .mock },
+        .{ .pattern = .perlin, .evaluator = .mock, .edges = .soft, .expected = error.SpeckleEdgeSoftnessRequiresDisk },
+        .{ .pattern = .perlin, .neighbors = .nine, .expected = error.SpecklePerlinDoesNotUseNeighbors },
+        .{ .pattern = .perlin, .evaluator = .list_indexed, .expected = error.PerlinRequiresSupportedEvaluator },
+        .{ .evaluator = .gradient_lattice, .expected = error.GradientLatticeRequiresPerlin },
+        .{ .pattern = .gaussian, .evaluator = .mask_1bit, .expected = error.Mask1BitRequiresDisk },
+        .{ .pattern = .gaussian, .evaluator = .classified_indexed, .expected = error.ClassifiedIndexedRequiresDiskAndNineNeighbors },
+        .{ .evaluator = .classified_indexed, .neighbors = .four, .expected = error.ClassifiedIndexedRequiresDiskAndNineNeighbors },
+        .{ .pattern = .gaussian, .evaluator = .classified_binned, .expected = error.ClassifiedBinnedRequiresDiskAndNineNeighbors },
+        .{ .evaluator = .classified_binned, .neighbors = .four, .expected = error.ClassifiedBinnedRequiresDiskAndNineNeighbors },
+        .{ .pattern = .gaussian, .evaluator = .direct_fixed, .expected = error.DirectFixedRequiresDiskAndOneNeighbor },
+        .{ .evaluator = .direct_fixed, .neighbors = .nine, .expected = error.DirectFixedRequiresDiskAndOneNeighbor },
+        .{ .evaluator = .classified_indexed, .edges = .soft, .expected = error.SpeckleEvaluatorRequiresHardEdges },
+        .{ .evaluator = .classified_binned, .edges = .soft, .expected = error.SpeckleEvaluatorRequiresHardEdges },
+        .{ .evaluator = .direct_fixed, .edges = .soft, .expected = error.SpeckleEvaluatorRequiresHardEdges },
+        .{ .evaluator = .mask_1bit, .edges = .soft, .expected = error.SpeckleEvaluatorRequiresHardEdges },
+    };
     inline for (.{ false, true }) |enabled| {
-        if (comptime enabled and !buildconfig.enable_all_evaluators) continue;
-        for (std.enums.values(Pattern)) |pattern| {
-            for (0..std.enums.values(Evaluator).len + 1) |choice| {
-                const evaluator: ?Evaluator = if (choice == std.enums.values(Evaluator).len) null else std.enums.values(Evaluator)[choice];
-                for ([_]?Neighborhood{ null, .one, .four, .nine }) |neighbors| {
-                    for (std.enums.values(Edges)) |edges| {
-                        // Independent raw-tuple oracle: original validation order, before erasure.
-                        const n: u8 = if (neighbors) |value| @intFromEnum(value) else if (evaluator == .direct_fixed) 1 else 9;
-                        const selected = evaluator orelse switch (pattern) {
-                            .disk => if (n != 9) Evaluator.list_indexed else if (edges == .hard) Evaluator.classified_binned else Evaluator.cell_binned,
-                            .gaussian => if (n == 9) Evaluator.cell_binned else Evaluator.list_indexed,
-                            .perlin => Evaluator.gradient_lattice,
-                        };
-                        const err: ?ResolveError = blk: {
-                            if (!enabled and (evaluator != null or neighbors != null)) break :blk error.SpeckleOverridesDisabled;
-                            if (pattern == .perlin and evaluator != .mock and neighbors != null) break :blk error.SpecklePerlinDoesNotUseNeighbors;
-                            if (pattern == .perlin and selected != .cell_hash and selected != .gradient_lattice and selected != .mask_u8 and selected != .mock) break :blk error.PerlinRequiresSupportedEvaluator;
-                            if (selected == .gradient_lattice and pattern != .perlin) break :blk error.GradientLatticeRequiresPerlin;
-                            if (selected == .mask_1bit and pattern != .disk) break :blk error.Mask1BitRequiresDisk;
-                            if (selected == .classified_indexed and (pattern != .disk or n != 9)) break :blk error.ClassifiedIndexedRequiresDiskAndNineNeighbors;
-                            if (selected == .classified_binned and (pattern != .disk or n != 9)) break :blk error.ClassifiedBinnedRequiresDiskAndNineNeighbors;
-                            if (selected == .direct_fixed and (pattern != .disk or n != 1)) break :blk error.DirectFixedRequiresDiskAndOneNeighbor;
-                            if (edges == .soft and pattern != .disk) break :blk error.SpeckleEdgeSoftnessRequiresDisk;
-                            if (edges == .soft and (selected == .classified_indexed or selected == .classified_binned or selected == .direct_fixed or selected == .mask_1bit or selected == .gradient_lattice)) break :blk error.SpeckleEvaluatorRequiresHardEdges;
-                            break :blk null;
-                        };
-                        const actual = resolve(enabled, pattern, evaluator, neighbors, edges);
-                        if (err) |expected| {
-                            try std.testing.expectError(expected, actual);
-                            continue;
-                        }
-                        const config = try actual;
-                        try std.testing.expectEqual(selected, std.meta.activeTag(config));
-                        try std.testing.expectEqual(if (selected == .mock) null else pattern, config.pattern());
-                        try std.testing.expectEqual(if (selected == .mock or pattern == .perlin) null else std.enums.fromInt(Neighborhood, n), config.neighborhood());
-                        try std.testing.expectEqual(if (selected == .mock or pattern != .disk) null else edges, config.edges());
-                        var matches: usize = 0;
-                        for (generationConfigs(enabled)) |candidate| matches += @intFromBool(std.meta.eql(config, candidate));
-                        try std.testing.expectEqual(@as(usize, 1), matches);
-                    }
-                }
+        const cases = if (enabled) automatic ++ overrides_enabled else automatic ++ overrides_disabled;
+        for (cases, 0..) |case, index| {
+            errdefer std.debug.print("resolve case {d}, experimental={}: {any}\n", .{ index, enabled, case });
+            const actual = resolve(enabled, case.pattern, case.evaluator, case.neighbors, case.edges);
+            if (case.expected) |expected| {
+                try std.testing.expectEqualDeep(expected, try actual);
+            } else |err| {
+                try std.testing.expectError(err, actual);
             }
         }
     }

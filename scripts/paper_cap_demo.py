@@ -15,7 +15,8 @@ from PIL import Image
 from scipy.interpolate import LinearNDInterpolator
 from scipy.spatial import Delaunay
 
-from paper_const import PAPER_DIR, PLOT_RESOLUTION_DPI, repo_root
+from bench_common import repo_root
+from paper_const import PAPER_DIR, PLOT_RESOLUTION_DPI
 
 
 VERIF_DIR = Path("verif")

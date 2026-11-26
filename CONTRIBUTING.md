@@ -1,6 +1,6 @@
 # Contributing to riley-raster
 
-Thank you for wanting to contribute to the development of riley-raster. Before contributing, please read this page, along with our [Code of Conduct](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/CODE_OF_CONDUCT.md), [Security](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/SECURITY.md), and relevant [Style](https://github.com/Computer-Aided-Validation-Laboratory/styleguides/tree/main/guides) guidelines.
+Thank you for wanting to contribute to the development of riley-raster. Before contributing, please read this page, along with our [Code of Conduct](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/CODE_OF_CONDUCT.md) and [Security](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/SECURITY.md) guidelines.
 
 
 ## Reporting Security Concerns
@@ -24,8 +24,6 @@ Code contributions should be associated with an issue or feature request. Please
 Please be aware that all riley-raster code is under the [MIT Licencse](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/LICENSE). It is your responsiblity to ensure that all contributions are compatible with this.
 
 ## AI Usage
-
-Refer to the AI guide included in our [style guides](https://github.com/Computer-Aided-Validation-Laboratory/styleguides/tree/main/guides) for more information on using AI sensibly and effectively.
 
 The riley-raster project has strict rules for AI usage:
 
@@ -130,27 +128,36 @@ def check_strain_files(strain_files: str | Path) -> list[str]:
 
 ### Testing
 
-Please test you code before submitting a pull request.
-
-The recommended testing workflow for Riley is:
+For routine Zig development, run focused checks and the Verification and Basic
+suites in Debug, f64, with SIMD on:
 
 ```bash
-# Step 1: Run gold-independent units and the precision/SIMD/evaluator-policy matrix
-zig build test-unit
-zig build test-configs
-
-# Step 2: Run the core test suites (fast, repository-packaged references)
-zig build test-verif
-zig build test-basic
-.venv/bin/pytest src/riley/pytests/
-
-# Step 3: Generate reference gold data for the Full suite
-zig build gen-gold-full -Doptimize=ReleaseSafe
-
-# Step 4: Run the exhaustive Full test suite
-zig build test-full -Doptimize=ReleaseSafe
+zig build test-unit -Dprecision=f64 -Dsimd=on  # Gold-independent; also included in Basic
+zig build test-verif -Dprecision=f64 -Dsimd=on
+zig build test-basic -Dprecision=f64 -Dsimd=on
 ```
-More details on testing zig code for riley-raster can be found at [Riley Testing Architecture & Test Suites](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/dev/TESTING.md).
+
+The CI target `zig build test-configs` runs the gold-independent native suite
+across precision, SIMD, evaluator policy, and mask resolution. It selects its own
+matrix even if precision and SIMD flags are supplied; it is not a routine local
+check. AI agents must not run it unless the user explicitly authorises the
+matrix configurations.
+
+For explicitly requested Zig consolidation or full verification, run the Full
+suite in ReleaseSafe, f64, with SIMD on and off:
+
+```bash
+zig build test-full -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+zig build test-full -Dprecision=f64 -Dsimd=off -Doptimize=ReleaseSafe
+```
+
+Use existing Full references. If they are missing, follow the reference setup in
+[the Full suite guide](dev/TESTING.md#6-full-test-suite-test_full); do not
+regenerate existing gold without explicit approval. For approved C ABI/Python
+integration, also run the relevant tests with
+`.venv/bin/pytest src/riley/pytests/`. AI agents must follow the explicit
+[stage gates](AGENTS.md#1-development-workflow--mandatory-stage-gates); passing
+checks does not authorise advancing to another stage.
 
 
 ## Creating a Pull Request

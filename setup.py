@@ -11,7 +11,6 @@ import sys
 import shutil
 import platform
 import importlib.util
-import sysconfig
 from pathlib import Path
 from setuptools import setup, Extension
 from setuptools.command.build_py import build_py
@@ -22,7 +21,18 @@ import numpy
 
 DIST_NAME = "riley-raster"
 PROJECT_ROOT = Path(__file__).resolve().parent
-REQUIRED_ZIG_VERSION = "0.16.0"
+
+# Load the selector without importing riley, whose extension is not built yet.
+zig_toolchain_path = PROJECT_ROOT / "src" / "riley" / "_zig_toolchain.py"
+zig_toolchain_spec = importlib.util.spec_from_file_location(
+    "_riley_build_zig_toolchain", zig_toolchain_path,
+)
+if zig_toolchain_spec is None or zig_toolchain_spec.loader is None:
+    raise RuntimeError(f"Could not load Zig toolchain selector: {zig_toolchain_path}")
+_zig_toolchain = importlib.util.module_from_spec(zig_toolchain_spec)
+zig_toolchain_spec.loader.exec_module(_zig_toolchain)
+
+subprocess.check_call([sys.executable, str(PROJECT_ROOT / "scripts" / "gen_c_abi.py"), "--check"])
 
 # -----------------------------------------------------------------------------
 # Platform-specific utilities
@@ -60,47 +70,6 @@ def lib_link_name(lib_name: str) -> str:
     return f"{PLATFORM_INFO['lib_prefix']}{lib_name}{PLATFORM_INFO['lib_ext']}"
 
 
-def get_windows_target_triple() -> str:
-    """Match the Python interpreter, independently of published wheel architectures."""
-    platform_tag = sysconfig.get_platform().lower()
-    if platform_tag == "win32":
-        return "x86-windows-msvc"
-    if platform_tag in ("win-amd64", "win_amd64"):
-        return "x86_64-windows-msvc"
-    if platform_tag in ("win-arm64", "win_arm64"):
-        return "aarch64-windows-msvc"
-
-    raise RuntimeError(
-        f"Unsupported Windows Python platform for Zig build: {platform_tag}"
-    )
-
-
-def select_zig_runner() -> list[str]:
-    """Use PATH Zig only at the pinned version, otherwise try bundled ziglang."""
-    zig_bin = shutil.which("zig")
-    candidates = [[zig_bin]] if zig_bin else []
-    candidates.append([sys.executable, "-m", "ziglang"])
-    failures = []
-    for runner in candidates:
-        try:
-            version = subprocess.check_output(
-                runner + ["version"],
-                text=True,
-                stderr=subprocess.STDOUT,
-                timeout=10,
-            ).strip()
-        except (OSError, subprocess.SubprocessError) as exc:
-            failures.append(f"{' '.join(runner)}: {exc}")
-            continue
-        if version == REQUIRED_ZIG_VERSION:
-            return runner
-        failures.append(f"{' '.join(runner)}: version {version!r}")
-    raise RuntimeError(
-        f"Riley requires Zig {REQUIRED_ZIG_VERSION}. "
-        f"Install ziglang=={REQUIRED_ZIG_VERSION} in the build environment "
-        "or put that Zig version on PATH. " + "; ".join(failures)
-    )
-
 
 # -----------------------------------------------------------------------------
 # Generated package data sync
@@ -136,8 +105,9 @@ class RileyBuildPy(build_py):
         ensure_python_package_data()
         self.run_command("build_ext")
 
-        generated_lib = Path(self.build_lib) / "riley" / "cython" / lib_link_name("c_riley")
-        source_lib = PROJECT_ROOT / "src" / "riley" / "cython" / lib_link_name("c_riley")
+        lib_name = lib_link_name("c_riley")
+        generated_lib = Path(self.build_lib) / "riley" / "cython" / lib_name
+        source_lib = PROJECT_ROOT / "src" / "riley" / "cython" / lib_name
         if generated_lib.is_file():
             shutil.copy2(generated_lib, source_lib)
 
@@ -145,7 +115,8 @@ class RileyBuildPy(build_py):
 
     def _get_data_files(self):
         data_files = super()._get_data_files()
-        generated_lib = Path(self.build_lib) / "riley" / "cython" / lib_link_name("c_riley")
+        lib_name = lib_link_name("c_riley")
+        generated_lib = Path(self.build_lib) / "riley" / "cython" / lib_name
         source_dir = PROJECT_ROOT / "src" / "riley" / "cython"
         if generated_lib.is_file():
             data_files.append((
@@ -183,7 +154,7 @@ class MultiBuildExt(build_ext):
         zig_target_args = []
         zig_soname_args = []
         if is_windows:
-            target_triple = get_windows_target_triple()
+            target_triple = _zig_toolchain.get_windows_target_triple()
             zig_target_args = ["-target", target_triple]
         elif is_darwin:
             macos_arch = platform.machine().lower()
@@ -193,7 +164,8 @@ class MultiBuildExt(build_ext):
                 macos_target_arch = "x86_64"
             else:
                 raise RuntimeError(
-                    f"Unsupported macOS architecture for Zig build: {macos_arch}"
+                    "Unsupported macOS architecture for Zig build: "
+                    f"{macos_arch}"
                 )
             zig_target_args = ["-target", f"{macos_target_arch}-macos.11.0"]
             zig_soname_args = [
@@ -219,7 +191,7 @@ class MultiBuildExt(build_ext):
 
         print(f"Zig build command:\nzig {' '.join(zig_build)}\n")
 
-        zig_runner = select_zig_runner()
+        zig_runner = _zig_toolchain.select_zig_runner()
 
         try:
             subprocess.check_call(
@@ -324,7 +296,9 @@ is_darwin = system == "darwin"
 # Configure compiler flags based on OS to support both MSVC and GCC/Clang
 if is_windows:
     cython_compile_args = ["/fp:fast", "/O2"]
-    cython_link_args = ["msvcrt.lib", "ucrt.lib", "vcruntime.lib", "kernel32.lib",]
+    cython_link_args = [
+        "msvcrt.lib", "ucrt.lib", "vcruntime.lib", "kernel32.lib",
+    ]
     runtime_lib_dirs = []
 elif is_darwin:
     cython_compile_args = ["-ffast-math", "-O3"]

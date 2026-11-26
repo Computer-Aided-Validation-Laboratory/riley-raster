@@ -20,7 +20,8 @@ const VecSU = buildconfig.VecSU;
 const lut_size = cfg.interp_lut_size;
 const tol = cfg.tol;
 
-const common = @import("textureops_common.zig");
+const texturetypes = @import("texturetypes.zig");
+const textureops_common = @import("textureops_common.zig");
 
 // --------------------------------------------------------------------------
 // Strategy Map:
@@ -47,41 +48,13 @@ const common = @import("textureops_common.zig");
 //         └── sampConvoOneLane()  (SIMD-Tap Convolution: 1 pixel)
 // --------------------------------------------------------------------------
 
-// --------------------------------------------------------------------------------------
-// Public Constants & Public Types
-// --------------------------------------------------------------------------------------
-
-pub const TexSamp = common.TexSamp;
-pub const TexSampMode = common.TexSampMode;
-pub const TexSampConfig = common.TexSampConfig;
-pub const Tex = common.Tex;
-
-const catmull_rom_lut = common.catmull_rom_lut;
-const mitchell_netravali_lut = common.mitchell_netravali_lut;
-const cubic_bspline_lut = common.cubic_bspline_lut;
-const lanczos2_lut = common.lanczos2_lut;
-const lanczos3_lut = common.lanczos3_lut;
-const quintic_bspline_lut = common.quintic_bspline_lut;
-const cubicCoeffCatmullRom = common.cubicCoeffCatmullRom;
-const cubicCoeffMitchellNetravali = common.cubicCoeffMitchellNetravali;
-const cubicBSplineCoeff = common.cubicBSplineCoeff;
-const lanczos2Coeff = common.lanczos2Coeff;
-const lanczos3Coeff = common.lanczos3Coeff;
-const quinticBSplineCoeff = common.quinticBSplineCoeff;
-const getLerpSampCoeffs = common.getLerpSampCoeffs;
-const getLerpSampCoeffsRuntime = common.getLerpSampCoeffsRuntime;
-const getPx = common.getPx;
-
-pub const sampScal = common.sampScal;
-pub const sampGrey = common.sampGrey;
-
 // --------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------
 
 pub inline fn sampWide(
     comptime C: usize,
-    comptime config: TexSampConfig,
+    comptime config: texturetypes.TexSampConfig,
     tex: anytype,
     v_u: VecSF,
     v_v: VecSF,
@@ -165,7 +138,7 @@ pub inline fn sampWide(
 
 pub inline fn sampLanes(
     comptime C: usize,
-    comptime config: TexSampConfig,
+    comptime config: texturetypes.TexSampConfig,
     v_mask_active: VecSB,
     tex: anytype,
     v_u: VecSF,
@@ -202,7 +175,7 @@ pub inline fn sampLanes(
 
 pub inline fn sampLanesTri3(
     comptime C: usize,
-    comptime config: TexSampConfig,
+    comptime config: texturetypes.TexSampConfig,
     v_mask_active: VecSB,
     tex: anytype,
     v_u: VecSF,
@@ -294,7 +267,7 @@ pub inline fn sampLanesTri3(
 
 pub inline fn sampOneLane(
     comptime C: usize,
-    comptime config: TexSampConfig,
+    comptime config: texturetypes.TexSampConfig,
     tex: anytype,
     u: F,
     v: F,
@@ -318,7 +291,7 @@ pub inline fn sampOneLane(
     const tex_y_round = @as(isize, @intFromFloat(@round(yf)));
 
     return switch (config.sample) {
-        .nearest => getPx(
+        .nearest => textureops_common.getPx(
             C,
             tex,
             tex_x_round,
@@ -540,8 +513,8 @@ inline fn sampConvoWide(
 
 fn samp4TapWide(
     comptime C: usize,
-    comptime sample: TexSamp,
-    comptime mode: TexSampMode,
+    comptime sample: texturetypes.TexSamp,
+    comptime mode: texturetypes.TexSampMode,
     tex: anytype,
     v_tex_x_i: [S]isize,
     v_tex_y_i: [S]isize,
@@ -555,10 +528,10 @@ fn samp4TapWide(
     const tex_y_frac_arr: [S]F = v_tex_y_frac;
 
     const lut = switch (sample) {
-        .cubic_catmull_rom => catmull_rom_lut,
-        .cubic_mitchell_netravali => mitchell_netravali_lut,
-        .cubic_bspline => cubic_bspline_lut,
-        .lanczos2 => lanczos2_lut,
+        .cubic_catmull_rom => textureops_common.catmull_rom_lut,
+        .cubic_mitchell_netravali => textureops_common.mitchell_netravali_lut,
+        .cubic_bspline => textureops_common.cubic_bspline_lut,
+        .lanczos2 => textureops_common.lanczos2_lut,
         else => unreachable,
     };
 
@@ -646,12 +619,12 @@ fn samp4TapWide(
             var samp_coeff_sum_arr: [S]F = @splat(0.0);
 
             for (0..S) |ii| {
-                const coeffs_x_lane = getLerpSampCoeffs(
+                const coeffs_x_lane = textureops_common.getLerpSampCoeffs(
                     TAP,
                     lut,
                     tex_x_frac_arr[ii],
                 );
-                const coeffs_y_lane = getLerpSampCoeffs(
+                const coeffs_y_lane = textureops_common.getLerpSampCoeffs(
                     TAP,
                     lut,
                     tex_y_frac_arr[ii],
@@ -698,8 +671,8 @@ fn samp4TapWide(
 
 fn samp6TapWide(
     comptime C: usize,
-    comptime sample: TexSamp,
-    comptime mode: TexSampMode,
+    comptime sample: texturetypes.TexSamp,
+    comptime mode: texturetypes.TexSampMode,
     tex: anytype,
     v_tex_x_i: [S]isize,
     v_tex_y_i: [S]isize,
@@ -713,8 +686,8 @@ fn samp6TapWide(
     const tex_y_frac_arr: [S]F = v_tex_y_frac;
 
     const lut = switch (sample) {
-        .lanczos3 => lanczos3_lut,
-        .quintic_bspline => quintic_bspline_lut,
+        .lanczos3 => textureops_common.lanczos3_lut,
+        .quintic_bspline => textureops_common.quintic_bspline_lut,
         else => unreachable,
     };
 
@@ -796,13 +769,13 @@ fn samp6TapWide(
             var samp_coeff_sum_arr: [S]F = @splat(0.0);
 
             for (0..S) |ii| {
-                const coeffs_x_lane = getLerpSampCoeffs(
+                const coeffs_x_lane = textureops_common.getLerpSampCoeffs(
                     TAP,
                     lut,
                     tex_x_frac_arr[ii],
                 );
 
-                const coeffs_y_lane = getLerpSampCoeffs(
+                const coeffs_y_lane = textureops_common.getLerpSampCoeffs(
                     TAP,
                     lut,
                     tex_y_frac_arr[ii],
@@ -940,7 +913,7 @@ inline fn sampConvoOneLane(
             for (0..TAP) |ii| {
                 const w = samp_coeff_x[ii] * samp_coeff_y[jj];
 
-                const px = getPx(
+                const px = textureops_common.getPx(
                     C,
                     tex,
                     tex_start_x + @as(isize, @intCast(ii)),
@@ -965,8 +938,8 @@ inline fn sampConvoOneLane(
 
 fn samp4TapOneLane(
     comptime C: usize,
-    comptime sample: TexSamp,
-    comptime mode: TexSampMode,
+    comptime sample: texturetypes.TexSamp,
+    comptime mode: texturetypes.TexSampMode,
     tex: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
@@ -976,18 +949,18 @@ fn samp4TapOneLane(
     const TAP = 4;
 
     const coeff_fun = switch (sample) {
-        .cubic_catmull_rom => cubicCoeffCatmullRom,
-        .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
-        .cubic_bspline => cubicBSplineCoeff,
-        .lanczos2 => lanczos2Coeff,
+        .cubic_catmull_rom => textureops_common.cubicCoeffCatmullRom,
+        .cubic_mitchell_netravali => textureops_common.cubicCoeffMitchellNetravali,
+        .cubic_bspline => textureops_common.cubicBSplineCoeff,
+        .lanczos2 => textureops_common.lanczos2Coeff,
         else => unreachable,
     };
 
     const lut = switch (sample) {
-        .cubic_catmull_rom => catmull_rom_lut,
-        .cubic_mitchell_netravali => mitchell_netravali_lut,
-        .cubic_bspline => cubic_bspline_lut,
-        .lanczos2 => lanczos2_lut,
+        .cubic_catmull_rom => textureops_common.catmull_rom_lut,
+        .cubic_mitchell_netravali => textureops_common.mitchell_netravali_lut,
+        .cubic_bspline => textureops_common.cubic_bspline_lut,
+        .lanczos2 => textureops_common.lanczos2_lut,
         else => unreachable,
     };
 
@@ -1032,8 +1005,8 @@ fn samp4TapOneLane(
             );
         },
         .lut_lerp => blk: {
-            const coeffs_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
-            const coeffs_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
+            const coeffs_x = textureops_common.getLerpSampCoeffs(TAP, lut, tex_x_frac);
+            const coeffs_y = textureops_common.getLerpSampCoeffs(TAP, lut, tex_y_frac);
 
             break :blk sampConvoOneLane(
                 C,
@@ -1050,8 +1023,8 @@ fn samp4TapOneLane(
 
 fn samp6TapOneLane(
     comptime C: usize,
-    comptime sample: TexSamp,
-    comptime mode: TexSampMode,
+    comptime sample: texturetypes.TexSamp,
+    comptime mode: texturetypes.TexSampMode,
     tex: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
@@ -1061,14 +1034,14 @@ fn samp6TapOneLane(
     const TAP = 6;
 
     const coeff_fun = switch (sample) {
-        .lanczos3 => lanczos3Coeff,
-        .quintic_bspline => quinticBSplineCoeff,
+        .lanczos3 => textureops_common.lanczos3Coeff,
+        .quintic_bspline => textureops_common.quinticBSplineCoeff,
         else => unreachable,
     };
 
     const lut = switch (sample) {
-        .lanczos3 => lanczos3_lut,
-        .quintic_bspline => quintic_bspline_lut,
+        .lanczos3 => textureops_common.lanczos3_lut,
+        .quintic_bspline => textureops_common.quintic_bspline_lut,
         else => unreachable,
     };
 
@@ -1117,8 +1090,8 @@ fn samp6TapOneLane(
             );
         },
         .lut_lerp => blk: {
-            const coeffs_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
-            const coeffs_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
+            const coeffs_x = textureops_common.getLerpSampCoeffs(TAP, lut, tex_x_frac);
+            const coeffs_y = textureops_common.getLerpSampCoeffs(TAP, lut, tex_y_frac);
 
             break :blk sampConvoOneLane(
                 C,
@@ -1249,7 +1222,7 @@ fn lanczos3CoeffSIMD(v_x: VecSF) VecSF {
     var samp_res_arr: [S]F = undefined;
     const ax_arr: [S]F = v_ax;
     for (0..S) |ii| {
-        samp_res_arr[ii] = lanczos3Coeff(ax_arr[ii]);
+        samp_res_arr[ii] = textureops_common.lanczos3Coeff(ax_arr[ii]);
     }
     return samp_res_arr;
 }
@@ -1258,7 +1231,7 @@ fn lanczos2CoeffSIMD(v_x: VecSF) VecSF {
     const x_arr: [S]F = v_x;
     var samp_res_arr: [S]F = undefined;
     for (0..S) |ii| {
-        samp_res_arr[ii] = lanczos2Coeff(x_arr[ii]);
+        samp_res_arr[ii] = textureops_common.lanczos2Coeff(x_arr[ii]);
     }
     return samp_res_arr;
 }

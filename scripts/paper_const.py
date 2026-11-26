@@ -38,10 +38,6 @@ PLOT_LINE_SECONDARY_AXIS_FONT_SIZE = 10.0
 PAPER_DIR = pathlib.Path("~/paper-riley-raster").expanduser()
 
 
-def repo_root() -> pathlib.Path:
-    return pathlib.Path(__file__).resolve().parent.parent
-
-
 def is_quad89(mesh_name: str) -> bool:
     return mesh_name in {"quad8", "quad9"}
 

@@ -6,12 +6,16 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 // --------------------------------------------------------------------------------------
+const matslice = @import("matslice.zig");
+const geometrykernels = @import("geometrykernels.zig");
+const shadertypes = @import("shadertypes.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const comm = @import("shaderkernels_common.zig");
-const shaderops = @import("shaderops.zig");
-const MatSlice = @import("matslice.zig").MatSlice;
-const CoordSpace = @import("geometrykernels.zig").CoordSpace;
+const max_channels = buildconfig.config.max_image_channels;
+const shaderkernels_common = @import("shaderkernels_common.zig");
+const meshhit = @import("meshhit.zig");
+const shaderfill_scalar = @import("shaderfill_scalar.zig");
+const speckleops = @import("speckleops.zig");
 
 // --------------------------------------------------------------------------------------
 // Nodal Interp Shader
@@ -19,23 +23,24 @@ const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
 pub fn NodalKernel(comptime N: usize) type {
     return struct {
+        pub const LocalBuff = shadertypes.LocalShaderBuff(N);
+        pub const Hit = meshhit.RasterHit(N);
+
         pub inline fn shade(
-            comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
-            shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.NodalPrepared,
-            ctx_report: anytype,
-            spx_image_scratch: *MatSlice(F),
+            comptime coord_space: geometrykernels.CoordSpace,
+            ctx_shade: shadertypes.ShadeContext,
+            interp: meshhit.RasterHit(N),
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.NodalPrepared,
+            spx_image_scratch: *matslice.MatSlice(F),
         ) void {
-            comm.shadeNodalScalComm(
+            shaderkernels_common.shadeNodalScalComm(
                 N,
                 coord_space,
                 ctx_shade,
                 interp,
                 shader_buf,
                 shader,
-                ctx_report,
                 spx_image_scratch,
             );
         }
@@ -52,16 +57,18 @@ pub fn TexKernel(
     comptime C: usize,
 ) type {
     return struct {
+        pub const LocalBuff = shadertypes.LocalShaderBuff(N);
+        pub const Hit = meshhit.RasterHit(N);
+
         pub inline fn shade(
-            comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
-            shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.TexPrepared(T, C),
-            ctx_report: anytype,
-            spx_image_scratch: *MatSlice(F),
+            comptime coord_space: geometrykernels.CoordSpace,
+            ctx_shade: shadertypes.ShadeContext,
+            interp: meshhit.RasterHit(N),
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.TexPrepared(T, C),
+            spx_image_scratch: *matslice.MatSlice(F),
         ) void {
-            comm.shadeTexScalComm(
+            shaderkernels_common.shadeTexScalComm(
                 N,
                 T,
                 C,
@@ -70,9 +77,41 @@ pub fn TexKernel(
                 interp,
                 shader_buf,
                 shader,
-                ctx_report,
                 spx_image_scratch,
             );
+        }
+    };
+}
+
+pub fn TexMultiKernel(comptime N: usize, comptime T: type) type {
+    return struct {
+        pub const LocalBuff = shadertypes.LocalShaderBuff(N);
+        pub const Hit = meshhit.RasterHit(N);
+
+        pub inline fn shade(
+            comptime coord_space: geometrykernels.CoordSpace,
+            ctx_shade: shadertypes.ShadeContext,
+            interp: meshhit.RasterHit(N),
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.TexMultiPrepared(T),
+            spx_image_scratch: *matslice.MatSlice(F),
+        ) void {
+            inline for (1..max_channels + 1) |C| {
+                if (shader.tex.array.dims[0] == C) {
+                    const concrete = shadertypes.concreteTexture(T, C, shader);
+                    TexKernel(N, T, C).shade(
+                        coord_space,
+                        ctx_shade,
+                        interp,
+                        shader_buf,
+                        &concrete,
+                        spx_image_scratch,
+                    );
+                    return;
+                }
+            }
+            // Preparation validates the runtime channel count against max_channels.
+            unreachable;
         }
     };
 }
@@ -86,64 +125,52 @@ pub fn FuncKernel(
     comptime C: usize,
 ) type {
     return struct {
+        pub const LocalBuff = shadertypes.LocalShaderBuff(N);
+        pub const Hit = meshhit.MeshHit(N);
+
         pub inline fn shade(
-            comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
-            shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.FuncPrepared,
-            ctx_report: anytype,
-            spx_image_scratch: *MatSlice(F),
+            comptime coord_space: geometrykernels.CoordSpace,
+            ctx_shade: shadertypes.ShadeContext,
+            interp: meshhit.MeshHit(N),
+            shader_buf: *const shadertypes.LocalShaderBuff(N),
+            shader: *const shadertypes.FuncPrepared,
+            spx_image_scratch: *matslice.MatSlice(F),
         ) void {
-            comm.shadeFuncScalComm(
+            const hit = shaderkernels_common.completeFuncHit(N, coord_space, interp, shader_buf, shader);
+            shaderkernels_common.shadeFuncScalComm(
                 N,
                 C,
                 coord_space,
                 ctx_shade,
-                interp,
+                hit,
                 shader_buf,
                 shader,
-                ctx_report,
                 spx_image_scratch,
             );
         }
     };
 }
 
-// --------------------------------------------------------------------------------------
-// Speckle Shader
-// --------------------------------------------------------------------------------------
-
-pub fn SpeckleKernel(
-    comptime N: usize,
-    comptime kernel_index: usize,
-) type {
+pub fn SpeckleKernel(comptime N: usize, comptime kernel_index: usize) type {
     return struct {
+        pub const LocalBuff = shadertypes.LocalShaderBuff(N);
+        pub const Hit = meshhit.RasterHit(N);
+
         pub inline fn shade(
-            comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
-            shader_buf: *const shaderops.LocalShaderBuff(N),
-            shader: *const shaderops.SpecklePrepared,
-            ctx_report: anytype,
-            spx_image_scratch: *MatSlice(F),
+            comptime coord_space: geometrykernels.CoordSpace,
+            ctx: shadertypes.ShadeContext,
+            interp: Hit,
+            buf: *const LocalBuff,
+            shader: *const shadertypes.SpecklePrepared,
+            scratch: *matslice.MatSlice(F),
         ) void {
-            if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-                ctx_report.recordDepth(
-                    ctx_shade.global_subx,
-                    ctx_shade.global_suby,
-                    1.0 / interp.sub_pixel_z,
-                );
-            }
-            shaderops.fillSpeckleScal(
+            scratch.slice[ctx.scratch_idx] = shaderfill_scalar.evalSpeckleScal(
                 N,
-                kernel_index,
                 coord_space,
-                ctx_shade,
                 interp,
-                shader_buf,
+                buf,
                 shader,
-                spx_image_scratch,
+                speckleops.Kernel(kernel_index).sampleScal,
             );
         }
     };

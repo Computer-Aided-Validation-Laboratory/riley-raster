@@ -2,12 +2,10 @@ name: Smoke Test Published Package
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Package version to test from PyPI (leave blank for latest from pyproject.toml)'
-        required: false
-        default: ''
-        type: string
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   smoke_test:
@@ -20,76 +18,29 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          # A reusable run inherits the release caller's SHA, matching the build jobs.
+          ref: ${{ github.sha }}
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
 
-      - name: Determine package version
-        id: package_version
+      - name: Install current wheel from PyPI and smoke test all CLI demos
         shell: bash
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            version="${{ inputs.version }}"
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          python -m venv .venv
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            python=.venv/Scripts/python.exe
           else
-            version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+            python=.venv/bin/python
           fi
-          echo "Testing version: $version"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Create clean environment (POSIX)
-        if: runner.os != 'Windows'
-        run: python -m venv "$RUNNER_TEMP/riley-pypi-smoke"
-
-      - name: Create clean environment (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: python -m venv "$env:RUNNER_TEMP\riley-pypi-smoke"
-
-      - name: Install from PyPI (POSIX)
-        if: runner.os != 'Windows'
-        run: |
-          python="$RUNNER_TEMP/riley-pypi-smoke/bin/python"
-          "$python" -m pip install --upgrade pip
-          for attempt in 1 2 3 4 5 6 7 8; do
-            "$python" -m pip install --index-url https://pypi.org/simple "riley-raster==${{ steps.package_version.outputs.version }}" && break
-            [ "$attempt" -eq 8 ] && exit 1
+          for attempt in {1..8}; do
+            "$python" -m pip install --index-url https://pypi.org/simple --only-binary=riley-raster "riley-raster==$version" && break
+            if [[ "$attempt" == 8 ]]; then
+              exit 1
+            fi
             sleep 15
           done
-
-      - name: Install from PyPI (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $python = "$env:RUNNER_TEMP\riley-pypi-smoke\Scripts\python.exe"
-          & $python -m pip install --upgrade pip
-          for ($attempt = 1; $attempt -le 8; $attempt++) {
-            & $python -m pip install --index-url https://pypi.org/simple "riley-raster==${{ steps.package_version.outputs.version }}"
-            if ($LASTEXITCODE -eq 0) { break }
-            if ($attempt -eq 8) { exit 1 }
-            Start-Sleep -Seconds 15
-          }
-
-      - name: Verify installed package (POSIX)
-        if: runner.os != 'Windows'
-        working-directory: ${{ runner.temp }}
-        run: "$RUNNER_TEMP/riley-pypi-smoke/bin/python -c 'import riley; print(riley.__file__)'"
-
-      - name: Verify installed package (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: '& "$env:RUNNER_TEMP\riley-pypi-smoke\Scripts\python.exe" -c "import riley; print(riley.__file__)"'
-
-      - name: Run demos (POSIX)
-        if: runner.os != 'Windows'
-        working-directory: ${{ runner.temp }}
-        run: |
-          "$RUNNER_TEMP/riley-pypi-smoke/bin/python" -I "$GITHUB_WORKSPACE/scripts/run_pypi_smoke_demos.py"
-
-      - name: Run demos (Windows)
-        if: runner.os == 'Windows'
-        working-directory: ${{ runner.temp }}
-        shell: pwsh
-        run: |
-          & "$env:RUNNER_TEMP\riley-pypi-smoke\Scripts\python.exe" -I "$env:GITHUB_WORKSPACE\scripts\run_pypi_smoke_demos.py"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "$python" -I scripts/smoke_pypi_demos.py

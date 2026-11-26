@@ -80,12 +80,14 @@ Unless a task explicitly concerns malformed-input validation, assume:
 
 ### Physical procedural speckles
 
-Physical speckles assume usable reference geometry and a usable UV metric on
-referenced faces. They are calibrated once per mesh, not at each point or frame.
-See the [public speckle contract](../docs/python-api/speckles.rst) for UV bounds
-and preparation errors, and the
-[calibration and coverage model](THEORY.md#6-physical-speckle-calibration-and-nominal-coverage)
-for the numerical assumptions.
+Referenced faces must have usable reference geometry and a usable UV metric.
+The entire interpolated UV patch, not just its nodes, must stay within the unit
+square up to the supported tolerance. Calibration is shared over the mesh's
+reference faces; it is not a local correction or recomputed for each frame or
+camera. Distorted UV maps can therefore vary spot size and shape locally.
+See the [public speckle guide](../docs/procedural.rst) for inputs and bounds and
+[Theory §6](THEORY.md#6-physical-speckle-calibration-and-nominal-coverage) for
+the calibration and coverage model.
 
 ---
 

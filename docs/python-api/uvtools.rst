@@ -1,9 +1,7 @@
 UV tools
 ========
 
-When passing generated UVs to :class:`riley.SpeckleShader`, see
-:ref:`speckle-uv-domain` for interpolation bounds and the memory cost of small
-UV islands.
+For UV requirements specific to speckle shaders, see :doc:`../procedural`.
 
 .. automodule:: riley.python.uvtools
    :members:

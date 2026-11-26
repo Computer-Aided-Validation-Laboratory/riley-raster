@@ -11,9 +11,10 @@ const std = @import("std");
 const F = @import("buildconfig.zig").F;
 const geometry = @import("geometrykernels.zig");
 const MeshType = geometry.MeshType;
-const meshio = @import("meshio.zig");
+const meshtypes = @import("meshtypes.zig");
 const NDArray = @import("ndarray.zig").NDArray;
 const shapefun = @import("shapefun.zig");
+const validatearrays = @import("validatearrays.zig");
 const vec = @import("vecstack.zig");
 const Vec3 = vec.Vec3T(F);
 
@@ -22,10 +23,13 @@ const Vec3 = vec.Vec3T(F);
 /// geometry (InvalidSpeckleUvGeometry, InvalidSpeckleReferenceGeometry). See dev/THEORY.md §6.
 pub fn calibrateReferenceUv(
     mesh_type: MeshType,
-    coords: *const meshio.Coords,
-    connect: *const meshio.Connect,
+    coords: *const meshtypes.Coords,
+    connect: *const meshtypes.Connect,
     uvs: *const NDArray(F),
 ) ![2]F {
+    // Full validation checks this before scanning UVs, but calibration also runs
+    // with validation off and can be called on its own. Connectivity is a caller invariant.
+    try validatearrays.checkUvLayout(uvs, coords.mat.rows_num);
     return switch (mesh_type) {
         .tri3, .tri3opt => calibrate(3, coords, connect, uvs),
         .tri6 => calibrate(6, coords, connect, uvs),
@@ -37,8 +41,8 @@ pub fn calibrateReferenceUv(
 
 fn calibrate(
     comptime N: usize,
-    coords: *const meshio.Coords,
-    connect: *const meshio.Connect,
+    coords: *const meshtypes.Coords,
+    connect: *const meshtypes.Connect,
     uvs: *const NDArray(F),
 ) ![2]F {
     std.debug.assert(connect.getNodesPerElem() == N);
@@ -249,8 +253,8 @@ fn testCalibrate(comptime mesh_type: MeshType, positions: []F, texcoords: []F) !
     const N = comptime mesh_type.getNodesNum();
     var indices: [N]usize = undefined;
     for (&indices, 0..) |*index, nn| index.* = nn;
-    const coords = meshio.Coords.init(positions, positions.len / 3);
-    const connect = meshio.Connect.init(&indices, 1, N);
+    const coords = meshtypes.Coords.init(positions, positions.len / 3);
+    const connect = meshtypes.Connect.init(&indices, 1, N);
     const uvs = try NDArray(F).init(std.testing.allocator, texcoords, &.{ positions.len / 3, 2 });
     defer uvs.deinit(std.testing.allocator);
     return calibrateReferenceUv(mesh_type, &coords, &connect, &uvs);
@@ -425,7 +429,7 @@ test "multipart calibration uses physical-area-weighted log axes with f64 reduct
     // Disconnected triangles have metrics (2,3) and (4,5), with UV areas in ratio 1:3.
     var positions = [_]F{ 0, 0, 0, 0.002, 0, 0, 0, 0.003, 0, 0, 0, 1, 0.012, 0, 1, 0, 0.005, 1 };
     var texcoords = [_]F{ 0, 0, 0.001, 0, 0, 0.001, 0, 0, 0.003, 0, 0, 0.001 };
-    const coords = meshio.Coords.init(&positions, 6);
+    const coords = meshtypes.Coords.init(&positions, 6);
     const uvs = try NDArray(F).init(alloc, &texcoords, &.{ 6, 2 });
     defer uvs.deinit(alloc);
     // Physical areas are 3e-6 and 30e-6: exact affine log weights are 1:10.
@@ -439,7 +443,7 @@ test "multipart calibration uses physical-area-weighted log axes with f64 reduct
         const indices = try alloc.alloc(usize, repeats * 6);
         defer alloc.free(indices);
         for (indices, 0..) |*index, ii| index.* = ii % 6;
-        const connect = meshio.Connect.init(indices, repeats * 2, 3);
+        const connect = meshtypes.Connect.init(indices, repeats * 2, 3);
         const lengths = try calibrateReferenceUv(.tri3, &coords, &connect, &uvs);
         try std.testing.expectApproxEqRel(expected_u, @as(f64, lengths[0]), tol);
         try std.testing.expectApproxEqRel(expected_v, @as(f64, lengths[1]), tol);
@@ -481,8 +485,8 @@ test "multipart calibration uses physical-area-weighted log axes with f64 reduct
     plate_positions[3 * grid_nodes ..][0..9].* = .{ 0, 0, 1, 0.4, 0, 1, 0, 0.6, 1 };
     plate_uvs[2 * grid_nodes ..][0..6].* = .{ 0, 0, 0.05, 0, 0, 0 };
     plate_indices[6 * side * side ..][0..3].* = .{ grid_nodes, grid_nodes + 1, grid_nodes + 2 };
-    const plate_coords = meshio.Coords.init(&plate_positions, grid_nodes + 3);
-    const plate_connect = meshio.Connect.init(&plate_indices, side * side * 2 + 1, 3);
+    const plate_coords = meshtypes.Coords.init(&plate_positions, grid_nodes + 3);
+    const plate_connect = meshtypes.Connect.init(&plate_indices, side * side * 2 + 1, 3);
     const plate_uv_array = try NDArray(F).init(alloc, &plate_uvs, &.{ grid_nodes + 3, 2 });
     defer plate_uv_array.deinit(alloc);
     for ([_]F{ 5e-3, 5e-4, 5e-5, 5e-6 }) |height| {
@@ -639,8 +643,8 @@ test "calibration rejects zero or nonfinite reference and UV geometry" {
     var mixed_positions = [_]F{ 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1 };
     var mixed_uvs = [_]F{ 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0 };
     var indices = [_]usize{ 0, 1, 2, 3, 4, 5 };
-    const coords = meshio.Coords.init(&mixed_positions, 6);
-    const connect = meshio.Connect.init(&indices, 2, 3);
+    const coords = meshtypes.Coords.init(&mixed_positions, 6);
+    const connect = meshtypes.Connect.init(&indices, 2, 3);
     const uvs = try NDArray(F).init(std.testing.allocator, &mixed_uvs, &.{ 6, 2 });
     defer uvs.deinit(std.testing.allocator);
     try std.testing.expectError(

@@ -48,8 +48,8 @@ Each term stores its $x$-output and $y$-output coefficients contiguously. Degree
 
 ```zig
 const coeffs = [_]F{ 0, 0, 0.01, 0, 0, -0.01 };
-const poly = try cam.PolyMap.init(1, .displacement, &coeffs);
-const distort = try cam.DistortModel.init(.{ .poly = poly });
+const poly = try cameramodels.PolyMap.init(1, .displacement, &coeffs);
+const distort = try cameramodels.DistortModel.init(.{ .poly = poly });
 ```
 
 ### Lifetime and Evaluation Semantics
@@ -115,7 +115,7 @@ In Python, `riley.RasterConfig(parallel=...)` passes thread settings directly to
 Advanced callers providing custom I/O or external group management use:
 
 ```zig
-var managed_groups = try ManagedRenderGroups.init(outer_alloc, minimal, thread_budget, max_groups);
+var managed_groups = try rendergroups.ManagedRenderGroups.init(outer_alloc, minimal, thread_budget, max_groups);
 defer managed_groups.deinit(outer_alloc);
 
 const images = try riley.rasterAdvanced(
@@ -144,81 +144,28 @@ const images = try riley.rasterAdvanced(
 | `grey_to_rgb` | 1 | 3 | Replicates 1 greyscale channel across R, G, and B |
 
 - **Strict Input Validation**: Mismatched channel counts throw an immediate validation error unless validation is explicitly set to `.off`.
-- **Bit Depths and Formats**: Controlled independently via `ImageSaveOpts`: formats include `.bmp`, `.tiff`, `.csv`, and `.fimg`; scaling supports `.none`, `.auto`, `.fixed`, and `.frac`.
+- **Bit Depths and Formats**: Each `ImageSaveOpts` selects format, optional `file_bits` and `adc_bits`, value scaling (`.none`, `.auto`, `.fixed`, `.frac`), and ADC code packing (`.spread`, `.lower`, `.upper`). Floating CSV/FIMG use `file_bits = null` and `adc_bits = null`.
 - **Compiler Requirements**: Shared C library builds explicitly enforce LLVM backend compilation in Debug mode to prevent floating-point struct ABI corruption present in Zig 0.16's self-hosted x86_64 Debug backend.
 
 ---
 
 ## 6. Physical Speckle Calibration and Nominal Coverage
 
-Use `C` for nominal coverage, `R` for physical radius, `p` for occupancy,
-`J` for jitter, and `S` for edge softness. See the
-[public contract](../docs/python-api/speckles.rst) for units and the UV domain.
-[`specklegeom.zig`](../src/riley/zig/specklegeom.zig) integrates referenced
-physical and UV areas of the referenced faces. Before integration, it checks
-nodal UV bounds for affine triangles and bilinear quads. For quadratic elements
-it also bounds the interpolated UV patch with Bernstein control points, bisecting
-uncertain patches up to 16 times along alternating axes. A patch that remains
-uncertified is rejected.
+The physical controls answer two different questions: the reference-mesh UV
+metric sets the average footprint size, while the coverage model sets the
+spacing of the owner grid for disks and Gaussians at the requested occupancy.
+Perlin uses the metric to set its cell size without a coverage solve. Because
+calibration uses reference geometry, the pattern follows the surface during
+deformation; it does not preserve spot size in deformed space or in pixels.
 
-```text
-Aphys = sum over faces integral |dX/dxi cross dX/deta| dxi deta
-Auv   = sum over faces integral |det(d(u,v)/d(xi,eta))| dxi deta
-m     = integral ln(|X_u|/|X_v|) dAphys / Aphys
-Lu    = sqrt(Aphys/Auv) * exp(m/2)
-Lv    = sqrt(Aphys/Auv) * exp(-m/2); Lu*Lv = Aphys/Auv
-```
+Nominal coverage is an expected union area for unjittered supports in a
+stratified Bernoulli grid, not opacity, a Poisson estimate, or a promise about a
+finite render. Jitter and softness constrain the feasible support but do not
+retune the nominal placement density.
 
-`tri3`/`tri3opt` use exact constant-Jacobian one-point integration; `tri6` and
-`quad4/8/9` use fixed 8×8 Gauss quadrature (Duffy mapping for triangles), assuming
-usable FE geometry. All area and metric reductions accumulate in `f64`, including
-f32 builds. The physical-area-weighted log-mean ratio varies continuously with
-the mapping and recovers constant orthogonal planar scales. A UV sliver's ratio
-influence grows logarithmically, weighted by its physical area fraction. Perlin
-uses `cells_per_uv = (Lu / cell_size, Lv / cell_size)` with no coverage solve.
-The product `Lu*Lv = Aphys/Auv` makes a nominal disk or Gaussian footprint
-of radius `R` correspond to average physical area `pi*R*R`.
-
-For disks and Gaussians, coverage is defined by the nominal disk support.
-On an infinite square owner grid, each cell independently contains one uniformly
-positioned centre with probability `p`. For normalized radius `r <= 1`, nine
-owners suffice. Let `A_i(x,r)` be the intersection area of owner cell `i` and
-the radius-`r` disk centred at query point `x`:
-
-```text
-F(p,r) = integral over unit query cell [1 - product_i(1 - p * A_i(x,r))] dx
-       = sum from k=1 to 9 of M_k(r) * p^k
-F(p,r) = C (solve for r); q = r / R
-cells_per_uv = (Lu * q, Lv * q)
-radius_mean = r; radius_jitter = r*(J/R); edge_softness = r*(S/R)
-```
-
-The signed coefficients integrate the expanded product; `M_1(r) = pi*r*r`.
-This stratified Bernoulli model approximates the finite-precision hash sampler;
-it is not the Poisson formula `1 - exp(-p*pi*r*r)`. Public jitter requires
-`0 <= J <= R/2`. Full feasibility also requires `C <= F(p,1/(1+J/R+S/R))`;
-validation checks this forward bound before geometry without an inverse solve.
-Lowering inverts nominal coverage once, independently of jitter/softness, and
-checks converted support `r + r*(J/R) + r*(S/R) <= 1` without clamping.
-Nominal cap equality maps to `r = 1`.
-
-Jitter changes expected union area without changing placement density. For
-example, `p = 1`, `C = 0.5`, and `J = R/2` give about 0.525 expected hard-disk
-coverage. In the dilute limit, uniform radius jitter multiplies expected area
-by `1 + J*J/(3*R*R)`, about 1.083 at `J = R/2`. Overlap generally reduces the
-increase, and the factor is not a bound for individual finite fields.
-
-[`specklecoverage.zig`](../src/riley/zig/specklecoverage.zig) computes in `f64`
-without allocation or I/O: an integrated analytic polynomial for `r <= 0.5`,
-otherwise a generated table over `0.5 <= r <= 1` with signed `M_2..M_9`
-coefficients. Horner evaluation gives `F(p,r)/p` at nodes;
-monotone PCHIP interpolates those values, not coefficients. At most 64 bisections
-invert the approximation. Builds import constants without regeneration.
-
-Separate oracle tests use vertical-slice circle/rectangle areas and direct
-noncoverage probabilities, with `1e-6` absolute coverage acceptance near geometry
-breaks and the cap. This is empirical evidence, not a global error bound or
-finite-image guarantee. The generator checks node monotonicity in both modes;
-`--check` verifies the committed table's shape and compares coefficients in
-fixed radius-node order without rewriting the table. See
-[Testing](TESTING.md#physical-speckle-verification) for offline and native checks.
+The [procedural developer guide](PROCEDURAL.md#physical-calibration-and-nominal-coverage)
+is the reference for the UV metric, quadrature, coverage derivation and inversion.
+See the [public inputs](../docs/procedural.rst) for units and parameter limits,
+the [geometry assumptions](ASSUMPTIONS.md#physical-procedural-speckles) for the
+supported domain, and the [gold-independent Zig checks](TESTING.md#gold-independent-zig-checks)
+for the focused numerical and render tests.

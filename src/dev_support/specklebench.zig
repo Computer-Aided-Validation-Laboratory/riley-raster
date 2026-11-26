@@ -19,8 +19,9 @@ const VecSF = build.VecSF;
 const VecSB = build.VecSB;
 const VecBits = @Vector(S, std.meta.Int(.unsigned, @bitSizeOf(F)));
 const VecSum = @Vector(S, u64);
-const camera = @import("../riley/zig/camera.zig");
-const meshio = @import("../riley/zig/meshio.zig");
+const cameraprojops = @import("../riley/zig/cameraprojops.zig");
+const meshtypes = @import("../riley/zig/meshtypes.zig");
+const meshhit = @import("../riley/zig/meshhit.zig");
 const ndarray = @import("../riley/zig/ndarray.zig");
 const frontend = @import("../riley/zig/rasterfrontend.zig");
 const elemtilebin = @import("../riley/zig/elemtilebinning.zig");
@@ -28,7 +29,8 @@ const meshpipe = @import("../riley/zig/meshpipeline.zig");
 const HullAdaptive = @import("../riley/zig/hulladaptive.zig").HullAdaptive;
 const HullMultiRoot = @import("../riley/zig/hullmultiroot.zig").HullMultiRoot;
 const geom = @import("../riley/zig/geometrykernels.zig");
-const shaderops = @import("../riley/zig/shaderops.zig");
+const shadertypes = @import("../riley/zig/shadertypes.zig");
+const texturetypes = @import("../riley/zig/texturetypes.zig");
 const speckle = @import("../riley/zig/speckleops.zig");
 const policy = @import("../riley/zig/scalingpolicy.zig");
 const pce = @import("../riley/zig/parachunkexec.zig");
@@ -40,7 +42,7 @@ const GK = geom.Tri6Kernel();
 const N = GK.nodes_num;
 const NH = geom.MeshType.tri6.getNumHullPoints();
 
-pub const workload_mode = "static-geometry-depth-accumulator-v2";
+pub const workload_mode = "static-geometry-depth-accumulator-shaderpipe";
 
 pub const Result = struct {
     checksum: u64 = 0,
@@ -89,7 +91,7 @@ pub const Accumulator = struct {
 /// RasterEngine only needs row metadata and a shade target. The target here
 /// is an accumulator, not an image. All geometry/depth scratch matches production.
 const Scratch = struct {
-    pub const exclusive_subpx_target = false;
+    pub const simd_full_vector_store_safe = false;
     stride_subpx: usize,
     inv_z: []align(64) F,
     image: Accumulator = .{},
@@ -134,38 +136,39 @@ const Scratch = struct {
 /// The only shader difference is the output sink. UV interpolation uses the
 /// same scalar helper and SIMD multiply/add order as the production UV shader.
 const texops = @import("../riley/zig/textureops.zig");
-const TextureShader = shaderops.TexPrepared(u8, 1);
+const TextureShader = shadertypes.TexPrepared(u8, 1);
 
-fn SinkKernel(comptime kernel_index: ?usize, comptime filter: texops.TexSampConfig) type {
-    const Shader = if (kernel_index != null) shaderops.SpecklePrepared else TextureShader;
+fn SinkKernel(comptime kernel_index: ?usize, comptime filter: texturetypes.TexSampConfig) type {
+    const Shader = if (kernel_index != null) shadertypes.SpecklePrepared else TextureShader;
     return struct {
+        pub const LocalBuff = shadertypes.LocalShaderBuff(N);
+        pub const Hit = meshhit.RasterHit(N);
+
         pub inline fn shade(
             comptime coord_space: geom.CoordSpace,
-            _: shaderops.ShadeContext,
-            interp: shaderops.InterpData(N),
-            buf: *const shaderops.LocalShaderBuff(N),
+            _: shadertypes.ShadeContext,
+            interp: meshhit.RasterHit(N),
+            buf: *const shadertypes.LocalShaderBuff(N),
             shader: *const Shader,
-            _: anytype,
             sink: *Accumulator,
         ) void {
             if (comptime coord_space != .clip_px_leng) @compileError("Benchmark requires tri6 clip coordinates");
             const u = buf.interpFuncCoord(0, interp.weights);
             const v = buf.interpFuncCoord(1, interp.weights);
-            const value = if (kernel_index) |index| speckle.Kernel(index).sampleScal(u, v, shader.params, shader.resources) else texops.sampScal(1, filter, &shader.tex, u, v)[0];
+            const value = if (kernel_index) |index| speckle.Kernel(index).sampleScal(u, v, shader.resources) else texops.sampScal(1, filter, &shader.tex, u, v)[0];
             sink.consumeScal(value);
         }
 
         pub inline fn shadeSIMD(
             comptime coord_space: geom.CoordSpace,
-            _: shaderops.ShadeContext,
-            _: anytype,
+            _: shadertypes.ShadeContext,
             active: VecSB,
             weights: [N]VecSF,
             _: VecSF,
             _: VecSF,
             _: [N]VecSF,
             _: VecSF,
-            buf: *const shaderops.LocalShaderBuff(N),
+            buf: *const shadertypes.LocalShaderBuff(N),
             shader: *const Shader,
             sink: *Accumulator,
         ) void {
@@ -176,7 +179,7 @@ fn SinkKernel(comptime kernel_index: ?usize, comptime filter: texops.TexSampConf
                 u += weights[nn] * @as(VecSF, @splat(buf.func_coords[nn]));
                 v += weights[nn] * @as(VecSF, @splat(buf.func_coords[N + nn]));
             }
-            const values = if (kernel_index) |index| speckle.Kernel(index).sampleSIMD(u, v, active, shader.params, shader.resources) else texops.sampWide(1, filter, &shader.tex, u, v)[0];
+            const values = if (kernel_index) |index| speckle.Kernel(index).sampleSIMD(u, v, active, shader.resources) else texops.sampWide(1, filter, &shader.tex, u, v)[0];
             sink.consumeSIMD(values, active);
         }
     };
@@ -187,7 +190,7 @@ pub const Geometry = struct {
     uvs: ndarray.NDArray(F),
     raster_hulls: ndarray.NDArray(F),
     tiling: elemtilebin.TileElemOverlaps,
-    multiroot_hulls: ?meshpipe.MultiRootHulls,
+    multiroot_hulls: ?meshtypes.MultiRootHulls,
     tile_size: u16,
 
     /// Fixed pinhole tri6 scenes only. Keep back-facing elements in the static
@@ -196,21 +199,21 @@ pub const Geometry = struct {
     pub fn prepare(
         alloc: std.mem.Allocator,
         io: std.Io,
-        cam: *const camera.CameraPrepared,
-        coords_world: meshio.Coords,
-        connect: meshio.Connect,
+        cam: *const cameraprojops.CameraPrepared,
+        coords_world: meshtypes.Coords,
+        connect: meshtypes.Connect,
         uvs_nodes: ndarray.NDArray(F),
         raster_config: config.RasterConfig,
         requested_workers: u16,
     ) !Geometry {
-        if (cam.sub_sample != 1 or cam.prep_psf.halo_px != 0 or cam.distort != .none) return error.UnsupportedBenchmarkCamera;
+        if (cam.sub_sample != 1 or cam.prep_psf.halo_px != 0 or !cameraprojops.isNoDistort(cam.distort)) return error.UnsupportedBenchmarkCamera;
         if (connect.getNodesPerElem() != N) return error.BenchmarkRequiresTri6;
-        var coords_nodes = try meshio.Coords.initAlloc(alloc, coords_world.mat.rows_num);
+        var coords_nodes = try meshtypes.Coords.initAlloc(alloc, coords_world.mat.rows_num);
         @memcpy(coords_nodes.mat.slice, coords_world.mat.slice);
         frontend.nodesToClipPxLengRangeInPlace(cam, &coords_nodes, 0, coords_nodes.mat.rows_num);
         const elems = connect.getElemsNum();
         var coords = try ndarray.NDArray(F).initFlat(alloc, &.{ elems, 3, N });
-        const uvs = try @import("../riley/zig/meshpipeline.zig").prepUVs(alloc, &uvs_nodes, &connect);
+        var uvs = try ndarray.NDArray(F).initFlat(alloc, &.{ elems, 2, N });
         var raster_hulls = try ndarray.NDArray(F).initFlat(alloc, &.{ elems, 2, NH });
         const bboxes = try alloc.alloc(frontend.ElemBBox, elems);
         const root_classes = try alloc.alloc(frontend.ElemRootClass, elems);
@@ -227,7 +230,9 @@ pub const Geometry = struct {
                 raster_hulls.set(&.{ ee, 0, nn }, x);
                 raster_hulls.set(&.{ ee, 1, nn }, y);
             }
-            for (0..N) |nn| {
+            for (connect.getElem(ee), 0..) |node_idx, nn| {
+                uvs.set(&.{ ee, 0, nn }, uvs_nodes.get(&.{ node_idx, 0 }));
+                uvs.set(&.{ ee, 1, nn }, uvs_nodes.get(&.{ node_idx, 1 }));
                 coords.set(&.{ ee, 0, nn }, nodes.x[nn]);
                 coords.set(&.{ ee, 1, nn }, nodes.y[nn]);
                 coords.set(&.{ ee, 2, nn }, nodes.z[nn]);
@@ -284,17 +289,17 @@ pub const Geometry = struct {
 
         // Reuse production multi-root preparation, including robust seed ordering.
         // Keep our unculled coordinates/overlaps so backface work remains timed.
-        var multiroot_hulls: ?meshpipe.MultiRootHulls = null;
+        var multiroot_hulls: ?meshtypes.MultiRootHulls = null;
         if (has_multiroot) {
-            const mesh_static: meshpipe.MeshStatic = .{
+            const mesh_static: meshtypes.MeshStatic = .{
                 .mesh_type = .tri6,
                 .coords_orig = coords_world,
                 .connect = connect,
                 .disp = null,
-                .shader = .{ .func = .{ .elem_uvs = null, .builtin = .constant, .bits = null } },
+                .shaders = .{ .mono = .{ .direct = .{ .func = .{ .elem_uvs = null } } } },
             };
-            var times: meshpipe.GeomTimes = .{};
-            const frame = try meshpipe.prepMeshFrame(alloc, &exec, requested_workers, cam, raster_config, &mesh_static, 0, null, &times);
+            var times: report.GeomTimes = .{};
+            const frame = try meshpipe.prepMeshFrame(alloc, &exec, requested_workers, cam, raster_config, &mesh_static, 0, &times);
             if (frame.hull_multiroot) |prepared| {
                 var remapped = prepared;
                 const slots = try alloc.alloc(u32, elems);
@@ -316,14 +321,14 @@ const Worker = struct {
 };
 
 pub const Evaluation = struct {
-    cam: *const camera.CameraPrepared,
+    cam: *const cameraprojops.CameraPrepared,
     geometry: *const Geometry,
     raster_config: config.RasterConfig,
     workers: []Worker,
     exec: pce.ParaChunkExecutor,
 
     /// Worker allocations and setup are outside both measured intervals.
-    pub fn init(alloc: std.mem.Allocator, io: std.Io, cam: *const camera.CameraPrepared, geometry: *const Geometry, raster_config: config.RasterConfig, requested_workers: u16) !Evaluation {
+    pub fn init(alloc: std.mem.Allocator, io: std.Io, cam: *const cameraprojops.CameraPrepared, geometry: *const Geometry, raster_config: config.RasterConfig, requested_workers: u16) !Evaluation {
         const workers_num = policy.rasterWorkers(requested_workers, geometry.tiling.active_tiles.len);
         const workers = try alloc.alloc(Worker, workers_num);
         for (workers) |*worker| worker.* = .{ .scratch = try Scratch.init(alloc, geometry.tile_size) };
@@ -331,16 +336,16 @@ pub const Evaluation = struct {
     }
 
     /// One invocation is one fresh measurement, with all frames inside the timer.
-    pub fn evaluate(self: *Evaluation, params: speckle.GridParams, resources: *const speckle.Resources, frames: usize) !void {
+    pub fn evaluate(self: *Evaluation, resources: *const speckle.Resources, frames: usize) !void {
         const index = resources.kernel_index orelse return error.MissingPreparedSpeckleKernel;
         inline for (speckle.kernel_configs, 0..) |_, ii| {
-            if (index == ii) return self.evaluateKernel(ii, .{ .sample = .linear }, shaderops.SpecklePrepared{ .elem_uvs = self.geometry.uvs, .resources = resources, .params = params, .bits = null }, frames);
+            if (index == ii) return self.evaluateKernel(ii, .{ .sample = .linear }, shadertypes.SpecklePrepared{ .elem_uvs = self.geometry.uvs, .resources = resources, .bits = null }, frames);
         }
         return error.UnsupportedBenchmarkEvaluator;
     }
 
     pub fn evaluateTexture(self: *Evaluation, shader: TextureShader, frames: usize) !void {
-        if (shader.samp_cfg.mode != (if (shader.samp_cfg.sample == .cubic_catmull_rom) texops.TexSampMode.lut_lerp else texops.TexSampMode.direct)) return error.UnsupportedBenchmarkTextureMode;
+        if (shader.samp_cfg.mode != (if (shader.samp_cfg.sample == .cubic_catmull_rom) texturetypes.TexSampMode.lut_lerp else texturetypes.TexSampMode.direct)) return error.UnsupportedBenchmarkTextureMode;
         switch (shader.samp_cfg.sample) {
             .nearest => try self.evaluateKernel(null, .{ .sample = .nearest }, shader, frames),
             .linear => try self.evaluateKernel(null, .{ .sample = .linear }, shader, frames),
@@ -349,7 +354,7 @@ pub const Evaluation = struct {
         }
     }
 
-    fn evaluateKernel(self: *Evaluation, comptime index: ?usize, comptime filter: texops.TexSampConfig, shader: anytype, frames: usize) !void {
+    fn evaluateKernel(self: *Evaluation, comptime index: ?usize, comptime filter: texturetypes.TexSampConfig, shader: anytype, frames: usize) !void {
         for (self.workers) |*worker| {
             worker.scratch.image = .{};
             worker.backface_rejections = 0;
@@ -385,11 +390,11 @@ pub const Evaluation = struct {
                                 raster_nodes.x[nn] = nodes.x[nn] / nodes.z[nn] + offsets.x_off;
                                 raster_nodes.y[nn] = nodes.y[nn] / nodes.z[nn] + offsets.y_off;
                             }
-                            if (frontend.isHighOrdBackface(N, raster_nodes)) {
+                            if (frontend.classifyHighOrdFacing(N, raster_nodes) == null) {
                                 worker.backface_rejections += 1;
                                 continue;
                             }
-                            var buf: shaderops.LocalShaderBuff(N) = .{};
+                            var buf: shadertypes.LocalShaderBuff(N) = .{};
                             buf.loadFuncCoords(geometry.uvs, overlap.elem_idx * 2 * N, 2);
                             const hulls = if (comptime root_class == .multi_root)
                                 if (geometry.multiroot_hulls) |*prepared| prepared else return error.MissingMultiRootData
@@ -445,31 +450,29 @@ test "speckle benchmark sink UV interpolation matches production grayscale shade
         if (comptime std.meta.eql(cfg, default_config)) {
             var resources = try speckle.Resources.init(std.testing.allocator, params);
             defer resources.deinit(std.testing.allocator);
-            const shader: shaderops.SpecklePrepared = .{ .elem_uvs = undefined, .resources = &resources, .params = params, .bits = null };
-            var buf: shaderops.LocalShaderBuff(N) = .{};
+            const shader: shadertypes.SpecklePrepared = .{ .elem_uvs = undefined, .resources = &resources, .bits = null };
+            var buf: shadertypes.LocalShaderBuff(N) = .{};
             buf.func_coords = .{ 0, 1, 0, 0.5, 0.5, 0, 0, 0, 1, 0, 0.5, 0.5, 0, 0, 0, 0, 0, 0 };
             const weights = [N]F{ 0.1, 0.2, 0.3, 0.1, 0.1, 0.2 };
-            const ctx: shaderops.ShadeContext = .{ .frame_idx = 0, .elem_idx = 0, .fields_num = 1, .actual_fields = 1, .scratch_idx = 0, .global_subx = 0, .global_suby = 0 };
-            var log: report.LogType(.off) = .{};
-            const ctx_report: report.ReportContext(.off) = .{ .log = &log };
-            const interp: shaderops.InterpData(N) = .{ .weights = weights, .nodes_inv_z = @splat(1), .sub_pixel_z = 1, .xi = 0.2, .eta = 0.3 };
+            const ctx: shadertypes.ShadeContext = .{ .frame_idx = 0, .elem_idx = 0, .fields_num = 1, .actual_fields = 1, .scratch_idx = 0, .global_subx = 0, .global_suby = 0 };
+            const interp: meshhit.RasterHit(N) = .{ .weights = weights, .nodes_inv_z = @splat(1), .sub_pixel_z = 1, .xi = 0.2, .eta = 0.3 };
             var storage: [S]F = @splat(-1);
             var image = MatSlice(F).init(&storage, 1, S);
             var expected: Accumulator = .{};
             var sink: Accumulator = .{};
-            @import("../riley/zig/shaderkernels_scalar.zig").SpeckleKernel(N, index).shade(.clip_px_leng, ctx, interp, &buf, &shader, ctx_report, &image);
+            @import("../riley/zig/shaderkernels_scalar.zig").SpeckleKernel(N, index).shade(.clip_px_leng, ctx, interp, &buf, &shader, &image);
             expected.consumeScal(storage[0]);
-            SinkKernel(index, .{ .sample = .linear }).shade(.clip_px_leng, ctx, interp, &buf, &shader, ctx_report, &sink);
+            SinkKernel(index, .{ .sample = .linear }).shade(.clip_px_leng, ctx, interp, &buf, &shader, &sink);
             try std.testing.expectEqualDeep(expected.result(), sink.result());
             var v_weights: [N]VecSF = undefined;
             inline for (0..N) |nn| v_weights[nn] = @splat(weights[nn]);
             var active: [S]bool = @splat(true);
             active[S - 1] = false;
-            @import("../riley/zig/shaderkernels_simd.zig").SpeckleKernel(N, index).shadeSIMD(.clip_px_leng, ctx, ctx_report, active, v_weights, @splat(0.2), @splat(0.3), @splat(@splat(1)), @splat(1), &buf, &shader, &image);
+            @import("../riley/zig/shaderkernels_simd.zig").SpeckleKernel(N, index).shadeSIMD(.clip_px_leng, ctx, active, v_weights, @splat(0.2), @splat(0.3), @splat(@splat(1)), @splat(1), &buf, &shader, &image);
             expected = .{};
             expected.consumeSIMD(storage, active);
             sink = .{};
-            SinkKernel(index, .{ .sample = .linear }).shadeSIMD(.clip_px_leng, ctx, ctx_report, active, v_weights, @splat(0.2), @splat(0.3), @splat(@splat(1)), @splat(1), &buf, &shader, &sink);
+            SinkKernel(index, .{ .sample = .linear }).shadeSIMD(.clip_px_leng, ctx, active, v_weights, @splat(0.2), @splat(0.3), @splat(@splat(1)), @splat(1), &buf, &shader, &sink);
             try std.testing.expectEqualDeep(expected.result(), sink.result());
         }
     }

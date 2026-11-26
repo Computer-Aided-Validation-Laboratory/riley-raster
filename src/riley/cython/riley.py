@@ -7,573 +7,87 @@
 # Authors: scepticalrabbit (Lloyd Fletcher), James Panayis
 # --------------------------------------------------------------------------------------
 import cython
-import warnings
-from dataclasses import dataclass, field
-from enum import IntEnum
 from numbers import Integral
-from operator import index
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-from cython.cimports.libc.stdlib import free, malloc
-from cython.cimports.libc.string import memset
+from cython.cimports.libc.limits import INT_MAX, INT_MIN
 from cython.cimports.riley.cython import riley as cr
-
-
-class EPolyMode(IntEnum):
-    coordinate = 0
-    displacement = 1
-
-
-@dataclass(slots=True)
-class PolyMap:
-    """Forward normalized-coordinate map with paired coefficients.
-
-    Parameters
-    ----------
-    degree
-        Total degree, from 1 through 7.
-    mode
-        Coordinate output or identity-plus-displacement interpretation.
-    coeffs
-        Shape (term_count, 2), ordered by total degree, descending x exponent.
-        Bindings take an owned contiguous float64 snapshot for each native
-        call.
-    """
-
-    degree: int
-    mode: EPolyMode
-    coeffs: np.ndarray
-
-
-@dataclass(slots=True)
-class Camera:
-    pixels_num: tuple[int, int]
-    pixels_size: tuple[float, float]
-    pos_world: tuple[float, float, float]
-    rot_world: tuple[float, float, float]
-    roi_cent_world: tuple[float, float, float]
-    focal_length: float
-    sub_sample: int
-    distort_model: int = 0
-    distort_k1: float = 0.0
-    distort_k2: float = 0.0
-    distort_k3: float = 0.0
-    distort_k4: float = 0.0
-    distort_k5: float = 0.0
-    distort_k6: float = 0.0
-    distort_p1: float = 0.0
-    distort_p2: float = 0.0
-    distort_s1: float = 0.0
-    distort_s2: float = 0.0
-    distort_s3: float = 0.0
-    distort_s4: float = 0.0
-    distort_tau_x: float = 0.0
-    distort_tau_y: float = 0.0
-    distort_poly: PolyMap | None = None
-    coord_sys: int = 0
-    subpixel_center_map: int = 1
-    psf_type: int = 0
-    psf_sigma_x: float = 0.0
-    psf_sigma_y: float = 0.0
-    psf_theta: float = 0.0
-    psf_support_rad: float = 0.0
-    psf_separable: int = 1
-
-
-CameraInput = Camera
-
-
-class SpecklePattern(IntEnum):
-    """Select disk or Gaussian physical footprints for a mesh."""
-
-    disk = cr.RILEY_SPECKLE_DISK
-    gaussian = cr.RILEY_SPECKLE_GAUSSIAN
-
-
-@dataclass(slots=True)
-class Dot2DParams:
-    """Configure physical disk or Gaussian speckles on the reference mesh.
-
-    Parameters
-    ----------
-    coverage : float
-        Nominal expected union-area fraction in ``(0, 1)``.
-    radius : float
-        Positive finite nominal radius in reference-mesh coordinate units.
-        For Gaussians this is the three-sigma cutoff radius.
-    occupancy : float, optional
-        Placement probability in ``(0, 1]`` (default 1).
-    jitter : float, optional
-        Uniform radius-variation half-range in reference-mesh units, with
-        ``0 <= jitter <= radius / 2`` (default 0).
-    edge_softness : float, optional
-        Nonnegative disk boundary-transition half-width in reference-mesh
-        units. Defaults to zero (hard edges); Gaussian speckles require zero.
-    pattern : SpecklePattern, optional
-        ``disk`` (default) or ``gaussian``.
-    seed : int, optional
-        Unsigned 32-bit seed (default ``0xA511E9B3``).
-    foreground, background : float, optional
-        Distinct finite intensities in ``[0, 1]``, before output transforms.
-        Defaults to zero and one respectively.
-
-    Notes
-    -----
-    See :ref:`speckle-calibration` and :ref:`speckle-preparation` for calibration,
-    combined support limits, and render-time validation.
-    """
-
-    coverage: float
-    radius: float
-    occupancy: float = field(default=1.0, kw_only=True)
-    jitter: float = field(default=0.0, kw_only=True)
-    edge_softness: float = field(default=0.0, kw_only=True)
-    pattern: SpecklePattern = field(default=SpecklePattern.disk, kw_only=True)
-    seed: int = field(default=cr.RILEY_SPECKLE_DEFAULT_SEED, kw_only=True)
-    foreground: float = field(default=0.0, kw_only=True)
-    background: float = field(default=1.0, kw_only=True)
-
-
-@dataclass(slots=True)
-class Perlin2DParams:
-    """Configure thresholded gradient noise at a physical reference scale.
-
-    Parameters
-    ----------
-    cell_size : float
-        Positive finite nominal lattice spacing in reference-mesh coordinate units.
-    threshold : float, optional
-        Finite threshold in noise units (default 0).
-    transition_width : float, optional
-        Finite nonnegative width in noise units (default ``0.12``).
-        Zero selects a hard threshold.
-    seed : int, optional
-        Unsigned 32-bit seed (default ``0xA511E9B3``).
-    foreground, background : float, optional
-        Distinct finite intensities in ``[0, 1]``, before output transforms.
-        Defaults to zero and one respectively.
-
-    Notes
-    -----
-    See :ref:`speckle-calibration` and :ref:`speckle-preparation`.
-    """
-
-    cell_size: float
-    threshold: float = field(default=0.0, kw_only=True)
-    transition_width: float = field(default=cr.RILEY_PERLIN_DEFAULT_TRANSITION_WIDTH, kw_only=True)
-    seed: int = field(default=cr.RILEY_SPECKLE_DEFAULT_SEED, kw_only=True)
-    foreground: float = field(default=0.0, kw_only=True)
-    background: float = field(default=1.0, kw_only=True)
-
-
-@dataclass(slots=True)
-class FuncShaderParams:
-    coord_scale: tuple[float, float] = (1.0, 1.0)
-    coord_offset: tuple[float, float] = (0.0, 0.0)
-    output_scale: float = 1.0
-    output_offset: float = 0.0
-    constant_value: float = 0.5
-    constant_value_rgb: tuple[float, float, float] = (0.2, 0.5, 0.8)
-    linear_coeffs: tuple[float, float, float] = (0.5, 0.25, 0.2)
-    linear_coeffs_rgb: tuple[
-        tuple[float, float, float],
-        tuple[float, float, float],
-        tuple[float, float, float],
-    ] = (
-        (0.5, 0.25, 0.0),
-        (0.5, 0.0, 0.25),
-        (0.5, 0.15, -0.15),
-    )
-    quadratic_coeffs: tuple[float, float, float, float, float, float] = (
-        0.35,
-        0.2,
-        0.15,
-        0.1,
-        -0.08,
-        0.06,
-    )
-    quadratic_coeffs_rgb: tuple[
-        tuple[float, float, float, float, float, float],
-        tuple[float, float, float, float, float, float],
-        tuple[float, float, float, float, float, float],
-    ] = (
-        (0.3, 0.0, 0.0, 0.2, 0.0, 0.0),
-        (0.3, 0.0, 0.0, 0.0, 0.0, 0.2),
-        (0.3, 0.0, 0.0, 0.0, 0.12, 0.0),
-    )
-    wave_num_scalar: tuple[float, float] = (6.0, 5.0)
-    wave_num_rgb: tuple[float, float, float] = (6.0, 6.0, 4.0)
-    sinusoidal_bias: float = 0.5
-    sinusoidal_amplitudes: tuple[float, float] = (0.25, 0.2)
-    sinusoidal_bias_rgb: tuple[float, float, float] = (0.5, 0.5, 0.5)
-    sinusoidal_amplitudes_rgb: tuple[float, float, float] = (
-        0.25,
-        0.25,
-        0.2,
-    )
-    checker_levels: tuple[float, float] = (0.0, 1.0)
-    checker_smooth_frequency: float = 8.0
-    lambertian_coeffs: tuple[float, float] = (0.5, 0.5)
-    lambertian_coeffs_rgb: tuple[
-        tuple[float, float],
-        tuple[float, float],
-        tuple[float, float],
-    ] = (
-        (0.5, 0.5),
-        (0.375, 0.375),
-        (0.25, 0.25),
-    )
-    eggbox_mean: float = 0.5
-    eggbox_contrast: float = 0.4
-    eggbox_pitch: tuple[float, float] = (1.0, 1.0)
-    eggbox_phase: tuple[float, float] = (0.0, 0.0)
-
-
-
-class RenderMode(IntEnum):
-    in_order = 0
-    offline = 1
-
-
-@dataclass(slots=True)
-class RasterConfig:
-    """Raster settings; ``parallel=None`` delegates thread planning to Zig.
-
-    Use 1 for serial rendering or a positive integer for an explicit thread
-    budget. The count includes group caller threads, not disk-save workers.
-    """
-
-    render_mode: int = RenderMode.offline
-    # Keep this untyped at the Cython boundary until strict validation runs.
-    parallel: Any = None
-    save_strategy: int = 1
-    image_save_mode: int = 2
-    oneroot_hull_mode: int = 1
-    oneroot_newton_seed_mode: int = 0
-    oneroot_newton_seed_reuse: int = 0
-    oneroot_edge_fun_mode: int = 0
-    multiroot_mode: int = 0
-    multiroot_edge_fun_mode: int = 1
-    validate_input: int = 1
-    report: int = 1
-    tile_size_min: int = 1
-    tile_size_max: int = 256
-    background_value: float = 0.0
-    disk_save_overlap: bool = False
-    tile_size_override: int = 0
-    global_subpx_tile_size_min: int = 64
-    global_subpx_tile_size_max: int = 1024
-    global_subpx_tile_size_override: int = 0
-    global_subpx_stripe_size_min: int = 256
-    global_subpx_stripe_size_max: int = 4096
-    global_subpx_stripe_size_override: int = 0
-    raster_halo_px_override: int = 0
-    save_frame_buffer_count: int = 3
-    save_format: int = 3
-    save_bits: int = 8
-    save_scaling: int = 0
-    save_scaling_min: float = 0.0
-    save_scaling_max: float = 0.0
-    full_stats_save_solver_csv: bool = False
-    full_stats_save_iter_map: bool = True
-    full_stats_save_xi_map: bool = True
-    full_stats_save_eta_map: bool = True
-    full_stats_save_conv_map: bool = True
-    full_stats_save_jac_det_map: bool = True
-    full_stats_save_tile_timing_map: bool = True
-    full_stats_save_tile_density_map: bool = True
-    full_stats_save_tile_occupancy_map: bool = True
-    full_stats_save_depth_map: bool = True
-    full_stats_save_earlyout_map: bool = True
-    full_stats_save_pixel_occupancy_map: bool = True
-    full_stats_save_normals_map: bool = False
-    buffer_mode: int = 0
-    output_name_format: str = "cam{camera}_frame{frame}_field{field}"
-    edge_spacing_px: float = 1.0
-
-    def __post_init__(self) -> None:
-        _check_parallel(self.parallel)
-
-
-def _check_parallel(parallel: Any) -> None:
-    if parallel is None:
-        return
-    if isinstance(parallel, bool) or not isinstance(parallel, Integral):
-        raise TypeError("parallel must be an integer thread budget or None.")
-    if parallel < 1 or parallel > 65535:
-        raise ValueError("parallel must be between 1 and 65535.")
-
-
-class MeshType(IntEnum):
-    tri3 = 0
-    tri3opt = 1
-    tri6 = 2
-    quad4 = 4
-    quad8 = 5
-    quad9 = 6
-
-
-class ShaderType(IntEnum):
-    tex = 0
-    tex_rgb = 1
-    nodal = 2
-    func = 3
-    func_rgb = 4
-    nodal_rgb = 5
-    speckle = 6
-
-
-class TextureStorage(IntEnum):
-    u8 = 0
-    u16 = 1
-    floating = 2
-
-
-class SaveStrategy(IntEnum):
-    disk = 0
-    memory = 1
-    both = 2
-    none = 3
-
-
-class ImageSaveMode(IntEnum):
-    grey = 0
-    rgb = 1
-    multifield = 2
-    rgb_to_grey = 3
-    grey_to_rgb = 4
-
-
-class ReportMode(IntEnum):
-    off = 0
-    bench = 1
-    full_stats = 2
-
-
-class BufferMode(IntEnum):
-    tile_local = 0
-    global_subpx_full = 1
-    global_subpx_stripe = 2
-
-
-class SubPixelCenterMap(IntEnum):
-    full_in_mem = 0
-    per_tile = 1
-
-
-class TextureSample(IntEnum):
-    nearest = 0
-    linear = 1
-    cubic_catmull_rom = 2
-    cubic_mitchell_netravali = 3
-    lanczos3 = 4
-    cubic_bspline = 5
-    quintic_bspline = 6
-    lanczos2 = 7
-
-
-class TextureSampleMode(IntEnum):
-    direct = 0
-    lut = 1
-    lut_lerp = 2
-
-
-class ScaleStrategy(IntEnum):
-    none = 0
-    auto = 1
-    fixed = 2
-    frac = 3
-
-
-class ScaleOver(IntEnum):
-    within_frames = 0
-    over_frames = 1
-
-
-class FuncShaderBuiltin(IntEnum):
-    constant = 0
-    linear = 1
-    quadratic = 2
-    sinusoidal = 3
-    sinusoidal_approx = 4
-    checker = 5
-    checker_smooth = 6
-    lambertian_normal_z = 7
-    eggbox = 8
-
-
-
-class FuncCoordMode(IntEnum):
-    uv = 0
-    parametric = 1
-    world_reference = 2
-    world_deformed = 3
-
-
-class NormalType(IntEnum):
-    none = 0
-    exact = 1
-    averaged = 2
-
-
-class HullMode(IntEnum):
-    on_no_fallback = 1
-    on_convex_fallback = 2
-
-
-class NewtonSeedMode(IntEnum):
-    centroid = 0
-    hull = 1
-
-
-class NewtonSeedReuse(IntEnum):
-    off = 0
-    last_converged = 1
-
-
-class MultirootSolverMode(IntEnum):
-    fast = 0
-    robust = 1
-
-
-class EdgeFunMode(IntEnum):
-    on_the_fly = 0
-    pre_calc = 1
-
-
-class ValidateInput(IntEnum):
-    off = 0
-    fast = 1
-    full = 2
-
-
-class CameraCoordSys(IntEnum):
-    opengl = 0
-    opencv = 1
-
-
-class PsfType(IntEnum):
-    pixel_box = 0
-    gaussian = 1
-    anisotropic_gaussian = 2
-
-
-@dataclass(slots=True)
-class TextureShader:
-    """Configure a monochrome or RGB texture shader."""
-
-    uvs: np.ndarray
-    texture: np.ndarray
-    sample: TextureSample = TextureSample.cubic_catmull_rom
-    sample_mode: TextureSampleMode = TextureSampleMode.direct
-    bits: int = 8
-    scaling_type: ScaleStrategy = ScaleStrategy.none
-    scaling_min: float = 0.0
-    scaling_max: float = 0.0
-    normal_type: NormalType = NormalType.none
-
-
-@dataclass(slots=True)
-class NodalShader:
-    """Configure a scalar or RGB nodal-field shader."""
-
-    field: np.ndarray
-    bits: int = 8
-    scaling_type: ScaleStrategy = ScaleStrategy.auto
-    scaling_min: float = 0.0
-    scaling_max: float = 0.0
-    scale_over: ScaleOver = ScaleOver.over_frames
-    normal_type: NormalType = NormalType.none
-
-
-@dataclass(slots=True)
-class FunctionShader:
-    """Configure a scalar or RGB procedural function shader."""
-
-    builtin: FuncShaderBuiltin
-    coord_mode: FuncCoordMode = FuncCoordMode.parametric
-    params: FuncShaderParams = field(default_factory=FuncShaderParams)
-    uvs: np.ndarray | None = None
-    channels: int = 1
-    bits: int = 8
-    scaling_type: ScaleStrategy = ScaleStrategy.auto
-    scaling_min: float = 0.0
-    scaling_max: float = 0.0
-    normal_type: NormalType = NormalType.none
-
-
-@dataclass(slots=True)
-class SpeckleShader:
-    """Configure a monochrome procedural speckle field from nodal UVs.
-
-    Pass ``uvs`` with shape ``(nodes, 2)`` and ``params`` as a
-    :class:`Dot2DParams` or :class:`Perlin2DParams` instance.
-    See :ref:`speckle-uv-domain` for the UV requirements.
-
-    Use ``bits=-1, scaling_type=ScaleStrategy.none`` for raw intensities after
-    the shader transform.
-    """
-
-    uvs: np.ndarray
-    params: Dot2DParams | Perlin2DParams
-    output_scale: float = 1.0
-    output_offset: float = 0.0
-    bits: int = 8
-    scaling_type: ScaleStrategy = ScaleStrategy.auto
-    scaling_min: float = 0.0
-    scaling_max: float = 0.0
-
-
-RileyShader = TextureShader | NodalShader | FunctionShader | SpeckleShader
-Shader = RileyShader
-
-
-@dataclass(slots=True)
-class Mesh:
-    """Hold one renderer-ready Riley surface mesh."""
-
-    mesh_type: MeshType
-    coords: np.ndarray
-    connect: np.ndarray
-    disp: np.ndarray | None
-    shader: Shader
-
-
-class ImageFormat(IntEnum):
-    csv = 0
-    fimg = 1
-    ppm = 2
-    bmp = 3
-    tiff = 4
-
-
-class FrameFitMode(IntEnum):
-    contain = 0
-    cover = 1
-    horizontal = 2
-    vertical = 3
-
-
-EFrameFit = FrameFitMode
-
-
-def _fit_mode_to_int(fit_mode: FrameFitMode | str | int) -> int:
-    if isinstance(fit_mode, (FrameFitMode, int)):
-        return int(fit_mode)
-    if isinstance(fit_mode, str):
-        fit_lower = fit_mode.lower()
-        if fit_lower in ("contain", "fit_max", "max"):
-            return int(FrameFitMode.contain)
-        if fit_lower in ("cover", "fit_min", "min"):
-            return int(FrameFitMode.cover)
-        if fit_lower in ("horizontal", "x", "width"):
-            return int(FrameFitMode.horizontal)
-        if fit_lower in ("vertical", "y", "height"):
-            return int(FrameFitMode.vertical)
-        raise ValueError(f"Unknown fit_mode: '{fit_mode}'")
-    raise TypeError(f"Invalid fit_mode type: {type(fit_mode)}")
+from riley.types import (
+    EPolyMode,
+    PolyMap,
+    RenderFormat,
+    CodePacking,
+    ImageSaveOpts,
+    Camera,
+    FuncShaderParams,
+    RenderMode,
+    RasterConfig,
+    MeshType,
+    ShaderType,
+    TextureStorage,
+    SaveStrategy,
+    ReportMode,
+    BufferMode,
+    SubPixelCenterMap,
+    TextureSample,
+    TextureSampleMode,
+    ScaleStrategy,
+    ScaleOver,
+    FuncShaderBuiltin,
+    FuncCoordMode,
+    NormalType,
+    HullMode,
+    NewtonSeedMode,
+    NewtonSeedReuse,
+    MultirootSolverMode,
+    EdgeFunMode,
+    ValidateInput,
+    CameraCoordSys,
+    PsfType,
+    TextureShader,
+    NodalShader,
+    FunctionShader,
+    FunctionChannel,
+    FunctionMultiShader,
+    Disk2DParams,
+    Gaussian2DParams,
+    Perlin2DParams,
+    SpeckleShader,
+    RegisterKind,
+    ResolverKind,
+    ResolverOpKind,
+    Register,
+    ResolverOp,
+    ShaderResolver,
+    ShaderSource,
+    GreyToEmissivity,
+    ClampStage,
+    AffineMap,
+    LUTMap,
+    Blend,
+    Normalise,
+    ShaderPipe,
+    MeshShaderSet,
+    Mesh,
+    ImageFormat,
+    FrameFitMode,
+    RileyShader,
+    Shader,
+    _check_parallel,
+    _fit_mode_to_int,
+)
+
+
+@cython.cfunc
+def _descriptor_bytes(size: cython.size_t, keepalive: list[Any]) -> cython.p_void:
+    # Every ABI descriptor is aligned no more strictly than double. NumPy owns
+    # these blocks, so errors and early returns cannot leak native allocations.
+    storage = np.empty(max(1, (size + 7) // 8), dtype=np.float64)
+    keepalive.append(storage)
+    view: cython.double[::1] = storage
+    return cython.cast(cython.p_void, cython.address(view[0]))
 
 
 @cython.cfunc
@@ -596,7 +110,9 @@ def _make_cvec2_u32(vec_in: tuple[int, int]) -> cr.CVec2U32:
 
 
 @cython.cfunc
-def _make_camera_input(camera: Any, keepalive: list[Any]) -> cr.CCameraInput:
+def _make_camera_input(
+    camera: Any, keepalive: list[Any]
+) -> cr.CCameraInput:
     camera_out: cr.CCameraInput
     poly_coeffs: cython.double[::1]
     camera_out.distort.distort_poly_degree = 0
@@ -640,6 +156,7 @@ def _make_camera_input(camera: Any, keepalive: list[Any]) -> cr.CCameraInput:
     camera_out.roi_cent_world = _make_cvec3(camera.roi_cent_world)
     camera_out.focal_length = float(camera.focal_length)
     camera_out.sub_sample = int(camera.sub_sample)
+    camera_out.background_value = float(camera.background_value)
     camera_out.distort.distort_model = int(camera.distort_model)
     camera_out.distort.distort_k1 = float(camera.distort_k1)
     camera_out.distort.distort_k2 = float(camera.distort_k2)
@@ -657,6 +174,30 @@ def _make_camera_input(camera: Any, keepalive: list[Any]) -> cr.CCameraInput:
     camera_out.distort.distort_tau_y = float(camera.distort_tau_y)
     camera_out.coord_sys = int(camera.coord_sys)
     camera_out.subpixel_center_map = int(camera.subpixel_center_map)
+
+    camera_out.render_format_tag = int(camera.render_format)
+    camera_out.render_channels = (3 if camera.render_format == RenderFormat.rgb else
+                                  camera.render_channels if camera.render_format == RenderFormat.multifield else 1)
+
+    camera_out.output_files = cython.NULL
+    camera_out.output_files_len = 0
+    out_files = getattr(camera, "output_files", None)
+    if out_files:
+        files_len: cython.size_t = len(out_files)
+        c_files = cython.cast(cython.pointer[cr.CImageSaveOpts],
+                              _descriptor_bytes(files_len * cython.sizeof(cr.CImageSaveOpts), keepalive))
+        for fi in range(files_len):
+            item = out_files[fi]
+            c_files[fi].format = int(item.format)
+            c_files[fi].file_bits = -1 if item.file_bits is None else int(item.file_bits)
+            c_files[fi].adc_bits = -1 if item.adc_bits is None else int(item.adc_bits)
+            c_files[fi].scaling_tag = int(item.scaling)
+            c_files[fi].scaling_min = float(getattr(item, "scaling_min", 0.0))
+            c_files[fi].scaling_max = float(getattr(item, "scaling_max", 1.0))
+            c_files[fi].packing = int(item.packing)
+        camera_out.output_files = c_files
+        camera_out.output_files_len = files_len
+
     camera_out.psf.psf_type = int(camera.psf_type)
     camera_out.psf.psf_sigma_x = float(camera.psf_sigma_x)
     camera_out.psf.psf_sigma_y = float(camera.psf_sigma_y)
@@ -699,6 +240,7 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
         ),
         focal_length=camera_in.focal_length,
         sub_sample=camera_in.sub_sample,
+        background_value=camera_in.background_value,
         distort_model=camera_in.distort.distort_model,
         distort_k1=camera_in.distort.distort_k1,
         distort_k2=camera_in.distort.distort_k2,
@@ -723,6 +265,8 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
         psf_theta=camera_in.psf.psf_theta,
         psf_support_rad=camera_in.psf.psf_supp_rad,
         psf_separable=camera_in.psf.psf_separable,
+        render_format=RenderFormat(camera_in.render_format_tag),
+        render_channels=camera_in.render_channels,
     )
 
 
@@ -741,7 +285,6 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
         config_out.parallel_mode = 2
         config_out.thread_count = int(config.parallel)
     config_out.save_strategy = int(config.save_strategy)
-    config_out.image_save_mode = int(config.image_save_mode)
     config_out.oneroot_hull_mode = int(config.oneroot_hull_mode)
     config_out.oneroot_newton_seed_mode = int(config.oneroot_newton_seed_mode)
     config_out.oneroot_newton_seed_reuse = int(
@@ -751,10 +294,10 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
     config_out.multiroot_mode = int(config.multiroot_mode)
     config_out.multiroot_edge_fun_mode = int(config.multiroot_edge_fun_mode)
     config_out.validate_input = int(config.validate_input)
-    config_out.report = int(config.report)
+    config_out.report_perf = int(config.report_perf)
+    config_out.report_console = int(config.report_console)
     config_out.tile_size_min = int(config.tile_size_min)
     config_out.tile_size_max = int(config.tile_size_max)
-    config_out.background_value = float(config.background_value)
     config_out.disk_save_overlap = 1 if config.disk_save_overlap else 0
     config_out.tile_size_override = int(config.tile_size_override)
     config_out.global_subpx_tile_size_min = int(
@@ -777,50 +320,6 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
     )
     config_out.raster_halo_px_override = int(config.raster_halo_px_override)
     config_out.save_frame_buff_count = int(config.save_frame_buffer_count)
-    config_out.save_format = int(config.save_format)
-    config_out.save_bits = int(config.save_bits)
-    config_out.save_scaling = int(config.save_scaling)
-    config_out.save_scaling_min = float(config.save_scaling_min)
-    config_out.save_scaling_max = float(config.save_scaling_max)
-    config_out.full_stats_save_solver_csv = int(
-        config.full_stats_save_solver_csv,
-    )
-    config_out.full_stats_save_iter_map = int(
-        config.full_stats_save_iter_map,
-    )
-    config_out.full_stats_save_xi_map = int(
-        config.full_stats_save_xi_map,
-    )
-    config_out.full_stats_save_eta_map = int(
-        config.full_stats_save_eta_map,
-    )
-    config_out.full_stats_save_conv_map = int(
-        config.full_stats_save_conv_map,
-    )
-    config_out.full_stats_save_jac_det_map = int(
-        config.full_stats_save_jac_det_map,
-    )
-    config_out.full_stats_save_tile_timing_map = int(
-        config.full_stats_save_tile_timing_map,
-    )
-    config_out.full_stats_save_tile_density_map = int(
-        config.full_stats_save_tile_density_map,
-    )
-    config_out.full_stats_save_tile_occupancy_map = int(
-        config.full_stats_save_tile_occupancy_map,
-    )
-    config_out.full_stats_save_depth_map = int(
-        config.full_stats_save_depth_map,
-    )
-    config_out.full_stats_save_earlyout_map = int(
-        config.full_stats_save_earlyout_map,
-    )
-    config_out.full_stats_save_pixel_occupancy_map = int(
-        config.full_stats_save_pixel_occupancy_map,
-    )
-    config_out.full_stats_save_normals_map = int(
-        config.full_stats_save_normals_map,
-    )
     config_out.buffer_mode = int(config.buffer_mode)
     config_out.edge_spacing_px = float(config.edge_spacing_px)
     output_name_format = config.output_name_format.encode("utf-8")
@@ -830,186 +329,63 @@ def _make_raster_config(config: Any, keepalive: list[Any]) -> cr.CRasterConfig:
 
 
 @cython.cfunc
-def _make_speckle_params(params_in: Any) -> cr.CSpeckleParams:
-    params_out: cr.CSpeckleParams
-    memset(cython.address(params_out), 0, cython.sizeof(params_out))
-    if isinstance(params_in, Dot2DParams):
-        params_out.pattern = int(SpecklePattern(params_in.pattern))
-        params_out.coverage = float(params_in.coverage)
-        params_out.radius = float(params_in.radius)
-        params_out.occupancy = float(params_in.occupancy)
-        params_out.jitter = float(params_in.jitter)
-        params_out.edge_softness = float(params_in.edge_softness)
-    elif isinstance(params_in, Perlin2DParams):
-        params_out.pattern = cr.RILEY_SPECKLE_PERLIN
-        params_out.perlin_cell_size = float(params_in.cell_size)
-        params_out.perlin_threshold = float(params_in.threshold)
-        params_out.perlin_transition_width = float(params_in.transition_width)
-    else:
-        raise TypeError("SpeckleShader.params must be Dot2DParams or Perlin2DParams")
-    if isinstance(params_in.seed, (bool, np.bool_)):
-        raise TypeError("Speckle seed must be an integer, not a boolean")
-    seed = index(params_in.seed)
-    if not 0 <= seed <= 2**32 - 1:
-        raise ValueError("Speckle seed must be in [0, 2**32 - 1]")
-    params_out.seed = seed
-    params_out.foreground = float(params_in.foreground)
-    params_out.background = float(params_in.background)
-    return params_out
-
-
-@cython.cfunc
 def _make_func_params(params_in: Any) -> cr.CFuncShaderParams:
     params_out: cr.CFuncShaderParams
-    params_out.coord_scale_0 = float(params_in.coord_scale[0])
-    params_out.coord_scale_1 = float(params_in.coord_scale[1])
-    params_out.coord_offset_0 = float(params_in.coord_offset[0])
-    params_out.coord_offset_1 = float(params_in.coord_offset[1])
-    params_out.output_scale = float(params_in.output_scale)
-    params_out.output_offset = float(params_in.output_offset)
+    ii: cython.size_t
+    jj: cython.size_t
+    for ii in range(2):
+        params_out.coord_scale[ii] = float(params_in.coord_scale[ii])
+    for ii in range(2):
+        params_out.coord_offset[ii] = float(params_in.coord_offset[ii])
+    for ii in range(3):
+        params_out.constant_value_rgb[ii] = float(params_in.constant_value_rgb[ii])
+    for ii in range(3):
+        params_out.linear_coeff[ii] = float(params_in.linear_coeffs[ii])
+    for ii in range(3):
+        for jj in range(3):
+            params_out.linear_coeff_rgb[ii][jj] = float(params_in.linear_coeffs_rgb[ii][jj])
+    for ii in range(6):
+        params_out.quadratic_coeff[ii] = float(params_in.quadratic_coeffs[ii])
+    for ii in range(3):
+        for jj in range(6):
+            params_out.quadratic_coeff_rgb[ii][jj] = float(params_in.quadratic_coeffs_rgb[ii][jj])
+    for ii in range(2):
+        params_out.wave_num_scalar[ii] = float(params_in.wave_num_scalar[ii])
+    for ii in range(3):
+        params_out.wave_num_rgb[ii] = float(params_in.wave_num_rgb[ii])
+    for ii in range(2):
+        params_out.sinusoidal_amp[ii] = float(params_in.sinusoidal_amplitudes[ii])
+    for ii in range(3):
+        params_out.sinusoidal_bias_rgb[ii] = float(params_in.sinusoidal_bias_rgb[ii])
+    for ii in range(3):
+        params_out.sinusoidal_amp_rgb[ii] = float(params_in.sinusoidal_amplitudes_rgb[ii])
+    for ii in range(2):
+        params_out.checker_level[ii] = float(params_in.checker_levels[ii])
+    for ii in range(2):
+        params_out.lambertian_coeff[ii] = float(params_in.lambertian_coeffs[ii])
+    for ii in range(3):
+        for jj in range(2):
+            params_out.lambertian_coeff_rgb[ii][jj] = float(params_in.lambertian_coeffs_rgb[ii][jj])
+    for ii in range(2):
+        params_out.eggbox_pitch[ii] = float(params_in.eggbox_pitch[ii])
+    for ii in range(2):
+        params_out.eggbox_phase[ii] = float(params_in.eggbox_phase[ii])
     params_out.constant_value = float(params_in.constant_value)
-    params_out.constant_value_rgb_0 = float(params_in.constant_value_rgb[0])
-    params_out.constant_value_rgb_1 = float(params_in.constant_value_rgb[1])
-    params_out.constant_value_rgb_2 = float(params_in.constant_value_rgb[2])
-    params_out.linear_coeff_0 = float(params_in.linear_coeffs[0])
-    params_out.linear_coeff_1 = float(params_in.linear_coeffs[1])
-    params_out.linear_coeff_2 = float(params_in.linear_coeffs[2])
-    params_out.linear_coeff_rgb_00 = float(params_in.linear_coeffs_rgb[0][0])
-    params_out.linear_coeff_rgb_01 = float(params_in.linear_coeffs_rgb[0][1])
-    params_out.linear_coeff_rgb_02 = float(params_in.linear_coeffs_rgb[0][2])
-    params_out.linear_coeff_rgb_10 = float(params_in.linear_coeffs_rgb[1][0])
-    params_out.linear_coeff_rgb_11 = float(params_in.linear_coeffs_rgb[1][1])
-    params_out.linear_coeff_rgb_12 = float(params_in.linear_coeffs_rgb[1][2])
-    params_out.linear_coeff_rgb_20 = float(params_in.linear_coeffs_rgb[2][0])
-    params_out.linear_coeff_rgb_21 = float(params_in.linear_coeffs_rgb[2][1])
-    params_out.linear_coeff_rgb_22 = float(params_in.linear_coeffs_rgb[2][2])
-    params_out.quadratic_coeff_0 = float(params_in.quadratic_coeffs[0])
-    params_out.quadratic_coeff_1 = float(params_in.quadratic_coeffs[1])
-    params_out.quadratic_coeff_2 = float(params_in.quadratic_coeffs[2])
-    params_out.quadratic_coeff_3 = float(params_in.quadratic_coeffs[3])
-    params_out.quadratic_coeff_4 = float(params_in.quadratic_coeffs[4])
-    params_out.quadratic_coeff_5 = float(params_in.quadratic_coeffs[5])
-    params_out.quadratic_coeff_rgb_00 = float(
-        params_in.quadratic_coeffs_rgb[0][0],
-    )
-    params_out.quadratic_coeff_rgb_01 = float(
-        params_in.quadratic_coeffs_rgb[0][1],
-    )
-    params_out.quadratic_coeff_rgb_02 = float(
-        params_in.quadratic_coeffs_rgb[0][2],
-    )
-    params_out.quadratic_coeff_rgb_03 = float(
-        params_in.quadratic_coeffs_rgb[0][3],
-    )
-    params_out.quadratic_coeff_rgb_04 = float(
-        params_in.quadratic_coeffs_rgb[0][4],
-    )
-    params_out.quadratic_coeff_rgb_05 = float(
-        params_in.quadratic_coeffs_rgb[0][5],
-    )
-    params_out.quadratic_coeff_rgb_10 = float(
-        params_in.quadratic_coeffs_rgb[1][0],
-    )
-    params_out.quadratic_coeff_rgb_11 = float(
-        params_in.quadratic_coeffs_rgb[1][1],
-    )
-    params_out.quadratic_coeff_rgb_12 = float(
-        params_in.quadratic_coeffs_rgb[1][2],
-    )
-    params_out.quadratic_coeff_rgb_13 = float(
-        params_in.quadratic_coeffs_rgb[1][3],
-    )
-    params_out.quadratic_coeff_rgb_14 = float(
-        params_in.quadratic_coeffs_rgb[1][4],
-    )
-    params_out.quadratic_coeff_rgb_15 = float(
-        params_in.quadratic_coeffs_rgb[1][5],
-    )
-    params_out.quadratic_coeff_rgb_20 = float(
-        params_in.quadratic_coeffs_rgb[2][0],
-    )
-    params_out.quadratic_coeff_rgb_21 = float(
-        params_in.quadratic_coeffs_rgb[2][1],
-    )
-    params_out.quadratic_coeff_rgb_22 = float(
-        params_in.quadratic_coeffs_rgb[2][2],
-    )
-    params_out.quadratic_coeff_rgb_23 = float(
-        params_in.quadratic_coeffs_rgb[2][3],
-    )
-    params_out.quadratic_coeff_rgb_24 = float(
-        params_in.quadratic_coeffs_rgb[2][4],
-    )
-    params_out.quadratic_coeff_rgb_25 = float(
-        params_in.quadratic_coeffs_rgb[2][5],
-    )
-    params_out.wave_num_scalar_0 = float(params_in.wave_num_scalar[0])
-    params_out.wave_num_scalar_1 = float(params_in.wave_num_scalar[1])
-    params_out.wave_num_rgb_0 = float(params_in.wave_num_rgb[0])
-    params_out.wave_num_rgb_1 = float(params_in.wave_num_rgb[1])
-    params_out.wave_num_rgb_2 = float(params_in.wave_num_rgb[2])
     params_out.sinusoidal_bias = float(params_in.sinusoidal_bias)
-    params_out.sinusoidal_amp_0 = float(params_in.sinusoidal_amplitudes[0])
-    params_out.sinusoidal_amp_1 = float(params_in.sinusoidal_amplitudes[1])
-    params_out.sinusoidal_bias_rgb_0 = float(
-        params_in.sinusoidal_bias_rgb[0],
-    )
-    params_out.sinusoidal_bias_rgb_1 = float(
-        params_in.sinusoidal_bias_rgb[1],
-    )
-    params_out.sinusoidal_bias_rgb_2 = float(
-        params_in.sinusoidal_bias_rgb[2],
-    )
-    params_out.sinusoidal_amp_rgb_0 = float(
-        params_in.sinusoidal_amplitudes_rgb[0],
-    )
-    params_out.sinusoidal_amp_rgb_1 = float(
-        params_in.sinusoidal_amplitudes_rgb[1],
-    )
-    params_out.sinusoidal_amp_rgb_2 = float(
-        params_in.sinusoidal_amplitudes_rgb[2],
-    )
-    params_out.checker_level_0 = float(params_in.checker_levels[0])
-    params_out.checker_level_1 = float(params_in.checker_levels[1])
-    params_out.checker_smooth_frequency = float(
-        params_in.checker_smooth_frequency,
-    )
-    params_out.lambertian_coeff_0 = float(params_in.lambertian_coeffs[0])
-    params_out.lambertian_coeff_1 = float(params_in.lambertian_coeffs[1])
-    params_out.lambertian_coeff_rgb_00 = float(
-        params_in.lambertian_coeffs_rgb[0][0],
-    )
-    params_out.lambertian_coeff_rgb_01 = float(
-        params_in.lambertian_coeffs_rgb[0][1],
-    )
-    params_out.lambertian_coeff_rgb_10 = float(
-        params_in.lambertian_coeffs_rgb[1][0],
-    )
-    params_out.lambertian_coeff_rgb_11 = float(
-        params_in.lambertian_coeffs_rgb[1][1],
-    )
-    params_out.lambertian_coeff_rgb_20 = float(
-        params_in.lambertian_coeffs_rgb[2][0],
-    )
-    params_out.lambertian_coeff_rgb_21 = float(
-        params_in.lambertian_coeffs_rgb[2][1],
-    )
+    params_out.checker_smooth_frequency = float(params_in.checker_smooth_frequency)
     params_out.eggbox_mean = float(params_in.eggbox_mean)
     params_out.eggbox_contrast = float(params_in.eggbox_contrast)
-    params_out.eggbox_pitch_0 = float(params_in.eggbox_pitch[0])
-    params_out.eggbox_pitch_1 = float(params_in.eggbox_pitch[1])
-    params_out.eggbox_phase_0 = float(params_in.eggbox_phase[0])
-    params_out.eggbox_phase_1 = float(params_in.eggbox_phase[1])
-
     return params_out
 
 
 @cython.cfunc
 def _make_array_2d_f64(
-    view_in: cython.double[:, ::1],
+    view_in: cython.const[cython.double][:, ::1],
     rows_num: cython.Py_ssize_t,
     cols_num: cython.Py_ssize_t,
 ) -> cr.CArray2DF64:
+    if rows_num == 0 or cols_num == 0:
+        return cr.CArray2DF64(cython.NULL, rows_num, cols_num)
     return cr.CArray2DF64(
         cython.address(view_in[0, 0]),
         rows_num,
@@ -1023,6 +399,8 @@ def _make_array_2d_usize(
     rows_num: cython.Py_ssize_t,
     cols_num: cython.Py_ssize_t,
 ) -> cr.CArray2DUsize:
+    if rows_num == 0 or cols_num == 0:
+        return cr.CArray2DUsize(cython.NULL, rows_num, cols_num)
     return cr.CArray2DUsize(
         cython.address(view_in[0, 0]),
         rows_num,
@@ -1236,37 +614,18 @@ def pos_frame_coords(
     out_pos: cr.CVec3F64
     mode_int: cython.uint = _fit_mode_to_int(fit_mode)
 
-    if target is None:
-        if (
-            cr.rileyPosFrameCoords(
-                cython.address(coords_c),
-                _make_cvec2_u32(tuple(pixels_num)),
-                _make_cvec2_f64(tuple(pixels_size)),
-                float(focal_length),
-                _make_cvec3(tuple(rot_world)),
-                float(fov_scale),
-                mode_int,
-                cython.address(out_pos),
-            )
-            != 0
-        ):
-            _raise_last_error()
-    else:
-        if (
-            cr.rileyPosFrameCoordsTarg(
-                cython.address(coords_c),
-                _make_cvec3(tuple(target)),
-                _make_cvec2_u32(tuple(pixels_num)),
-                _make_cvec2_f64(tuple(pixels_size)),
-                float(focal_length),
-                _make_cvec3(tuple(rot_world)),
-                float(fov_scale),
-                mode_int,
-                cython.address(out_pos),
-            )
-            != 0
-        ):
-            _raise_last_error()
+    target_c: cr.CVec3F64
+    target_ptr: cython.pointer[cr.CVec3F64] = cython.NULL
+    if target is not None:
+        target_c = _make_cvec3(tuple(target))
+        target_ptr = cython.address(target_c)
+    if cr.rileyPosFrameCoords(
+        cython.address(coords_c), _make_cvec2_u32(tuple(pixels_num)),
+        _make_cvec2_f64(tuple(pixels_size)), float(focal_length),
+        _make_cvec3(tuple(rot_world)), float(fov_scale), mode_int,
+        target_ptr, cython.address(out_pos),
+    ) != 0:
+        _raise_last_error()
 
     return (out_pos.x, out_pos.y, out_pos.z)
 
@@ -1294,28 +653,335 @@ def pos_frame_mesh(
     )
 
 
-def pos_fill_frame_from_rot(
-    coords_in: Any,
-    pixels_num: tuple[int, int],
-    pixels_size: tuple[float, float],
-    focal_length: float,
-    rot_world: tuple[float, float, float],
-    frame_fill: float = 1.0,
-) -> tuple[float, float, float]:
-    warnings.warn(
-        "pos_fill_frame_from_rot is deprecated, use pos_frame_coords instead",
-        DeprecationWarning,
-        stacklevel=2,
+@cython.cfunc
+def _make_register(register_ref: Register) -> cr.CRegister:
+    return cr.CRegister(int(register_ref.kind), int(register_ref.index))
+
+
+@cython.cfunc
+def _fill_shader_input(
+    shader: Any,
+    nodes_num: cython.Py_ssize_t,
+    out_shader: cython.pointer[cr.CShaderInput],
+    keepalive: list[Any],
+) -> None:
+    is_speckle = isinstance(shader, SpeckleShader)
+    gain = float(getattr(shader, "output_gain", 1.0))
+    scaling = int(getattr(shader, "scaling_type", ScaleStrategy.none))
+    # Speckle scaling uses the bit depth in the native shader, independently of gain.
+    if not is_speckle and gain == 1.0 and scaling != int(ScaleStrategy.none):
+        bits = getattr(shader, "bits", None)
+        if bits is not None:
+            gain = float((1 << int(bits)) - 1)
+    out_shader.output_gain = gain
+    out_shader.output_offset = float(getattr(shader, "output_offset", 0.0))
+    out_shader.scaling_tag = scaling
+    out_shader.scaling_min = float(getattr(shader, "scaling_min", 0.0))
+    out_shader.scaling_max = float(getattr(shader, "scaling_max", 0.0))
+
+    if isinstance(shader, TextureShader):
+        count = int(shader.texture.shape[0])
+        storage = (TextureStorage.u8 if shader.texture.dtype == np.uint8 else
+                   TextureStorage.u16 if shader.texture.dtype == np.uint16 else TextureStorage.floating)
+        out_shader.shader_tag = int(ShaderType.tex if count == 1 else
+                                    ShaderType.tex_rgb if count == 3 else ShaderType.tex_multi)
+        out_shader.value.texture.storage = int(storage)
+        out_shader.value.texture.sample = int(shader.sample)
+        out_shader.value.texture.sample_mode = int(shader.sample_mode)
+        uvs = _contig_f64_2d(shader.uvs, "uvs")
+        keepalive.append(uvs)
+        uv_view: cython.double[:, ::1] = uvs
+        out_shader.value.texture.uvs = _make_array_2d_f64(uv_view, uvs.shape[0], uvs.shape[1])
+        texture = _contig_texture(shader.texture, count, int(storage))
+        keepalive.append(texture)
+        if storage == TextureStorage.u8:
+            tex_u8: cython.uchar[:, :, ::1] = texture
+            out_shader.value.texture.data.u8 = _make_array_3d_u8(tex_u8, texture.shape[0], texture.shape[1], texture.shape[2])
+        elif storage == TextureStorage.u16:
+            tex_u16: cython.ushort[:, :, ::1] = texture
+            out_shader.value.texture.data.u16 = _make_array_3d_u16(tex_u16, texture.shape[0], texture.shape[1], texture.shape[2])
+        else:
+            tex_f: cython.double[:, :, ::1] = texture
+            out_shader.value.texture.data.f = _make_array_3d_f64(tex_f, texture.shape[0], texture.shape[1], texture.shape[2])
+
+    elif is_speckle:
+        params = shader.params
+        pattern: cython.uint
+        if isinstance(params, Disk2DParams):
+            pattern = cr.RILEY_SPECKLE_DISK
+        elif isinstance(params, Gaussian2DParams):
+            pattern = cr.RILEY_SPECKLE_GAUSSIAN
+        elif isinstance(params, Perlin2DParams):
+            pattern = cr.RILEY_SPECKLE_PERLIN
+        else:
+            raise TypeError("speckle params must be Disk2DParams, Gaussian2DParams, or Perlin2DParams")
+
+        # Check integer conversions and buffer metadata here; Zig validates the physical inputs.
+        seed = params.seed
+        if isinstance(seed, (bool, np.bool_)) or not isinstance(seed, Integral):
+            raise TypeError("speckle seed must be a uint32 integer")
+        if not 0 <= seed <= 0xFFFF_FFFF:
+            raise ValueError("speckle seed must be in the uint32 range")
+        bits = shader.bits
+        bits_c: cython.int = cr.RILEY_SPECKLE_BITS_NONE
+        if bits is not None:
+            if isinstance(bits, (bool, np.bool_)) or not isinstance(bits, Integral):
+                raise TypeError("speckle bits must be an integer or None")
+            if not INT_MIN <= bits <= INT_MAX:
+                raise ValueError("speckle bits must fit in a C int")
+            if bits == cr.RILEY_SPECKLE_BITS_NONE:
+                raise ValueError("speckle bits must use None to disable quantisation")
+            bits_c = int(bits)
+
+        speckle_uvs = np.asarray(shader.uvs)
+        if speckle_uvs.shape != (nodes_num, 2):
+            raise ValueError("speckle uvs must have shape (N, 2), with one row per mesh node")
+        if not np.issubdtype(speckle_uvs.dtype, np.floating):
+            raise TypeError("speckle uvs must have a floating-point dtype.")
+        speckle_uvs = np.require(speckle_uvs, dtype=np.float64, requirements=("C", "A"))
+        keepalive.append(speckle_uvs)
+        speckle_uv_view: cython.const[cython.double][:, ::1] = speckle_uvs
+
+        out_shader.shader_tag = cr.RILEY_SHADER_SPECKLE
+        out_shader.value.speckle.uvs = _make_array_2d_f64(speckle_uv_view, nodes_num, 2)
+        out_shader.value.speckle.pattern = pattern
+        out_shader.value.speckle.seed = int(seed)
+        out_shader.value.speckle.bits = bits_c
+        is_perlin = pattern == cr.RILEY_SPECKLE_PERLIN
+        out_shader.value.speckle.coverage = 0.0 if is_perlin else float(params.coverage)
+        out_shader.value.speckle.radius = 0.0 if is_perlin else float(params.radius)
+        out_shader.value.speckle.occupancy = 0.0 if is_perlin else float(params.occupancy)
+        out_shader.value.speckle.jitter = 0.0 if is_perlin else float(params.jitter)
+        out_shader.value.speckle.edge_softness = (
+            float(params.edge_softness) if pattern == cr.RILEY_SPECKLE_DISK else 0.0
+        )
+        out_shader.value.speckle.cell_size = float(params.cell_size) if is_perlin else 0.0
+        out_shader.value.speckle.threshold = float(params.threshold) if is_perlin else 0.0
+        out_shader.value.speckle.transition_width = float(params.transition_width) if is_perlin else 0.0
+        out_shader.value.speckle.foreground = float(params.foreground)
+        out_shader.value.speckle.background = float(params.background)
+
+    elif isinstance(shader, NodalShader):
+        field = _contig_f64_3d(shader.field, "nodal_field")
+        keepalive.append(field)
+        field_view: cython.double[:, :, ::1] = field
+        out_shader.shader_tag = int(ShaderType.nodal_rgb if field.shape[2] == 3 else ShaderType.nodal)
+        out_shader.value.nodal.field = _make_array_3d_f64(field_view, field.shape[0], field.shape[1], field.shape[2])
+        out_shader.value.nodal.scale_over = int(shader.scale_over)
+
+    elif isinstance(shader, (FunctionShader, FunctionMultiShader)):
+        out_shader.value.func.channels = cython.NULL
+        out_shader.value.func.channels_len = 0
+        out_shader.value.func.coord_mode = int(shader.coord_mode)
+        out_shader.value.func.uvs = _empty_array_2d_f64()
+        if shader.uvs is not None:
+            func_uvs = _contig_f64_2d(shader.uvs, "uvs")
+            keepalive.append(func_uvs)
+            func_uv_view: cython.double[:, ::1] = func_uvs
+            out_shader.value.func.uvs = _make_array_2d_f64(func_uv_view, func_uvs.shape[0], func_uvs.shape[1])
+        if isinstance(shader, FunctionMultiShader):
+            count_c: cython.size_t = len(shader.channels)
+            if not 1 <= count_c <= 8:
+                raise ValueError("function source requires between one and eight channels")
+            out_shader.shader_tag = int(ShaderType.func_multi)
+            channels = cython.cast(cython.pointer[cr.CFuncChannel], _descriptor_bytes(count_c * cython.sizeof(cr.CFuncChannel), keepalive))
+            if channels == cython.NULL:
+                raise MemoryError()
+
+            out_shader.value.func.channels = channels
+            out_shader.value.func.channels_len = count_c
+            ci: cython.size_t
+            for ci in range(count_c):
+                channel = shader.channels[ci]
+                if not isinstance(channel, FunctionChannel):
+                    raise TypeError("function source channels must be FunctionChannel objects")
+                channels[ci].builtin = int(channel.builtin)
+                channels[ci].params = _make_func_params(channel.params)
+                channels[ci].output_gain = float(channel.output_gain)
+                channels[ci].output_offset = float(channel.output_offset)
+                channels[ci].scaling_tag = int(channel.scaling_type)
+                channels[ci].scaling_min = float(channel.scaling_min)
+                channels[ci].scaling_max = float(channel.scaling_max)
+        else:
+            if shader.channels not in (1, 3):
+                raise ValueError("FunctionShader.channels must be 1 or 3; use FunctionMultiShader for independent channels")
+            out_shader.shader_tag = int(ShaderType.func_rgb if shader.channels == 3 else ShaderType.func)
+            out_shader.value.func.builtin = int(shader.builtin)
+            out_shader.value.func.params = _make_func_params(shader.params)
+    else:
+        raise TypeError("source must be a texture, nodal, function, or speckle shader")
+
+
+@cython.cfunc
+def _fill_pipe_single(
+    pipe: ShaderPipe,
+    nodes_num: cython.Py_ssize_t,
+    out_pipe: cython.pointer[cr.CPipe],
+    keepalive: list[Any],
+) -> None:
+    stages_len: cython.size_t = len(pipe.stages)
+    if not 1 <= stages_len <= 8:
+        raise ValueError("pipe requires between one and eight stages")
+    stages = cython.cast(
+        cython.pointer[cr.CPipeStage],
+        _descriptor_bytes(stages_len * cython.sizeof(cr.CPipeStage), keepalive),
     )
-    return pos_frame_coords(
-        coords_in,
-        pixels_num,
-        pixels_size,
-        focal_length,
-        rot_world,
-        fov_scale=frame_fill,
-        fit_mode=FrameFitMode.contain,
-    )
+    if stages == cython.NULL:
+        raise MemoryError()
+
+    out_pipe.stages = stages
+    out_pipe.stages_len = stages_len
+    si: cython.size_t
+    for si in range(stages_len):
+        stage = pipe.stages[si]
+        stages[si].shader = cython.NULL
+        stages[si].lower = 0.0
+        stages[si].upper = 0.0
+        stages[si].black = 0.0
+        stages[si].white = 0.0
+        if isinstance(stage, ShaderSource):
+            stages[si].tag = 0
+            stages[si].register_dest = _make_register(stage.register_dest)
+            source = cython.cast(
+                cython.pointer[cr.CShaderInput],
+                _descriptor_bytes(cython.sizeof(cr.CShaderInput), keepalive),
+            )
+            if source == cython.NULL:
+                raise MemoryError()
+
+            _fill_shader_input(stage.shader, nodes_num, source, keepalive)
+            stages[si].shader = source
+        elif isinstance(stage, GreyToEmissivity):
+            stages[si].tag = 1
+            stages[si].register_source = _make_register(stage.register_source)
+            stages[si].register_dest = _make_register(stage.register_dest)
+            stages[si].lower = float(stage.greylevel_at_black)
+            stages[si].upper = float(stage.greylevel_at_white)
+            stages[si].black = float(stage.emissivity_at_black)
+            stages[si].white = float(stage.emissivity_at_white)
+        elif isinstance(stage, ClampStage):
+            stages[si].tag = 2
+            stages[si].register_source = _make_register(stage.register_source)
+            stages[si].register_dest = _make_register(stage.register_dest)
+            stages[si].lower = float(stage.lower)
+            stages[si].upper = float(stage.upper)
+        elif isinstance(stage, AffineMap):
+            stages[si].tag = 3
+            stages[si].register_source = _make_register(stage.register_source)
+            stages[si].register_dest = _make_register(stage.register_dest)
+            stages[si].gain = float(stage.gain)
+            stages[si].offset = float(stage.offset)
+        elif isinstance(stage, LUTMap):
+            stages[si].tag = 4
+            stages[si].register_source = _make_register(stage.register_source)
+            stages[si].register_dest = _make_register(stage.register_dest)
+            stages[si].lookup.first = float(stage.first)
+            stages[si].lookup.step = float(stage.step)
+            # The native LUT borrows an aligned buffer without writing to it.
+            lookup_np = np.require(
+                stage.values, dtype=np.float64, requirements=("C", "A"),
+            )
+            if lookup_np.ndim != 1 or lookup_np.size < 2:
+                raise ValueError(
+                    "LUTMap needs a one-dimensional table of at least two"
+                    " values"
+                )
+            keepalive.append(lookup_np)
+            stage_lookup_view: cython.const[cython.double][::1] = lookup_np
+            stages[si].lookup.values = cython.address(stage_lookup_view[0])
+            stages[si].lookup.values_len = len(lookup_np)
+        elif isinstance(stage, Blend):
+            stages[si].tag = 5
+            stages[si].register_source = _make_register(stage.a)
+            stages[si].register_source_b = _make_register(stage.b)
+            stages[si].register_dest = _make_register(stage.register_dest)
+            if isinstance(stage.alpha, Register):
+                stages[si].alpha_from_register = 1
+                stages[si].alpha_register = _make_register(stage.alpha)
+            else:
+                stages[si].alpha_from_register = 0
+                stages[si].alpha = float(stage.alpha)
+        elif isinstance(stage, Normalise):
+            stages[si].tag = 6
+            stages[si].register_source = _make_register(stage.register_source)
+            stages[si].register_dest = _make_register(stage.register_dest)
+            stages[si].components = int(stage.components)
+        else:
+            raise TypeError("unsupported shader-pipe stage")
+
+    resolver = pipe.resolver
+    out_pipe.resolver.tag = int(resolver.kind)
+    out_pipe.resolver.factor = _make_register(resolver.factor)
+    out_pipe.resolver.temperature = _make_register(resolver.temperature)
+    out_pipe.resolver.emissivity = _make_register(resolver.emissivity)
+    out_pipe.resolver.ambient = float(resolver.ambient)
+    out_pipe.resolver.gain = float(resolver.gain)
+    out_pipe.resolver.registers = cython.NULL
+    out_pipe.resolver.registers_len = len(resolver.registers)
+    if resolver.registers:
+        registers = cython.cast(
+            cython.pointer[cr.CRegister],
+            _descriptor_bytes(len(resolver.registers) * cython.sizeof(cr.CRegister), keepalive),
+        )
+        if registers == cython.NULL:
+            raise MemoryError()
+
+        for si in range(len(resolver.registers)):
+            registers[si] = _make_register(resolver.registers[si])
+        out_pipe.resolver.registers = registers
+
+    out_pipe.resolver.weights = cython.NULL
+    out_pipe.resolver.weights_len = len(resolver.weights)
+    if resolver.weights:
+        weights_np = np.ascontiguousarray(
+            resolver.weights, dtype=np.float64
+        )
+        keepalive.append(weights_np)
+        weights_view: cython.double[::1] = weights_np
+        out_pipe.resolver.weights = cython.address(weights_view[0])
+
+    out_pipe.resolver.lookup.values = cython.NULL
+    out_pipe.resolver.lookup.values_len = 0
+    out_pipe.resolver.lookup.first = float(resolver.lookup_first)
+    out_pipe.resolver.lookup.step = float(resolver.lookup_step)
+    if resolver.lookup_values is not None:
+        lookup_np = np.require(
+            resolver.lookup_values, dtype=np.float64, requirements=("C", "A"),
+        )
+        if lookup_np.ndim != 1 or lookup_np.size < 2:
+            raise ValueError("resolver lookup needs at least two values")
+        keepalive.append(lookup_np)
+        lookup_view: cython.const[cython.double][::1] = lookup_np
+        out_pipe.resolver.lookup.values = cython.address(lookup_view[0])
+        out_pipe.resolver.lookup.values_len = len(lookup_np)
+
+    out_pipe.resolver.operations = cython.NULL
+    out_pipe.resolver.operations_len = len(resolver.operations)
+    if resolver.operations:
+        operations = cython.cast(
+            cython.pointer[cr.CResolverOp],
+            _descriptor_bytes(len(resolver.operations) * cython.sizeof(cr.CResolverOp), keepalive),
+        )
+        if operations == cython.NULL:
+            raise MemoryError()
+
+        for si in range(len(resolver.operations)):
+            operation = resolver.operations[si]
+            operations[si].tag = int(operation.kind)
+            operations[si].register_ref = _make_register(operation.register_ref)
+            operations[si].lower = float(operation.lower)
+            operations[si].upper = float(operation.upper)
+        out_pipe.resolver.operations = operations
+
+    out_pipe.constants = cython.NULL
+    out_pipe.constants_len = len(pipe.constants)
+    if pipe.constants:
+        constants_np = np.ascontiguousarray(
+            pipe.constants, dtype=np.float64
+        )
+        keepalive.append(constants_np)
+        constants_view: cython.double[::1] = constants_np
+        out_pipe.constants = cython.address(constants_view[0])
 
 
 @cython.cfunc
@@ -1323,6 +989,7 @@ def _fill_mesh_array(
     mesh_list: list[Any],
     mesh_array: cython.pointer[cr.CMeshInput],
     keepalive: list[Any],
+
 ) -> None:
     nn: cython.size_t
     for nn in range(len(mesh_list)):
@@ -1336,6 +1003,7 @@ def _fill_mesh_array(
         coords_view: cython.double[:, ::1] = coords_np
         connect_view: cython.size_t[:, ::1] = connect_np
         mesh_array[nn].mesh_type = int(mesh.mesh_type)
+        mesh_array[nn].normal_type = int(mesh.normal_type)
         mesh_array[nn].coords = _make_array_2d_f64(
             coords_view,
             coords_np.shape[0],
@@ -1361,185 +1029,87 @@ def _fill_mesh_array(
             )
             keepalive.append(disp_np)
 
-        shader = mesh.shader
-        texture_channels = 0
-        if isinstance(shader, TextureShader):
-            texture_channels = int(shader.texture.shape[0])
-            shader_tag = int(
-                ShaderType.tex_rgb if texture_channels == 3 else ShaderType.tex
-            )
-            if shader.texture.dtype == np.uint16:
-                texture_storage = int(TextureStorage.u16)
-            elif shader.texture.dtype == np.uint8:
-                texture_storage = int(TextureStorage.u8)
-            else:
-                texture_storage = int(TextureStorage.floating)
-        elif isinstance(shader, NodalShader):
-            field_channels = int(shader.field.shape[2])
-            is_rgb = (field_channels == 3)
-            shader_tag = int(
-                ShaderType.nodal_rgb if is_rgb else ShaderType.nodal
-            )
-            texture_storage = int(TextureStorage.u8)
-        elif isinstance(shader, SpeckleShader):
-            shader_tag = int(ShaderType.speckle)
-            texture_storage = int(TextureStorage.u8)
-            if shader.uvs is None:
-                raise ValueError("SpeckleShader requires uvs with shape (N, 2)")
-        elif isinstance(shader, FunctionShader):
-            is_rgb = (shader.channels == 3)
-            shader_tag = int(
-                ShaderType.func_rgb if is_rgb else ShaderType.func
-            )
-            texture_storage = int(TextureStorage.u8)
-        else:
-            raise TypeError("mesh.shader must be a Riley shader object")
+        mesh.shaders._normalise_sources()
+        choices = []
+        for role, entry in (
+            (RenderFormat.mono, mesh.shaders.mono),
+            (RenderFormat.rgb, mesh.shaders.rgb),
+            (RenderFormat.ir, mesh.shaders.ir),
+            (RenderFormat.multifield, mesh.shaders.multifield),
+        ):
+            if entry is not None:
+                choices.append((role, entry))
 
-        mesh_array[nn].shader.shader_tag = shader_tag
-        mesh_array[nn].shader.texture_storage = texture_storage
-        mesh_array[nn].shader.sample = int(getattr(shader, "sample", 0))
-        mesh_array[nn].shader.sample_mode = int(
-            getattr(shader, "sample_mode", 0)
-        )
-        mesh_array[nn].shader.bits = int(getattr(shader, "bits", 8))
-        mesh_array[nn].shader.scaling_tag = int(shader.scaling_type)
-        mesh_array[nn].shader.scaling_min = float(shader.scaling_min)
-        mesh_array[nn].shader.scaling_max = float(shader.scaling_max)
-        mesh_array[nn].shader.scale_over = int(
-            getattr(shader, "scale_over", ScaleOver.over_frames)
-        )
-        mesh_array[nn].shader.func_shader_builtin = int(
-            getattr(shader, "builtin", FuncShaderBuiltin.constant)
-        )
-        mesh_array[nn].shader.func_shader_coord_mode = int(
-            getattr(shader, "coord_mode", FuncCoordMode.parametric)
-        )
-        if isinstance(shader, SpeckleShader):
-            mesh_array[nn].shader.speckle_params = _make_speckle_params(shader.params)
-            mesh_array[nn].shader.speckle_output_scale = float(shader.output_scale)
-            mesh_array[nn].shader.speckle_output_offset = float(shader.output_offset)
-        else:
-            mesh_array[nn].shader.func_shader_params = _make_func_params(
-                getattr(shader, "params", FuncShaderParams()),
-            )
-        mesh_array[nn].shader.normal_type = int(
-            getattr(shader, "normal_type", NormalType.none)
-        )
+        shaders_len: cython.size_t = len(choices)
+        if shaders_len == 0:
+            raise ValueError("mesh needs at least one shader choice")
 
-        shader_uvs = getattr(shader, "uvs", None)
-        if shader_uvs is None:
-            mesh_array[nn].shader.uvs = _empty_array_2d_f64()
-        else:
-            uvs_np = _contig_f64_2d(shader_uvs, "uvs")
-            uvs_shape = _as_shape_2d(uvs_np)
-            if isinstance(shader, SpeckleShader) and (
-                uvs_shape != (coords_shape[0], 2) or uvs_shape[0] == 0
-            ):
-                raise ValueError("SpeckleShader requires uvs with shape (N, 2), one row per node")
-            uvs_view: cython.double[:, ::1] = uvs_np
-            mesh_array[nn].shader.uvs = _make_array_2d_f64(
-                uvs_view,
-                uvs_shape[0],
-                uvs_shape[1],
-            )
-            keepalive.append(uvs_np)
+        shaders = cython.cast(
+            cython.pointer[cr.CShaderEntry],
+            _descriptor_bytes(shaders_len * cython.sizeof(cr.CShaderEntry), keepalive),
+        )
+        if shaders == cython.NULL:
+            raise MemoryError()
 
-        shader_texture = getattr(shader, "texture", None)
-        if shader_texture is None:
-            mesh_array[nn].shader.tex = _empty_array_3d_f64()
-            mesh_array[nn].shader.tex_u8 = _empty_array_3d_u8()
-            mesh_array[nn].shader.tex_u16 = _empty_array_3d_u16()
-        else:
-            texture_np = _contig_texture(
-                shader_texture,
-                texture_channels,
-                texture_storage,
-            )
-            texture_shape = _as_shape_3d(texture_np)
-            mesh_array[nn].shader.tex = _empty_array_3d_f64()
-            mesh_array[nn].shader.tex_u8 = _empty_array_3d_u8()
-            mesh_array[nn].shader.tex_u16 = _empty_array_3d_u16()
-            if texture_storage == int(TextureStorage.u8):
-                texture_view_u8: cython.uchar[:, :, ::1] = texture_np
-                mesh_array[nn].shader.tex_u8 = _make_array_3d_u8(
-                    texture_view_u8,
-                    texture_shape[0],
-                    texture_shape[1],
-                    texture_shape[2],
+        mesh_array[nn].shaders = shaders
+        mesh_array[nn].shaders_len = shaders_len
+
+        si: cython.size_t
+        for si in range(shaders_len):
+            role, entry = choices[si]
+            shaders[si].format_tag = int(role)
+            if isinstance(entry, ShaderPipe):
+                shaders[si].execution_tag = 1
+                _fill_pipe_single(
+                    entry,
+                    coords_shape[0],
+                    cython.address(shaders[si].value.pipe),
+                    keepalive,
                 )
-            elif texture_storage == int(TextureStorage.u16):
-                texture_view_u16: cython.ushort[:, :, ::1] = texture_np
-                mesh_array[nn].shader.tex_u16 = _make_array_3d_u16(
-                    texture_view_u16,
-                    texture_shape[0],
-                    texture_shape[1],
-                    texture_shape[2],
+            elif isinstance(entry, RileyShader):
+                shaders[si].execution_tag = 0
+                _fill_shader_input(
+                    entry,
+                    coords_shape[0],
+                    cython.address(shaders[si].value.direct),
+                    keepalive,
                 )
             else:
-                texture_view_f: cython.double[:, :, ::1] = texture_np
-                mesh_array[nn].shader.tex = _make_array_3d_f64(
-                    texture_view_f,
-                    texture_shape[0],
-                    texture_shape[1],
-                    texture_shape[2],
+                raise TypeError(
+                    f"unsupported shader entry type: {type(entry)}"
                 )
-            keepalive.append(texture_np)
-
-        shader_field = getattr(shader, "field", None)
-        if shader_field is None:
-            mesh_array[nn].shader.nodal_field = _empty_array_3d_f64()
-        else:
-            nodal_field_np = _contig_f64_3d(shader_field, "nodal_field")
-            nodal_shape = _as_shape_3d(nodal_field_np)
-            if shader_tag == int(ShaderType.nodal_rgb) and nodal_shape[2] != 3:
-                raise ValueError(
-                    "nodal_rgb field must have shape (time, nodes, 3)",
-                )
-            nodal_view: cython.double[:, :, ::1] = nodal_field_np
-            mesh_array[nn].shader.nodal_field = _make_array_3d_f64(
-                nodal_view,
-                nodal_shape[0],
-                nodal_shape[1],
-                nodal_shape[2],
-            )
-            keepalive.append(nodal_field_np)
 
         keepalive.append(coords_np)
         keepalive.append(connect_np)
 
 
-@cython.boundscheck(False)
-@cython.wraparound(False)
+@cython.cfunc
+def _fill_geometry(meshes: list[Any], keepalive: list[Any]) -> cython.pointer[cr.CArray2DF64]:
+    if not meshes:
+        raise ValueError("geometry must contain at least one coordinate array")
+    descriptors = cython.cast(cython.pointer[cr.CArray2DF64],
+                              _descriptor_bytes(len(meshes) * cython.sizeof(cr.CArray2DF64), keepalive))
+    index: cython.size_t
+    for index in range(len(meshes)):
+        coords = _contig_f64_2d(meshes[index].coords, "coords")
+        if coords.shape[1] != 3 or coords.shape[0] == 0:
+            raise ValueError("coords must have shape (N, 3) with N > 0")
+        keepalive.append(coords)
+        view: cython.double[:, ::1] = coords
+        descriptors[index] = _make_array_2d_f64(view, coords.shape[0], coords.shape[1])
+    return descriptors
+
+
 def roi_cent_over_meshes(meshes: Any) -> tuple[float, float, float]:
-    mesh_list = _normalize_meshes(meshes)
-    meshes_len: cython.size_t = len(mesh_list)
-    mesh_array = cython.cast(
-        cython.pointer[cr.CMeshInput],
-        malloc(meshes_len * cython.sizeof(cr.CMeshInput)),
-    )
-    out_cent: cr.CVec3F64
     keepalive: list[Any] = []
-    image_c: cr.CImageBuffF64
-    if mesh_array == cython.NULL:
-        raise MemoryError()
-    try:
-        _fill_mesh_array(mesh_list, mesh_array, keepalive)
-        if (
-            cr.rileyRoiCentOverMeshes(
-                mesh_array,
-                meshes_len,
-                cython.address(out_cent),
-            )
-            != 0
-        ):
-            _raise_last_error()
-    finally:
-        free(mesh_array)
+    mesh_list = _normalize_meshes(meshes)
+    geometry = _fill_geometry(mesh_list, keepalive)
+    out_cent: cr.CVec3F64
+    if cr.rileyRoiCentOverMeshes(geometry, len(mesh_list), cython.address(out_cent)) != 0:
+        _raise_last_error()
     return (out_cent.x, out_cent.y, out_cent.z)
 
 
-@cython.boundscheck(False)
-@cython.wraparound(False)
 def pos_frame_meshes(
     meshes: Any,
     pixels_num: tuple[int, int],
@@ -1550,80 +1120,23 @@ def pos_frame_meshes(
     fit_mode: FrameFitMode | str | int = FrameFitMode.contain,
     target: tuple[float, float, float] | None = None,
 ) -> tuple[float, float, float]:
-    mesh_list = _normalize_meshes(meshes)
-    meshes_len: cython.size_t = len(mesh_list)
-    mesh_array = cython.cast(
-        cython.pointer[cr.CMeshInput],
-        malloc(meshes_len * cython.sizeof(cr.CMeshInput)),
-    )
-    out_pos: cr.CVec3F64
     keepalive: list[Any] = []
-    if mesh_array == cython.NULL:
-        raise MemoryError()
-    mode_int: cython.uint = _fit_mode_to_int(fit_mode)
-    try:
-        _fill_mesh_array(mesh_list, mesh_array, keepalive)
-        if target is None:
-            if (
-                cr.rileyPosFrameMeshes(
-                    mesh_array,
-                    meshes_len,
-                    _make_cvec2_u32(tuple(pixels_num)),
-                    _make_cvec2_f64(tuple(pixels_size)),
-                    float(focal_length),
-                    _make_cvec3(tuple(rot_world)),
-                    float(fov_scale),
-                    mode_int,
-                    cython.address(out_pos),
-                )
-                != 0
-            ):
-                _raise_last_error()
-        else:
-            if (
-                cr.rileyPosFrameMeshesTarg(
-                    mesh_array,
-                    meshes_len,
-                    _make_cvec3(tuple(target)),
-                    _make_cvec2_u32(tuple(pixels_num)),
-                    _make_cvec2_f64(tuple(pixels_size)),
-                    float(focal_length),
-                    _make_cvec3(tuple(rot_world)),
-                    float(fov_scale),
-                    mode_int,
-                    cython.address(out_pos),
-                )
-                != 0
-            ):
-                _raise_last_error()
-    finally:
-        free(mesh_array)
+    mesh_list = _normalize_meshes(meshes)
+    geometry = _fill_geometry(mesh_list, keepalive)
+    out_pos: cr.CVec3F64
+    target_c: cr.CVec3F64
+    target_ptr: cython.pointer[cr.CVec3F64] = cython.NULL
+    if target is not None:
+        target_c = _make_cvec3(tuple(target))
+        target_ptr = cython.address(target_c)
+    if cr.rileyPosFrameMeshes(
+        geometry, len(mesh_list), _make_cvec2_u32(tuple(pixels_num)),
+        _make_cvec2_f64(tuple(pixels_size)), float(focal_length),
+        _make_cvec3(tuple(rot_world)), float(fov_scale), _fit_mode_to_int(fit_mode),
+        target_ptr, cython.address(out_pos),
+    ) != 0:
+        _raise_last_error()
     return (out_pos.x, out_pos.y, out_pos.z)
-
-
-def pos_fill_frame_from_rot_over_meshes(
-    meshes: Any,
-    pixels_num: tuple[int, int],
-    pixels_size: tuple[float, float],
-    focal_length: float,
-    rot_world: tuple[float, float, float],
-    frame_fill: float = 1.0,
-) -> tuple[float, float, float]:
-    warnings.warn(
-        "pos_fill_frame_from_rot_over_meshes is deprecated, "
-        "use pos_frame_meshes instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return pos_frame_meshes(
-        meshes,
-        pixels_num,
-        pixels_size,
-        focal_length,
-        rot_world,
-        fov_scale=frame_fill,
-        fit_mode=FrameFitMode.contain,
-    )
 
 
 def pos_orbit_cam(
@@ -1826,17 +1339,18 @@ def raster(
     config: RasterConfig,
     out_dir: str | None = None,
 ) -> np.ndarray | None:
+    keepalive: list[Any] = []
     mesh_list = _normalize_meshes(meshes)
     camera_list = _normalize_cameras(cameras)
     meshes_len: cython.size_t = len(mesh_list)
     cameras_len: cython.size_t = len(camera_list)
     mesh_array = cython.cast(
         cython.pointer[cr.CMeshInput],
-        malloc(meshes_len * cython.sizeof(cr.CMeshInput)),
+        _descriptor_bytes(meshes_len * cython.sizeof(cr.CMeshInput), keepalive),
     )
     camera_array = cython.cast(
         cython.pointer[cr.CCameraInput],
-        malloc(cameras_len * cython.sizeof(cr.CCameraInput)),
+        _descriptor_bytes(cameras_len * cython.sizeof(cr.CCameraInput), keepalive),
     )
     config_c: cr.CRasterConfig
     image_np: np.ndarray | None = None
@@ -1845,15 +1359,8 @@ def raster(
         cython.NULL,
     )
     image_c: cr.CImageBuffF64
-    keepalive: list[Any] = []
-    config_c = _make_raster_config(config, keepalive)
 
-    if mesh_array == cython.NULL or camera_array == cython.NULL:
-        if mesh_array != cython.NULL:
-            free(mesh_array)
-        if camera_array != cython.NULL:
-            free(camera_array)
-        raise MemoryError()
+    config_c = _make_raster_config(config, keepalive)
 
     try:
         _fill_mesh_array(mesh_list, mesh_array, keepalive)
@@ -1912,55 +1419,15 @@ def raster(
         ):
             _raise_last_error()
     finally:
-        free(mesh_array)
-        free(camera_array)
+        keepalive.clear()
 
     return image_np
 
 
 __all__ = [
-    "Camera",
-    "PolyMap",
-    "EPolyMode",
-    "CameraInput",
-    "CameraCoordSys",
-    "BufferMode",
-    "HullMode",
-    "Mesh",
-    "MeshType",
-    "MultirootSolverMode",
-    "EdgeFunMode",
-    "NewtonSeedMode",
-    "NewtonSeedReuse",
-    "NormalType",
-    "ImageSaveMode",
-    "RasterConfig",
-    "RenderMode",
-    "ReportMode",
-    "RileyShader",
-    "SaveStrategy",
-    "ScaleOver",
-    "ScaleStrategy",
-    "Shader",
-    "SubPixelCenterMap",
-    "FuncShaderBuiltin",
-    "FuncCoordMode",
-    "FuncShaderParams",
-    "SpeckleShader",
-    "Dot2DParams",
-    "Perlin2DParams",
-    "SpecklePattern",
-    "TextureSample",
-    "TextureSampleMode",
-    "PsfType",
-    "ImageFormat",
-    "load_camera",
-    "load_stereo_pair",
-    "pos_fill_frame_from_rot",
-    "pos_fill_frame_from_rot_over_meshes",
-    "raster",
-    "roi_cent_from_coords",
-    "roi_cent_over_meshes",
-    "save_camera",
-    "save_stereo_pair",
+    "raster", "roi_cent_from_coords", "roi_cent_over_meshes",
+    "pos_frame_coords", "pos_frame_mesh", "pos_frame_meshes",
+    "pos_orbit_cam", "pos_stereo_pair", "calc_pixel_resolution",
+    "coverage_to_fov_scale", "fov_scale_to_coverage",
+    "save_camera", "save_stereo_pair", "load_camera", "load_stereo_pair",
 ]

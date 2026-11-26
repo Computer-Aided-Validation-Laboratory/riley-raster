@@ -11,12 +11,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from bench_common import repo_root
 from paper_const import (
     SHEAR_REGULAR,
     SHEAR_SHEAR,
     bulge_in_frame,
     bulge_out_frame,
-    repo_root,
 )
 
 

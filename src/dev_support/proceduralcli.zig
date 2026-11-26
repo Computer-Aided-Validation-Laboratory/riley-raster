@@ -9,6 +9,9 @@
 //! Argument handling only; the tutorials own all scene and render configuration.
 const std = @import("std");
 
+const riley = @import("../riley/zig/api.zig");
+const Pattern = std.meta.Tag(riley.SpeckleParams);
+
 const flags = std.StaticStringMap(enum { pattern, output, width, height }).initComptime(.{
     .{ "--pattern", .pattern },
     .{ "--output", .output },
@@ -16,23 +19,20 @@ const flags = std.StaticStringMap(enum { pattern, output, width, height }).initC
     .{ "--height", .height },
 });
 
-pub fn Options(comptime Pattern: type) type {
-    return struct {
-        pattern: Pattern = .disk,
-        out_dir: []const u8,
-    };
-}
+pub const Options = struct {
+    pattern: Pattern = .disk,
+    out_dir: []const u8,
+};
 
 /// Returns null after printing help. Only demos supplying dimensions accept size flags.
 pub fn parse(
-    comptime Pattern: type,
     io: std.Io,
     args: []const []const u8,
     usage: []const u8,
     default_out_dir: []const u8,
     pixels_num: ?*[2]u32,
-) !?Options(Pattern) {
-    var options: Options(Pattern) = .{ .out_dir = default_out_dir };
+) !?Options {
+    var options: Options = .{ .out_dir = default_out_dir };
     var ii: usize = 1;
     while (ii < args.len) : (ii += 2) {
         const flag = args[ii];
