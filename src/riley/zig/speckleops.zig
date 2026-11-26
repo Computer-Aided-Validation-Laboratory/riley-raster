@@ -592,9 +592,12 @@ fn samplePerlinSIMD(u: VecSF, v: VecSF, active: VecSB, lattice: PerlinLattice2D)
     const y = @max(zero, @min(one, v)) * @as(VecSF, @splat(lattice.params.cells_per_uv[1]));
     const cx = @floor(x);
     const cy = @floor(y);
+    // Widen before extracting lanes: Zig 0.17.1 can miscompile direct bool-vector
+    // indexing when the mask is passed on the stack (stripped x86 Debug).
+    const active_lanes: @Vector(S, u8) = @intFromBool(active);
     var ids: [4]@Vector(S, u8) = .{ @splat(0), @splat(0), @splat(0), @splat(0) };
     inline for (0..S) |lane| {
-        if (active[lane]) {
+        if (active_lanes[lane] != 0) {
             const corners = perlinCornerIDs(lattice, @intFromFloat(cx[lane]), @intFromFloat(cy[lane]));
             inline for (0..4) |i| ids[i][lane] = corners[i];
         }
