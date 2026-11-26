@@ -238,29 +238,17 @@ pub fn loadMultiSimData(
     }
 
     for (dir_paths, 0..) |dir_path, ii| {
-        const path_coords = try std.fmt.allocPrint(
-            outer_alloc,
-            "{s}{s}",
-            .{ dir_path, files.coord_file },
-        );
+        const path_coords = try outer_alloc.print("{s}{s}", .{ dir_path, files.coord_file });
         defer outer_alloc.free(path_coords);
 
-        const path_connect = try std.fmt.allocPrint(
-            outer_alloc,
-            "{s}{s}",
-            .{ dir_path, files.connect_file },
-        );
+        const path_connect = try outer_alloc.print("{s}{s}", .{ dir_path, files.connect_file });
         defer outer_alloc.free(path_connect);
 
         var field_paths: ?[][]const u8 = null;
         if (files.field_files) |ff| {
             field_paths = try outer_alloc.alloc([]const u8, ff.len);
             for (ff, 0..) |suffix, jj| {
-                field_paths.?[jj] = try std.fmt.allocPrint(
-                    outer_alloc,
-                    "{s}{s}",
-                    .{ dir_path, suffix },
-                );
+                field_paths.?[jj] = try outer_alloc.print("{s}{s}", .{ dir_path, suffix });
             }
         }
         defer if (field_paths) |fp| {
@@ -272,11 +260,7 @@ pub fn loadMultiSimData(
         if (files.disp_files) |df| {
             disp_paths = try outer_alloc.alloc([]const u8, df.len);
             for (df, 0..) |suffix, jj| {
-                disp_paths.?[jj] = try std.fmt.allocPrint(
-                    outer_alloc,
-                    "{s}{s}",
-                    .{ dir_path, suffix },
-                );
+                disp_paths.?[jj] = try outer_alloc.print("{s}{s}", .{ dir_path, suffix });
             }
         }
         defer if (disp_paths) |dp| {
