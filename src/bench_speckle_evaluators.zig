@@ -79,7 +79,13 @@ fn buildIdentity() BuildIdentity {
         .newton_solver = @tagName(build.NewtonMode),
         .enable_all_evaluators = build.enable_all_evaluators,
         .speckle_mask_samples_per_cell = build.speckle_mask_samples_per_cell,
-        .optimize = @tagName(builtin.mode),
+        // The runner's catalogue labels are independent of Zig's enum names.
+        .optimize = switch (builtin.mode) {
+            .debug => "Debug",
+            .safe => "ReleaseSafe",
+            .fast => "ReleaseFast",
+            .small => "ReleaseSmall",
+        },
         .strip = builtin.strip_debug_info,
         .zig_version = builtin.zig_version_string,
         .target_arch = @tagName(builtin.cpu.arch),
