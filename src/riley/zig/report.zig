@@ -143,16 +143,8 @@ pub fn recordGlobalSubpxStats(
     frame_times: *FrameTimes,
 ) void {
     if (frame_times.global_subpx_stats) |*stats| {
-        const tiles_x = std.math.divCeil(
-            usize,
-            pixels_num[0],
-            actual_tile_size,
-        ) catch unreachable;
-        const tiles_y = std.math.divCeil(
-            usize,
-            pixels_num[1],
-            actual_tile_size,
-        ) catch unreachable;
+        const tiles_x = @divCeil(@as(usize, pixels_num[0]), actual_tile_size);
+        const tiles_y = @divCeil(@as(usize, pixels_num[1]), actual_tile_size);
         recordTilingStatsGlobBuff(tiling, tiles_x * tiles_y, stats);
     }
 }
@@ -170,17 +162,9 @@ pub fn recordGlobalSubpxStripeStats(
     frame_times: *FrameTimes,
 ) void {
     if (frame_times.global_subpx_stats) |*stats| {
-        const tiles_x = std.math.divCeil(
-            usize,
-            cam_w_px,
-            actual_tile_size,
-        ) catch unreachable;
+        const tiles_x = @divCeil(@as(usize, cam_w_px), actual_tile_size);
         const stripe_h_px = (core_suby_max - core_suby_min) / sub_samp;
-        const tiles_y = std.math.divCeil(
-            usize,
-            stripe_h_px,
-            actual_tile_size,
-        ) catch unreachable;
+        const tiles_y = @divCeil(stripe_h_px, actual_tile_size);
         recordTilingStatsGlobBuff(stripe_tiling, tiles_x * tiles_y, stats);
 
         stats.stripe_core_subpx = stripe_subpx;

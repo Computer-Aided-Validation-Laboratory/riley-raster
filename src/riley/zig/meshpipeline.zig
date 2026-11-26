@@ -221,11 +221,7 @@ pub fn meshInputFromSimDataSlice(
             }
         } else {
             const paths = uv_paths orelse return error.MissingUVPaths;
-            const path_uvs = try std.fmt.allocPrint(
-                outer_alloc,
-                "{s}{s}",
-                .{ paths[ii], uv_file_name },
-            );
+            const path_uvs = try outer_alloc.print("{s}{s}", .{ paths[ii], uv_file_name });
             defer outer_alloc.free(path_uvs);
 
             const uvmap = try uvio.loadUVMap(outer_alloc, io, path_uvs);

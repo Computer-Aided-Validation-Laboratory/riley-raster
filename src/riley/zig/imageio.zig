@@ -1267,11 +1267,7 @@ test "Save and Load All Formats 8-bit and 16-bit" {
 
     for (formats) |fmt| {
         for (bit_depths) |bits| {
-            const base_name = try std.fmt.allocPrint(
-                allocator,
-                "test_io_{s}_{d}bit",
-                .{ @tagName(fmt), bits },
-            );
+            const base_name = try allocator.print("test_io_{s}_{d}bit", .{ @tagName(fmt), bits });
             defer allocator.free(base_name);
 
             // 1. Save with auto-scaling

@@ -581,11 +581,7 @@ fn processOfflineRenderGroupLoop(
     );
     defer save_overlap.deinit(shared.outer_alloc);
 
-    const max_batches = std.math.divCeil(
-        usize,
-        jobs_num,
-        shared.batch_size,
-    ) catch unreachable;
+    const max_batches = @divCeil(jobs_num, shared.batch_size);
     for (0..max_batches) |_| {
         const batch_start = shared.next_job.fetchAdd(
             shared.batch_size,
@@ -744,11 +740,7 @@ fn processInOrderRenderGroupLoop(
     );
     defer save_overlap.deinit(shared.outer_alloc);
 
-    const max_camera_batches = std.math.divCeil(
-        usize,
-        shared.cameras.len,
-        shared.batch_size,
-    ) catch unreachable;
+    const max_camera_batches = @divCeil(shared.cameras.len, shared.batch_size);
     for (0..max_camera_batches) |_| {
         const batch_start_camera = shared.next_camera.fetchAdd(
             shared.batch_size,
