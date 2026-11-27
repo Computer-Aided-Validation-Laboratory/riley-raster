@@ -1249,9 +1249,9 @@ fn testMixedCaseEmptyInputs(
     const empty_cams = [_]CameraInput{};
     const empty_meshes = [_]MeshInput{};
 
-    // Group check precedes camera and mesh checks
+    // Mesh count is checked before camera count and render groups.
     try std.testing.expectError(
-        error.NoRenderGroups,
+        error.NoMeshes,
         runRender(&empty_groups, &empty_cams, &empty_meshes, fixture.config),
     );
 }
