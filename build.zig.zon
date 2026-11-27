@@ -1,6 +1,6 @@
 .{
     .name = .riley,
-    .version = "2026.11.1",
+    .version = "2026.11.4",
     .fingerprint = 0x7380980579fcd8b7, // Changing this has security and trust implications.
     .minimum_zig_version = "0.17.1",
     .dependencies = .{},
