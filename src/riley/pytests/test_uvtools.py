@@ -14,27 +14,16 @@ import pytest
 import riley
 
 
-def test_project_uvs_planar_centered_xy() -> None:
-    coords = np.array(
-        (
-            (0.0, 0.0, 0.0),
-            (2.0, 0.0, 0.0),
-            (2.0, 1.0, 0.0),
-            (0.0, 1.0, 0.0),
-        ),
-        dtype=np.float64,
-    )
-
-    uvs = riley.project_uvs_planar_centered(
-        coords,
-        (200, 100),
-        uv_span_max=0.8,
-        proj_plane=riley.EUVProjPlane.XY,
-    )
-
-    assert uvs.shape == (4, 2)
-    assert np.all(uvs >= 0.0)
-    assert np.all(uvs <= 1.0)
+@pytest.mark.parametrize("cap", (1.0, np.longdouble("0.7")))
+def test_project_uvs_planar_centered_xy(cap: float | np.longdouble) -> None:
+    coords = np.array(((0.0, 0.0, 0.0), (2.5, 1.0, 0.0)))
+    uvs = riley.project_uvs_planar_centered(coords, (4, 2), cap)
+    assert uvs.dtype == np.float64
+    cap = float(cap)
+    lower, upper = (1 - cap) / 2, (1 + cap) / 2
+    assert uvs.min() == lower and uvs.max() == upper
+    np.testing.assert_allclose(uvs.mean(axis=0), (0.5, 0.5))
+    np.testing.assert_allclose(uvs[1] - uvs[0], (cap * 5 / 6, -cap))
 
 
 @pytest.mark.parametrize(

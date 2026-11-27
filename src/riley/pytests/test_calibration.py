@@ -8,6 +8,8 @@
 # --------------------------------------------------------------------------------------
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -108,6 +110,15 @@ def test_sampling_stays_within_limits(
     assert np.all(disp_x <= 4.0)
 
 
+def test_fixed_zero_poses_keep_requested_frame_count() -> None:
+    displacements = riley.caltarget_motion_from_limits(
+        _coords(), 5, limits=riley.CalTargetMotionLimits(),
+        sampling=riley.ECalTargetMotionSampling.RANDOM,
+    )
+
+    np.testing.assert_array_equal(displacements, np.zeros((3, 2, 5)))
+
+
 def test_cartesian_sampling_returns_complete_grid() -> None:
     disp_x, disp_y, _ = riley.caltarget_motion_from_limits(
         np.array(((0.0, 0.0, 0.0),), dtype=np.float64),
@@ -189,7 +200,7 @@ def test_fov_motion_keeps_all_nodes_inside_requested_fraction() -> None:
         deformed = coords + np.column_stack(
             tuple(component[:, frame_idx] for component in disp),
         )
-        pixels = 50.0 + 50.0 * deformed[:, :2]
+        pixels = 50.0 + deformed[:, :2] * (50.0, -50.0)
         assert np.all(pixels >= 10.0)
         assert np.all(pixels <= 90.0)
 
@@ -207,26 +218,39 @@ def test_fov_rejects_reference_target_outside_fraction() -> None:
         )
 
 
-def test_fov_contracts_requested_translation_to_sensor_bounds() -> None:
-    coords = np.array(((-0.1, 0.0, 0.0), (0.1, 0.0, 0.0)), dtype=np.float64)
-    disp_x, disp_y, disp_z = riley.caltarget_motion_from_fov(
-        coords,
-        _camera(),
-        2,
-        limits=riley.CalTargetMotionLimits(
-            translation=((1.0, 1.0), (0.0, 0.0), (0.0, 0.0)),
+@pytest.mark.parametrize(
+    ("camera", "fov_fraction", "translation", "expected"),
+    (
+        # Roll maps world +X to raster +Y: 0.8 * 30 / 50 - 0.1 = 0.38.
+        pytest.param(
+            replace(_camera(), pixels_num=(120, 60), rot_world=(np.pi / 2, 0.0, 0.0)),
+            0.8, (0.7, 0.0, 0.0), (0.38, 0.0, 0.0), id="roll",
         ),
-        fov_fraction=0.8,
+        # At raster y = 0.5, Brown p1 gives 0.5 + 0.125 * (0.1**2 + 3 * 0.5**2).
+        pytest.param(
+            replace(_camera(), distort_model=1, distort_p1=0.125),
+            0.595, (0.0, -0.7, 0.0), (0.0, -0.5, 0.0), id="tangential",
+        ),
+    ),
+)
+def test_fov_contracts_requested_translation_to_sensor_bounds(
+    camera: riley.Camera,
+    fov_fraction: float,
+    translation: tuple[float, float, float],
+    expected: tuple[float, float, float],
+) -> None:
+    coords = np.array(((-0.1, 0.0, 0.0), (0.1, 0.0, 0.0)), dtype=np.float64)
+    disp = riley.caltarget_motion_from_fov(
+        coords,
+        camera,
+        1,
+        limits=riley.CalTargetMotionLimits(translation=tuple((v, v) for v in translation)),
+        fov_fraction=fov_fraction,
         sampling=riley.ECalTargetMotionSampling.RANDOM,
+        include_reference_frame=False,
     )
 
-    assert 0.0 < disp_x[0, 1] < 1.0
-    np.testing.assert_array_equal(disp_y, 0.0)
-    np.testing.assert_array_equal(disp_z, 0.0)
-    deformed = coords + np.column_stack((disp_x[:, 1], disp_y[:, 1], disp_z[:, 1]))
-    pixels_x = 50.0 + 50.0 * deformed[:, 0]
-    assert np.all(pixels_x >= 10.0)
-    assert np.all(pixels_x <= 90.0)
+    np.testing.assert_allclose(np.column_stack(disp), (expected, expected), rtol=0, atol=1e-12)
 
 
 @pytest.mark.parametrize(
