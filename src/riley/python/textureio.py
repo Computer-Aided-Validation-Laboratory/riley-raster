@@ -15,20 +15,22 @@ from PIL import Image
 
 
 class ETextureCoercion(Flag):
-    """Flags specifying allowed automatic texture conversions during loading.
+    """Texture channel and bit-depth conversions permitted during loading.
 
-    Members
-    -------
-    NONE
-        No conversions allowed; file format must match target precisely.
-    RGB_TO_MONO
-        Convert 3-channel RGB image to 1-channel greyscale.
-    MONO_TO_RGB
+    Combine flags with ``|`` to allow more than one conversion.
+
+    Attributes
+    ----------
+    NONE : ETextureCoercion
+        Do not coerce the channel count or bit depth.
+    RGB_TO_MONO : ETextureCoercion
+        Convert RGB to greyscale with channel weights 0.299, 0.587, and 0.114.
+    MONO_TO_RGB : ETextureCoercion
         Replicate 1-channel greyscale image across 3 RGB channels.
-    U8_TO_U16
-        Scale 8-bit unsigned integer depth to 16-bit unsigned integer depth.
-    U16_TO_U8
-        Scale 16-bit unsigned integer depth down to 8-bit unsigned integer.
+    U8_TO_U16 : ETextureCoercion
+        Expand unsigned 8-bit samples to the full 16-bit range.
+    U16_TO_U8 : ETextureCoercion
+        Rescale unsigned 16-bit samples to the 8-bit range and round.
     """
 
     NONE = 0

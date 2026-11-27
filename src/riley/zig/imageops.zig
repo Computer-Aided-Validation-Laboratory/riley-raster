@@ -19,11 +19,17 @@ const texturetypes = @import("texturetypes.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+/// Intensity mapping. Input bounds depend on the caller: image and field paths
+/// can scan samples, while procedural shaders can use nominal bounds.
 pub const ScaleStrategy = union(enum) {
+    /// Leave values unchanged.
     none,
+    /// Map the input bounds to the full output range.
     auto,
-    fixed: [2]F, // [min, max]
-    frac: [2]F, // [min_frac, max_frac]
+    /// Map explicit `[min, max]` input bounds to the full output range where supported.
+    fixed: [2]F,
+    /// Map the input bounds to `[min_fraction, max_fraction]` of the output range.
+    frac: [2]F,
 };
 
 pub const ScalingParams = struct { min: F, range: F };
@@ -41,6 +47,8 @@ pub fn getScaleMax(bits: ?u8) F {
     return 1.0;
 }
 
+/// Build an affine map from the caller-supplied `params`. Does not scan samples
+/// or read the `.fixed` payload; callers choose the bounds before calling.
 pub fn getScaleFactors(
     strategy: ScaleStrategy,
     bits: ?u8,
@@ -140,6 +148,8 @@ pub fn getScalingParams(
     }
 }
 
+/// Compute scaling over the whole array, or one slice along axis 0 when
+/// `frame_idx` is set (clamped to the last entry).
 pub fn getScalingParamsNDArray(
     array: *const ndarray.NDArray(F),
     frame_idx: ?usize,

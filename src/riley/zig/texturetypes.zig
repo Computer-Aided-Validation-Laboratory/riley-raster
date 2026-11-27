@@ -9,6 +9,7 @@
 const ndarray = @import("ndarray.zig");
 const std = @import("std");
 
+/// Reconstruction filter used when sampling a texture.
 pub const TexSamp = enum {
     nearest,
     linear,
@@ -20,12 +21,18 @@ pub const TexSamp = enum {
     lanczos2,
 };
 
+/// How a texture sampler obtains its filter weights.
 pub const TexSampMode = enum {
+    /// Evaluate filter weights directly.
     direct,
+    /// Read filter weights from a lookup table without interpolation.
     lut,
+    /// Linearly interpolate filter weights between lookup table entries.
     lut_lerp,
 };
 
+/// Texture filter and weight evaluation mode. Nearest and linear sampling
+/// support only `.direct`.
 pub const TexSampConfig = struct {
     sample: TexSamp,
     mode: TexSampMode = .direct,
@@ -49,17 +56,22 @@ pub const TexSampConfig = struct {
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
+/// Planar texture of `T` with a positive compile-time channel count `C`.
+/// Storage is indexed `[channel][row][column]`. Use `deinit` to free
+/// the storage allocated by `init`.
 pub fn TexDataFix(comptime T: type, comptime C: usize) type {
     if (C == 0) @compileError("Use TexDataDyn for runtime channel counts");
     return texDataType(T, C);
 }
 
+/// Runtime-channel counterpart of `TexDataFix`, with the same layout and ownership.
 pub fn TexDataDyn(comptime T: type) type {
     return texDataType(T, null);
 }
 
 fn texDataType(comptime T: type, comptime C: ?usize) type {
     return struct {
+        /// Planar pixels; the caller or loader defines channel order.
         array: ndarray.NDArray(T),
         rows_num: usize,
         cols_num: usize,

@@ -30,12 +30,21 @@ pub const TRI_CENTROID_ETA: F = 1.0 / 3.0;
 pub const QUAD_CENTROID_XI: F = 0.0;
 pub const QUAD_CENTROID_ETA: F = 0.0;
 
+/// Supported finite element topologies and their rasterisation variants.
+/// The selected type determines the expected number and ordering of nodes
+/// in each connectivity row.
 pub const MeshType = enum(u8) {
+    /// Three-node linear triangle.
     tri3 = 0,
+    /// Three-node linear triangle using the optimised triangle rasteriser.
     tri3opt = 1,
+    /// Six-node quadratic triangle.
     tri6 = 2,
+    /// Four-node bilinear quadrilateral.
     quad4 = 4,
+    /// Eight-node serendipity quadrilateral.
     quad8 = 5,
+    /// Nine-node biquadratic quadrilateral with a centre node.
     quad9 = 6,
 
     pub inline fn getNodesNum(self: MeshType) usize {

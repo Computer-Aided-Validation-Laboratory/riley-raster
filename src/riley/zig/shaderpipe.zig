@@ -29,6 +29,7 @@ const max_radiance_lookup_intervals: usize = 65535;
 // Shader Pipe Stages
 // --------------------------------------------------------------------------------------
 
+/// Maps a greyscale register into emissivity using black and white calibration points.
 pub const GreyToEmissivityStage = struct {
     register_source: Register,
     register_dest: Register,
@@ -38,6 +39,8 @@ pub const GreyToEmissivityStage = struct {
     greylevel_at_white: F = 1,
 };
 
+/// Clamps a source register to an inclusive interval and writes the result to a destination
+/// register.
 pub const ClampStage = struct {
     register_source: Register,
     register_dest: Register,
@@ -45,6 +48,7 @@ pub const ClampStage = struct {
     upper: F,
 };
 
+/// Writes `source * gain + offset` to a destination register.
 pub const AffineMapStage = struct {
     register_source: Register,
     register_dest: Register,
@@ -58,6 +62,7 @@ pub const AffineMapStage = struct {
     }
 };
 
+/// Maps a source register through a sampled lookup table.
 pub const LUTMapStage = struct {
     register_source: Register,
     register_dest: Register,
@@ -74,8 +79,10 @@ pub const LUTMapStage = struct {
     }
 };
 
+/// Interpolation weight supplied as a literal or read from a register.
 pub const BlendWeight = union(enum) { fixed: F, register: Register };
 
+/// Blends registers `a` and `b` as `(1 - alpha) * a + alpha * b`.
 pub const BlendStage = struct {
     a: Register,
     b: Register,
@@ -94,6 +101,7 @@ pub const BlendStage = struct {
     }
 };
 
+/// Normalises consecutive source registers as a vector, leaving a zero vector unchanged.
 pub const NormaliseStage = struct {
     register_source: Register,
     register_dest: Register,
@@ -130,7 +138,9 @@ pub const NormaliseStage = struct {
 // Registers for Pipe Stage Outputs
 // --------------------------------------------------------------------------------------
 
+/// Register bank: channel, field, parameter, or read-only constant.
 pub const RegisterKind = enum { channel, field, parameter, constant };
+/// A zero-based index into a shader-pipe register bank.
 pub const Register = struct { kind: RegisterKind, index: u8 };
 
 pub const identity_channels = blk: {
@@ -212,6 +222,8 @@ pub const RegistersWritten = struct {
 // Resolver Programs
 // --------------------------------------------------------------------------------------
 
+/// Single stack instruction in a resolver expression, from loading registers to storing
+/// output channels.
 pub const ResolverOp = union(enum) {
     load: Register,
     add,
@@ -225,7 +237,10 @@ pub const ResolverOp = union(enum) {
     store: u8,
 };
 
+/// Stack-based resolver program with operations, program-local constants, and lookup
+/// tables.
 pub const ResolverProgramInput = struct {
+    /// Instructions in execution order. A valid program stores every output channel.
     operations: []const ResolverOp,
     constants: []const F = &.{},
     lookups: []const LookupTable = &.{},
@@ -345,6 +360,7 @@ pub const ResolverProgramPrepared = struct {
 // Output Resolution
 // --------------------------------------------------------------------------------------
 
+/// Applies `(source * factor + ambient) * gain` to each source channel.
 pub const Modulate = struct {
     register_sources: []const Register,
     factor: Register,
@@ -352,30 +368,40 @@ pub const Modulate = struct {
     gain: F = 1,
 };
 
+/// Combines source channels by weighted addition, with one weight per source register.
 pub const WeightedSum = struct {
     register_sources: []const Register,
     weights: []const F,
 };
 
+/// Temperature and emissivity register references for bolometric greybody output.
 pub const GreybodyBolometric = struct {
+    /// Field register containing absolute temperature in kelvin.
     temperature: Register,
     emissivity: Register,
 };
 
+/// Maps shader-pipe registers to output channels by selection, combination, radiometry, or
+/// an expression.
 pub const ResolverInput = union(enum) {
+    /// Forward one register per output channel.
     identity: []const Register,
+    /// Add register `i` to output channel `i % channels` (zero-based).
     sum: []const Register,
     modulate: Modulate,
     weighted_sum: WeightedSum,
     greybody_bolometric: GreybodyBolometric,
+    /// Scale the blackbody band radiance at the input temperature by emissivity.
     greybody_band: struct {
         temperature: Register,
         emissivity: Register,
         radiance: LookupTable,
     },
+    /// Convert emitted and reflected ambient radiance to apparent temperature in °C.
     greybody_band_apparent_c: struct {
         temperature: Register,
         emissivity: Register,
+        /// Strictly increasing radiance samples on a kelvin temperature grid.
         radiance: LookupTable,
         ambient_k: F,
     },
@@ -610,9 +636,12 @@ pub fn createResolverPreparedFromInput(
 // Lookup Tables and Spectral Response
 // --------------------------------------------------------------------------------------
 
+/// Uniformly sampled mapping with linear interpolation and endpoint clamping.
 pub const LookupTable = struct {
     first: F,
+    /// Positive spacing between consecutive input coordinates.
     step: F,
+    /// Borrowed samples at `first + i * step`; at least two are required.
     values: []const F,
 
     pub fn validate(self: LookupTable) !void {
@@ -680,12 +709,15 @@ pub const LookupTablePrepared = struct {
     }
 };
 
-/// Integrates blackbody spectral radiance against an absolute, dimensionless
-/// camera response. Wavelengths are metres; values are W/(m² sr).
+/// Absolute, dimensionless camera response sampled at wavelengths in metres.
+/// This response weights blackbody spectral radiance to produce band radiance
+/// in W/(m² sr).
 pub const SpectralBandResponse = struct {
     wavelengths_m: []const F,
     response: []const F,
 
+    /// Integrates the response over a uniform temperature grid in kelvin.
+    /// The caller owns the returned table's `values` and frees them with `allocator`.
     pub fn prepareRadianceLookup(
         self: SpectralBandResponse,
         allocator: std.mem.Allocator,

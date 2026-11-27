@@ -148,9 +148,12 @@ pub fn saveCamera(
     try file_writer.flush();
 }
 
-/// Owns CSV-loaded coefficient storage; keep alive until rendering completes.
+/// Camera input loaded from CSV together with its backing coefficient storage.
+/// Keep this alive while `camera_input` is in use and call `deinit` when finished.
 pub const LoadedCamera = struct {
+    /// Camera input for rendering; it may borrow the owned `coeffs` storage.
     camera_input: cameratypes.CameraInput,
+    /// Owned coefficients, if present; see `PolyMap.coeffs` for layout.
     coeffs: ?[]const F,
 
     pub fn init(
@@ -346,8 +349,13 @@ pub fn saveStereoPair(
     try file_writer.flush();
 }
 
+/// Stereo camera inputs loaded from CSV together with their backing
+/// camera storage. Keep this alive while `stereo_pair` is in use and call
+/// `deinit` when finished.
 pub const LoadedStereoPair = struct {
+    /// Loaded cameras in `stereo_pair.cameras` order, with their owned coefficients.
     loaded_cameras: [2]LoadedCamera,
+    /// Stereo input that may borrow coefficient storage from `loaded_cameras`.
     stereo_pair: cameratypes.StereoPairInput,
 
     pub fn init(

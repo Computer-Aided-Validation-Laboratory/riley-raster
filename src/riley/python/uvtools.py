@@ -96,14 +96,14 @@ def _verify_coords(coords: np.ndarray) -> np.ndarray:
 class EUVProjPlane(Enum):
     """Standard Cartesian coordinate projection planes.
 
-    Members
-    -------
-    XY
-        Project onto the XY plane along the Z axis.
-    YZ
-        Project onto the YZ plane along the X axis.
-    XZ
-        Project onto the XZ plane along the Y axis.
+    Attributes
+    ----------
+    XY : EUVProjPlane
+        Use X for the horizontal coordinate and Y for the vertical coordinate.
+    YZ : EUVProjPlane
+        Use Y for the horizontal coordinate and Z for the vertical coordinate.
+    XZ : EUVProjPlane
+        Use X for the horizontal coordinate and Z for the vertical coordinate.
     """
 
     XY = "xy"
@@ -112,15 +112,17 @@ class EUVProjPlane(Enum):
 
 
 class EUVPlanarProjMode(Enum):
-    """Scaling mode for fitting projected coordinates into a bounding box.
+    """Uniform scaling mode for fitting a centered projection to a pixel box.
 
-    Members
-    -------
-    BEST
+    ``FIT_X`` and ``FIT_Y`` may extend beyond the box on the other axis.
+
+    Attributes
+    ----------
+    BEST : EUVPlanarProjMode
         Fit within bounding box preserving aspect ratio (minimum scale).
-    FIT_X
+    FIT_X : EUVPlanarProjMode
         Scale coordinates to fill horizontal span of the bounding box.
-    FIT_Y
+    FIT_Y : EUVPlanarProjMode
         Scale coordinates to fill vertical span of the bounding box.
     """
 
@@ -131,16 +133,14 @@ class EUVPlanarProjMode(Enum):
 
 @dataclass(slots=True)
 class UVProjPlane:
-    """Specification of an arbitrary planar projection surface in 3D.
+    """Custom plane for orthogonally projecting 3D points to texture space.
 
     Attributes
     ----------
     normal : numpy.ndarray
-        Surface normal vector of shape `(3,)` and dtype `np.float64`
-        representing direction `(nx, ny, nz)`.
+        Nonzero XYZ normal of shape ``(3,)``; it need not be a unit vector.
     origin : numpy.ndarray
-        Origin reference point of shape `(3,)` and dtype `np.float64`
-        representing spatial coordinates `(x0, y0, z0)`.
+        XYZ point of shape ``(3,)`` from which in-plane coordinates are measured.
     """
 
     normal: np.ndarray
@@ -149,16 +149,18 @@ class UVProjPlane:
 
 @dataclass(slots=True)
 class UVProjAxes:
-    """Resolved 3D projection coordinate system origin and unit axes.
+    """Origin and in-plane unit vectors of a 3D projection frame.
+
+    All arrays have shape ``(3,)`` and dtype ``np.float64``, in XYZ order.
 
     Attributes
     ----------
     origin : numpy.ndarray
-        Projection origin point of shape `(3,)` and dtype `np.float64`.
+        Point from which in-plane coordinates are measured.
     u_axis : numpy.ndarray
-        Normalized U axis vector of shape `(3,)` and dtype `np.float64`.
+        Direction of increasing U in the projection plane.
     v_axis : numpy.ndarray
-        Normalized V axis vector of shape `(3,)` and dtype `np.float64`.
+        Direction of increasing V in the projection plane.
     """
 
     origin: np.ndarray
@@ -168,7 +170,7 @@ class UVProjAxes:
 
 @dataclass(frozen=True, slots=True)
 class UVProjBounds2D:
-    """2D bounding extents of coordinates on a projection plane.
+    """Bounds of projected points in plane coordinates, before UV scaling.
 
     Attributes
     ----------
@@ -190,7 +192,11 @@ class UVProjBounds2D:
 
 @dataclass(frozen=True, slots=True)
 class UVPixelBBox:
-    """Target pixel bounding box within a texture map.
+    """Target bounds in pixel coordinates, not normalized UV coordinates.
+
+    Fractional bounds are allowed. Each upper bound must exceed its lower
+    bound. The full texture spans ``0`` to ``width - 1`` and ``height - 1``
+    on the respective axes.
 
     Attributes
     ----------
@@ -210,10 +216,14 @@ class UVPixelBBox:
     y_upper: float
 
 
+#: A standard or custom plane, or ``(normal, origin)`` as two XYZ arrays
+#: of shape ``(3,)``.
 UVProjPlaneLike = EUVProjPlane | UVProjPlane | tuple[
     np.ndarray, np.ndarray
 ]
 
+#: A pixel box or a sequence/array of shape ``(4,)`` in
+#: ``(x_lower, y_lower, x_upper, y_upper)`` order.
 UVPixelBBoxLike = (
     UVPixelBBox
     | tuple[float, float, float, float]
@@ -443,19 +453,21 @@ def project_uvs_planar_bbox(
         number of nodes and columns represent `(x, y, z)` spatial coordinates.
     texture_size : tuple of (int, int) or tuple of (float, float)
         Dimensions `(width, height)` of the target texture in pixels.
-    px_bbox : UVPixelBBox, tuple, sequence, or numpy.ndarray
-        Pixel bounding box `(x_lower, y_lower, x_upper, y_upper)`.
-    proj_plane : EUVProjPlane, UVProjPlane, or tuple
-        Projection surface definition.
+    px_bbox : UVPixelBBox or ``array-like``
+        Target bounds in pixel coordinates. Pass a box or a sequence or array
+        of shape ``(4,)`` in ``(x_lower, y_lower, x_upper, y_upper)`` order.
+    proj_plane : UVProjPlaneLike
+        Standard or custom plane, or ``(normal, origin)`` as two XYZ
+        arrays of shape ``(3,)``.
     mode : EUVPlanarProjMode, default=EUVPlanarProjMode.BEST
         Policy for fitting projected coordinates to the bounding box.
 
     Returns
     -------
     numpy.ndarray
-        Array of shape `(N, 2)` and dtype `np.float64`, where `N` is the
-        number of nodes and columns represent normalized UV texture coordinates
-        `(u, v)` in `[0.0, 1.0]`.
+        Array of shape ``(N, 2)`` and dtype ``np.float64``, one normalized
+        ``(u, v)`` pair per node. Coordinates can fall outside ``[0, 1]``
+        if the fitted projection extends beyond the texture.
 
     Raises
     ------
@@ -518,15 +530,15 @@ def project_uvs_planar_centered(
     uv_span_max : float, default=1.0
         Maximum fraction of normalized UV span in `(0.0, 1.0]` that the
         larger mesh dimension should occupy.
-    proj_plane : EUVProjPlane, UVProjPlane, or tuple, default=EUVProjPlane.XY
-        Projection surface definition.
+    proj_plane : UVProjPlaneLike, default=EUVProjPlane.XY
+        Standard or custom plane, or ``(normal, origin)`` as two XYZ
+        arrays of shape ``(3,)``.
 
     Returns
     -------
     numpy.ndarray
-        Array of shape `(N, 2)` and dtype `np.float64`, where `N` is the
-        number of nodes and columns represent normalized UV texture coordinates
-        `(u, v)` in `[0.0, 1.0]`.
+        Array of shape ``(N, 2)`` and dtype ``np.float64``, one normalized
+        ``(u, v)`` pair per node.
 
     Raises
     ------

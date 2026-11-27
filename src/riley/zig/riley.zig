@@ -47,8 +47,10 @@ const F = buildconfig.F;
 pub const RasterAdvancedOptions = struct {
     render_groups: union(enum) {
         from_config,
+        /// Borrow caller-owned groups, which must stay valid until rendering returns.
         supplied: []const rendergroups.RenderGroup,
     } = .from_config,
+    /// Optional benchmark destination in frame-major, camera-minor order.
     bench_capture: ?[]report.FrameBenchCapture = null,
 };
 
@@ -56,6 +58,9 @@ pub const RasterAdvancedOptions = struct {
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
+/// Render the scene and return an image batch shaped by `calcAllFramesImageDims`
+/// for `.memory` or `.both`; otherwise return `null`. The caller frees the
+/// returned `slice` and calls `deinit` with `outer_alloc`.
 pub fn raster(
     outer_alloc: std.mem.Allocator,
     user_io: std.Io,
@@ -75,6 +80,8 @@ pub fn raster(
     );
 }
 
+/// Render into caller-owned `images_arr` with the shape from
+/// `calcAllFramesImageDims`. Supply it for `.memory` or `.both`, otherwise pass `null`.
 pub fn rasterInto(
     outer_alloc: std.mem.Allocator,
     user_io: std.Io,
@@ -238,6 +245,8 @@ pub fn getThreadedIo(
     });
 }
 
+/// Return the image batch shape `[camera][frame][channel][row][column]`.
+/// Cameras follow input order; channel, row and column extents are their scene-wide maxima.
 pub fn calcAllFramesImageDims(
     cam_inps: []const cameratypes.CameraInput,
     meshes: []const meshtypes.MeshInput,

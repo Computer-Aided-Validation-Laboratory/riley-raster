@@ -7,7 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 
-// Public load/save operations for meshes, UVs, images, cameras and calibration data.
+//! Public load/save operations for meshes, UVs, images, cameras and calibration data.
 
 const meshio = @import("../meshio.zig");
 const uvio = @import("../uvio.zig");

@@ -16,7 +16,15 @@ const shapefun = @import("shapefun.zig");
 const parachunkexec = @import("parachunkexec.zig");
 const geometrykernels = @import("geometrykernels.zig");
 
-pub const NormalType = enum { none, exact, avg };
+/// How surface normals are prepared for mesh shading.
+pub const NormalType = enum {
+    /// Do not prepare surface normals.
+    none,
+    /// Compute normals separately at each element's nodes.
+    exact,
+    /// Sum contributions from all incident elements at each node, then normalise.
+    avg,
+};
 const rasterfrontend = @import("rasterfrontend.zig");
 
 // --------------------------------------------------------------------------------------

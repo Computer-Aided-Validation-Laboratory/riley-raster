@@ -7,10 +7,15 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 
-// Public module root. Zig resolves a module path from the root source directory, so
-// this file lives beside the implementation and forwards the explicit public surface
-// assembled in api/core.zig.
+//! Public Zig API for the Riley rasteriser.
+//!
+//! Configure a render with `MeshInput`, `CameraInput`, and `RasterConfig`. Use
+//! `dataio` for file I/O, `maths` for numerical types, and `ops` for scene,
+//! camera-framing, and shader construction helpers.
 
+// The root source directory sets the boundary for relative imports. Keep this
+// root beside the implementation so api/core.zig and the facade namespaces
+// can import their ../ implementation modules within that boundary.
 const core = @import("api/core.zig");
 
 pub const dataio = core.dataio;

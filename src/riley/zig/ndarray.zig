@@ -17,14 +17,25 @@ const sliceops = @import("sliceops.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+/// Dense array of `T` with runtime rank and shape. Dimensions run from
+/// slowest- to fastest-varying; the last dimension has unit stride. Axis
+/// meanings are defined by the caller or by the type that contains the array.
+///
+/// `deinit` releases shape and stride metadata, not element storage. Keep
+/// borrowed storage alive while in use, and free owned storage separately.
 pub fn NDArray(comptime T: type) type {
     return struct {
+        /// Flat element storage.
         slice: []T,
+        /// Length of each dimension; `dims.len` is the rank.
         dims: []usize,
+        /// Step in elements for a unit increment in each dimension.
         strides: []usize,
 
         const Self: type = @This();
 
+        /// Borrow element storage and allocate metadata for a nonempty shape. The
+        /// product of the dimensions must not exceed `slice.len`.
         pub fn init(allocator: std.mem.Allocator, slice: []T, dims: []const usize) !Self {
             var dim_prod: usize = dims[0];
             for (1..dims.len) |dd| {
@@ -50,6 +61,8 @@ pub fn NDArray(comptime T: type) type {
             return ndarray;
         }
 
+        /// Allocate uninitialised element storage and metadata. The caller must
+        /// free the returned `slice` in addition to calling `deinit`.
         pub fn initFlat(allocator: std.mem.Allocator, dims: []const usize) !Self {
             var dim_prod: usize = 1;
             for (dims) |dd| {
@@ -87,6 +100,7 @@ pub fn NDArray(comptime T: type) type {
             self.slice[flat_idx] = in_val;
         }
 
+        /// Return the flat offset for one index per axis, in `dims` order.
         pub fn getFlatIdx(self: *const Self, indices: []const usize) usize {
             std.debug.assert(indices.len == self.dims.len);
 
@@ -219,11 +233,14 @@ pub fn NDArray(comptime T: type) type {
             return self.slice[start .. start + stride];
         }
 
+        /// Return the tail of `slice` starting at the given first-axis index.
         pub fn getPlaneSlice(self: *const Self, chan: usize) []T {
             const start = chan * self.strides[0];
             return self.slice[start..];
         }
 
+        /// Borrow a contiguous subarray by fixing one or more leading indices,
+        /// leaving at least one dimension. The view owns its own metadata.
         pub fn fixedPrefixView(
             self: *const Self,
             allocator: std.mem.Allocator,
@@ -246,6 +263,8 @@ pub fn NDArray(comptime T: type) type {
             );
         }
 
+        /// Copy element storage and metadata. The caller must free the new
+        /// `slice` in addition to calling `deinit`.
         pub fn dupe(self: *const Self, allocator: std.mem.Allocator) !Self {
             const new_slice = try allocator.dupe(T, self.slice);
             errdefer allocator.free(new_slice);
@@ -254,6 +273,9 @@ pub fn NDArray(comptime T: type) type {
     };
 }
 
+/// An `NDArray(T)` paired with a mapping from external indices to indices
+/// in the array. `deinit` frees the map and array metadata, but not the
+/// underlying array elements.
 pub fn MappedNDArray(comptime T: type) type {
     return struct {
         array: NDArray(T),
@@ -314,6 +336,8 @@ pub fn NDArrayOps(comptime T: type) type {
             sliceops.div(T, arr0.slice, arr1.slice, arr_out.slice);
         }
 
+        /// Copy array axes `row_ext` and `col_ext` to matrix rows and columns,
+        /// holding the remaining axes at their entries in `fixed_idxs`.
         pub fn extractMat(
             allocator: std.mem.Allocator,
             arr: *const NDArray(T),
