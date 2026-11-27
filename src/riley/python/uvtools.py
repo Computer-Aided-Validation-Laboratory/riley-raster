@@ -528,8 +528,9 @@ def project_uvs_planar_centered(
     texture_size : tuple of (int, int) or tuple of (float, float)
         Dimensions `(width, height)` of the target texture in pixels.
     uv_span_max : float, default=1.0
-        Maximum fraction of normalized UV span in `(0.0, 1.0]` that the
-        larger mesh dimension should occupy.
+        Maximum normalized span on either axis, in ``(0, 1]``. The fit
+        preserves aspect ratio in pixel space using the spans between the
+        first and last pixel centres.
     proj_plane : UVProjPlaneLike, default=EUVProjPlane.XY
         Standard or custom plane, or ``(normal, origin)`` as two XYZ
         arrays of shape ``(3,)``.
@@ -555,33 +556,15 @@ def project_uvs_planar_centered(
 
     projected = _project_coords(coords_in, proj_plane)
     bounds = _calc_proj_bounds(projected)
-    aspect_ratio_ratio = (
-        (bounds.x_max - bounds.x_min) / (bounds.y_max - bounds.y_min)
-        / (texture_width / texture_height)
-    )
+    proj_min = np.array((bounds.x_min, bounds.y_min))
+    proj_extent = np.array((bounds.x_max, bounds.y_max)) - proj_min
+    uv_extent = proj_extent / (texture_width - 1.0, texture_height - 1.0)
+    u_span, v_span = (uv_extent / np.max(uv_extent)) * float(uv_span_max)
 
-    if aspect_ratio_ratio > 1.0:
-        u_span = uv_span_max
-        v_span = u_span / aspect_ratio_ratio
-        mode = EUVPlanarProjMode.FIT_X
-    else:
-        v_span = uv_span_max
-        u_span = v_span * aspect_ratio_ratio
-        mode = EUVPlanarProjMode.FIT_Y
-
-    u_min = 0.5 * (1.0 - u_span)
-    v_min = 0.5 * (1.0 - v_span)
-
-    px_bbox = UVPixelBBox(
-        x_lower=u_min * (texture_width - 1.0),
-        y_lower=v_min * (texture_height - 1.0),
-        x_upper=(1.0 - u_min) * (texture_width - 1.0),
-        y_upper=(1.0 - v_min) * (texture_height - 1.0),
-    )
-
-    return _calc_uvs_from_proj(
-        projected, bounds, (texture_width, texture_height), px_bbox, mode,
-    )
+    # Normalize before centering so the projected endpoints map to exactly
+    # -0.5 and 0.5, without rounding a midpoint in mesh or pixel coordinates.
+    offsets = (projected - proj_min) / proj_extent - 0.5
+    return 0.5 + offsets * (u_span, -v_span)
 
 
 __all__ = [

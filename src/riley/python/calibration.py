@@ -100,7 +100,8 @@ def caltarget_motion_from_limits(
     sampling : ECalTargetMotionSampling
         Policy for sampling the free axes.
     include_reference_frame : bool, default=True
-        Include a zero-displacement frame if it is not already sampled.
+        Reserve the first frame for zero displacement. For Cartesian sampling,
+        prepend it only if the grid does not already contain it.
     rotation_center : array_like or None, default=None
         XYZ point of shape ``(3,)`` about which to rotate. The default is
         the center of the undeformed node bounding box.
@@ -149,10 +150,12 @@ def caltarget_motion_from_fov(
     rng: np.random.Generator | None = None,
     cartesian_levels: int | tuple[int, ...] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Create rigid fields whose generated poses fit one camera's FOV.
+    """Create rigid fields whose supplied nodes fit one camera's FOV.
 
-    Sampled poses are contracted as needed to fit inside the central
-    sensor region. The undeformed target must already fit there.
+    Sampled poses are contracted as needed to keep the supplied nodes'
+    projected positions inside the central sensor region. The undeformed
+    nodes must already fit there. This does not check element interiors
+    or curved edges between nodes.
 
     Parameters
     ----------
@@ -160,7 +163,9 @@ def caltarget_motion_from_fov(
         Undeformed target coordinates of shape ``(N, 3)``, one
         ``(x, y, z)`` row per node.
     camera : Camera
-        Camera using the OpenGL coordinate convention.
+        Camera tagged ``CameraCoordSys.opengl``. Supports no distortion or
+        Brown–Conrady (standard or extended), without polynomial distortion
+        or sensor tilt.
     positions_num : int
         Requested frame count, including the reference when requested.
         For Cartesian sampling the grid sets the count instead.
@@ -171,7 +176,8 @@ def caltarget_motion_from_fov(
     sampling : ECalTargetMotionSampling
         Policy for sampling the free axes.
     include_reference_frame : bool, default=True
-        Include a zero-displacement frame if it is not already sampled.
+        Reserve the first frame for zero displacement. For Cartesian sampling,
+        prepend it only if the grid does not already contain it.
     rotation_center : array_like or None, default=None
         XYZ point of shape ``(3,)`` about which to rotate. The default is
         the center of the undeformed node bounding box.
@@ -292,9 +298,12 @@ def _sample_poses(
             rng,
         )
 
-    reference = np.zeros((1, 6), dtype=np.float64)
-    if include_reference_frame and not np.any(np.all(poses == reference, axis=1)):
-        poses = np.vstack((reference, poses))
+    # Only Cartesian grids can supply the reference without reserving a slot.
+    if include_reference_frame and (
+        sampling is not ECalTargetMotionSampling.CARTESIAN
+        or not np.any(np.all(poses == 0.0, axis=1))
+    ):
+        poses = np.vstack((np.zeros((1, 6), dtype=np.float64), poses))
     return np.ascontiguousarray(poses)
 
 
@@ -509,7 +518,7 @@ def _pose_is_in_fov(
 def _project_world_points(coords: np.ndarray, camera: Camera) -> np.ndarray:
     camera_rotation = Rotation.from_euler(
         "ZYX",
-        np.asarray(camera.rot_world, dtype=np.float64)[::-1],
+        camera.rot_world,
     )
     cam_coords = camera_rotation.inv().apply(
         coords - np.asarray(camera.pos_world, dtype=np.float64),
@@ -518,12 +527,13 @@ def _project_world_points(coords: np.ndarray, camera: Camera) -> np.ndarray:
     if np.any(depth <= 0.0):
         return np.full((coords.shape[0], 2), np.nan, dtype=np.float64)
     norm_x = cam_coords[:, 0] / depth
-    norm_y = cam_coords[:, 1] / depth
+    # Distortion is defined in raster coordinates, where Y points down.
+    norm_y = -cam_coords[:, 1] / depth
     dist_x, dist_y = _apply_brown_con(norm_x, norm_y, camera)
     focal_px = camera.focal_length / np.asarray(camera.pixels_size, dtype=np.float64)
     pixels_num = np.asarray(camera.pixels_num, dtype=np.float64)
     return np.column_stack((0.5 * pixels_num[0] + focal_px[0] * dist_x,
-                            0.5 * pixels_num[1] - focal_px[1] * dist_y))
+                            0.5 * pixels_num[1] + focal_px[1] * dist_y))
 
 
 def _apply_brown_con(

@@ -45,6 +45,9 @@ def test_project_uvs_rejects_degenerate_proj() -> None:
     )
 
     with pytest.raises(ValueError, match="zero area"):
+        riley.project_uvs_planar_centered(coords, (100, 100))
+
+    with pytest.raises(ValueError, match="zero area"):
         riley.project_uvs_planar_bbox(
             coords,
             (100, 100),
