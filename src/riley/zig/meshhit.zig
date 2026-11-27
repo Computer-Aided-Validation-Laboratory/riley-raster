@@ -17,11 +17,13 @@ const ndarray = @import("ndarray.zig");
 pub const MeshHitField = enum { coords_ref, coords_def, surf_norm };
 pub const MeshHitSelection = std.EnumSet(MeshHitField);
 
-// Culled element-node geometry shared by every shader selected for a mesh frame.
+/// Culled element-node geometry shared by the selected shaders for a mesh
+/// frame. Positions are in world space; vectors use `[visible_element][xyz][local_node]`.
 pub const MeshHitGeomPrepared = struct {
     selection: MeshHitSelection = MeshHitSelection.empty,
     coords_ref: ?ndarray.NDArray(F) = null,
     coords_def: ?ndarray.NDArray(F) = null,
+    /// Surface normals; `map` maps visible element indices to array rows.
     surf_norm: ?ndarray.MappedNDArray(F) = null,
 };
 

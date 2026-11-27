@@ -7,7 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 
-// Public scene/camera operations and shader-input construction helpers.
+//! Public scene/camera operations and shader-input construction helpers.
 
 // --------------------------------------------------------------------------------------
 // Scene Operations

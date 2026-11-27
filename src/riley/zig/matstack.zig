@@ -13,8 +13,11 @@ const F = buildconfig.F;
 const vecstack = @import("vecstack.zig");
 
 const TestType = F;
+/// A 2×2 row-major matrix using Riley's build-selected floating-point type.
 pub const Mat22F = Mat22T(buildconfig.F);
+/// A 3×3 row-major matrix using Riley's build-selected floating-point type.
 pub const Mat33F = Mat33T(buildconfig.F);
+/// A 4×4 row-major matrix using Riley's build-selected floating-point type.
 pub const Mat44F = Mat44T(buildconfig.F);
 pub const Mat22f = Mat22F;
 pub const Mat33f = Mat33F;
@@ -25,12 +28,14 @@ pub const MatrixInversionError = error{SingularMatrix};
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+/// Fixed-size row-major matrix with inline storage and no heap allocation.
 pub fn MatStack(
     comptime rows_n: comptime_int,
     comptime cols_n: comptime_int,
     comptime T: type,
 ) type {
     return struct {
+        /// Matrix elements indexed as `[row][column]`.
         mat: [rows_n][cols_n]T,
 
         pub const elem_n: usize = rows_n * cols_n;
@@ -284,14 +289,17 @@ pub fn MatStack(
     };
 }
 
+/// A fixed-size 2×2 row-major matrix of `T`.
 pub fn Mat22T(comptime T: type) type {
     return MatStack(2, 2, T);
 }
 
+/// A fixed-size 3×3 row-major matrix of `T`.
 pub fn Mat33T(comptime T: type) type {
     return MatStack(3, 3, T);
 }
 
+/// A fixed-size 4×4 row-major matrix of `T`.
 pub fn Mat44T(comptime T: type) type {
     return MatStack(4, 4, T);
 }

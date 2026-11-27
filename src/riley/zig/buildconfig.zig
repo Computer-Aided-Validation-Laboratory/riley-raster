@@ -57,6 +57,7 @@ comptime {
     }
 }
 
+/// Riley's build-selected scalar floating-point type (`f32` or `f64`).
 pub const default_precision = switch (build_options.precision) {
     .f32 => f32,
     .f64 => f64,

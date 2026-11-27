@@ -17,14 +17,18 @@ const csvio = @import("csvio.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+/// Dense row-major matrix of `T` with runtime dimensions. The storage is
+/// borrowed by `init`, or allocated for the caller by `initAlloc`.
 pub fn MatSlice(comptime T: type) type {
     return struct {
+        /// Contiguous row-major elements, with length `rows_num * cols_num`.
         slice: []T,
         rows_num: usize,
         cols_num: usize,
 
         const Self: type = @This();
 
+        /// Wrap caller-provided row-major storage without copying.
         pub fn init(slice: []T, rows_num: usize, cols_num: usize) Self {
             std.debug.assert(slice.len == (rows_num * cols_num));
 
@@ -35,6 +39,8 @@ pub fn MatSlice(comptime T: type) type {
             };
         }
 
+        /// Allocate uninitialised row-major storage. The caller frees `slice`
+        /// using `outer_alloc`.
         pub fn initAlloc(
             outer_alloc: std.mem.Allocator,
             rows_num: usize,

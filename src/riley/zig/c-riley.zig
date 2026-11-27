@@ -53,34 +53,42 @@ pub const RILEY_SPECKLE_BITS_NONE: c_int = -1;
 pub const RILEY_SPECKLE_DEFAULT_SEED: u32 = speckleconfig.default_seed;
 pub const RILEY_PERLIN_DEFAULT_TRANSITION_WIDTH: F = speckleconfig.default_perlin_transition_width;
 
+/// Two-component unsigned 32-bit vector, used for pixel counts in x and y.
 pub const CVec2U32 = extern struct {
     x: u32,
     y: u32,
 };
 
+/// Two-component double-precision vector, used for pixel sizes in x and y.
 pub const CVec2F64 = extern struct {
     x: F,
     y: F,
 };
 
+/// Three-component double-precision vector in x, y, z order.
 pub const CVec3F64 = extern struct {
     x: F,
     y: F,
     z: F,
 };
 
+/// Borrowed dense double array of shape (rows_num, cols_num), column varying fastest.
+/// Coordinate inputs to the ROI and framing functions use (nodes, 3), with x, y, z columns.
 pub const CArray2DF64 = extern struct {
     elems: [*c]const F,
     rows_num: usize,
     cols_num: usize,
 };
 
+/// Borrowed dense size_t array of shape (rows_num, cols_num), column varying fastest.
 pub const CArray2DUsize = extern struct {
     elems: [*c]const usize,
     rows_num: usize,
     cols_num: usize,
 };
 
+/// Borrowed dense double array of shape (dim0, dim1, dim2), with dim2 varying fastest.
+/// The field using this descriptor defines the meaning of the axes.
 pub const CArray3DF64 = extern struct {
     elems: [*c]const F,
     dim0: usize,
@@ -88,6 +96,8 @@ pub const CArray3DF64 = extern struct {
     dim2: usize,
 };
 
+/// Borrowed dense uint8_t texture of shape (dim0, dim1, dim2) = (channels, rows, columns).
+/// Columns vary fastest.
 pub const CArray3DU8 = extern struct {
     elems: [*c]const u8,
     dim0: usize,
@@ -95,6 +105,8 @@ pub const CArray3DU8 = extern struct {
     dim2: usize,
 };
 
+/// Borrowed dense uint16_t texture of shape (dim0, dim1, dim2) = (channels, rows, columns).
+/// Columns vary fastest.
 pub const CArray3DU16 = extern struct {
     elems: [*c]const u16,
     dim0: usize,
@@ -102,6 +114,7 @@ pub const CArray3DU16 = extern struct {
     dim2: usize,
 };
 
+/// Image batch shape (dim0, dim1, dim2, dim3, dim4) = (cameras, frames, channels, rows, columns).
 pub const CDims5Usize = extern struct {
     dim0: usize,
     dim1: usize,
@@ -110,11 +123,14 @@ pub const CDims5Usize = extern struct {
     dim4: usize,
 };
 
+/// Caller-owned writable image buffer, with columns varying fastest in CDims5Usize axis order.
+/// Use rileyCalcOutputDimsScene to obtain dims and allocate their product in doubles at elems.
 pub const CImageBuffF64 = extern struct {
     elems: [*c]F,
     dims: CDims5Usize,
 };
 
+/// Lens distortion model and its coefficients, including optional polynomial data.
 pub const CDistort = extern struct {
     distort_model: u32,
     distort_k1: F,
@@ -137,6 +153,7 @@ pub const CDistort = extern struct {
     distort_poly_coeffs_len: usize,
 };
 
+/// Camera point-spread function settings, including Gaussian widths, angle and support.
 pub const CPSF = extern struct {
     psf_type: u32,
     psf_sigma_x: F,
@@ -146,6 +163,7 @@ pub const CPSF = extern struct {
     psf_separable: u32,
 };
 
+/// File format, bit depths, intensity scaling and code packing for image output.
 pub const CImageSaveOpts = extern struct {
     format: u32,
     file_bits: c_int,
@@ -156,6 +174,7 @@ pub const CImageSaveOpts = extern struct {
     packing: u32,
 };
 
+/// Camera geometry, optics, sampling and rendered image output settings.
 pub const CCameraInput = extern struct {
     pixels_num: CVec2U32,
     pixels_size: CVec2F64,
@@ -175,6 +194,7 @@ pub const CCameraInput = extern struct {
     output_files_len: usize,
 };
 
+/// Parameters for built-in procedural shaders; the selected function determines which fields are used.
 pub const CFuncShaderParams = extern struct {
     coord_scale: [2]F,
     coord_offset: [2]F,
@@ -200,6 +220,7 @@ pub const CFuncShaderParams = extern struct {
     eggbox_phase: [2]F,
 };
 
+/// Built-in function and output scaling for one procedural shader channel.
 pub const CFuncChannel = extern struct {
     builtin: u32,
     params: CFuncShaderParams,
@@ -210,12 +231,18 @@ pub const CFuncChannel = extern struct {
     scaling_max: F,
 };
 
+/// Texture array variants; CTextureInput.storage selects the active member.
+/// All variants have shape (channels, rows, columns), with columns varying fastest.
 pub const CTextureData = extern union {
     f: CArray3DF64,
     u8: CArray3DU8,
     u16: CArray3DU16,
 };
 
+/// Texture shader input with mesh UVs, pixel storage and sampling settings.
+/// uvs has shape (nodes, 2), with u, v columns in mesh node order.
+/// data has shape (channels, rows, columns): one plane for scalar textures, three
+/// planes in R, G, B order for RGB textures, or one plane per multifield texture channel.
 pub const CTextureInput = extern struct {
     uvs: CArray2DF64,
     data: CTextureData,
@@ -224,11 +251,17 @@ pub const CTextureInput = extern struct {
     sample_mode: u32,
 };
 
+/// Nodal field shader input with its scaling scope.
+/// field has shape (frames, nodes, components), in mesh node order.
+/// Use three components in R, G, B order for RGB.
 pub const CNodalInput = extern struct {
     field: CArray3DF64,
     scale_over: u32,
 };
 
+/// Procedural shader input with a coordinate mode, function parameters and optional per-channel functions.
+/// uvs is required in UV coordinate mode and may be omitted otherwise with a zeroed descriptor.
+/// When supplied, uvs has shape (nodes, 2), with u, v columns in mesh node order.
 pub const CFunctionInput = extern struct {
     uvs: CArray2DF64,
     builtin: u32,
@@ -238,6 +271,8 @@ pub const CFunctionInput = extern struct {
     channels_len: usize,
 };
 
+/// Procedural speckle shader input with UVs, pattern parameters and intensity settings.
+/// uvs has shape (nodes, 2), with u, v columns in mesh node order.
 pub const CSpeckleInput = extern struct {
     uvs: CArray2DF64,
     pattern: u32,
@@ -255,6 +290,7 @@ pub const CSpeckleInput = extern struct {
     background: F,
 };
 
+/// Direct shader payload variants; CShaderInput.shader_tag selects the active member.
 pub const CShaderPayload = extern union {
     texture: CTextureInput,
     nodal: CNodalInput,
@@ -262,6 +298,7 @@ pub const CShaderPayload = extern union {
     speckle: CSpeckleInput,
 };
 
+/// Direct shader selection, payload and output gain, offset and scaling.
 pub const CShaderInput = extern struct {
     shader_tag: u32,
     output_gain: F,
@@ -272,19 +309,23 @@ pub const CShaderInput = extern struct {
     value: CShaderPayload,
 };
 
+/// Shader pipeline register reference identified by kind and index.
 pub const CRegister = extern struct { kind: u32, index: u32 };
+/// One instruction in a shader resolver expression, with operands selected by tag.
 pub const CResolverOp = extern struct {
     tag: u32,
     register_ref: CRegister,
     lower: F,
     upper: F,
 };
+/// Borrowed lookup table sampled at uniform intervals starting at first.
 pub const CLookup = extern struct {
     first: F,
     step: F,
     values: [*c]const F,
     values_len: usize,
 };
+/// Shader pipeline output resolver; the tag selects how it maps values to output channels.
 pub const CResolver = extern struct {
     tag: u32,
     registers: [*c]const CRegister,
@@ -300,6 +341,7 @@ pub const CResolver = extern struct {
     operations: [*c]const CResolverOp,
     operations_len: usize,
 };
+/// One shader pipeline stage; the tag selects the operation and its operands.
 pub const CPipeStage = extern struct {
     tag: u32,
     shader: [*c]const CShaderInput,
@@ -318,6 +360,7 @@ pub const CPipeStage = extern struct {
     components: u32,
     lookup: CLookup,
 };
+/// Ordered shader stages, shared constants and the final output resolver.
 pub const CPipe = extern struct {
     stages: [*c]const CPipeStage,
     stages_len: usize,
@@ -326,17 +369,25 @@ pub const CPipe = extern struct {
     constants_len: usize,
 };
 
+/// Direct shader and pipeline variants; CShaderEntry.execution_tag selects the active member.
 pub const CShaderExecution = extern union {
     direct: CShaderInput,
     pipe: CPipe,
 };
 
+/// A mesh shader assigned to a render format, with its execution mode and payload.
 pub const CShaderEntry = extern struct {
     format_tag: u32,
     execution_tag: u32,
     value: CShaderExecution,
 };
 
+/// Mesh topology, coordinates, connectivity, optional displacements and shaders.
+/// coords has shape (nodes, 3), with x, y, z columns.
+/// connect has shape (elements, nodes_per_element), with zero-based row indices into coords
+/// in the local node order of mesh_type.
+/// disp has shape (frames, nodes, 3), with x, y, z components in mesh node order.
+/// Use a zeroed disp descriptor for a mesh without displacements.
 pub const CMeshInput = extern struct {
     mesh_type: u32,
     normal_type: u32,
@@ -347,6 +398,7 @@ pub const CMeshInput = extern struct {
     shaders_len: usize,
 };
 
+/// Rasteriser settings for rendering algorithms, scheduling, validation, buffering and output.
 pub const CRasterConfig = extern struct {
     render_mode: u32,
     parallel_mode: u32,

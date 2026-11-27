@@ -67,41 +67,26 @@ write files. The camera settings do not rescale the returned image buffer.
 Python parameter reference
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. py:class:: riley.SpeckleShader(uvs, params, bits=8, output_gain=1.0, output_offset=0.0, scaling_type=ScaleStrategy.none, scaling_min=0.0, scaling_max=0.0)
+.. autoclass:: riley.SpeckleShader
 
-   Bind nodal UVs and pattern parameters to a shader. The class of ``params``
-   selects the pattern (there is no separate ``pattern`` argument):
-   :py:class:`riley.Disk2DParams` for disk spots,
-   :py:class:`riley.Gaussian2DParams` for Gaussian spots, or
-   :py:class:`riley.Perlin2DParams` for Perlin noise. The default gain and
-   offset leave the sample unchanged, and the default scaling does not apply
-   the bit-depth multiplier. With ``ScaleStrategy.frac``, ``scaling_min`` and
-   ``scaling_max`` set the output interval as fractions of full scale. With
-   ``ScaleStrategy.fixed``, they set the input bounds after gain and offset.
-   Use ``bits=None`` to omit the bit-depth multiplier when scaling.
+   With ``ScaleStrategy.frac``, ``scaling_min`` and ``scaling_max`` set the output
+   interval as fractions of full scale. With ``ScaleStrategy.fixed``, they set
+   the input bounds after gain and offset.
 
-.. py:class:: riley.Disk2DParams(*, coverage, radius, occupancy=1.0, jitter=0.0, edge_softness=0.0, seed=default, foreground=0.0, background=1.0)
+.. autoclass:: riley.Disk2DParams
 
-   ``edge_softness`` is nonnegative and measured in reference-mesh units;
-   zero gives a hard edge. The other spot parameters are shared with
-   :py:class:`riley.Gaussian2DParams`.
+.. autoclass:: riley.Gaussian2DParams
 
-.. py:class:: riley.Gaussian2DParams(*, coverage, radius, occupancy=1.0, jitter=0.0, seed=default, foreground=0.0, background=1.0)
+For disk and Gaussian spots, ``coverage`` must be in ``(0, 1)`` and
+``occupancy`` (the probability that a grid cell contains a spot centre) must be
+in ``(0, 1]``. Use a positive ``radius`` and nonnegative ``jitter`` no larger
+than half the radius. Not every combination of coverage and support is feasible.
+Disk ``edge_softness`` must be nonnegative.
 
-   ``coverage`` is the expected area fraction of nominal spot supports, not
-   a guarantee for a finite render or a measure of mean opacity. It must be
-   between 0 and 1, exclusive. ``occupancy`` is the probability that a grid
-   cell contains a spot centre, in ``(0, 1]``. Use a positive ``radius`` and
-   nonnegative ``jitter``, both in reference-mesh units. Jitter is at most
-   half the radius. Not every combination of coverage and support sizes is
-   feasible.
+.. autoclass:: riley.Perlin2DParams
 
-.. py:class:: riley.Perlin2DParams(*, cell_size, threshold=0.0, transition_width=default, seed=default, foreground=0.0, background=1.0)
-
-   Set a positive ``cell_size`` in reference-mesh units. ``threshold`` and
-   nonnegative ``transition_width`` are in noise units. Perlin has no coverage
-   control. Omit ``transition_width`` to use Riley's native default, or set it
-   to zero for a hard threshold.
+   Use a positive ``cell_size`` and a nonnegative ``transition_width``.
+   Perlin has no coverage control.
 
 All patterns share Riley's deterministic default ``seed``. Set another
 unsigned 32-bit integer seed for a different realization. The ``foreground``

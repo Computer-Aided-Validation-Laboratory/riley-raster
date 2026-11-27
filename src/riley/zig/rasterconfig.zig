@@ -13,6 +13,8 @@ const F = buildconfig.F;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+/// Top-level rendering options: scheduling, output, validation, reporting, and advanced
+/// tuning.
 pub const RasterConfig = struct {
     pub const default_output_name_format =
         "cam{camera}_frame{frame}_field{field}";
@@ -37,23 +39,27 @@ pub const RasterConfig = struct {
     advanced: AdvancedConfig = .{},
 };
 
+/// Render thread budget: infer it from the machine, render serially, or supply a budget.
 pub const ParallelConfig = union(enum) {
     auto,
     serial,
     threads: u16,
 };
 
+/// Controls disk-write overlap and the number of frame buffers available for saving.
 pub const OutputConfig = struct {
     disk_save_overlap: bool = false,
     save_frame_buff_count: usize = buildconfig.SaveFrameBuffCount,
 };
 
+/// Groups raster, lens-distortion, and geometry-solver tuning options.
 pub const AdvancedConfig = struct {
     raster: RasterTuning = .{},
     distortion: DistortionTuning = .{},
     solver: SolverTuning = .{},
 };
 
+/// Overrides or bounds the automatically chosen tile, stripe, and raster buffer settings.
 pub const RasterTuning = struct {
     tile_size_override: ?u16 = null,
     tile_size_min: u16 = 1,
@@ -68,15 +74,20 @@ pub const RasterTuning = struct {
     raster_halo_px_override: ?u16 = null,
 };
 
+/// Controls spacing, in pixels, between samples along edges used to bound distorted
+/// geometry.
 pub const DistortionTuning = struct {
     edge_spacing_px: F = 1.0,
 };
 
+/// Separate tuning for elements classified as single-root or potentially multi-root under
+/// projection.
 pub const SolverTuning = struct {
     oneroot: SolverTuningOneRoot = .{},
     multiroot: SolverTuningMultiroot = .{},
 };
 
+/// Hull, edge-function, and Newton-seed policies for the single-root path.
 pub const SolverTuningOneRoot = struct {
     hull_mode: HullMode = .on_no_fallback,
     edge_fun_mode: EdgeFunMode = .on_the_fly,
@@ -84,11 +95,13 @@ pub const SolverTuningOneRoot = struct {
     newton_seed_reuse: NewtonSeedReuse = .off,
 };
 
+/// Edge-function and search-recovery policies for the potentially multi-root path.
 pub const SolverTuningMultiroot = struct {
     mode: MultirootSolverMode = .fast,
     edge_fun_mode: EdgeFunMode = .pre_calc,
 };
 
+/// Selects whether edge functions are evaluated on demand or precomputed.
 pub const EdgeFunMode = enum {
     on_the_fly,
     pre_calc,
@@ -132,18 +145,22 @@ pub const MultirootSolverMode = enum {
     robust,
 };
 
+/// Input-validation level, from disabled through fast checks to full validation.
 pub const ValidateInput = enum(u32) {
     off = 0,
     fast = 1,
     full = 2,
 };
 
+/// Subpixel raster storage: tile-local scratch, a full-frame buffer, or a stripe buffer.
 pub const BufferMode = enum {
     tile_local,
     global_subpx_full,
     global_subpx_stripe,
 };
 
+/// Frame scheduling policy: process frames in time order or allow offline scheduling across
+/// frames.
 pub const RenderMode = enum {
     in_order,
     offline,
@@ -155,6 +172,7 @@ pub const GeometrySchedulingMode = enum {
     auto,
 };
 
+/// Selects whether rendered images go to disk, memory, both, or neither.
 pub const SaveStrategy = enum {
     disk,
     memory,
@@ -162,21 +180,25 @@ pub const SaveStrategy = enum {
     none,
 };
 
+/// Selects whether to collect benchmark timings and counters.
 pub const ReportMode = enum {
     off,
     bench,
 };
 
+/// Controls whether single-root hull preparation can fall back to a convex hull.
 pub const HullMode = enum(u32) {
     on_no_fallback = 1,
     on_convex_fallback = 2,
 };
 
+/// Selects the centroid or hull-based initial seed for single-root Newton iteration.
 pub const NewtonSeedMode = enum {
     centroid,
     hull,
 };
 
+/// Controls whether the single-root solver can reuse its last converged seed.
 pub const NewtonSeedReuse = enum {
     off,
     last_conv,

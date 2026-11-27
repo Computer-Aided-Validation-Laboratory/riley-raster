@@ -14,7 +14,7 @@ pub const RenderGroup = struct {
     workers: u16,
 };
 
-/// Owns render-group groups and their backing I/O instances. Do not copy the
+/// Owns render groups and their backing I/O instances. Do not copy the
 /// owner or resize its storage. groups and I/O handles expire on deinit.
 /// The allocator must support concurrent allocation when rendering in parallel;
 /// it and the supplied process environment must outlive this owner.

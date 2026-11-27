@@ -14,6 +14,7 @@ const F = buildconfig.F;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+/// A value and its zero-based index in the source slice or vector.
 pub fn ValIdx(ValType: type) type {
     return struct {
         val: ValType,

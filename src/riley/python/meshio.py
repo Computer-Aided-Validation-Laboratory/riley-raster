@@ -49,17 +49,18 @@ from riley.python.meshconv import (
 
 @dataclass(frozen=True, slots=True)
 class MeshConversion:
-    """Geometry converted for one Riley renderer mesh type.
+    """Renderer-ready surface geometry and its mapping to the source nodes.
 
     Attributes
     ----------
     mesh_type : MeshType
-        Requested Riley renderer implementation.
+        Riley mesh type for which the geometry was prepared.
     geometry : MeshGeometry
         Canonical, renderer-compatible surface geometry.
     source_node_indices : numpy.ndarray
-        Array of shape ``(K,)`` mapping converted nodes to rows in the source
-        coordinate and nodal-attribute arrays.
+        Array of shape ``(K,)`` and dtype ``np.uintp``, where ``K`` is the
+        converted node count. Entry ``i`` is the zero-based source node
+        index for row ``i`` of ``geometry.coords``.
     source_node_count : int
         Number of nodes in the source coordinate array.
     """
@@ -425,7 +426,25 @@ def remap_nodal_data(
     *,
     node_axis: int = 0,
 ) -> np.ndarray:
-    """Remap source nodal data onto converted mesh nodes."""
+    """Remap source nodal data onto converted mesh nodes.
+
+    Parameters
+    ----------
+    conversion : MeshConversion
+        Mapping from converted nodes to source nodes.
+    values : numpy.ndarray
+        Data with ``conversion.source_node_count`` entries along ``node_axis``.
+        All other axes are preserved.
+    node_axis : int, default=0
+        Axis indexed by source node, with negative indices allowed.
+
+    Returns
+    -------
+    numpy.ndarray
+        C-contiguous array of the same dtype as ``values``. The node
+        axis is in converted node order and has length ``K``, the
+        converted node count.
+    """
     if not isinstance(conversion, MeshConversion):
         raise TypeError("conversion must be a MeshConversion.")
 
@@ -454,7 +473,28 @@ def convert_mesh_for_render(
     coords: np.ndarray,
     connect: np.ndarray,
 ) -> MeshConversion:
-    """Convert raw geometry for a Riley renderer and retain node provenance."""
+    """Convert raw geometry for a Riley renderer and retain node provenance.
+
+    Parameters
+    ----------
+    convention : ConnectConvention
+        Source connectivity orientation, index base, and node order.
+    mesh_type : MeshType
+        Target renderer mesh type.
+    coords : numpy.ndarray
+        Floating-point array of shape ``(N, 3)``, one ``(x, y, z)`` row
+        per source node.
+    connect : numpy.ndarray
+        Integer connectivity of shape ``(E, M)`` for row-oriented input
+        or ``(M, E)`` for column-oriented input, with ``E`` elements and
+        ``M`` nodes per element.
+
+    Returns
+    -------
+    MeshConversion
+        Canonical surface geometry and the source node index for each
+        converted node.
+    """
     if not isinstance(convention, ConnectConvention):
         raise TypeError("convention must be a ConnectConvention.")
 
@@ -545,7 +585,26 @@ def create_mesh_from_conversion(
     disp: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
     normal_type: NormalType = NormalType.exact,
 ) -> Mesh:
-    """Create a Riley mesh from source-indexed nodal attributes."""
+    """Create a Riley mesh from source-indexed nodal attributes.
+
+    Parameters
+    ----------
+    conversion : MeshConversion
+        Converted geometry and node mapping.
+    shaders : MeshShaderSet
+        Shader choices with nodal data in source node order.
+    disp : tuple of numpy.ndarray or None, default=None
+        Floating-point components ``(disp_x, disp_y, disp_z)`` of shape
+        ``(N,)`` for one frame or ``(N, T)`` for ``T`` frames, where
+        ``N`` is the source node count.
+    normal_type : NormalType, default=NormalType.exact
+        Mesh normal mode shared by all shader choices.
+
+    Returns
+    -------
+    Mesh
+        Mesh ready for rasterisation.
+    """
     if not isinstance(conversion, MeshConversion):
         raise TypeError("conversion must be a MeshConversion.")
     if not isinstance(shaders, MeshShaderSet):
@@ -576,7 +635,26 @@ def create_mesh_from_prepared(
     disp: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
     normal_type: NormalType = NormalType.exact,
 ) -> Mesh:
-    """Create a Riley mesh from attributes indexed by converted mesh nodes."""
+    """Create a Riley mesh from attributes indexed by converted mesh nodes.
+
+    Parameters
+    ----------
+    conversion : MeshConversion
+        Converted geometry and node mapping.
+    shaders : MeshShaderSet
+        Shader choices with nodal data in converted node order.
+    disp : tuple of numpy.ndarray or None, default=None
+        Floating-point components ``(disp_x, disp_y, disp_z)`` of shape
+        ``(N,)`` for one frame or ``(N, T)`` for ``T`` frames, where
+        ``N`` is the converted node count.
+    normal_type : NormalType, default=NormalType.exact
+        Mesh normal mode shared by all shader choices.
+
+    Returns
+    -------
+    Mesh
+        Mesh ready for rasterisation.
+    """
     if not isinstance(conversion, MeshConversion):
         raise TypeError("conversion must be a MeshConversion.")
 
@@ -616,16 +694,17 @@ def create_mesh(
     mesh_type : MeshType
         Target Riley rasteriser mesh representation.
     coords : numpy.ndarray
-        Array of node coordinates of shape `(N, 3)` and dtype `np.float64`,
-        where `N` is the number of nodes and columns represent `(x, y, z)`.
+        Floating-point array of shape ``(N, 3)``, one ``(x, y, z)`` row
+        per source node.
     connect : numpy.ndarray
         Connectivity table of shape `(E, M)` or `(M, E)` with integer dtype,
         where `E` is elements and `M` is nodes per element.
     shaders : MeshShaderSet
         A set of direct and/or pipeline shader choices.
     disp : tuple of numpy.ndarray or None, default=None
-        Optional displacement field tuple `(disp_x, disp_y, disp_z)`, where
-        each component has shape `(N,)` or `(N, T)` with floating dtype.
+        Floating-point components ``(disp_x, disp_y, disp_z)`` of shape
+        ``(N,)`` for one frame or ``(N, T)`` for ``T`` frames, where
+        ``N`` is the source node count.
     normal_type : NormalType, default=NormalType.exact
         Mesh normal mode shared by all shader choices. ``none`` skips normals;
         ``exact`` and ``averaged`` retain Riley's element-node methods.

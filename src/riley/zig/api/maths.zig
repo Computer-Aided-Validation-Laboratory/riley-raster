@@ -7,7 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 
-// Public numerical primitives and mathematical utilities.
+//! Public numerical primitives and mathematical utilities.
 
 pub const F = @import("../buildconfig.zig").F;
 

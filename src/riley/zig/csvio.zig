@@ -65,6 +65,8 @@ pub fn hasPackedChannels(line: []const u8) bool {
     return false;
 }
 
+/// Load a scalar CSV grid in `[row][column]` order. Free the returned
+/// `slice` separately from its metadata (`deinit`).
 pub fn loadScalarCsv2D(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -111,6 +113,8 @@ fn parseCellFloat(cell: []const u8) !F {
     return std.fmt.parseFloat(F, std.mem.trim(u8, cell, " \r\n\t"));
 }
 
+/// Load a packed CSV grid in `[row][column][channel]` order, with
+/// channels in cell order. Ownership is the same as `loadScalarCsv2D`.
 pub fn loadPackedCsv2D(
     allocator: std.mem.Allocator,
     io: std.Io,

@@ -16,8 +16,12 @@ const csvio = @import("csvio.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+/// Owned per-node texture coordinates with shape `[node][2]`. Each row
+/// stores `u` then `v`; use `deinit` to release storage and metadata.
 pub const UVMap = struct {
+    /// Array metadata and view over `buff`.
     array: ndarray.NDArray(F),
+    /// Owned backing storage for the UV pairs.
     buff: []F,
 
     const Self = @This();
@@ -51,6 +55,7 @@ pub const UVMap = struct {
         return self.array.get(&[_]usize{ node_idx, 1 });
     }
 
+    /// Return a mutable two-element view of a node's UV pair, without copying.
     pub fn getUV(self: *const Self, node_idx: usize) []F {
         std.debug.assert(node_idx < self.array.dims[0]);
         const start = node_idx * 2;
@@ -68,6 +73,8 @@ pub const UVMap = struct {
 // Public Entry-Point Functions
 // --------------------------------------------------------------------------------------
 
+/// Load a UV array in `UVMap` layout, with nodes in CSV row order.
+/// The caller frees its `slice` and calls `deinit` with `outer_alloc`.
 pub fn loadUVs(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -85,6 +92,7 @@ pub fn loadUVs(
     return uv_arr;
 }
 
+/// Load an owned `UVMap`, with nodes in CSV row order.
 pub fn loadUVMap(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !UVMap {
     const uv_arr = try loadUVs(outer_alloc, io, path);
     return UVMap{
