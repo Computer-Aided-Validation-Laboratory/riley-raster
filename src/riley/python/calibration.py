@@ -23,13 +23,28 @@ if TYPE_CHECKING:
     from riley.types import Camera
 
 
+#: One ``(minimum, maximum)`` pair for a translation or rotation component.
 MotionRange: TypeAlias = tuple[float, float]
+#: Three ``(minimum, maximum)`` pairs in XYZ order (shape ``(3, 2)``).
 AxisMotionRanges: TypeAlias = tuple[MotionRange, MotionRange, MotionRange]
 _NORMALISED_RANGES: TypeAlias = tuple[tuple[float, float], ...]
 
 
 class ECalTargetMotionSampling(Enum):
-    """Sampling strategy for calibration-target rigid motion."""
+    """How to sample calibration-target poses across the free axes.
+
+    Attributes
+    ----------
+    RANDOM : ECalTargetMotionSampling
+        Draw independent uniform samples on each axis.
+    STRATIFIED : ECalTargetMotionSampling
+        Draw one sample per equal interval on each axis and pair the
+        intervals in ascending order across axes.
+    HYPERCUBE : ECalTargetMotionSampling
+        Shuffle the stratified samples independently on each axis.
+    CARTESIAN : ECalTargetMotionSampling
+        Take every combination of equally spaced levels on the free axes.
+    """
 
     RANDOM = "random"
     STRATIFIED = "stratified"
@@ -39,11 +54,19 @@ class ECalTargetMotionSampling(Enum):
 
 @dataclass(frozen=True, slots=True)
 class CalTargetMotionLimits:
-    """Rigid calibration-target limits in world units and degrees.
+    """Translation and rotation ranges for a rigid calibration target.
 
-    A single range applies to all three axes. Three ranges apply in XYZ order.
-    Rotation values are intrinsic XYZ Euler angles in degrees. Equal endpoints
-    fix an axis.
+    For either field, use shape ``(2,)`` for one ``(minimum, maximum)``
+    pair shared by all axes or ``(3, 2)`` for one pair per axis in XYZ
+    order. Equal endpoints fix the axis at that value.
+
+    Attributes
+    ----------
+    translation : MotionRange or AxisMotionRanges, default=(0.0, 0.0)
+        Translation along each world axis, in world units.
+    rotation_deg : MotionRange or AxisMotionRanges, default=(0.0, 0.0)
+        Extrinsic XYZ Euler angles in degrees, applied about the rotation
+        center before translation.
     """
 
     translation: MotionRange | AxisMotionRanges = (0.0, 0.0)
@@ -64,11 +87,39 @@ def caltarget_motion_from_limits(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Create rigid displacement fields from explicit pose limits.
 
-    ``positions_num`` includes a requested reference frame for non-Cartesian
-    sampling. ``seed`` reproducibly initialises random sampling and is mutually
-    exclusive with ``rng``. Cartesian sampling uses ``cartesian_levels`` levels
-    across each free degree of freedom and therefore has a grid-defined frame
-    count.
+    Parameters
+    ----------
+    coords : array_like
+        Undeformed target coordinates of shape ``(N, 3)``, one
+        ``(x, y, z)`` row per node.
+    positions_num : int
+        Requested frame count, including the reference when requested.
+        For Cartesian sampling the grid sets the count instead.
+    limits : CalTargetMotionLimits
+        Translation and rotation limits.
+    sampling : ECalTargetMotionSampling
+        Policy for sampling the free axes.
+    include_reference_frame : bool, default=True
+        Reserve the first frame for zero displacement. For Cartesian sampling,
+        prepend it only if the grid does not already contain it.
+    rotation_center : array_like or None, default=None
+        XYZ point of shape ``(3,)`` about which to rotate. The default is
+        the center of the undeformed node bounding box.
+    seed : int or None, default=None
+        Seed for random sampling. Mutually exclusive with ``rng``.
+    rng : numpy.random.Generator or None, default=None
+        Random number generator to use instead of creating a new one.
+    cartesian_levels : int, tuple of int, or None, default=None
+        Required for Cartesian sampling: one positive count for all free
+        axes, or one per free axis in XYZ translation then XYZ rotation order.
+
+    Returns
+    -------
+    tuple of numpy.ndarray
+        ``(disp_x, disp_y, disp_z)`` in world units. Each ``np.float64``
+        array has shape ``(N, T)``, with nodes on axis 0 and pose frames
+        on axis 1. The frame count ``T`` is set by the sampled poses and
+        whether a reference pose is added.
     """
     coords_out = _validate_coords(coords)
     center = _validate_rotation_center(rotation_center, coords_out)
@@ -99,13 +150,52 @@ def caltarget_motion_from_fov(
     rng: np.random.Generator | None = None,
     cartesian_levels: int | tuple[int, ...] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Create rigid fields whose generated poses fit one camera's FOV.
+    """Create rigid fields whose supplied nodes fit one camera's FOV.
 
-    Translation limits describe the maximum requested motion. Each sampled
-    pose is contracted automatically to remain in the central
-    ``fov_fraction`` of the supplied OpenGL-coordinate-system camera sensor.
-    The function raises ``ValueError`` only when the undeformed reference
-    target cannot fit in that fraction.
+    Sampled poses are contracted as needed to keep the supplied nodes'
+    projected positions inside the central sensor region. The undeformed
+    nodes must already fit there. This does not check element interiors
+    or curved edges between nodes.
+
+    Parameters
+    ----------
+    coords : array_like
+        Undeformed target coordinates of shape ``(N, 3)``, one
+        ``(x, y, z)`` row per node.
+    camera : Camera
+        Camera tagged ``CameraCoordSys.opengl``. Supports no distortion or
+        Brown–Conrady (standard or extended), without polynomial distortion
+        or sensor tilt.
+    positions_num : int
+        Requested frame count, including the reference when requested.
+        For Cartesian sampling the grid sets the count instead.
+    fov_fraction : float
+        Fraction of sensor width and height to use, in ``(0, 1]``.
+    limits : CalTargetMotionLimits
+        Translation and rotation limits.
+    sampling : ECalTargetMotionSampling
+        Policy for sampling the free axes.
+    include_reference_frame : bool, default=True
+        Reserve the first frame for zero displacement. For Cartesian sampling,
+        prepend it only if the grid does not already contain it.
+    rotation_center : array_like or None, default=None
+        XYZ point of shape ``(3,)`` about which to rotate. The default is
+        the center of the undeformed node bounding box.
+    seed : int or None, default=None
+        Seed for random sampling. Mutually exclusive with ``rng``.
+    rng : numpy.random.Generator or None, default=None
+        Random number generator to use instead of creating a new one.
+    cartesian_levels : int, tuple of int, or None, default=None
+        Required for Cartesian sampling: one positive count for all free
+        axes, or one per free axis in XYZ translation then XYZ rotation order.
+
+    Returns
+    -------
+    tuple of numpy.ndarray
+        ``(disp_x, disp_y, disp_z)`` in world units. Each ``np.float64``
+        array has shape ``(N, T)``, with nodes on axis 0 and pose frames
+        on axis 1. The frame count ``T`` is set by the sampled poses and
+        whether a reference pose is added.
     """
     coords_out = _validate_coords(coords)
     center = _validate_rotation_center(rotation_center, coords_out)
@@ -208,9 +298,12 @@ def _sample_poses(
             rng,
         )
 
-    reference = np.zeros((1, 6), dtype=np.float64)
-    if include_reference_frame and not np.any(np.all(poses == reference, axis=1)):
-        poses = np.vstack((reference, poses))
+    # Only Cartesian grids can supply the reference without reserving a slot.
+    if include_reference_frame and (
+        sampling is not ECalTargetMotionSampling.CARTESIAN
+        or not np.any(np.all(poses == 0.0, axis=1))
+    ):
+        poses = np.vstack((np.zeros((1, 6), dtype=np.float64), poses))
     return np.ascontiguousarray(poses)
 
 
@@ -425,7 +518,7 @@ def _pose_is_in_fov(
 def _project_world_points(coords: np.ndarray, camera: Camera) -> np.ndarray:
     camera_rotation = Rotation.from_euler(
         "ZYX",
-        np.asarray(camera.rot_world, dtype=np.float64)[::-1],
+        camera.rot_world,
     )
     cam_coords = camera_rotation.inv().apply(
         coords - np.asarray(camera.pos_world, dtype=np.float64),
@@ -434,12 +527,13 @@ def _project_world_points(coords: np.ndarray, camera: Camera) -> np.ndarray:
     if np.any(depth <= 0.0):
         return np.full((coords.shape[0], 2), np.nan, dtype=np.float64)
     norm_x = cam_coords[:, 0] / depth
-    norm_y = cam_coords[:, 1] / depth
+    # Distortion is defined in raster coordinates, where Y points down.
+    norm_y = -cam_coords[:, 1] / depth
     dist_x, dist_y = _apply_brown_con(norm_x, norm_y, camera)
     focal_px = camera.focal_length / np.asarray(camera.pixels_size, dtype=np.float64)
     pixels_num = np.asarray(camera.pixels_num, dtype=np.float64)
     return np.column_stack((0.5 * pixels_num[0] + focal_px[0] * dist_x,
-                            0.5 * pixels_num[1] - focal_px[1] * dist_y))
+                            0.5 * pixels_num[1] + focal_px[1] * dist_y))
 
 
 def _apply_brown_con(

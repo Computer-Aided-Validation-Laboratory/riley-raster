@@ -23,34 +23,42 @@ extern "C" {
 #define RILEY_SPECKLE_DEFAULT_SEED (0xa511e9b3u)
 #define RILEY_PERLIN_DEFAULT_TRANSITION_WIDTH (0.12)
 
+/// Two-component unsigned 32-bit vector, used for pixel counts in x and y.
 typedef struct CVec2U32 {
     uint32_t x;
     uint32_t y;
 } CVec2U32;
 
+/// Two-component double-precision vector, used for pixel sizes in x and y.
 typedef struct CVec2F64 {
     double x;
     double y;
 } CVec2F64;
 
+/// Three-component double-precision vector in x, y, z order.
 typedef struct CVec3F64 {
     double x;
     double y;
     double z;
 } CVec3F64;
 
+/// Borrowed dense double array of shape (rows_num, cols_num), column varying fastest.
+/// Coordinate inputs to the ROI and framing functions use (nodes, 3), with x, y, z columns.
 typedef struct CArray2DF64 {
     const double * elems;
     size_t rows_num;
     size_t cols_num;
 } CArray2DF64;
 
+/// Borrowed dense size_t array of shape (rows_num, cols_num), column varying fastest.
 typedef struct CArray2DUsize {
     const size_t * elems;
     size_t rows_num;
     size_t cols_num;
 } CArray2DUsize;
 
+/// Borrowed dense double array of shape (dim0, dim1, dim2), with dim2 varying fastest.
+/// The field using this descriptor defines the meaning of the axes.
 typedef struct CArray3DF64 {
     const double * elems;
     size_t dim0;
@@ -58,6 +66,8 @@ typedef struct CArray3DF64 {
     size_t dim2;
 } CArray3DF64;
 
+/// Borrowed dense uint8_t texture of shape (dim0, dim1, dim2) = (channels, rows, columns).
+/// Columns vary fastest.
 typedef struct CArray3DU8 {
     const uint8_t * elems;
     size_t dim0;
@@ -65,6 +75,8 @@ typedef struct CArray3DU8 {
     size_t dim2;
 } CArray3DU8;
 
+/// Borrowed dense uint16_t texture of shape (dim0, dim1, dim2) = (channels, rows, columns).
+/// Columns vary fastest.
 typedef struct CArray3DU16 {
     const uint16_t * elems;
     size_t dim0;
@@ -72,6 +84,7 @@ typedef struct CArray3DU16 {
     size_t dim2;
 } CArray3DU16;
 
+/// Image batch shape (dim0, dim1, dim2, dim3, dim4) = (cameras, frames, channels, rows, columns).
 typedef struct CDims5Usize {
     size_t dim0;
     size_t dim1;
@@ -80,11 +93,14 @@ typedef struct CDims5Usize {
     size_t dim4;
 } CDims5Usize;
 
+/// Caller-owned writable image buffer, with columns varying fastest in CDims5Usize axis order.
+/// Use rileyCalcOutputDimsScene to obtain dims and allocate their product in doubles at elems.
 typedef struct CImageBuffF64 {
     double * elems;
     CDims5Usize dims;
 } CImageBuffF64;
 
+/// Lens distortion model and its coefficients, including optional polynomial data.
 typedef struct CDistort {
     uint32_t distort_model;
     double distort_k1;
@@ -107,6 +123,7 @@ typedef struct CDistort {
     size_t distort_poly_coeffs_len;
 } CDistort;
 
+/// Camera point-spread function settings, including Gaussian widths, angle and support.
 typedef struct CPSF {
     uint32_t psf_type;
     double psf_sigma_x;
@@ -116,6 +133,7 @@ typedef struct CPSF {
     uint32_t psf_separable;
 } CPSF;
 
+/// File format, bit depths, intensity scaling and code packing for image output.
 typedef struct CImageSaveOpts {
     uint32_t format;
     int file_bits;
@@ -126,6 +144,7 @@ typedef struct CImageSaveOpts {
     uint32_t packing;
 } CImageSaveOpts;
 
+/// Camera geometry, optics, sampling and rendered image output settings.
 typedef struct CCameraInput {
     CVec2U32 pixels_num;
     CVec2F64 pixels_size;
@@ -145,6 +164,7 @@ typedef struct CCameraInput {
     size_t output_files_len;
 } CCameraInput;
 
+/// Parameters for built-in procedural shaders; the selected function determines which fields are used.
 typedef struct CFuncShaderParams {
     double coord_scale[2];
     double coord_offset[2];
@@ -170,6 +190,7 @@ typedef struct CFuncShaderParams {
     double eggbox_phase[2];
 } CFuncShaderParams;
 
+/// Built-in function and output scaling for one procedural shader channel.
 typedef struct CFuncChannel {
     uint32_t builtin;
     CFuncShaderParams params;
@@ -180,12 +201,18 @@ typedef struct CFuncChannel {
     double scaling_max;
 } CFuncChannel;
 
+/// Texture array variants; CTextureInput.storage selects the active member.
+/// All variants have shape (channels, rows, columns), with columns varying fastest.
 typedef union CTextureData {
     CArray3DF64 f;
     CArray3DU8 u8;
     CArray3DU16 u16;
 } CTextureData;
 
+/// Texture shader input with mesh UVs, pixel storage and sampling settings.
+/// uvs has shape (nodes, 2), with u, v columns in mesh node order.
+/// data has shape (channels, rows, columns): one plane for scalar textures, three
+/// planes in R, G, B order for RGB textures, or one plane per multifield texture channel.
 typedef struct CTextureInput {
     CArray2DF64 uvs;
     CTextureData data;
@@ -194,11 +221,17 @@ typedef struct CTextureInput {
     uint32_t sample_mode;
 } CTextureInput;
 
+/// Nodal field shader input with its scaling scope.
+/// field has shape (frames, nodes, components), in mesh node order.
+/// Use three components in R, G, B order for RGB.
 typedef struct CNodalInput {
     CArray3DF64 field;
     uint32_t scale_over;
 } CNodalInput;
 
+/// Procedural shader input with a coordinate mode, function parameters and optional per-channel functions.
+/// uvs is required in UV coordinate mode and may be omitted otherwise with a zeroed descriptor.
+/// When supplied, uvs has shape (nodes, 2), with u, v columns in mesh node order.
 typedef struct CFunctionInput {
     CArray2DF64 uvs;
     uint32_t builtin;
@@ -208,6 +241,8 @@ typedef struct CFunctionInput {
     size_t channels_len;
 } CFunctionInput;
 
+/// Procedural speckle shader input with UVs, pattern parameters and intensity settings.
+/// uvs has shape (nodes, 2), with u, v columns in mesh node order.
 typedef struct CSpeckleInput {
     CArray2DF64 uvs;
     uint32_t pattern;
@@ -225,6 +260,7 @@ typedef struct CSpeckleInput {
     double background;
 } CSpeckleInput;
 
+/// Direct shader payload variants; CShaderInput.shader_tag selects the active member.
 typedef union CShaderPayload {
     CTextureInput texture;
     CNodalInput nodal;
@@ -232,6 +268,7 @@ typedef union CShaderPayload {
     CSpeckleInput speckle;
 } CShaderPayload;
 
+/// Direct shader selection, payload and output gain, offset and scaling.
 typedef struct CShaderInput {
     uint32_t shader_tag;
     double output_gain;
@@ -242,11 +279,13 @@ typedef struct CShaderInput {
     CShaderPayload value;
 } CShaderInput;
 
+/// Shader pipeline register reference identified by kind and index.
 typedef struct CRegister {
     uint32_t kind;
     uint32_t index;
 } CRegister;
 
+/// One instruction in a shader resolver expression, with operands selected by tag.
 typedef struct CResolverOp {
     uint32_t tag;
     CRegister register_ref;
@@ -254,6 +293,7 @@ typedef struct CResolverOp {
     double upper;
 } CResolverOp;
 
+/// Borrowed lookup table sampled at uniform intervals starting at first.
 typedef struct CLookup {
     double first;
     double step;
@@ -261,6 +301,7 @@ typedef struct CLookup {
     size_t values_len;
 } CLookup;
 
+/// Shader pipeline output resolver; the tag selects how it maps values to output channels.
 typedef struct CResolver {
     uint32_t tag;
     const CRegister * registers;
@@ -277,6 +318,7 @@ typedef struct CResolver {
     size_t operations_len;
 } CResolver;
 
+/// One shader pipeline stage; the tag selects the operation and its operands.
 typedef struct CPipeStage {
     uint32_t tag;
     const CShaderInput * shader;
@@ -296,6 +338,7 @@ typedef struct CPipeStage {
     CLookup lookup;
 } CPipeStage;
 
+/// Ordered shader stages, shared constants and the final output resolver.
 typedef struct CPipe {
     const CPipeStage * stages;
     size_t stages_len;
@@ -304,17 +347,25 @@ typedef struct CPipe {
     size_t constants_len;
 } CPipe;
 
+/// Direct shader and pipeline variants; CShaderEntry.execution_tag selects the active member.
 typedef union CShaderExecution {
     CShaderInput direct;
     CPipe pipe;
 } CShaderExecution;
 
+/// A mesh shader assigned to a render format, with its execution mode and payload.
 typedef struct CShaderEntry {
     uint32_t format_tag;
     uint32_t execution_tag;
     CShaderExecution value;
 } CShaderEntry;
 
+/// Mesh topology, coordinates, connectivity, optional displacements and shaders.
+/// coords has shape (nodes, 3), with x, y, z columns.
+/// connect has shape (elements, nodes_per_element), with zero-based row indices into coords
+/// in the local node order of mesh_type.
+/// disp has shape (frames, nodes, 3), with x, y, z components in mesh node order.
+/// Use a zeroed disp descriptor for a mesh without displacements.
 typedef struct CMeshInput {
     uint32_t mesh_type;
     uint32_t normal_type;
@@ -325,6 +376,7 @@ typedef struct CMeshInput {
     size_t shaders_len;
 } CMeshInput;
 
+/// Rasteriser settings for rendering algorithms, scheduling, validation, buffering and output.
 typedef struct CRasterConfig {
     uint32_t render_mode;
     uint32_t parallel_mode;

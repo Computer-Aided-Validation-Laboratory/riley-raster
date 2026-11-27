@@ -15,10 +15,17 @@ const F = buildconfig.F;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+/// Intrinsic Z-Y-X Euler rotation in radians, with a cached 3×3 matrix
+/// `Rz(alpha_z) * Ry(beta_y) * Rx(gamma_x)`. Use `init` to initialise
+/// the matrix, and call `calcRotMat` after changing the angles.
 pub const Rotation = struct {
+    /// First rotation, about Z, in radians.
     alpha_z: F = 0.0,
+    /// Second rotation, about the rotated Y axis, in radians.
     beta_y: F = 0.0,
+    /// Third rotation, about the rotated X axis, in radians.
     gamma_x: F = 0.0,
+    /// Row-major matrix that applies the rotation by multiplying a column vector.
     matrix: matstack.Mat33F = undefined,
 
     const Self = @This();

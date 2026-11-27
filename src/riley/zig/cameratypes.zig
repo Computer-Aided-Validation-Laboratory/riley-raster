@@ -18,39 +18,58 @@ const cameramodels = @import("cameramodels.zig");
 const distortbounds = @import("distortbounds.zig");
 const imageio = @import("imageio.zig");
 
+/// Camera geometry, sampling, optics, and output options for rendering.
 pub const CameraInput = struct {
+    /// Sensor width and height, in pixels.
     pixels_num: [2]u32,
+    /// Physical pixel pitch in the horizontal and vertical directions.
     pixels_size: [2]F,
+    /// Camera centre in world space, regardless of `coord_sys`.
     pos_world: vecstack.Vec3F,
+    /// OpenGL-style camera-to-world rotation, regardless of `coord_sys`.
     rot_world: rotation.Rotation,
+    /// World-space point defining the region-of-interest projection distance.
     roi_cent_world: vecstack.Vec3F,
+    /// Focal length in the same length units as `pixels_size`.
     focal_length: F,
+    /// Samples per pixel axis; render input validation rejects zero.
     sub_sample: u32,
     background_value: F = 0.0,
     distort: cameramodels.DistortParams = .none,
     psf: cameramodels.PointSpreadFunc = .{ .pixel_box = .{} },
+    /// Camera CSV convention; does not change the in-memory pose used for rendering.
     coord_sys: CameraCoordSys = .opengl,
     subpixel_center_map: SubPixelCenterMap = .per_tile,
     render_format: shadertypes.RenderFormat = .mono,
+    /// Per-file encoding options used when disk output is requested.
     output_files: []const imageio.ImageSaveOpts = &.{
         .{ .format = .bmp, .file_bits = 8, .scaling = .none },
     },
 };
 
+/// Two independently configured cameras in stereo-pair order.
 pub const StereoPairInput = struct {
     cameras: [2]CameraInput,
 };
 
+/// Camera CSV pose convention. Rendering uses an OpenGL-style in-memory pose for either tag.
 pub const CameraCoordSys = enum {
+    /// CSV stores the camera centre and camera-to-world rotation (+x right, +y up, −z forward).
     opengl,
+    /// CSV stores world-to-camera extrinsics (+x right, +y down, +z forward).
+    /// Loading converts to the in-memory pose while retaining this tag; saving converts back.
     opencv,
 };
 
+/// Storage policy for undistorted subpixel centres: cache the whole image or compute
+/// centres per tile.
 pub const SubPixelCenterMap = enum {
     full_in_mem,
     per_tile,
 };
 
+/// Field-of-view size and per-axis pixel/length conversion at a reference plane.
+/// The two-element quantities are ordered horizontal, then vertical.
 pub const FOVScaling = struct {
     plane_dist: F,
     plane_size: [2]F,
@@ -88,6 +107,9 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         psf: cameramodels.PointSpreadFunc,
         prep_psf: cameramodels.PreparedPSF,
         coord_sys: CameraCoordSys,
+        /// Undistorted centers in raster pixels, indexed
+        /// `[subpixel_row][subpixel_column][2]` with `x` then `y`.
+        /// Empty (shape `[0][0][2]`) in `.per_tile` mode.
         ideal_pixel_centers: ndarray.NDArray(F),
         subpixel_center_map: SubPixelCenterMap,
         render_format: shadertypes.RenderFormat = .mono,
@@ -226,6 +248,8 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             );
         }
 
+        /// Fill tile-local subpixel rows in two planes (`x` then `y`),
+        /// each spanning half the scratch slice with row stride `subpx_tile_size`.
         pub inline fn fillTileIdealCentersPerTile(
             self: *const Self,
             scratch_x_px_min: i32,
@@ -298,18 +322,25 @@ fn calcSensorSize(pixels_num: [2]u32, pixels_size: [2]F) [2]F {
     };
 }
 
+/// Selects the limiting axis when positioning a camera to fit projected bounds.
 pub const FrameFitMode = enum(u32) {
+    /// Fit both axes, using the farther of the two fit distances.
     contain = 0,
+    /// Fill both axes, allowing one axis to extend beyond the frame.
     cover = 1,
+    /// Fit the width only.
     horizontal = 2,
+    /// Fit the height only.
     vertical = 3,
 };
 
+/// World-space position and camera-to-world rotation of a camera on an orbit.
 pub const OrbitCam = struct {
     pos: vecstack.Vec3F,
     rot: rotation.Rotation,
 };
 
+/// World-space positions and camera-to-world rotations of the two cameras in a stereo pair.
 pub const StereoPairPosRot = struct {
     cam0_pos: vecstack.Vec3F,
     cam0_rot: rotation.Rotation,
@@ -317,6 +348,7 @@ pub const StereoPairPosRot = struct {
     cam1_rot: rotation.Rotation,
 };
 
+/// Sensor and projection measurements at the camera's region-of-interest plane.
 pub const CameraPlaneMetrics = struct {
     sensor_size: [2]F,
     focal_px: [2]F,

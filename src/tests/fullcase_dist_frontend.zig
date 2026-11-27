@@ -35,7 +35,7 @@ pub const DistModelCase = struct {
 };
 
 pub fn buildRadialPoly7Coeffs(k1: F, k2: F, k3: F) [72]F {
-    var coeffs = [_]F{0} ** 72;
+    var coeffs: [72]F = @splat(0);
     // Degree 3 terms (total = 3):
     // (3,0) term 6, (1,2) term 8 -> u; (2,1) term 7, (0,3) term 9 -> v
     coeffs[2 * 6] = k1;

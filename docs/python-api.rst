@@ -8,6 +8,7 @@ for speckle shader parameters and examples of direct and shader-pipe use.
    :maxdepth: 1
 
    python-api/configuration
+   python-api/shaders
    python-api/calibration
    python-api/exodusio
    python-api/frameops

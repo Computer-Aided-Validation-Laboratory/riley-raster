@@ -30,11 +30,11 @@ from riley.python.meshconst import (
 class EConnectAxis(Enum):
     """Array dimension orientation of elements in a connectivity table.
 
-    Members
-    -------
-    ROW
+    Attributes
+    ----------
+    ROW : EConnectAxis
         Each row represents an element: shape `(num_elems, nodes_per_elem)`.
-    COLUMN
+    COLUMN : EConnectAxis
         Each column represents an element: shape `(nodes_per_elem, num_elems)`.
     """
 
@@ -45,13 +45,13 @@ class EConnectAxis(Enum):
 class ENodeOrder(Enum):
     """Standard element node numbering and winding conventions.
 
-    Members
-    -------
-    RILEY
+    Attributes
+    ----------
+    RILEY : ENodeOrder
         Canonical Riley node winding order.
-    VTK
+    VTK : ENodeOrder
         Visualization Toolkit (VTK) standard node order.
-    EXODUS
+    EXODUS : ENodeOrder
         Exodus II standard node order.
     """
 
@@ -67,7 +67,8 @@ class EdgeNode:
     Attributes
     ----------
     corners : tuple of int
-        Pair of corner vertex local indices `(corner_a, corner_b)`.
+        Pair of zero-based corner slots in the source element. Order does
+        not matter.
     node_slot : int
         Zero-based index of the mid-edge node in the source element.
     """
@@ -83,7 +84,8 @@ class FaceNode:
     Attributes
     ----------
     corners : tuple of int
-        Tuple of corner vertex local indices bounding the face.
+        Zero-based source corner slots bounding the face. Order does not
+        matter.
     node_slot : int
         Zero-based index of the face node in the source element.
     """
@@ -99,13 +101,13 @@ class UserTopology:
     Attributes
     ----------
     corner_slots : tuple of int
-        Indices of corner vertices in source element ordering.
+        Zero-based source slots of the corners, listed in Riley corner order.
     edge_nodes : tuple of EdgeNode, default=()
         Mid-edge node definitions.
     face_nodes : tuple of FaceNode, default=()
         Face node definitions.
     centre_slot : int or None, default=None
-        Index of the center/bubble node, if present.
+        Zero-based source slot of the element center node, if present.
     """
 
     corner_slots: tuple[int, ...]
@@ -116,22 +118,23 @@ class UserTopology:
 
 @dataclass(frozen=True, slots=True)
 class ConnectConvention:
-    """Specification of connectivity table formatting and ordering.
+    """Describe how to interpret a source connectivity table.
 
     Attributes
     ----------
     elem_type : EElemType
-        Target finite element geometry type.
+        Finite element type of the source connectivity.
     elem_axis : EConnectAxis
-        Orientation of elements in the connectivity table (row or column).
+        ``ROW`` for shape ``(E, M)`` or ``COLUMN`` for shape ``(M, E)``,
+        where ``E`` is the element count and ``M`` is nodes per element.
     index_base : {0, 1}
         Indexing base for node IDs (0-based or 1-based).
     node_order : ENodeOrder or UserTopology
         Standard convention or custom topology mapping for node winding.
     material_normal_hint : tuple of float or None, default=None
-        Optional direction `(nx, ny, nz)` indicating the material side.
+        XYZ normal vector, currently unused by mesh conversion.
     reverse_open_surface : bool, default=False
-        Whether to reverse the surface normal winding for open surfaces.
+        Currently unused by mesh conversion.
     """
 
     elem_type: EElemType
@@ -165,12 +168,12 @@ class MeshGeometry:
     elem_type : EElemType
         Finite element geometry type.
     coords : numpy.ndarray
-        Node coordinates array of shape `(N, 3)` and dtype `np.float64`,
-        where `N` is the number of nodes and columns represent `(x, y, z)`.
+        C-contiguous array of shape ``(N, 3)`` and dtype ``np.float64``.
+        Rows are nodes and columns are ``(x, y, z)``.
     connect : numpy.ndarray
-        Element connectivity table of shape `(E, M)` and dtype `np.uintp`,
-        where `E` is the number of elements and `M` is the number of nodes
-        per element in canonical Riley winding order.
+        C-contiguous array of shape ``(E, M)`` and dtype ``np.uintp``.
+        Each of the ``E`` element rows lists ``M`` zero-based indices
+        into ``coords``, in Riley node order.
     """
 
     elem_type: EElemType
@@ -189,7 +192,7 @@ class MeshVerifyIssue:
     message : str
         Human-readable description of the issue.
     elem_idx : int or None, default=None
-        Index of the offending element, if applicable.
+        Zero-based connectivity row of the offending element, if applicable.
     """
 
     code: str
@@ -198,7 +201,13 @@ class MeshVerifyIssue:
 
 
 class MeshError(ValueError):
-    """Exception raised when mesh data, conversion, or verification fails."""
+    """Exception raised when mesh data, conversion, or verification fails.
+
+    Attributes
+    ----------
+    issues : tuple of MeshVerifyIssue
+        Structured verification issues, if available; otherwise empty.
+    """
 
     def __init__(
         self,
@@ -369,9 +378,8 @@ def convert_mesh(
     Parameters
     ----------
     coords : numpy.ndarray
-        Array of node coordinates of shape `(N, 3)` and floating-point dtype
-        `np.float64`, where `N` is the number of nodes and columns represent
-        spatial coordinates `(x, y, z)`.
+        Floating-point array of shape ``(N, 3)`` with one ``(x, y, z)``
+        row per node.
     connect : numpy.ndarray
         Connectivity table of shape `(E, M)` if `convention.elem_axis` is ROW,
         or `(M, E)` if COLUMN, with integer dtype, where `E` is the number of

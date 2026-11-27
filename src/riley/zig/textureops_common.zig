@@ -207,7 +207,7 @@ pub fn sampConvo(
     samp_coeff_y: [TAP]F,
 ) [C]F {
     const tap_offset = @as(isize, @intCast(TAP)) / 2 - 1;
-    var samp_res: [C]F = [_]F{0.0} ** C;
+    var samp_res: [C]F = @splat(0.0);
     var samp_coeff_sum: F = 0.0;
 
     for (0..TAP) |jj| {

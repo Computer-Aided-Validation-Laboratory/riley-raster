@@ -160,9 +160,9 @@ test "frozen Jacobian refinement solves an affine quad4 in one step" {
 }
 
 test "frozen Jacobian refinement keeps the original seed for singular maps" {
-    const node_x = [_]F{0} ** 4;
-    const node_y = [_]F{0} ** 4;
-    const node_w = [_]F{1} ** 4;
+    const node_x: [4]F = @splat(0);
+    const node_y: [4]F = @splat(0);
+    const node_w: [4]F = @splat(1);
     const seed = newton_common.NewtonSeed{ .xi = 0.1, .eta = -0.2 };
     const result = refineSeedFrozenScal(
         4,

@@ -7,7 +7,7 @@ import sys
 import sysconfig
 
 
-REQUIRED_ZIG_VERSION = "0.16.0"
+REQUIRED_ZIG_VERSION = "0.17.1"
 
 
 class ZigUnavailableError(RuntimeError):

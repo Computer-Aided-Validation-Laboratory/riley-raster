@@ -281,7 +281,7 @@ pub fn avgScratchCore(
                 image_out_arr.slice[image_out_arr.offset3(2, image_px_y, image_px_x)] =
                     field_sum_2 * inv_sub_samp_sq;
             } else {
-                var field_avg_buff = [_]F{0.0} ** cfg.max_nodal_fields;
+                var field_avg_buff: [cfg.max_nodal_fields]F = @splat(0.0);
                 const spx_field_avg = field_avg_buff[0..@as(usize, fields_num)];
                 @memset(spx_field_avg, 0.0);
 

@@ -27,6 +27,7 @@ const bmp_header_size: u32 = 14 + 40;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+/// File formats supported by Riley's image I/O.
 pub const ImageFormat = enum {
     csv,
     fimg,
@@ -35,14 +36,23 @@ pub const ImageFormat = enum {
     tiff,
 };
 
+/// Output format, file and ADC precision, intensity scaling, and code packing for one saved
+/// image.
 pub const ImageSaveOpts = struct {
     format: ImageFormat,
+    /// Bits per stored sample. Camera output validation requires 8 or 16 for
+    /// BMP, PPM, and TIFF, allows null for CSV, and requires null for FIMG.
+    /// With null, `adc_bits` must be null and `packing` must be `.spread`.
     file_bits: ?u8 = 8,
+    /// ADC quantization depth for integer output; null uses `file_bits`.
     adc_bits: ?u8 = null,
+    /// Save-time intensity mapping. FIMG ignores this and writes raw samples.
     scaling: imageops.ScaleStrategy = .none,
     packing: CodePacking = .spread,
 };
 
+/// Places ADC codes in the low bits, high bits, or across the full range of the file
+/// sample.
 pub const CodePacking = enum { lower, upper, spread };
 
 const OutputNameField = enum {
@@ -55,6 +65,7 @@ const OutputNameField = enum {
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
+/// Load an owned image in `TexDataFix` layout.
 pub fn loadImage(
     comptime T: type,
     comptime channels: usize,
@@ -74,6 +85,13 @@ pub fn loadImage(
     };
 }
 
+/// Save from a planar `[channel][row][column]` image, starting at `start_field`.
+/// FIMG writes the supplied samples as raw little-endian floats, without save-time
+/// scaling, quantization, or packing.
+///
+/// Camera output validation rejects TIFF for `.rgb`. This lower-level function
+/// has no render-format check: TIFF writes only the plane at `start_field` as
+/// grayscale, regardless of `channels`.
 pub fn saveImage(
     io: std.Io,
     out_dir: std.Io.Dir,
@@ -123,6 +141,7 @@ pub fn saveMatAsImage(
     try saveImage(io, out_dir, file_name_no_ext, &arr, 0, opts, 1);
 }
 
+/// Save groups of consecutive channels from `frame_arr` in `saveImage` layout.
 pub fn saveImages(
     io: std.Io,
     out_dir: ?std.Io.Dir,
@@ -708,6 +727,8 @@ pub fn loadCSV(
     return tex;
 }
 
+/// Load an FIMG image with the planar layout of `TexDataFix`.
+/// The caller frees the returned `slice` and calls `deinit` with `allocator`.
 pub fn loadFIMG(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -1267,11 +1288,7 @@ test "Save and Load All Formats 8-bit and 16-bit" {
 
     for (formats) |fmt| {
         for (bit_depths) |bits| {
-            const base_name = try std.fmt.allocPrint(
-                allocator,
-                "test_io_{s}_{d}bit",
-                .{ @tagName(fmt), bits },
-            );
+            const base_name = try allocator.print("test_io_{s}_{d}bit", .{ @tagName(fmt), bits });
             defer allocator.free(base_name);
 
             // 1. Save with auto-scaling

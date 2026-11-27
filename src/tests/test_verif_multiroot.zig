@@ -228,7 +228,7 @@ fn getFallbackSeeds(
     }
     var ordered: [32]SeedZ = undefined;
     var length: usize = 0;
-    var used = [_]bool{false} ** 32;
+    var used: [32]bool = @splat(false);
     for (0..tier_len) |ii| {
         const remaining = tier_len - ii;
         const rank = switch (ii % 3) {
@@ -568,7 +568,7 @@ fn oraclePolyEval(poly: OraclePoly, degree: usize, value: F) F {
 }
 
 fn oraclePolyMul(a: OraclePoly, b: OraclePoly) OraclePoly {
-    var result = [_]F{0} ** 9;
+    var result: [9]F = @splat(0);
     for (0..9) |ii| {
         if (a[ii] == 0) continue;
         for (0..9 - ii) |jj| result[ii + jj] += a[ii] * b[jj];
@@ -604,7 +604,7 @@ fn oracleRealRoots(
         }
         return result;
     }
-    var derivative = [_]F{0} ** 9;
+    var derivative: [9]F = @splat(0);
     for (1..degree + 1) |ii| {
         derivative[ii - 1] = @as(F, @floatFromInt(ii)) * normalized[ii];
     }
@@ -1092,7 +1092,7 @@ fn checkOutwardCurvedMatrix(
                         var du: [N]F = undefined;
                         var dv: [N]F = undefined;
                         shapefun.shapeFunc(N, u, v, &weights, &du, &dv);
-                        var pos = [_]F{0} ** 3;
+                        var pos: [3]F = @splat(0);
                         for (0..N) |nn| {
                             const node = [3]F{
                                 coords.x[nn] / image_scale,

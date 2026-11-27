@@ -34,10 +34,10 @@ class ExodusBlock:
     Attributes
     ----------
     connect : numpy.ndarray
-        1-based raw connectivity table of shape `(E, M)` and dtype `np.int64`,
-        where `E` is the number of elements and `M` is the number of nodes
-        per element.
-    elem_type : ~riley.python.meshconst.EElemType
+        Array of shape ``(E, M)`` and dtype ``np.int64``. Each of the
+        ``E`` element rows lists ``M`` one-based node indices in Exodus
+        order, referencing rows of ``ExodusSim.coords``.
+    elem_type : riley.python.meshconst.EElemType
         Parsed Riley element geometry type.
     """
 
@@ -52,20 +52,20 @@ class ExodusSim:
     Attributes
     ----------
     coords : numpy.ndarray
-        Global nodal coordinates of shape `(N, 3)` and dtype `np.float64`,
-        where `N` is the number of nodes and columns represent `(x, y, z)`.
+        Global node coordinates of shape ``(N, 3)`` and dtype
+        ``np.float64``, one ``(x, y, z)`` row per node.
     elem_blocks : dict of str to ExodusBlock
-        Mapping of element block connectivity table names to `ExodusBlock`.
+        Element blocks keyed by connectivity variable name, e.g. ``connect1``.
     disp : tuple of numpy.ndarray or None, default=None
-        Displacement components `(disp_x, disp_y, disp_z)` if requested,
-        where each array has shape `(N, T)` and dtype `np.float64` (`N` nodes,
-        `T` time steps).
+        Up to three displacement components in the requested ``disp_keys``
+        order, or ``None`` if none were requested. Each array has shape
+        ``(N, T)`` and dtype ``np.float64`` (``N`` nodes, ``T`` time steps).
     nodal_vars : dict of str to numpy.ndarray
-        Loaded nodal variables, where each array has shape `(N, T)` and
-        dtype `np.float64`.
+        Loaded nodal fields keyed by variable name, each of shape ``(N, T)``
+        and dtype ``np.float64`` (nodes by time steps).
     time : numpy.ndarray or None, default=None
-        Simulation time step values of shape `(T,)` and dtype `np.float64`,
-        or None if no time steps exist.
+        Time values of shape ``(T,)`` and dtype ``np.float64``, or ``None``
+        if the file has no time variable.
     """
 
     coords: np.ndarray
@@ -701,10 +701,9 @@ def load_exodus(
     Returns
     -------
     ExodusSim
-        Loaded simulation dataset with node coordinates of shape `(N, 3)`
-        and dtype `np.float64`, element blocks of shape `(E, M)` and dtype
-        `np.int64`, and displacement / nodal fields of shape `(N, T)` and
-        dtype `np.float64`.
+        Loaded simulation, including node coordinates, element blocks, and
+        any requested nodal fields. See ``ExodusSim`` and ``ExodusBlock``
+        for array layouts.
 
     Raises
     ------

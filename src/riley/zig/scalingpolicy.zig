@@ -267,6 +267,7 @@ fn chunkSize(
     workers_num: usize,
     chunks_per_worker: usize,
 ) usize {
+    // Even an empty domain needs a positive chunk size.
     if (dom_len == 0) {
         return 1;
     }
@@ -276,12 +277,18 @@ fn chunkSize(
         @as(usize, 1),
         actual_workers * chunks_per_worker,
     );
-    return @max(@as(usize, 1), (dom_len + chunk_count - 1) / chunk_count);
+    return @divCeil(dom_len, chunk_count);
 }
 
 // --------------------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------------------
+
+test "chunkSize rounds up without overflowing the domain length" {
+    const max_len = std.math.maxInt(usize);
+    try std.testing.expectEqual(max_len / 2 + 1, chunkSize(max_len, 1, 2));
+    try std.testing.expectEqual(@as(usize, 1), chunkSize(0, 1, 2));
+}
 
 test "resolveGeometrySchedulingMode uses explicit modes unchanged" {
     try std.testing.expectEqual(

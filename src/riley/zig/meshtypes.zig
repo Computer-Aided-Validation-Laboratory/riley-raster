@@ -26,6 +26,7 @@ const meshhit = @import("meshhit.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+/// Row-major node positions of shape `[node][3]`, with `x`, `y`, then `z`.
 pub const Coords = struct {
     mat: matslice.MatSlice(F),
     mem: []F,
@@ -71,6 +72,8 @@ pub const Coords = struct {
     }
 };
 
+/// Row-major connectivity of shape `[element][local_node]`. Entries are
+/// zero-based indices into `Coords`, in the mesh type's local node order.
 pub const Connect = struct {
     table: matslice.MatSlice(usize),
     table_mem: []usize,
@@ -117,14 +120,14 @@ pub const Connect = struct {
     }
 };
 
-// Input: Raw user data for all frames.
-// Coords/Fields: Node-order [total_nodes, ...]
-// Connect: Connectivity table links nodes to elems.
+/// Mesh topology, reference coordinates, optional frame displacements, and shader inputs.
+/// Displacements and nodal fields follow the reference node order.
 pub const MeshInput = struct {
     mesh_type: geometrykernels.MeshType,
     normal_type: normals.NormalType = .exact,
     coords: Coords,
     connect: Connect,
+    /// A `Field` with three displacement components in `x`, `y`, `z` order.
     disp: ?fieldtypes.Field,
     shaders: shadertypes.MeshShaderSetInput,
 };
@@ -135,7 +138,7 @@ pub const MeshInput = struct {
 pub const MeshStatic = struct {
     referenced_nodes_num: usize = 0,
     hit_selections: std.EnumArray(shadertypes.RenderRole, meshhit.MeshHitSelection) =
-        .initFill(meshhit.MeshHitSelection.initEmpty()),
+        .initFill(meshhit.MeshHitSelection.empty),
     scene_mesh_idx: usize = 0,
     mesh_type: geometrykernels.MeshType,
     normal_type: normals.NormalType = .exact,
@@ -146,17 +149,20 @@ pub const MeshStatic = struct {
 };
 
 pub const MultiRootHulls = struct {
+    /// Shape `[slot][3]`; candidate leaf indices in search order for each slot.
     indices: matslice.MatSlice(u8),
+    /// Number of valid candidate indices per slot.
     valid_depth: vecslice.VecSlice(u8),
+    /// Maps a visible-element index to its multi-root slot, or `maxInt(u32)`.
     slot_by_visible_elem: vecslice.VecSlice(u32),
     leaves_pre_calc: []hullmultiroot.HullMultiRoot.BezierLeafPreCalc = &.{},
     leaves_on_the_fly: []hullmultiroot.HullMultiRoot.BezierLeafOnTheFly = &.{},
 };
 
 pub const MeshHulls = struct {
-    // Dims: [mesh_idex][elems_in_image,2(x,y),NH(num_hull_pts)]
+    /// Per-mesh adaptive hulls; see `MeshFrameWorkspace.hull_adaptive` for layout.
     hull_adaptive_by_mesh: []const ?ndarray.NDArray(F),
-    // Dims: [mesh_idx][slot_by_visible_elem LUT]
+    /// Per-mesh multi-root hulls; see `MultiRootHulls`.
     hull_multiroot_by_mesh: []const ?MultiRootHulls,
 };
 
@@ -171,6 +177,7 @@ pub const MeshFrameWorkspace = struct {
     root_classes: []rasterfrontend.ElemRootClass,
     elem_float_bboxes: ?[]distortbounds.DistortBounds = null,
     elems_in_image: usize,
+    /// Shape `[visible_element][2][hull_point]`, with `x` then `y`.
     hull_adaptive: ?ndarray.NDArray(F),
     hull_multiroot: ?MultiRootHulls,
     vis_counts_by_chunk: []usize,
@@ -191,12 +198,11 @@ pub const MeshFrame = struct {
     frame_workspace: MeshFrameWorkspace,
 };
 
-// Prep: Data culled and gathered for the raster loop for a SINGLE frame.
-// Prep means culled elem-order ndarray.NDArray data ready for the raster loop.
-// Elem-order [vis_elems, field, nodes_per_elem]
+/// Data gathered in visible-element order for one frame.
 pub const MeshPrepared = struct {
     scene_mesh_idx: usize = 0,
     mesh_type: geometrykernels.MeshType,
+    /// Shape `[visible_element][3][local_node]`, with `x`, `y`, then `z`.
     coords: ndarray.NDArray(F),
     hit_geometry: meshhit.MeshHitGeomPrepared = .{},
     shaders: shadertypes.MeshShaderSetPrepared,

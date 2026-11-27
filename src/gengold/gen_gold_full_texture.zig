@@ -97,7 +97,7 @@ pub fn generateAllFullTextureCases(
         .quad9,
     };
     const bool_values = [_]bool{ false, true };
-    const dtypes = [_]@typeInfo(FullTexSamplingCase).@"struct".fields[1].type{
+    const dtypes = [_]@FieldType(FullTexSamplingCase, "dtype"){
         .u8,
         .u16,
         .f64,

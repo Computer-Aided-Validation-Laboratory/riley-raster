@@ -698,7 +698,7 @@ class BenchmarkTests(unittest.TestCase):
     def catalogue(self):
         build = dict(precision='f64', simd='on', simd_vector_width=8, newton_solver='fast',
                      enable_all_evaluators=True, speckle_mask_samples_per_cell=8,
-                     optimize='ReleaseFast', strip=True, zig_version='0.16.0', target_arch='x86_64', cpu_model='test',
+                     optimize='ReleaseFast', strip=True, zig_version='0.17.1', target_arch='x86_64', cpu_model='test',
                      cpu_features=['64bit', 'avx', 'avx2'])
         samples = [dict(evaluator=evaluator, pattern=pattern, neighbors=neighbors, soft_edges=soft)
                    for evaluator in ('cell-hash', 'list-indexed', 'cell-binned')

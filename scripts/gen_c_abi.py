@@ -27,15 +27,17 @@ def constants(source):
 
 def declarations(source):
     types = []
-    for match in re.finditer(r'pub const (C\w+) = extern (struct|union) \{(.*?)\n?\};', source, re.S):
+    pattern = r'^((?:///[^\n]*\n)*)pub const (C\w+) = extern (struct|union) \{(.*?)\n?\};'
+    for match in re.finditer(pattern, source, re.M | re.S):
+        doc, type_name, kind, body = match.groups()
         fields = []
-        for entry in match[3].split(','):
+        for entry in body.split(','):
             entry = entry.strip()
             if not entry:
                 continue
             name, field_type = entry.split(':', 1)
             fields.append((name.strip(), field_type.strip()))
-        types.append((match[1], match[2], fields))
+        types.append((type_name, kind, fields, doc))
     functions = []
     for match in re.finditer(r'pub export fn (\w+)\((.*?)\) (\w+) \{', source, re.S):
         fields = []
@@ -98,7 +100,8 @@ def generate():
         defaults += f'{name} = {value}\n'
     h += '\n'
     pxd += '\n'
-    for name, kind, fields in types:
+    for name, kind, fields, doc in types:
+        h += doc
         h += f'typedef {kind} {name} {{\n'
         pxd += f'    ctypedef {kind} {name}:\n'
         for field, typ in fields:
@@ -113,7 +116,7 @@ def generate():
         pxd += '    ' + c_type(ret, name) + '(' + args + ')\n'
     h += '\n#ifdef __cplusplus\n}\n#endif\n#endif\n'
     layout = '/* Generated C compiler reference for test_c_abi.zig. */\n#include "riley.h"\n\nsize_t rileyTestAbiLayout(size_t index) {\n    static const size_t layout[] = {\n'
-    for name, _, fields in types:
+    for name, _, fields, _ in types:
         layout += f'        sizeof({name}), _Alignof({name}),\n'
         for field, _ in fields:
             layout += f'        offsetof({name}, {field}),\n'

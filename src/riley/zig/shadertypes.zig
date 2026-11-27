@@ -25,7 +25,11 @@ const meshhit = @import("meshhit.zig");
 const speckleops = @import("speckleops.zig");
 const speckleparams = @import("speckleparams.zig");
 
+/// Chooses whether nodal scaling bounds are computed separately for each frame or across
+/// all frames.
 pub const ScaleOver = enum { within_frames, over_frames };
+/// Selects the camera's shader role and output channel count: mono and IR use one, RGB uses
+/// three, and multifield supplies its count.
 pub const RenderFormat = union(enum) {
     mono,
     rgb,
@@ -45,7 +49,9 @@ pub const RenderFormat = union(enum) {
 pub const RenderRole = std.meta.Tag(RenderFormat);
 pub const ActiveShaderRoles = std.EnumSet(RenderRole);
 
+/// A nodal field to interpolate, with output gain, offset, and optional range scaling.
 pub const NodalInput = struct {
+    /// A `Field` in reference node order, with components in shader output order.
     field: fieldtypes.Field,
     output_gain: F = 1.0,
     output_offset: F = 0.0,
@@ -53,8 +59,11 @@ pub const NodalInput = struct {
     scale_over: ScaleOver = .over_frames,
 };
 
+/// Texture shader input specialised for a texture storage type, with node UVs, sampling,
+/// and output scaling.
 pub fn TexInput(comptime Texture: type) type {
     return struct {
+        /// Shape `[node][2]` in reference node order, with `u` then `v`.
         uvs: ndarray.NDArray(F),
         tex: Texture,
         samp_cfg: texturetypes.TexSampConfig = .{
@@ -67,40 +76,58 @@ pub fn TexInput(comptime Texture: type) type {
     };
 }
 
+/// A built-in function shader with a coordinate source, shape parameters, and output
+/// remapping.
 pub const FuncInput = struct {
+    /// Required in `.uv` mode; same layout as `TexInput.uvs`.
     uvs: ?ndarray.NDArray(F) = null,
     coord_mode: shaderfunc.FuncCoordMode = .para,
     builtin: shaderfunc.FuncShaderBuiltin,
     params: shaderfunc.FuncShaderParams = .{},
     output_gain: F = 1.0,
     output_offset: F = 0.0,
+    /// Applied before output gain and offset. Uses nominal `[0, 1]` bounds, not
+    /// sampled extrema. `.auto` and `.fixed` are identity maps; `.fixed` ignores its bounds.
     scaling: imageops.ScaleStrategy = .none,
 };
 
+/// Built-in function and output remapping for one channel of a multifield function shader.
 pub const FuncChannel = struct {
     builtin: shaderfunc.FuncShaderBuiltin,
     params: shaderfunc.FuncShaderParams = .{},
+    /// Same nominal bounds and remapping order as `FuncInput.scaling`.
     scaling: imageops.ScaleStrategy = .none,
     output_gain: F = 1.0,
     output_offset: F = 0.0,
 };
 
+/// A multifield function shader with a shared coordinate source and one function
+/// configuration per channel.
 pub const FuncMultiInput = struct {
+    /// Shared UV array; see `FuncInput.uvs`.
     uvs: ?ndarray.NDArray(F) = null,
     coord_mode: shaderfunc.FuncCoordMode = .para,
+    /// Function settings in output channel order.
     channels: []const FuncChannel,
 };
 
+/// A procedural speckle shader with node UVs, pattern controls, and output remapping.
 pub const SpeckleInput = struct {
+    /// Reference texture coordinates; see `TexInput.uvs` for layout.
     uvs: ndarray.NDArray(F),
     params: speckleparams.SpeckleParams,
     /// Apply `sample * output_gain + output_offset` before `scaling`.
     output_gain: F = 1.0,
     output_offset: F = 0.0,
+    /// Sets the scaling output maximum to `2^bits - 1` (null uses 1).
+    /// Ignored by `.none`; does not quantize shader output.
     bits: ?u8 = 8,
+    /// `.auto` and `.frac` use nominal `[0, 1]` bounds, not sampled extrema.
+    /// `.fixed` uses its explicit bounds on values after gain and offset.
     scaling: imageops.ScaleStrategy = .none,
 };
 
+/// Direct single-channel shader source evaluated without a shader pipe.
 pub const ShaderMonoInput = union(enum) {
     nodal: NodalInput,
     tex_u8: TexInput(texturetypes.TexDataFix(u8, 1)),
@@ -110,6 +137,7 @@ pub const ShaderMonoInput = union(enum) {
     speckle: SpeckleInput,
 };
 
+/// Shader source for a pipe stage, including scalar, RGB, and multifield inputs.
 pub const PipeSourceInput = union(enum) {
     nodal: NodalInput,
     tex_u8: TexInput(texturetypes.TexDataFix(u8, 1)),
@@ -127,7 +155,10 @@ pub const PipeSourceInput = union(enum) {
     speckle: SpeckleInput,
 };
 
+/// One ordered step in a shader pipe: evaluate a source into registers or transform
+/// existing registers.
 pub const ShaderPipeStageInput = union(enum) {
+    /// Evaluates a shader source starting at the specified destination register.
     shader: struct { shader: PipeSourceInput, register_dest: shaderpipe.Register },
     grey_to_emissivity: shaderpipe.GreyToEmissivityStage,
     clamp: shaderpipe.ClampStage,
@@ -137,12 +168,15 @@ pub const ShaderPipeStageInput = union(enum) {
     normalise: shaderpipe.NormaliseStage,
 };
 
+/// Ordered register-writing stages, optional constants, and a resolver for the output
+/// channels.
 pub const ShaderPipeInput = struct {
     stages: []const ShaderPipeStageInput,
     resolver: shaderpipe.ResolverInput,
     constants: []const F = &.{},
 };
 
+/// Optional direct shaders and shader pipes keyed by the camera's render role.
 pub const MeshShaderSetInput = struct {
     mono_direct: ?ShaderMonoInput = null,
     mono_pipe: ?ShaderPipeInput = null,
@@ -172,6 +206,7 @@ pub fn TexMultiStatic(comptime T: type) type {
 
 fn texStaticType(comptime T: type, comptime C: ?usize) type {
     return struct {
+        /// Shape `[element][2][local_node]` in connectivity order, with `u` then `v`.
         elem_uvs: ndarray.NDArray(F),
         tex: if (C) |channels| texturetypes.TexDataFix(T, channels) else texturetypes.TexDataDyn(T),
         samp_cfg: texturetypes.TexSampConfig = .{
@@ -346,6 +381,7 @@ pub const MeshShaderSetStatic = struct {
 };
 
 pub const NodalPrepared = struct {
+    /// Current frame, indexed `[visible_element][component][local_node]`.
     elem_field: ndarray.NDArray(F),
     output_gain: F = 1.0,
     output_offset: F = 0.0,
@@ -365,6 +401,7 @@ pub fn TexMultiPrepared(comptime T: type) type {
 
 fn texPreparedType(comptime T: type, comptime C: ?usize) type {
     return struct {
+        /// `TexStatic.elem_uvs` layout gathered in visible-element order.
         elem_uvs: ndarray.NDArray(F),
         tex: if (C) |channels| texturetypes.TexDataFix(T, channels) else texturetypes.TexDataDyn(T),
         samp_cfg: texturetypes.TexSampConfig = .{

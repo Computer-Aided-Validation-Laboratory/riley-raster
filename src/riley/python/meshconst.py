@@ -40,31 +40,31 @@ from riley.types import MeshType
 # --------------------------------------------------------------------------
 
 class EElemType(Enum):
-    """Finite element geometry types supported by Riley.
+    """Surface and volume element types recognised by Riley's mesh utilities.
 
-    Members
-    -------
-    TRI3 : str
+    Attributes
+    ----------
+    TRI3 : EElemType
         3-node linear triangle.
-    TRI6 : str
+    TRI6 : EElemType
         6-node quadratic triangle.
-    TRI7 : str
+    TRI7 : EElemType
         7-node quadratic triangle with face center.
-    QUAD4 : str
+    QUAD4 : EElemType
         4-node bilinear quadrilateral.
-    QUAD8 : str
+    QUAD8 : EElemType
         8-node serendipity quadratic quadrilateral.
-    QUAD9 : str
+    QUAD9 : EElemType
         9-node biquadratic quadrilateral with center node.
-    TET4 : str
+    TET4 : EElemType
         4-node linear tetrahedron.
-    TET10 : str
+    TET10 : EElemType
         10-node quadratic tetrahedron.
-    HEX8 : str
+    HEX8 : EElemType
         8-node trilinear hexahedron.
-    HEX20 : str
+    HEX20 : EElemType
         20-node serendipity quadratic hexahedron.
-    HEX27 : str
+    HEX27 : EElemType
         27-node triquadratic hexahedron with face and center nodes.
     """
 
@@ -86,16 +86,18 @@ class EElemType(Enum):
         Returns
         -------
         numpy.ndarray
-            Array of shape `(N, D)` and dtype `np.float64`, where `N` is the
-            node count for the element type and `D` is the parametric
-            dimension (2 for 2D surface elements, 3 for 3D volume elements).
+            Array of shape ``(N, D)`` and dtype ``np.float64``. Rows list
+            the ``N`` nodes in Riley order; columns are ``(xi, eta)`` for
+            surface elements or ``(xi, eta, zeta)`` for volume elements.
         """
         return np.asarray(RILEY_PARA_COORD_MAP[self], dtype=np.float64)
 
 
 @dataclass(frozen=True, slots=True)
 class RileyElemTopology:
-    """Canonical topological definitions and node winding slots for an element.
+    """Topology and winding of an element in canonical Riley order.
+
+    All indices are zero-based and local to the element, not global node IDs.
 
     Attributes
     ----------
@@ -108,13 +110,14 @@ class RileyElemTopology:
     reverse_slots : tuple of int
         Permutation to reverse surface normal or volume orientation.
     edge_corners : tuple of tuple of int, default=()
-        Vertex index pairs `(start_idx, end_idx)` for all edges.
+        Pairs of corner indices identifying edges, where listed.
     surf_faces : tuple of tuple of int, default=()
-        Node index tuples for external boundary faces.
+        Node slots for each boundary face of a volume element, in Riley
+        surface-element order.
     face_corners : tuple of tuple of int, default=()
-        Corner vertex tuples for boundary faces.
+        Corner indices for faces with a center node, in ``face_slots`` order.
     face_slots : tuple of int, default=()
-        Indices of face center nodes.
+        Node slots of the face centers.
     centre_slot : int or None, default=None
         Index of the volume or element center node, if present.
     """

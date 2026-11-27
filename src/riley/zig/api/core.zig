@@ -7,7 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 
-// Public API entry point for `@import("riley")`.
+//! Public render entry points and scene types forwarded by `@import("riley")`.
 
 const shaderfunc = @import("../shaderfunc.zig");
 pub const dataio = @import("dataio.zig");

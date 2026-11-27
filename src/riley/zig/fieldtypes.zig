@@ -17,8 +17,13 @@ const F = buildconfig.F;
 
 // NOTE: this has to be in a separate file from meshtypes to avoid a circular dependency
 // as shadertypes need access as well.
+/// Nodal values indexed `[frame][node][component]`. The consumer defines
+/// component meanings and ordering.
+/// The field owns its data and array metadata; release both with `deinit`.
 pub const Field = struct {
+    /// Array metadata and view over `array_mem`.
     array: ndarray.NDArray(F),
+    /// Owned, contiguous element storage. Components of one node are adjacent.
     array_mem: []F,
 
     const Self = @This();
