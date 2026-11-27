@@ -640,3 +640,39 @@ pub fn SpeckleKernel(comptime N: usize, comptime kernel_index: usize) type {
         }
     };
 }
+
+pub fn Speckle3DKernel(comptime N: usize) type {
+    const Scalar = @import("shaderkernels_scalar.zig").Speckle3DKernel(N);
+    return struct {
+        pub const LocalBuff = Scalar.LocalBuff;
+        pub const Hit = Scalar.Hit;
+        pub const shade = Scalar.shade;
+
+        pub inline fn shadeSIMD(
+            comptime coord_space: geometrykernels.CoordSpace,
+            ctx: shadertypes.ShadeContext,
+            active: VecSB,
+            weights: [N]VecSF,
+            _: VecSF,
+            _: VecSF,
+            nodes_inv_z: [N]VecSF,
+            subpx_z: VecSF,
+            elem_coords_ref: *const LocalBuff,
+            shader: *const shadertypes.Speckle3DPrepared,
+            scratch: *matslice.MatSlice(F),
+        ) void {
+            const coords_ref = meshhit.interpCoordsSIMD(
+                N,
+                coord_space,
+                elem_coords_ref,
+                active,
+                weights,
+                nodes_inv_z,
+                subpx_z,
+            );
+            const value = shaderfill_simd.evalSpeckle3DSIMD(coords_ref, active, shader);
+            var sink = shaderfill.ImageSink{ .ctx = ctx, .scratch = scratch };
+            sink.store(0, active, value);
+        }
+    };
+}

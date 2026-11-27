@@ -53,6 +53,18 @@ test "public speckle variants use pattern-specific parameters" {
     try std.testing.expect(!@hasDecl(riley, "Dot2DParams"));
 }
 
+test "public 3D speckles use the same UV-free input for direct and pipe shaders" {
+    const std = @import("std");
+    const perlin: riley.Perlin3DParams = .{ .cell_size = 0.25 };
+    const params: riley.Speckle3DParams = .{ .perlin = perlin };
+    try params.validate();
+    const input: riley.Speckle3DInput = .{ .params = params };
+    const direct: riley.ShaderMonoInput = .{ .speckle3d = input };
+    const source: riley.PipeSourceInput = .{ .speckle3d = input };
+    try std.testing.expectEqualDeep(direct.speckle3d, source.speckle3d);
+    try std.testing.expect(!@hasField(riley.Speckle3DInput, "uvs"));
+}
+
 test "public API excludes render implementation details" {
     const std = @import("std");
     try std.testing.expect(!@hasDecl(riley, "MeshStatic"));

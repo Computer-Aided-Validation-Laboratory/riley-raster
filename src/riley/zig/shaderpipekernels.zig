@@ -108,6 +108,7 @@ pub fn LocalPipeBuff(comptime N: usize) type {
                     .speckle => |shader| {
                         buf.loadFuncCoords(shader.elem_uvs, elem_idx * 2 * N, 2);
                     },
+                    .speckle3d => {},
                     .func, .func_rgb, .func_multi => |shader| {
                         if (shader.coord_mode == .uv) {
                             buf.loadFuncCoords(shader.elem_uvs.?, elem_idx * 2 * N, 2);
@@ -397,6 +398,9 @@ fn shadeSource(
                 samplePipeSpeckleScal,
             );
         },
+        .speckle3d => |*s| {
+            scratch.slice[ctx.scratch_idx] = shaderfill_scalar.evalSpeckle3D(interp.coords_ref.?, s);
+        },
         .nodal => |*s| {
             shaderkernels.NodalKernel(N).shade(
                 coord_space,
@@ -539,6 +543,9 @@ fn shadeSourceSIMD(
                 samplePipeSpeckleSIMD,
             );
             sink.store(0, mask, value);
+        },
+        .speckle3d => |*s| {
+            sink.store(0, mask, shaderfill_simd.evalSpeckle3DSIMD(hit.coords_ref.?, mask, s));
         },
         .nodal => |*s| {
             shaderkernels.NodalKernel(N).shadeSIMDTo(

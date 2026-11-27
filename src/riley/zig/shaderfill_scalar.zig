@@ -357,3 +357,8 @@ pub inline fn evalSpeckleScal(
     const value = sample(u, v, shader.resources) * shader.output_gain + shader.output_offset;
     return value * shader.scale_mul + shader.scale_add;
 }
+
+pub fn evalSpeckle3D(coords_ref: [3]F, shader: *const shadertypes.Speckle3DPrepared) F {
+    const value = shader.sampler.sample(coords_ref) * shader.output_gain + shader.output_offset;
+    return value * shader.scale_mul + shader.scale_add;
+}

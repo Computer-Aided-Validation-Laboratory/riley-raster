@@ -16,6 +16,7 @@ const imageio = @import("../riley/zig/imageio.zig");
 const matslice = @import("../riley/zig/matslice.zig");
 const riley = @import("../riley/zig/api.zig");
 const render = @import("../riley/zig/riley.zig");
+const speckle3d = @import("../riley/zig/speckle3d.zig");
 const speckleconfig = @import("../riley/zig/speckleconfig.zig");
 const speckleops = @import("../riley/zig/speckleops.zig");
 const speckleparams = @import("../riley/zig/speckleparams.zig");
@@ -543,6 +544,95 @@ test "public physical disk render recovers nominal coverage and reference scale"
             }
         }
     }
+}
+
+test "3D Perlin direct and identity pipe follow the same reference material under deformation" {
+    const side = 32;
+    const pixel_size: F = 1.0 / 16.0;
+    const shift_pixels = 3;
+    const cell_size: F = 7.0 / 32.0;
+    const ref_z = -4 * cell_size;
+    const camera: riley.CameraInput = .{
+        .pixels_num = .{ side, side },
+        .pixels_size = .{ pixel_size, pixel_size },
+        .pos_world = .{ .vec = .{ 0, 0, ref_z + 2 } },
+        .rot_world = rotation.Rotation.init(0, 0, 0),
+        .roi_cent_world = .{ .vec = .{ 0, 0, ref_z } },
+        .focal_length = 2,
+        .sub_sample = 1,
+    };
+    var coords = [_]F{
+        -0.75, -0.75, ref_z,
+        0.75,  -0.75, ref_z,
+        0.75,  0.75,  ref_z,
+        -0.75, 0.75,  ref_z,
+    };
+    var nodes = [_]usize{ 0, 1, 2, 3 };
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var disp = try riley.Field.initAlloc(alloc, 2, 4, 3);
+    for (0..4) |nn| {
+        // Move 0.5 towards the camera, shrinking x/y by the depth ratio (3/4).
+        // The added x translation then projects to exactly three pixels.
+        disp.array.set(&.{ 1, nn, 0 }, -0.25 * coords[3 * nn] + 0.75 * shift_pixels * pixel_size);
+        disp.array.set(&.{ 1, nn, 1 }, -0.25 * coords[3 * nn + 1]);
+        disp.array.set(&.{ 1, nn, 2 }, 0.5);
+    }
+    const params: speckle3d.Speckle3DParams = .{ .perlin = .{
+        .cell_size = cell_size,
+        .threshold = 0,
+        .transition_width = 0.6,
+    } };
+    const shader: riley.ShaderMonoInput = .{ .speckle3d = .{
+        .params = params,
+        .bits = null,
+        .scaling = .none,
+        .output_gain = 1.5,
+        .output_offset = 0.25,
+    } };
+    var mesh: riley.MeshInput = .{
+        .mesh_type = .quad4,
+        .coords = riley.Coords.init(&coords, 4),
+        .connect = riley.Connect.init(&nodes, 1, 4),
+        .disp = disp,
+        .shaders = .{ .mono_direct = shader },
+    };
+    const direct = try renderSpeckleMesh(alloc, camera, mesh, .tile_local, 1);
+    var stages: [1]riley.ShaderPipeStageInput = undefined;
+    mesh.shaders = .{ .mono_pipe = riley.ops.identityMulti(
+        1,
+        riley.ops.monoToPipeSource(shader),
+        &stages,
+    ) };
+    const pipe = try renderSpeckleMesh(alloc, camera, mesh, .tile_local, 1);
+    try std.testing.expectEqualSlices(usize, &.{ 1, 2, 1, side, side }, direct.dims);
+    try std.testing.expectEqualSlices(usize, direct.dims, pipe.dims);
+    try std.testing.expectEqualSlices(F, direct.slice, pipe.slice);
+
+    const tol: F = if (F == f32) 2e-4 else 1e-10;
+    const reference = direct.slice[0 .. side * side];
+    const deformed = direct.slice[side * side ..];
+    // These pixel centres sample (±cell_size, ±cell_size, -4*cell_size).
+    // Perlin noise is zero at all lattice vertices, giving the midpoint after remapping.
+    for ([_]usize{ 12, 19 }) |rr| for ([_]usize{ 12, 19 }) |cc| {
+        try std.testing.expectApproxEqAbs(@as(F, 1), reference[rr * side + cc], tol);
+    };
+    const sampler = params.prepare();
+    var min_value: F = 1;
+    var max_value: F = 1;
+    for (6..26) |rr| for (6..26) |cc| {
+        errdefer std.debug.print("3D Perlin reference pixel ({d}, {d})\n", .{ cc, rr });
+        // Analytic ray intersection with z = ref_z, independent of the renderer.
+        const x = (@as(F, @floatFromInt(cc)) + 0.5 - side / 2) * pixel_size;
+        const y = (side / 2 - @as(F, @floatFromInt(rr)) - 0.5) * pixel_size;
+        const expected = 1.5 * sampler.sample(.{ x, y, ref_z }) + 0.25;
+        try std.testing.expectApproxEqAbs(expected, reference[rr * side + cc], tol);
+        try std.testing.expectApproxEqAbs(expected, deformed[rr * side + cc + shift_pixels], tol);
+        min_value = @min(min_value, expected);
+        max_value = @max(max_value, expected);
+    };
+    try std.testing.expect(max_value - min_value > 0.5);
 }
 
 fn expectPlanarExecutionParity(

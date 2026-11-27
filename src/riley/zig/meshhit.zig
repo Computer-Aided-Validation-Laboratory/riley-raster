@@ -38,7 +38,7 @@ pub fn RasterHit(comptime N: usize) type {
     };
 }
 
-// A raster hit with optional mesh geometry for function shaders and pipes.
+// A raster hit with optional mesh geometry for shaders that sample reference or deformed fields.
 pub fn MeshHit(comptime N: usize) type {
     return struct {
         weights: [N]F,

@@ -12,6 +12,7 @@ const shaderfunc = @import("shaderfunc.zig");
 const fieldtypes = @import("fieldtypes.zig");
 const std = @import("std");
 const shaderpipe = @import("shaderpipe.zig");
+const speckle3d = @import("speckle3d.zig");
 const speckleparams = @import("speckleparams.zig");
 const validatearrays = @import("validatearrays.zig");
 
@@ -267,18 +268,21 @@ pub fn createMeshStaticFromInput(
     );
 
     var shaders: shadertypes.MeshShaderSetStatic = .{};
+    var speckle3d_coord_bound: ?f64 = null;
     if (active_roles.contains(.mono)) {
         if (mesh_input.shaders.mono_direct) |shader|
             shaders.mono = .{ .direct = try createShaderMonoStaticFromInput(
                 allocator,
                 shader,
                 mesh_input,
+                &speckle3d_coord_bound,
             ) };
         if (mesh_input.shaders.mono_pipe) |pipe|
             shaders.mono = .{ .pipe = try createShaderPipeStaticFromInput(
                 allocator,
                 pipe,
                 mesh_input,
+                &speckle3d_coord_bound,
             ) };
     }
 
@@ -288,6 +292,7 @@ pub fn createMeshStaticFromInput(
                 allocator,
                 pipe,
                 mesh_input,
+                &speckle3d_coord_bound,
             );
     }
 
@@ -297,12 +302,14 @@ pub fn createMeshStaticFromInput(
                 allocator,
                 shader,
                 mesh_input,
+                &speckle3d_coord_bound,
             ) };
         if (mesh_input.shaders.ir_pipe) |pipe|
             shaders.ir = .{ .pipe = try createShaderPipeStaticFromInput(
                 allocator,
                 pipe,
                 mesh_input,
+                &speckle3d_coord_bound,
             ) };
     }
 
@@ -312,6 +319,7 @@ pub fn createMeshStaticFromInput(
                 allocator,
                 pipe,
                 mesh_input,
+                &speckle3d_coord_bound,
             );
     }
 
@@ -344,6 +352,7 @@ fn createShaderPipeStaticFromInput(
     allocator: std.mem.Allocator,
     pipe: shadertypes.ShaderPipeInput,
     mesh_input: *const meshtypes.MeshInput,
+    speckle3d_coord_bound: *?f64,
 ) !shadertypes.ShaderPipeStatic {
     const stages = try allocator.alloc(
         shadertypes.ShaderPipeStageStatic,
@@ -353,7 +362,12 @@ fn createShaderPipeStaticFromInput(
     for (pipe.stages, 0..) |stage, si| {
         stages[si] = switch (stage) {
             .shader => |src| .{ .shader = .{
-                .shader = try createPipeSourceStaticFromInput(allocator, src.shader, mesh_input),
+                .shader = try createPipeSourceStaticFromInput(
+                    allocator,
+                    src.shader,
+                    mesh_input,
+                    speckle3d_coord_bound,
+                ),
                 .register_dest = src.register_dest,
                 .channels = switch (src.shader) {
                     .nodal => |n| @intCast(n.field.getFieldsN()),
@@ -432,10 +446,14 @@ fn createShaderMonoStaticFromInput(
     allocator: std.mem.Allocator,
     input: shadertypes.ShaderMonoInput,
     mesh_input: *const meshtypes.MeshInput,
+    speckle3d_coord_bound: *?f64,
 ) !shadertypes.ShaderMonoStatic {
     const connect = &mesh_input.connect;
     return switch (input) {
         .speckle => |speckle| .{ .speckle = try createSpeckleStaticFromInput(allocator, speckle, mesh_input) },
+        .speckle3d => |speckle| .{
+            .speckle3d = try createSpeckle3DStaticFromInput(speckle, mesh_input, speckle3d_coord_bound),
+        },
         .nodal => |n| .{ .nodal = createNodalStaticFromInput(n) },
         .tex_u8 => |t| .{ .tex_u8 = try createTextureStaticFromInput(
             u8,
@@ -478,6 +496,55 @@ fn createSpeckleStaticFromInput(
     payload.bits = input.bits;
     payload.scaling = input.scaling;
     return payload;
+}
+
+fn createSpeckle3DStaticFromInput(
+    input: shadertypes.Speckle3DInput,
+    mesh_input: *const meshtypes.MeshInput,
+    coord_bound_cache: *?f64,
+) !shadertypes.Speckle3DPrepared {
+    const coord_bound = coord_bound_cache.* orelse blk: {
+        var max_abs_node: f64 = 0;
+        for (0..mesh_input.connect.getElemsNum()) |ee| {
+            for (mesh_input.connect.getElem(ee)) |node_idx| {
+                for (mesh_input.coords.getVecSlice(node_idx)) |coord| {
+                    if (!std.math.isFinite(coord)) return error.NonFiniteCoordinates;
+                    max_abs_node = @max(max_abs_node, @abs(coord));
+                }
+            }
+        }
+        // Linear/bilinear interpolation is a convex combination inside the element.
+        // For higher order, bound the sum of absolute shape weights: Quad8 corner
+        // weights have a combined magnitude <= 3 and each midside weight is <= 1.
+        // Tri6 and Quad9 have smaller bounds. Leave slack for edge tolerances and rounding.
+        const weight_bound: f64 = switch (mesh_input.mesh_type) {
+            .tri3, .tri3opt, .quad4 => 2,
+            .tri6, .quad8, .quad9 => 8,
+        };
+        const bound = max_abs_node * weight_bound;
+        coord_bound_cache.* = bound;
+        break :blk bound;
+    };
+    try speckle3d.validateReferenceRange(input.params, coord_bound);
+    const factors = speckleScaleFactors(input.scaling, input.bits);
+    return .{
+        .sampler = input.params.prepare(),
+        .output_gain = input.output_gain,
+        .output_offset = input.output_offset,
+        .scale_mul = factors.mul,
+        .scale_add = factors.add,
+    };
+}
+
+fn speckleScaleFactors(scaling: imageops.ScaleStrategy, bits: ?u8) imageops.ScaleFactors {
+    const range: imageops.ScalingParams = switch (scaling) {
+        .fixed => |bounds| .{
+            .min = bounds[0],
+            .range = if (bounds[1] > bounds[0]) bounds[1] - bounds[0] else 1,
+        },
+        else => .{ .min = 0, .range = 1 },
+    };
+    return imageops.getScaleFactors(scaling, bits, range);
 }
 
 fn createFuncStaticFromInput(
@@ -537,10 +604,14 @@ fn createPipeSourceStaticFromInput(
     allocator: std.mem.Allocator,
     input: shadertypes.PipeSourceInput,
     mesh_input: *const meshtypes.MeshInput,
+    speckle3d_coord_bound: *?f64,
 ) !shadertypes.PipeSourceStatic {
     const connect = &mesh_input.connect;
     return switch (input) {
         .speckle => |speckle| .{ .speckle = try createSpeckleStaticFromInput(allocator, speckle, mesh_input) },
+        .speckle3d => |speckle| .{
+            .speckle3d = try createSpeckle3DStaticFromInput(speckle, mesh_input, speckle3d_coord_bound),
+        },
         .nodal => |n| .{ .nodal = createNodalStaticFromInput(n) },
         .tex_u8 => |t| .{ .tex_u8 = try createTextureStaticFromInput(
             u8,
@@ -796,6 +867,7 @@ fn shaderMonoHitSelection(
 ) meshhit.MeshHitSelection {
     var selection = meshhit.MeshHitSelection.empty;
     switch (shader) {
+        .speckle3d => selection.insert(.coords_ref),
         .func => |s| {
             switch (s.coord_mode) {
                 .world_reference => selection.insert(.coords_ref),
@@ -817,6 +889,7 @@ fn pipeSourceHitSelection(
 ) meshhit.MeshHitSelection {
     var selection = meshhit.MeshHitSelection.empty;
     switch (source) {
+        .speckle3d => selection.insert(.coords_ref),
         .func, .func_rgb, .func_multi => |s| {
             switch (s.coord_mode) {
                 .world_reference => selection.insert(.coords_ref),
@@ -1765,6 +1838,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                         .speckle => |speckle| .{
                             .speckle = try self.prepareSpeckleFromStatic(outer_alloc, speckle),
                         },
+                        .speckle3d => |speckle| .{ .speckle3d = speckle },
                         .nodal => |s| .{
                             .nodal = try self.prepareNodalShaderFromStatic(outer_alloc, s),
                         },
@@ -1855,6 +1929,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                 .speckle => |speckle| .{
                     .speckle = try self.prepareSpeckleFromStatic(outer_alloc, speckle),
                 },
+                .speckle3d => |speckle| .{ .speckle3d = speckle },
                 .nodal => |s| .{
                     .nodal = try self.prepareNodalShaderFromStatic(outer_alloc, s),
                 },
@@ -2045,14 +2120,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
             outer_alloc: std.mem.Allocator,
             speckle: *const shadertypes.SpeckleStatic,
         ) !shadertypes.SpecklePrepared {
-            const range: imageops.ScalingParams = switch (speckle.scaling) {
-                .fixed => |bounds| .{
-                    .min = bounds[0],
-                    .range = if (bounds[1] > bounds[0]) bounds[1] - bounds[0] else 1,
-                },
-                else => .{ .min = 0, .range = 1 },
-            };
-            const factors = imageops.getScaleFactors(speckle.scaling, speckle.bits, range);
+            const factors = speckleScaleFactors(speckle.scaling, speckle.bits);
             return .{
                 .elem_uvs = try self.gatherVisElemUVs(outer_alloc, speckle.elem_uvs),
                 .resources = &speckle.resources,
@@ -2437,6 +2505,63 @@ test "malformed multifield texture layouts are rejected before allocation withou
         input.tex.rows_num = tex_dims[1];
         try std.testing.expectError(error.InvalidTextureDimensions, createTextureMultiStaticFromInput(T, alloc, input, &connect));
     }
+}
+
+test "3D speckle static preparation rejects unresolved reference lattices" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var coords = [_]F{
+        -1,   -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0,
+        0,    -1, 0, 1, 0,  0, 0, 1, 0, -1, 0, 0,
+        1e20, 0,  0,
+    };
+    var connect = [_]usize{ 0, 1, 2, 3, 4, 5, 6, 7 };
+    const regular: shadertypes.Speckle3DInput = .{ .params = .{ .perlin = .{ .cell_size = 0.1 } } };
+    var stages = [_]shadertypes.ShaderPipeStageInput{
+        shaderops.stageSource(.{ .speckle3d = regular }),
+        shaderops.stageSource(.{ .speckle3d = regular }),
+    };
+    stages[1].shader.register_dest = .{ .kind = .channel, .index = 1 };
+    var mesh: meshtypes.MeshInput = .{
+        .mesh_type = .quad8,
+        .coords = meshtypes.Coords.init(&coords, 9),
+        .connect = meshtypes.Connect.init(&connect, 1, 8),
+        .disp = null,
+        .shaders = .{
+            .mono_direct = .{ .speckle3d = regular },
+            .ir_pipe = .{ .stages = &stages, .resolver = .{ .identity = shaderpipe.identity_channels_1 } },
+        },
+    };
+    const mono = shadertypes.ActiveShaderRoles.initOne(.mono);
+    const both = shadertypes.ActiveShaderRoles.initMany(&.{ .mono, .ir });
+    _ = try createMeshStaticFromInput(alloc, &mesh, both);
+    connect[7] = 8;
+    try std.testing.expectError(error.Speckle3DCoordinateRange, createMeshStaticFromInput(alloc, &mesh, both));
+    connect[7] = 7;
+
+    // The second stage must check its own spacing even after the bound has been cached.
+    stages[1].shader.shader.speckle3d.params.perlin.cell_size = std.math.floatEps(F);
+    _ = try createMeshStaticFromInput(alloc, &mesh, mono);
+    try std.testing.expectError(error.Speckle3DCoordinateRange, createMeshStaticFromInput(alloc, &mesh, both));
+
+    // This spacing resolves on the same linear reference range, but not with the
+    // conservative envelope for overshoot in a quadratic element.
+    mesh.shaders.mono_direct.?.speckle3d.params.perlin.cell_size = 16 * std.math.floatEps(F);
+    try std.testing.expectError(error.Speckle3DCoordinateRange, createMeshStaticFromInput(alloc, &mesh, mono));
+    var linear = mesh;
+    linear.mesh_type = .quad4;
+    linear.connect = meshtypes.Connect.init(connect[0..4], 1, 4);
+    _ = try createMeshStaticFromInput(alloc, &linear, mono);
+
+    // In f64 this subnormal spacing would overflow coordinate / cell_size.
+    linear.shaders.mono_direct.?.speckle3d.params.perlin.cell_size = std.math.floatMin(F) * std.math.floatEps(F);
+    try std.testing.expectError(error.Speckle3DCoordinateRange, createMeshStaticFromInput(alloc, &linear, mono));
+    linear.shaders.mono_direct.?.speckle3d.params.perlin.cell_size = 0;
+    try std.testing.expectError(error.InvalidSpeckleCellSize, createMeshStaticFromInput(alloc, &linear, mono));
+
+    coords[0] = std.math.nan(F);
+    try std.testing.expectError(error.NonFiniteCoordinates, createMeshStaticFromInput(alloc, &mesh, mono));
 }
 
 test "speckle direct and pipe frame preparation borrow calibrated resources" {

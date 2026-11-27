@@ -394,7 +394,7 @@ pub fn rasterTileCore(
                         @intCast(s.elem_field.dims[1])
                     else
                         @intCast(s.elem_field.dims[2]),
-                    .tex_u8, .tex_u16, .tex_f, .func, .speckle => 1,
+                    .tex_u8, .tex_u16, .tex_f, .func, .speckle, .speckle3d => 1,
                 },
             };
 
@@ -561,6 +561,27 @@ pub fn rasterTileCore(
                             ),
                             else => unreachable,
                         };
+                    },
+                    .speckle3d => |*shader| {
+                        const start = ov.elem_idx * 3 * N;
+                        const coords_ref = mesh_ptr.hit_geometry.coords_ref.?.slice[start..][0 .. 3 * N];
+                        shaded_px += try RasterBackend.RasterEngine(
+                            GK,
+                            shaderkernels.Speckle3DKernel(N),
+                            shadertypes.Speckle3DPrepared,
+                            root_class,
+                        ).rasterElemInTile(
+                            report_mode,
+                            ctx_rast,
+                            ctx_report,
+                            tile,
+                            ov,
+                            coords,
+                            hull,
+                            shader,
+                            coords_ref,
+                            subpx_scratch,
+                        );
                     },
                     .func => |*shader| {
                         var local_shader_buf: shadertypes.LocalShaderBuff(N) = .{};

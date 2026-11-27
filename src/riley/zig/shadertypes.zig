@@ -22,6 +22,7 @@ const texturetypes = @import("texturetypes.zig");
 const fieldtypes = @import("fieldtypes.zig");
 const shaderpipe = @import("shaderpipe.zig");
 const meshhit = @import("meshhit.zig");
+const speckle3d = @import("speckle3d.zig");
 const speckleops = @import("speckleops.zig");
 const speckleparams = @import("speckleparams.zig");
 
@@ -127,6 +128,15 @@ pub const SpeckleInput = struct {
     scaling: imageops.ScaleStrategy = .none,
 };
 
+/// A procedural speckle shader sampled in the original mesh's world coordinates.
+pub const Speckle3DInput = struct {
+    params: speckle3d.Speckle3DParams,
+    output_gain: F = 1.0,
+    output_offset: F = 0.0,
+    bits: ?u8 = 8,
+    scaling: imageops.ScaleStrategy = .none,
+};
+
 /// Direct single-channel shader source evaluated without a shader pipe.
 pub const ShaderMonoInput = union(enum) {
     nodal: NodalInput,
@@ -135,6 +145,7 @@ pub const ShaderMonoInput = union(enum) {
     tex_f: TexInput(texturetypes.TexDataFix(F, 1)),
     func: FuncInput,
     speckle: SpeckleInput,
+    speckle3d: Speckle3DInput,
 };
 
 /// Shader source for a pipe stage, including scalar, RGB, and multifield inputs.
@@ -153,6 +164,7 @@ pub const PipeSourceInput = union(enum) {
     func_rgb: FuncInput,
     func_multi: FuncMultiInput,
     speckle: SpeckleInput,
+    speckle3d: Speckle3DInput,
 };
 
 /// One ordered step in a shader pipe: evaluate a source into registers or transform
@@ -253,6 +265,7 @@ pub const ShaderMonoStatic = union(enum) {
     tex_f: TexStatic(F, 1),
     func: FuncStatic,
     speckle: *const SpeckleStatic,
+    speckle3d: Speckle3DPrepared,
 };
 
 pub const PipeSourceStatic = union(enum) {
@@ -268,6 +281,7 @@ pub const PipeSourceStatic = union(enum) {
     func_rgb: FuncStatic,
     func_multi: FuncStatic,
     speckle: *const SpeckleStatic,
+    speckle3d: Speckle3DPrepared,
 };
 
 pub const GreyToEmissivityPrepared = struct {
@@ -471,6 +485,14 @@ pub const SpecklePrepared = struct {
     scale_add: F = 0.0,
 };
 
+pub const Speckle3DPrepared = struct {
+    sampler: speckle3d.Prepared,
+    output_gain: F,
+    output_offset: F,
+    scale_mul: F,
+    scale_add: F,
+};
+
 pub const ShaderMonoPrepared = union(enum) {
     nodal: NodalPrepared,
     tex_u8: TexPrepared(u8, 1),
@@ -478,6 +500,7 @@ pub const ShaderMonoPrepared = union(enum) {
     tex_f: TexPrepared(F, 1),
     func: FuncPrepared,
     speckle: SpecklePrepared,
+    speckle3d: Speckle3DPrepared,
 };
 
 pub const PipeSourcePrepared = union(enum) {
@@ -493,6 +516,7 @@ pub const PipeSourcePrepared = union(enum) {
     func_rgb: FuncPrepared,
     func_multi: FuncPrepared,
     speckle: SpecklePrepared,
+    speckle3d: Speckle3DPrepared,
 };
 
 pub const ShaderPipeStagePrepared = union(enum) {

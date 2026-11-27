@@ -21,3 +21,4 @@ pub const TexKernel = impl.TexKernel;
 pub const TexMultiKernel = impl.TexMultiKernel;
 pub const FuncKernel = impl.FuncKernel;
 pub const SpeckleKernel = impl.SpeckleKernel;
+pub const Speckle3DKernel = impl.Speckle3DKernel;

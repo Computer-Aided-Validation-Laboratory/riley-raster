@@ -307,6 +307,11 @@ pub fn build(b: *std.Build) void {
             .description = "Run the lit sphere shaderpipe demo",
             .source_path = "src/demo10_sphere_lit.zig",
         },
+        .{
+            .step_name = "demo11-procedural-3d",
+            .description = "Render 3D Perlin speckles on a plate and sphere without UVs",
+            .source_path = "src/demo11_procedural_3d.zig",
+        },
     };
 
     const demos_check = b.step("demos-check", "Compile all demo entrypoints without running them");

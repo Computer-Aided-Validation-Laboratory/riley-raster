@@ -171,6 +171,7 @@ fn checkShaderMonoArrays(shader: shadertypes.ShaderMonoInput) InputArrayError!vo
     switch (shader) {
         .tex_u8 => |t| try checkUvArrays(&t.uvs),
         .speckle => |speckle| try checkUvArrays(&speckle.uvs),
+        .speckle3d => {},
         .tex_u16 => |t| try checkUvArrays(&t.uvs),
         .tex_f => |t| {
             try checkUvArrays(&t.uvs);
@@ -189,6 +190,7 @@ fn checkPipeSourceArrays(source: shadertypes.PipeSourceInput) InputArrayError!vo
     switch (source) {
         .tex_u8 => |t| try checkUvArrays(&t.uvs),
         .speckle => |speckle| try checkUvArrays(&speckle.uvs),
+        .speckle3d => {},
         .tex_u16 => |t| try checkUvArrays(&t.uvs),
         .tex_f => |t| {
             try checkUvArrays(&t.uvs);

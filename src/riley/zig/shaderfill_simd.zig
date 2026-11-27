@@ -25,6 +25,7 @@ const textureops = @import("textureops.zig");
 const texturetypes = @import("texturetypes.zig");
 const meshhit = @import("meshhit.zig");
 const simdops = @import("simdops.zig");
+const shaderfill_scalar = @import("shaderfill_scalar.zig");
 
 // --------------------------------------------------------------------------------------
 // Nodal Interp Shader
@@ -818,4 +819,22 @@ pub inline fn evalSpeckleSIMD(
     const value = sample(u, v, active, shader.resources) * @as(VecSF, @splat(shader.output_gain)) +
         @as(VecSF, @splat(shader.output_offset));
     return value * @as(VecSF, @splat(shader.scale_mul)) + @as(VecSF, @splat(shader.scale_add));
+}
+
+pub fn evalSpeckle3DSIMD(
+    coords_ref: [3]VecSF,
+    active: VecSB,
+    shader: *const shadertypes.Speckle3DPrepared,
+) VecSF {
+    const mask: [S]bool = active;
+    const x: [S]F = coords_ref[0];
+    const y: [S]F = coords_ref[1];
+    const z: [S]F = coords_ref[2];
+    var values: [S]F = @splat(0);
+    for (0..S) |lane| {
+        if (mask[lane]) {
+            values[lane] = shaderfill_scalar.evalSpeckle3D(.{ x[lane], y[lane], z[lane] }, shader);
+        }
+    }
+    return values;
 }

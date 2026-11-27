@@ -64,6 +64,7 @@ pub fn monoToPipeSource(mono: shadertypes.ShaderMonoInput) shadertypes.PipeSourc
         .nodal => |n| .{ .nodal = n },
         .func => |f| .{ .func = f },
         .speckle => |s| .{ .speckle = s },
+        .speckle3d => |s| .{ .speckle3d = s },
     };
 }
 
@@ -75,6 +76,7 @@ pub fn pipeSourceToMono(source: shadertypes.PipeSourceInput) !shadertypes.Shader
         .nodal => |n| .{ .nodal = n },
         .func => |f| .{ .func = f },
         .speckle => |s| .{ .speckle = s },
+        .speckle3d => |s| .{ .speckle3d = s },
         .func_rgb => error.DirectMonoFuncRequiresMono,
         .func_multi => error.DirectMonoFuncRequiresMono,
         else => error.DirectMonoShaderExpectedMono,

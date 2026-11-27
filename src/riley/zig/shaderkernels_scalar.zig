@@ -175,3 +175,22 @@ pub fn SpeckleKernel(comptime N: usize, comptime kernel_index: usize) type {
         }
     };
 }
+
+pub fn Speckle3DKernel(comptime N: usize) type {
+    return struct {
+        pub const LocalBuff = [3 * N]F;
+        pub const Hit = meshhit.MeshHit(N);
+
+        pub inline fn shade(
+            comptime coord_space: geometrykernels.CoordSpace,
+            ctx: shadertypes.ShadeContext,
+            interp: Hit,
+            elem_coords_ref: *const LocalBuff,
+            shader: *const shadertypes.Speckle3DPrepared,
+            scratch: *matslice.MatSlice(F),
+        ) void {
+            const coords_ref = meshhit.interpCoords(N, coord_space, elem_coords_ref, interp);
+            scratch.slice[ctx.scratch_idx] = shaderfill_scalar.evalSpeckle3D(coords_ref, shader);
+        }
+    };
+}

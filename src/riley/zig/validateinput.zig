@@ -431,7 +431,7 @@ fn pipeSourceChannels(source: shadertypes.PipeSourceInput) u8 {
         .tex_multi_u8 => |t| @intCast(t.tex.array.dims[0]),
         .tex_multi_u16 => |t| @intCast(t.tex.array.dims[0]),
         .tex_multi_f => |t| @intCast(t.tex.array.dims[0]),
-        .func, .speckle => 1,
+        .func, .speckle, .speckle3d => 1,
         .func_rgb => 3,
         .func_multi => |f| @intCast(f.channels.len),
     };
@@ -714,6 +714,7 @@ fn checkShaderMonoMetadata(
     switch (shader) {
         .tex_u8 => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
         .speckle => |speckle| try checkSpeckleMetadata(speckle, coords_num),
+        .speckle3d => |speckle| try checkSpeckleControls(speckle),
         .tex_u16 => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
         .tex_f => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
         .nodal => |nodal_shader| {
@@ -731,6 +732,7 @@ fn checkPipeSourceMetadata(
     switch (source) {
         .tex_u8 => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
         .speckle => |speckle| try checkSpeckleMetadata(speckle, coords_num),
+        .speckle3d => |speckle| try checkSpeckleControls(speckle),
         .tex_u16 => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
         .tex_f => |tex_shader| try checkTexShaderMetadata(tex_shader, 1, coords_num),
         .tex_rgb_u8 => |tex_shader| try checkTexShaderMetadata(tex_shader, 3, coords_num),
@@ -750,6 +752,10 @@ fn checkSpeckleMetadata(
     coords_num: usize,
 ) InputValidationError!void {
     try validatearrays.checkUvLayout(&speckle.uvs, coords_num);
+    try checkSpeckleControls(speckle);
+}
+
+fn checkSpeckleControls(speckle: anytype) InputValidationError!void {
     if (speckle.bits) |bits| switch (bits) {
         8, 10, 12, 14, 16 => {},
         else => return error.InvalidShaderBitDepth,
