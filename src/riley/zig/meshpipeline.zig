@@ -221,11 +221,7 @@ pub fn meshInputFromSimDataSlice(
             }
         } else {
             const paths = uv_paths orelse return error.MissingUVPaths;
-            const path_uvs = try std.fmt.allocPrint(
-                outer_alloc,
-                "{s}{s}",
-                .{ paths[ii], uv_file_name },
-            );
+            const path_uvs = try outer_alloc.print("{s}{s}", .{ paths[ii], uv_file_name });
             defer outer_alloc.free(path_uvs);
 
             const uvmap = try uvio.loadUVMap(outer_alloc, io, path_uvs);
@@ -320,7 +316,7 @@ pub fn createMeshStaticFromInput(
     }
 
     var hit_selections = std.EnumArray(shadertypes.RenderRole, meshhit.MeshHitSelection)
-        .initFill(meshhit.MeshHitSelection.initEmpty());
+        .initFill(meshhit.MeshHitSelection.empty);
     var needs_normals = false;
     for (std.enums.values(shadertypes.RenderRole)) |role| {
         const selection = shaderSetHitSelection(shaders, role, mesh_input.normal_type);
@@ -798,7 +794,7 @@ fn shaderMonoHitSelection(
     shader: shadertypes.ShaderMonoStatic,
     normal_type: normals.NormalType,
 ) meshhit.MeshHitSelection {
-    var selection = meshhit.MeshHitSelection.initEmpty();
+    var selection = meshhit.MeshHitSelection.empty;
     switch (shader) {
         .func => |s| {
             switch (s.coord_mode) {
@@ -819,7 +815,7 @@ fn pipeSourceHitSelection(
     source: shadertypes.PipeSourceStatic,
     normal_type: normals.NormalType,
 ) meshhit.MeshHitSelection {
-    var selection = meshhit.MeshHitSelection.initEmpty();
+    var selection = meshhit.MeshHitSelection.empty;
     switch (source) {
         .func, .func_rgb, .func_multi => |s| {
             switch (s.coord_mode) {
@@ -841,7 +837,7 @@ fn shaderSetHitSelection(
     role: shadertypes.RenderRole,
     normal_type: normals.NormalType,
 ) meshhit.MeshHitSelection {
-    var selection = meshhit.MeshHitSelection.initEmpty();
+    var selection = meshhit.MeshHitSelection.empty;
     const selected = shaderops.selectShader(
         shadertypes.ShaderMonoStatic,
         shadertypes.ShaderPipeStatic,
@@ -1614,7 +1610,7 @@ fn FrameMeshPipeline(comptime MT: geometrykernels.MeshType) type {
                         tier[tier_len] = seed;
                         tier_len += 1;
                     }
-                    var used = [_]bool{false} ** geometrykernels.multiRootSeedCount(N);
+                    var used: [geometrykernels.multiRootSeedCount(N)]bool = @splat(false);
                     for (0..tier_len) |ii| {
                         const remaining = tier_len - ii;
                         const rank = switch (ii % 3) {
@@ -2410,7 +2406,7 @@ test "malformed multifield texture layouts are rejected before allocation withou
     var uv_dims = [_]usize{ 3, 2 };
     var uv_strides = [_]usize{ 2, 1 };
     inline for (.{ u8, u16, F }) |T| {
-        var tex_mem = [_]T{0} ** 12;
+        var tex_mem: [12]T = @splat(0);
         var tex_dims = [_]usize{ 3, 2, 2 };
         var short_strides = [_]usize{ 4, 2 };
         var stride_cases = [_][3]usize{

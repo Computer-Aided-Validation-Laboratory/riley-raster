@@ -27,8 +27,8 @@ pub const NodalDerivs = struct {
 
 pub fn getNodalDerivs(comptime N: usize) NodalDerivs {
     var nodal_derivs = NodalDerivs{
-        .dNu = [_][9]F{[_]F{0} ** 9} ** 9,
-        .dNv = [_][9]F{[_]F{0} ** 9} ** 9,
+        .dNu = @as([9][9]F, @splat(@as([9]F, @splat(0)))),
+        .dNv = @as([9][9]F, @splat(@as([9]F, @splat(0)))),
     };
 
     const node_coords = switch (N) {

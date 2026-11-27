@@ -143,16 +143,8 @@ pub fn recordGlobalSubpxStats(
     frame_times: *FrameTimes,
 ) void {
     if (frame_times.global_subpx_stats) |*stats| {
-        const tiles_x = std.math.divCeil(
-            usize,
-            pixels_num[0],
-            actual_tile_size,
-        ) catch unreachable;
-        const tiles_y = std.math.divCeil(
-            usize,
-            pixels_num[1],
-            actual_tile_size,
-        ) catch unreachable;
+        const tiles_x = @divCeil(@as(usize, pixels_num[0]), actual_tile_size);
+        const tiles_y = @divCeil(@as(usize, pixels_num[1]), actual_tile_size);
         recordTilingStatsGlobBuff(tiling, tiles_x * tiles_y, stats);
     }
 }
@@ -170,17 +162,9 @@ pub fn recordGlobalSubpxStripeStats(
     frame_times: *FrameTimes,
 ) void {
     if (frame_times.global_subpx_stats) |*stats| {
-        const tiles_x = std.math.divCeil(
-            usize,
-            cam_w_px,
-            actual_tile_size,
-        ) catch unreachable;
+        const tiles_x = @divCeil(@as(usize, cam_w_px), actual_tile_size);
         const stripe_h_px = (core_suby_max - core_suby_min) / sub_samp;
-        const tiles_y = std.math.divCeil(
-            usize,
-            stripe_h_px,
-            actual_tile_size,
-        ) catch unreachable;
+        const tiles_y = @divCeil(stripe_h_px, actual_tile_size);
         recordTilingStatsGlobBuff(stripe_tiling, tiles_x * tiles_y, stats);
 
         stats.stripe_core_subpx = stripe_subpx;
@@ -377,8 +361,8 @@ pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
     dst.solver_calls += src.solver_calls;
     dst.total_solver_iters += src.total_solver_iters;
     dst.solver_diverged += src.solver_diverged;
-    inline for (std.meta.fields(CoherentStats)) |field| {
-        @field(dst.coherent, field.name) += @field(src.coherent, field.name);
+    inline for (@typeInfo(CoherentStats).@"struct".field_names) |field_name| {
+        @field(dst.coherent, field_name) += @field(src.coherent, field_name);
     }
     dst.tess_checks += src.tess_checks;
     dst.tess_passes += src.tess_passes;
@@ -455,9 +439,9 @@ pub fn ReportContext(comptime mode: rasterconfig.ReportMode) type {
             counts: CoherentStats,
         ) void {
             if (self.bench()) |bench_log| {
-                inline for (std.meta.fields(CoherentStats)) |field| {
-                    @field(bench_log.coherent, field.name) +=
-                        @field(counts, field.name);
+                inline for (@typeInfo(CoherentStats).@"struct".field_names) |field_name| {
+                    @field(bench_log.coherent, field_name) +=
+                        @field(counts, field_name);
                 }
             }
         }
@@ -606,8 +590,8 @@ pub fn standardReport(
         0;
 
     const conv_units: F = 1.0 / 1.0e6;
-    const print_break = [_]u8{'='} ** 80;
-    const print_break_inner = [_]u8{'-'} ** 80;
+    const print_break: [80]u8 = @splat('=');
+    const print_break_inner: [80]u8 = @splat('-');
 
     try writer.print("{s}\nRILEY TILE LOCAL RASTER: Frame {d}, Camera {d}\n{s}\n", .{
         print_break,
@@ -737,8 +721,8 @@ fn globalSubpxStandardReport(
     var buff: [4096]u8 = undefined;
     var stdout_writer = std.Io.File.stdout().writer(io, &buff);
     const writer = &stdout_writer.interface;
-    const stats_break = [_]u8{'='} ** 80;
-    const section_break = [_]u8{'-'} ** 80;
+    const stats_break: [80]u8 = @splat('=');
+    const section_break: [80]u8 = @splat('-');
     const conv: F = 1.0 / 1.0e6;
     const output_samples = @as(F, @floatFromInt(
         stats.output_w_subpx * stats.output_h_subpx,
@@ -958,7 +942,7 @@ pub fn printRenderSummary(
     var buff: [1024]u8 = undefined;
     var stdout_writer = std.Io.File.stdout().writer(io, &buff);
     const writer = &stdout_writer.interface;
-    const print_break = [_]u8{'='} ** 80;
+    const print_break: [80]u8 = @splat('=');
 
     try writer.print("{s}\nRILEY RASTER RENDER SUMMARY\n{s}\n", .{
         print_break,

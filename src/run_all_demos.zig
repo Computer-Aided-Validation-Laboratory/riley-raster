@@ -27,6 +27,9 @@ const demo09_diciruq = @import("demo09_diciruq.zig");
 const demo10_sphere_lit = @import("demo10_sphere_lit.zig");
 
 pub fn main(init: std.process.Init) !void {
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
+    if (args.len > 1) std.process.fatal("'run-all-demos' does not accept arguments; use 'zig build <demo-target> -- <args>'.", .{});
+
     try demo00_quickstart.main(init);
     try demo00b_procedural_quickstart.run(init, &.{});
     try demo01_sphere.main(init);

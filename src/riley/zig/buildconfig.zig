@@ -57,6 +57,7 @@ comptime {
     }
 }
 
+/// Riley's build-selected scalar floating-point type (`f32` or `f64`).
 pub const default_precision = switch (build_options.precision) {
     .f32 => f32,
     .f64 => f64,
@@ -71,7 +72,7 @@ pub const default_newton_solver_mode: NewtonSolverMode =
     @field(NewtonSolverMode, @tagName(build_options.newton_solver));
 pub const enable_all_evaluators = build_options.enable_all_evaluators;
 pub const speckle_mask_samples_per_cell: comptime_int =
-    @intFromEnum(build_options.speckle_mask_resolution);
+    @backingInt(build_options.speckle_mask_resolution);
 
 pub const config = configForPrecision(F);
 

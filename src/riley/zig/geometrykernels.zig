@@ -30,12 +30,21 @@ pub const TRI_CENTROID_ETA: F = 1.0 / 3.0;
 pub const QUAD_CENTROID_XI: F = 0.0;
 pub const QUAD_CENTROID_ETA: F = 0.0;
 
+/// Supported finite element topologies and their rasterisation variants.
+/// The selected type determines the expected number and ordering of nodes
+/// in each connectivity row.
 pub const MeshType = enum(u8) {
+    /// Three-node linear triangle.
     tri3 = 0,
+    /// Three-node linear triangle using the optimised triangle rasteriser.
     tri3opt = 1,
+    /// Six-node quadratic triangle.
     tri6 = 2,
+    /// Four-node bilinear quadrilateral.
     quad4 = 4,
+    /// Eight-node serendipity quadrilateral.
     quad8 = 5,
+    /// Nine-node biquadratic quadrilateral with a centre node.
     quad9 = 6,
 
     pub inline fn getNodesNum(self: MeshType) usize {
@@ -281,13 +290,13 @@ pub fn Tri3Kernel() type {
                     @as(
                         VecSU8,
                         @splat(
-                            @intFromEnum(newton.NewtonStatus.conv_resid),
+                            @backingInt(newton.NewtonStatus.conv_resid),
                         ),
                     ),
                     @as(
                         VecSU8,
                         @splat(
-                            @intFromEnum(newton.NewtonStatus.fail_dom),
+                            @backingInt(newton.NewtonStatus.fail_dom),
                         ),
                     ),
                 ),
@@ -539,13 +548,13 @@ pub fn Tri6Kernel() type {
                 .v_mask = res.v_conv,
                 .v_status = blk: {
                     const v_status_fail_iter_lim: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_iter_lim));
+                        @splat(@backingInt(newton.NewtonStatus.fail_iter_lim));
                     const v_status_fail_near_singular: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_near_singular));
+                        @splat(@backingInt(newton.NewtonStatus.fail_near_singular));
                     const v_status_conv_resid: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.conv_resid));
+                        @splat(@backingInt(newton.NewtonStatus.conv_resid));
                     const v_status_fail_dom: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_dom));
+                        @splat(@backingInt(newton.NewtonStatus.fail_dom));
                     const v_fail_dom = res.v_pre_dom_conv & !res.v_conv;
                     var v_status = v_status_fail_iter_lim;
                     v_status = @select(
@@ -746,13 +755,13 @@ pub fn Quad4Kernel() type {
                 .v_mask = res.v_conv,
                 .v_status = blk: {
                     const v_status_fail_iter_lim: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_iter_lim));
+                        @splat(@backingInt(newton.NewtonStatus.fail_iter_lim));
                     const v_status_fail_near_singular: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_near_singular));
+                        @splat(@backingInt(newton.NewtonStatus.fail_near_singular));
                     const v_status_conv_resid: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.conv_resid));
+                        @splat(@backingInt(newton.NewtonStatus.conv_resid));
                     const v_status_fail_dom: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_dom));
+                        @splat(@backingInt(newton.NewtonStatus.fail_dom));
                     const v_fail_dom = res.v_pre_dom_conv & !res.v_conv;
                     var v_status = v_status_fail_iter_lim;
                     v_status = @select(
@@ -952,13 +961,13 @@ pub fn Quad89Kernel(comptime N: usize) type {
                 .v_mask = res.v_conv,
                 .v_status = blk: {
                     const v_status_fail_iter_lim: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_iter_lim));
+                        @splat(@backingInt(newton.NewtonStatus.fail_iter_lim));
                     const v_status_fail_near_singular: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_near_singular));
+                        @splat(@backingInt(newton.NewtonStatus.fail_near_singular));
                     const v_status_conv_resid: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.conv_resid));
+                        @splat(@backingInt(newton.NewtonStatus.conv_resid));
                     const v_status_fail_dom: VecSU8 =
-                        @splat(@intFromEnum(newton.NewtonStatus.fail_dom));
+                        @splat(@backingInt(newton.NewtonStatus.fail_dom));
                     const v_fail_dom = res.v_pre_dom_conv & !res.v_conv;
                     var v_status = v_status_fail_iter_lim;
                     v_status = @select(

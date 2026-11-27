@@ -747,7 +747,7 @@ test "MeshHit shares selected geometry with scalar and SIMD stages" {
         .xi = 0.3,
         .eta = 0.5,
     };
-    var selection = meshhit.MeshHitSelection.initEmpty();
+    var selection = meshhit.MeshHitSelection.empty;
     const empty_hit = buff.completeHit(.raster, base, selection);
     try std.testing.expect(empty_hit.coords_ref == null);
     try std.testing.expect(empty_hit.coords_def == null);

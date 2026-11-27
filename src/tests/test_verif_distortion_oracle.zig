@@ -186,11 +186,11 @@ fn checkSIMDPoints(cases: anytype, points: anytype) !void {
             lane_count += 1;
         }
 
-        var ideal_x = [_]F{0.0} ** S;
-        var ideal_y = [_]F{0.0} ** S;
-        var observed_x = [_]F{0.0} ** S;
-        var observed_y = [_]F{0.0} ** S;
-        var active = [_]bool{false} ** S;
+        var ideal_x: [S]F = @splat(0.0);
+        var ideal_y: [S]F = @splat(0.0);
+        var observed_x: [S]F = @splat(0.0);
+        var observed_y: [S]F = @splat(0.0);
+        var active: [S]bool = @splat(false);
         for (0..lane_count) |lane| {
             const row_offset = (row_start + lane) * points_cols_num;
             const row = points.slice[row_offset..][0..points_cols_num];
@@ -424,9 +424,9 @@ fn checkBrownConPolyEquivalence() !void {
             tcfg.DISTORT_ORACLE_TOL.inv_abs_norm,
         );
 
-        var observed_x = [_]F{0.0} ** S;
-        var observed_y = [_]F{0.0} ** S;
-        var active = [_]bool{false} ** S;
+        var observed_x: [S]F = @splat(0.0);
+        var observed_y: [S]F = @splat(0.0);
+        var active: [S]bool = @splat(false);
         observed_x[0] = brown_ford.x;
         observed_y[0] = brown_ford.y;
         active[0] = true;

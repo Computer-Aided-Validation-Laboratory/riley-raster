@@ -14,7 +14,7 @@ pub const RenderGroup = struct {
     workers: u16,
 };
 
-/// Owns render-group groups and their backing I/O instances. Do not copy the
+/// Owns render groups and their backing I/O instances. Do not copy the
 /// owner or resize its storage. groups and I/O handles expire on deinit.
 /// The allocator must support concurrent allocation when rendering in parallel;
 /// it and the supplied process environment must outlive this owner.
@@ -108,7 +108,7 @@ test "render group budgets use all workers and distribute remainders evenly" {
         for (groups.groups, groups.managed_ios, case.expected) |spec, *managed_io, workers| {
             try std.testing.expectEqual(workers, spec.workers);
             try std.testing.expectEqual(managed_io.io().userdata, spec.io.userdata);
-            const concurrent_limit = @intFromEnum(managed_io.concurrent_limit);
+            const concurrent_limit = @backingInt(managed_io.concurrent_limit);
             try std.testing.expectEqual(@as(usize, workers - 1), concurrent_limit);
             try std.testing.expectEqual(managed_io.async_limit, managed_io.concurrent_limit);
             total += spec.workers;

@@ -17,6 +17,7 @@ const coverage = @import("specklecoverage.zig");
 const speckle = @import("speckleops.zig");
 const config = @import("speckleconfig.zig");
 
+/// Errors returned when validating procedural speckle pattern controls.
 pub const ValidationError = coverage.Error || speckle.PerlinControlError || speckle.ColorError || error{
     InvalidSpeckleCellSize,
     SpeckleColorsMustDiffer,
@@ -63,6 +64,7 @@ pub const Perlin2DParams = struct {
     background: F = 1,
 };
 
+/// Selects a procedural speckle pattern and its pattern-specific controls.
 pub const SpeckleParams = union(enum) {
     disk: Disk2DParams,
     gaussian: Gaussian2DParams,

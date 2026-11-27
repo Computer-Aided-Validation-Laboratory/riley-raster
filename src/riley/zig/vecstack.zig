@@ -13,7 +13,9 @@ const F = buildconfig.F;
 const sliceops = @import("sliceops.zig");
 
 const EType = buildconfig.F;
+/// Two-component vector using Riley's build-selected floating-point type.
 pub const Vec2F = Vec2T(EType);
+/// Three-component vector using Riley's build-selected floating-point type.
 pub const Vec3F = Vec3T(EType);
 pub const Vec2f = Vec2F;
 pub const Vec3f = Vec3F;
@@ -22,14 +24,16 @@ pub const Vec3f = Vec3F;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+/// Fixed-size vector of `T` with inline storage and no heap allocation.
 pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
     return struct {
+        /// Components in index order (`x`, `y`, `z`, `w` where present).
         vec: [elem_n]T,
 
         const Self: type = @This();
 
         pub fn initFill(fill_val: T) Self {
-            return .{ .vec = [_]T{fill_val} ** elem_n };
+            return .{ .vec = @as([elem_n]T, @splat(fill_val)) };
         }
 
         pub fn initOnes() Self {
@@ -104,6 +108,7 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
             return dot_prod;
         }
 
+        /// Return the squared Euclidean length; use `vecLen` for the length.
         pub fn norm(self: *const Self) T {
             var norm_out: T = 0;
             for (0..elem_n) |ii| {
@@ -153,10 +158,12 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
     };
 }
 
+/// Fixed-size two-component vector with element type `T`.
 pub fn Vec2T(comptime T: type) type {
     return VecStack(2, T);
 }
 
+/// Fixed-size three-component vector with element type `T`.
 pub fn Vec3T(comptime T: type) type {
     return VecStack(3, T);
 }
@@ -173,6 +180,7 @@ pub fn initVec3(comptime T: type, x_in: T, y_in: T, z_in: T) Vec3T(T) {
     };
 }
 
+/// Namespace for scalar cross products and signed orientation in 2D.
 pub const Vec2Ops = struct {
     pub fn cross2(comptime T: type, vec0: Vec2T(T), vec1: Vec2T(T)) T {
         return vec0.x() * vec1.y() - vec0.y() * vec1.x();
@@ -219,6 +227,7 @@ pub const Vec2SliceOps = struct {
     pub const insertSort = insertSortVec2;
 };
 
+/// Namespace for the 3D vector cross product.
 pub const Vec3Ops = struct {
     pub fn cross(comptime T: type, vec0: Vec3T(T), vec1: Vec3T(T)) Vec3T(T) {
         var vec_out: Vec3T(T) = undefined;

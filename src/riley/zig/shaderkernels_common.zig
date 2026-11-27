@@ -284,7 +284,7 @@ test "direct function hit completion shares world coordinates and normals" {
     var buf: shadertypes.LocalShaderBuff(N) = .{};
     buf.func_coords = .{ 1, 3, 5, 2, 4, 6, 7, 8, 9 };
     buf.normals = .{ 0, 0, 0, 0, 0, 0, 1, 0, 1 };
-    var selection = meshhit.MeshHitSelection.initEmpty();
+    var selection = meshhit.MeshHitSelection.empty;
     selection.insert(.coords_ref);
     selection.insert(.surf_norm);
     const shader = shadertypes.FuncPrepared{

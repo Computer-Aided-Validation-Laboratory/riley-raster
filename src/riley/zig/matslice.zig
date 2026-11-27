@@ -17,14 +17,18 @@ const csvio = @import("csvio.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+/// Dense row-major matrix of `T` with runtime dimensions. The storage is
+/// borrowed by `init`, or allocated for the caller by `initAlloc`.
 pub fn MatSlice(comptime T: type) type {
     return struct {
+        /// Contiguous row-major elements, with length `rows_num * cols_num`.
         slice: []T,
         rows_num: usize,
         cols_num: usize,
 
         const Self: type = @This();
 
+        /// Wrap caller-provided row-major storage without copying.
         pub fn init(slice: []T, rows_num: usize, cols_num: usize) Self {
             std.debug.assert(slice.len == (rows_num * cols_num));
 
@@ -35,6 +39,8 @@ pub fn MatSlice(comptime T: type) type {
             };
         }
 
+        /// Allocate uninitialised row-major storage. The caller frees `slice`
+        /// using `outer_alloc`.
         pub fn initAlloc(
             outer_alloc: std.mem.Allocator,
             rows_num: usize,
@@ -364,9 +370,9 @@ test "MatSlice.getSlice" {
         mat0.set(2, cc, 9);
     }
 
-    const exp0 = [_]TestType{0} ** 4;
-    const exp1 = [_]TestType{7} ** 4;
-    const exp2 = [_]TestType{9} ** 4;
+    const exp0: [4]TestType = @splat(0);
+    const exp1: [4]TestType = @splat(7);
+    const exp2: [4]TestType = @splat(9);
 
     const slice0 = mat0.getSlice(0);
     const slice1 = mat0.getSlice(1);
@@ -615,7 +621,7 @@ test "MatSliceOps.mulVec" {
     var v1 = [_]TestType{ 10, 28, 46 };
     const vec_exp = vecslice.VecSlice(TestType).init(&v1);
 
-    var v_out = [_]TestType{0} ** 3;
+    var v_out: [3]TestType = @splat(0);
     var vec_out = vecslice.VecSlice(TestType).init(&v_out);
 
     MatSliceOps(TestType).mulVec(&mat0, &vec0, &vec_out);
@@ -630,7 +636,7 @@ test "MatSliceOps.mulMat" {
     var m1 = [_]TestType{ 3, 1, 1, 1, 3, 1, 1, 1, 3 };
     const mat1 = MatSlice(TestType).init(&m1, 3, 3);
 
-    var m2 = [_]TestType{0} ** 9;
+    var m2: [9]TestType = @splat(0);
     var mat_out = MatSlice(TestType).init(&m2, 3, 3);
 
     var m3 = [_]TestType{ 8, 10, 12, 23, 25, 27, 38, 40, 42 };

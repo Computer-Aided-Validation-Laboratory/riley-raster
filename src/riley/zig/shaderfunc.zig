@@ -21,6 +21,8 @@ const shaderfill = @import("shaderfill.zig");
 // Coordinate Modes & Builtins
 // --------------------------------------------------------------------------------------
 
+/// Selects UV, element parametric, reference-world, or deformed-world coordinates for a
+/// function shader.
 pub const FuncCoordMode = enum {
     uv,
     para,
@@ -28,6 +30,7 @@ pub const FuncCoordMode = enum {
     world_deformed,
 };
 
+/// Available built-in functions for analytic shader patterns and normal-based shading.
 pub const FuncShaderBuiltin = enum {
     constant,
     linear,
@@ -60,11 +63,14 @@ pub const FuncCoordSIMD = struct {
 // Function Shader Parameters
 // --------------------------------------------------------------------------------------
 
+/// Constant output values for scalar and RGB function shaders.
 pub const ConstantParams = struct {
     value: F = 0.5,
     value_rgb: [3]F = .{ 0.2, 0.5, 0.8 },
 };
 
+/// Linear coefficients ordered as constant, first coordinate, and second coordinate; RGB
+/// has one set per channel.
 pub const LinearParams = struct {
     coeffs: [3]F = .{ 0.5, 0.25, 0.2 },
     coeffs_rgb: [3][3]F = .{
@@ -74,6 +80,8 @@ pub const LinearParams = struct {
     },
 };
 
+/// Coefficients for `1, a, b, a², a*b, b²`, where `a` and `b` are the
+/// first and second coordinates. RGB has one set per channel.
 pub const QuadraticParams = struct {
     coeffs: [6]F = .{ 0.35, 0.2, 0.15, 0.1, -0.08, 0.06 },
     coeffs_rgb: [3][6]F = .{
@@ -83,6 +91,7 @@ pub const QuadraticParams = struct {
     },
 };
 
+/// Wave numbers, biases, and amplitudes shared by exact and approximate sinusoidal shaders.
 pub const SinusoidalParams = struct {
     wave_num_scalar: [2]F = .{ 6.0, 5.0 },
     wave_num_rgb: [3]F = .{ 6.0, 6.0, 4.0 },
@@ -92,6 +101,7 @@ pub const SinusoidalParams = struct {
     amplitudes_rgb: [3]F = .{ 0.25, 0.25, 0.2 },
 };
 
+/// Alternating scalar levels or RGB colour triplets for a checker pattern.
 pub const CheckerParams = struct {
     levels: [2]F = .{ 0.0, 1.0 },
     levels_rgb: [2][3]F = .{
@@ -100,10 +110,12 @@ pub const CheckerParams = struct {
     },
 };
 
+/// Frequency control for the smooth checker pattern.
 pub const CheckerSmoothParams = struct {
     frequency: F = 8.0,
 };
 
+/// Bias and normal-z gain for scalar or per-channel RGB normal shading.
 pub const LambertianParams = struct {
     coeffs: [2]F = .{ 0.5, 0.5 },
     coeffs_rgb: [3][2]F = .{
@@ -113,6 +125,7 @@ pub const LambertianParams = struct {
     },
 };
 
+/// Mean, contrast, per-axis pitch, and phase of the eggbox pattern.
 pub const EggboxParams = struct {
     mean: F = 0.5,
     contrast: F = 0.4,
@@ -120,9 +133,12 @@ pub const EggboxParams = struct {
     phase: [2]F = .{ 0.0, 0.0 },
 };
 
+/// Coordinate scale and offset plus settings for the selected built-in function.
 pub const FuncShaderParams = struct {
+    /// Per-axis multiplier applied to the input coordinates before adding `coord_offset`.
     coord_scale: [2]F = .{ 1.0, 1.0 },
     coord_offset: [2]F = .{ 0.0, 0.0 },
+    /// Set the tag to the selected built-in to override its defaults.
     settings: union(FuncShaderBuiltin) {
         constant: ConstantParams,
         linear: LinearParams,

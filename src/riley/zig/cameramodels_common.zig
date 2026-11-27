@@ -20,16 +20,19 @@ const tol = cfg.tol;
 // Brown Conrady
 // --------------------------------------------------------------------------------------
 
+/// A point in the 2D distortion model's coordinate space.
 pub const DistortCoords = struct {
     x: F,
     y: F,
 };
 
+/// Forward-distorted coordinates and their Jacobian with respect to the input coordinates.
 pub const DistortFordJacResult = struct {
     coords: DistortCoords,
     jac: matstack.Mat22F,
 };
 
+/// Brown–Conrady distortion coefficients: three radial terms and two tangential terms.
 pub const BrownConParams = struct {
     k1: F = 0,
     k2: F = 0,
@@ -76,6 +79,8 @@ pub const BrownCon = struct {
     }
 };
 
+/// Extended Brown–Conrady coefficients for rational radial, tangential, thin-prism, and
+/// sensor-tilt distortion.
 pub const BrownConExtParams = struct {
     k1: F = 0,
     k2: F = 0,
@@ -89,7 +94,9 @@ pub const BrownConExtParams = struct {
     s2: F = 0,
     s3: F = 0,
     s4: F = 0,
+    /// Sensor tilt about the x axis, in radians.
     tau_x: F = 0,
+    /// Sensor tilt about the y axis, in radians.
     tau_y: F = 0,
 };
 
@@ -268,6 +275,8 @@ fn applyHomography(matrix: matstack.Mat33F, x: F, y: F) !TiltResult {
 // --------------------------------------------------------------------------------------
 
 pub const POLY_MAX_DEGREE: u8 = 7;
+/// Interpret polynomial outputs as mapped coordinates or as displacements added to the
+/// input.
 pub const PolyMode = enum(u8) { coordinate = 0, displacement = 1 };
 pub const PolyPowers = struct { px: u8, py: u8 };
 
@@ -290,13 +299,17 @@ fn generatePolyPowers() [polyTermCount(POLY_MAX_DEGREE)]PolyPowers {
 }
 
 pub const poly_powers = generatePolyPowers();
-const identity_poly_coeffs = [_]F{0} ** 6;
+const identity_poly_coeffs: [6]F = @splat(0);
 
+/// Bivariate distortion polynomial on normalized sensor coordinates. Terms are ordered by
+/// increasing total degree, then increasing y exponent within each degree.
 pub const PolyMap = struct {
+    /// The map itself is its input parameter record.
     pub const Params = @This();
     degree: u8 = 1,
     mode: PolyMode = .displacement,
-    /// Borrowed immutable row-major [term_count, 2] coefficients.
+    /// Borrowed row-major coefficients of shape `[term_count][2]`,
+    /// with the `x` output coefficient followed by `y` for each term.
     /// Caller storage must remain alive and unchanged until all workers finish.
     coeffs: []const F = &identity_poly_coeffs,
 
@@ -395,6 +408,7 @@ pub fn evalPoly(
     return .{ .x = out.x, .y = out.y, .xx = out.xx, .xy = out.xy, .yx = out.yx, .yy = out.yy };
 }
 
+/// Composite distortion that applies standard Brown–Conrady first, then a polynomial map.
 pub const BrownConPoly = struct {
     brown_con: BrownCon.Params = .{},
     poly: PolyMap = .{},
@@ -424,6 +438,7 @@ pub const BrownConPoly = struct {
     }
 };
 
+/// Coefficients for extended Brown–Conrady distortion followed by a polynomial map.
 pub const BrownConExtPolyParams = struct {
     brown_con_ext: BrownConExt.Params = .{},
     poly: PolyMap = .{},
@@ -470,6 +485,7 @@ pub const BrownConExtPoly = struct {
 // Distortion Unions
 // --------------------------------------------------------------------------------------
 
+/// Selects lens distortion and its coefficients; `.none` leaves coordinates unchanged.
 pub const DistortParams = union(enum) {
     none,
     brown_con: BrownCon.Params,
@@ -527,16 +543,20 @@ pub const DistortModel = union(enum) {
 // Point Spread Func
 // --------------------------------------------------------------------------------------
 
+/// Selects independent horizontal and vertical filtering instead of a two-dimensional
+/// kernel.
 pub const SeparablePSF = enum {
     no,
     yes,
 };
 
+/// Uniform box filter with a support radius in sensor pixels.
 pub const PixelBoxPSF = struct {
     supp_rad_px: F = 0.5,
     halo_px_override: ?u16 = null,
 };
 
+/// Isotropic Gaussian filter with standard deviation and support radius in sensor pixels.
 pub const GaussianPSF = struct {
     sigma_px: F,
     supp_rad_px: F,
@@ -544,6 +564,8 @@ pub const GaussianPSF = struct {
     halo_px_override: ?u16 = null,
 };
 
+/// Gaussian filter with two principal-axis standard deviations in pixels and an orientation
+/// in radians.
 pub const AnisotropicGaussianPSF = struct {
     sigma_x_px: F,
     sigma_y_px: F,
@@ -553,6 +575,7 @@ pub const AnisotropicGaussianPSF = struct {
     halo_px_override: ?u16 = null,
 };
 
+/// Camera filter used to combine subpixel samples into output pixels.
 pub const PointSpreadFunc = union(enum) {
     pixel_box: PixelBoxPSF,
     gaussian: GaussianPSF,
@@ -1070,7 +1093,7 @@ test "polynomial table ordering and checked construction" {
     );
     try std.testing.expectError(
         error.InvalidPolyCoeffCount,
-        PolyMap.init(1, .coordinate, &([_]F{0} ** 8)),
+        PolyMap.init(1, .coordinate, &(@as([8]F, @splat(0)))),
     );
     for ([_]F{ std.math.nan(F), std.math.inf(F), -std.math.inf(F) }) |invalid| {
         try std.testing.expectError(
@@ -1122,7 +1145,7 @@ test "degree seven polynomial matches BC and polynomial BCExt subset" {
     const inv_allowed: F = if (F == f32) 3e-5 else 1e-9;
     for (cases) |case| {
         const p = case.brown;
-        var coeffs = [_]F{0} ** 72;
+        var coeffs: [72]F = @splat(0);
         // Independent, explicit binomial expansion in the documented term order.
         coeffs[2 * 3] = 3 * p.p2 + p.s1;
         coeffs[2 * 3 + 1] = p.p1 + p.s3;

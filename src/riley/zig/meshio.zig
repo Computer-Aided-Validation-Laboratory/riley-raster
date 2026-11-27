@@ -94,6 +94,7 @@ pub fn getFieldTimeN(csv_lines: *const std.ArrayList([]const u8)) usize {
     return time_n;
 }
 
+/// Read CSV `[node][frame]` values into component `field_n` of `Field`.
 pub fn parseField(
     csv_lines: *const std.ArrayList([]const u8),
     field: *fieldtypes.Field,
@@ -127,13 +128,24 @@ const default_field_files = &[_][]const u8{
     "field_disp_z.csv",
 };
 
+/// CSV file suffixes appended directly to each directory prefix by
+/// `loadMultiSimData`. Include any needed trailing separator in the prefix.
 pub const SimDataFiles = struct {
+    /// Suffix for the reference node coordinates CSV.
     coord_file: []const u8 = "coords.csv",
+    /// Suffix for the element connectivity CSV.
     connect_file: []const u8 = "connectivity.csv",
+    /// One suffix per field component, in component order. Set to `null` or
+    /// an empty list to omit the field.
     field_files: ?[]const []const u8 = default_field_files,
+    /// One suffix per displacement component, in component order. Set to
+    /// `null` or an empty list to omit displacements.
     disp_files: ?[]const []const u8 = default_field_files,
 };
 
+/// An owned mesh dataset loaded from CSV: reference coordinates, element
+/// connectivity, and optional time-varying nodal fields and displacements.
+/// Release the dataset with `deinit`.
 pub const SimData = struct {
     coords: meshtypes.Coords,
     connect: meshtypes.Connect,
@@ -148,6 +160,8 @@ pub const SimData = struct {
     }
 };
 
+/// Load an owned `SimData`. Each entry of `field_paths` or `disp_paths`
+/// supplies one `Field` component, in the given path order.
 pub fn loadSimData(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -222,6 +236,7 @@ pub fn loadSimData(
     };
 }
 
+/// Load one `SimData` per directory prefix, preserving `dir_paths` order.
 pub fn loadMultiSimData(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -238,29 +253,17 @@ pub fn loadMultiSimData(
     }
 
     for (dir_paths, 0..) |dir_path, ii| {
-        const path_coords = try std.fmt.allocPrint(
-            outer_alloc,
-            "{s}{s}",
-            .{ dir_path, files.coord_file },
-        );
+        const path_coords = try outer_alloc.print("{s}{s}", .{ dir_path, files.coord_file });
         defer outer_alloc.free(path_coords);
 
-        const path_connect = try std.fmt.allocPrint(
-            outer_alloc,
-            "{s}{s}",
-            .{ dir_path, files.connect_file },
-        );
+        const path_connect = try outer_alloc.print("{s}{s}", .{ dir_path, files.connect_file });
         defer outer_alloc.free(path_connect);
 
         var field_paths: ?[][]const u8 = null;
         if (files.field_files) |ff| {
             field_paths = try outer_alloc.alloc([]const u8, ff.len);
             for (ff, 0..) |suffix, jj| {
-                field_paths.?[jj] = try std.fmt.allocPrint(
-                    outer_alloc,
-                    "{s}{s}",
-                    .{ dir_path, suffix },
-                );
+                field_paths.?[jj] = try outer_alloc.print("{s}{s}", .{ dir_path, suffix });
             }
         }
         defer if (field_paths) |fp| {
@@ -272,11 +275,7 @@ pub fn loadMultiSimData(
         if (files.disp_files) |df| {
             disp_paths = try outer_alloc.alloc([]const u8, df.len);
             for (df, 0..) |suffix, jj| {
-                disp_paths.?[jj] = try std.fmt.allocPrint(
-                    outer_alloc,
-                    "{s}{s}",
-                    .{ dir_path, suffix },
-                );
+                disp_paths.?[jj] = try outer_alloc.print("{s}{s}", .{ dir_path, suffix });
             }
         }
         defer if (disp_paths) |dp| {

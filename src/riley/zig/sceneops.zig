@@ -19,61 +19,94 @@ const F = buildconfig.F;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+/// Location on one axis of an axis-aligned bounding box: the lower edge,
+/// midpoint, or upper edge.
 pub const AxisAnchor = enum {
     min,
     center,
     max,
 };
 
+/// Axis-aligned 3D bounds, with each quantity ordered `[x, y, z]`.
 pub const Bounds3D = struct {
     min: [3]F,
     max: [3]F,
+    /// Midpoint between `min` and `max` on each axis.
     center: [3]F,
+    /// Full width (`max - min`) on each axis.
     extent: [3]F,
 };
 
+/// Contiguous range of meshes starting at `mesh_start`, with `mesh_len`
+/// entries.
 pub const MeshGroupSpan = struct {
     mesh_start: usize,
     mesh_len: usize,
 };
 
+/// Selection of meshes used as a unit by scene operations. Indices refer
+/// to the mesh collection passed to the operation.
 pub const MeshGroup = union(enum) {
+    /// Select a contiguous run of mesh indices.
     span: MeshGroupSpan,
+    /// Borrow an explicit list of mesh indices in traversal order.
     indices: []const usize,
 };
 
+/// Parameters for arranging mesh or mesh-group bounding box centres on an
+/// axis-aligned grid. X advances first, then Y, then Z.
 pub const GridSpec = struct {
+    /// Per-axis spacing added to the largest bounding box extent on that axis.
     gap: [3]F,
+    /// Grid division counts in `[x, y, z]` order. X and Y must be nonzero
+    /// and control wrapping; the current arrangement does not cap Z.
     max_divs: [3]usize,
 };
 
+/// Side of the fixed bounds centre on which to place the moving centre.
 pub const OverlapDirection = enum {
+    /// Use the negative side of the axis.
     negative,
+    /// Keep the current side; choose positive if the centres coincide on this axis.
     current,
+    /// Use the positive side of the axis.
     positive,
 };
 
+/// Per-axis placement rules for overlapping a moving mesh group with a
+/// fixed mesh group. All arrays are ordered `[x, y, z]`.
 pub const BoundsOverlapSpec = struct {
+    /// Target overlap as a fraction of the smaller bounds extent on each axis.
     overlap_frac: [3]F,
+    /// Axes on which to compute overlap-based placement.
     enabled_axes: [3]bool = .{ true, true, true },
+    /// Side on which to place the moving group on each enabled axis.
     direction: [3]OverlapDirection = .{
         .current,
         .current,
         .current,
     },
+    /// Additional translation applied on all axes, including disabled axes.
     extra_offset: [3]F = .{ 0.0, 0.0, 0.0 },
 };
 
+/// Axis normal to the plane of a radial arrangement.
 pub const RadialAxis = enum {
     x,
     y,
     z,
 };
 
+/// Parameters for placing mesh or mesh-group bounding box centres at
+/// equal angular intervals around a circle.
 pub const RadialSpec = struct {
+    /// Circle centre in `[x, y, z]` order.
     center: [3]F,
+    /// Distance from the circle centre to each placement point.
     radius: F,
     axis: RadialAxis = .z,
+    /// Angle of the first placement, in radians. Zero starts along +Y for
+    /// `.x` and +X for `.y` or `.z`.
     angle_offset_rad: F = 0.0,
 };
 
@@ -119,8 +152,8 @@ pub fn selectEvenlySpacedFrameIndices(
     return indices;
 }
 
-/// Copy selected frames, in the requested order, into a separately owned field.
-/// The caller must deinit the returned field with outer_alloc.
+/// Copy selected `Field` frames in `frame_indices` order, preserving node
+/// and component order. Deinit the returned field with `outer_alloc`.
 pub fn selectFieldFrames(
     outer_alloc: std.mem.Allocator,
     field: *const fieldtypes.Field,

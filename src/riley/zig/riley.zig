@@ -47,8 +47,10 @@ const F = buildconfig.F;
 pub const RasterAdvancedOptions = struct {
     render_groups: union(enum) {
         from_config,
+        /// Borrow caller-owned groups, which must stay valid until rendering returns.
         supplied: []const rendergroups.RenderGroup,
     } = .from_config,
+    /// Optional benchmark destination in frame-major, camera-minor order.
     bench_capture: ?[]report.FrameBenchCapture = null,
 };
 
@@ -56,6 +58,9 @@ pub const RasterAdvancedOptions = struct {
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
+/// Render the scene and return an image batch shaped by `calcAllFramesImageDims`
+/// for `.memory` or `.both`; otherwise return `null`. The caller frees the
+/// returned `slice` and calls `deinit` with `outer_alloc`.
 pub fn raster(
     outer_alloc: std.mem.Allocator,
     user_io: std.Io,
@@ -75,6 +80,8 @@ pub fn raster(
     );
 }
 
+/// Render into caller-owned `images_arr` with the shape from
+/// `calcAllFramesImageDims`. Supply it for `.memory` or `.both`, otherwise pass `null`.
 pub fn rasterInto(
     outer_alloc: std.mem.Allocator,
     user_io: std.Io,
@@ -238,6 +245,8 @@ pub fn getThreadedIo(
     });
 }
 
+/// Return the image batch shape `[camera][frame][channel][row][column]`.
+/// Cameras follow input order; channel, row and column extents are their scene-wide maxima.
 pub fn calcAllFramesImageDims(
     cam_inps: []const cameratypes.CameraInput,
     meshes: []const meshtypes.MeshInput,
@@ -581,11 +590,7 @@ fn processOfflineRenderGroupLoop(
     );
     defer save_overlap.deinit(shared.outer_alloc);
 
-    const max_batches = std.math.divCeil(
-        usize,
-        jobs_num,
-        shared.batch_size,
-    ) catch unreachable;
+    const max_batches = @divCeil(jobs_num, shared.batch_size);
     for (0..max_batches) |_| {
         const batch_start = shared.next_job.fetchAdd(
             shared.batch_size,
@@ -744,11 +749,7 @@ fn processInOrderRenderGroupLoop(
     );
     defer save_overlap.deinit(shared.outer_alloc);
 
-    const max_camera_batches = std.math.divCeil(
-        usize,
-        shared.cameras.len,
-        shared.batch_size,
-    ) catch unreachable;
+    const max_camera_batches = @divCeil(shared.cameras.len, shared.batch_size);
     for (0..max_camera_batches) |_| {
         const batch_start_camera = shared.next_camera.fetchAdd(
             shared.batch_size,
@@ -1341,7 +1342,7 @@ fn createMeshStaticSliceFromInput(
 ) ![]meshtypes.MeshStatic {
     const mesh_static = try allocator.alloc(meshtypes.MeshStatic, meshes.len);
 
-    var active_roles = shadertypes.ActiveShaderRoles.initEmpty();
+    var active_roles = shadertypes.ActiveShaderRoles.empty;
     for (cameras) |camera| {
         active_roles.insert(std.meta.activeTag(camera.render_format));
     }

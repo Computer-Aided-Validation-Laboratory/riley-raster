@@ -91,16 +91,16 @@ def _verify_coords(coords: np.ndarray) -> np.ndarray:
 
 
 class ESceneOverlapDirect(Enum):
-    """Direction for bounding box separation during overlap operations.
+    """Which side of the fixed bounds to place the moving bounds on.
 
-    Members
-    -------
-    NEGATIVE
-        Move in the negative coordinate direction along the axis.
-    CURRENT
-        Preserve the current relative sign of separation.
-    POSITIVE
-        Move in the positive coordinate direction along the axis.
+    Attributes
+    ----------
+    NEGATIVE : ESceneOverlapDirect
+        Place on the negative side of the fixed center.
+    CURRENT : ESceneOverlapDirect
+        Keep the current side; choose the positive side if centers coincide.
+    POSITIVE : ESceneOverlapDirect
+        Place on the positive side of the fixed center.
     """
 
     NEGATIVE = "negative"
@@ -110,22 +110,20 @@ class ESceneOverlapDirect(Enum):
 
 @dataclass(slots=True)
 class SceneBounds3D:
-    """Axis-aligned 3D bounding box extents for geometry.
+    """Axis-aligned 3D bounding box.
+
+    All arrays have shape ``(3,)`` and dtype ``np.float64``, in XYZ order.
 
     Attributes
     ----------
     minimum : numpy.ndarray
-        Lower spatial bounds `(x_min, y_min, z_min)` of shape `(3,)` and
-        dtype `np.float64`.
+        Lower coordinate on each axis.
     maximum : numpy.ndarray
-        Upper spatial bounds `(x_max, y_max, z_max)` of shape `(3,)` and
-        dtype `np.float64`.
+        Upper coordinate on each axis.
     center : numpy.ndarray
-        Midpoint center coordinates `(xc, yc, zc)` of shape `(3,)` and
-        dtype `np.float64`.
+        Midpoint between ``minimum`` and ``maximum`` on each axis.
     extent : numpy.ndarray
-        Total span dimensions `(dx, dy, dz)` of shape `(3,)` and
-        dtype `np.float64`.
+        Span from ``minimum`` to ``maximum`` on each axis.
     """
 
     minimum: np.ndarray
@@ -136,7 +134,7 @@ class SceneBounds3D:
 
 @dataclass(frozen=True, slots=True)
 class SceneMeshGroup:
-    """Contiguous slice of meshes in a scene coordinate list.
+    """Contiguous range of mesh indices in a scene coordinate list.
 
     Attributes
     ----------
@@ -157,9 +155,11 @@ class SceneGridSpec:
     Attributes
     ----------
     gap : tuple of float
-        Spacing gap `(gx, gy, gz)` added between adjacent cell extents.
+        Per-axis gap ``(gx, gy, gz)`` added to the largest group extent
+        along that axis to set the distance between cell centers.
     max_divs : tuple of int
-        Maximum number of cell divisions `(nx, ny, nz)` along each axis.
+        Positive cell counts ``(nx, ny, nz)``. Cells fill along X first, then
+        Y, then Z.
     """
 
     gap: tuple[float, float, float]
@@ -168,18 +168,21 @@ class SceneGridSpec:
 
 @dataclass(frozen=True, slots=True)
 class SceneBoundsOverlapSpec:
-    """Configuration for positioning a moving mesh group relative to fixed.
+    """Configuration for positioning moving bounds relative to fixed bounds.
+
+    Each tuple contains one value per axis, in XYZ order.
 
     Attributes
     ----------
     overlap_frac : tuple of float
-        Fraction of overlap `(fx, fy, fz)` in `[0.0, 1.0]` along each axis.
+        Desired overlap as a fraction of the smaller bounds extent on each
+        axis, from ``0`` (touching) to ``1`` (full overlap of that extent).
     enabled_axes : tuple of bool, default=(True, True, True)
-        Whether overlap adjustment is active on `(x, y, z)` axes.
+        Whether overlap adjustment is active on each axis.
     direct : tuple of ESceneOverlapDirect, default=(CURRENT, CURRENT, CURRENT)
         Direction policy for placing the moving group relative to fixed.
     extra_offset : tuple of float, default=(0.0, 0.0, 0.0)
-        Additional spatial translation offset `(ox, oy, oz)` applied.
+        Additional XYZ translation, applied even on disabled axes.
     """
 
     overlap_frac: tuple[float, float, float]
@@ -507,7 +510,8 @@ def scene_overlap_mesh_group_bounds(
     Parameters
     ----------
     coords_list : collections.abc.Sequence of numpy.ndarray
-        Sequence of coordinate arrays modified in-place.
+        One coordinate array per mesh, each of shape ``(N_i, 3)`` with
+        one ``(x, y, z)`` row per node. Moving meshes are modified in-place.
     fixed_group : SceneMeshGroup
         Stationary mesh group reference.
     moving_group : SceneMeshGroup
@@ -571,7 +575,8 @@ def scene_arrange_mesh_groups_grid(
     Parameters
     ----------
     coords_list : collections.abc.Sequence of numpy.ndarray
-        Sequence of coordinate arrays modified in-place.
+        One coordinate array per mesh, each of shape ``(N_i, 3)`` with
+        one ``(x, y, z)`` row per node. Arranged meshes are modified in-place.
     groups : collections.abc.Sequence of SceneMeshGroup
         Mesh groups to position.
     spec : SceneGridSpec

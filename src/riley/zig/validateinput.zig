@@ -409,7 +409,7 @@ fn checkMeshesMetadata(
         if (shaders.multifield_pipe) |pipe| {
             // Full validation scans all supplied sources, even when no camera uses this pipe.
             const written = try checkPipeStageMetadata(pipe, mesh.coords.mat.rows_num);
-            var checked_channels = [_]bool{false} ** (max_channels + 1);
+            var checked_channels: [(max_channels + 1)]bool = @splat(false);
             for (cam_inps) |camera| {
                 if (camera.render_format != .multifield) continue;
                 const channels = camera.render_format.multifield;
@@ -1148,7 +1148,7 @@ test "pipe metadata validates every distinct requested multifield channel count"
             .resolver = .{ .identity = &.{ch0} },
         } },
     }};
-    var cameras = [_]cameratypes.CameraInput{.{
+    var cameras: [3]cameratypes.CameraInput = @splat(.{
         .pixels_num = .{ 16, 16 },
         .pixels_size = .{ 1, 1 },
         .pos_world = .initSlice(&.{ 0, 0, 1 }),
@@ -1156,7 +1156,7 @@ test "pipe metadata validates every distinct requested multifield channel count"
         .roi_cent_world = .initSlice(&.{ 0, 0, 0 }),
         .focal_length = 1,
         .sub_sample = 1,
-    }} ** 3;
+    });
     for (&cameras) |*camera| camera.render_format = .{ .multifield = 1 };
     try checkMeshesMetadata(&meshes, &cameras);
     try checkPipeCompatibility(&cameras, &meshes);

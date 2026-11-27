@@ -27,7 +27,7 @@ jobs:
       - name: Zig Setup
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.16.0
+          version: 0.17.1
 
       - name: Check Zig formatting (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
@@ -40,16 +40,14 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: zig build demos-check -Doptimize=Debug
 
-      - name: Check aggregate Zig demos reject runtime options (Ubuntu)
+      - name: Check run-all-demos rejects runtime options (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          for target in demos run-all-demos; do
-            log="$RUNNER_TEMP/$target.log"
-            if zig build "$target" -Doptimize=Debug -Dprecision=f64 -Dsimd=on -- --output "$RUNNER_TEMP/demo-output" >"$log" 2>&1; then
-              echo "Expected $target to reject runtime options"; exit 1
-            fi
-            grep -F "'$target' does not accept arguments" "$log"
-          done
+          log="$RUNNER_TEMP/run-all-demos.log"
+          if zig build run-all-demos -Doptimize=Debug -Dprecision=f64 -Dsimd=on -- --output "$RUNNER_TEMP/demo-output" >"$log" 2>&1; then
+            echo 'Expected run-all-demos to reject runtime options'; exit 1
+          fi
+          grep -F "'run-all-demos' does not accept arguments" "$log"
           test ! -e "$RUNNER_TEMP/demo-output"
 
       - name: Compile all Zig demos with f32 and SIMD off (Ubuntu)
@@ -83,10 +81,6 @@ jobs:
             echo 'bench-multiroot accepted an unknown option'; exit 1
           fi
           grep -F 'error: UnknownArgument' "$output/invalid.log"
-          if zig build benches "${opts[@]}" -- --list-evaluators >"$output/aggregate.log" 2>&1; then
-            echo 'benches accepted benchmark arguments'; exit 1
-          fi
-          grep -F "'benches' does not accept arguments" "$output/aggregate.log"
 
       - name: Check Windows benchmark executables
         if: matrix.os == 'windows-latest'

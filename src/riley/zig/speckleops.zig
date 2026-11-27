@@ -592,9 +592,12 @@ fn samplePerlinSIMD(u: VecSF, v: VecSF, active: VecSB, lattice: PerlinLattice2D)
     const y = @max(zero, @min(one, v)) * @as(VecSF, @splat(lattice.params.cells_per_uv[1]));
     const cx = @floor(x);
     const cy = @floor(y);
+    // Widen before extracting lanes: Zig 0.17.1 can miscompile direct bool-vector
+    // indexing when the mask is passed on the stack (stripped x86 Debug).
+    const active_lanes: @Vector(S, u8) = @intFromBool(active);
     var ids: [4]@Vector(S, u8) = .{ @splat(0), @splat(0), @splat(0), @splat(0) };
     inline for (0..S) |lane| {
-        if (active[lane]) {
+        if (active_lanes[lane] != 0) {
             const corners = perlinCornerIDs(lattice, @intFromFloat(cx[lane]), @intFromFloat(cy[lane]));
             inline for (0..4) |i| ids[i][lane] = corners[i];
         }
@@ -806,7 +809,7 @@ const ClassifiedBinned = struct {
         var covered = active & ((flags & @as(Flags, @splat(1))) != @as(Flags, @splat(0)));
         const ambiguous = active & ((flags & @as(Flags, @splat(0x1_0000_0000))) != @as(Flags, @splat(0)));
         if (@reduce(.Or, ambiguous)) {
-            const Bits = std.meta.Int(.unsigned, S);
+            const Bits = @Int(.unsigned, S);
             const first: usize = @ctz(@as(Bits, @bitCast(ambiguous)));
             const cell = cells[first];
             var coherent = true;
@@ -853,7 +856,7 @@ const ClassifiedBinned = struct {
 
     inline fn groupHits(px: VecSF, py: VecSF, cells: [S]usize, ambiguous: VecSB, data: *const Data) VecSB {
         const V = VecSF;
-        const Bits = std.meta.Int(.unsigned, S);
+        const Bits = @Int(.unsigned, S);
         var remaining: Bits = @bitCast(ambiguous);
         var hits: @Vector(S, bool) = @splat(false);
         while (remaining != 0) {
@@ -878,7 +881,7 @@ const ClassifiedBinned = struct {
 fn Implementation(comptime config: speckleconfig.Config) type {
     return struct {
         const speckle_shape = config.pattern() orelse .disk;
-        const speckle_neighbor_count = @intFromEnum(config.neighborhood() orelse speckleconfig.Neighborhood.nine);
+        const speckle_neighbor_count = @backingInt(config.neighborhood() orelse speckleconfig.Neighborhood.nine);
         const evaluator = std.meta.activeTag(config);
         const configured_soft_edges = config.edges() == .soft;
 
@@ -2404,7 +2407,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             const sample: [S]bool = v_mask_active;
             const cell_x: [S]isize = v_cell_x;
             const cell_y: [S]isize = v_cell_y;
-            var state_values = [_]u16{0} ** S;
+            var state_values: [S]u16 = @splat(0);
             // Clamping keeps every lane's load in bounds; inactive lanes never evaluate candidates.
             inline for (0..S) |lane| {
                 const x: usize = @intCast(cell_x[lane]);
@@ -2460,7 +2463,7 @@ fn Implementation(comptime config: speckleconfig.Config) type {
             const sample: [S]bool = v_mask_active;
             const cell_x: [S]isize = v_cell_x;
             const cell_y: [S]isize = v_cell_y;
-            var descriptors = [_]u64{0} ** S;
+            var descriptors: [S]u64 = @splat(0);
             inline for (0..S) |lane| {
                 if (sample[lane]) {
                     descriptors[lane] = direct.cells[directFixedSpeckleCellIndex(direct.*, cell_x[lane], cell_y[lane])];
@@ -2679,9 +2682,7 @@ test "exact Perlin all 4096 corner combinations preserve analytic arithmetic" {
                     const coverage = PerlinReference.perlinCoverage(noise, params);
                     const expected = params.background + coverage * (params.foreground - params.background);
                     try std.testing.expectEqual(expected, perlinAnalytic(F, p[0], p[1], ids, params));
-                    // Zig 0.16's AArch64 Debug codegen can broadcast ids[0] for every corner in a literal.
-                    var vector_ids: [4]@Vector(S, u8) = undefined;
-                    for (ids, &vector_ids) |id, *corner| corner.* = @splat(id);
+                    const vector_ids = [4]@Vector(S, u8){ @splat(ids[0]), @splat(ids[1]), @splat(ids[2]), @splat(ids[3]) };
                     const actual: [S]F = perlinAnalytic(VecSF, @splat(p[0]), @splat(p[1]), vector_ids, params);
                     for (actual) |value| try std.testing.expectEqual(expected, value);
                 }
@@ -3857,7 +3858,7 @@ test "classified indexed prepared SIMD matches scalar for every state" {
     defer deinitTestResources(.{ .data = .{ .classified = classified } });
 
     var state_uv: [3][2]F = undefined;
-    var found_state = [_]bool{false} ** 3;
+    var found_state: [3]bool = @splat(false);
     for (0..classified.dims[0] * classified.dims[1]) |index| {
         const state = classified.states[index];
         const state_value: usize = if (state == 0) 0 else if (state == 512) 1 else 2;
@@ -4527,7 +4528,7 @@ test "runtime resources select only one resource and canonical scalar SIMD kerne
     inline for (generation_configs) |config| {
         const evaluator = comptime std.meta.activeTag(config);
         const speckle_shape = comptime config.pattern() orelse .disk;
-        const speckle_neighbor_count = comptime @intFromEnum(config.neighborhood() orelse speckleconfig.Neighborhood.nine);
+        const speckle_neighbor_count = comptime @backingInt(config.neighborhood() orelse speckleconfig.Neighborhood.nine);
         const soft_edges = comptime config.edges() == .soft;
         var params: GridParams = .{
             .pattern = speckle_shape,
@@ -4767,7 +4768,7 @@ test "strip indexed records and samples match exhaustive lists exactly across oc
     inline for (generation_configs) |config| {
         const evaluator = comptime std.meta.activeTag(config);
         const speckle_shape = comptime config.pattern() orelse .disk;
-        const speckle_neighbor_count = comptime @intFromEnum(config.neighborhood() orelse speckleconfig.Neighborhood.nine);
+        const speckle_neighbor_count = comptime @backingInt(config.neighborhood() orelse speckleconfig.Neighborhood.nine);
         const soft_edges = comptime config.edges() == .soft;
         if (comptime evaluator != .list_indexed) continue;
         for ([_]F{ 0.0, 0.7, 1.0 }) |occupancy| {
@@ -4981,7 +4982,7 @@ const CellBinnedIndependentReference = struct {
         if (!isOccupied(hash, p.occupancy)) return null;
         const radius = p.radius_mean + p.radius_jitter * (@as(F, @floatFromInt(hash >> 48)) / 32768 - 1);
         const support = radius + p.edge_softness;
-        const n = @intFromEnum(p.neighbor_count orelse .nine);
+        const n = @backingInt(p.neighbor_count orelse .nine);
         const margin = if (n == 1) support else @as(F, 0);
         const span = 1 - (if (n == 1) 2 * support else if (n == 4) support else @as(F, 0));
         var result: Disk = .{ .xy = undefined, .radius = radius };
@@ -5006,7 +5007,7 @@ const CellBinnedIndependentReference = struct {
         const py = @max(0, @min(1, v)) * p.cells_per_uv[1];
         const sx: i64 = @intFromFloat(@floor(px));
         const sy: i64 = @intFromFloat(@floor(py));
-        const n = @intFromEnum(p.neighbor_count orelse .nine);
+        const n = @backingInt(p.neighbor_count orelse .nine);
         var coverage: F = 0;
         var y: i64 = -1;
         while (y <= @as(i64, @intFromFloat(@floor(p.cells_per_uv[1]))) + 1) : (y += 1) {

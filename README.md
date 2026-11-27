@@ -5,7 +5,7 @@
 <p align="center"><strong>A high performance rasteriser for digital image correlation uncertainty quantification.</strong></p>
 
 <p align="center">
-  <a href="https://ziglang.org/download/"><img src="https://img.shields.io/badge/Zig-0.16.0-F7A41D?logo=zig&logoColor=white" alt="Zig version"></a>
+  <a href="https://ziglang.org/download/"><img src="https://img.shields.io/badge/Zig-0.17.1-F7A41D?logo=zig&logoColor=white" alt="Zig version"></a>
   <a href="https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/actions/workflows/zig-tests.yaml"><img src="https://img.shields.io/github/actions/workflow/status/Computer-Aided-Validation-Laboratory/riley-raster/zig-tests.yaml?branch=main&label=zig-tests" alt="Zig Tests"></a>
   <a href="https://pypi.org/project/riley-raster/"><img src="https://img.shields.io/pypi/v/riley-raster?label=PyPI" alt="PyPI version"></a>
   <a href="https://pypi.org/project/riley-raster/"><img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Supported Python versions"></a>
@@ -19,7 +19,7 @@ Riley's Zig core uses `comptime` specialisation and SIMD with `@Vector` to keep 
 
 ## Quick start: Zig
 
-Riley uses [Zig 0.16.0](https://ziglang.org/download/). Clone the repository,
+Riley uses [Zig 0.17.1](https://ziglang.org/download/). Clone the repository,
 then run the smallest demo from the repository root:
 
 ```shell
